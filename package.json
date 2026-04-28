@@ -6,10 +6,12 @@
     "dev": "next dev",
     "build": "next build && node postbuild.js",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "migrate:payments:postgres": "node scripts/migrate-payment-orders-to-postgres.mjs"
   },
   "dependencies": {
     "next": "^16.2.4",
+    "pg": "^8.20.0",
     "react": "^18",
     "react-dom": "^18"
   },
@@ -18,6 +20,7 @@
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/pg": "^8.20.0",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "autoprefixer": "^10.0.1",

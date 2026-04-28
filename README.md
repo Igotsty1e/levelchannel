@@ -9,6 +9,7 @@
 - оплата уже встроена в UI и API
 - checkout работает по сценарию `свободная сумма + e-mail + CloudPayments popup widget`
 - провайдер по умолчанию: `mock`
+- storage backend: `file` или `postgres`
 - реальный режим CloudPayments включается через `.env`
 - проект прошёл базовый hardening: security headers, origin checks, rate limiting, webhook signature verification
 
@@ -40,10 +41,13 @@ npm run start
 Минимальный набор:
 
 - `PAYMENTS_PROVIDER=mock|cloudpayments`
+- `PAYMENTS_STORAGE_BACKEND=file|postgres`
 - `PAYMENTS_STORAGE_FILE=payment-orders.json`
 - `PAYMENTS_MOCK_AUTO_CONFIRM_SECONDS=20`
 - `PAYMENTS_ALLOW_MOCK_CONFIRM=true|false`
 - `NEXT_PUBLIC_SITE_URL=http://localhost:3000`
+- `DATABASE_URL=postgresql://...`
+- `TELEMETRY_HASH_SECRET=...`
 - `CLOUDPAYMENTS_PUBLIC_ID=...`
 - `CLOUDPAYMENTS_API_SECRET=...`
 
@@ -81,14 +85,15 @@ Payment API:
 - добавлен mock-режим для локальной проверки checkout flow
 - подготовлены webhook'и CloudPayments
 - проведён дополнительный security hardening
+- добавлен PostgreSQL storage backend и миграционный скрипт `npm run migrate:payments:postgres`
 - зависимости обновлены, `npm audit --omit=dev` сейчас чистый
 
 ## Что важно помнить
 
-- текущий storage заказов файловый и подходит только для single-instance deployment
+- файловый storage остаётся fallback-режимом, production-целевой backend теперь `PostgreSQL`
 - боевой CloudPayments flow ещё не прогнан до конца, потому что нет рабочего production deploy + webhook setup
 - mock confirm должен оставаться выключенным в production
 
 ## Рекомендуемый следующий шаг
 
-Поднять VPS / Node deployment, заполнить CloudPayments credentials и перейти к реальному end-to-end тесту widget flow, webhook'ов и отправки чеков через CloudKassir.
+Поднять и включить `PostgreSQL` в `.env`, прогнать миграцию заказов, затем проверить реальный end-to-end тест widget flow, webhook'ов и отправки чеков через CloudKassir.

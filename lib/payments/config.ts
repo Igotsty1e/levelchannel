@@ -4,9 +4,15 @@ function parseProvider(value: string | undefined): PaymentProvider {
   return value === 'cloudpayments' ? 'cloudpayments' : 'mock'
 }
 
+function parseStorageBackend(value: string | undefined) {
+  return value === 'postgres' ? 'postgres' : 'file'
+}
+
 export const paymentConfig = {
   provider: parseProvider(process.env.PAYMENTS_PROVIDER),
+  storageBackend: parseStorageBackend(process.env.PAYMENTS_STORAGE_BACKEND),
   storageFile: process.env.PAYMENTS_STORAGE_FILE || 'payment-orders.json',
+  databaseUrl: process.env.DATABASE_URL || '',
   mockAutoConfirmSeconds: Number(process.env.PAYMENTS_MOCK_AUTO_CONFIRM_SECONDS || '20'),
   siteUrl: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
   allowMockConfirm:

@@ -5,6 +5,7 @@
 - фронтенд уже подключён к `/api/payments`;
 - пользователь вводит `сумму + e-mail`, после чего запускается CloudPayments Widget;
 - провайдер по умолчанию: `mock`;
+- storage backend по умолчанию: `file`;
 - реальный режим CloudPayments включается через `.env`.
 - проект работает на `Next.js 16`;
 - mock confirm endpoint должен использоваться только для локальной проверки и staging.
@@ -18,7 +19,8 @@
   - `/api/payments/webhooks/cloudpayments/check`
   - `/api/payments/webhooks/cloudpayments/pay`
   - `/api/payments/webhooks/cloudpayments/fail`
-- добавлено файловое хранилище заказов в `data/payment-orders.json`;
+- добавлен PostgreSQL backend для заказов;
+- файловое хранилище заказов в `data/payment-orders.json` оставлено как fallback;
 - добавлена передача `receiptEmail` и `receipt` для CloudPayments / CloudKassir.
 - добавлены rate limiting, origin checks и HMAC verification для webhook'ов.
 
@@ -30,8 +32,11 @@
    - любой другой хостинг с постоянным серверным процессом
 2. Заполнить `.env`:
    - `PAYMENTS_PROVIDER=cloudpayments`
+   - `PAYMENTS_STORAGE_BACKEND=postgres`
    - `PAYMENTS_ALLOW_MOCK_CONFIRM=false`
    - `NEXT_PUBLIC_SITE_URL=https://ваш-домен`
+   - `DATABASE_URL=postgresql://...`
+   - `TELEMETRY_HASH_SECRET=...`
    - `CLOUDPAYMENTS_PUBLIC_ID=...`
    - `CLOUDPAYMENTS_API_SECRET=...`
 3. В кабинете CloudPayments проверить, что включены нужные методы оплаты в форме (`Банковская карта`, при необходимости `T-Pay` и др.).
@@ -43,18 +48,23 @@
 6. Прогнать тестовый платёж.
 7. Убедиться, что после оплаты status меняется через webhook, а не только через polling.
 8. Убедиться, что на e-mail приходит чек от CloudPayments / CloudKassir.
+9. Если до этого использовался JSON storage, прогнать:
+
+```bash
+npm run migrate:payments:postgres
+```
 
 ## Важно перед production
 
-- Текущее хранилище заказов файловое. Для первых тестов и MVP на VPS этого достаточно, но для production лучше вынести заказы в БД.
+- Для production теперь целевой backend: `PostgreSQL`.
 - Путь к файловому хранилищу намеренно ограничен директорией `data/`, чтобы конфиг не мог увести запись в произвольное место файловой системы.
 - Чеки уже завязаны на передачу `receipt` и `receiptEmail`, но фактическая отправка зависит от настройки CloudKassir в кабинете.
-- Для multi-instance deployment обязательно заменить in-memory rate limiter и файловое хранилище.
+- Для multi-instance deployment обязательно заменить in-memory rate limiter.
 - Если платежи пойдут в production, нужен отдельный backup / retention plan для order storage.
 
 ## Что ещё нужно будет сделать позже
 
-1. Перейти на БД
+1. Вынести audit / telemetry storage из файлов в отдельный backend
 2. Добавить operator notifications о successful payment
 3. Добавить reconciliation / admin tooling
 4. Добавить monitoring и alerting по webhook failures

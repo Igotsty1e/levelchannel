@@ -24,10 +24,7 @@ function getTelemetryPath() {
 }
 
 function hashEmail(email: string) {
-  const secret =
-    process.env.TELEMETRY_HASH_SECRET ||
-    process.env.CLOUDPAYMENTS_API_SECRET ||
-    'levelchannel-telemetry'
+  const secret = process.env.TELEMETRY_HASH_SECRET || 'levelchannel-telemetry'
 
   return createHmac('sha256', secret).update(email).digest('hex')
 }

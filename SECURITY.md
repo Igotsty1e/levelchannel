@@ -23,6 +23,7 @@
 - валидация суммы на сервере, без доверия сумме и e-mail с клиента
 - ограничение mock confirm в production
 - payment storage file исключён из репозитория
+- телеметрия хешируется отдельным `TELEMETRY_HASH_SECRET`, без fallback на CloudPayments secret
 - `npm audit --omit=dev` чистый на текущем lockfile
 
 ## Защищаемые активы
@@ -68,7 +69,7 @@
 ## Оставшиеся ограничения
 
 - limiter in-memory, значит не синхронизируется между инстансами
-- storage файловый, не годится для multi-node production
+- payment telemetry пока файловая и не годится для multi-node production
 - нет WAF / reverse-proxy limiting на уровне инфраструктуры
 - нет централизованного audit log storage
 - нет Sentry / alerting / intrusion visibility
@@ -91,7 +92,7 @@
 - боевые CloudPayments credentials
 - реальный `NEXT_PUBLIC_SITE_URL`
 - webhook URLs в кабинете CloudPayments
-- backup strategy для `data/` или переход на БД
+- backup strategy для `PostgreSQL` и `data/` telemetry logs
 
 ### Monitoring
 
@@ -102,13 +103,12 @@
 
 ## Рекомендуемые будущие улучшения
 
-1. Перевести orders в `PostgreSQL`
-2. Вынести limiter в `Redis`
-3. Добавить structured audit log
-4. Добавить Sentry / error tracking
-5. Добавить отдельный health endpoint
-6. Добавить admin-safe reconciliation tool для платежей
-7. Перенести orders в БД перед multi-instance production
+1. Вынести limiter в `Redis`
+2. Добавить structured audit log
+3. Добавить Sentry / error tracking
+4. Добавить отдельный health endpoint
+5. Добавить admin-safe reconciliation tool для платежей
+6. Перевести payment telemetry из файла в БД или log pipeline
 
 ## Правило по изменениям
 

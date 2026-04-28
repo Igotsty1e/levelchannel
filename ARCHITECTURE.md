@@ -28,7 +28,10 @@
 - [`lib/payments/mock.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/mock.ts) — mock provider
 - [`lib/payments/cloudpayments.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/cloudpayments.ts) — формирование server-side order и widget intent для CloudPayments / CloudKassir
 - [`lib/payments/cloudpayments-webhook.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/cloudpayments-webhook.ts) — webhook payload parsing and verification
-- [`lib/payments/store.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/store.ts) — файловое хранилище заказов
+- [`lib/payments/store.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/store.ts) — adapter layer, выбирает file или postgres backend
+- [`lib/payments/store-file.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/store-file.ts) — файловое хранилище заказов
+- [`lib/payments/store-postgres.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/store-postgres.ts) — PostgreSQL backend для заказов
+- [`scripts/migrate-payment-orders-to-postgres.mjs`](/Users/ivankhanaev/LevelChannel/scripts/migrate-payment-orders-to-postgres.mjs) — one-shot перенос заказов из JSON в PostgreSQL
 
 ### Security layer
 
@@ -69,7 +72,12 @@
 
 ## Хранилище заказов
 
-Сейчас используется JSON-файл в директории `data/`.
+Теперь storage выбирается через `PAYMENTS_STORAGE_BACKEND`.
+
+Варианты:
+
+- `file` — JSON-файл в директории `data/`
+- `postgres` — таблица `payment_orders` в PostgreSQL
 
 Плюсы:
 
@@ -83,7 +91,7 @@
 - нет транзакционности уровня БД
 - ограниченная масштабируемость
 
-Production target: `PostgreSQL` или `SQLite` на первом серверном этапе, затем `PostgreSQL`.
+Текущий production target: `PostgreSQL`.
 
 ## Deployment model
 

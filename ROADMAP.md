@@ -19,7 +19,7 @@
 
 ### P1
 
-- заменить файловое хранилище заказов на БД
+- довести PostgreSQL storage до полного production rollout
 - добавить uptime / error monitoring
 - добавить reverse proxy rate limiting
 - зафиксировать deployment playbook
@@ -34,7 +34,6 @@
 
 ### Payment domain
 
-- вынести storage в отдельный adapter layer
 - перейти с polling на более надёжную модель статусов при росте нагрузки
 - добавить idempotency key для client-side create payment requests
 - добавить lifecycle cleanup для старых pending orders
