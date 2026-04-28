@@ -1,0 +1,110 @@
+# Architecture
+
+## Overview
+
+Проект состоит из двух частей:
+
+- публичный лендинг на `Next.js App Router`
+- серверный payment-контур внутри того же приложения
+
+Основная продуктовая логика сейчас сосредоточена в checkout flow и обработке статусов оплаты.
+
+## Структура
+
+### Frontend
+
+- [`app/page.tsx`](/Users/ivankhanaev/LevelChannel/app/page.tsx) — главная страница
+- [`components/payments/pricing-section.tsx`](/Users/ivankhanaev/LevelChannel/components/payments/pricing-section.tsx) — UI оплаты со свободной суммой и e-mail, создание платежа, polling статуса, запуск widget
+- [`app/thank-you/page.tsx`](/Users/ivankhanaev/LevelChannel/app/thank-you/page.tsx) — страница подтверждения оплаты
+- [`app/offer/page.tsx`](/Users/ivankhanaev/LevelChannel/app/offer/page.tsx) — публичная оферта
+- [`app/privacy/page.tsx`](/Users/ivankhanaev/LevelChannel/app/privacy/page.tsx) — политика конфиденциальности
+
+### Payment domain
+
+- [`lib/payments/catalog.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/catalog.ts) — payment constraints, суммы и описание услуги
+- [`lib/payments/types.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/types.ts) — типы заказа и публичной модели
+- [`lib/payments/config.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/config.ts) — payment env config
+- [`lib/payments/provider.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/provider.ts) — orchestration: create payment, mark paid/failed, public model
+- [`lib/payments/mock.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/mock.ts) — mock provider
+- [`lib/payments/cloudpayments.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/cloudpayments.ts) — формирование server-side order и widget intent для CloudPayments / CloudKassir
+- [`lib/payments/cloudpayments-webhook.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/cloudpayments-webhook.ts) — webhook payload parsing and verification
+- [`lib/payments/store.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/store.ts) — файловое хранилище заказов
+
+### Security layer
+
+- [`lib/security/request.ts`](/Users/ivankhanaev/LevelChannel/lib/security/request.ts) — origin checks, invoice id validation, per-IP rate limiting
+- [`lib/security/rate-limit.ts`](/Users/ivankhanaev/LevelChannel/lib/security/rate-limit.ts) — in-memory limiter
+- [`next.config.js`](/Users/ivankhanaev/LevelChannel/next.config.js) — security headers для Node deployment
+- [`public/.htaccess`](/Users/ivankhanaev/LevelChannel/public/.htaccess) — security headers для Apache
+
+### API routes
+
+- [`app/api/payments/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/route.ts)
+- [`app/api/payments/[invoiceId]/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/%5BinvoiceId%5D/route.ts)
+- [`app/api/payments/mock/[invoiceId]/confirm/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/mock/%5BinvoiceId%5D/confirm/route.ts)
+- [`app/api/payments/webhooks/cloudpayments/check/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/webhooks/cloudpayments/check/route.ts)
+- [`app/api/payments/webhooks/cloudpayments/pay/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/webhooks/cloudpayments/pay/route.ts)
+- [`app/api/payments/webhooks/cloudpayments/fail/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/webhooks/cloudpayments/fail/route.ts)
+
+## Payment flow
+
+### Mock mode
+
+1. Пользователь вводит сумму и e-mail
+2. Frontend вызывает `POST /api/payments`
+3. Server создаёт order через `mock` provider
+4. Frontend опрашивает `GET /api/payments/[invoiceId]`
+5. Статус автоматически переходит в `paid` по таймеру
+
+### CloudPayments mode
+
+1. Пользователь вводит сумму и e-mail
+2. Frontend вызывает `POST /api/payments`
+3. Server создаёт внутренний `invoiceId`, order и widget intent
+4. Клиент запускает CloudPayments Widget поверх сайта
+5. В widget передаются `externalId`, `receiptEmail`, `receipt`, `userInfo.email`
+6. После оплаты CloudPayments отправляет webhook
+7. Server валидирует подпись, сумму и `AccountId`
+8. Клиент видит финальный статус через polling и страницу `/thank-you`
+
+## Хранилище заказов
+
+Сейчас используется JSON-файл в директории `data/`.
+
+Плюсы:
+
+- просто
+- удобно для локальной проверки и MVP
+- не требует внешней инфраструктуры
+
+Минусы:
+
+- не годится для multi-instance deployment
+- нет транзакционности уровня БД
+- ограниченная масштабируемость
+
+Production target: `PostgreSQL` или `SQLite` на первом серверном этапе, затем `PostgreSQL`.
+
+## Deployment model
+
+Текущая архитектура требует server runtime.
+
+Подходящие варианты:
+
+- Vercel
+- VPS + `next start`
+- любой Node.js hosting с постоянным процессом
+
+Неподходящий вариант:
+
+- чистый static export без backend runtime
+
+## Source of truth
+
+Если между документами есть расхождения:
+
+1. код
+2. `README.md`
+3. `ARCHITECTURE.md`
+4. `PAYMENTS_SETUP.md`
+5. `PRD.md` как исторический документ
