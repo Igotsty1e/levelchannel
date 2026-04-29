@@ -227,22 +227,33 @@ Once in git:
 
 ## 11. Test discipline
 
-The repo currently has **no automated tests** — `package.json` has no
-`test` script, and no test runner is installed. This is a gap, not a
-feature.
+The repo runs on **Vitest** (`tests/`, configured in `vitest.config.ts`).
+Real money is moving through this code, so the bar is high.
 
-- **Don't add a test framework unprompted.** That's a project-wide
-  decision (Vitest vs Jest vs Playwright vs node:test) and belongs to
-  the user. Ask first.
-- **Once tests exist:** the load-bearing logic in `lib/payments/` and
-  `lib/security/` is the priority. Specifically: amount validation,
-  webhook HMAC verification, rate-limit edges, mock-provider boundaries.
-- **Until then:** the verification path is `npm run build` for type
-  safety + manual click-through in dev mode for behaviour. Walk the
-  full mock checkout end-to-end before claiming a payment-domain change
-  is done.
-- **Coverage is not the metric.** *Load-bearing logic + boundary
-  contracts* is the metric.
+- **Run `npm run test:run` before claiming any payment-domain or
+  security-layer change is done.** TypeScript-only checks don't prove
+  HMAC verification is correct, only that the types line up.
+- **`npm run test:coverage` enforces 70% lines / branches / functions /
+  statements** on the load-bearing modules listed in `vitest.config.ts`.
+  If you drop below the threshold, the run fails — fix it in the same
+  diff, don't promise a follow-up.
+- **What earns a unit test:** anything in `lib/payments/`,
+  `lib/security/`, `lib/telemetry/` that is pure or can be made pure with
+  a mock — HMAC verify, amount/email validation, token extraction +
+  consent reading, rate limiter edges, idempotency key validation,
+  CloudPayments API client (with mocked `fetch`), invoice id regex.
+- **What stays integration:** `store-postgres.ts`, `idempotency-postgres.ts`,
+  `store-file.ts`, the route handlers themselves. These need a live
+  Postgres or temp FS. Excluded from coverage thresholds in
+  `vitest.config.ts`. If you add an integration runner later, gate it
+  behind `npm run test:integration` to keep `test:run` fast.
+- **Always-on signals before merge:** `npm run test:run` (green),
+  `npm run build` (green), and a manual click-through of the affected
+  payment flow against `PAYMENTS_PROVIDER=mock`. Never test against the
+  real CloudPayments terminal from a feature branch.
+- **Coverage is not the goal — boundary correctness is.** A 100%-covered
+  HMAC verifier that signs the wrong bytes is worse than a 60%-covered
+  one with a precise regression test for the exact CP wire format.
 
 ---
 
@@ -272,18 +283,45 @@ English-tutoring sessions, with server-side CloudPayments integration.
 ### Critical paths
 
 - **Payment domain:** `lib/payments/`
-  - `catalog.ts` — server-side amount + service constraints (the
-    authority for "is this amount legal")
-  - `provider.ts` — orchestration, public model stripping
-  - `cloudpayments.ts` — server-side order + widget intent
-  - `cloudpayments-webhook.ts` — HMAC-verified webhook parsing
-  - `mock.ts` — mock provider (default)
-  - `store.ts` — file-based order storage (P1 in `ROADMAP.md`:
-    replace with DB)
+  - `catalog.ts` — server-side amount + email validation. Authority
+    for "is this amount legal".
+  - `config.ts` — env config + **production assertions at module load**
+    (NEXT_PUBLIC_SITE_URL must be real, CP creds must be set, mock
+    confirm must be off). Never relax these without explicit ask.
+  - `provider.ts` — orchestration: `createPayment`, `markOrderPaid/
+    Failed/Cancelled`, `chargeWithSavedCard` (one-click).
+  - `cloudpayments.ts` — server-side order + widget intent (`tokenize`
+    flag honours user's `rememberCard` consent).
+  - `cloudpayments-webhook.ts` — HMAC-verified parsing
+    (`base64(HMAC-SHA256(rawBody, ApiSecret))` over **raw** body),
+    plus order validation (amount, AccountId, Email match).
+  - `cloudpayments-api.ts` — server-to-server HTTP client for
+    `POST /payments/tokens/charge` (HTTP Basic, `Public ID : API
+    Secret`). Branches: success / requires_3ds / declined / error.
+  - `tokens.ts` — extracts CardLastFour/CardType/Token from webhook,
+    reads `rememberCard` consent from order metadata (with Data /
+    JsonData fallback), persists token only when consented.
+  - `mock.ts` — mock provider (development only).
+  - `store.ts` / `store-postgres.ts` / `store-file.ts` — adapter +
+    backends for orders AND saved card tokens.
 - **Security layer:** `lib/security/`
-  - `request.ts` — origin checks, invoice id validation, rate limiting
-  - `rate-limit.ts` — in-memory limiter
+  - `request.ts` — origin checks, invoice id validation
+    (`/^lc_[a-z0-9_]{8,48}$/i`), rate limiting wrapper.
+  - `rate-limit.ts` — in-memory per-IP limiter (single-process; any
+    multi-instance deploy needs a Redis backend, see ROADMAP).
+  - `idempotency.ts` + `idempotency-postgres.ts` — request dedup by
+    `Idempotency-Key` header for money-moving routes (`/api/payments`,
+    `/api/payments/charge-token`). 5xx responses are NOT cached so
+    transient infra failures stay retriable.
+- **Telemetry:** `lib/telemetry/`
+  - `store.ts` — privacy-friendly checkout event log (HMAC-hashed
+    e-mail, /24-masked IP). Postgres primary, file fallback if DB
+    write fails.
 - **API routes:** `app/api/`
+  - `payments/` — create, status, cancel, events
+  - `payments/saved-card/` — POST = lookup, DELETE = forget (opt-out)
+  - `payments/charge-token/` — one-click charge by saved token
+  - `payments/webhooks/cloudpayments/{check,pay,fail}/` — CP callbacks
 - **Checkout UI:** `components/payments/pricing-section.tsx`
 - **Public legal pages:** `app/offer/page.tsx`, `app/privacy/page.tsx`
 
@@ -296,21 +334,94 @@ English-tutoring sessions, with server-side CloudPayments integration.
 | Production build (with postbuild) | `npm run build` |
 | Production server | `npm run start` |
 | Lint | `npm run lint` |
-| Tests | _(not configured yet)_ |
+| Tests (watch) | `npm run test` |
+| Tests (CI) | `npm run test:run` |
+| Tests + coverage gate | `npm run test:coverage` |
+| TypeScript-only check | `npx tsc --noEmit` |
+| One-shot file → Postgres migration | `npm run migrate:payments:postgres` |
 
 ### Deploy posture
 
-The project is **pre-production** for the real payment flow. P0 in
-`ROADMAP.md`:
+This is **production with real money.** The bar:
 
-- deploy production runtime to VPS or Vercel
-- obtain `CLOUDPAYMENTS_PUBLIC_ID` + `CLOUDPAYMENTS_API_SECRET`
-- set up real webhook URLs
-- disable `PAYMENTS_ALLOW_MOCK_CONFIRM` in production
-- end-to-end real-payment test
+- `PAYMENTS_PROVIDER=cloudpayments` and `PAYMENTS_STORAGE_BACKEND=postgres`
+  in production env.
+- `PAYMENTS_ALLOW_MOCK_CONFIRM` must be unset — `lib/payments/config.ts`
+  throws on boot if it's `true` under `NODE_ENV=production`.
+- `NEXT_PUBLIC_SITE_URL` must be the real https URL — config also
+  validates this when provider=cloudpayments in prod.
+- CloudPayments webhooks (`Pay`, `Check`, `Fail`) point at the real
+  domain in the CP cabinet, terminal is in live mode, kassa sends
+  receipts.
+- Postgres has the four tables: `payment_orders`, `payment_card_tokens`,
+  `payment_telemetry`, `idempotency_records`. They self-create on first
+  use via `ensureSchema*` paths, but a backup + retention plan is the
+  operator's responsibility.
 
-Until P0 is done: no real money is moving. The moment it's done, the
-risk profile changes — see §13 below.
+When you're shipping a payment-domain or security-layer change to this
+production system, the bar is: tests green, build green, manual mock
+checkout walked, doc sweep done, and you'd bet your own money on the
+diff being correct. See §15.
+
+---
+
+## 12a. One-click / token payments (152-FZ-aware)
+
+CloudPayments returns a `Token` on every successful payment when the
+terminal is configured to support it. **Saving that token is opt-in,
+not opt-out** — `pricing-section.tsx` shows an unchecked checkbox
+"Запомнить карту" and only when it's checked do we tokenize:
+
+1. Frontend sends `rememberCard: true` to `/api/payments`.
+2. Server stamps `metadata.rememberCard = true` on the order
+   (`createCloudPaymentsOrder`).
+3. Widget intent passes both `tokenize: true` AND `metadata.rememberCard:
+   true` so CP knows to issue a token AND echoes the consent back.
+4. Pay-вебхук reads consent from order metadata first (our source of
+   truth), falls back to `Data` / `JsonData` in the payload.
+5. Token saved to `payment_card_tokens` only when consent is true.
+6. User can delete the token any time via DELETE
+   `/api/payments/saved-card`.
+
+If you change anything in this chain, walk through the flow with the
+checkbox both checked and unchecked. The default — never save without
+explicit consent — is a hard requirement, not a preference.
+
+3-D Secure for one-click is fully implemented. When CP returns
+`AcsUrl + PaReq`, the route persists `metadata.threeDs` on the order
+and returns `{ status: 'requires_3ds', threeDs: { acsUrl, paReq,
+transactionId, termUrl } }`. The UI builds and submits a hidden
+`<form method="POST" action="acsUrl">` with `PaReq`, `MD`, `TermUrl`.
+The bank's ACS POSTs back to `/api/payments/3ds-callback?invoiceId=...`
+which calls CloudPayments `/payments/cards/post3ds` and 303-redirects
+the user to `/thank-you` (success) or the home page with
+`?payment=failed` (decline).
+
+If you change anything in the 3DS chain — `cloudpayments-api.ts`
+(`confirmThreeDs`), `provider.ts` (`confirmThreeDsAndFinalize`),
+`/api/payments/3ds-callback/route.ts`, or the form-submit helper in
+`pricing-section.tsx` — verify every branch (success, decline, error,
+unknown invoice, invalid state, double callback). The bank may POST
+twice (browser back, retry) and we must not double-charge or
+double-fail.
+
+---
+
+## 12b. Idempotency (money-moving routes)
+
+`/api/payments` and `/api/payments/charge-token` accept an
+`Idempotency-Key` header. Frontend sends a fresh UUID per submit.
+Backend dedupes via `idempotency_records` table.
+
+- Replays return the **cached** response with `Idempotency-Replay: true`.
+- Same key + different body → 409.
+- 5xx responses are not cached — transient infra failures must stay
+  retriable.
+- File backend ignores idempotency cache (single-process, low value).
+
+If you add another money-moving route, wrap it in `withIdempotency` and
+pick a stable scope name. Never trust the client's word that the same
+amount/email means "this is a retry".
 
 ---
 
@@ -335,9 +446,19 @@ risk profile changes — see §13 below.
   HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy. If
   you're touching that file, read `SECURITY.md` first; understand
   what each header is buying before relaxing it.
-- **Don't replace the file-based order storage in a side project.**
-  P1 in `ROADMAP.md` calls for a DB-backed adapter, but that's a
-  scoped initiative — propose the design before writing the code.
+- **Don't tokenize a card without explicit user consent.** The default
+  is `rememberCard=false`. `tokens.ts` enforces this on the webhook
+  side; do not weaken `readRememberCardConsent`. If the user didn't
+  tick the box, even if CP sent a Token, we drop it.
+- **Don't bypass `withIdempotency` on money-moving routes.** If you
+  add a new route that creates an order or charges a card, wrap it.
+  Frontend retries are normal; double-charges are not.
+- **Don't change the HMAC verification path** (`cloudpayments-webhook.ts`)
+  without updating the regression tests in
+  `tests/payments/cloudpayments-webhook.test.ts`. The exact wire format
+  is `base64(HMAC-SHA256(rawBody, ApiSecret))` over **raw** bytes — no
+  re-encoding, no decoding, no JSON-vs-form branching for signature
+  input.
 - **Don't cut the `ARCHITECTURE.md` file map.** Every file added or
   moved goes in. Without it, the next agent has to re-discover the
   structure from scratch.

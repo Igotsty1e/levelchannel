@@ -19,9 +19,13 @@
 - in-memory rate limiting по IP
 - валидация `invoiceId`
 - `Cache-Control: no-store` для payment responses
-- HMAC verification для CloudPayments webhook'ов
+- HMAC verification для CloudPayments webhook'ов по `X-Content-HMAC` и `Content-HMAC`
+  (HMAC-SHA256 в base64 поверх raw body, без перекодировки)
 - валидация суммы на сервере, без доверия сумме и e-mail с клиента
-- ограничение mock confirm в production
+- ограничение mock confirm в production (по умолчанию закрыто, открывается явным `PAYMENTS_ALLOW_MOCK_CONFIRM=true`)
+- transactional `SELECT ... FOR UPDATE` на изменение ордера в Postgres — защита от TOCTOU при конкурентных вебхуках
+- one-click charge (`/api/payments/charge-token`) проксирует CloudPayments
+  Token API через server-side Basic Auth, токены никогда не уходят в браузер
 - payment storage file исключён из репозитория
 - телеметрия хешируется отдельным `TELEMETRY_HASH_SECRET`, без fallback на CloudPayments secret
 - `npm audit --omit=dev` чистый на текущем lockfile

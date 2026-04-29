@@ -15,6 +15,7 @@
 - сайт больше не собран как static export-only приложение;
 - добавлены API routes для создания платежей и чтения статуса;
 - добавлен `thank-you` flow после успешной оплаты;
+- добавлено сохранение последнего успешного подтверждения на главной, чтобы пользователь не терял результат после возврата с банка;
 - добавлены webhook routes CloudPayments:
   - `/api/payments/webhooks/cloudpayments/check`
   - `/api/payments/webhooks/cloudpayments/pay`
@@ -23,6 +24,8 @@
 - файловое хранилище заказов в `data/payment-orders.json` оставлено как fallback;
 - добавлена передача `receiptEmail` и `receipt` для CloudPayments / CloudKassir.
 - добавлены rate limiting, origin checks и HMAC verification для webhook'ов.
+- добавлены one-click платежи: `/api/payments/saved-card` и `/api/payments/charge-token`,
+  токены сохраняются в `payment_card_tokens` после Pay-вебхука.
 
 ## Что нужно для боевого включения
 
@@ -62,10 +65,57 @@ npm run migrate:payments:postgres
 - Для multi-instance deployment обязательно заменить in-memory rate limiter.
 - Если платежи пойдут в production, нужен отдельный backup / retention plan для order storage.
 
+## One-click (платёж в один клик)
+
+CloudPayments возвращает `Token` в Pay-уведомлении после успешной первой оплаты.
+Токен сохраняется в БД и привязывается к `customerEmail`. На следующем визите
+тот же e-mail увидит кнопку «Оплатить картой ··NNNN».
+
+Серверная часть:
+
+1. `POST /api/payments/saved-card` — отдаёт `{ savedCard: { cardLastFour, cardType, createdAt } | null }`.
+   Защищён origin-check + rate limit (10/мин/IP).
+2. `POST /api/payments/charge-token` — создаёт ордер и вызывает
+   `https://api.cloudpayments.ru/payments/tokens/charge` с HTTP Basic Auth
+   (`Public ID : API Secret`). Возможные ответы клиенту:
+   - `{ status: 'paid', order }` — списание прошло, перенаправляем на `/thank-you`.
+   - `{ status: 'requires_widget', order }` — банк потребовал 3-D Secure,
+     ордер остаётся `pending`, фронт предлагает обычную форму.
+   - `{ status: 'declined', order, message }` — отказ, ордер `failed`.
+
+В кабинете CloudPayments обязательно включить «Оплата по токену» / cofRecurring
+(если терминал не поддерживает, `tokens/charge` вернёт ошибку).
+
+### 3-D Secure flow (полностью реализован)
+
+Если на первом one-click-списании банк требует 3DS, поток такой:
+
+1. CloudPayments возвращает `Success: false, Model: { TransactionId, AcsUrl, PaReq, ThreeDsCallbackId }`.
+2. Сервер сохраняет `metadata.threeDs` в ордере и возвращает клиенту
+   `{ status: 'requires_3ds', threeDs: { acsUrl, paReq, transactionId, termUrl } }`.
+3. Клиент строит auto-submitting `<form method="POST" action="acsUrl">` с
+   полями `PaReq`, `MD=transactionId`, `TermUrl=https://site/api/payments/3ds-callback?invoiceId=...`.
+4. Браузер уходит в окно банка, пользователь подтверждает.
+5. Банк POST'ит на `TermUrl` form-данными `MD=...&PaRes=...`.
+6. `app/api/payments/3ds-callback/route.ts` читает `PaRes`, вызывает
+   `https://api.cloudpayments.ru/payments/cards/post3ds` (HTTP Basic),
+   обновляет ордер и редиректит юзера 303 на `/thank-you` или
+   `/?payment=failed`.
+
+### Health endpoint
+
+`GET /api/health` отдаёт:
+
+- `{ status: 'ok' }` со статусом 200 — runtime жив, БД пингуется,
+  CloudPayments creds на месте.
+- `{ status: 'degraded' }` со статусом 503 — что-то критичное не настроено.
+
+Удобно подключить к Render uptime-monitor'у или внешнему watchdog'у.
+
 ## Что ещё нужно будет сделать позже
 
-1. Вынести audit / telemetry storage из файлов в отдельный backend
-2. Добавить operator notifications о successful payment
-3. Добавить reconciliation / admin tooling
-4. Добавить monitoring и alerting по webhook failures
-5. Добавить operator notification о новой успешной оплате
+1. Operator notifications о successful payment (Sentry / e-mail / Slack)
+2. Reconciliation / admin tooling
+3. Monitoring и alerting по webhook failures
+4. Redis для rate-limit при переходе на multi-instance деплой
+5. Покрытие интеграционными тестами (живая Postgres + sandbox CP terminal)
