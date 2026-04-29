@@ -34,10 +34,19 @@
    - Check -> `https://ваш-домен/api/payments/webhooks/cloudpayments/check`
    - Pay -> `https://ваш-домен/api/payments/webhooks/cloudpayments/pay`
    - Fail -> `https://ваш-домен/api/payments/webhooks/cloudpayments/fail`
-6. Прогнать тестовый платёж.
-7. Убедиться, что после оплаты status меняется через webhook, а не только через polling.
-8. Убедиться, что на e-mail приходит чек от CloudPayments / CloudKassir.
-9. Если до этого использовался JSON storage, прогнать:
+6. Накатить схему на новую базу:
+
+```bash
+DATABASE_URL=postgres://... npm run migrate:up
+```
+
+   На существующей prod-БД (где таблицы уже созданы legacy `ensureSchema*`)
+   эта же команда безопасна — миграции `0001..0004` идемпотентны и просто
+   зафиксируют bookkeeping в `_migrations`. Подробнее — `migrations/README.md`.
+7. Прогнать тестовый платёж.
+8. Убедиться, что после оплаты status меняется через webhook, а не только через polling.
+9. Убедиться, что на e-mail приходит чек от CloudPayments / CloudKassir.
+10. Если до этого использовался JSON storage заказов, прогнать (one-shot data import, не путать со schema migrations):
 
 ```bash
 npm run migrate:payments:postgres

@@ -37,6 +37,42 @@
 - [`lib/payments/store-postgres.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/store-postgres.ts) — PostgreSQL backend для заказов и `payment_card_tokens`
 - [`scripts/migrate-payment-orders-to-postgres.mjs`](/Users/ivankhanaev/LevelChannel/scripts/migrate-payment-orders-to-postgres.mjs) — one-shot перенос заказов из JSON в PostgreSQL
 
+### Auth foundation
+
+Backend-only слой для будущего кабинета. UI и API-роуты ещё не подключены —
+эта итерация добавляет таблицы и lib/-модули; следующая фаза подключит
+`/api/auth/*` и страницы. Гостевой checkout от него не зависит.
+
+- [`migrations/0005_accounts.sql`](/Users/ivankhanaev/LevelChannel/migrations/0005_accounts.sql) — `accounts` (uuid PK, email UNIQUE, password_hash, email_verified_at, disabled_at)
+- [`migrations/0006_account_roles.sql`](/Users/ivankhanaev/LevelChannel/migrations/0006_account_roles.sql) — `account_roles` (admin / teacher / student через CHECK)
+- [`migrations/0007_account_sessions.sql`](/Users/ivankhanaev/LevelChannel/migrations/0007_account_sessions.sql) — `account_sessions` (token_hash UNIQUE, expires_at, revoked_at)
+- [`migrations/0008_email_verifications.sql`](/Users/ivankhanaev/LevelChannel/migrations/0008_email_verifications.sql) — single-use verify-email tokens (TTL 24h)
+- [`migrations/0009_password_resets.sql`](/Users/ivankhanaev/LevelChannel/migrations/0009_password_resets.sql) — single-use reset tokens (TTL 1h)
+- [`migrations/0010_accounts_email_normalized.sql`](/Users/ivankhanaev/LevelChannel/migrations/0010_accounts_email_normalized.sql) — `CHECK (email = lower(btrim(email)))` invariant; защита от shadow accounts при bypass app-слоя
+- [`lib/auth/pool.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/pool.ts) — отдельный `pg.Pool` для auth, тот же DATABASE_URL
+- [`lib/auth/password.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/password.ts) — bcryptjs, cost=12
+- [`lib/auth/tokens.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/tokens.ts) — random 32B base64url + sha256 hash; tokens хранятся только хешем
+- [`lib/auth/policy.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/policy.ts) — password policy (8..128 символов, не all-digits)
+- [`lib/auth/accounts.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/accounts.ts) — store ops: create / getByEmail / getById / markVerified / setPassword / role grant/revoke + `normalizeAccountEmail` helper (`trim().toLowerCase()`) — единая точка нормализации для всех путей записи/чтения
+- [`lib/auth/sessions.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/sessions.ts) — create / lookup / revoke + cookie helpers (`lc_session`, HttpOnly + SameSite=Lax + Secure в проде)
+- [`lib/auth/single-use-tokens.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/single-use-tokens.ts) — общий store для verify-email и password-reset (whitelist scope в SQL)
+- [`lib/auth/verifications.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/verifications.ts), [`lib/auth/resets.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/resets.ts) — thin wrappers с TTL
+
+### Email transport
+
+- [`lib/email/config.ts`](/Users/ivankhanaev/LevelChannel/lib/email/config.ts) — `RESEND_API_KEY` + `EMAIL_FROM`. Если ключ пустой — console fallback.
+- [`lib/email/client.ts`](/Users/ivankhanaev/LevelChannel/lib/email/client.ts) — Resend SDK + dev console writer.
+- [`lib/email/escape.ts`](/Users/ivankhanaev/LevelChannel/lib/email/escape.ts) — `escapeHtml` для динамических значений в шаблонах (5 опасных символов).
+- [`lib/email/templates/verify.ts`](/Users/ivankhanaev/LevelChannel/lib/email/templates/verify.ts), [`lib/email/templates/reset.ts`](/Users/ivankhanaev/LevelChannel/lib/email/templates/reset.ts) — inline HTML + plain text, RU. URL пропускается через `escapeHtml` перед интерполяцией.
+- [`lib/email/dispatch.ts`](/Users/ivankhanaev/LevelChannel/lib/email/dispatch.ts) — `sendVerifyEmail`, `sendResetEmail` с URL построением через `paymentConfig.siteUrl`.
+
+### Schema migrations
+
+- [`scripts/migrate.mjs`](/Users/ivankhanaev/LevelChannel/scripts/migrate.mjs) — минимальный self-contained runner поверх `pg`. Команды: `npm run migrate:up`, `npm run migrate:status`. Применяет файлы `migrations/NNNN_*.sql` по порядку в транзакциях, фиксирует имена в `_migrations`.
+- [`migrations/`](/Users/ivankhanaev/LevelChannel/migrations) — SQL-миграции, по одной на изменение схемы.
+  - `0001_payment_orders.sql`, `0002_payment_card_tokens.sql`, `0003_payment_telemetry.sql`, `0004_idempotency_records.sql` — повторяют существующие `ensureSchema*` через `create ... if not exists`. На прод-БД, где таблицы уже существуют, `npm run migrate:up` приносит схему под bookkeeping без диффа.
+- Legacy `ensureSchema*` функции в `lib/payments/store-postgres.ts`, `lib/security/idempotency-postgres.ts`, `lib/telemetry/store-postgres.ts` остаются как safety net. После того как runner подключён в deploy pipeline и накатан хотя бы один раз на проде, их можно постепенно удалять — но не в этом цикле.
+
 ### Security layer
 
 - [`lib/security/request.ts`](/Users/ivankhanaev/LevelChannel/lib/security/request.ts) — origin checks, invoice id validation, per-IP rate limiting
