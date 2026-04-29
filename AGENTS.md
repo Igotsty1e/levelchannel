@@ -50,6 +50,10 @@ Project-specific elaboration of the company-level [SAFETY] guardrails.
 
 When you encounter unfamiliar files, branches, or state — investigate first. Don't delete to make the obstacle go away.
 
+### Legal-pipeline guardrail
+
+Any change touching public legal text (`app/offer/`, `app/privacy/`, `app/consent/`) or the server-side legal SoT (`lib/legal/`, `docs/legal/`) must flow through `legal-rf-router → profile skill → legal-rf-qa` (company rule, `~/.claude/CLAUDE.md` § legal-rf) and the commit must carry a `Legal-Pipeline-Verified:` trailer. The hook in `.githooks/commit-msg` and the CI workflow in `.github/workflows/legal-pipeline.yml` enforce this mechanically — see [`docs/legal-pipeline.md`](docs/legal-pipeline.md) for the marker format, the protected scope, and how to add a new legal path.
+
 ## 3. Test discipline
 
 Vitest (`tests/`, configured in `vitest.config.ts`). Real money is moving through this code, so the bar is high.
