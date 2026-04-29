@@ -1,0 +1,28 @@
+# Postgres service for integration tests.
+#
+# Used by `npm run test:integration` (scripts/test-integration.sh):
+# bring up → wait → migrate:up → vitest run → tear down.
+#
+# postgres:16.13 matches production exactly (see OPERATIONS.md §1).
+# That parity is the whole reason we run real Postgres in tests instead
+# of pg-mem (per /plan-eng-review D5): FOR UPDATE row locks, jsonb
+# operators, FK cascades, CHECK constraints all behave identically to
+# prod.
+
+services:
+  postgres-test:
+    image: postgres:16.13
+    container_name: levelchannel-postgres-test
+    environment:
+      POSTGRES_USER: levelchannel_test
+      POSTGRES_PASSWORD: levelchannel_test
+      POSTGRES_DB: levelchannel_test
+    ports:
+      - "127.0.0.1:54329:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U levelchannel_test -d levelchannel_test"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+    tmpfs:
+      - /var/lib/postgresql/data

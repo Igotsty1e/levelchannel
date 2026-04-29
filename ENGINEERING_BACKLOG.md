@@ -31,10 +31,13 @@ Multi-phase build из `Output 2` (target architecture). Гостевой checko
     idempotency_records).
   - common-password rejection (HIBP / breached lists) — пока политика
     только "не all-digits". Для MVP ок, для public launch стоит добавить.
-- **Phase 1B (auth API routes)** — pending: `/api/auth/{register,login,
-  logout,verify,reset-request,reset-confirm,me}` + rate-limit + origin
-  check + idempotency-style replay-safety + production assertions
-  (`RESEND_API_KEY`, `EMAIL_FROM`).
+- **Phase 1B (auth API routes)** — Lane A foundation **done**: migration
+  0011 `account_consents`, `lib/auth/{consents,dummy-hash,email-hash}.ts`,
+  `lib/email/config.ts` production assertions (`RESEND_API_KEY` +
+  `AUTH_RATE_LIMIT_SECRET`), `already-registered.ts` template + dispatch,
+  `docker-compose.test.yml` + `scripts/test-integration.sh` + integration
+  vitest config. Lane B (7 routes) и Lane C (`/verify-failed` placeholder
+  page) pending.
 - **Phase 2 (auth UI)** — pending: `/register`, `/login`, `/forgot`,
   `/reset`, `/verify`, `/cabinet` placeholder. Header лендинга получает
   кнопку «Войти» без удаления существующих CTA.

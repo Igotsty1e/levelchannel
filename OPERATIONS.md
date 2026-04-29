@@ -266,6 +266,7 @@ SSH-туннель.
 | `email_verifications` | `migrations/0008_email_verifications.sql` | single-use verify-email tokens (TTL 24h) |
 | `password_resets` | `migrations/0009_password_resets.sql` | single-use password-reset tokens (TTL 1h) |
 | `accounts.email` CHECK | `migrations/0010_accounts_email_normalized.sql` | DB-level enforcement: `email = lower(btrim(email))`. Любой bypass app-слоя получает constraint violation, не shadow account |
+| `account_consents` | `migrations/0011_account_consents.sql` | audit table; row per consent acceptance event (`document_kind` ∈ personal_data/offer/marketing_opt_in/parent_consent) |
 | `_migrations` | служебная, создаётся runner'ом | bookkeeping применённых миграций |
 
 **Migration runner.** Схема теперь живёт в `migrations/NNNN_*.sql`. Накатить:
@@ -582,10 +583,16 @@ TELEMETRY_HASH_SECRET=<!-- FILL IN -->
 CLOUDPAYMENTS_PUBLIC_ID=<!-- FILL IN из кабинета CloudPayments -->
 CLOUDPAYMENTS_API_SECRET=<!-- FILL IN из кабинета CloudPayments -->
 
-# Resend transactional email (verify + reset). При пустом ключе lib/email
-# падает в console fallback — для дев-среды ок, для прода обязательно.
+# Resend transactional email (verify + reset + already-registered). При пустом
+# ключе под NODE_ENV=production lib/email/config.ts падает на boot.
 RESEND_API_KEY=<!-- FILL IN из кабинета Resend -->
 EMAIL_FROM="LevelChannel <noreply@levelchannel.ru>"
+
+# HMAC key for per-email rate-limit scope strings (lib/auth/email-hash.ts).
+# 32+ random chars. NOT the same value as TELEMETRY_HASH_SECRET — different
+# trust boundary, different rotation cadence (Phase 1B mech-3).
+# Boot fails under NODE_ENV=production if empty.
+AUTH_RATE_LIMIT_SECRET=<!-- FILL IN: 32+ random chars -->
 ```
 
 `.env` на сервере — права `chmod 600`, владелец = app-юзер. Не в git, не
