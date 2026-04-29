@@ -102,7 +102,7 @@ jobs:
             const prodVer   = (process.env.PROD_VERSION || 'null').trim()
             const prodCode  = process.env.PROD_CODE || '(no response)'
             const prodExit  = process.env.PROD_EXIT || ''
-            const body      = (process.env.PROD_BODY || '').slice(0, 1500)
+            const prodBody  = (process.env.PROD_BODY || '').slice(0, 1500)
             const ts        = new Date().toISOString()
             const runUrl    = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
             const label     = 'deploy-stale'
