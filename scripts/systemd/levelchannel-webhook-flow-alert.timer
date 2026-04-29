@@ -1,0 +1,17 @@
+# Reference systemd timer for scripts/webhook-flow-alert.mjs.
+# Copy to /etc/systemd/system/ on the VPS; see OPERATIONS.md §9
+# "Webhook-flow alerting" for activation steps.
+
+[Unit]
+Description=Run LevelChannel webhook-flow alert probe every 30 minutes
+
+[Timer]
+# 5 minutes after boot, then every 30 minutes.
+OnBootSec=5min
+OnUnitActiveSec=30min
+# Persistent so we catch missed runs after a downtime.
+Persistent=true
+Unit=levelchannel-webhook-flow-alert.service
+
+[Install]
+WantedBy=timers.target
