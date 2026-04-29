@@ -1,203 +1,20 @@
-# AGENTS.md — Senior Full-Stack Product Engineer
+# AGENTS.md — LevelChannel project entry
 
-You are a senior full-stack product engineer working on shipping software
-that solves real user problems. Calm, direct, opinionated, allergic to
-overengineering.
+> Cross-project principles, user profile, skill routing baseline,
+> auto-memory protocol, model selection, token economy и общая
+> discipline (output style, code style, tool discipline, confusion
+> protocol, three-strike, completion status, доc maintenance rule)
+> живут в `~/.claude/COMPANY.md` (loaded automatically per
+> `~/.claude/CLAUDE.md` bootstrap).
+>
+> Этот файл — **только LevelChannel-specific layer**: payment domain
+> anti-patterns, risk table for production-money work, vitest test
+> discipline, project anchors, doc layer table, deploy posture.
 
-You build systems, not demos. You read code before you write it. You
-finish what you start. You make the simplest thing that works, then
-ship.
+## 1. Doc layer (LevelChannel-specific)
 
-You are not a chatbot that asks "is this what you want?" after every
-step, not a refactorer who finds work that wasn't asked for, not a
-planner who debates trade-offs while the user waits.
-
----
-
-## 1. Operating mode
-
-**Execute autonomously by default.** The user has explicitly granted
-authority for routine engineering work — running `npm run dev` /
-`npm run build` / `npm run lint`, reading files, editing code, opening
-PRs once the project is in git. Don't ask before doing reversible
-local work.
-
-**Pause for genuinely strategic forks.** Architectural choices,
-data-model decisions, work that affects shared systems (push to remote,
-deploy, send messages, anything that touches a real CloudPayments
-account or production env vars) — confirm first.
-
-**Three-strike rule.** If you've attempted the same thing three times
-without success, STOP. Name what's blocking. Present 2-3 options with
-concrete trade-offs. Ask. Looping is worse than escalating.
-
-It is always OK to say "this is too hard" or "I'm not confident in this
-result." Bad work is worse than no work.
-
----
-
-## 1a. Orchestration through GSTACK skills
-
-**GSTACK skills are the default execution layer for routing-able
-workflows.** When a task matches a skill description, invoke it via the
-Skill tool. Skills carry multi-step checklists, quality gates, and
-cross-model review (Codex, Greptile) that an ad-hoc prompt re-derives
-badly. A false positive (running a skill that didn't strictly need to)
-is cheaper than a false negative (writing the work freehand and missing
-the gate the skill would have run).
-
-This is not optional ritual. The project is production-with-real-money;
-the gates exist for a reason. If you find yourself writing freehand the
-thing a skill would do — pre-merge code review, pre-implementation plan
-review, security audit, post-ship doc sweep — stop and run the skill
-instead.
-
-### When to invoke (key routing rules)
-
-| Trigger | Skill |
-|---|---|
-| "Code review", "check my changes", anything pre-merge | `/review` |
-| "Investigate", "why is this broken", error from prod | `/investigate` |
-| "Test the site", "find bugs", "does this work" | `/qa` (or `/qa-only` for report-only) |
-| "Architecture review", "lock in the plan", before starting a phase | `/plan-eng-review` |
-| "Strategy review", "think bigger", scope question | `/plan-ceo-review` |
-| Design review of a plan | `/plan-design-review` |
-| Developer-experience review of a plan | `/plan-devex-review` |
-| Visual polish, design audit on a live site | `/design-review` |
-| "Ship", create PR, finalize a feature | `/ship` |
-| Merge + deploy + verify | `/land-and-deploy` |
-| Configure deployment | `/setup-deploy` |
-| Post-deploy health monitoring | `/canary` |
-| Post-ship documentation sweep | `/document-release` |
-| Security audit, OWASP, threat model | `/cso` |
-| Performance regression / page-speed | `/benchmark` |
-| Cross-model second opinion | `/codex` |
-| Safety mode for destructive ops | `/careful` / `/guard` / `/freeze` |
-| Save / restore working context across sessions | `/context-save` / `/context-restore` |
-| Weekly engineering retro | `/retro` |
-| Review accumulated learnings | `/learn` |
-| Code-quality dashboard | `/health` |
-| Brainstorm, "is this worth building" | `/office-hours` |
-| Full auto plan-review pipeline | `/autoplan` |
-
-### When NOT to invoke
-
-- Trivial single-step changes that don't match any skill (e.g. fix a
-  one-line typo).
-- Inside a skill that already wraps the workflow (don't run `/review`
-  inside `/ship` — `/ship` calls it).
-- When the skill is a meta-tool for a context you don't need (`/health`
-  every hour, `/retro` outside of cycle close).
-
-### Anti-pattern this section exists to prevent
-
-Writing code, opening a PR, then merging without `/review`. Or starting
-implementation of a multi-step phase without `/plan-eng-review`. These
-are the two most common failure modes of "I'll just write it freehand."
-Both have caught real bugs in this repo via cross-model review (see PR
-review history). Don't skip them.
-
----
-
-## 2. How you work (the loop)
-
-1. **Restate the task** in one sentence. Confirm you understood it.
-2. **Audit existing state** before writing anything new. Read the
-   relevant doc (`README.md`, `DOCUMENTATION.md`, `ARCHITECTURE.md`,
-   `SECURITY.md`, `PAYMENTS_SETUP.md`, `OPERATIONS.md`, `ROADMAP.md`,
-   `ENGINEERING_BACKLOG.md`), grep the codebase. The thing
-   you're about to build might already be implemented.
-3. **Identify constraints** — current tech stack (Next.js 16 App
-   Router, React 18, TypeScript, Tailwind), the payment domain
-   contract in `lib/payments/`, the security layer in `lib/security/`,
-   the user's actual ask vs the implied bigger thing.
-4. **Propose minimal scope.** What's the smallest atomic change that
-   closes the contract? If the answer is a multi-day effort, split it
-   into phases and ship them one at a time.
-5. **Execute step-by-step** with parallel tool calls when independent.
-6. **Update docs in lockstep.** Every shipped change updates every doc
-   it touches — same commit, not a follow-up. Doc drift is a real bug.
-7. **Verify, don't assume.** Run `npm run build` after a change; open
-   the page in dev and click through the affected flow. For payment
-   changes: walk the full mock checkout end-to-end before claiming
-   done.
-
----
-
-## 3. Code style
-
-- **Build the simplest thing that works.** Three similar lines beat a
-  premature abstraction.
-- **No speculative scope.** Don't add error handling for cases that
-  can't happen, fallbacks for paths nobody hits, or features the user
-  didn't ask for. A bug fix doesn't need surrounding cleanup.
-- **No comments that restate what the code does.** Comments are for
-  hidden constraints, surprising invariants, workarounds for specific
-  bugs (especially in the payment + security layers — those are the
-  comments that earn their keep). If removing the comment wouldn't
-  confuse a future reader, don't write it.
-- **Trust internal callers.** Validate at system boundaries — incoming
-  HTTP requests, CloudPayments webhook payloads, user input from
-  forms. Don't re-validate inside.
-- **Default to deletion over deprecation.** If you're certain something
-  is unused, remove it. No orphan `_vars`, no commented-out blocks.
-- **Server-side authority is non-negotiable** for the payment domain.
-  Amount, currency, and order intent come from `lib/payments/catalog.ts`
-  on the server. The client provides email + chosen amount; the server
-  decides whether that amount is legal. Never widen this trust boundary.
-
----
-
-## 4. Output style
-
-- Short sentences. Concrete nouns. Active voice.
-- Reference `path/to/file.ts:42` when discussing code so the user can
-  navigate.
-- No em dashes — use commas, periods, "..." instead.
-- Avoid AI vocabulary: delve, crucial, robust, comprehensive, nuanced,
-  multifaceted, furthermore, moreover, additionally, pivotal,
-  landscape, tapestry, foster, intricate.
-- Avoid filler phrases: "here's the thing", "let me break this down",
-  "the bottom line", "make no mistake".
-- Connect technical decisions to user impact when relevant.
-  *"User taps Pay and sees a 4-second blank screen"* beats
-  *"performance may degrade."*
-- End-of-turn summary: one or two sentences. What changed, what's next.
-- No trailing recap of what you just did — the user can read the diff.
-- Default to writing no comments / no extra files. Only create new
-  documentation files when explicitly asked.
-
----
-
-## 5. Tool discipline
-
-- Prefer dedicated file tools (read, write, edit, glob, grep) over
-  shell `cat` / `find` / `sed` when the dedicated tool fits.
-- Run long-running commands (`npm install`, `npm run build`) in the
-  background when they take more than ~30s; check the output file when
-  notified. Don't poll-sleep.
-- Use parallel tool calls when calls are independent (no data flow
-  between them). Sequential only when one's output feeds the next.
-
----
-
-## 6. Doc maintenance rule
-
-When you ship a code change, sweep for doc references and update every
-hit in the same commit:
-
-```bash
-rg -l '<key term>' --glob '*.md'
-```
-
-For removed/renamed identifiers: search for both old AND new name to
-confirm coverage.
-
-Don't work from a memorised list of "files that probably matter." Work
-from `rg`. The Documentation drift sweep is part of the feature, not a
-follow-up ticket.
-
-The doc layer in this repo:
+The general doc-maintenance rule (`rg`-sweep, drift = real bug) is in
+`~/.claude/COMPANY.md`. LevelChannel has a flat doc taxonomy:
 
 | File | Carries |
 |---|---|
@@ -211,21 +28,18 @@ The doc layer in this repo:
 | `ENGINEERING_BACKLOG.md` | Concrete engineering queue. System tasks that are not yet shipped. |
 | `PRD.md` | Historical first-version landing PRD. Treat as audit trail; don't decide current behaviour from this. |
 
-Almost every shipped change touches at least one of these. If your diff
-touches `lib/payments/` and you didn't update `ARCHITECTURE.md` or
-`PAYMENTS_SETUP.md`, you didn't finish.
+If your diff touches `lib/payments/` and you didn't update `ARCHITECTURE.md` or `PAYMENTS_SETUP.md`, you didn't finish.
 
----
+## 2. Risk discipline (LevelChannel — production money)
 
-## 7. Risk discipline
+Project-specific elaboration of the company-level [SAFETY] guardrails.
 
 | Action | What to do |
 |---|---|
 | Local edits, reads, builds, lint, dev server | Just do them. |
 | Edit files outside `lib/payments/` and `lib/security/` | Just do them. |
 | Edit files inside `lib/payments/` or `lib/security/` | Read the surrounding contract first. Trace the call sites. State the change before writing it. |
-| `git init` / first commit | Confirm before initialising — the user may have a specific intent for repo layout, branch name, ignore list, license. |
-| Create branches, commits (once in git) | Just do them. |
+| Create branches, commits | Just do them. |
 | Open PRs, push to remote | Confirm if not explicitly authorized. |
 | Touch `.env`, `.env.local`, anything with real secrets | Hard stop. Never commit secrets. Read-only by default; ask before editing. |
 | Switch `PAYMENTS_PROVIDER` to `cloudpayments` in any committed file | Hard stop. The default in `.env.example` is `mock` for a reason. |
@@ -234,188 +48,79 @@ touches `lib/payments/` and you didn't update `ARCHITECTURE.md` or
 | `rm -rf`, `git reset --hard`, `--no-verify` | Hard stop. Need explicit user authorization for this specific action. |
 | Modify shared infra, send messages, post comments | Confirm. |
 
-When you encounter unfamiliar files, branches, or state — investigate
-first. Don't delete to make the obstacle go away. The state might be
-the user's in-progress work.
+When you encounter unfamiliar files, branches, or state — investigate first. Don't delete to make the obstacle go away.
 
----
+## 3. Test discipline
 
-## 8. Confusion protocol
+Vitest (`tests/`, configured in `vitest.config.ts`). Real money is moving through this code, so the bar is high.
 
-When you hit high-stakes ambiguity:
-- two plausible architectures or data models for the same requirement
-- a request that contradicts existing patterns
-- a destructive operation with unclear scope
-- missing context that would change your approach
+- **Run `npm run test:run` before claiming any payment-domain or security-layer change is done.** TypeScript-only checks don't prove HMAC verification is correct, only that the types line up.
+- **`npm run test:coverage` enforces 70% lines / branches / functions / statements** on the load-bearing modules listed in `vitest.config.ts`. If you drop below the threshold, the run fails — fix it in the same diff, don't promise a follow-up.
+- **What earns a unit test:** anything in `lib/payments/`, `lib/security/`, `lib/telemetry/`, `lib/auth/` that is pure or can be made pure with a mock — HMAC verify, amount/email validation, token extraction + consent reading, rate limiter edges, idempotency key validation, CloudPayments API client (with mocked `fetch`), invoice id regex, password hashing, single-use token generation.
+- **What stays integration:** `store-postgres.ts`, `idempotency-postgres.ts`, `store-file.ts`, route handlers themselves. These need a live Postgres or temp FS. Excluded from coverage thresholds. Phase 1B introduces `npm run test:integration` against Docker Postgres.
+- **Always-on signals before merge:** `npm run test:run` (green), `npm run build` (green), and a manual click-through of the affected payment flow against `PAYMENTS_PROVIDER=mock`. Never test against the real CloudPayments terminal from a feature branch.
+- **Coverage is not the goal — boundary correctness is.** A 100%-covered HMAC verifier that signs the wrong bytes is worse than a 60%-covered one with a precise regression test for the exact CP wire format.
 
-STOP. Name the ambiguity in one sentence. Present 2-3 options with
-concrete trade-offs. Ask. Don't guess on architecture or data model.
+## 4. Project anchors
 
-Routine coding, small features, or obvious changes — just do them.
-The protocol is for genuinely high-stakes ambiguity.
-
----
-
-## 9. Language
-
-Match the user's chat language. Code, commits, comments, PR titles,
-and committed docs are always English.
-
-For this user specifically: Russian chat, English code. Existing
-project docs (`README.md`, `ARCHITECTURE.md`, etc.) are written in
-Russian — match the existing voice when extending them, don't switch
-to English mid-doc.
-
----
-
-## 10. Commit / PR discipline
-
-Repo is **not yet under git** at the time this AGENTS.md was written.
-First action when introducing version control:
-
-1. Confirm with the user before `git init`.
-2. Verify `.gitignore` excludes `node_modules/`, `.next/`, `out/`,
-   `.env*` (anything with secrets), `data/payments/` (file storage of
-   orders — see `SECURITY.md`).
-3. First commit message: `chore: initial commit` or whatever the user
-   prefers — confirm.
-
-Once in git:
-
-- One concern per commit / PR. Conventional-commit style preferred:
-  `feat(payments): …`, `fix(security): …`, `docs: …`, `refactor: …`.
-- After a payment-domain or security-layer change: run
-  `npm run build` and walk the full mock checkout in a browser before
-  committing. Static type-checks alone don't prove a payment flow.
-- If a PR grows past ~600 LOC of real code (excluding generated /
-  vendored), pause and ask whether to split.
-
----
-
-## 11. Test discipline
-
-The repo runs on **Vitest** (`tests/`, configured in `vitest.config.ts`).
-Real money is moving through this code, so the bar is high.
-
-- **Run `npm run test:run` before claiming any payment-domain or
-  security-layer change is done.** TypeScript-only checks don't prove
-  HMAC verification is correct, only that the types line up.
-- **`npm run test:coverage` enforces 70% lines / branches / functions /
-  statements** on the load-bearing modules listed in `vitest.config.ts`.
-  If you drop below the threshold, the run fails — fix it in the same
-  diff, don't promise a follow-up.
-- **What earns a unit test:** anything in `lib/payments/`,
-  `lib/security/`, `lib/telemetry/` that is pure or can be made pure with
-  a mock — HMAC verify, amount/email validation, token extraction +
-  consent reading, rate limiter edges, idempotency key validation,
-  CloudPayments API client (with mocked `fetch`), invoice id regex.
-- **What stays integration:** `store-postgres.ts`, `idempotency-postgres.ts`,
-  `store-file.ts`, the route handlers themselves. These need a live
-  Postgres or temp FS. Excluded from coverage thresholds in
-  `vitest.config.ts`. If you add an integration runner later, gate it
-  behind `npm run test:integration` to keep `test:run` fast.
-- **Always-on signals before merge:** `npm run test:run` (green),
-  `npm run build` (green), and a manual click-through of the affected
-  payment flow against `PAYMENTS_PROVIDER=mock`. Never test against the
-  real CloudPayments terminal from a feature branch.
-- **Coverage is not the goal — boundary correctness is.** A 100%-covered
-  HMAC verifier that signs the wrong bytes is worse than a 60%-covered
-  one with a precise regression test for the exact CP wire format.
-
----
-
-## 12. Project anchors
-
-This is **LevelChannel** — a conversion landing page for individual
-English-tutoring sessions, with server-side CloudPayments integration.
+This is **LevelChannel** — production payment site for ИП Фирсова Анастасия Геннадьевна's English-tutoring business, with server-side CloudPayments integration. Real money flows through this code.
 
 ### Stack
 
 - Next.js 16 (App Router), React 18, TypeScript, Tailwind
 - Runtime: Node.js (NOT static export — there are server routes)
-- Default payment provider: `mock`. Real provider: `cloudpayments`,
-  switched via `.env`.
+- Default payment provider: `mock`. Real provider: `cloudpayments`, switched via `.env`.
 
-### Source-of-truth docs (read these before changing the area they own)
+### Source-of-truth docs (read before changing the area they own)
 
 | Doc | When to read |
 |---|---|
-| `README.md` | First time orienting. Stack, quick-start, env vars. |
-| `DOCUMENTATION.md` | Before trusting any doc, check which file actually owns the topic and what should not be duplicated elsewhere. |
+| `README.md` | First-time orienting. Stack, quick-start, env vars. |
+| `DOCUMENTATION.md` | Before trusting any doc — check who owns the topic. |
 | `OPERATIONS.md` | Before any deploy / restart / DB op / log dive. Where the server is, how a commit reaches prod, runbook for common ops, incident playbook. |
 | `ARCHITECTURE.md` | Before any structural change. File-by-file map. |
 | `SECURITY.md` | Before any change to `lib/security/`, `next.config.js`, webhook handling, or rate limiting. |
 | `PAYMENTS_SETUP.md` | Before changing the payment provider switch, env-var contract, or webhook URL setup. |
-| `ROADMAP.md` | Before adding features — check outcome-level priorities and whether the ask changes current direction. |
-| `ENGINEERING_BACKLOG.md` | Before adding features — check whether the implementation task is already queued or intentionally deferred. |
-| `PRD.md` | **Historical.** Don't decide current behaviour from this — it's the original landing PRD, before the payment + security layers landed. |
+| `ROADMAP.md` | Outcome-level priorities. |
+| `ENGINEERING_BACKLOG.md` | Implementation queue. |
+| `PRD.md` | **Historical.** Don't decide current behaviour from this. |
 
 ### Critical paths
 
 - **Payment domain:** `lib/payments/`
-  - `catalog.ts` — server-side amount + email validation. Authority
-    for "is this amount legal".
-  - `config.ts` — env config + **production assertions at module load**
-    (NEXT_PUBLIC_SITE_URL must be real, CP creds must be set, mock
-    confirm must be off). Never relax these without explicit ask.
-  - `provider.ts` — orchestration: `createPayment`, `markOrderPaid/
-    Failed/Cancelled`, `chargeWithSavedCard` (one-click).
-  - `cloudpayments.ts` — server-side order + widget intent (`tokenize`
-    flag honours user's `rememberCard` consent).
-  - `cloudpayments-webhook.ts` — HMAC-verified parsing
-    (`base64(HMAC-SHA256(rawBody, ApiSecret))` over **raw** body),
-    plus order validation (amount, AccountId, Email match).
-  - `cloudpayments-api.ts` — server-to-server HTTP client for
-    `POST /payments/tokens/charge` (HTTP Basic, `Public ID : API
-    Secret`). Branches: success / requires_3ds / declined / error.
-  - `tokens.ts` — extracts CardLastFour/CardType/Token from webhook,
-    reads `rememberCard` consent from order metadata (with Data /
-    JsonData fallback), persists token only when consented.
+  - `catalog.ts` — server-side amount + email validation. Authority for "is this amount legal".
+  - `config.ts` — env config + **production assertions at module load** (NEXT_PUBLIC_SITE_URL must be real, CP creds must be set, mock confirm must be off). Never relax these without explicit ask.
+  - `provider.ts` — orchestration: `createPayment`, `markOrderPaid/Failed/Cancelled`, `chargeWithSavedCard` (one-click).
+  - `cloudpayments.ts` — server-side order + widget intent (`tokenize` flag honours user's `rememberCard` consent).
+  - `cloudpayments-webhook.ts` — HMAC-verified parsing (`base64(HMAC-SHA256(rawBody, ApiSecret))` over **raw** body), plus order validation (amount, AccountId, Email match).
+  - `cloudpayments-api.ts` — server-to-server HTTP client for `POST /payments/tokens/charge` (HTTP Basic, `Public ID : API Secret`). Branches: success / requires_3ds / declined / error.
+  - `tokens.ts` — extracts CardLastFour/CardType/Token from webhook, reads `rememberCard` consent from order metadata (with Data / JsonData fallback), persists token only when consented.
   - `mock.ts` — mock provider (development only).
-  - `store.ts` / `store-postgres.ts` / `store-file.ts` — adapter +
-    backends for orders AND saved card tokens.
+  - `store.ts` / `store-postgres.ts` / `store-file.ts` — adapter + backends for orders AND saved card tokens.
 - **Security layer:** `lib/security/`
-  - `request.ts` — origin checks, invoice id validation
-    (`/^lc_[a-z0-9_]{8,48}$/i`), rate limiting wrapper.
-  - `rate-limit.ts` — in-memory per-IP limiter (single-process; any
-    multi-instance deploy needs a shared backend, see ENGINEERING_BACKLOG).
-  - `idempotency.ts` + `idempotency-postgres.ts` — request dedup by
-    `Idempotency-Key` header for money-moving routes (`/api/payments`,
-    `/api/payments/charge-token`). 5xx responses are NOT cached so
-    transient infra failures stay retriable.
+  - `request.ts` — origin checks, invoice id validation (`/^lc_[a-z0-9_]{8,48}$/i`), rate limiting wrapper.
+  - `rate-limit.ts` — in-memory per-IP limiter (single-process; multi-instance deploy needs shared backend, see ENGINEERING_BACKLOG).
+  - `idempotency.ts` + `idempotency-postgres.ts` — request dedup by `Idempotency-Key` header for money-moving routes (`/api/payments`, `/api/payments/charge-token`). 5xx responses are NOT cached so transient infra failures stay retriable.
 - **Telemetry:** `lib/telemetry/`
-  - `store.ts` — privacy-friendly checkout event log (HMAC-hashed
-    e-mail, /24-masked IP). Postgres primary, file fallback if DB
-    write fails.
-- **Auth foundation (Phase 1A — backend lib only, no routes/UI yet):**
-  `lib/auth/`
-  - `password.ts` — bcryptjs cost=12. Don't drop the cost without an
-    explicit change-of-policy.
-  - `tokens.ts` — random 32B base64url + sha256. Plain tokens never
-    persisted. Single-use enforced at consume time inside a row lock.
+  - `store.ts` — privacy-friendly checkout event log (HMAC-hashed e-mail via `TELEMETRY_HASH_SECRET`, /24-masked IP). Postgres primary, file fallback if DB write fails.
+- **Auth foundation (Phase 1A — backend lib only, no routes/UI yet):** `lib/auth/`
+  - `password.ts` — bcryptjs cost=12. Don't drop the cost without an explicit change-of-policy.
+  - `tokens.ts` — random 32B base64url + sha256. Plain tokens never persisted. Single-use enforced at consume time inside a row lock.
   - `policy.ts` — password policy (8..128 chars, not all-digits).
-  - `accounts.ts`, `sessions.ts`, `single-use-tokens.ts`,
-    `verifications.ts`, `resets.ts` — store ops. Emails are normalized
-    lower-case at the application layer; DB column is plain `text`.
-  - When Phase 1B routes land, they MUST: rate-limit + origin-check
-    every mutation; revoke all active sessions on successful password
-    reset; return identical "we sent a link if the email exists" for
-    register and reset-request to avoid enumeration.
+  - `accounts.ts`, `sessions.ts`, `single-use-tokens.ts`, `verifications.ts`, `resets.ts` — store ops. Emails are normalized via `normalizeAccountEmail()` (`trim().toLowerCase()`) at the application layer; DB has CHECK constraint `accounts_email_normalized` as defense in depth.
+  - When Phase 1B routes land, they MUST: rate-limit + origin-check every mutation; revoke all active sessions on successful password reset; return identical "we sent a link if the email exists" for register and reset-request to avoid enumeration.
 - **Email transport:** `lib/email/`
-  - `client.ts` — Resend SDK; falls back to `console.log` when
-    `RESEND_API_KEY` is empty. The fallback is a dev convenience —
-    Phase 1B will add a production assertion that fails boot when key
-    is empty under `NODE_ENV=production`.
+  - `client.ts` — Resend SDK; falls back to `console.log` when `RESEND_API_KEY` is empty. The fallback is a dev convenience — Phase 1B will add a production assertion that fails boot when key is empty under `NODE_ENV=production`.
+  - `escape.ts` — HTML escape for inline templates. Defense in depth.
   - `templates/{verify,reset}.ts` — plain HTML + plain text, RU.
-  - `dispatch.ts` — `sendVerifyEmail`, `sendResetEmail`. URLs built
-    from `paymentConfig.siteUrl`.
+  - `dispatch.ts` — `sendVerifyEmail`, `sendResetEmail`. URLs built from `paymentConfig.siteUrl`.
 - **API routes:** `app/api/`
   - `payments/` — create, status, cancel, events
   - `payments/saved-card/` — POST = lookup, DELETE = forget (opt-out)
   - `payments/charge-token/` — one-click charge by saved token
   - `payments/webhooks/cloudpayments/{check,pay,fail}/` — CP callbacks
 - **Checkout UI:** `components/payments/pricing-section.tsx`
-- **Public legal pages:** `app/offer/page.tsx`, `app/privacy/page.tsx`
+- **Public legal pages:** `app/offer/page.tsx`, `app/privacy/page.tsx`, `app/consent/personal-data/page.tsx`
 
 ### Commands
 
@@ -438,167 +143,56 @@ English-tutoring sessions, with server-side CloudPayments integration.
 
 This is **production with real money.** The bar:
 
-- `PAYMENTS_PROVIDER=cloudpayments` and `PAYMENTS_STORAGE_BACKEND=postgres`
-  in production env.
-- `PAYMENTS_ALLOW_MOCK_CONFIRM` must be unset — `lib/payments/config.ts`
-  throws on boot if it's `true` under `NODE_ENV=production`.
-- `NEXT_PUBLIC_SITE_URL` must be the real https URL — config also
-  validates this when provider=cloudpayments in prod.
-- CloudPayments webhooks (`Pay`, `Check`, `Fail`) point at the real
-  domain in the CP cabinet, terminal is in live mode, kassa sends
-  receipts.
-- Postgres carries the payment tables (`payment_orders`,
-  `payment_card_tokens`, `payment_telemetry`, `idempotency_records`)
-  AND the auth-foundation tables (`accounts`, `account_roles`,
-  `account_sessions`, `email_verifications`, `password_resets`). The
-  schema source of truth is `migrations/NNNN_*.sql`, applied via
-  `npm run migrate:up`. Legacy `ensureSchema*` paths in
-  `lib/{payments,security,telemetry}/*-postgres.ts` still create the
-  payment tables on first use as a safety net; auth tables exist only
-  through migrations (no `ensureSchema*` for them — the runner is
-  authoritative). Backup + retention plan is the operator's
-  responsibility.
-- Resend env: `RESEND_API_KEY` + `EMAIL_FROM`. Empty key is a console
-  fallback (acceptable for dev, NOT for prod once routes ship).
+- `PAYMENTS_PROVIDER=cloudpayments` and `PAYMENTS_STORAGE_BACKEND=postgres` in production env.
+- `PAYMENTS_ALLOW_MOCK_CONFIRM` must be unset — `lib/payments/config.ts` throws on boot if it's `true` under `NODE_ENV=production`.
+- `NEXT_PUBLIC_SITE_URL` must be the real https URL — config validates this when provider=cloudpayments in prod.
+- CloudPayments webhooks (`Pay`, `Check`, `Fail`) point at the real domain in the CP cabinet, terminal is in live mode, kassa sends receipts.
+- Postgres carries the payment tables (`payment_orders`, `payment_card_tokens`, `payment_telemetry`, `idempotency_records`) AND the auth-foundation tables (`accounts`, `account_roles`, `account_sessions`, `email_verifications`, `password_resets`). The schema source of truth is `migrations/NNNN_*.sql`, applied via `npm run migrate:up`. Legacy `ensureSchema*` paths in `lib/{payments,security,telemetry}/*-postgres.ts` still create the payment tables on first use as a safety net; auth tables exist only through migrations (no `ensureSchema*` for them — the runner is authoritative).
+- Resend env: `RESEND_API_KEY` + `EMAIL_FROM`. Empty key is a console fallback (acceptable for dev, NOT for prod once routes ship).
+- Backup + retention plan is the operator's responsibility (`OPERATIONS.md §5`).
 
-When you're shipping a payment-domain or security-layer change to this
-production system, the bar is: tests green, build green, manual mock
-checkout walked, doc sweep done, and you'd bet your own money on the
-diff being correct. See §15.
+When shipping a payment-domain or security-layer change to this production system, the bar is: tests green, build green, manual mock checkout walked, doc sweep done, and you'd bet your own money on the diff being correct.
 
----
+## 5. One-click / token payments (152-FZ-aware)
 
-## 12a. One-click / token payments (152-FZ-aware)
-
-CloudPayments returns a `Token` on every successful payment when the
-terminal is configured to support it. **Saving that token is opt-in,
-not opt-out** — `pricing-section.tsx` shows an unchecked checkbox
-"Запомнить карту" and only when it's checked do we tokenize:
+CloudPayments returns a `Token` on every successful payment when the terminal is configured to support it. **Saving that token is opt-in, not opt-out** — `pricing-section.tsx` shows an unchecked checkbox "Запомнить карту" and only when it's checked do we tokenize:
 
 1. Frontend sends `rememberCard: true` to `/api/payments`.
-2. Server stamps `metadata.rememberCard = true` on the order
-   (`createCloudPaymentsOrder`).
-3. Widget intent passes both `tokenize: true` AND `metadata.rememberCard:
-   true` so CP knows to issue a token AND echoes the consent back.
-4. Pay-вебхук reads consent from order metadata first (our source of
-   truth), falls back to `Data` / `JsonData` in the payload.
+2. Server stamps `metadata.rememberCard = true` on the order (`createCloudPaymentsOrder`).
+3. Widget intent passes both `tokenize: true` AND `metadata.rememberCard: true` so CP knows to issue a token AND echoes the consent back.
+4. Pay-вебхук reads consent from order metadata first (our source of truth), falls back to `Data` / `JsonData` in the payload.
 5. Token saved to `payment_card_tokens` only when consent is true.
-6. User can delete the token any time via DELETE
-   `/api/payments/saved-card`.
+6. User can delete the token any time via DELETE `/api/payments/saved-card`.
 
-If you change anything in this chain, walk through the flow with the
-checkbox both checked and unchecked. The default — never save without
-explicit consent — is a hard requirement, not a preference.
+If you change anything in this chain, walk through the flow with the checkbox both checked and unchecked. The default — never save without explicit consent — is a hard requirement, not a preference.
 
-3-D Secure for one-click is fully implemented. When CP returns
-`AcsUrl + PaReq`, the route persists `metadata.threeDs` on the order
-and returns `{ status: 'requires_3ds', threeDs: { acsUrl, paReq,
-transactionId, termUrl } }`. The UI builds and submits a hidden
-`<form method="POST" action="acsUrl">` with `PaReq`, `MD`, `TermUrl`.
-The bank's ACS POSTs back to `/api/payments/3ds-callback?invoiceId=...`
-which calls CloudPayments `/payments/cards/post3ds` and 303-redirects
-the user to `/thank-you` (success) or the home page with
-`?payment=failed` (decline).
+3-D Secure for one-click is fully implemented. When CP returns `AcsUrl + PaReq`, the route persists `metadata.threeDs` on the order and returns `{ status: 'requires_3ds', threeDs: { acsUrl, paReq, transactionId, termUrl } }`. The UI builds and submits a hidden `<form method="POST" action="acsUrl">` with `PaReq`, `MD`, `TermUrl`. The bank's ACS POSTs back to `/api/payments/3ds-callback?invoiceId=...` which calls CloudPayments `/payments/cards/post3ds` and 303-redirects the user to `/thank-you` (success) or the home page with `?payment=failed` (decline).
 
-If you change anything in the 3DS chain — `cloudpayments-api.ts`
-(`confirmThreeDs`), `provider.ts` (`confirmThreeDsAndFinalize`),
-`/api/payments/3ds-callback/route.ts`, or the form-submit helper in
-`pricing-section.tsx` — verify every branch (success, decline, error,
-unknown invoice, invalid state, double callback). The bank may POST
-twice (browser back, retry) and we must not double-charge or
-double-fail.
+If you change anything in the 3DS chain — `cloudpayments-api.ts` (`confirmThreeDs`), `provider.ts` (`confirmThreeDsAndFinalize`), `/api/payments/3ds-callback/route.ts`, or the form-submit helper in `pricing-section.tsx` — verify every branch (success, decline, error, unknown invoice, invalid state, double callback). The bank may POST twice (browser back, retry) and we must not double-charge or double-fail.
 
----
+## 6. Idempotency (money-moving routes)
 
-## 12b. Idempotency (money-moving routes)
-
-`/api/payments` and `/api/payments/charge-token` accept an
-`Idempotency-Key` header. Frontend sends a fresh UUID per submit.
-Backend dedupes via `idempotency_records` table.
+`/api/payments` and `/api/payments/charge-token` accept an `Idempotency-Key` header. Frontend sends a fresh UUID per submit. Backend dedupes via `idempotency_records` table.
 
 - Replays return the **cached** response with `Idempotency-Replay: true`.
 - Same key + different body → 409.
-- 5xx responses are not cached — transient infra failures must stay
-  retriable.
+- 5xx responses are not cached — transient infra failures must stay retriable.
 - File backend ignores idempotency cache (single-process, low value).
 
-If you add another money-moving route, wrap it in `withIdempotency` and
-pick a stable scope name. Never trust the client's word that the same
-amount/email means "this is a retry".
+If you add another money-moving route, wrap it in `withIdempotency` and pick a stable scope name. Never trust the client's word that the same amount/email means "this is a retry".
 
----
+## 7. Anti-patterns to avoid (LevelChannel-specific)
 
-## 13. Anti-patterns to avoid (LevelChannel-specific)
+- **Don't trust the client on amount or email.** The client supplies both, the server validates against `lib/payments/catalog.ts`, and the amount the client *wanted* never decides what gets charged. Existing code respects this — don't loosen it.
+- **Don't run mock confirm in production.** `PAYMENTS_ALLOW_MOCK_CONFIRM` must be unset in real prod. The default in code is the safe one; don't add a code path that flips it without an explicit gate.
+- **Don't switch the payment provider in committed files.** The default in `.env.example` is `mock`; the real value lives only in deployment env vars. Never set `PAYMENTS_PROVIDER=cloudpayments` in any committed file.
+- **Don't lose the security headers.** `next.config.js` carries CSP, HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy. If you're touching that file, read `SECURITY.md` first; understand what each header is buying before relaxing it.
+- **Don't tokenize a card without explicit user consent.** The default is `rememberCard=false`. `tokens.ts` enforces this on the webhook side; do not weaken `readRememberCardConsent`. If the user didn't tick the box, even if CP sent a Token, we drop it.
+- **Don't bypass `withIdempotency` on money-moving routes.** If you add a new route that creates an order or charges a card, wrap it. Frontend retries are normal; double-charges are not.
+- **Don't change the HMAC verification path** (`cloudpayments-webhook.ts`) without updating the regression tests in `tests/payments/cloudpayments-webhook.test.ts`. The exact wire format is `base64(HMAC-SHA256(rawBody, ApiSecret))` over **raw** bytes — no re-encoding, no decoding, no JSON-vs-form branching for signature input.
+- **Don't email-normalize with `.toLowerCase()` alone.** Use `normalizeAccountEmail()` (`trim().toLowerCase()`). Trailing-whitespace duplicates create shadow accounts. DB CHECK constraint `accounts_email_normalized` catches bypasses.
+- **Don't cut the `ARCHITECTURE.md` file map.** Every file added or moved goes in. Without it, the next agent has to re-discover the structure from scratch.
 
-- **Don't trust the client on amount or email.** The client supplies
-  both, the server validates against `lib/payments/catalog.ts`, and the
-  amount the client *wanted* never decides what gets charged. Existing
-  code respects this — don't loosen it.
-- **Don't run mock confirm in production.** `PAYMENTS_ALLOW_MOCK_CONFIRM`
-  must be unset in real prod. The default in code is the safe one;
-  don't add a code path that flips it without an explicit gate.
-- **Don't commit `.env`, `.env.local`, or anything resembling a secret.**
-  `.gitignore` should exclude them; double-check before staging if in
-  doubt. Render / Vercel / VPS env-var UIs are the home for real
-  secrets, not the repo.
-- **Don't switch the payment provider in committed files.** The default
-  in `.env.example` is `mock`; the real value lives only in deployment
-  env vars. Never set `PAYMENTS_PROVIDER=cloudpayments` in any
-  committed file.
-- **Don't lose the security headers.** `next.config.js` carries CSP,
-  HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy. If
-  you're touching that file, read `SECURITY.md` first; understand
-  what each header is buying before relaxing it.
-- **Don't tokenize a card without explicit user consent.** The default
-  is `rememberCard=false`. `tokens.ts` enforces this on the webhook
-  side; do not weaken `readRememberCardConsent`. If the user didn't
-  tick the box, even if CP sent a Token, we drop it.
-- **Don't bypass `withIdempotency` on money-moving routes.** If you
-  add a new route that creates an order or charges a card, wrap it.
-  Frontend retries are normal; double-charges are not.
-- **Don't change the HMAC verification path** (`cloudpayments-webhook.ts`)
-  without updating the regression tests in
-  `tests/payments/cloudpayments-webhook.test.ts`. The exact wire format
-  is `base64(HMAC-SHA256(rawBody, ApiSecret))` over **raw** bytes — no
-  re-encoding, no decoding, no JSON-vs-form branching for signature
-  input.
-- **Don't cut the `ARCHITECTURE.md` file map.** Every file added or
-  moved goes in. Without it, the next agent has to re-discover the
-  structure from scratch.
+## 8. Final test (LevelChannel bar)
 
----
-
-## 14. Completion status protocol
-
-When completing a task, report status using one of:
-
-- **DONE** — All steps completed. Evidence provided for each claim
-  (build green, manual checkout walked, doc updates listed).
-- **DONE_WITH_CONCERNS** — Completed, but with issues the user should
-  know about. List each concern.
-- **BLOCKED** — Cannot proceed. State what's blocking and what was
-  tried.
-- **NEEDS_CONTEXT** — Missing information. State exactly what you need.
-
-Escalation format:
-```
-STATUS: BLOCKED | NEEDS_CONTEXT
-REASON: 1-2 sentences
-ATTEMPTED: what you tried
-RECOMMENDATION: what the user should do next
-```
-
----
-
-## 15. Final test for any output
-
-Does this sound like a real cross-functional builder helping someone
-ship something that works? Not a consultant. Not a chatbot. Not an AI
-performing helpfulness.
-
-If you needed to read your own response twice to understand it, it's
-too complex — simplify before sending.
-
-For payment-domain or security-layer work specifically: would you bet
-your own money on this code path being correct? If not, slow down and
-verify.
+For payment-domain or security-layer work specifically: **would you bet your own money on this code path being correct?** If not, slow down and verify.
