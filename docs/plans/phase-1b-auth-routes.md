@@ -1,6 +1,6 @@
 # Phase 1B — Auth API routes
 
-Status: **reviewed (`/plan-eng-review` 2026-04-29), ready for implementation.**
+Status: **shipped 2026-04-29. Historical implementation plan, not current source of truth.**
 
 ## Decisions from /plan-eng-review
 

@@ -35,7 +35,7 @@ Single source of truth по инфраструктуре, деплою, git work
 | SSH | root + ed25519 ключ `~/.ssh/levelchannel_timeweb_ed25519` (на машине оператора) | **`PermitRootLogin prohibit-password` + `PasswordAuthentication no`** — только publickey. См. §3 |
 | Firewall (ufw) | OpenSSH + Nginx Full + `10050/tcp` (Zabbix agent от Timeweb) | приложение биндится на `127.0.0.1:3000`, ufw нужен только как defense-in-depth |
 | **Деплой** | **Git-based autodeploy с сервера** | `/usr/local/bin/levelchannel-autodeploy` делает clone → `npm ci` → `npm run build` → `npm run migrate:up` → swap → health-check |
-| Email транспорт | Resend (RESEND_API_KEY + EMAIL_FROM) — для verify/reset; платёжные чеки по-прежнему шлёт CloudKassir | при пустом RESEND_API_KEY lib/email падает в console fallback (Phase 1B добавит boot-assertion для prod) |
+| Email транспорт | Resend (RESEND_API_KEY + EMAIL_FROM) — для verify/reset; платёжные чеки по-прежнему шлёт CloudKassir | в production boot падает, если auth email-контур не сконфигурирован |
 | Платёжный провайдер | CloudPayments | <!-- FILL IN: ID кабинета (есть в .env как CLOUDPAYMENTS_PUBLIC_ID) --> |
 | Онлайн-касса | CloudKassir (входит в CloudPayments) | <!-- FILL IN: статус ОФД --> |
 | Логи | `journalctl -u levelchannel`, `/var/log/nginx/access.log`, `/var/log/nginx/error.log` | см. §8 |
@@ -141,7 +141,7 @@ User=levelchannel
 Group=levelchannel
 WorkingDirectory=/var/www/levelchannel
 EnvironmentFile=/etc/levelchannel.env
-ExecStart=/usr/bin/npm run start
+ExecStart=/usr/bin/npm run start -- --hostname 127.0.0.1 --port 3000
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -153,57 +153,26 @@ WantedBy=multi-user.target
 
 ### Reverse proxy — nginx
 
-Конфиг: `/etc/nginx/sites-enabled/levelchannel`. Сейчас минимальный —
-TLS termination + proxy_pass. **Нет `limit_req_zone`** на nginx-уровне
-(долг, §13). HTTP→HTTPS редирект работает.
+Конфиг: `/etc/nginx/sites-enabled/levelchannel`.
 
-Reverse proxy обязателен для:
-- TLS termination (HTTPS)
-- gzip / brotli
-- inflight rate limiting на уровне инфраструктуры (`limit_req_zone` в nginx)
-- передача `X-Forwarded-For` (наш `getClientIp` его читает)
+Текущее состояние:
 
-Базовый nginx-блок (если ещё не оформлен):
+- TLS termination + HTTP→HTTPS redirect
+- `limit_req_zone lcapi 30r/m burst=20 nodelay` на `/api/*`
+- `^~ /api/payments/webhooks/` исключены из nginx rate limit и живут на
+  HMAC + order cross-check
+- в app прокидываются `Host`, `X-Forwarded-For`, `X-Real-IP`
 
-```nginx
-server {
-  server_name <!-- FILL IN: levelchannel.ru -->;
-  listen 443 ssl http2;
-  ssl_certificate /etc/letsencrypt/live/<!-- FILL IN -->/fullchain.pem;
-  ssl_certificate_key /etc/letsencrypt/live/<!-- FILL IN -->/privkey.pem;
+Проверить или перечитать текущий конфиг:
 
-  # CloudPayments webhooks ходят сюда — не блокируем по UA / referer
-  location /api/payments/webhooks/ {
-    proxy_pass http://127.0.0.1:3000;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $remote_addr;
-    proxy_set_header X-Real-IP $remote_addr;
-  }
-
-  # Per-IP лимит на mutation эндпоинтах. webhook'и не трогаем — там HMAC.
-  limit_req_zone $binary_remote_addr zone=payments:10m rate=30r/m;
-
-  location /api/ {
-    limit_req zone=payments burst=10 nodelay;
-    proxy_pass http://127.0.0.1:3000;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $remote_addr;
-    proxy_set_header X-Real-IP $remote_addr;
-  }
-
-  location / {
-    proxy_pass http://127.0.0.1:3000;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $remote_addr;
-  }
-}
-
-server {
-  listen 80;
-  server_name <!-- FILL IN -->;
-  return 301 https://$host$request_uri;
-}
+```bash
+sudo nginx -T
+sudo nginx -t
+sudo systemctl reload nginx
 ```
+
+Если меняешь nginx, правь боевой конфиг, потом делай `nginx -t` перед
+reload.
 
 ### TLS
 
@@ -356,29 +325,19 @@ select * from payment_telemetry where type = 'one_click_3ds_paid' order by at de
 select scope, count(*) from idempotency_records group by 1;
 ```
 
-**Backup:**
-
-<!-- FILL IN: pg_dump cron на сервере? managed snapshot? куда складывается? retention? -->
-
-Минимально-приличный setup: ежедневный `pg_dump` через cron, хранение
-14 дней, файлы в директории вне репозитория и вне веб-корня.
+**Backup и restore.** Фактический backup уже настроен:
+`/etc/cron.daily/levelchannel-db-backup` → `/var/backups/levelchannel`,
+retention 14 дней, restore drill пройден 2026-04-29.
 
 ```bash
-# /etc/cron.daily/levelchannel-db-backup
-#!/bin/sh
-TS=$(date +%Y-%m-%d)
-pg_dump "$DATABASE_URL" | gzip > /var/backups/levelchannel/db-$TS.sql.gz
-find /var/backups/levelchannel -name "db-*.sql.gz" -mtime +14 -delete
-```
+# проверить наличие свежих бэкапов
+ls -lh /var/backups/levelchannel
 
-**Restore (после инцидента):**
+# проверить содержимое конкретного дампа
+gunzip -c /var/backups/levelchannel/db-YYYY-MM-DD.sql.gz | head -100
 
-```bash
-# проверка содержимого
-gunzip -c /var/backups/levelchannel/db-2026-04-29.sql.gz | head -100
-
-# применение в чистую БД (НЕ в production без подтверждения)
-gunzip -c /var/backups/levelchannel/db-2026-04-29.sql.gz | psql "$RECOVERY_DATABASE_URL"
+# применить в recovery БД, не в production
+gunzip -c /var/backups/levelchannel/db-YYYY-MM-DD.sql.gz | psql "$RECOVERY_DATABASE_URL"
 ```
 
 ### Retention и удаление персональных данных
@@ -595,8 +554,9 @@ EMAIL_FROM="LevelChannel <noreply@levelchannel.ru>"
 AUTH_RATE_LIMIT_SECRET=<!-- FILL IN: 32+ random chars -->
 ```
 
-`.env` на сервере — права `chmod 600`, владелец = app-юзер. Не в git, не
-в публичной директории.
+`.env` на сервере — права `chmod 600`, владелец `root:root`, читается
+через `EnvironmentFile=` в systemd unit. Не в git, не в публичной
+директории.
 
 ### Ротация секретов
 
@@ -616,13 +576,11 @@ AUTH_RATE_LIMIT_SECRET=<!-- FILL IN: 32+ random chars -->
 
 ## 8. Logs
 
-<!-- FILL IN -->
-
 | Источник | Где смотреть |
 |---|---|
-| App stdout/stderr | <!-- journalctl -u levelchannel / pm2 logs / файл --> |
-| Reverse proxy access | <!-- /var/log/nginx/access.log --> |
-| Reverse proxy errors | <!-- /var/log/nginx/error.log --> |
+| App stdout/stderr | `journalctl -u levelchannel` |
+| Reverse proxy access | `/var/log/nginx/access.log` |
+| Reverse proxy errors | `/var/log/nginx/error.log` |
 | Database slow query | <!-- если включён `log_min_duration_statement` --> |
 | OS / auth | `/var/log/auth.log` |
 
@@ -670,9 +628,9 @@ journalctl -u levelchannel | grep -E "(charge-token|tokens/charge|requires_3ds|d
 
 | Событие | URL |
 |---|---|
-| Check | `https://<домен>/api/payments/webhooks/cloudpayments/check` |
-| Pay | `https://<домен>/api/payments/webhooks/cloudpayments/pay` |
-| Fail | `https://<домен>/api/payments/webhooks/cloudpayments/fail` |
+| Check | `https://levelchannel.ru/api/payments/webhooks/cloudpayments/check` |
+| Pay | `https://levelchannel.ru/api/payments/webhooks/cloudpayments/pay` |
+| Fail | `https://levelchannel.ru/api/payments/webhooks/cloudpayments/fail` |
 
 Все три — POST, формат: `application/x-www-form-urlencoded` или
 `application/json` (мы понимаем оба). HMAC включить обязательно
@@ -813,19 +771,16 @@ curl -s https://<домен>/api/health | jq    # должен быть status: 
 
 ---
 
-## 13. Долги и known security gaps
+## 13. Долги и known ops gaps
 
-### Phase 0 server hardening — закрыт 2026-04-29
+### Closed hardening work — 2026-04-29
 
-| Долг | Статус | Где |
-|---|---|---|
-| `PermitRootLogin` = `yes` | **DONE** → `prohibit-password` | §3 SSH |
-| `PasswordAuthentication` = `yes` | **DONE** → `no` (cloud-init override обновлён) | §3 SSH |
-| Bind `next start` `*:3000` | **DONE** → `127.0.0.1:3000` | §3 |
-| nginx `limit_req_zone` | **DONE** — `lcapi 30r/m burst=20 nodelay` на `/api/`, webhooks исключены | §1 |
-| Backup БД (cron + retention) | **DONE** — `/etc/cron.daily/levelchannel-db-backup`, retention 14d, restore drill пройден | §1, §5 |
-| `migrate:up` в autodeploy pipeline | **DONE** — между build и swap | §6 |
-| Зафиксировать `<!-- FILL IN -->` маркеры | **в работе** — большинство закрыто, остались `CLOUDPAYMENTS_PUBLIC_ID`, `CLOUDPAYMENTS_API_SECRET`, ОФД статус, регистратор DNS |
+Закрыто: SSH publickey-only, bind `127.0.0.1:3000`, nginx `limit_req`
+на `/api/*`, ежедневный DB backup + restore drill, `npm run migrate:up`
+в autodeploy pipeline. Детали живут в §§1, 3, 5 и 6.
+
+Из фактических blanks ещё не закрыты: CloudPayments cabinet ID, ОФД
+status, DNS registrar.
 
 ### Открытые долги (operations)
 

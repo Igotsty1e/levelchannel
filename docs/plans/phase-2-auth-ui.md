@@ -1,6 +1,6 @@
 # Phase 2 — Auth UI
 
-Status: **in progress (started 2026-04-29).** Phase 1B (7 API routes) is shipped on prod. This phase puts a user-facing UI on top of those endpoints.
+Status: **shipped 2026-04-29. Historical implementation plan, not current source of truth.**
 
 ## Goal
 
