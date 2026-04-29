@@ -36,6 +36,69 @@ result." Bad work is worse than no work.
 
 ---
 
+## 1a. Orchestration through GSTACK skills
+
+**GSTACK skills are the default execution layer for routing-able
+workflows.** When a task matches a skill description, invoke it via the
+Skill tool. Skills carry multi-step checklists, quality gates, and
+cross-model review (Codex, Greptile) that an ad-hoc prompt re-derives
+badly. A false positive (running a skill that didn't strictly need to)
+is cheaper than a false negative (writing the work freehand and missing
+the gate the skill would have run).
+
+This is not optional ritual. The project is production-with-real-money;
+the gates exist for a reason. If you find yourself writing freehand the
+thing a skill would do — pre-merge code review, pre-implementation plan
+review, security audit, post-ship doc sweep — stop and run the skill
+instead.
+
+### When to invoke (key routing rules)
+
+| Trigger | Skill |
+|---|---|
+| "Code review", "check my changes", anything pre-merge | `/review` |
+| "Investigate", "why is this broken", error from prod | `/investigate` |
+| "Test the site", "find bugs", "does this work" | `/qa` (or `/qa-only` for report-only) |
+| "Architecture review", "lock in the plan", before starting a phase | `/plan-eng-review` |
+| "Strategy review", "think bigger", scope question | `/plan-ceo-review` |
+| Design review of a plan | `/plan-design-review` |
+| Developer-experience review of a plan | `/plan-devex-review` |
+| Visual polish, design audit on a live site | `/design-review` |
+| "Ship", create PR, finalize a feature | `/ship` |
+| Merge + deploy + verify | `/land-and-deploy` |
+| Configure deployment | `/setup-deploy` |
+| Post-deploy health monitoring | `/canary` |
+| Post-ship documentation sweep | `/document-release` |
+| Security audit, OWASP, threat model | `/cso` |
+| Performance regression / page-speed | `/benchmark` |
+| Cross-model second opinion | `/codex` |
+| Safety mode for destructive ops | `/careful` / `/guard` / `/freeze` |
+| Save / restore working context across sessions | `/context-save` / `/context-restore` |
+| Weekly engineering retro | `/retro` |
+| Review accumulated learnings | `/learn` |
+| Code-quality dashboard | `/health` |
+| Brainstorm, "is this worth building" | `/office-hours` |
+| Full auto plan-review pipeline | `/autoplan` |
+
+### When NOT to invoke
+
+- Trivial single-step changes that don't match any skill (e.g. fix a
+  one-line typo).
+- Inside a skill that already wraps the workflow (don't run `/review`
+  inside `/ship` — `/ship` calls it).
+- When the skill is a meta-tool for a context you don't need (`/health`
+  every hour, `/retro` outside of cycle close).
+
+### Anti-pattern this section exists to prevent
+
+Writing code, opening a PR, then merging without `/review`. Or starting
+implementation of a multi-step phase without `/plan-eng-review`. These
+are the two most common failure modes of "I'll just write it freehand."
+Both have caught real bugs in this repo via cross-model review (see PR
+review history). Don't skip them.
+
+---
+
 ## 2. How you work (the loop)
 
 1. **Restate the task** in one sentence. Confirm you understood it.
