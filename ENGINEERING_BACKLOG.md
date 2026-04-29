@@ -38,6 +38,21 @@ Multi-phase build из `Output 2` (target architecture). Гостевой checko
   `docker-compose.test.yml` + `scripts/test-integration.sh` + integration
   vitest config. Lane B (7 routes) и Lane C (`/verify-failed` placeholder
   page) pending.
+  Lane A `/review` findings (informational — backlog'd):
+  - **Consent withdrawal model** — 152-ФЗ subjects can withdraw consent;
+    current `account_consents` only models acceptance. Future additive
+    migration: add `withdrawn_at` column or `revoked` document_kind.
+    Triggers when first withdrawal flow lands (likely Phase 3+ admin
+    surface).
+  - **Time-window query index** — `account_consents` index on
+    `(document_kind, document_version)` doesn't cover `accepted_at`
+    filter. Postgres still does btree lookup + filter; fine until tens
+    of thousands of rows. Rebuild as `(document_kind, document_version,
+    accepted_at)` if `/admin/consent-history` becomes a hot path.
+  - **Docker test parallelization** — `docker-compose.test.yml` hardcodes
+    container_name `levelchannel-postgres-test` + port 54329. Parallel
+    CI runs would collide. Current single-developer flow OK; parameterize
+    when CI matrix grows.
 - **Phase 2 (auth UI)** — pending: `/register`, `/login`, `/forgot`,
   `/reset`, `/verify`, `/cabinet` placeholder. Header лендинга получает
   кнопку «Войти» без удаления существующих CTA.
