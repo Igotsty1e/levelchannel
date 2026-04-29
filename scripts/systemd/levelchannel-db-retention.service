@@ -1,0 +1,17 @@
+# Reference systemd unit for scripts/db-retention-cleanup.mjs.
+# Copy to /etc/systemd/system/ on the VPS during activation; see
+# OPERATIONS.md §5 Retention for the procedure.
+
+[Unit]
+Description=LevelChannel daily DB retention cleanup
+After=network.target
+
+[Service]
+Type=oneshot
+User=levelchannel
+Group=levelchannel
+WorkingDirectory=/var/www/levelchannel
+EnvironmentFile=/etc/levelchannel.env
+ExecStart=/usr/bin/node scripts/db-retention-cleanup.mjs
+StandardOutput=journal
+StandardError=journal
