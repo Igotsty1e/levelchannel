@@ -89,6 +89,36 @@ describe('POST /api/auth/login', () => {
     expect(delta).toBeLessThan(150)
   })
 
+  it('allows login when email is not yet verified (Phase 1B D4)', async () => {
+    // Phase 1B D4: login MUST succeed even when account.emailVerifiedAt
+    // is null. Cabinet stays accessible (banner shown); payment routes
+    // gate on email_verified_at separately. The invariant under test is
+    // that login itself does NOT pre-block based on verification state.
+    const email = 'unverified@example.com'
+    const password = 'CorrectHorse77!'
+
+    await registerOne(email, password)
+
+    // Sanity check: register did NOT mark the account as verified.
+    const pool = getAuthPool()
+    const before = await pool.query(
+      `select email_verified_at from accounts where email = $1`,
+      [email],
+    )
+    expect(before.rows[0].email_verified_at).toBeNull()
+
+    const res = await loginHandler(
+      buildRequest('/api/auth/login', { body: { email, password } }),
+    )
+    expect(res.status).toBe(200)
+
+    const setCookie = res.headers.get('Set-Cookie')
+    expect(extractSessionCookie(setCookie)).not.toBeNull()
+
+    const body = await res.json()
+    expect(body.account.emailVerifiedAt).toBeNull()
+  })
+
   it('silently upgrades a legacy lower-cost password hash on successful login', async () => {
     const email = 'rehash@example.com'
     const password = 'CorrectHorse77!'

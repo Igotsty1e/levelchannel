@@ -98,7 +98,8 @@ Auth-контур уже живёт в коде: есть таблицы, `lib/a
 | Reset: запрос на unknown email возвращает 200 ok (anti-enumeration) | [`tests/integration/auth/reset.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/reset.test.ts) (`returns 200 ok for unknown email`) |
 | Reset confirm: revoke всех сессий аккаунта до создания новой (mech-5 sign-out-everywhere) | [`tests/integration/auth/reset.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/reset.test.ts) (`signs out everywhere on success (mech-5 invariant)`) |
 | Session lifecycle: создание / валидация / revoke / expiry | [`tests/integration/auth/session-lifecycle.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/session-lifecycle.test.ts) |
-| **NOT covered yet:** login with unverified email returns 200 + session (cabinet-allow, payment-gated) | backlog'd в `ENGINEERING_BACKLOG.md` § DX and quality |
+| Login allows unverified email (Phase 1B D4) — cabinet-allow, payment-gated | [`tests/integration/auth/login.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/login.test.ts) (`allows login when email is not yet verified`) |
+| Silent password rehash on successful login when stored hash is below current cost | [`tests/integration/auth/login.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/login.test.ts) (`silently upgrades a legacy lower-cost password hash`) |
 
 ### Audit log (payment lifecycle)
 
