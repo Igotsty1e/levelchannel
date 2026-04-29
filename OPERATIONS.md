@@ -14,21 +14,23 @@ Single source of truth по инфраструктуре, деплою, git work
 
 ## 1. TL;DR — где что лежит
 
-| Контур | Где | Кто владеет |
+| Контур | Где | Примечание |
 |---|---|---|
-| Source code | GitHub: `Igotsty1e/levelchannel` (private) | <!-- FILL IN: владелец/контактный человек --> |
-| Production runtime | <!-- FILL IN: hostname / IP / провайдер VPS --> | <!-- FILL IN --> |
-| Production database | <!-- FILL IN: тот же VPS / managed Postgres / hostname --> | <!-- FILL IN --> |
-| Domain | <!-- FILL IN: levelchannel.ru? --> | <!-- FILL IN: регистратор --> |
-| TLS | <!-- FILL IN: Let's Encrypt / Cloudflare / другое --> | автоматическое продление: <!-- FILL IN --> |
-| Reverse proxy | <!-- FILL IN: nginx / caddy / напрямую `next start` --> | <!-- FILL IN --> |
-| Process manager | <!-- FILL IN: systemd / pm2 / другое --> | <!-- FILL IN --> |
+| Source code | GitHub: `Igotsty1e/levelchannel` (private) | default branch `main` |
+| Production runtime | `83.217.202.136` (Timeweb VPS) | systemd unit `levelchannel` |
+| Production database | тот же VPS, Postgres слушает только `127.0.0.1:5432` | БД `levelchannel`, app-юзер `levelchannel` |
+| Domain | <!-- FILL IN: домен, через который доступен сайт --> | A-запись на `83.217.202.136` |
+| TLS | <!-- FILL IN: предположительно Let's Encrypt (nginx + certbot) --> | <!-- FILL IN --> |
+| Reverse proxy | `nginx` на том же VPS | конфиг: `/etc/nginx/sites-enabled/...` |
+| Process manager | `systemd` (`systemctl status levelchannel`) | Next слушает `*:3000` (gap, см. §13) |
+| SSH | root + ed25519 ключ `~/.ssh/levelchannel_timeweb_ed25519` (на машине оператора) | password auth включён сейчас (gap, см. §13) |
+| Firewall (ufw) | наружу только `22/80/443` | прикрывает gap с `*:3000` в краткосроке |
 | Email транспорт | пока не нужен (чеки шлёт CloudKassir) | — |
 | Платёжный провайдер | CloudPayments | <!-- FILL IN: ID кабинета --> |
 | Онлайн-касса | CloudKassir (входит в CloudPayments) | <!-- FILL IN --> |
-| Логи | <!-- FILL IN: где живут, как читать --> | — |
-| Бэкапы БД | <!-- FILL IN: цель, частота, retention --> | — |
-| Uptime monitor | <!-- FILL IN: ставится на `/api/health` --> | — |
+| Логи | `journalctl -u levelchannel`, `/var/log/nginx/` | см. §8 |
+| Бэкапы БД | <!-- FILL IN: пока не настроено --> | см. §13 |
+| Uptime monitor | <!-- FILL IN: пока не настроено --> | подключай на `/api/health` |
 | Error tracking | пока не подключено (Sentry в roadmap) | — |
 
 ---
@@ -66,20 +68,25 @@ Single source of truth по инфраструктуре, деплою, git work
 
 ## 3. Server / runtime
 
-<!-- FILL IN this whole section once known -->
+**Хост:** `83.217.202.136`, VPS на Timeweb.
+**OS:** <!-- FILL IN: на сервере `cat /etc/os-release | grep PRETTY_NAME` --> (предположительно Ubuntu).
+**Node.js версия:** <!-- FILL IN: `node -v` на сервере, должна быть >= 20.x -->.
+**Рабочая директория:** <!-- FILL IN: путь репо на сервере, например `/opt/levelchannel` -->.
+**Пользователь, под которым крутится app:** <!-- FILL IN: `ps aux | grep node` -->.
+**Порт, который слушает Next:** `3000`. Сейчас bind на `*:3000` (см. gap в §13). Должен быть `127.0.0.1:3000`, перед ним nginx.
 
-**Хост:** <!-- например, `lc-prod-1.levelchannel.ru` (`<IP>`), <провайдер VPS> -->
-**OS:** <!-- Ubuntu 22.04 / Debian 12 / другое -->
-**Node.js версия:** <!-- v20.x — должна совпадать с `engines` в package.json -->
-**Рабочая директория:** <!-- /opt/levelchannel или /home/levelchannel/app -->
-**Пользователь, под которым крутится app:** <!-- levelchannel / www-data -->
-**Порт, который слушает Next:** <!-- 3000 -->
+### SSH
 
-### Process manager
+```bash
+# с машины оператора (Ivan)
+ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136
+```
 
-<!-- FILL IN: pm2 / systemd / другое -->
+Сейчас на сервере включены `PermitRootLogin yes` и
+`PasswordAuthentication yes` (см. §13 — это hardening долг). До его
+закрытия — не публиковать IP сервера в публичных issue / wiki.
 
-Если **systemd**, юнит лежит в `<!-- /etc/systemd/system/levelchannel.service -->`. Команды:
+### Process manager — systemd
 
 ```bash
 sudo systemctl status levelchannel
@@ -88,17 +95,18 @@ sudo journalctl -u levelchannel -f         # follow логов
 sudo journalctl -u levelchannel --since "1 hour ago"
 ```
 
-Если **pm2**:
-
 ```bash
-pm2 status
-pm2 restart levelchannel
-pm2 logs levelchannel --lines 200
+sudo systemctl status levelchannel
+sudo systemctl restart levelchannel
+sudo journalctl -u levelchannel -f         # follow логов
+sudo journalctl -u levelchannel --since "1 hour ago"
 ```
 
-### Reverse proxy
+Файл юнита: <!-- FILL IN: `/etc/systemd/system/levelchannel.service`, проверить `systemctl cat levelchannel` -->.
 
-<!-- FILL IN: nginx / caddy. Конфиг файла. -->
+### Reverse proxy — nginx
+
+Конфиг: <!-- FILL IN: предположительно `/etc/nginx/sites-enabled/levelchannel.conf`, проверить `ls /etc/nginx/sites-enabled/` -->.
 
 Reverse proxy обязателен для:
 - TLS termination (HTTPS)
@@ -172,12 +180,14 @@ server {
 
 ## 5. Database
 
-**Engine:** PostgreSQL <!-- FILL IN: 14 / 15 / 16 -->
-**Хост:** <!-- FILL IN: `localhost:5432` на app-сервере / managed Yandex.Cloud / другое -->
-**База:** <!-- levelchannel -->
-**Пользователь приложения:** <!-- levelchannel_app -->
-**Connection string:** хранится только в production env как `DATABASE_URL`,
-никогда в репозитории.
+**Engine:** PostgreSQL <!-- FILL IN: проверить `psql --version` на сервере -->
+**Хост:** `127.0.0.1:5432` на том же VPS (`83.217.202.136`). Слушает
+**только** loopback — наружу БД не торчит, доступ только через SSH-туннель.
+**База:** `levelchannel`
+**Пользователь приложения:** `levelchannel`
+**Пароль:** хранится только в `.env` на сервере, не в репозитории.
+**Connection string** (в формате `DATABASE_URL`):
+`postgresql://levelchannel:<password>@127.0.0.1:5432/levelchannel?sslmode=disable`
 
 **Таблицы (создаются автоматически при первом запросе через `ensureSchema*`):**
 
@@ -188,10 +198,62 @@ server {
 | `payment_telemetry` | `lib/telemetry/store-postgres.ts` | событийный лог checkout (privacy-friendly: e-mail хешируется, IP маскируется до /24) |
 | `idempotency_records` | `lib/security/idempotency-postgres.ts` | dedup для money-роутов |
 
-**Подключение для отладки:**
+### Доступ для отладки — три способа
+
+**1. Самый быстрый — psql на сервере под `postgres`-суперюзером:**
 
 ```bash
-# на app-сервере, под app-юзером
+ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136
+sudo -u postgres psql -d levelchannel
+```
+
+```sql
+\dt                    -- список таблиц
+\q                     -- выйти
+```
+
+**2. Однострочник (top-20 платежей, без входа в консоль):**
+
+```bash
+ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 \
+  "sudo -u postgres psql -d levelchannel -c \"select invoice_id, status, amount_rub, customer_email, created_at from payment_orders order by created_at desc limit 20;\""
+```
+
+**3. SSH-туннель для GUI (TablePlus / DBeaver / pgAdmin):**
+
+```bash
+# в отдельном терминале:
+ssh -i ~/.ssh/levelchannel_timeweb_ed25519 \
+    -L 5433:127.0.0.1:5432 \
+    root@83.217.202.136
+```
+
+Подключение в клиенте:
+
+| Поле | Значение |
+|---|---|
+| Host | `127.0.0.1` |
+| Port | `5433` (локальный порт туннеля) |
+| Database | `levelchannel` |
+| User | `levelchannel` |
+| Password | пароль app-юзера БД (из `.env` на сервере) |
+
+Альтернатива — встроенный SSH в TablePlus:
+
+| Поле | Значение |
+|---|---|
+| DB Host | `127.0.0.1` |
+| DB Port | `5432` |
+| Database | `levelchannel` |
+| User | `levelchannel` |
+| SSH Host | `83.217.202.136` |
+| SSH Port | `22` |
+| SSH User | `root` |
+| SSH Key | `~/.ssh/levelchannel_timeweb_ed25519` |
+
+### Полезные запросы (под app-юзером через `$DATABASE_URL`)
+
+```bash
 psql "$DATABASE_URL"
 
 # полезные запросы:
@@ -232,43 +294,44 @@ gunzip -c /var/backups/levelchannel/db-2026-04-29.sql.gz | psql "$RECOVERY_DATAB
 
 ## 6. Deploy
 
-<!-- FILL IN: текущий способ -->
-
-Из того, что я знаю по коду:
-- нет `Dockerfile`, нет `docker-compose.yml`
-- нет `.github/workflows/`
-- нет `ecosystem.config.js` (pm2)
-- есть `postbuild.js` — но он работает только на static-export сборке, в server-режиме это no-op (legacy от первой версии)
-- есть `public/.htaccess` — это headers + редиректы для **Apache**, тоже legacy от static-сборки. Если за приложением стоит nginx, файл не используется, но и не мешает.
-
-Значит сейчас деплой — **manual git pull + restart**, либо что-то самописное на сервере. Заполни ниже что у тебя реально:
-
-### Текущий механизм деплоя
-
-<!-- FILL IN: один из вариантов -->
-
-#### Вариант A — manual `git pull`
+**Текущий механизм:** manual `git pull` + restart по SSH. Нет
+`Dockerfile`, нет `docker-compose.yml`, нет `.github/workflows/`, нет pm2.
+`postbuild.js` и `public/.htaccess` — legacy от первой static-export
+версии, в текущем server-режиме не используются.
 
 ```bash
-ssh <user>@<host>
-cd /opt/levelchannel
+# 1. С локальной машины: убедись что коммит уже в origin/main
+git push origin main
+
+# 2. На сервере: подтяни и пересобери
+ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136
+cd <!-- FILL IN: путь репо на сервере -->
 git fetch origin
-git pull --ff-only origin main
+git pull --ff-only origin main          # упадёт, если на сервере незакоммиченные изменения — см. §13
 npm ci
 npm run build
-sudo systemctl restart levelchannel    # или: pm2 restart levelchannel
+
+# 3. Рестарт runtime
+sudo systemctl restart levelchannel
+sudo journalctl -u levelchannel -f       # подтверди, что встал чисто (Ctrl-C после Ready)
+
+# 4. Smoke test (см. ниже)
 ```
 
-#### Вариант B — webhook → script
+### Если на сервере есть untracked / модифицированные файлы
 
-GitHub шлёт push-event на endpoint `<!-- FILL IN -->`, который запускает
-`<!-- FILL IN: /opt/levelchannel/scripts/deploy.sh -->` под app-юзером.
-Скрипт делает `git pull`, `npm ci && npm run build`, рестарт.
+Сейчас именно такая ситуация (см. §13 — legal-блок). `git pull --ff-only`
+завалится с конфликтом. До деплоя коммитни их отдельным коммитом на сервере:
 
-#### Вариант C — GitHub Actions → SSH
+```bash
+cd <!-- FILL IN: путь репо на сервере -->
+git status
+git add lib/legal app/api/payments components/payments lib/payments
+git commit -m "feat(legal): personal data consent capture (deployed manually)"
+git push origin main
+```
 
-`.github/workflows/deploy.yml` на push в main: чекаут, билд, rsync артефактов
-на сервер, рестарт через SSH. Сейчас не настроено.
+После этого рабочее дерево чистое и `git pull --ff-only` снова безопасен.
 
 ### Pre-deploy чеклист (вручную, если деплой manual)
 
@@ -555,15 +618,76 @@ curl -s https://<домен>/api/health | jq    # должен быть status: 
 
 ---
 
-## 13. Что осталось в долге (operations side)
+## 13. Долги и known security gaps
+
+### Server hardening (SSH)
+
+Сейчас на `83.217.202.136`:
+
+| Что | Текущее | Должно быть |
+|---|---|---|
+| `PermitRootLogin` | `yes` | `prohibit-password` (только по ключу) или, лучше, отдельный sudo-юзер + `no` для root |
+| `PasswordAuthentication` | `yes` | `no` (только публичные ключи) |
+| Key-based access | работает (`levelchannel_timeweb_ed25519`) | оставить |
+
+Mitigation сейчас: `ufw` пропускает наружу только `22/80/443`, и
+ключевой доступ настроен. Это снимает остроту, но не решает: пароль на
+SSH — постоянно открытая дверь под брутфорс с ботнета (на 22 порт).
+
+Закрытие (порядок строго такой):
+```bash
+# 1. Убедись, что ключевой доступ работает (ты сейчас именно так и заходишь — ок)
+# 2. На сервере:
+sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+sudo sshd -t                             # проверка синтаксиса
+sudo systemctl restart ssh
+# 3. НЕ закрывая текущую сессию — открой новую и убедись, что заходишь.
+#    Если что — есть провайдерская VNC-консоль у Timeweb.
+```
+
+### Application binding
+
+`next start` слушает `*:3000` вместо `127.0.0.1:3000`. Сейчас прикрыт ufw,
+но если кто-то перенастроит firewall — приложение сразу окажется в
+интернете без TLS. Фиксы:
+
+```bash
+# В юните /etc/systemd/system/levelchannel.service:
+# ExecStart=/usr/bin/node node_modules/.bin/next start --hostname 127.0.0.1 --port 3000
+sudo systemctl daemon-reload
+sudo systemctl restart levelchannel
+ss -tlnp | grep :3000        # убедись, что binding 127.0.0.1, не *
+```
+
+### Прочие долги (operations)
 
 - зафиксировать всё, что помечено `<!-- FILL IN -->` в этом файле
-- настроить uptime monitor на `/api/health`
-- настроить ежедневный `pg_dump` + retention 14 дней
+- настроить uptime monitor на `/api/health` (UptimeRobot free / BetterStack)
+- настроить ежедневный `pg_dump` + retention минимум 14 дней
 - подключить Sentry или хотя бы `journald` → лог-агрегатор
-- автоматизировать deploy (либо webhook-скрипт, либо GitHub Actions)
+- автоматизировать deploy (webhook-скрипт или GitHub Actions через SSH)
 - зафиксировать ротацию `CLOUDPAYMENTS_API_SECRET` (раз в N месяцев или по событию)
-- добавить `nginx limit_req_zone` если деплой пока без него
+- добавить `nginx limit_req_zone` (если в текущем конфиге его нет)
 - backup retention 14 дней — мало для бухгалтерии. По 152-ФЗ персональные
   данные надо хранить только пока цель обработки актуальна, но платёжные
   записи нужны для налоговой минимум 5 лет — продумай отдельный архив
+
+### git ↔ prod синхронизация
+
+Legal-блок (`lib/legal/personal-data.ts` + интеграция `personalDataConsent`
+во все money-роуты и `pricing-section.tsx`) попал в git коммитом
+`98f7219 feat(legal): add personal data consent flow`. На случай рассинхрона
+проверяй так:
+
+```bash
+ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136
+cd <!-- FILL IN: путь репо -->
+git status                           # должно быть clean
+git log --oneline -5                 # head должен совпадать с origin/main
+git rev-parse HEAD                   # сравни с локальным `git ls-remote origin main`
+```
+
+Если на сервере есть `M`-файлы (модифицированные после последнего
+deploy) — НЕ делай `git pull --ff-only` сразу. Сначала зафиксируй или
+сбрось эти правки, иначе pull завалится с конфликтом.

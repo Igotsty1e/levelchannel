@@ -76,10 +76,24 @@
 ## Оставшиеся ограничения
 
 - limiter in-memory, значит не синхронизируется между инстансами
-- payment telemetry пока файловая и не годится для multi-node production
+- payment telemetry: postgres основной путь, файловый fallback на случай
+  сбоя БД (см. `lib/telemetry/store.ts`)
 - нет WAF / reverse-proxy limiting на уровне инфраструктуры
 - нет централизованного audit log storage
 - нет Sentry / alerting / intrusion visibility
+
+## Известные server-side hardening долги (production VPS)
+
+Найдены в ходе аудита 2026-04-29. Краткосрочно прикрыты `ufw`, который
+пропускает наружу только `22/80/443`, но это митигация, не решение.
+
+| Что | Текущее | Должно быть | Риск |
+|---|---|---|---|
+| `PermitRootLogin` | `yes` | `prohibit-password` или `no` | прямой root по SSH |
+| `PasswordAuthentication` | `yes` | `no` (только ключи) | brute-force на 22 порт |
+| Bind `next start` | `*:3000` | `127.0.0.1:3000` | при ошибке firewall — голое приложение в интернете без TLS |
+
+Конкретные шаги по закрытию — в `OPERATIONS.md §13`.
 
 ## Обязательные меры перед production
 
