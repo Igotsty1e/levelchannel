@@ -28,18 +28,18 @@ Single source of truth по инфраструктуре, деплою, git work
 | Node.js | v20.20.2 (npm 10.8.2) | `/usr/bin/npm`, `/usr/bin/node` |
 | Domain | `levelchannel.ru` + `www.levelchannel.ru` (A → `83.217.202.136`) | TLS обязателен (`http://` редиректится 301) |
 | TLS | Let's Encrypt, `/etc/letsencrypt/live/levelchannel.ru/` | `certbot.timer` активен → автообновление |
-| Reverse proxy | `nginx`, `/etc/nginx/sites-enabled/levelchannel` | простой `proxy_pass http://127.0.0.1:3000`, без `limit_req` (см. §13) |
-| Process manager | `systemd`, юнит `/etc/systemd/system/levelchannel.service` | `User=levelchannel`, `WorkingDirectory=/var/www/levelchannel`, `ExecStart=/usr/bin/npm run start` |
-| Auto-deploy | `systemd` timer `levelchannel-autodeploy.timer` + service `/etc/systemd/system/levelchannel-autodeploy.service` | раз в минуту сверяет `origin/main`, см. §6 |
+| Reverse proxy | `nginx`, `/etc/nginx/sites-enabled/levelchannel` | per-IP `limit_req zone=lcapi 30r/m burst=20 nodelay` на `/api/*`; CP webhooks (`^~ /api/payments/webhooks/`) исключены — HMAC + amount cross-check там единственный trust boundary |
+| Process manager | `systemd`, юнит `/etc/systemd/system/levelchannel.service` | `User=levelchannel`, `WorkingDirectory=/var/www/levelchannel`, `ExecStart=/usr/bin/npm run start -- --hostname 127.0.0.1 --port 3000` |
+| Auto-deploy | `systemd` timer `levelchannel-autodeploy.timer` + service `/etc/systemd/system/levelchannel-autodeploy.service` | раз в минуту сверяет `origin/main`, см. §6. Между `npm run build` и swap зовёт `npm run migrate:up` — миграции накатываются под старым live-кодом (additive only), потом swap. |
 | Env file | `/etc/levelchannel.env` (chmod 600, root:root) | подключается через `EnvironmentFile=` в systemd unit |
-| SSH | root + ed25519 ключ `~/.ssh/levelchannel_timeweb_ed25519` (на машине оператора) | password auth включён (gap, §13) |
-| Firewall (ufw) | OpenSSH + Nginx Full + `10050/tcp` (Zabbix agent от Timeweb) | прикрывает gap с `*:3000` в краткосроке |
-| **Деплой** | **Git-based autodeploy с сервера** | `/usr/local/bin/levelchannel-autodeploy` делает clone → `npm ci` → `npm run build` → swap → health-check |
-| Email транспорт | пока не нужен (чеки шлёт CloudKassir) | — |
+| SSH | root + ed25519 ключ `~/.ssh/levelchannel_timeweb_ed25519` (на машине оператора) | **`PermitRootLogin prohibit-password` + `PasswordAuthentication no`** — только publickey. См. §3 |
+| Firewall (ufw) | OpenSSH + Nginx Full + `10050/tcp` (Zabbix agent от Timeweb) | приложение биндится на `127.0.0.1:3000`, ufw нужен только как defense-in-depth |
+| **Деплой** | **Git-based autodeploy с сервера** | `/usr/local/bin/levelchannel-autodeploy` делает clone → `npm ci` → `npm run build` → `npm run migrate:up` → swap → health-check |
+| Email транспорт | Resend (RESEND_API_KEY + EMAIL_FROM) — для verify/reset; платёжные чеки по-прежнему шлёт CloudKassir | при пустом RESEND_API_KEY lib/email падает в console fallback (Phase 1B добавит boot-assertion для prod) |
 | Платёжный провайдер | CloudPayments | <!-- FILL IN: ID кабинета (есть в .env как CLOUDPAYMENTS_PUBLIC_ID) --> |
 | Онлайн-касса | CloudKassir (входит в CloudPayments) | <!-- FILL IN: статус ОФД --> |
 | Логи | `journalctl -u levelchannel`, `/var/log/nginx/access.log`, `/var/log/nginx/error.log` | см. §8 |
-| Бэкапы БД | **не настроены** | см. §13 |
+| Бэкапы БД | ежедневный `pg_dump` через `/etc/cron.daily/levelchannel-db-backup` → `/var/backups/levelchannel/db-YYYY-MM-DD.sql.gz` (mode 600 + dir 700), retention 14 дней. Restore drill пройден 2026-04-29 | для catastrophic recovery — gunzip + `psql -d <recovery_db>`. Дамп: `--no-owner --no-acl --clean --if-exists` |
 | Uptime monitor | **не настроен** | подключай на `/api/health` |
 | Error tracking | не подключено (Sentry в roadmap) | — |
 | External monitoring | Zabbix agent на `:10050` (от Timeweb) | внутренние метрики хоста, не приложения |
@@ -87,7 +87,7 @@ Single source of truth по инфраструктуре, деплою, git work
 **Рабочая директория:** `/var/www/levelchannel` (активный git-checkout текущего release).
 **Пользователь, под которым крутится app:** `levelchannel` (system user).
 **Env file:** `/etc/levelchannel.env` (chmod 600, root:root, подключается через `EnvironmentFile=` в systemd unit).
-**Порт, который слушает Next:** `3000`. Сейчас bind на `*:3000` (gap, §13). Должен быть `127.0.0.1:3000`, перед ним nginx.
+**Порт, который слушает Next:** `127.0.0.1:3000`. Bind закреплён в systemd unit через `--hostname 127.0.0.1 --port 3000` в `ExecStart`. nginx терминирует TLS и проксирует.
 
 ### SSH
 
@@ -96,9 +96,25 @@ Single source of truth по инфраструктуре, деплою, git work
 ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136
 ```
 
-Сейчас на сервере включены `PermitRootLogin yes` и
-`PasswordAuthentication yes` (см. §13 — это hardening долг). До его
-закрытия — не публиковать IP сервера в публичных issue / wiki.
+**SSH hardening применён 2026-04-29.** Эффективная конфигурация
+(`sshd -T` подтверждает):
+
+```
+permitrootlogin without-password   # alias для prohibit-password
+passwordauthentication no
+pubkeyauthentication yes
+kbdinteractiveauthentication no
+```
+
+- `/etc/ssh/sshd_config` — `PermitRootLogin prohibit-password`
+- `/etc/ssh/sshd_config.d/50-cloud-init.conf` — `PasswordAuthentication no` (cloud-init override; если по какой-то причине будет переопределяться обновлением Ubuntu, проверить здесь)
+
+Backup исходных файлов: `/etc/ssh/sshd_config.bak-20260429-072458` и
+`/etc/ssh/sshd_config.d/50-cloud-init.conf.bak-20260429-072458`.
+
+**Если потерял SSH-ключ:** root password не работает. Эмерджнси-доступ
+через VNC console у Timeweb (timeweb.cloud → твой VPS → "Консоль") и
+оттуда восстановление авторизованных ключей в `/root/.ssh/authorized_keys`.
 
 ### Process manager — systemd
 
@@ -265,11 +281,12 @@ DATABASE_URL=postgres://... npm run migrate:status
 существуют, `migrate:up` ничего не меняет — фиксирует bookkeeping в
 `_migrations`. Подробнее — `migrations/README.md`.
 
-**Подключение runner'а в autodeploy — отдельная задача (queued).** Сейчас
-`/usr/local/bin/levelchannel-autodeploy` НЕ вызывает `npm run migrate:up`.
-Пока не подключено — после первого ручного `migrate:up` на проде новые
-миграции придётся запускать руками тем же `npm run migrate:up` (через ssh)
-**до** деплоя кода, который от них зависит.
+**Runner подключён в autodeploy с 2026-04-29.**
+`/usr/local/bin/levelchannel-autodeploy` вызывает `npm run migrate:up`
+между `npm run build` и release-swap. Если миграция упадёт, `set -e`
+аварит rollout и текущий live-код продолжает работать на предыдущем
+release directory. Политика: миграции additive-only, поэтому новая
+схема всегда совместима с предыдущей версией кода.
 
 ### Доступ для отладки — три способа
 
@@ -791,59 +808,30 @@ curl -s https://<домен>/api/health | jq    # должен быть status: 
 
 ## 13. Долги и known security gaps
 
-### Server hardening (SSH)
+### Phase 0 server hardening — закрыт 2026-04-29
 
-Сейчас на `83.217.202.136`:
-
-| Что | Текущее | Должно быть |
+| Долг | Статус | Где |
 |---|---|---|
-| `PermitRootLogin` | `yes` | `prohibit-password` (только по ключу) или, лучше, отдельный sudo-юзер + `no` для root |
-| `PasswordAuthentication` | `yes` | `no` (только публичные ключи) |
-| Key-based access | работает (`levelchannel_timeweb_ed25519`) | оставить |
+| `PermitRootLogin` = `yes` | **DONE** → `prohibit-password` | §3 SSH |
+| `PasswordAuthentication` = `yes` | **DONE** → `no` (cloud-init override обновлён) | §3 SSH |
+| Bind `next start` `*:3000` | **DONE** → `127.0.0.1:3000` | §3 |
+| nginx `limit_req_zone` | **DONE** — `lcapi 30r/m burst=20 nodelay` на `/api/`, webhooks исключены | §1 |
+| Backup БД (cron + retention) | **DONE** — `/etc/cron.daily/levelchannel-db-backup`, retention 14d, restore drill пройден | §1, §5 |
+| `migrate:up` в autodeploy pipeline | **DONE** — между build и swap | §6 |
+| Зафиксировать `<!-- FILL IN -->` маркеры | **в работе** — большинство закрыто, остались `CLOUDPAYMENTS_PUBLIC_ID`, `CLOUDPAYMENTS_API_SECRET`, ОФД статус, регистратор DNS |
 
-Mitigation сейчас: `ufw` пропускает наружу только `22/80/443`, и
-ключевой доступ настроен. Это снимает остроту, но не решает: пароль на
-SSH — постоянно открытая дверь под брутфорс с ботнета (на 22 порт).
+### Открытые долги (operations)
 
-Закрытие (порядок строго такой):
-```bash
-# 1. Убедись, что ключевой доступ работает (ты сейчас именно так и заходишь — ок)
-# 2. На сервере:
-sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
-sudo sshd -t                             # проверка синтаксиса
-sudo systemctl restart ssh
-# 3. НЕ закрывая текущую сессию — открой новую и убедись, что заходишь.
-#    Если что — есть провайдерская VNC-консоль у Timeweb.
-```
-
-### Application binding
-
-`next start` слушает `*:3000` вместо `127.0.0.1:3000`. Сейчас прикрыт ufw,
-но если кто-то перенастроит firewall — приложение сразу окажется в
-интернете без TLS. Фиксы:
-
-```bash
-# В юните /etc/systemd/system/levelchannel.service:
-# ExecStart=/usr/bin/node node_modules/.bin/next start --hostname 127.0.0.1 --port 3000
-sudo systemctl daemon-reload
-sudo systemctl restart levelchannel
-ss -tlnp | grep :3000        # убедись, что binding 127.0.0.1, не *
-```
-
-### Прочие долги (operations)
-
-- зафиксировать всё, что помечено `<!-- FILL IN -->` в этом файле
 - настроить uptime monitor на `/api/health` (UptimeRobot free / BetterStack)
-- настроить ежедневный `pg_dump` + retention минимум 14 дней
 - подключить Sentry или хотя бы `journald` → лог-агрегатор
 - зафиксировать ротацию `CLOUDPAYMENTS_API_SECRET` (раз в N месяцев или по событию)
-- добавить `nginx limit_req_zone` (если в текущем конфиге его нет)
 - backup retention 14 дней не заменяет отдельный архивный контур. По
   152-ФЗ персональные данные надо хранить только пока цель обработки
   актуальна, а платёжные записи и связанные доказательства согласия
   должны оставаться доступными в основной БД и рабочих архивах весь
   обязательный срок хранения
+- alerting на неуспешный autodeploy / зависший `levelchannel-autodeploy.service`
+- session cleanup cron для `account_sessions` (Phase 1A backlog)
 
 ### git ↔ prod синхронизация
 

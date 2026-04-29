@@ -12,9 +12,8 @@
 
 ### Production operations
 
-- настроить ежедневный backup Postgres и регулярно проверять restore
+- регулярно проверять `pg_dump` бэкапы и restore drill (cron активен с 2026-04-29)
 - подключить uptime monitor на `/api/health`
-- выключить password auth по SSH и запретить прямой root по паролю
 - регулярно проверять rollback drill и состояние git-based autodeploy
 
 ## P1
