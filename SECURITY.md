@@ -157,3 +157,4 @@ gaps, а не исторический ход серверных работ.
 - обновлением `README.md`
 - обновлением `PAYMENTS_SETUP.md`
 - пересмотром `SECURITY.md`, если меняются trust boundaries или секреты
+- прохождением [`docs/security-regression-checklist.md`](docs/security-regression-checklist.md) перед merge
