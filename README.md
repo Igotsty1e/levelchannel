@@ -73,32 +73,18 @@ Payment API:
 
 ## Документация
 
+- [DOCUMENTATION.md](/Users/ivankhanaev/LevelChannel/DOCUMENTATION.md) — карта документации, кто чем владеет, что читать первым
 - [ARCHITECTURE.md](/Users/ivankhanaev/LevelChannel/ARCHITECTURE.md) — file-by-file карта кода
 - [OPERATIONS.md](/Users/ivankhanaev/LevelChannel/OPERATIONS.md) — где сервер, как деплоим, git, БД, runbook
 - [SECURITY.md](/Users/ivankhanaev/LevelChannel/SECURITY.md) — hardening + threat model
 - [PAYMENTS_SETUP.md](/Users/ivankhanaev/LevelChannel/PAYMENTS_SETUP.md) — CloudPayments, one-click, 3DS, health
 - [AGENTS.md](/Users/ivankhanaev/LevelChannel/AGENTS.md) — operating guide для ИИ-агентов
-- [ROADMAP.md](/Users/ivankhanaev/LevelChannel/ROADMAP.md)
+- [ROADMAP.md](/Users/ivankhanaev/LevelChannel/ROADMAP.md) — high-level приоритеты
+- [ENGINEERING_BACKLOG.md](/Users/ivankhanaev/LevelChannel/ENGINEERING_BACKLOG.md) — инженерная очередь задач
 - [PRD.md](/Users/ivankhanaev/LevelChannel/PRD.md) — исторический продуктовый документ первой версии
-
-## Что уже сделано
-
-- лендинг переведён на `Next.js 16`
-- подключён серверный контур для оплат
-- встроен CloudPayments card/widget flow с передачей `receiptEmail`
-- добавлена отдельная страница согласия на обработку персональных данных и серверная фиксация акцепта checkbox в заказе
-- добавлен mock-режим для локальной проверки checkout flow
-- подготовлены webhook'и CloudPayments
-- проведён дополнительный security hardening
-- добавлен PostgreSQL storage backend и миграционный скрипт `npm run migrate:payments:postgres`
-- зависимости обновлены, `npm audit --omit=dev` сейчас чистый
 
 ## Что важно помнить
 
 - файловый storage остаётся fallback-режимом, production-целевой backend теперь `PostgreSQL`
 - боевой CloudPayments flow уже работает на VPS, но deploy по-прежнему manual и требует сверки `DEPLOYED_SHA`
 - mock confirm должен оставаться выключенным в production
-
-## Рекомендуемый следующий шаг
-
-Закрыть операционные долги production-контура: настроить backup и retention policy, uptime monitor на `/api/health`, SSH hardening и более надёжный deploy-процесс вместо ручного rsync.
