@@ -20,6 +20,18 @@ cd "$REPO_ROOT"
 COMPOSE_FILE="docker-compose.test.yml"
 DB_URL="postgresql://levelchannel_test:levelchannel_test@127.0.0.1:54329/levelchannel_test?sslmode=disable"
 
+# Auto-detect Docker socket. Default is /var/run/docker.sock on Linux and
+# Docker Desktop. Colima (lightweight macOS runtime) sockets live under
+# ~/.colima/default/. We probe and export DOCKER_HOST if the default
+# socket is missing but a known alternative exists.
+if [ -z "${DOCKER_HOST:-}" ] && [ ! -S /var/run/docker.sock ]; then
+  if [ -S "$HOME/.colima/default/docker.sock" ]; then
+    export DOCKER_HOST="unix://$HOME/.colima/default/docker.sock"
+  elif [ -S "$HOME/.docker/run/docker.sock" ]; then
+    export DOCKER_HOST="unix://$HOME/.docker/run/docker.sock"
+  fi
+fi
+
 cleanup() {
   echo "===tearing down test postgres==="
   docker compose -f "$COMPOSE_FILE" down --volumes --remove-orphans >/dev/null 2>&1 || true

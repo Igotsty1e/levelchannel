@@ -89,6 +89,17 @@ Backend-only слой для будущего кабинета. UI и API-роу
 - [`next.config.js`](/Users/ivankhanaev/LevelChannel/next.config.js) — security headers для Node deployment
 - [`public/.htaccess`](/Users/ivankhanaev/LevelChannel/public/.htaccess) — security headers для Apache
 
+### Auth API routes (Phase 1B Lane B)
+
+- [`app/api/auth/register/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/register/route.ts) — POST. Symmetric work for new vs existing email path; consent recording on new accounts (D1)
+- [`app/api/auth/verify/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/verify/route.ts) — GET click-through; no origin check (mech-4); consumes single-use token; 303 → `/cabinet` on success, `/verify-failed` on failure
+- [`app/api/auth/login/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/login/route.ts) — POST. constantTimeVerifyPassword (D3); identical 401 for unknown/disabled/wrong-password (anti-enumeration); allows login on unverified email (D4)
+- [`app/api/auth/logout/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/logout/route.ts) — POST. Revokes session, clears cookie. Replay-safe.
+- [`app/api/auth/reset-request/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/reset-request/route.ts) — POST. Identical `{ok: true}` for known/unknown email (anti-enumeration)
+- [`app/api/auth/reset-confirm/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/reset-confirm/route.ts) — POST. revokeAllSessionsForAccount **before** createSession (mech-5); password-policy gate keeps token unconsumed on weak input
+- [`app/api/auth/me/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/me/route.ts) — GET. Bootstrap; same-origin, no origin check; 401 with cookie cleared on missing/expired session
+- [`app/verify-failed/page.tsx`](/Users/ivankhanaev/LevelChannel/app/verify-failed/page.tsx) — minimal placeholder for verify-route failure landing (Lane C; full UI in Phase 2)
+
 ### API routes
 
 - [`app/api/payments/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/route.ts) — создание платежа

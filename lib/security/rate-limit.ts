@@ -69,3 +69,9 @@ export function takeRateLimit(
     ),
   }
 }
+
+// Test-only: clear all in-memory buckets between integration tests
+// so rate-limit thresholds don't leak across cases.
+export function __resetRateLimitsForTesting(): void {
+  buckets.clear()
+}
