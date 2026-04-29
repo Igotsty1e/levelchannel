@@ -70,6 +70,7 @@ export default function PersonalDataConsentPage() {
         </p>
 
         <div
+          className="legal-page-card"
           style={{
             background: '#111113',
             border: '1px solid rgba(255,255,255,0.08)',
