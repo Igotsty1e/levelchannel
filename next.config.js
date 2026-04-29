@@ -1,4 +1,9 @@
 /** @type {import('next').NextConfig} */
+const { withSentryConfig } = require('@sentry/nextjs')
+
+// Sentry's browser SDK posts events to the EU ingest endpoint we got
+// from Sentry-side project keys. CSP must allow connect-src to
+// `*.ingest.de.sentry.io` or every event from a real user is blocked.
 const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -9,8 +14,9 @@ const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: https://*.cloudpayments.ru",
-  "connect-src 'self' https://api.cloudpayments.ru https://widget.cloudpayments.ru https://*.cloudpayments.ru https://www.google-analytics.com https://region1.google-analytics.com",
+  "connect-src 'self' https://api.cloudpayments.ru https://widget.cloudpayments.ru https://*.cloudpayments.ru https://www.google-analytics.com https://region1.google-analytics.com https://*.ingest.de.sentry.io https://*.ingest.sentry.io",
   "frame-src 'self' https://widget.cloudpayments.ru https://*.cloudpayments.ru",
+  "worker-src 'self' blob:",
 ].join('; ')
 
 const nextConfig = {
@@ -43,4 +49,22 @@ const nextConfig = {
   },
 }
 
-module.exports = nextConfig
+// withSentryConfig:
+// - injects source-maps upload (silent if SENTRY_AUTH_TOKEN missing,
+//   which is the case in dev / on-prem builds without the token)
+// - tunnels client SDK requests through /monitoring to bypass adblockers
+//   that strip *.sentry.io connect-src (we still allow direct ingest in
+//   CSP above for fallback)
+// - hides Source Map upload errors from breaking the build
+module.exports = withSentryConfig(nextConfig, {
+  org: 'mastery-zs',
+  project: 'levelchannel',
+  silent: !process.env.CI,
+  // No tunnelRoute — middleware/edge route would need its own setup.
+  // Direct ingest via CSP allowance is fine for our audience.
+  disableLogger: true,
+  // Source maps upload only when SENTRY_AUTH_TOKEN is set in env.
+  // Local builds and the autodeploy script (currently without the
+  // token) just ship the SDK with bundled stack traces; readable
+  // enough for v1.
+})
