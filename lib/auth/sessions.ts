@@ -127,3 +127,28 @@ export function buildSessionClearCookie(isProduction: boolean): string {
   if (isProduction) parts.push('Secure')
   return parts.join('; ')
 }
+
+// Pull the lc_session cookie value from a Request's `Cookie` header without
+// pulling next/headers — keeps these helpers framework-agnostic.
+export function readSessionCookieFromRequest(request: Request): string | null {
+  const header = request.headers.get('cookie')
+  if (!header) return null
+  for (const part of header.split(';')) {
+    const eq = part.indexOf('=')
+    if (eq < 0) continue
+    const name = part.slice(0, eq).trim()
+    if (name !== SESSION_COOKIE_NAME) continue
+    return part.slice(eq + 1).trim() || null
+  }
+  return null
+}
+
+// Convenience: read cookie from request, look up session, return resolved
+// account + session pair, or null if absent / expired / revoked / disabled.
+export async function getCurrentSession(
+  request: Request,
+): Promise<{ session: Session; account: Account } | null> {
+  const cookieValue = readSessionCookieFromRequest(request)
+  if (!cookieValue) return null
+  return lookupSession(cookieValue)
+}

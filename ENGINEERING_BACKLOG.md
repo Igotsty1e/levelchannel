@@ -31,13 +31,14 @@ Multi-phase build из `Output 2` (target architecture). Гостевой checko
     idempotency_records).
   - common-password rejection (HIBP / breached lists) — пока политика
     только "не all-digits". Для MVP ок, для public launch стоит добавить.
-- **Phase 1B (auth API routes)** — Lane A foundation **done**: migration
-  0011 `account_consents`, `lib/auth/{consents,dummy-hash,email-hash}.ts`,
-  `lib/email/config.ts` production assertions (`RESEND_API_KEY` +
-  `AUTH_RATE_LIMIT_SECRET`), `already-registered.ts` template + dispatch,
-  `docker-compose.test.yml` + `scripts/test-integration.sh` + integration
-  vitest config. Lane B (7 routes) и Lane C (`/verify-failed` placeholder
-  page) pending.
+- **Phase 1B (auth API routes)** — Lane A foundation + Lane B routes +
+  Lane C placeholder **done**. 7 routes shipped: register / verify /
+  login / logout / reset-request / reset-confirm / me. Integration tests
+  cover all D-decisions: D1 register timing parity, D3 login constant-time,
+  D4 allow-login-on-unverified, mech-5 sign-out-everywhere on reset.
+  Anti-enumeration tests assert byte-equal responses for known/unknown
+  email on register and reset-request. Run with `npm run test:integration`
+  (requires Docker engine for postgres:16.13 service).
   Lane A `/review` findings (informational — backlog'd):
   - **Consent withdrawal model** — 152-ФЗ subjects can withdraw consent;
     current `account_consents` only models acceptance. Future additive
@@ -54,8 +55,10 @@ Multi-phase build из `Output 2` (target architecture). Гостевой checko
     CI runs would collide. Current single-developer flow OK; parameterize
     when CI matrix grows.
 - **Phase 2 (auth UI)** — pending: `/register`, `/login`, `/forgot`,
-  `/reset`, `/verify`, `/cabinet` placeholder. Header лендинга получает
-  кнопку «Войти» без удаления существующих CTA.
+  `/reset`, `/cabinet` (placeholder). Header лендинга получает кнопку
+  «Войти» без удаления существующих CTA. Phase 1B `/verify-failed`
+  placeholder уже стоит — Phase 2 заменит на полный styled UI вместе
+  с остальными страницами.
 - **Phase 3..6** — детали не разворачиваем в backlog до Phase 2 ship'а;
   high-level: profiles + admin pricing → scheduling → lesson lifecycle
   + 24h rule → cabinet payment + payment_allocations → legal/receipt

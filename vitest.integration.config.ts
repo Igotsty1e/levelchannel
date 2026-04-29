@@ -17,6 +17,10 @@ export default defineConfig({
     include: ['tests/integration/**/*.test.ts'],
     setupFiles: ['tests/setup-env.ts'],
     pool: 'forks',
+    // All integration test files share one Docker Postgres. Truncate-in-
+    // afterEach races across parallel files cause spurious FK violations
+    // and lost sessions. Run files sequentially.
+    fileParallelism: false,
     testTimeout: 15000,
   },
 })
