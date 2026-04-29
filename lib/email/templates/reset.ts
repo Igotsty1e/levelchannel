@@ -1,5 +1,8 @@
+import { escapeHtml } from '@/lib/email/escape'
+
 export function renderResetEmail(params: { resetUrl: string }) {
   const { resetUrl } = params
+  const safeResetUrl = escapeHtml(resetUrl)
 
   const subject = 'Сброс пароля в LevelChannel'
 
@@ -22,13 +25,13 @@ export function renderResetEmail(params: { resetUrl: string }) {
     Вы запросили сброс пароля. Чтобы задать новый пароль, откройте ссылку:
   </p>
   <p style="margin:0 0 16px;">
-    <a href="${resetUrl}" style="display:inline-block;padding:12px 18px;border-radius:8px;background:#C87878;color:#fff;text-decoration:none;font-weight:600;">
+    <a href="${safeResetUrl}" style="display:inline-block;padding:12px 18px;border-radius:8px;background:#C87878;color:#fff;text-decoration:none;font-weight:600;">
       Задать новый пароль
     </a>
   </p>
   <p style="font-size:13px;line-height:1.6;color:#5F5F67;margin:0 0 16px;">
     Если кнопка не открывается, скопируйте ссылку:<br/>
-    <span style="word-break:break-all;">${resetUrl}</span>
+    <span style="word-break:break-all;">${safeResetUrl}</span>
   </p>
   <p style="font-size:13px;line-height:1.6;color:#5F5F67;margin:0;">
     Ссылка действительна 1 час. Если вы не запрашивали сброс, просто проигнорируйте это письмо.

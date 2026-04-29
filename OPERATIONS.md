@@ -249,6 +249,7 @@ SSH-туннель.
 | `account_sessions` | `migrations/0007_account_sessions.sql` | session bearer-tokens, хранятся хешем; cookie `lc_session` |
 | `email_verifications` | `migrations/0008_email_verifications.sql` | single-use verify-email tokens (TTL 24h) |
 | `password_resets` | `migrations/0009_password_resets.sql` | single-use password-reset tokens (TTL 1h) |
+| `accounts.email` CHECK | `migrations/0010_accounts_email_normalized.sql` | DB-level enforcement: `email = lower(btrim(email))`. Любой bypass app-слоя получает constraint violation, не shadow account |
 | `_migrations` | служебная, создаётся runner'ом | bookkeeping применённых миграций |
 
 **Migration runner.** Схема теперь живёт в `migrations/NNNN_*.sql`. Накатить:

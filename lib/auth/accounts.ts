@@ -14,6 +14,16 @@ export type Account = {
 
 export type AccountRole = 'admin' | 'teacher' | 'student'
 
+// Single source of truth for the canonical email shape stored in accounts.
+// trim() catches the trailing-space class of duplicates (`user@example.com `
+// vs `user@example.com`). lower-case handles the standard variant. Every
+// read and every write goes through this helper. The DB enforces the same
+// invariant via a CHECK constraint (migrations/0010) so a bypass surfaces
+// as a constraint violation, not a shadow account.
+export function normalizeAccountEmail(email: string): string {
+  return email.trim().toLowerCase()
+}
+
 function rowToAccount(row: Record<string, unknown>): Account {
   return {
     id: String(row.id),
@@ -35,7 +45,7 @@ export async function getAccountByEmail(email: string): Promise<Account | null> 
   const result = await pool.query(
     `select id, email, password_hash, email_verified_at, disabled_at, created_at, updated_at
      from accounts where email = $1 limit 1`,
-    [email.toLowerCase()],
+    [normalizeAccountEmail(email)],
   )
   return result.rows[0] ? rowToAccount(result.rows[0]) : null
 }
@@ -59,7 +69,7 @@ export async function createAccount(params: {
   const result = await pool.query(
     `insert into accounts (id, email, password_hash) values ($1, $2, $3)
      returning id, email, password_hash, email_verified_at, disabled_at, created_at, updated_at`,
-    [id, params.email.toLowerCase(), params.passwordHash],
+    [id, normalizeAccountEmail(params.email), params.passwordHash],
   )
   return rowToAccount(result.rows[0])
 }

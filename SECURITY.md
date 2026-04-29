@@ -59,6 +59,20 @@ Security-контракт первой фазы кабинета. UI и `/api/au
   ловится при первом же sign-up, но всё равно явная угроза для запуска
   без письма. Гейт перенесём в `lib/payments/config.ts`-style assertion
   в Phase 1B одновременно с роутами.
+- email-нормализация: `lib/auth/accounts.ts.normalizeAccountEmail` =
+  `email.trim().toLowerCase()` на всех read/write путях. DB-level
+  CHECK в `migrations/0010_accounts_email_normalized.sql` ловит bypass
+  app-слоя (data migration, ручной psql), отвергая non-normalized
+  insert до того, как он создаст shadow account. UNIQUE-индекс на
+  `accounts.email` остаётся обычным — на нормализованных данных он
+  эквивалентен функциональному без оверхеда.
+- HTML-escape для transactional templates: `lib/email/escape.ts`
+  применяется к каждому динамическому значению (verify/reset URL),
+  даже если значение сегодня заведомо безопасно. Защита от того, что
+  завтра кто-то поменяет format токена на содержащий `"` или `<`.
+- single-use-tokens whitelist invariant: `tableFor(scope)` бросает
+  типизированную ошибку, если scope невалиден; SQL никогда не строится
+  на `undefined`-имени таблицы.
 
 ## Защищаемые активы
 

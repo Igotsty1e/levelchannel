@@ -15,8 +15,19 @@ Multi-phase build из `Output 2` (target architecture). Гостевой checko
   `limit_req_zone`, bind `127.0.0.1`, SSH hardening, подключить
   `migrate:up` в `levelchannel-autodeploy`.
 - **Phase 1A (auth foundation, backend only)** — выполнен: миграции
-  0005..0009, `lib/auth/`, `lib/email/` (Resend + console fallback),
-  unit-тесты на password / tokens / policy.
+  0005..0010, `lib/auth/`, `lib/email/` (Resend + console fallback),
+  unit-тесты на password / tokens / policy / escape / email-normalize.
+  Вшитые в эту фазу долги:
+  - hash versioning: `lib/auth/password.ts` пишет bcrypt без явного
+    version-stamp поля. Миграция на argon2id или повышение cost = forced
+    rehash на следующем входе пользователя — нужен `needsRehash()` check
+    в login flow до Phase 2.
+  - session cleanup: `account_sessions` без cron. Добавить в
+    `OPERATIONS.md §11` runbook `delete from account_sessions where
+    expires_at < now() - interval '7 days'` (по аналогии с
+    idempotency_records).
+  - common-password rejection (HIBP / breached lists) — пока политика
+    только "не all-digits". Для MVP ок, для public launch стоит добавить.
 - **Phase 1B (auth API routes)** — pending: `/api/auth/{register,login,
   logout,verify,reset-request,reset-confirm,me}` + rate-limit + origin
   check + idempotency-style replay-safety + production assertions

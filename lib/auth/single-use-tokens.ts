@@ -12,12 +12,23 @@ const TABLES: Record<SingleUseTokenScope, string> = {
   password_resets: 'password_resets',
 }
 
+// Defensive: TS already gates the scope, but a JS caller or any-cast bypass
+// would let scope be undefined and produce SQL against `undefined` — a 500
+// instead of a clear invariant error. Throw early with a typed message.
+function tableFor(scope: SingleUseTokenScope): string {
+  const table = TABLES[scope]
+  if (!table) {
+    throw new Error(`Unknown single-use token scope: ${String(scope)}`)
+  }
+  return table
+}
+
 export async function createSingleUseToken(
   scope: SingleUseTokenScope,
   accountId: string,
   ttlMs: number,
 ): Promise<{ token: string }> {
-  const table = TABLES[scope]
+  const table = tableFor(scope)
   const pool = getAuthPool()
   const { plain, hash } = mintToken()
   const expiresAt = new Date(Date.now() + ttlMs).toISOString()
@@ -33,7 +44,7 @@ export async function consumeSingleUseToken(
   token: string,
 ): Promise<{ accountId: string } | null> {
   if (!token) return null
-  const table = TABLES[scope]
+  const table = tableFor(scope)
   const hash = hashToken(token)
   const pool = getAuthPool()
   const client = await pool.connect()

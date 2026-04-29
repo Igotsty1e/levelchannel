@@ -1,8 +1,11 @@
 // Plain inline HTML, no template engine. Anything fancier (React Email,
 // MJML) is overkill for two transactional templates.
 
+import { escapeHtml } from '@/lib/email/escape'
+
 export function renderVerifyEmail(params: { verifyUrl: string }) {
   const { verifyUrl } = params
+  const safeVerifyUrl = escapeHtml(verifyUrl)
 
   const subject = 'Подтвердите e-mail для LevelChannel'
 
@@ -25,13 +28,13 @@ export function renderVerifyEmail(params: { verifyUrl: string }) {
     Вы регистрируетесь в кабинете LevelChannel. Чтобы подтвердить e-mail, откройте ссылку:
   </p>
   <p style="margin:0 0 16px;">
-    <a href="${verifyUrl}" style="display:inline-block;padding:12px 18px;border-radius:8px;background:#C87878;color:#fff;text-decoration:none;font-weight:600;">
+    <a href="${safeVerifyUrl}" style="display:inline-block;padding:12px 18px;border-radius:8px;background:#C87878;color:#fff;text-decoration:none;font-weight:600;">
       Подтвердить e-mail
     </a>
   </p>
   <p style="font-size:13px;line-height:1.6;color:#5F5F67;margin:0 0 16px;">
     Если кнопка не открывается, скопируйте ссылку:<br/>
-    <span style="word-break:break-all;">${verifyUrl}</span>
+    <span style="word-break:break-all;">${safeVerifyUrl}</span>
   </p>
   <p style="font-size:13px;line-height:1.6;color:#5F5F67;margin:0;">
     Ссылка действительна 24 часа. Если вы не запрашивали регистрацию, просто проигнорируйте это письмо.
