@@ -13,12 +13,24 @@
 
 ### Frontend
 
-- [`app/page.tsx`](/Users/ivankhanaev/LevelChannel/app/page.tsx) — главная страница
+- [`app/page.tsx`](/Users/ivankhanaev/LevelChannel/app/page.tsx) — главная страница (с `<Link href="/login">Войти</Link>` в nav)
 - [`components/payments/pricing-section.tsx`](/Users/ivankhanaev/LevelChannel/components/payments/pricing-section.tsx) — UI оплаты со свободной суммой и e-mail, обязательным checkbox согласия на обработку ПДн, созданием платежа, polling статуса, запуском widget, сохранением последнего успешного подтверждения на главной
 - [`app/thank-you/page.tsx`](/Users/ivankhanaev/LevelChannel/app/thank-you/page.tsx) — страница подтверждения оплаты
 - [`app/offer/page.tsx`](/Users/ivankhanaev/LevelChannel/app/offer/page.tsx) — публичная оферта
 - [`app/privacy/page.tsx`](/Users/ivankhanaev/LevelChannel/app/privacy/page.tsx) — политика в отношении обработки персональных данных
 - [`app/consent/personal-data/page.tsx`](/Users/ivankhanaev/LevelChannel/app/consent/personal-data/page.tsx) — отдельный текст согласия на обработку персональных данных
+- [`app/register/page.tsx`](/Users/ivankhanaev/LevelChannel/app/register/page.tsx) — регистрация (Phase 2): email + пароль + 152-ФЗ согласие → `POST /api/auth/register`, успех → `/verify-pending`
+- [`app/verify-pending/page.tsx`](/Users/ivankhanaev/LevelChannel/app/verify-pending/page.tsx) — info-страница после регистрации
+- [`app/login/page.tsx`](/Users/ivankhanaev/LevelChannel/app/login/page.tsx) — вход (Phase 2): email + пароль → `POST /api/auth/login`, успех → `/cabinet`
+- [`app/forgot/page.tsx`](/Users/ivankhanaev/LevelChannel/app/forgot/page.tsx) — запрос сброса пароля (Phase 2): нейтральная confirmation всегда (anti-enumeration)
+- [`app/reset/page.tsx`](/Users/ivankhanaev/LevelChannel/app/reset/page.tsx) — установка нового пароля по токену из URL (Phase 2): после успеха `mech-5` уже создал новую сессию
+- [`app/cabinet/page.tsx`](/Users/ivankhanaev/LevelChannel/app/cabinet/page.tsx) — server-side gate (Phase 2): прямой `lookupSession` через cookie, 307 на `/login` без сессии. Содержание — placeholder «Кабинет в разработке»
+- [`app/cabinet/logout-button.tsx`](/Users/ivankhanaev/LevelChannel/app/cabinet/logout-button.tsx) — client island: `POST /api/auth/logout` + redirect на `/`
+- [`app/verify-failed/page.tsx`](/Users/ivankhanaev/LevelChannel/app/verify-failed/page.tsx) — styled UI для истёкшей/использованной verify-ссылки (Phase 2 заменил Phase 1B placeholder)
+- [`components/site-header.tsx`](/Users/ivankhanaev/LevelChannel/components/site-header.tsx) — sticky header для auth/legal страниц с `useEffect → fetch /api/auth/me` и переключением «Войти» ↔ «Кабинет»
+- [`components/auth-shell.tsx`](/Users/ivankhanaev/LevelChannel/components/auth-shell.tsx) — общая chrome-обёртка для auth страниц (header + центрированная колонка)
+- [`components/auth-form-bits.tsx`](/Users/ivankhanaev/LevelChannel/components/auth-form-bits.tsx) — shared `AuthField`, `AuthErrorBox`, `AuthInfoBox`, `authInputStyle` для 4 форм
+- [`lib/auth/client.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/client.ts) — браузерный `postAuthJson` helper: единый JSON-shape, нормализация ошибок, обработка 429
 
 ### Payment domain
 
