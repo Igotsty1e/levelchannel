@@ -103,6 +103,7 @@ Auth-контур уже живёт в коде: есть таблицы, `lib/a
 | Silent password rehash on successful login when stored hash is below current cost | [`tests/integration/auth/login.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/login.test.ts) (`silently upgrades a legacy lower-cost password hash`) |
 | Payment route create + idempotency replay + amount/consent rejection (mock provider, postgres backend) | [`tests/integration/payment/payment-routes.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/payment/payment-routes.test.ts) |
 | Payment route cancel + mock-confirm transitions, audit events written for each | [`tests/integration/payment/payment-routes.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/payment/payment-routes.test.ts) |
+| CloudPayments Pay/Fail webhooks: HMAC verify, validation, status transitions, audit phases | [`tests/integration/payment/webhooks.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/payment/webhooks.test.ts) (test-side HMAC via [`tests/integration/payment/sign.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/payment/sign.ts)) |
 
 ### Audit log (payment lifecycle)
 
