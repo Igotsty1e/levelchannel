@@ -57,14 +57,23 @@ Backend-only слой для будущего кабинета. UI и API-роу
 - [`lib/auth/sessions.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/sessions.ts) — create / lookup / revoke + cookie helpers (`lc_session`, HttpOnly + SameSite=Lax + Secure в проде)
 - [`lib/auth/single-use-tokens.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/single-use-tokens.ts) — общий store для verify-email и password-reset (whitelist scope в SQL)
 - [`lib/auth/verifications.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/verifications.ts), [`lib/auth/resets.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/resets.ts) — thin wrappers с TTL
+- [`lib/auth/consents.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/consents.ts) — store ops для `account_consents` (recordConsent / listAccountConsents / getLatestConsent). Phase 1B D2.
+- [`lib/auth/dummy-hash.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/dummy-hash.ts) — module-load bcrypt-хешированный dummy + `constantTimeVerifyPassword`. Закрывает email-enumeration через timing на login (Phase 1B D3).
+- [`lib/auth/email-hash.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/email-hash.ts) — HMAC-keyed sha256 нормализованного email через `AUTH_RATE_LIMIT_SECRET` для per-email rate-limit scope keys. Не reuse `TELEMETRY_HASH_SECRET` — разные trust boundaries (Phase 1B mech-3).
 
 ### Email transport
 
-- [`lib/email/config.ts`](/Users/ivankhanaev/LevelChannel/lib/email/config.ts) — `RESEND_API_KEY` + `EMAIL_FROM`. Если ключ пустой — console fallback.
+- [`lib/email/config.ts`](/Users/ivankhanaev/LevelChannel/lib/email/config.ts) — `RESEND_API_KEY` + `EMAIL_FROM`. Если ключ пустой — console fallback. **Production assertions at module load:** `RESEND_API_KEY` и `AUTH_RATE_LIMIT_SECRET` обязательны при `NODE_ENV=production` — boot аборт если пусты.
 - [`lib/email/client.ts`](/Users/ivankhanaev/LevelChannel/lib/email/client.ts) — Resend SDK + dev console writer.
 - [`lib/email/escape.ts`](/Users/ivankhanaev/LevelChannel/lib/email/escape.ts) — `escapeHtml` для динамических значений в шаблонах (5 опасных символов).
-- [`lib/email/templates/verify.ts`](/Users/ivankhanaev/LevelChannel/lib/email/templates/verify.ts), [`lib/email/templates/reset.ts`](/Users/ivankhanaev/LevelChannel/lib/email/templates/reset.ts) — inline HTML + plain text, RU. URL пропускается через `escapeHtml` перед интерполяцией.
-- [`lib/email/dispatch.ts`](/Users/ivankhanaev/LevelChannel/lib/email/dispatch.ts) — `sendVerifyEmail`, `sendResetEmail` с URL построением через `paymentConfig.siteUrl`.
+- [`lib/email/templates/verify.ts`](/Users/ivankhanaev/LevelChannel/lib/email/templates/verify.ts), [`lib/email/templates/reset.ts`](/Users/ivankhanaev/LevelChannel/lib/email/templates/reset.ts), [`lib/email/templates/already-registered.ts`](/Users/ivankhanaev/LevelChannel/lib/email/templates/already-registered.ts) — inline HTML + plain text, RU. URL пропускается через `escapeHtml`. `already-registered` для existing-email path в register flow (Phase 1B D1 timing parity).
+- [`lib/email/dispatch.ts`](/Users/ivankhanaev/LevelChannel/lib/email/dispatch.ts) — `sendVerifyEmail`, `sendResetEmail`, `sendAlreadyRegisteredEmail`. URLs построены через `paymentConfig.siteUrl`.
+
+### Test infrastructure (integration)
+
+- [`docker-compose.test.yml`](/Users/ivankhanaev/LevelChannel/docker-compose.test.yml) — `postgres:16.13` service на `127.0.0.1:54329`, tmpfs storage. Точное соответствие prod (Phase 1B D5).
+- [`scripts/test-integration.sh`](/Users/ivankhanaev/LevelChannel/scripts/test-integration.sh) — bring up → wait → migrate:up → vitest → tear down. `npm run test:integration`.
+- [`vitest.integration.config.ts`](/Users/ivankhanaev/LevelChannel/vitest.integration.config.ts) — отдельный config; tests/integration/**/*.test.ts. Unit `npm run test:run` остаётся быстрым и без Docker dep.
 
 ### Schema migrations
 

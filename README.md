@@ -51,8 +51,9 @@ npm run start
 - `TELEMETRY_HASH_SECRET=...`
 - `CLOUDPAYMENTS_PUBLIC_ID=...`
 - `CLOUDPAYMENTS_API_SECRET=...`
-- `RESEND_API_KEY=...` (transactional email; empty → console fallback in dev)
+- `RESEND_API_KEY=...` (transactional email; empty → console fallback in dev; **boot fails in prod if empty**)
 - `EMAIL_FROM="LevelChannel <noreply@levelchannel.ru>"`
+- `AUTH_RATE_LIMIT_SECRET=...` (HMAC key для per-email rate-limit scopes; 32+ chars; **boot fails in prod if empty**)
 
 ## Основные маршруты
 
