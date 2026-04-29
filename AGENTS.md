@@ -274,6 +274,7 @@ English-tutoring sessions, with server-side CloudPayments integration.
 | Doc | When to read |
 |---|---|
 | `README.md` | First time orienting. Stack, quick-start, env vars. |
+| `OPERATIONS.md` | Before any deploy / restart / DB op / log dive. Where the server is, how a commit reaches prod, runbook for common ops, incident playbook. |
 | `ARCHITECTURE.md` | Before any structural change. File-by-file map. |
 | `SECURITY.md` | Before any change to `lib/security/`, `next.config.js`, webhook handling, or rate limiting. |
 | `PAYMENTS_SETUP.md` | Before changing the payment provider switch, env-var contract, or webhook URL setup. |

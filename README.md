@@ -73,9 +73,11 @@ Payment API:
 
 ## Документация
 
-- [ARCHITECTURE.md](/Users/ivankhanaev/LevelChannel/ARCHITECTURE.md)
-- [SECURITY.md](/Users/ivankhanaev/LevelChannel/SECURITY.md)
-- [PAYMENTS_SETUP.md](/Users/ivankhanaev/LevelChannel/PAYMENTS_SETUP.md)
+- [ARCHITECTURE.md](/Users/ivankhanaev/LevelChannel/ARCHITECTURE.md) — file-by-file карта кода
+- [OPERATIONS.md](/Users/ivankhanaev/LevelChannel/OPERATIONS.md) — где сервер, как деплоим, git, БД, runbook
+- [SECURITY.md](/Users/ivankhanaev/LevelChannel/SECURITY.md) — hardening + threat model
+- [PAYMENTS_SETUP.md](/Users/ivankhanaev/LevelChannel/PAYMENTS_SETUP.md) — CloudPayments, one-click, 3DS, health
+- [AGENTS.md](/Users/ivankhanaev/LevelChannel/AGENTS.md) — operating guide для ИИ-агентов
 - [ROADMAP.md](/Users/ivankhanaev/LevelChannel/ROADMAP.md)
 - [PRD.md](/Users/ivankhanaev/LevelChannel/PRD.md) — исторический продуктовый документ первой версии
 
