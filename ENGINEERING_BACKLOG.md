@@ -60,7 +60,7 @@ owner-docs и git history важнее старых chat outputs.
 
 - ~~добавить password hash versioning + `needsRehash()` путь для будущей смены cost / алгоритма~~ — **закрыто 2026-04-29**: `passwordNeedsRehash()` в `lib/auth/password.ts` парсит cost из bcrypt prefix; login route после `verifyPassword` silently re-hash'ит и `setAccountPassword`. Best-effort (warn + продолжает на ошибке БД). Покрыто unit + integration тестами. Будущая миграция на argon2id — обновить regex одновременно с введением нового хешера, иначе все login'ы будут перехешировать каждый раз
 - ~~добавить cleanup для истёкших `account_sessions`~~ — **shipped 2026-04-29**: вошло в `scripts/db-retention-cleanup.mjs` (см. выше)
-- добавить common-password rejection (HIBP / breached list или локальный denylist)
+- ~~добавить common-password rejection~~ — **закрыто 2026-04-29**: локальный denylist в `lib/auth/common-passwords.ts` (~100 топ-utечек), normalize'ит case + whitespace; `validatePasswordPolicy` возвращает `too_common`. HIBP k-anonymity API — расширение если понадобится дальше
 
 ## P2
 
