@@ -124,18 +124,21 @@ Security-контракт первой фазы кабинета. UI и `/api/au
 - нет централизованного audit log storage
 - нет Sentry / alerting / intrusion visibility
 
-## Известные server-side hardening долги (production VPS)
+## Phase 0 server-side hardening — закрыт 2026-04-29
 
-Найдены в ходе аудита 2026-04-29. Краткосрочно прикрыты `ufw`, который
-пропускает наружу только `22/80/443/10050`, но это митигация, не решение.
+Все пять пунктов аудита 2026-04-29 выполнены. Эффективное состояние:
 
-| Что | Текущее | Должно быть | Риск |
-|---|---|---|---|
-| `PermitRootLogin` | `yes` | `prohibit-password` или `no` | прямой root по SSH |
-| `PasswordAuthentication` | `yes` | `no` (только ключи) | brute-force на 22 порт |
-| Bind `next start` | `*:3000` | `127.0.0.1:3000` | при ошибке firewall — голое приложение в интернете без TLS |
-| nginx rate limiting | отсутствует (только app-level in-memory) | `limit_req_zone` на mutation роутах | DDoS на `/api/payments/*` пробивает к Node |
-| Backup БД | не настроен | ежедневный `pg_dump`, retention 14+ дней | при отказе диска — потеря всех платёжных записей |
+| Что | Было | Сейчас |
+|---|---|---|
+| `PermitRootLogin` | `yes` | `prohibit-password` (только publickey для root) |
+| `PasswordAuthentication` | `yes` (через cloud-init override) | `no` — cloud-init override переписан на `PasswordAuthentication no` |
+| Bind `next start` | `*:3000` | `127.0.0.1:3000` (через `--hostname 127.0.0.1 --port 3000` в systemd unit) |
+| nginx rate limiting | отсутствует | `limit_req_zone lcapi 30r/m burst=20 nodelay` на `/api/*`. CP webhooks (`^~ /api/payments/webhooks/`) исключены — HMAC + amount cross-check там единственный trust boundary |
+| Backup БД | не настроен | ежедневный `pg_dump --no-owner --no-acl --clean --if-exists` в `__LEVELCHANNEL_BACKUP_DIR__/db-YYYY-MM-DD.sql.gz`, retention 14d, perms 600 + dir 700, restore drill пройден |
+
+Backup'ы исходных конфигов на проде сохранены с суффиксом `.bak-<timestamp>`
+для быстрого rollback. Детали и runbook — `OPERATIONS.md §3` (SSH/systemd)
+и `§13` (статус долгов).
 
 Конкретные шаги по оставшимся пунктам — в `OPERATIONS.md §6` (deploy,
 rollback, проверка timer'а) и `§13` (SSH hardening, app binding).
@@ -144,13 +147,12 @@ rollback, проверка timer'а) и `§13` (SSH hardening, app binding).
 
 ### Infra
 
-- только HTTPS
-- reverse proxy: `nginx` или `caddy`
-- firewall: открыть только `80/443` и управляемый `SSH`
-- вход по SSH только по ключам
-- отключить password auth для SSH
-- systemd service с restart policy
-- log rotation
+- только HTTPS — выполнено (Let's Encrypt + auto-renew)
+- reverse proxy: `nginx` — выполнено
+- firewall (ufw): открыто `22/80/443` + `10050/tcp` — выполнено
+- SSH publickey-only — **выполнено 2026-04-29** (PasswordAuthentication no, PermitRootLogin prohibit-password)
+- systemd service с restart policy — выполнено (`Restart=always RestartSec=5`)
+- log rotation — стандартный `journald` rotation, sufficient для текущего объёма
 
 ### App
 

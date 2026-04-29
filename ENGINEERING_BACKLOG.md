@@ -10,10 +10,13 @@
 Multi-phase build из `Output 2` (target architecture). Гостевой checkout
 не трогается — все фазы additive. План пофазно:
 
-- **Phase 0 (stabilization)** — частично выполнен: `migrations/` runner +
-  миграции 0001..0004. Остаётся: pg_dump cron + restore drill, nginx
-  `limit_req_zone`, bind `127.0.0.1`, SSH hardening, подключить
-  `migrate:up` в `levelchannel-autodeploy`.
+- **Phase 0 (stabilization)** — **закрыт 2026-04-29**: `migrations/`
+  runner + 10 миграций накатаны на прод; ежедневный `pg_dump` cron +
+  restore drill пройден; nginx `limit_req_zone` на `/api/*` (webhooks
+  исключены); bind `127.0.0.1:3000`; SSH hardening
+  (`PermitRootLogin prohibit-password` + `PasswordAuthentication no`);
+  `npm run migrate:up` подключён в `__LEVELCHANNEL_AUTODEPLOY__`
+  между `npm run build` и swap.
 - **Phase 1A (auth foundation, backend only)** — выполнен: миграции
   0005..0010, `lib/auth/`, `lib/email/` (Resend + console fallback),
   unit-тесты на password / tokens / policy / escape / email-normalize.
@@ -46,13 +49,11 @@ Multi-phase build из `Output 2` (target architecture). Гостевой checko
 ### Production reliability
 
 - подключить uptime / failure alerting на приложение и webhook-контур
-- настроить и проверить регулярный backup + restore drill для Postgres
 - добавить сигнал о неуспешном git-based deploy или зависшем `levelchannel-autodeploy`
 
 ### Security and payment safety
 
-- добавить reverse-proxy rate limiting поверх app-level limiter
-- вынести rate limiter в shared backend store для multi-instance future
+- вынести app-level rate limiter в shared backend store для multi-instance future (nginx `limit_req` уже на месте, app-level дополняет per-route семантикой)
 - добавить отдельный audit log persistence для критичных payment transitions
 
 ## P1
