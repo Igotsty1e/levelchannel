@@ -10,14 +10,11 @@ Single source of truth по инфраструктуре, деплою, git work
 > как полагаться на этот раздел". Эти маркеры рассчитаны на то, что их
 > заменят на реальные хосты/пути/имена.
 
-> **⚠ Production drift (зафиксировано аудитом 2026-04-29):** на сервере
-> `/var/www/levelchannel` НЕ является git-репозиторием, и его содержимое
-> отстаёт от `origin/main` минимум на 5 коммитов (legal-блок + opt-in
-> tokens + one-click + 3DS + idempotency + telemetry-postgres + health +
-> tests + docs). На проде сейчас работает версия от 28 апреля. Деплой
-> делается через прямой upload (scp / rsync с локальной машины), не через
-> `git pull`. Перед любой работой с прод-инцидентами помни: код там
-> другой. См. §6 для процедуры догнать.
+> Прод по-прежнему деплоится manual upload'ом, а `/var/www/levelchannel`
+> остаётся НЕ git-репозиторием. Поэтому перед любым инцидентом или ручным
+> изменением на сервере сначала сверяй текущий продовый SHA через
+> `/var/www/levelchannel/DEPLOYED_SHA` и затем сравнивай его с `origin/main`.
+> См. §6 для процедуры выката и проверки.
 
 ---
 
@@ -42,7 +39,7 @@ Single source of truth по инфраструктуре, деплою, git work
 | Онлайн-касса | CloudKassir (входит в CloudPayments) | <!-- FILL IN: статус ОФД --> |
 | Логи | `journalctl -u levelchannel`, `/var/log/nginx/access.log`, `/var/log/nginx/error.log` | см. §8 |
 | Бэкапы БД | **не настроены** | см. §13 |
-| Uptime monitor | **не настроен** | подключай на `/api/health` (после деплоя — сейчас 404) |
+| Uptime monitor | **не настроен** | подключай на `/api/health` |
 | Error tracking | не подключено (Sentry в roadmap) | — |
 | External monitoring | Zabbix agent на `:10050` (от Timeweb) | внутренние метрики хоста, не приложения |
 
@@ -342,6 +339,27 @@ gunzip -c /var/backups/levelchannel/db-2026-04-29.sql.gz | head -100
 gunzip -c /var/backups/levelchannel/db-2026-04-29.sql.gz | psql "$RECOVERY_DATABASE_URL"
 ```
 
+### Retention и удаление персональных данных
+
+Минимальная операционная политика хранения для текущего контура:
+
+| Категория данных | Где хранится | Срок |
+|---|---|---|
+| Оплаченные заказы, статусы оплаты, webhook events, proof of consent | `payment_orders` | 5 лет после окончания отчётного года платежа |
+| Неоплаченные / отменённые / failed заказы без спора | `payment_orders` | до 30 дней |
+| Сохранённые токены карт | `payment_card_tokens` | до удаления пользователем, отзыва consent на one-click или прекращения необходимости |
+| Checkout telemetry | `payment_telemetry` | до 90 дней |
+| ФИО / телефон / доп. e-mail из Telegram, Gmail, Edvibe, если они не вошли в бухгалтерские документы | внешние сервисы связи и внутренние рабочие записи | до завершения занятий и расчётов, затем до 30 дней |
+| Backup БД | `/var/backups/levelchannel` | 14 дней |
+
+Минимальная процедура удаления по запросу субъекта ПДн:
+
+1. Принять запрос на `igptstyle227@gmail.com` и зафиксировать дату получения.
+2. Проверить, какие данные ещё нужны для договора, налогового, бухгалтерского или платёжного учёта.
+3. Удалить или обезличить данные, по которым больше нет законного основания для хранения.
+4. Отдельно удалить переписку и вспомогательные записи в Telegram / Gmail / Edvibe, если они больше не нужны.
+5. Сохранить краткую внутреннюю отметку: кто удалял, что удалено, на каком основании и в какую дату.
+
 ---
 
 ## 6. Deploy
@@ -468,7 +486,7 @@ recovery.
 - [ ] локально: `npm run build` зелёный
 - [ ] на сервере: `df -h /` — есть как минимум 2GB свободного
 - [ ] на сервере: `pg_isready` отвечает ok
-- [ ] изменения в env? — обновил env-файл на сервере ДО pull
+- [ ] изменения в env? — обновил env-файл на сервере ДО рестарта приложения
 - [ ] миграции? — все миграции у нас сейчас идемпотентные `create table if not exists`, схема обновится сама на первом запросе
 
 ### Post-deploy smoke test
@@ -490,13 +508,29 @@ curl -s -X POST https://<домен>/api/payments/webhooks/cloudpayments/check \
 ### Rollback
 
 ```bash
-# на сервере
-cd /opt/levelchannel
-git log --oneline -10                       # найди предыдущий хороший SHA
-git reset --hard <SHA>                      # ВНИМАНИЕ: только если SHA уже был задеплоен раньше
+# локально
+cd ~/LevelChannel
+git checkout <previous-sha>                 # sha из DEPLOYED_SHA / локального git log
 npm ci
 npm run build
-sudo systemctl restart levelchannel
+rsync -avz --delete \
+  --exclude='.git/' \
+  --exclude='.next/cache/' \
+  --exclude='data/' \
+  --exclude='tests/' \
+  --exclude='vitest.config.ts' \
+  --exclude='.env' \
+  --exclude='.env.local' \
+  --exclude='.DS_Store' \
+  -e "ssh -i ~/.ssh/levelchannel_timeweb_ed25519" \
+  ./ root@83.217.202.136:/var/www/levelchannel/
+
+ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
+  chown -R levelchannel:levelchannel /var/www/levelchannel
+  systemctl restart levelchannel
+'
+
+git checkout main
 ```
 
 Если rollback вызывает несовместимость со схемой БД — миграции у нас
@@ -798,44 +832,35 @@ ss -tlnp | grep :3000        # убедись, что binding 127.0.0.1, не *
 - автоматизировать deploy (webhook-скрипт или GitHub Actions через SSH)
 - зафиксировать ротацию `CLOUDPAYMENTS_API_SECRET` (раз в N месяцев или по событию)
 - добавить `nginx limit_req_zone` (если в текущем конфиге его нет)
-- backup retention 14 дней — мало для бухгалтерии. По 152-ФЗ персональные
-  данные надо хранить только пока цель обработки актуальна, но платёжные
-  записи нужны для налоговой минимум 5 лет — продумай отдельный архив
+- backup retention 14 дней не заменяет отдельный архивный контур. По
+  152-ФЗ персональные данные надо хранить только пока цель обработки
+  актуальна, а платёжные записи и связанные доказательства согласия
+  должны оставаться доступными в основной БД и рабочих архивах весь
+  обязательный срок хранения
 
 ### git ↔ prod синхронизация
 
-Текущее состояние (на 2026-04-29): `/var/www/levelchannel` **не git-репо**,
-файлы датированы 28 апреля, отстают от `origin/main` на 5+ коммитов:
+`/var/www/levelchannel` по-прежнему **не git-репо**, поэтому всегда
+проверяй, какой именно коммит сейчас крутится в проде.
 
-- `12ac8e7` chore(deps): add vitest, bump tsconfig target
-- `b3dedcc` feat(payments): opt-in tokens, one-click + 3-D Secure, idempotency, telemetry, health
-- `7b1f1bc` test: vitest with 87% coverage
-- `73a0d0e` docs: refresh AGENTS, ARCHITECTURE, PAYMENTS_SETUP, SECURITY
-- `98f7219` feat(legal): add personal data consent flow
-- `88d7959` docs: add OPERATIONS.md
-- `ecb40b2` docs: fill OPERATIONS with real prod facts
-
-То есть на проде НЕТ:
-- legal/personal-data consent capture (на проде сайт принимает платежи без
-  записи согласия — это юридический долг под 152-ФЗ);
-- one-click + 3DS + saved-card endpoints;
-- idempotency на money-роутах;
-- health endpoint (`/api/health` отвечает 404);
-- postgres-таблицы `payment_card_tokens`, `payment_telemetry`,
-  `idempotency_records` (создадутся автоматически при первом hit
-  соответствующего кода после деплоя).
-
-**Как проверить расхождение в любой момент:**
+**Как проверить текущий state в любой момент:**
 
 ```bash
 ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
-  ls /var/www/levelchannel/lib/legal/ 2>/dev/null && echo "legal: present" || echo "legal: MISSING"
-  ls /var/www/levelchannel/app/api/health/ 2>/dev/null && echo "health: present" || echo "health: MISSING"
-  ls /var/www/levelchannel/lib/payments/cloudpayments-api.ts 2>/dev/null && echo "one-click: present" || echo "one-click: MISSING"
   cat /var/www/levelchannel/DEPLOYED_SHA 2>/dev/null || echo "DEPLOYED_SHA not written yet"
+  curl -s http://127.0.0.1:3000/api/health
 '
 ```
 
-**Что делать:** прогнать процедуру деплоя из §6. После первого успешного
-деплоя — желательно превратить `/var/www/levelchannel` в git-checkout
+Потом локально:
+
+```bash
+cd ~/LevelChannel
+git fetch origin main
+git rev-parse origin/main
+```
+
+Если SHA не совпадают, прод отстал от `main` и нужно прогнать процедуру
+деплоя из §6. Следующий шаг после стабилизации, превратить
+`/var/www/levelchannel` в git-checkout
 (см. там же), чтобы дальше иметь честный аудит.

@@ -96,9 +96,9 @@ Payment API:
 ## Что важно помнить
 
 - файловый storage остаётся fallback-режимом, production-целевой backend теперь `PostgreSQL`
-- боевой CloudPayments flow ещё не прогнан до конца, потому что нет рабочего production deploy + webhook setup
+- боевой CloudPayments flow уже работает на VPS, но deploy по-прежнему manual и требует сверки `DEPLOYED_SHA`
 - mock confirm должен оставаться выключенным в production
 
 ## Рекомендуемый следующий шаг
 
-Поднять и включить `PostgreSQL` в `.env`, прогнать миграцию заказов, затем проверить реальный end-to-end тест widget flow, webhook'ов и отправки чеков через CloudKassir.
+Закрыть операционные долги production-контура: настроить backup и retention policy, uptime monitor на `/api/health`, SSH hardening и более надёжный deploy-процесс вместо ручного rsync.
