@@ -8,6 +8,7 @@ import {
   buildCloudPaymentsWidgetIntent,
   createCloudPaymentsOrder,
 } from '@/lib/payments/cloudpayments'
+import type { PersonalDataConsentSnapshot } from '@/lib/legal/personal-data'
 import { paymentConfig } from '@/lib/payments/config'
 import { createMockOrder } from '@/lib/payments/mock'
 import {
@@ -86,7 +87,10 @@ export function toPublicOrder(order: PaymentOrder): PublicPaymentOrder {
 export async function createPayment(
   amountRub: number,
   customerEmail: string,
-  options: { rememberCard?: boolean } = {},
+  options: {
+    rememberCard?: boolean
+    personalDataConsent: PersonalDataConsentSnapshot
+  },
 ) {
   let order: PaymentOrder
   let checkoutIntent: CloudPaymentsWidgetIntent | null = null
@@ -95,10 +99,13 @@ export async function createPayment(
     const invoiceId = `lc_${randomUUID().replace(/-/g, '').slice(0, 18)}`
     order = createCloudPaymentsOrder(amountRub, customerEmail, invoiceId, {
       rememberCard: Boolean(options.rememberCard),
+      personalDataConsent: options.personalDataConsent,
     })
     checkoutIntent = buildCloudPaymentsWidgetIntent(order)
   } else {
-    order = createMockOrder(amountRub, customerEmail)
+    order = createMockOrder(amountRub, customerEmail, {
+      personalDataConsent: options.personalDataConsent,
+    })
   }
 
   await createOrder(order)
@@ -221,6 +228,7 @@ export async function chargeWithSavedCard(params: {
   amountRub: number
   customerEmail: string
   ipAddress?: string
+  personalDataConsent: PersonalDataConsentSnapshot
 }): Promise<ChargeWithSavedCardOutcome> {
   if (paymentConfig.provider !== 'cloudpayments') {
     return { kind: 'no_saved_card' }
@@ -237,6 +245,7 @@ export async function chargeWithSavedCard(params: {
     params.amountRub,
     params.customerEmail,
     invoiceId,
+    { personalDataConsent: params.personalDataConsent },
   )
 
   const orderWithMetadata: PaymentOrder = {

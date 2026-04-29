@@ -4,6 +4,7 @@ import {
   PAYMENT_ITEM_NAME,
 } from '@/lib/payments/catalog'
 import { isCloudPaymentsConfigured, paymentConfig } from '@/lib/payments/config'
+import type { PersonalDataConsentSnapshot } from '@/lib/legal/personal-data'
 import type {
   CloudPaymentsWidgetIntent,
   PaymentOrder,
@@ -40,7 +41,11 @@ export function createCloudPaymentsOrder(
   amountRub: number,
   customerEmail: string,
   invoiceId: string,
-  options: { rememberCard?: boolean; source?: string } = {},
+  options: {
+    rememberCard?: boolean
+    source?: string
+    personalDataConsent?: PersonalDataConsentSnapshot
+  } = {},
 ): PaymentOrder {
   if (!isCloudPaymentsConfigured()) {
     throw new Error('CloudPayments credentials are not configured.')
@@ -66,8 +71,25 @@ export function createCloudPaymentsOrder(
     metadata: {
       source: options.source || 'widget',
       rememberCard: Boolean(options.rememberCard),
+      personalDataConsent: options.personalDataConsent,
     },
     events: [
+      ...(options.personalDataConsent
+        ? [
+            {
+              type: 'legal.personal_data_consent_accepted',
+              at: options.personalDataConsent.acceptedAt,
+              payload: {
+                documentVersion: options.personalDataConsent.documentVersion,
+                documentPath: options.personalDataConsent.documentPath,
+                policyPath: options.personalDataConsent.policyPath,
+                source: options.personalDataConsent.source,
+                ipAddress: options.personalDataConsent.ipAddress,
+                userAgent: options.personalDataConsent.userAgent,
+              },
+            },
+          ]
+        : []),
       {
         type: 'order.created',
         at: now,

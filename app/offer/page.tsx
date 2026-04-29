@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 
+import { PERSONAL_DATA_CONSENT_PATH } from '@/lib/legal/personal-data'
+
 export const metadata: Metadata = {
   title: 'Публичная оферта — LevelChannel',
   description: 'Публичная оферта о заключении договора оказания образовательных услуг. ИП Фирсова Анастасия Геннадьевна.',
@@ -148,9 +150,9 @@ export default function OfferPage() {
           </Section>
 
           <Section num="9" title="Персональные данные">
-            <P>При оплате сайт обрабатывает минимально необходимые данные заказа, включая e-mail плательщика, сумму и номер платежа.</P>
-            <P>Коммуникация осуществляется через сторонние сервисы (Telegram), которые регулируют обработку данных самостоятельно.</P>
-            <P>Платёжные данные банковской карты обрабатываются исключительно платёжным провайдером CloudPayments.</P>
+            <P>При оплате сайт обрабатывает минимально необходимые данные заказа, включая e-mail плательщика, сумму, номер платежа, статус оплаты, а также технические данные подтверждения согласия на обработку персональных данных.</P>
+            <P>После первичного контакта и оплаты Заказчик может дополнительно сообщить Исполнителю фамилию, имя, отчество, номер телефона и иные данные, необходимые для связи, записи, переноса и оказания услуг.</P>
+            <P>Платёжные данные банковской карты обрабатываются исключительно платёжным провайдером CloudPayments. Текст согласия на обработку персональных данных размещён по адресу <Link href={PERSONAL_DATA_CONSENT_PATH} style={{ color: '#E89A90' }}>{PERSONAL_DATA_CONSENT_PATH}</Link>.</P>
           </Section>
 
           <Section num="10" title="Срок действия и расторжение">
@@ -189,9 +191,14 @@ export default function OfferPage() {
         {/* Footer note */}
         <div style={{ marginTop: 48, paddingTop: 32, borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexWrap: 'wrap', gap: 16, justifyContent: 'space-between', alignItems: 'center' }}>
           <p style={{ fontSize: 13, color: '#52525B' }}>© 2025 LevelChannel. Все права защищены.</p>
-          <Link href="/privacy" style={{ fontSize: 13, color: '#A1A1AA', textDecoration: 'none' }}>
-            Политика конфиденциальности
-          </Link>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+            <Link href="/privacy" style={{ fontSize: 13, color: '#A1A1AA', textDecoration: 'none' }}>
+              Политика персональных данных
+            </Link>
+            <Link href={PERSONAL_DATA_CONSENT_PATH} style={{ fontSize: 13, color: '#A1A1AA', textDecoration: 'none' }}>
+              Согласие на обработку ПДн
+            </Link>
+          </div>
         </div>
       </div>
     </div>

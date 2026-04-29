@@ -3,7 +3,7 @@
 Текущее состояние на 28 апреля 2026:
 
 - фронтенд уже подключён к `/api/payments`;
-- пользователь вводит `сумму + e-mail`, после чего запускается CloudPayments Widget;
+- пользователь вводит `сумму + e-mail`, подтверждает отдельное согласие на обработку ПДн, после чего запускается CloudPayments Widget;
 - провайдер по умолчанию: `mock`;
 - storage backend по умолчанию: `file`;
 - реальный режим CloudPayments включается через `.env`.
@@ -26,6 +26,8 @@
 - добавлены rate limiting, origin checks и HMAC verification для webhook'ов.
 - добавлены one-click платежи: `/api/payments/saved-card` и `/api/payments/charge-token`,
   токены сохраняются в `payment_card_tokens` после Pay-вебхука.
+- сервер сохраняет proof of consent в metadata заказа: timestamp, версия документа,
+  путь документа, IP и user-agent запроса.
 
 ## Что нужно для боевого включения
 

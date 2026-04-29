@@ -14,13 +14,15 @@
 ### Frontend
 
 - [`app/page.tsx`](/Users/ivankhanaev/LevelChannel/app/page.tsx) — главная страница
-- [`components/payments/pricing-section.tsx`](/Users/ivankhanaev/LevelChannel/components/payments/pricing-section.tsx) — UI оплаты со свободной суммой и e-mail, создание платежа, polling статуса, запуск widget, сохранение последнего успешного подтверждения на главной
+- [`components/payments/pricing-section.tsx`](/Users/ivankhanaev/LevelChannel/components/payments/pricing-section.tsx) — UI оплаты со свободной суммой и e-mail, обязательным checkbox согласия на обработку ПДн, созданием платежа, polling статуса, запуском widget, сохранением последнего успешного подтверждения на главной
 - [`app/thank-you/page.tsx`](/Users/ivankhanaev/LevelChannel/app/thank-you/page.tsx) — страница подтверждения оплаты
 - [`app/offer/page.tsx`](/Users/ivankhanaev/LevelChannel/app/offer/page.tsx) — публичная оферта
-- [`app/privacy/page.tsx`](/Users/ivankhanaev/LevelChannel/app/privacy/page.tsx) — политика конфиденциальности
+- [`app/privacy/page.tsx`](/Users/ivankhanaev/LevelChannel/app/privacy/page.tsx) — политика в отношении обработки персональных данных
+- [`app/consent/personal-data/page.tsx`](/Users/ivankhanaev/LevelChannel/app/consent/personal-data/page.tsx) — отдельный текст согласия на обработку персональных данных
 
 ### Payment domain
 
+- [`lib/legal/personal-data.ts`](/Users/ivankhanaev/LevelChannel/lib/legal/personal-data.ts) — версия документов и server-side snapshot акцепта согласия
 - [`lib/payments/catalog.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/catalog.ts) — payment constraints, суммы и описание услуги
 - [`lib/payments/types.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/types.ts) — типы заказа и публичной модели
 - [`lib/payments/config.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/config.ts) — payment env config
@@ -88,12 +90,13 @@
 
 1. Пользователь вводит сумму и e-mail
 2. Frontend вызывает `POST /api/payments`
-3. Server создаёт внутренний `invoiceId`, order и widget intent
-4. Клиент запускает CloudPayments Widget поверх сайта
-5. В widget передаются `externalId`, `receiptEmail`, `receipt`, `userInfo.email`
-6. После оплаты CloudPayments отправляет webhook
-7. Server валидирует подпись, сумму и `AccountId`
-8. Клиент видит финальный статус через polling, страницу `/thank-you` и сохранённую success-карточку на главной после возврата
+3. Backend проверяет отдельное согласие на обработку ПДн и сохраняет proof of consent в metadata заказа
+4. Server создаёт внутренний `invoiceId`, order и widget intent
+5. Клиент запускает CloudPayments Widget поверх сайта
+6. В widget передаются `externalId`, `receiptEmail`, `receipt`, `userInfo.email`
+7. После оплаты CloudPayments отправляет webhook
+8. Server валидирует подпись, сумму и `AccountId`
+9. Клиент видит финальный статус через polling, страницу `/thank-you` и сохранённую success-карточку на главной после возврата
 
 ## Хранилище заказов
 

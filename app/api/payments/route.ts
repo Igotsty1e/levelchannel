@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { buildPersonalDataConsentSnapshot } from '@/lib/legal/personal-data'
 import {
   normalizeCustomerEmail,
   isValidPaymentAmount,
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
       amountRub?: number | string
       customerEmail?: string
       rememberCard?: boolean
+      personalDataConsentAccepted?: boolean
     }
 
     try {
@@ -86,11 +88,24 @@ export async function POST(request: Request) {
       }
     }
 
+    if (body.personalDataConsentAccepted !== true) {
+      return {
+        status: 400,
+        body: { error: 'Подтвердите согласие на обработку персональных данных.' },
+      }
+    }
+
     try {
       const { order, checkoutIntent } = await createPayment(
         amountRub,
         emailValidation.email,
-        { rememberCard: body.rememberCard === true },
+        {
+          rememberCard: body.rememberCard === true,
+          personalDataConsent: buildPersonalDataConsentSnapshot({
+            ipAddress: getClientIp(request),
+            userAgent: request.headers.get('user-agent') || undefined,
+          }),
+        },
       )
 
       return {

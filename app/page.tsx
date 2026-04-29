@@ -1012,7 +1012,20 @@ function Footer() {
                 onMouseEnter={(e) => ((e.target as HTMLElement).style.color = '#fff')}
                 onMouseLeave={(e) => ((e.target as HTMLElement).style.color = '#A1A1AA')}
               >
-                Политика конфиденциальности
+                Политика персональных данных
+              </Link>
+              <Link
+                href="/consent/personal-data"
+                style={{
+                  fontSize: 14,
+                  color: '#A1A1AA',
+                  textDecoration: 'none',
+                  transition: 'color 0.2s',
+                }}
+                onMouseEnter={(e) => ((e.target as HTMLElement).style.color = '#fff')}
+                onMouseLeave={(e) => ((e.target as HTMLElement).style.color = '#A1A1AA')}
+              >
+                Согласие на обработку ПДн
               </Link>
               <a
                 href={TELEGRAM_URL}

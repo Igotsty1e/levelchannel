@@ -8,6 +8,7 @@
 - сайт работает как Node.js-приложение, а не как static export
 - оплата уже встроена в UI и API
 - checkout работает по сценарию `свободная сумма + e-mail + CloudPayments popup widget`
+- перед созданием платежа пользователь обязан подтвердить отдельное согласие на обработку персональных данных
 - провайдер по умолчанию: `mock`
 - storage backend: `file` или `postgres`
 - реальный режим CloudPayments включается через `.env`
@@ -58,6 +59,7 @@ npm run start
 - `/`
 - `/offer`
 - `/privacy`
+- `/consent/personal-data`
 - `/thank-you`
 
 Payment API:
@@ -82,6 +84,7 @@ Payment API:
 - лендинг переведён на `Next.js 16`
 - подключён серверный контур для оплат
 - встроен CloudPayments card/widget flow с передачей `receiptEmail`
+- добавлена отдельная страница согласия на обработку персональных данных и серверная фиксация акцепта checkbox в заказе
 - добавлен mock-режим для локальной проверки checkout flow
 - подготовлены webhook'и CloudPayments
 - проведён дополнительный security hardening

@@ -5,6 +5,7 @@ import {
   validateCustomerEmail,
 } from '@/lib/payments/catalog'
 import { paymentConfig } from '@/lib/payments/config'
+import { buildPersonalDataConsentSnapshot } from '@/lib/legal/personal-data'
 import { chargeWithSavedCard } from '@/lib/payments/provider'
 import { appendCheckoutTelemetryEvent } from '@/lib/telemetry/store'
 import { withIdempotency } from '@/lib/security/idempotency'
@@ -44,7 +45,11 @@ export async function POST(request: Request) {
   const ip = getClientIp(request)
 
   return withIdempotency(request, 'payments:charge-token', rawBody, async () => {
-    let body: { amountRub?: number | string; customerEmail?: string }
+    let body: {
+      amountRub?: number | string
+      customerEmail?: string
+      personalDataConsentAccepted?: boolean
+    }
 
     try {
       body = rawBody ? JSON.parse(rawBody) : {}
@@ -81,10 +86,21 @@ export async function POST(request: Request) {
       }
     }
 
+    if (body.personalDataConsentAccepted !== true) {
+      return {
+        status: 400,
+        body: { error: 'Подтвердите согласие на обработку персональных данных.' },
+      }
+    }
+
     const result = await chargeWithSavedCard({
       amountRub,
       customerEmail: emailValidation.email,
       ipAddress: ip === 'unknown' ? undefined : ip,
+      personalDataConsent: buildPersonalDataConsentSnapshot({
+        ipAddress: ip === 'unknown' ? undefined : ip,
+        userAgent: request.headers.get('user-agent') || undefined,
+      }),
     })
 
     if (result.kind === 'no_saved_card') {

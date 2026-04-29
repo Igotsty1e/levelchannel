@@ -6,6 +6,10 @@ import { useRouter } from 'next/navigation'
 
 import { logCheckoutEvent } from '@/lib/analytics/client'
 import {
+  PERSONAL_DATA_CONSENT_LABEL,
+  PERSONAL_DATA_CONSENT_PATH,
+} from '@/lib/legal/personal-data'
+import {
   formatRubles,
   MAX_PAYMENT_AMOUNT_RUB,
   MIN_PAYMENT_AMOUNT_RUB,
@@ -218,6 +222,8 @@ export function PricingSection() {
   const [oneClickPending, setOneClickPending] = useState(false)
   // Карта по умолчанию НЕ запоминается. Чекбокс — opt-in.
   const [rememberCard, setRememberCard] = useState(false)
+  const [personalDataConsentAccepted, setPersonalDataConsentAccepted] = useState(false)
+  const [personalDataConsentTouched, setPersonalDataConsentTouched] = useState(false)
 
   const activeOrder = checkout.order
   const normalizedEmail = normalizeCustomerEmail(email)
@@ -232,6 +238,10 @@ export function PricingSection() {
       ? `Введите сумму от ${formatRubles(MIN_PAYMENT_AMOUNT_RUB)} до ${formatRubles(MAX_PAYMENT_AMOUNT_RUB)} ₽.`
       : null
   const emailError = emailTouched && !emailValidation.ok ? emailValidation.message : null
+  const personalDataConsentError =
+    personalDataConsentTouched && !personalDataConsentAccepted
+      ? 'Чтобы перейти к оплате, подтвердите согласие на обработку персональных данных.'
+      : null
   const emailHelperText = emailError
     ? emailError
     : 'На этот e-mail придёт электронный чек после успешной оплаты.'
@@ -372,6 +382,7 @@ export function PricingSection() {
     event.preventDefault()
     setAmountTouched(true)
     setEmailTouched(true)
+    setPersonalDataConsentTouched(true)
 
     void logCheckoutEvent({
       type: 'checkout_submit_clicked',
@@ -409,6 +420,15 @@ export function PricingSection() {
       return
     }
 
+    if (!personalDataConsentAccepted) {
+      setCheckout((current) => ({
+        ...current,
+        phase: 'idle',
+        error: 'Подтвердите согласие на обработку персональных данных.',
+      }))
+      return
+    }
+
     setCheckout((current) => ({
       ...current,
       phase: 'creating',
@@ -427,6 +447,7 @@ export function PricingSection() {
           amountRub,
           customerEmail: emailValidation.email,
           rememberCard,
+          personalDataConsentAccepted,
         }),
       })
 
@@ -553,6 +574,7 @@ export function PricingSection() {
   async function handleOneClick() {
     setAmountTouched(true)
     setEmailTouched(true)
+    setPersonalDataConsentTouched(true)
 
     if (!amountIsValid || !emailValidation.ok) {
       setCheckout((current) => ({
@@ -565,6 +587,14 @@ export function PricingSection() {
     }
 
     if (hasLockedPendingOrder) {
+      return
+    }
+
+    if (!personalDataConsentAccepted) {
+      setCheckout((current) => ({
+        ...current,
+        error: 'Подтвердите согласие на обработку персональных данных.',
+      }))
       return
     }
 
@@ -589,6 +619,7 @@ export function PricingSection() {
         body: JSON.stringify({
           amountRub: Number(amountRub),
           customerEmail: emailValidation.email,
+          personalDataConsentAccepted,
         }),
         cache: 'no-store',
       })
@@ -991,6 +1022,38 @@ export function PricingSection() {
               </label>
             ) : null}
 
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 10,
+                fontSize: 13,
+                color: '#A1A1AA',
+                lineHeight: 1.45,
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={personalDataConsentAccepted}
+                onChange={(event) => setPersonalDataConsentAccepted(event.target.checked)}
+                onBlur={() => setPersonalDataConsentTouched(true)}
+                disabled={isLoading || hasLockedPendingOrder || oneClickPending}
+                style={{ marginTop: 2 }}
+                required
+              />
+              <span>
+                {PERSONAL_DATA_CONSENT_LABEL}{' '}
+                <a href={PERSONAL_DATA_CONSENT_PATH} style={inlineLinkStyle}>
+                  Текст согласия
+                </a>
+                .
+              </span>
+            </label>
+            {personalDataConsentError ? (
+              <span style={fieldErrorStyle}>{personalDataConsentError}</span>
+            ) : null}
+
             {savedCard && !hasLockedPendingOrder ? (
               <div style={{ display: 'grid', gap: 8 }}>
                 <button
@@ -1050,13 +1113,17 @@ export function PricingSection() {
                       : 'Перейти к оплате'}
               </button>
               <div style={legalTextStyle}>
-                Нажимая кнопку, вы соглашаетесь с{' '}
+                Нажимая кнопку, вы подтверждаете согласие с{' '}
+                <a href={PERSONAL_DATA_CONSENT_PATH} style={inlineLinkStyle}>
+                  обработкой персональных данных
+                </a>
+                , а также с{' '}
                 <a href="/offer" style={inlineLinkStyle}>
                   офертой
                 </a>{' '}
                 и{' '}
                 <a href="/privacy" style={inlineLinkStyle}>
-                  политикой конфиденциальности
+                  политикой персональных данных
                 </a>
                 .
               </div>

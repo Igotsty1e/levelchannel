@@ -22,6 +22,8 @@
 - HMAC verification для CloudPayments webhook'ов по `X-Content-HMAC` и `Content-HMAC`
   (HMAC-SHA256 в base64 поверх raw body, без перекодировки)
 - валидация суммы на сервере, без доверия сумме и e-mail с клиента
+- отдельное server-side доказательство акцепта согласия на обработку ПДн
+  (timestamp, версия документа, путь документа, IP, user-agent)
 - ограничение mock confirm в production (по умолчанию закрыто, открывается явным `PAYMENTS_ALLOW_MOCK_CONFIRM=true`)
 - transactional `SELECT ... FOR UPDATE` на изменение ордера в Postgres — защита от TOCTOU при конкурентных вебхуках
 - one-click charge (`/api/payments/charge-token`) проксирует CloudPayments
@@ -44,12 +46,13 @@
 
 - жёсткий CSP для снижения XSS и injection surface
 - пользовательская форма оплаты ограничена только `amount + email`
+- создание платежа и one-click charge запрещены без явного checkbox consent на обработку ПДн
 - нет `dangerouslySetInnerHTML`
 - чувствительный order state хранится только как `invoiceId` в `localStorage`
 
 ### 2. API
 
-- `POST /api/payments` принимает только `amountRub` и `customerEmail`
+- `POST /api/payments` принимает только `amountRub`, `customerEmail` и флаг подтверждённого consent
 - invalid invoice ids отклоняются до обращения к storage
 - rate limiting на create / status / mock confirm routes
 - browser-origin filtering для mutation endpoints

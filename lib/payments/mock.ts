@@ -2,11 +2,13 @@ import { randomUUID } from 'crypto'
 
 import { normalizePaymentAmount, PAYMENT_DESCRIPTION } from '@/lib/payments/catalog'
 import { paymentConfig } from '@/lib/payments/config'
+import type { PersonalDataConsentSnapshot } from '@/lib/legal/personal-data'
 import type { PaymentOrder } from '@/lib/payments/types'
 
 export function createMockOrder(
   amountRub: number,
   customerEmail: string,
+  options: { personalDataConsent?: PersonalDataConsentSnapshot } = {},
 ): PaymentOrder {
   const now = new Date()
   const invoiceId = `lc_${now.toISOString().slice(0, 10).replace(/-/g, '')}_${randomUUID().slice(0, 8)}`
@@ -51,8 +53,25 @@ export function createMockOrder(
     providerMessage: 'Mock-режим: оплата будет автоматически подтверждена.',
     metadata: {
       mockBankSessionId: randomUUID(),
+      personalDataConsent: options.personalDataConsent,
     },
     events: [
+      ...(options.personalDataConsent
+        ? [
+            {
+              type: 'legal.personal_data_consent_accepted',
+              at: options.personalDataConsent.acceptedAt,
+              payload: {
+                documentVersion: options.personalDataConsent.documentVersion,
+                documentPath: options.personalDataConsent.documentPath,
+                policyPath: options.personalDataConsent.policyPath,
+                source: options.personalDataConsent.source,
+                ipAddress: options.personalDataConsent.ipAddress,
+                userAgent: options.personalDataConsent.userAgent,
+              },
+            },
+          ]
+        : []),
       {
         type: 'order.created',
         at: now.toISOString(),
