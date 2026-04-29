@@ -171,7 +171,7 @@ export default function OfferPage() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
                 {[
                   { label: 'ИНН', value: '673202755730' },
-                  { label: 'E-mail', value: 'igptstyle227@gmail.com' },
+                  { label: 'E-mail', value: 'igotstyle227@gmail.com' },
                   { label: 'Расчётный счёт', value: '40802810720000971101' },
                   { label: 'Банк', value: 'ООО «Банк Точка»' },
                   { label: 'БИК', value: '044525104' },
