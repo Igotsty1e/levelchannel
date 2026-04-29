@@ -51,6 +51,7 @@ export async function POST(request: Request) {
           customerEmail: order.customerEmail,
           transactionId: payload.TransactionId ?? null,
           paymentMethod: payload.PaymentMethod ?? null,
+          customerComment: order.customerComment ?? null,
         })
         if (!result.ok && result.reason === 'no_recipient') {
           // No-op path — OPERATOR_NOTIFY_EMAIL not configured. Don't
