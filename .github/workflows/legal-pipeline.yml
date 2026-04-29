@@ -1,0 +1,25 @@
+name: legal-pipeline
+
+# Blocks PRs that touch legal-sensitive files without a
+# `Legal-Pipeline-Verified:` trailer in every such commit. See
+# docs/legal-pipeline.md.
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  legal-pipeline-check:
+    name: Verify Legal-Pipeline-Verified trailer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history needed for commit walk)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run legal-pipeline check
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/legal-pipeline-check.sh --ci
