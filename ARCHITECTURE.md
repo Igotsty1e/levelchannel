@@ -84,9 +84,21 @@ Auth-контур уже живёт в коде: есть таблицы, `lib/a
 
 ### Test infrastructure (integration)
 
-- [`docker-compose.test.yml`](/Users/ivankhanaev/LevelChannel/docker-compose.test.yml) — `postgres:16.13` service на `127.0.0.1:54329`, tmpfs storage. Точное соответствие prod (Phase 1B D5).
+- [`docker-compose.test.yml`](/Users/ivankhanaev/LevelChannel/docker-compose.test.yml) — `postgres:16.13` service на `127.0.0.1:54329`, tmpfs storage. Точное соответствие prod.
 - [`scripts/test-integration.sh`](/Users/ivankhanaev/LevelChannel/scripts/test-integration.sh) — bring up → wait → migrate:up → vitest → tear down. `npm run test:integration`.
 - [`vitest.integration.config.ts`](/Users/ivankhanaev/LevelChannel/vitest.integration.config.ts) — отдельный config; tests/integration/**/*.test.ts. Unit `npm run test:run` остаётся быстрым и без Docker dep.
+
+**Auth invariants covered by integration suite.** Эта матрица — source of truth для того, какие security-инварианты уже проверяются Postgres-backed тестами. Если инвариант ниже изменён в коде, регрессия должна падать в указанном файле. Открытые пункты — в `ENGINEERING_BACKLOG.md` § DX and quality.
+
+| Invariant | Where covered |
+|---|---|
+| Register: byte-equal response для known/unknown email (anti-enumeration shape) | [`tests/integration/auth/register.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/register.test.ts) (`returns identical response for already-registered email`) |
+| Register: симметричный wall-clock budget для new/existing email path (anti-enumeration timing) | [`tests/integration/auth/register.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/register.test.ts) (`register paths take similar wall-clock time`) |
+| Login: constant-time через `dummyHash` для unknown-email vs known-email-wrong-password | [`tests/integration/auth/login.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/login.test.ts) (`constant-time D3`) |
+| Reset: запрос на unknown email возвращает 200 ok (anti-enumeration) | [`tests/integration/auth/reset.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/reset.test.ts) (`returns 200 ok for unknown email`) |
+| Reset confirm: revoke всех сессий аккаунта до создания новой (mech-5 sign-out-everywhere) | [`tests/integration/auth/reset.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/reset.test.ts) (`signs out everywhere on success (mech-5 invariant)`) |
+| Session lifecycle: создание / валидация / revoke / expiry | [`tests/integration/auth/session-lifecycle.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/session-lifecycle.test.ts) |
+| **NOT covered yet:** login with unverified email returns 200 + session (cabinet-allow, payment-gated) | backlog'd в `ENGINEERING_BACKLOG.md` § DX and quality |
 
 ### Schema migrations
 
