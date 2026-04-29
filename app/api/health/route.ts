@@ -5,6 +5,21 @@ import { paymentConfig, isCloudPaymentsConfigured } from '@/lib/payments/config'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+// `version` — git SHA of the deployed commit. Populated by the autodeploy
+// script's `export GIT_SHA=$(git rev-parse HEAD)` before `npm run build`.
+// Returned as `null` when the env var is unset (local dev, fresh runs)
+// so consumers can distinguish "this build doesn't carry version info"
+// from "version mismatch". Used by .github/workflows/uptime-probe.yml
+// to flag autodeploy drift (last main commit vs prod-deployed SHA).
+function readDeployedVersion(): string | null {
+  const sha = process.env.GIT_SHA?.trim()
+  if (!sha) return null
+  // Defense in depth: only forward if the value looks like a SHA. An
+  // accidentally bound non-hex string (e.g. "main") would mislead the
+  // probe — better to surface as null.
+  return /^[a-f0-9]{7,64}$/i.test(sha) ? sha : null
+}
+
 // Render и uptime monitor пингуют этот эндпоинт.
 // Возвращаем 200, если приложение в принципе живо и базовые контуры
 // сконфигурированы; 503, если что-то критичное отсутствует — например,
@@ -52,6 +67,7 @@ export async function GET() {
       status: ok ? 'ok' : 'degraded',
       provider: paymentConfig.provider,
       storage: paymentConfig.storageBackend,
+      version: readDeployedVersion(),
       checks,
     },
     {

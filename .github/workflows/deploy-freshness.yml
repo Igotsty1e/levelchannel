@@ -1,0 +1,245 @@
+name: deploy-freshness
+
+# Detects autodeploy stalls by comparing the SHA of `main` against the
+# `version` field returned by /api/health. The autodeploy script on the
+# VPS exports GIT_SHA=$(git rev-parse HEAD) before `npm run build`, so
+# the deployed app reports the SHA it was built from.
+#
+# On drift (main has a SHA newer than prod by more than the cron's own
+# tolerance), opens / comments on a GitHub Issue tagged `deploy-stale`.
+# Symmetric with .github/workflows/uptime-probe.yml — same idempotent
+# issue-management style, no third party, owner gets the email via
+# the standard GitHub subscription.
+#
+# Detection latency: 30 min cron + GH Actions schedule jitter. That's
+# fine for autodeploy — the timer ticks every minute; if it has been
+# stuck for >30 min, *something* is wrong (timer dead, build failing
+# in a loop, swap step blocked) and the issue is the right escalation.
+#
+# What "drift" means here: prod's `version` does NOT match the latest
+# main HEAD AND the latest main commit is older than 15 min. The 15-min
+# floor avoids false-positives during a normal autodeploy (which takes
+# 1-3 min from push to swap).
+#
+# When prod's `version` is null (autodeploy script hasn't been patched
+# yet to export GIT_SHA, or the env var didn't survive the systemd
+# unit), the workflow opens a one-time issue noting that the freshness
+# check is not yet active. See OPERATIONS.md §6 for the patch.
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: deploy-freshness
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout (need git log to read main HEAD)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: main
+
+      - name: Read main HEAD SHA + commit time
+        id: main
+        run: |
+          set -uo pipefail
+          MAIN_SHA=$(git rev-parse HEAD)
+          MAIN_AT=$(git log -1 --format=%cI HEAD)
+          echo "sha=$MAIN_SHA"     >> "$GITHUB_OUTPUT"
+          echo "at=$MAIN_AT"        >> "$GITHUB_OUTPUT"
+          echo "main HEAD: $MAIN_SHA at $MAIN_AT"
+
+      - name: Read prod /api/health version
+        id: prod
+        run: |
+          set -uo pipefail
+          BODY=$(curl --silent --show-error --max-time 15 \
+                      --write-out "\n__HTTP_CODE__:%{http_code}" \
+                      "https://levelchannel.ru/api/health" 2>&1) || EXIT=$?
+          EXIT=${EXIT:-0}
+
+          CODE=$(printf '%s' "$BODY" | sed -n 's/.*__HTTP_CODE__:\([0-9]*\).*/\1/p' | tail -1)
+          BODY_ONLY=$(printf '%s' "$BODY" | sed 's/\n*__HTTP_CODE__:[0-9]*$//')
+
+          # Best-effort jq: missing field → "null", missing jq → empty.
+          PROD_VERSION=$(printf '%s' "$BODY_ONLY" | jq -r '.version // "null"' 2>/dev/null || echo "")
+
+          echo "exit=$EXIT code=$CODE prod_version=$PROD_VERSION"
+          {
+            echo "exit=$EXIT"
+            echo "code=$CODE"
+            echo "version=$PROD_VERSION"
+            echo 'body<<EOF_BODY'
+            printf '%s' "$BODY_ONLY"
+            echo
+            echo 'EOF_BODY'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Decide and manage incident issue
+        uses: actions/github-script@v7
+        env:
+          MAIN_SHA: ${{ steps.main.outputs.sha }}
+          MAIN_AT: ${{ steps.main.outputs.at }}
+          PROD_VERSION: ${{ steps.prod.outputs.version }}
+          PROD_EXIT: ${{ steps.prod.outputs.exit }}
+          PROD_CODE: ${{ steps.prod.outputs.code }}
+          PROD_BODY: ${{ steps.prod.outputs.body }}
+        with:
+          script: |
+            const mainSha   = (process.env.MAIN_SHA  || '').trim()
+            const mainAt    = (process.env.MAIN_AT   || '').trim()
+            const prodVer   = (process.env.PROD_VERSION || 'null').trim()
+            const prodCode  = process.env.PROD_CODE || '(no response)'
+            const prodExit  = process.env.PROD_EXIT || ''
+            const body      = (process.env.PROD_BODY || '').slice(0, 1500)
+            const ts        = new Date().toISOString()
+            const runUrl    = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            const label     = 'deploy-stale'
+            const inactiveLabel = 'deploy-freshness-inactive'
+
+            // Decide state:
+            //   - prod fetch failed → uptime probe will alert separately, skip here
+            //   - prod.version is null/missing → workflow inactive, surface ONCE via deploy-freshness-inactive
+            //   - SHA mismatch + main commit > 15 min old → drift (issue)
+            //   - SHA matches OR main commit < 15 min old → ok
+
+            if (prodCode !== '200') {
+              core.notice(`Prod health not 200 (got ${prodCode}). Uptime probe handles unhealthy. Skipping freshness check.`)
+              return
+            }
+
+            const findOpenIssue = async (lbl) => {
+              const { data } = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                labels: lbl,
+                per_page: 5,
+              })
+              return data[0] || null
+            }
+
+            // ---- inactive path (one-time notice) ----
+            if (!prodVer || prodVer === 'null') {
+              const existing = await findOpenIssue(inactiveLabel)
+              if (existing) {
+                core.notice(`deploy-freshness still inactive (open issue #${existing.number}). No new noise.`)
+                return
+              }
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `[deploy-freshness] /api/health.version is null — workflow inactive`,
+                body:
+                  `Prod \`/api/health\` returned at \`${ts}\` with \`version: null\`. ` +
+                  `That means the autodeploy script is not yet exporting \`GIT_SHA\` ` +
+                  `before \`npm run build\`, so this freshness workflow has nothing to compare against.\n\n` +
+                  `Fix per \`OPERATIONS.md §6\` — add to \`__LEVELCHANNEL_AUTODEPLOY__\` ` +
+                  `right before \`npm run build\`:\n\n` +
+                  '```bash\n' +
+                  'export GIT_SHA=$(git rev-parse HEAD)\n' +
+                  '```\n\n' +
+                  `Then ensure \`GIT_SHA\` is forwarded into the systemd unit's environment ` +
+                  `(via \`__LEVELCHANNEL_ENV_FILE__\` or \`Environment=\` directive).\n\n` +
+                  `This issue will close itself on the next run after \`/api/health.version\` ` +
+                  `becomes a non-null SHA.`,
+                labels: [inactiveLabel],
+              })
+              core.notice(`Opened deploy-freshness-inactive issue.`)
+              return
+            }
+
+            // version is present — close inactive issue if any.
+            const inactiveOpen = await findOpenIssue(inactiveLabel)
+            if (inactiveOpen) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: inactiveOpen.number,
+                body: `Prod /api/health.version is now \`${prodVer.slice(0, 12)}\`. Closing.`,
+              })
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: inactiveOpen.number,
+                state: 'closed',
+                state_reason: 'completed',
+              })
+            }
+
+            // ---- drift detection ----
+            const matches = mainSha.startsWith(prodVer) || prodVer.startsWith(mainSha)
+            const mainAge = Date.now() - new Date(mainAt).getTime()
+            const fifteenMin = 15 * 60 * 1000
+
+            if (matches) {
+              core.info(`prod is on main HEAD (${prodVer.slice(0,12)}). Closing any open drift issue.`)
+              const open = await findOpenIssue(label)
+              if (open) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: open.number,
+                  body: `Caught up at \`${ts}\` — prod is on \`${prodVer.slice(0,12)}\`, main HEAD is \`${mainSha.slice(0,12)}\`. Closing.`,
+                })
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: open.number,
+                  state: 'closed',
+                  state_reason: 'completed',
+                })
+              }
+              return
+            }
+
+            if (mainAge < fifteenMin) {
+              core.info(`Main HEAD is ${Math.round(mainAge/1000)}s old — within deploy window, not flagging.`)
+              return
+            }
+
+            // Drift — open or comment.
+            const open = await findOpenIssue(label)
+            const body =
+              `Prod is behind \`main\`.\n\n` +
+              `- main HEAD: \`${mainSha}\`  (committed \`${mainAt}\`)\n` +
+              `- prod /api/health.version: \`${prodVer}\`\n` +
+              `- main is \`${Math.round(mainAge/60000)} min\` old\n` +
+              `- check run: ${runUrl}\n\n` +
+              `Likely causes: \`levelchannel-autodeploy.timer\` stopped, build is failing in a loop, ` +
+              `or the swap step is stuck. SSH and check:\n\n` +
+              '```bash\n' +
+              'systemctl status levelchannel-autodeploy.timer\n' +
+              'journalctl -u levelchannel-autodeploy.service --since "30 min ago"\n' +
+              '```\n\n' +
+              `See \`OPERATIONS.md §6\` rollback / runbook.`
+
+            if (!open) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `[deploy-stale] prod is behind main (${prodVer.slice(0,12)} vs ${mainSha.slice(0,12)})`,
+                body,
+                labels: [label],
+              })
+              core.notice(`Opened deploy-stale issue.`)
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: open.number,
+                body: `Still stale at \`${ts}\` — prod \`${prodVer.slice(0,12)}\`, main \`${mainSha.slice(0,12)}\` (${Math.round(mainAge/60000)} min old). Run: ${runUrl}`,
+              })
+              core.notice(`Commented on existing deploy-stale issue #${open.number}.`)
+            }
