@@ -6,6 +6,7 @@ import { AuthInfoBox } from '@/components/auth-form-bits'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 
 import { LogoutButton } from './logout-button'
+import { ResendVerifyButton } from './resend-verify-button'
 
 // Server-side cabinet gate. Reads the session cookie directly (no HTTP
 // round-trip to /api/auth/me) and SSR-redirects to /login when unauth'd.
@@ -44,10 +45,7 @@ export default async function CabinetPage() {
       {!isVerified ? (
         <AuthInfoBox>
           E-mail ещё не подтверждён. Откройте письмо, которое мы отправили при регистрации, и нажмите ссылку в нём. Если письма нет —{' '}
-          <a href="/forgot" style={{ color: 'var(--text)', textDecoration: 'underline' }}>
-            запросите новое
-          </a>
-          .
+          <ResendVerifyButton />.
         </AuthInfoBox>
       ) : null}
 
