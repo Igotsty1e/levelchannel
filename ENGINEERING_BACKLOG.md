@@ -73,6 +73,7 @@ owner-docs и git history важнее старых chat outputs.
 - собрать security regression checklist перед релизами
 - расширить integration coverage для payment routes и production-like storage flows
 - параметризовать Docker integration stack для параллельного CI
+- добавить integration-тест на login с unverified email (Phase 1B D4 invariant — cabinet allow, payment-gated). Сейчас policy живёт только в коде `app/api/auth/login/route.ts` без regression-теста
 - добавить real-time signal для `/verify-pending`, только если это реально нужно пользователям
 
 ## Not now
