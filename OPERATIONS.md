@@ -742,13 +742,69 @@ external probe (BetterStack / Healthchecks.io) как второй слой,
 Если хочется проверить вне cron — Actions tab → uptime-probe →
 **Run workflow** (button). Использует `workflow_dispatch` trigger.
 
+### Webhook-flow alerting (TODO — активация на сервере)
+
+`scripts/webhook-flow-alert.mjs` каждые 30 минут читает `payment_audit_events` за последний час и шлёт email на `ALERT_EMAIL_TO`, если CloudPayments webhook contour выглядит сломанным:
+
+| Сигнал | Verdict |
+|---|---|
+| создано <5 заказов за окно | `low_volume_skip` (молчим — слишком тихо чтобы судить) |
+| `paid + fail + cancelled ≥ created` | `all_resolved` (всё разрешилось) |
+| `(paid + fail) / created < 0.3` | **`alert`** — webhook stall |
+| иначе | `ok` |
+
+Что значит "webhook stall": заказы создаются, но pay/fail webhook'и не приходят (или приходят, но не обрабатываются). Чаще всего — CP cabinet URL'ы сломаны, HMAC secret разъехался с `/etc/levelchannel.env`, или handler упал в loop.
+
+**Активация (один раз, требует SSH):**
+
+```bash
+# 1) убедиться что scripts/webhook-flow-alert.mjs уже на сервере
+#    (попадает на VPS обычным autodeploy — зеркало git репо)
+ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136
+
+# 2) установить unit + timer
+cp /var/www/levelchannel/scripts/systemd/levelchannel-webhook-flow-alert.service \
+   /etc/systemd/system/
+cp /var/www/levelchannel/scripts/systemd/levelchannel-webhook-flow-alert.timer \
+   /etc/systemd/system/
+
+# 3) добавить ALERT_EMAIL_TO в /etc/levelchannel.env (если ещё не задан;
+#    EMAIL_FROM, RESEND_API_KEY, DATABASE_URL уже там)
+echo 'ALERT_EMAIL_TO=masteryprojectss@gmail.com' >> /etc/levelchannel.env
+
+# 4) запустить timer
+systemctl daemon-reload
+systemctl enable --now levelchannel-webhook-flow-alert.timer
+
+# 5) проверить
+systemctl status levelchannel-webhook-flow-alert.timer
+journalctl -u levelchannel-webhook-flow-alert.service --since "5 min ago"
+```
+
+**Ручной запуск без ожидания таймера:**
+
+```bash
+systemctl start levelchannel-webhook-flow-alert.service
+journalctl -u levelchannel-webhook-flow-alert.service -n 20
+```
+
+В журнале каждый run печатает одну JSON-строку с `verdict` — это `low_volume_skip` / `all_resolved` / `ok` / `alert`.
+
+**Тонкая настройка (env vars):**
+
+| Var | Default | Что делает |
+|---|---|---|
+| `WEBHOOK_FLOW_WINDOW_MINUTES` | `60` | окно для подсчёта |
+| `WEBHOOK_FLOW_MIN_VOLUME` | `5` | минимум заказов для срабатывания (избегает false-positive на малых объёмах) |
+| `WEBHOOK_FLOW_TERMINATED_RATIO` | `0.3` | floor отношения (paid+fail)/created для alert |
+
+**Idempotence:** скрипт НЕ хранит «уже алертил». Каждый run в состоянии alert посылает email. При cron 30 минут — максимум 2 email/час, что приемлемо. Если шум станет проблемой, добавляется state file `/var/lib/levelchannel/last-webhook-alert-at` — отдельный wave.
+
 ### Что НЕ настроено (в roadmap)
 
 - Sentry / error tracking — пока ловишь только по логам
 - Slack/Telegram алерт по успешному платежу — opt'ed out оператором
-- Webhook failure alerting — пока разбирается вручную через `journalctl`
 - Disk usage monitoring (косвенно — `db: err` появится когда диск умирает)
-- Heartbeat от `levelchannel-autodeploy.timer` (если timer развалится — узнаем когда сломается deploy и потом /api/health)
 
 ---
 
