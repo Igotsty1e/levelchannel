@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 
 import { buildPersonalDataConsentSnapshot } from '@/lib/legal/personal-data'
 import {
+  formatRubles,
+  MAX_PAYMENT_AMOUNT_RUB,
+  MIN_PAYMENT_AMOUNT_RUB,
   normalizeCustomerEmail,
   isValidPaymentAmount,
   normalizePaymentAmount,
@@ -65,7 +68,9 @@ export async function POST(request: Request) {
 
       return {
         status: 400,
-        body: { error: 'Введите сумму от 10 до 10000 ₽.' },
+        body: {
+          error: `Введите сумму от ${formatRubles(MIN_PAYMENT_AMOUNT_RUB)} до ${formatRubles(MAX_PAYMENT_AMOUNT_RUB)} ₽.`,
+        },
       }
     }
 
