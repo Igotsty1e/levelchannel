@@ -42,6 +42,7 @@
 ### Исторический контекст
 
 1. `PRD.md`
+2. `docs/plans/*` — архив планов и review-артефактов, не source of truth
 
 ## Матрица ответственности
 
@@ -56,6 +57,7 @@
 | `ROADMAP.md` | high-level приоритеты продукта, операционки и compliance | низкоуровневые implementation tasks |
 | `ENGINEERING_BACKLOG.md` | очередь инженерных задач по реализации | deploy facts, public legal text |
 | `PRD.md` | исторический аудит-трейл ранней версии | текущие решения как source of truth |
+| `docs/plans/*` | архив design / implementation plans | текущее shipped-состояние и owner-contracts |
 
 ## Правило конфликтов
 

@@ -34,9 +34,10 @@
 
 ## Auth and account layer
 
-Auth backend уже подключён: таблицы, `lib/auth/*`, `lib/email/*` и
-`/api/auth/*` живут в runtime. Полного cabinet UI пока нет, но security
-инварианты ниже уже обязательны для работающих маршрутов.
+Auth backend уже подключён: таблицы, `lib/auth/*`, `lib/email/*`,
+`/api/auth/*` и минимальный auth/cabinet UI живут в runtime. Полноценная
+product-surface кабинета ещё не раздута, но security инварианты ниже уже
+обязательны для работающих маршрутов.
 
 - пароли: `bcryptjs`, cost=12. Никакого pepper'а в текущей итерации;
   если будем добавлять — отдельная миграция rehash'а.
@@ -100,6 +101,7 @@ Auth backend уже подключён: таблицы, `lib/auth/*`, `lib/email
 - `POST /api/payments` принимает только `amountRub`, `customerEmail` и флаг подтверждённого consent
 - invalid invoice ids отклоняются до обращения к storage
 - rate limiting на create / status / mock confirm routes
+- nginx держит per-IP `limit_req` на `/api/*`, а CloudPayments webhooks исключены из него и защищаются HMAC + order cross-check'ами
 - browser-origin filtering для mutation endpoints
 - чувствительные ответы не кешируются
 
@@ -118,68 +120,20 @@ Auth backend уже подключён: таблицы, `lib/auth/*`, `lib/email
 - payment storage file исключён из репозитория
 - CloudPayments credentials используются только на сервере
 
-## Оставшиеся ограничения
+## Текущие ограничения и accepted gaps
 
-- limiter in-memory, значит не синхронизируется между инстансами
+- app-level limiter остаётся in-memory, значит не синхронизируется между инстансами
 - payment telemetry: postgres основной путь, файловый fallback на случай
   сбоя БД (см. `lib/telemetry/store.ts`)
-- нет WAF / reverse-proxy limiting на уровне инфраструктуры
 - нет централизованного audit log storage
 - нет Sentry / alerting / intrusion visibility
 
-## Phase 0 server-side hardening — закрыт 2026-04-29
+## Граница владения
 
-Все пять пунктов аудита 2026-04-29 выполнены. Эффективное состояние:
-
-| Что | Было | Сейчас |
-|---|---|---|
-| `PermitRootLogin` | `yes` | `prohibit-password` (только publickey для root) |
-| `PasswordAuthentication` | `yes` (через cloud-init override) | `no` — cloud-init override переписан на `PasswordAuthentication no` |
-| Bind `next start` | `*:3000` | `127.0.0.1:3000` (через `--hostname 127.0.0.1 --port 3000` в systemd unit) |
-| nginx rate limiting | отсутствует | `limit_req_zone lcapi 30r/m burst=20 nodelay` на `/api/*`. CP webhooks (`^~ /api/payments/webhooks/`) исключены — HMAC + amount cross-check там единственный trust boundary |
-| Backup БД | не настроен | ежедневный `pg_dump --no-owner --no-acl --clean --if-exists` в `__LEVELCHANNEL_BACKUP_DIR__/db-YYYY-MM-DD.sql.gz`, retention 14d, perms 600 + dir 700, restore drill пройден |
-
-Backup'ы исходных конфигов на проде сохранены с суффиксом `.bak-<timestamp>`
-для быстрого rollback. Детали и runbook — `OPERATIONS.md §3` (SSH/systemd)
-и `§13` (статус долгов).
-
-Конкретные шаги по оставшимся пунктам — в `OPERATIONS.md §6` (deploy,
-rollback, проверка timer'а) и `§13` (SSH hardening, app binding).
-
-## Обязательные меры перед production
-
-### Infra
-
-- только HTTPS — выполнено (Let's Encrypt + auto-renew)
-- reverse proxy: `nginx` — выполнено
-- firewall (ufw): открыто `22/80/443` + `10050/tcp` — выполнено
-- SSH publickey-only — **выполнено 2026-04-29** (PasswordAuthentication no, PermitRootLogin prohibit-password)
-- systemd service с restart policy — выполнено (`Restart=always RestartSec=5`)
-- log rotation — стандартный `journald` rotation, sufficient для текущего объёма
-
-### App
-
-- `PAYMENTS_ALLOW_MOCK_CONFIRM=false`
-- боевые CloudPayments credentials
-- реальный `NEXT_PUBLIC_SITE_URL`
-- webhook URLs в кабинете CloudPayments
-- backup strategy для `PostgreSQL` и `data/` telemetry logs
-
-### Monitoring
-
-- uptime monitor
-- webhook failure alerting
-- disk usage monitoring
-- basic app logs aggregation
-
-## Рекомендуемые будущие улучшения
-
-1. Вынести limiter в `Redis`
-2. Добавить structured audit log
-3. Добавить Sentry / error tracking
-4. Добавить отдельный health endpoint
-5. Добавить admin-safe reconciliation tool для платежей
-6. Перевести payment telemetry из файла в БД или log pipeline
+Infra hardening, SSH, nginx, backup, deploy, rollback и фактическое
+production-состояние живут в `OPERATIONS.md`. Этот документ описывает
+текущие security boundaries, обязательные инварианты и открытые security
+gaps, а не исторический ход серверных работ.
 
 ## Правило по изменениям
 
