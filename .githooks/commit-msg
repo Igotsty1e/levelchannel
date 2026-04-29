@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#
+# commit-msg hook for legal-pipeline guardrail.
+# Activated by `git config core.hooksPath .githooks` (set automatically via
+# `npm install` postinstall, or manually with the same command).
+#
+# Delegates to scripts/legal-pipeline-check.sh which contains the shared
+# matching/trailer logic used by both this hook and the CI workflow.
+
+set -e
+exec "$(git rev-parse --show-toplevel)/scripts/legal-pipeline-check.sh" \
+  --commit-msg "$1"

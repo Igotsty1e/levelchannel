@@ -13,7 +13,8 @@
     "test:integration": "bash scripts/test-integration.sh",
     "migrate:up": "node scripts/migrate.mjs up",
     "migrate:status": "node scripts/migrate.mjs status",
-    "migrate:payments:postgres": "node scripts/migrate-payment-orders-to-postgres.mjs"
+    "migrate:payments:postgres": "node scripts/migrate-payment-orders-to-postgres.mjs",
+    "postinstall": "git config core.hooksPath .githooks 2>/dev/null || true"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
