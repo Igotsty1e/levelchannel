@@ -1,27 +1,18 @@
-import { Pool } from 'pg'
-
+import { getDbPool } from '@/lib/db/pool'
 import { paymentConfig } from '@/lib/payments/config'
 import type { PaymentOrder, SavedCardToken } from '@/lib/payments/types'
 
-declare global {
-  // eslint-disable-next-line no-var
-  var __levelchannelPaymentsPool: Pool | undefined
-}
-
 let initPromise: Promise<void> | null = null
 
+// Payment storage now shares the single Postgres pool from
+// `lib/db/pool.ts`. The `paymentConfig.databaseUrl` reference is
+// kept above the import only because it's still consulted elsewhere
+// in this file via paymentConfig.* (storage backend selection etc).
 function getPool() {
   if (!paymentConfig.databaseUrl) {
     throw new Error('DATABASE_URL is not configured for PostgreSQL storage.')
   }
-
-  if (!global.__levelchannelPaymentsPool) {
-    global.__levelchannelPaymentsPool = new Pool({
-      connectionString: paymentConfig.databaseUrl,
-    })
-  }
-
-  return global.__levelchannelPaymentsPool
+  return getDbPool()
 }
 
 async function ensureSchema() {
