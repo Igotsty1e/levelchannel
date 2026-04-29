@@ -1,0 +1,183 @@
+name: uptime-probe
+
+# External health probe for levelchannel.ru. Runs every 5 minutes and
+# opens / closes a GitHub Issue tagged `uptime-incident` based on health.
+# Ping schedule frequency is at the lower bound — GitHub Actions cron
+# sometimes delays scheduled runs under load, so 5 min is the practical
+# floor and means worst-case detection latency is ~10 min. Good enough
+# for "did the site fall over"; if we ever need true 30s detection we
+# add a second-tier external probe (BetterStack / Healthchecks.io).
+#
+# How it decides:
+#   - 3 curl attempts with 20s pause inside one job
+#   - probe is OK if ANY attempt returns HTTP 200 with body containing
+#     "status":"ok" AND "database":"ok"
+#   - probe is FAIL otherwise
+#
+# Issue lifecycle (idempotent — the same workflow run handles all 4
+# states without duplicating issues):
+#   - FAIL + no open incident issue   → create new issue
+#   - FAIL + open issue already       → comment a flap line with timestamp
+#   - OK   + open issue (recovery)    → close it with a recovery comment
+#   - OK   + no open issue            → no-op
+#
+# Owner of this repo is auto-subscribed to issue create/comment, so
+# notifications go to the owner's GitHub email. No secrets, no third
+# party. Runbook: OPERATIONS.md §14.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: uptime-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe /api/health (3 retries, 20s apart)
+        id: probe
+        run: |
+          set -uo pipefail
+
+          URL="https://levelchannel.ru/api/health"
+          OK=0
+          LAST_BODY=""
+          LAST_CODE=""
+          LAST_ERR=""
+
+          for i in 1 2 3; do
+            echo "::group::Attempt $i"
+            # No `--fail-with-body`: we want the body even on HTTP 5xx
+            # so it lands in the issue. EXIT here only signals network
+            # / DNS / TLS / timeout — not HTTP status.
+            EXIT=0
+            BODY=$(curl --silent --show-error \
+                        --max-time 15 \
+                        --write-out "\n__HTTP_CODE__:%{http_code}" \
+                        "$URL" 2>&1) || EXIT=$?
+
+            CODE=$(printf '%s' "$BODY" | sed -n 's/.*__HTTP_CODE__:\([0-9]*\).*/\1/p' | tail -1)
+            BODY_ONLY=$(printf '%s' "$BODY" | sed 's/\n*__HTTP_CODE__:[0-9]*$//')
+
+            echo "exit=$EXIT code=$CODE"
+            echo "body=$BODY_ONLY"
+
+            LAST_CODE="$CODE"
+            LAST_BODY="$BODY_ONLY"
+            LAST_ERR="curl exit $EXIT"
+
+            if [ "$EXIT" = "0" ] && [ "$CODE" = "200" ] && \
+               printf '%s' "$BODY_ONLY" | grep -q '"status":"ok"' && \
+               printf '%s' "$BODY_ONLY" | grep -q '"database":"ok"'; then
+              OK=1
+              echo "::endgroup::"
+              break
+            fi
+            echo "::endgroup::"
+            [ "$i" != "3" ] && sleep 20
+          done
+
+          {
+            echo "ok=$OK"
+            echo "last_code=$LAST_CODE"
+            echo "last_err=$LAST_ERR"
+            echo "url=$URL"
+            echo 'last_body<<EOF_BODY'
+            printf '%s' "$LAST_BODY"
+            echo
+            echo 'EOF_BODY'
+          } >> "$GITHUB_OUTPUT"
+
+          # Always exit 0 — we communicate result via outputs, not exit code.
+          # The Issue management step is the one that takes action.
+          exit 0
+
+      - name: Manage incident issue (idempotent)
+        uses: actions/github-script@v7
+        env:
+          PROBE_OK: ${{ steps.probe.outputs.ok }}
+          PROBE_CODE: ${{ steps.probe.outputs.last_code }}
+          PROBE_ERR: ${{ steps.probe.outputs.last_err }}
+          PROBE_URL: ${{ steps.probe.outputs.url }}
+          PROBE_BODY: ${{ steps.probe.outputs.last_body }}
+        with:
+          script: |
+            const ok      = process.env.PROBE_OK === '1'
+            const code    = process.env.PROBE_CODE || '(no response)'
+            const err     = process.env.PROBE_ERR || '(no error info)'
+            const url     = process.env.PROBE_URL
+            const body    = (process.env.PROBE_BODY || '').slice(0, 1500)
+            const ts      = new Date().toISOString()
+            const runUrl  = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            const label   = 'uptime-incident'
+
+            // 1. Find any open uptime-incident issue.
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: label,
+              per_page: 5,
+            })
+            const openIssue = openIssues[0] || null
+
+            if (!ok) {
+              const failBody =
+                `**${url}** is unhealthy.\n\n` +
+                `- detected at: \`${ts}\`\n` +
+                `- last HTTP code: \`${code}\`\n` +
+                `- ${err}\n` +
+                `- probe run: ${runUrl}\n\n` +
+                `<details><summary>last response body (truncated)</summary>\n\n` +
+                '```\n' + (body || '(empty)') + '\n```\n</details>\n\n' +
+                `Diagnose: see \`OPERATIONS.md §14\` runbook.`
+
+              if (!openIssue) {
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: `[uptime] ${url} is DOWN`,
+                  body: failBody,
+                  labels: [label],
+                })
+                core.notice(`Opened new uptime-incident issue.`)
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: openIssue.number,
+                  body: `Still failing at \`${ts}\` — code \`${code}\`, ${err}. Run: ${runUrl}`,
+                })
+                core.notice(`Flap-commented on existing issue #${openIssue.number}.`)
+              }
+              return
+            }
+
+            // probe ok
+            if (openIssue) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: openIssue.number,
+                body: `Recovered at \`${ts}\`. Final probe HTTP \`${code}\`. Closing.\nRun: ${runUrl}`,
+              })
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: openIssue.number,
+                state: 'closed',
+                state_reason: 'completed',
+              })
+              core.notice(`Closed recovered issue #${openIssue.number}.`)
+            } else {
+              core.info(`Probe ok, no open incident — nothing to do.`)
+            }
