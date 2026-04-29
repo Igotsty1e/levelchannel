@@ -1,5 +1,5 @@
 export const MIN_PAYMENT_AMOUNT_RUB = 10
-export const MAX_PAYMENT_AMOUNT_RUB = 10000
+export const MAX_PAYMENT_AMOUNT_RUB = 50000
 
 export const PAYMENT_DESCRIPTION = 'Оплата дополнительных занятий по английскому языку'
 export const PAYMENT_ITEM_NAME = 'Оплата дополнительных занятий по английскому языку'

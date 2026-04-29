@@ -7,7 +7,7 @@
 - стек: `Next.js 16`, `React 18`, `App Router`, `TypeScript`
 - сайт работает как Node.js-приложение, а не как static export
 - оплата уже встроена в UI и API
-- checkout работает по сценарию `свободная сумма + e-mail + CloudPayments popup widget`
+- checkout работает по сценарию `согласованная сумма в пределах лимита + e-mail + CloudPayments popup widget`
 - перед созданием платежа пользователь обязан подтвердить отдельное согласие на обработку персональных данных
 - провайдер по умолчанию: `mock`
 - storage backend: `file` или `postgres`

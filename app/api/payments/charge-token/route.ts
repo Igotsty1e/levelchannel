@@ -1,5 +1,8 @@
 import {
+  formatRubles,
   isValidPaymentAmount,
+  MAX_PAYMENT_AMOUNT_RUB,
+  MIN_PAYMENT_AMOUNT_RUB,
   normalizeCustomerEmail,
   normalizePaymentAmount,
   validateCustomerEmail,
@@ -75,7 +78,9 @@ export async function POST(request: Request) {
 
       return {
         status: 400,
-        body: { error: 'Введите сумму от 10 до 10000 ₽.' },
+        body: {
+          error: `Введите сумму от ${formatRubles(MIN_PAYMENT_AMOUNT_RUB)} до ${formatRubles(MAX_PAYMENT_AMOUNT_RUB)} ₽.`,
+        },
       }
     }
 
