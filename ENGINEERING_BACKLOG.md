@@ -77,7 +77,8 @@ owner-docs и git history важнее старых chat outputs.
 ### DX and quality
 
 - собрать security regression checklist перед релизами
-- расширить integration coverage для payment routes и production-like storage flows
+- ~~расширить integration coverage для payment routes~~ — **закрыто 2026-04-29**: `tests/integration/payment/payment-routes.test.ts` покрывает POST /api/payments (create + amount/consent rejection + idempotency replay), cancel (success + 404 + 400-malformed-id), mock-confirm. Каждый тест проверяет DB-состояние + audit-events shape. Всё против реального Docker Postgres в mock-payment mode (через `TEST_INTEGRATION=1` → setup-env переключает provider/storage/allowMockConfirm). Webhook handlers — backlog item ниже (нужны HMAC-tooling).
+- добавить integration test для webhook handlers (HMAC verify path) — нужен test-side HMAC signing helper. Currently покрыто только unit tests на parse + signature verify в `tests/payments/cloudpayments-webhook.test.ts`
 - параметризовать Docker integration stack для параллельного CI
 - ~~добавить integration-тест на login с unverified email (Phase 1B D4)~~ — **закрыто 2026-04-29**: `tests/integration/auth/login.test.ts` теперь содержит test `allows login when email is not yet verified` — регистрирует, проверяет что `emailVerifiedAt` null, login возвращает 200 + session cookie + body с `emailVerifiedAt: null`
 - добавить real-time signal для `/verify-pending`, только если это реально нужно пользователям

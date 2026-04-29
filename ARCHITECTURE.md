@@ -100,6 +100,8 @@ Auth-контур уже живёт в коде: есть таблицы, `lib/a
 | Session lifecycle: создание / валидация / revoke / expiry | [`tests/integration/auth/session-lifecycle.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/session-lifecycle.test.ts) |
 | Login allows unverified email (Phase 1B D4) — cabinet-allow, payment-gated | [`tests/integration/auth/login.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/login.test.ts) (`allows login when email is not yet verified`) |
 | Silent password rehash on successful login when stored hash is below current cost | [`tests/integration/auth/login.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/login.test.ts) (`silently upgrades a legacy lower-cost password hash`) |
+| Payment route create + idempotency replay + amount/consent rejection (mock provider, postgres backend) | [`tests/integration/payment/payment-routes.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/payment/payment-routes.test.ts) |
+| Payment route cancel + mock-confirm transitions, audit events written for each | [`tests/integration/payment/payment-routes.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/payment/payment-routes.test.ts) |
 
 ### Audit log (payment lifecycle)
 
