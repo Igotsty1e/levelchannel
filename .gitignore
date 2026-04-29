@@ -34,3 +34,4 @@ data/payment-telemetry.jsonl
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.gstack/
