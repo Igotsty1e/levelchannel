@@ -82,6 +82,7 @@ Payment API:
 - [ROADMAP.md](/Users/ivankhanaev/LevelChannel/ROADMAP.md) — high-level приоритеты
 - [ENGINEERING_BACKLOG.md](/Users/ivankhanaev/LevelChannel/ENGINEERING_BACKLOG.md) — инженерная очередь задач
 - [PRD.md](/Users/ivankhanaev/LevelChannel/PRD.md) — исторический продуктовый документ первой версии
+- [migrations/README.md](/Users/ivankhanaev/LevelChannel/migrations/README.md) — формат и правила работы с SQL-миграциями
 
 ## Что важно помнить
 

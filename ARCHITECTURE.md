@@ -37,6 +37,13 @@
 - [`lib/payments/store-postgres.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/store-postgres.ts) — PostgreSQL backend для заказов и `payment_card_tokens`
 - [`scripts/migrate-payment-orders-to-postgres.mjs`](/Users/ivankhanaev/LevelChannel/scripts/migrate-payment-orders-to-postgres.mjs) — one-shot перенос заказов из JSON в PostgreSQL
 
+### Schema migrations
+
+- [`scripts/migrate.mjs`](/Users/ivankhanaev/LevelChannel/scripts/migrate.mjs) — минимальный self-contained runner поверх `pg`. Команды: `npm run migrate:up`, `npm run migrate:status`. Применяет файлы `migrations/NNNN_*.sql` по порядку в транзакциях, фиксирует имена в `_migrations`.
+- [`migrations/`](/Users/ivankhanaev/LevelChannel/migrations) — SQL-миграции, по одной на изменение схемы.
+  - `0001_payment_orders.sql`, `0002_payment_card_tokens.sql`, `0003_payment_telemetry.sql`, `0004_idempotency_records.sql` — повторяют существующие `ensureSchema*` через `create ... if not exists`. На прод-БД, где таблицы уже существуют, `npm run migrate:up` приносит схему под bookkeeping без диффа.
+- Legacy `ensureSchema*` функции в `lib/payments/store-postgres.ts`, `lib/security/idempotency-postgres.ts`, `lib/telemetry/store-postgres.ts` остаются как safety net. После того как runner подключён в deploy pipeline и накатан хотя бы один раз на проде, их можно постепенно удалять — но не в этом цикле.
+
 ### Security layer
 
 - [`lib/security/request.ts`](/Users/ivankhanaev/LevelChannel/lib/security/request.ts) — origin checks, invoice id validation, per-IP rate limiting

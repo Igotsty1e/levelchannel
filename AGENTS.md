@@ -345,7 +345,9 @@ English-tutoring sessions, with server-side CloudPayments integration.
 | Tests (CI) | `npm run test:run` |
 | Tests + coverage gate | `npm run test:coverage` |
 | TypeScript-only check | `npx tsc --noEmit` |
-| One-shot file → Postgres migration | `npm run migrate:payments:postgres` |
+| Apply pending schema migrations | `npm run migrate:up` |
+| Show schema migration status | `npm run migrate:status` |
+| One-shot file → Postgres data import (legacy) | `npm run migrate:payments:postgres` |
 
 ### Deploy posture
 
@@ -361,8 +363,11 @@ This is **production with real money.** The bar:
   domain in the CP cabinet, terminal is in live mode, kassa sends
   receipts.
 - Postgres has the four tables: `payment_orders`, `payment_card_tokens`,
-  `payment_telemetry`, `idempotency_records`. They self-create on first
-  use via `ensureSchema*` paths, but a backup + retention plan is the
+  `payment_telemetry`, `idempotency_records`. The schema source of truth
+  is `migrations/NNNN_*.sql`, applied via `npm run migrate:up`. Legacy
+  `ensureSchema*` paths in `lib/{payments,security,telemetry}/*-postgres.ts`
+  still create the tables on first use as a safety net, but new schema
+  changes must ship as a migration file. Backup + retention plan is the
   operator's responsibility.
 
 When you're shipping a payment-domain or security-layer change to this

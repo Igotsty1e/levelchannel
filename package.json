@@ -10,6 +10,8 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "migrate:up": "node scripts/migrate.mjs up",
+    "migrate:status": "node scripts/migrate.mjs status",
     "migrate:payments:postgres": "node scripts/migrate-payment-orders-to-postgres.mjs"
   },
   "dependencies": {

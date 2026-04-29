@@ -236,14 +236,34 @@ SSH-туннель.
 **Connection string** (в формате `DATABASE_URL`):
 `postgresql://levelchannel:<password>@127.0.0.1:5432/levelchannel?sslmode=disable`
 
-**Таблицы (создаются автоматически при первом запросе через `ensureSchema*`):**
+**Таблицы (источник истины — `migrations/`, см. ниже):**
 
-| Таблица | Файл | Назначение |
+| Таблица | Миграция | Назначение |
 |---|---|---|
-| `payment_orders` | `lib/payments/store-postgres.ts` | заказы / lifecycle / events |
-| `payment_card_tokens` | `lib/payments/store-postgres.ts` | сохранённые токены карт (PK = customer_email) |
-| `payment_telemetry` | `lib/telemetry/store-postgres.ts` | событийный лог checkout (privacy-friendly: e-mail хешируется, IP маскируется до /24) |
-| `idempotency_records` | `lib/security/idempotency-postgres.ts` | dedup для money-роутов |
+| `payment_orders` | `migrations/0001_payment_orders.sql` | заказы / lifecycle / events |
+| `payment_card_tokens` | `migrations/0002_payment_card_tokens.sql` | сохранённые токены карт (PK = customer_email) |
+| `payment_telemetry` | `migrations/0003_payment_telemetry.sql` | событийный лог checkout (privacy-friendly: e-mail хешируется, IP маскируется до /24) |
+| `idempotency_records` | `migrations/0004_idempotency_records.sql` | dedup для money-роутов |
+| `_migrations` | служебная, создаётся runner'ом | bookkeeping применённых миграций |
+
+**Migration runner.** Схема теперь живёт в `migrations/NNNN_*.sql`. Накатить:
+
+```bash
+DATABASE_URL=postgres://... npm run migrate:up
+DATABASE_URL=postgres://... npm run migrate:status
+```
+
+Ребят `ensureSchema*` функций в коде (`lib/payments/store-postgres.ts`,
+`lib/security/idempotency-postgres.ts`, `lib/telemetry/store-postgres.ts`)
+оставлены как safety net и idempotent. На прод-БД, где таблицы уже
+существуют, `migrate:up` ничего не меняет — фиксирует bookkeeping в
+`_migrations`. Подробнее — `migrations/README.md`.
+
+**Подключение runner'а в autodeploy — отдельная задача (queued).** Сейчас
+`/usr/local/bin/levelchannel-autodeploy` НЕ вызывает `npm run migrate:up`.
+Пока не подключено — после первого ручного `migrate:up` на проде новые
+миграции придётся запускать руками тем же `npm run migrate:up` (через ssh)
+**до** деплоя кода, который от них зависит.
 
 ### Доступ для отладки — три способа
 
