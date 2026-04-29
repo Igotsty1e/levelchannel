@@ -1,3 +1,4 @@
+import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
 import {
   formatRubles,
   isValidPaymentAmount,
@@ -115,6 +116,15 @@ export async function POST(request: Request) {
       }
     }
 
+    const auditCommonFields = {
+      customerEmail: emailValidation.email,
+      clientIp: ip === 'unknown' ? null : ip,
+      userAgent: request.headers.get('user-agent') || null,
+      amountKopecks: rublesToKopecks(amountRub),
+      actor: 'user' as const,
+      idempotencyKey: request.headers.get('idempotency-key') || null,
+    }
+
     if (result.kind === 'paid') {
       await appendCheckoutTelemetryEvent({
         type: 'one_click_paid',
@@ -125,6 +135,14 @@ export async function POST(request: Request) {
         path: '/api/payments/charge-token',
         userAgent: request.headers.get('user-agent') || undefined,
         ip,
+      })
+
+      await recordPaymentAuditEvent({
+        ...auditCommonFields,
+        eventType: 'charge_token.succeeded',
+        invoiceId: result.order.invoiceId,
+        toStatus: result.order.status,
+        payload: { provider: 'cloudpayments' },
       })
 
       return {
@@ -144,6 +162,17 @@ export async function POST(request: Request) {
         path: '/api/payments/charge-token',
         userAgent: request.headers.get('user-agent') || undefined,
         ip,
+      })
+
+      await recordPaymentAuditEvent({
+        ...auditCommonFields,
+        eventType: 'charge_token.requires_3ds',
+        invoiceId: result.order.invoiceId,
+        toStatus: result.order.status,
+        payload: {
+          transactionId: result.threeDs.transactionId,
+          acsUrl: result.threeDs.acsUrl,
+        },
       })
 
       return {
@@ -174,6 +203,14 @@ export async function POST(request: Request) {
       path: '/api/payments/charge-token',
       userAgent: request.headers.get('user-agent') || undefined,
       ip,
+    })
+
+    await recordPaymentAuditEvent({
+      ...auditCommonFields,
+      eventType: 'charge_token.declined',
+      invoiceId: result.order.invoiceId,
+      toStatus: result.order.status,
+      payload: { reason: result.reason },
     })
 
     return {
