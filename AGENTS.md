@@ -40,8 +40,9 @@ result." Bad work is worse than no work.
 
 1. **Restate the task** in one sentence. Confirm you understood it.
 2. **Audit existing state** before writing anything new. Read the
-   relevant doc (`README.md`, `ARCHITECTURE.md`, `SECURITY.md`,
-   `PAYMENTS_SETUP.md`, `ROADMAP.md`), grep the codebase. The thing
+   relevant doc (`README.md`, `DOCUMENTATION.md`, `ARCHITECTURE.md`,
+   `SECURITY.md`, `PAYMENTS_SETUP.md`, `OPERATIONS.md`, `ROADMAP.md`,
+   `ENGINEERING_BACKLOG.md`), grep the codebase. The thing
    you're about to build might already be implemented.
 3. **Identify constraints** — current tech stack (Next.js 16 App
    Router, React 18, TypeScript, Tailwind), the payment domain
@@ -138,10 +139,13 @@ The doc layer in this repo:
 | File | Carries |
 |---|---|
 | `README.md` | Stack overview, quick-start, env vars, deploy stance. Always-loaded entry point. |
+| `DOCUMENTATION.md` | Documentation map. Which doc owns which topic, what to read first, where duplication is forbidden. |
 | `ARCHITECTURE.md` | File-by-file responsibilities. Frontend, payment domain, security layer, API routes. Update when a file moves or its responsibility changes. |
 | `SECURITY.md` | Hardening checklist + threat model + open items. Update when a security boundary moves. |
 | `PAYMENTS_SETUP.md` | Mock vs real CloudPayments switch, env vars, webhook URL setup. Update when the payment integration contract changes. |
-| `ROADMAP.md` | P0 / P1 / P2 backlog. Update when items ship or scope changes. |
+| `OPERATIONS.md` | Production infrastructure, deploy, server, DB, rollback, retention, incident runbook. |
+| `ROADMAP.md` | Outcome-level priorities. Product, operations, compliance. No low-level implementation queue here. |
+| `ENGINEERING_BACKLOG.md` | Concrete engineering queue. System tasks that are not yet shipped. |
 | `PRD.md` | Historical first-version landing PRD. Treat as audit trail; don't decide current behaviour from this. |
 
 Almost every shipped change touches at least one of these. If your diff
@@ -274,11 +278,13 @@ English-tutoring sessions, with server-side CloudPayments integration.
 | Doc | When to read |
 |---|---|
 | `README.md` | First time orienting. Stack, quick-start, env vars. |
+| `DOCUMENTATION.md` | Before trusting any doc, check which file actually owns the topic and what should not be duplicated elsewhere. |
 | `OPERATIONS.md` | Before any deploy / restart / DB op / log dive. Where the server is, how a commit reaches prod, runbook for common ops, incident playbook. |
 | `ARCHITECTURE.md` | Before any structural change. File-by-file map. |
 | `SECURITY.md` | Before any change to `lib/security/`, `next.config.js`, webhook handling, or rate limiting. |
 | `PAYMENTS_SETUP.md` | Before changing the payment provider switch, env-var contract, or webhook URL setup. |
-| `ROADMAP.md` | Before adding features — check whether the user's ask is a P0 / P1 / P2 already, and where it fits. |
+| `ROADMAP.md` | Before adding features — check outcome-level priorities and whether the ask changes current direction. |
+| `ENGINEERING_BACKLOG.md` | Before adding features — check whether the implementation task is already queued or intentionally deferred. |
 | `PRD.md` | **Historical.** Don't decide current behaviour from this — it's the original landing PRD, before the payment + security layers landed. |
 
 ### Critical paths
@@ -309,7 +315,7 @@ English-tutoring sessions, with server-side CloudPayments integration.
   - `request.ts` — origin checks, invoice id validation
     (`/^lc_[a-z0-9_]{8,48}$/i`), rate limiting wrapper.
   - `rate-limit.ts` — in-memory per-IP limiter (single-process; any
-    multi-instance deploy needs a Redis backend, see ROADMAP).
+    multi-instance deploy needs a shared backend, see ENGINEERING_BACKLOG).
   - `idempotency.ts` + `idempotency-postgres.ts` — request dedup by
     `Idempotency-Key` header for money-moving routes (`/api/payments`,
     `/api/payments/charge-token`). 5xx responses are NOT cached so

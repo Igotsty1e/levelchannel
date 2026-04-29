@@ -140,7 +140,7 @@
 Если между документами есть расхождения:
 
 1. код
-2. `README.md`
-3. `ARCHITECTURE.md`
-4. `PAYMENTS_SETUP.md`
+2. профильный документ-владелец темы из `DOCUMENTATION.md`
+3. `README.md`
+4. `ROADMAP.md` и `ENGINEERING_BACKLOG.md` только как intent-layer
 5. `PRD.md` как исторический документ

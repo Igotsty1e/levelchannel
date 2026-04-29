@@ -1,54 +1,44 @@
 # Roadmap
 
-## Статус
+Этот файл хранит high-level приоритеты следующего этапа. Конкретные
+инженерные таски вынесены в `ENGINEERING_BACKLOG.md`.
 
-Production runtime на VPS и боевой CloudPayments уже запущены. Следующий
-этап, операционное дожатие production и юридический контур вокруг ПДн.
+## P0
 
-## Ближайшие задачи
-
-### P0
+### Compliance
 
 - подать уведомление в Роскомнадзор о начале обработки ПДн
-- настроить ежедневный backup Postgres и проверить restore
+- зафиксировать и выполнять retention / deletion policy по ПДн
+
+### Production operations
+
+- настроить ежедневный backup Postgres и регулярно проверять restore
 - подключить uptime monitor на `/api/health`
 - выключить password auth по SSH и запретить прямой root по паролю
-- зафиксировать и выполнять retention / deletion policy по ПДн
-- перевести продовый workdir на git-aware deploy или другой auditable rollout
+- уйти от manual deploy к более предсказуемому процессу выката
 
-### P1
+## P1
 
-- добавить error monitoring
-- добавить reverse proxy rate limiting
-- зафиксировать deploy automation без ручного rsync
+### Operator visibility
 
-### P2
+- получить более удобную видимость по оплатам и их статусам
+- получить понятный контроль за сбоями и инцидентами оплаты
 
-- добавить reconciliation screen / admin tooling
-- добавить телеметрию по payment funnel
-- добавить email / Telegram notification о successful payment на стороне оператора
+### Service reliability
 
-## Что нужно сделать в коде в будущем
+- снизить зависимость от ручной операционки вокруг продакшена
+- улучшить наблюдаемость за приложением и webhook-контуром
 
-### Payment domain
+## P2
 
-- перейти с polling на более надёжную модель статусов при росте нагрузки
-- добавить idempotency key для client-side create payment requests
-- добавить lifecycle cleanup для старых pending orders
+### Operator tooling and growth
 
-### Security
+- добавить операторские уведомления о важных платёжных событиях
+- улучшить аналитику payment funnel
+- при необходимости вернуться к продуктовым улучшениям checkout, если это даст измеримую конверсию
 
-- вынести rate limiter в shared backend store
-- добавить отдельный audit log persistence
-- добавить security regression checklist перед релизом
+## Важно
 
-### Product
-
-- добавить нормальный operator-side список оплат вместо файлового просмотра `data/`
-- при необходимости вернуть предустановленные суммы как быстрые кнопки поверх свободного ввода
-
-## Не делать сейчас
-
-- не добавлять пользовательский кабинет
-- не добавлять сбор лишних персональных данных
-- не усложнять checkout формами, пока не появится реальная бизнес-необходимость
+- `ROADMAP.md` отвечает за outcome-level приоритеты
+- `ENGINEERING_BACKLOG.md` отвечает за implementation queue
+- `OPERATIONS.md` отвечает за фактическое состояние production
