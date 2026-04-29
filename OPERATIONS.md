@@ -236,14 +236,40 @@ SSH-туннель.
 **Connection string** (в формате `DATABASE_URL`):
 `postgresql://levelchannel:<password>@127.0.0.1:5432/levelchannel?sslmode=disable`
 
-**Таблицы (создаются автоматически при первом запросе через `ensureSchema*`):**
+**Таблицы (источник истины — `migrations/`, см. ниже):**
 
-| Таблица | Файл | Назначение |
+| Таблица | Миграция | Назначение |
 |---|---|---|
-| `payment_orders` | `lib/payments/store-postgres.ts` | заказы / lifecycle / events |
-| `payment_card_tokens` | `lib/payments/store-postgres.ts` | сохранённые токены карт (PK = customer_email) |
-| `payment_telemetry` | `lib/telemetry/store-postgres.ts` | событийный лог checkout (privacy-friendly: e-mail хешируется, IP маскируется до /24) |
-| `idempotency_records` | `lib/security/idempotency-postgres.ts` | dedup для money-роутов |
+| `payment_orders` | `migrations/0001_payment_orders.sql` | заказы / lifecycle / events |
+| `payment_card_tokens` | `migrations/0002_payment_card_tokens.sql` | сохранённые токены карт (PK = customer_email) |
+| `payment_telemetry` | `migrations/0003_payment_telemetry.sql` | событийный лог checkout (privacy-friendly: e-mail хешируется, IP маскируется до /24) |
+| `idempotency_records` | `migrations/0004_idempotency_records.sql` | dedup для money-роутов |
+| `accounts` | `migrations/0005_accounts.sql` | identity: email, password_hash, email_verified_at, disabled_at |
+| `account_roles` | `migrations/0006_account_roles.sql` | роли (admin / teacher / student) per account |
+| `account_sessions` | `migrations/0007_account_sessions.sql` | session bearer-tokens, хранятся хешем; cookie `lc_session` |
+| `email_verifications` | `migrations/0008_email_verifications.sql` | single-use verify-email tokens (TTL 24h) |
+| `password_resets` | `migrations/0009_password_resets.sql` | single-use password-reset tokens (TTL 1h) |
+| `accounts.email` CHECK | `migrations/0010_accounts_email_normalized.sql` | DB-level enforcement: `email = lower(btrim(email))`. Любой bypass app-слоя получает constraint violation, не shadow account |
+| `_migrations` | служебная, создаётся runner'ом | bookkeeping применённых миграций |
+
+**Migration runner.** Схема теперь живёт в `migrations/NNNN_*.sql`. Накатить:
+
+```bash
+DATABASE_URL=postgres://... npm run migrate:up
+DATABASE_URL=postgres://... npm run migrate:status
+```
+
+Ребят `ensureSchema*` функций в коде (`lib/payments/store-postgres.ts`,
+`lib/security/idempotency-postgres.ts`, `lib/telemetry/store-postgres.ts`)
+оставлены как safety net и idempotent. На прод-БД, где таблицы уже
+существуют, `migrate:up` ничего не меняет — фиксирует bookkeeping в
+`_migrations`. Подробнее — `migrations/README.md`.
+
+**Подключение runner'а в autodeploy — отдельная задача (queued).** Сейчас
+`/usr/local/bin/levelchannel-autodeploy` НЕ вызывает `npm run migrate:up`.
+Пока не подключено — после первого ручного `migrate:up` на проде новые
+миграции придётся запускать руками тем же `npm run migrate:up` (через ssh)
+**до** деплоя кода, который от них зависит.
 
 ### Доступ для отладки — три способа
 
@@ -538,6 +564,11 @@ TELEMETRY_HASH_SECRET=<!-- FILL IN -->
 
 CLOUDPAYMENTS_PUBLIC_ID=<!-- FILL IN из кабинета CloudPayments -->
 CLOUDPAYMENTS_API_SECRET=<!-- FILL IN из кабинета CloudPayments -->
+
+# Resend transactional email (verify + reset). При пустом ключе lib/email
+# падает в console fallback — для дев-среды ок, для прода обязательно.
+RESEND_API_KEY=<!-- FILL IN из кабинета Resend -->
+EMAIL_FROM="LevelChannel <noreply@levelchannel.ru>"
 ```
 
 `.env` на сервере — права `chmod 600`, владелец = app-юзер. Не в git, не
@@ -553,6 +584,9 @@ CLOUDPAYMENTS_API_SECRET=<!-- FILL IN из кабинета CloudPayments -->
   сломает связку «один и тот же e-mail в телеметрии до и после ротации»,
   но сами события не теряются.
 - **`DATABASE_URL`**: смена пароля БД — обновить в `.env`, рестарт.
+- **`RESEND_API_KEY`**: ротация в кабинете Resend, обновить `.env`, рестарт.
+  Старый ключ можно отозвать сразу — verify/reset токены идут от нашего
+  сервера, доставка не зависит от истории.
 
 ---
 
