@@ -39,4 +39,20 @@ describe('lib/auth/policy', () => {
   it('accepts a normal mixed password', () => {
     expect(validatePasswordPolicy('correct horse battery staple').ok).toBe(true)
   })
+
+  it('rejects a top-of-list leaked password (too_common)', () => {
+    const result = validatePasswordPolicy('password1')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toBe('too_common')
+  })
+
+  it('rejects regardless of case and surrounding whitespace', () => {
+    expect(validatePasswordPolicy('PASSWORD1').ok).toBe(false)
+    expect(validatePasswordPolicy('  password1  ').ok).toBe(false)
+    expect(validatePasswordPolicy('Qwerty123').ok).toBe(false)
+  })
+
+  it('does not reject uncommon long passphrases', () => {
+    expect(validatePasswordPolicy('mauve giraffe walks slowly').ok).toBe(true)
+  })
 })
