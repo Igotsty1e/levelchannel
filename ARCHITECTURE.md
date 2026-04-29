@@ -100,6 +100,28 @@ Auth-контур уже живёт в коде: есть таблицы, `lib/a
 | Session lifecycle: создание / валидация / revoke / expiry | [`tests/integration/auth/session-lifecycle.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/session-lifecycle.test.ts) |
 | **NOT covered yet:** login with unverified email returns 200 + session (cabinet-allow, payment-gated) | backlog'd в `ENGINEERING_BACKLOG.md` § DX and quality |
 
+### Audit log (payment lifecycle)
+
+Append-only audit-log-of-record для money-bound transitions. Параллельный канал к `payment_telemetry` (которая privacy-friendly funnel-аналитика, HMAC email + /24 IP) — audit хранит full email + full IP для расследования инцидентов. Доступ admin-only; см. `SECURITY.md` § "Audit log — payment lifecycle".
+
+- [`migrations/0012_payment_audit_events.sql`](/Users/ivankhanaev/LevelChannel/migrations/0012_payment_audit_events.sql) — append-only таблица. CHECK enum `event_type` (17 transitions), FK `invoice_id` → `payment_orders` ON DELETE NO ACTION (audit переживает order), structured columns + JSONB `payload`. Индексы: per-invoice, per-account (partial WHERE NOT NULL), per-type-time.
+- [`lib/audit/payment-events.ts`](/Users/ivankhanaev/LevelChannel/lib/audit/payment-events.ts) — `recordPaymentAuditEvent(...)` (best-effort: catch + warn + return false; не throw'ит, чтобы business path не валился). `listPaymentAuditEventsByInvoice(invoiceId)` для admin tooling. Экспорт `PAYMENT_AUDIT_EVENT_TYPES` — single source of truth для enum, должен совпадать с миграционным CHECK (закрыто integration-тестом).
+- [`lib/audit/pool.ts`](/Users/ivankhanaev/LevelChannel/lib/audit/pool.ts) — изолированный pg Pool (max=4) под audit. Будущая консолидация всех domain pool'ов в общий `lib/db/pool.ts` — backlog item.
+
+Точки записи (route handlers):
+
+- [`app/api/payments/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/route.ts) → `order.created`
+- [`app/api/payments/[invoiceId]/cancel/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/[invoiceId]/cancel/route.ts) → `order.cancelled`
+- [`app/api/payments/mock/[invoiceId]/confirm/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/mock/[invoiceId]/confirm/route.ts) → `mock.confirmed`
+- [`app/api/payments/charge-token/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/charge-token/route.ts) → `charge_token.succeeded` / `charge_token.requires_3ds` / `charge_token.declined`
+- [`app/api/payments/3ds-callback/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/3ds-callback/route.ts) → `threeds.callback.received` + `threeds.confirmed` / `threeds.declined`
+- [`app/api/payments/webhooks/cloudpayments/pay/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/webhooks/cloudpayments/pay/route.ts) → `webhook.pay.processed`
+- [`app/api/payments/webhooks/cloudpayments/fail/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/webhooks/cloudpayments/fail/route.ts) → `webhook.fail.received`
+
+Не покрыто (открытые backlog-items, см. `ENGINEERING_BACKLOG.md`):
+- `webhook.check.received` / `webhook.*.declined` / `webhook.pay.validation_failed` — пока пишется только финальный business transition; pre-validation phases требуют переработки `cloudpayments-route` wrapper'а.
+- `charge_token.attempted` / `charge_token.error` — pre-call recording требует двухфазной записи; для MVP отдан только финальный исход.
+
 ### Schema migrations
 
 - [`scripts/migrate.mjs`](/Users/ivankhanaev/LevelChannel/scripts/migrate.mjs) — минимальный self-contained runner поверх `pg`. Команды: `npm run migrate:up`, `npm run migrate:status`. Применяет файлы `migrations/NNNN_*.sql` по порядку в транзакциях, фиксирует имена в `_migrations`.

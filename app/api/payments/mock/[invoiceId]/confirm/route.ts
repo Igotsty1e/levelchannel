@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server'
 
+import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
 import { paymentConfig } from '@/lib/payments/config'
 import { markOrderPaid } from '@/lib/payments/provider'
 import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
+  getClientIp,
   isValidInvoiceId,
 } from '@/lib/security/request'
 
@@ -40,6 +42,18 @@ export async function POST(
   if (!order) {
     return NextResponse.json({ error: 'Payment not found.' }, { status: 404 })
   }
+
+  await recordPaymentAuditEvent({
+    eventType: 'mock.confirmed',
+    invoiceId: order.invoiceId,
+    customerEmail: order.customerEmail,
+    clientIp: getClientIp(request),
+    userAgent: request.headers.get('user-agent') || null,
+    amountKopecks: rublesToKopecks(order.amountRub),
+    toStatus: order.status,
+    actor: 'system',
+    payload: { source: 'mock.manual_confirm' },
+  })
 
   return NextResponse.json(
     { ok: true },

@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 
+import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
 import { paymentConfig } from '@/lib/payments/config'
 import { confirmThreeDsAndFinalize } from '@/lib/payments/provider'
+import { getOrder } from '@/lib/payments/store'
 import { appendCheckoutTelemetryEvent } from '@/lib/telemetry/store'
 import {
   enforceRateLimit,
@@ -65,6 +67,30 @@ export async function POST(request: Request) {
 
   const result = await confirmThreeDsAndFinalize({ invoiceId, paRes })
 
+  // PublicPaymentOrder doesn't carry customerEmail (intentionally — it's
+  // the client-facing shape). Re-fetch the full order for audit identity.
+  // Skipped for unknown_invoice — there's nothing to bind to.
+  const fullOrder = result.kind === 'unknown_invoice' ? null : await getOrder(invoiceId)
+  const auditCommon =
+    fullOrder
+      ? {
+          invoiceId: fullOrder.invoiceId,
+          customerEmail: fullOrder.customerEmail,
+          clientIp: getClientIp(request),
+          userAgent: request.headers.get('user-agent') || null,
+          amountKopecks: rublesToKopecks(fullOrder.amountRub),
+          actor: 'user' as const,
+        }
+      : null
+
+  if (auditCommon) {
+    await recordPaymentAuditEvent({
+      ...auditCommon,
+      eventType: 'threeds.callback.received',
+      payload: { mdPresent: !!md, kind: result.kind },
+    })
+  }
+
   if (result.kind === 'paid') {
     await appendCheckoutTelemetryEvent({
       type: 'one_click_3ds_paid',
@@ -73,6 +99,13 @@ export async function POST(request: Request) {
       path: '/api/payments/3ds-callback',
       ip: getClientIp(request),
     })
+    if (auditCommon) {
+      await recordPaymentAuditEvent({
+        ...auditCommon,
+        eventType: 'threeds.confirmed',
+        toStatus: result.order.status,
+      })
+    }
     return redirectThankYou(result.order.invoiceId)
   }
 
@@ -81,6 +114,14 @@ export async function POST(request: Request) {
   }
 
   if (result.kind === 'invalid_state') {
+    if (auditCommon) {
+      await recordPaymentAuditEvent({
+        ...auditCommon,
+        eventType: 'threeds.declined',
+        toStatus: result.order.status,
+        payload: { reason: 'invalid_state' },
+      })
+    }
     return redirectFailed(invoiceId)
   }
 
@@ -91,6 +132,15 @@ export async function POST(request: Request) {
     path: '/api/payments/3ds-callback',
     ip: getClientIp(request),
   })
+
+  if (auditCommon) {
+    await recordPaymentAuditEvent({
+      ...auditCommon,
+      eventType: 'threeds.declined',
+      toStatus: result.order.status,
+      payload: { reason: result.reason },
+    })
+  }
 
   return redirectFailed(invoiceId)
 }
