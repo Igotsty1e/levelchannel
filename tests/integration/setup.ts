@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll } from 'vitest'
 
 import { getAuthPool } from '@/lib/auth/pool'
+import { __resetRateLimitsForTesting } from '@/lib/security/rate-limit'
 
 // Per /plan-eng-review D5 — integration tests run against Docker Postgres
 // (postgres:16.13, exact prod parity). Brought up by scripts/test-integration.sh
@@ -30,6 +31,9 @@ afterEach(async () => {
       accounts
     restart identity cascade
   `)
+  // Reset in-memory rate-limit buckets so per-IP and per-email-hash
+  // counters don't leak across test cases.
+  __resetRateLimitsForTesting()
 })
 
 afterAll(async () => {
