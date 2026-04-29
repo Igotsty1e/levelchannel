@@ -362,6 +362,8 @@ gunzip -c /var/backups/levelchannel/db-YYYY-MM-DD.sql.gz | psql "$RECOVERY_DATAB
 
 ### Retention и удаление персональных данных
 
+> **Канонический документ — [`docs/legal/retention-policy.md`](docs/legal/retention-policy.md)** (со скелетом для legal-rf-router pipeline). Эта таблица — operator-facing краткая выписка для runbook'а, не подменяет основной документ. При расхождении источник истины — `docs/legal/retention-policy.md`.
+
 Минимальная операционная политика хранения для текущего контура:
 
 | Категория данных | Где хранится | Срок |
