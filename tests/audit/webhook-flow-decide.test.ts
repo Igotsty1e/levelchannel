@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 
-// @ts-expect-error — pulling JS from a sibling tools script, no TS types
 import { decideVerdict } from '../../scripts/webhook-flow-alert.mjs'
 
 // Pure-logic threshold check. The probe itself is a side-effecting
