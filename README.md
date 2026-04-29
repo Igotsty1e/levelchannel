@@ -86,5 +86,5 @@ Payment API:
 ## Что важно помнить
 
 - файловый storage остаётся fallback-режимом, production-целевой backend теперь `PostgreSQL`
-- боевой CloudPayments flow уже работает на VPS, но deploy по-прежнему manual и требует сверки `DEPLOYED_SHA`
+- боевой CloudPayments flow уже работает на VPS, а прод обновляется git-based автодеплоем с сервера по `origin/main`
 - mock confirm должен оставаться выключенным в production

@@ -94,10 +94,9 @@
 | Bind `next start` | `*:3000` | `127.0.0.1:3000` | при ошибке firewall — голое приложение в интернете без TLS |
 | nginx rate limiting | отсутствует (только app-level in-memory) | `limit_req_zone` на mutation роутах | DDoS на `/api/payments/*` пробивает к Node |
 | Backup БД | не настроен | ежедневный `pg_dump`, retention 14+ дней | при отказе диска — потеря всех платёжных записей |
-| Deploy audit trail | manual rsync/upload, продовый workdir не git-репо | git-checkout на сервере + автоматизированный deploy | расхождение между `main` и продом можно заметить слишком поздно |
 
-Конкретные шаги по закрытию — в `OPERATIONS.md §6` (deploy / переход на
-git) и `§13` (SSH hardening, app binding).
+Конкретные шаги по оставшимся пунктам — в `OPERATIONS.md §6` (deploy,
+rollback, проверка timer'а) и `§13` (SSH hardening, app binding).
 
 ## Обязательные меры перед production
 

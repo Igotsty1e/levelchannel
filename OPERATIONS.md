@@ -10,11 +10,11 @@ Single source of truth по инфраструктуре, деплою, git work
 > как полагаться на этот раздел". Эти маркеры рассчитаны на то, что их
 > заменят на реальные хосты/пути/имена.
 
-> Прод по-прежнему деплоится manual upload'ом, а `/var/www/levelchannel`
-> остаётся НЕ git-репозиторием. Поэтому перед любым инцидентом или ручным
-> изменением на сервере сначала сверяй текущий продовый SHA через
-> `/var/www/levelchannel/DEPLOYED_SHA` и затем сравнивай его с `origin/main`.
-> См. §6 для процедуры выката и проверки.
+> Прод деплоится server-side git autodeploy'ем из `origin/main`. Активный
+> `/var/www/levelchannel` теперь git-checkout, а rollout делает swap на
+> свежий release directory с обязательным health-check после рестарта.
+> Перед любым инцидентом сверяй `DEPLOYED_SHA`, `git rev-parse HEAD` в
+> проде и `origin/main`. См. §6.
 
 ---
 
@@ -30,10 +30,11 @@ Single source of truth по инфраструктуре, деплою, git work
 | TLS | Let's Encrypt, `/etc/letsencrypt/live/levelchannel.ru/` | `certbot.timer` активен → автообновление |
 | Reverse proxy | `nginx`, `/etc/nginx/sites-enabled/levelchannel` | простой `proxy_pass http://127.0.0.1:3000`, без `limit_req` (см. §13) |
 | Process manager | `systemd`, юнит `/etc/systemd/system/levelchannel.service` | `User=levelchannel`, `WorkingDirectory=/var/www/levelchannel`, `ExecStart=/usr/bin/npm run start` |
+| Auto-deploy | `systemd` timer `levelchannel-autodeploy.timer` + service `/etc/systemd/system/levelchannel-autodeploy.service` | раз в минуту сверяет `origin/main`, см. §6 |
 | Env file | `/etc/levelchannel.env` (chmod 600, root:root) | подключается через `EnvironmentFile=` в systemd unit |
 | SSH | root + ed25519 ключ `~/.ssh/levelchannel_timeweb_ed25519` (на машине оператора) | password auth включён (gap, §13) |
 | Firewall (ufw) | OpenSSH + Nginx Full + `10050/tcp` (Zabbix agent от Timeweb) | прикрывает gap с `*:3000` в краткосроке |
-| **Деплой** | **Manual upload (scp/rsync с локальной машины)** | На сервере НЕТ `.git` — workdir не git-репо. См. §6. |
+| **Деплой** | **Git-based autodeploy с сервера** | `/usr/local/bin/levelchannel-autodeploy` делает clone → `npm ci` → `npm run build` → swap → health-check |
 | Email транспорт | пока не нужен (чеки шлёт CloudKassir) | — |
 | Платёжный провайдер | CloudPayments | <!-- FILL IN: ID кабинета (есть в .env как CLOUDPAYMENTS_PUBLIC_ID) --> |
 | Онлайн-касса | CloudKassir (входит в CloudPayments) | <!-- FILL IN: статус ОФД --> |
@@ -50,6 +51,8 @@ Single source of truth по инфраструктуре, деплою, git work
 **Remote:** `https://github.com/Igotsty1e/levelchannel.git` (private).
 
 **Default branch:** `main`. Это и dev, и prod. Долгоживущих feature-веток сейчас нет.
+Каждый push в `main` считается production-bound, потому что его подберёт
+`levelchannel-autodeploy.timer`.
 
 **Кто пушит:** <!-- FILL IN: ты один / команда из N человек -->.
 
@@ -81,7 +84,7 @@ Single source of truth по инфраструктуре, деплою, git work
 **Хост:** `83.217.202.136`, VPS на Timeweb.
 **OS:** Ubuntu 24.04.4 LTS (kernel 6.8.0-110-generic).
 **Node.js версия:** v20.20.2, npm 10.8.2.
-**Рабочая директория:** `/var/www/levelchannel` (НЕ git-репо — см. §6).
+**Рабочая директория:** `/var/www/levelchannel` (активный git-checkout текущего release).
 **Пользователь, под которым крутится app:** `levelchannel` (system user).
 **Env file:** `/etc/levelchannel.env` (chmod 600, root:root, подключается через `EnvironmentFile=` в systemd unit).
 **Порт, который слушает Next:** `3000`. Сейчас bind на `*:3000` (gap, §13). Должен быть `127.0.0.1:3000`, перед ним nginx.
@@ -104,13 +107,8 @@ sudo systemctl status levelchannel
 sudo systemctl restart levelchannel
 sudo journalctl -u levelchannel -f         # follow логов
 sudo journalctl -u levelchannel --since "1 hour ago"
-```
-
-```bash
-sudo systemctl status levelchannel
-sudo systemctl restart levelchannel
-sudo journalctl -u levelchannel -f         # follow логов
-sudo journalctl -u levelchannel --since "1 hour ago"
+sudo systemctl status levelchannel-autodeploy.timer
+sudo journalctl -u levelchannel-autodeploy.service --since "1 hour ago"
 ```
 
 Файл юнита: `/etc/systemd/system/levelchannel.service`. Текущее
@@ -364,179 +362,155 @@ gunzip -c /var/backups/levelchannel/db-2026-04-29.sql.gz | psql "$RECOVERY_DATAB
 
 ## 6. Deploy
 
-**Текущий механизм: manual upload через rsync/scp с локальной машины оператора.**
-Нет `Dockerfile`, нет `docker-compose.yml`, нет `.github/workflows/`,
-нет pm2, и **нет `.git` в `/var/www/levelchannel`** — workdir на сервере
-**не git-репозиторий**. Файлы попадают туда копированием, без аудит-trail
-"какой sha сейчас крутится".
+**Текущий механизм: server-side git autodeploy из `origin/main`.**
+За rollout отвечает `/usr/local/bin/levelchannel-autodeploy`, который
+запускается `systemd` timer'ом `levelchannel-autodeploy.timer` раз в
+минуту. Схема простая:
 
-`postbuild.js` и `public/.htaccess` — legacy от первой static-export
-версии, в текущем server-режиме не используются.
+1. узнать `target_sha` через `git ls-remote` на `origin/main`
+2. если SHA не изменился, выйти без действий
+3. клонировать свежий release в `/var/www/levelchannel.release-<sha12>`
+4. выполнить `env -u NODE_ENV npm ci`
+5. загрузить `/etc/levelchannel.env` и выполнить `env -u NODE_ENV npm run build`
+6. записать `DEPLOYED_SHA`
+7. остановить `levelchannel`
+8. переименовать текущий `/var/www/levelchannel` в `/var/www/levelchannel.prev-<timestamp>`
+9. переместить новый release в `/var/www/levelchannel`
+10. запустить `levelchannel` и проверить `http://127.0.0.1:3000/api/health`
+11. оставить только три последних `levelchannel.prev-*`
 
-### Процедура деплоя: build-локально → rsync → restart
+`postbuild.js` и `public/.htaccess` остаются legacy от первой
+static-export версии, в текущем server-режиме не участвуют в deploy.
+
+### Что именно крутит deploy
+
+| Компонент | Где | Роль |
+|---|---|---|
+| Deploy script | `/usr/local/bin/levelchannel-autodeploy` | весь rollout, build и swap |
+| Deploy unit | `/etc/systemd/system/levelchannel-autodeploy.service` | oneshot запуск скрипта |
+| Deploy timer | `/etc/systemd/system/levelchannel-autodeploy.timer` | `OnBootSec=2min`, `OnUnitActiveSec=1min`, `Persistent=true` |
+| GitHub auth | `/home/levelchannel/.ssh/github_deploy` + `/home/levelchannel/.ssh/config` | read-only deploy key для `git@github.com:Igotsty1e/levelchannel.git` |
+
+### Нормальный путь выката
 
 ```bash
-# 1. На локальной машине: подтянуть последний main, прогнать gates
+# 1. Локально: подготовить чистый main и пройти gates
 cd ~/LevelChannel
 git checkout main
 git pull --ff-only origin main
 npm ci
-npm run test:run                        # 87 tests должны быть зелёные
-npm run build                           # должен дойти до "✓ Compiled successfully"
+npm run test:run
+npm run build
 
-# 2. Rsync артефактов на прод. Исключаем dev-only мусор и data-store.
-#    Включаем .next (готовый билд), node_modules (production deps),
-#    исходники (Next в server-режиме читает их при старте).
-rsync -avz --delete \
-  --exclude='.git/' \
-  --exclude='.next/cache/' \
-  --exclude='data/' \
-  --exclude='tests/' \
-  --exclude='vitest.config.ts' \
-  --exclude='.env' \
-  --exclude='.env.local' \
-  --exclude='.DS_Store' \
-  -e "ssh -i ~/.ssh/levelchannel_timeweb_ed25519" \
-  ./ root@83.217.202.136:/var/www/levelchannel/
+# 2. Закоммитить и запушить в main
+git push origin main
 
-# 3. На сервере: вернуть владельца файлам и рестартнуть
+# 3. Подождать до минуты и проверить rollout
 ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
-  chown -R levelchannel:levelchannel /var/www/levelchannel
-  systemctl restart levelchannel
-  sleep 2
-  systemctl is-active levelchannel
-  curl -sS -o /dev/null -w "/api/health -> %%{http_code}\n" http://127.0.0.1:3000/api/health
+  systemctl status levelchannel-autodeploy.timer --no-pager
+  journalctl -u levelchannel-autodeploy.service --since "10 minutes ago" --no-pager
+  cat /var/www/levelchannel/DEPLOYED_SHA
+  su -s /bin/bash -c "git -C /var/www/levelchannel rev-parse HEAD" levelchannel
+  curl -s http://127.0.0.1:3000/api/health
 '
 ```
 
-### Smoke test после деплоя
+### Ручной запуск deploy без ожидания timer'а
 
 ```bash
-# С внешней сети — health endpoint должен вернуть 200 ok
-curl -s https://levelchannel.ru/api/health | jq
+ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
+  systemctl start levelchannel-autodeploy.service
+  journalctl -u levelchannel-autodeploy.service -n 100 --no-pager
+'
+```
 
-# Webhook reachability (без HMAC он отдаст 401, это норма)
+### Smoke test после deploy
+
+```bash
+curl -s https://levelchannel.ru/api/health | jq
+# ожидаемо: {"status":"ok","provider":"cloudpayments","storage":"postgres",...}
+
+curl -s -o /dev/null -w "%{http_code}\n" https://levelchannel.ru/
+# ожидаемо: 200
+
 curl -s -X POST https://levelchannel.ru/api/payments/webhooks/cloudpayments/check \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "test=1" -w "\nHTTP %{http_code}\n"
-# ожидаем: HTTP 401 (HMAC missing/invalid) — значит роут жив
+# ожидаемо: HTTP 401, потому что HMAC нет, но маршрут жив
 ```
 
-### Записать что катилось
-
-Поскольку `.git` на проде нет, sha из коммита нужно класть рядом с
-артефактами, иначе через неделю никто не вспомнит что в проде. Пока
-делаем так — после rsync дописать `git rev-parse HEAD` в файл на сервере:
-
-```bash
-ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 \
-  "echo $(git rev-parse HEAD) > /var/www/levelchannel/DEPLOYED_SHA"
-```
-
-Тогда `cat /var/www/levelchannel/DEPLOYED_SHA` всегда покажет что катилось.
-
-### Rollback
-
-Поскольку git на проде нет, rollback = выкатить старый sha с локальной
-машины:
-
-```bash
-cd ~/LevelChannel
-git checkout <previous-sha>            # sha из DEPLOYED_SHA из бэкапа /var/www/levelchannel/
-npm ci
-npm run build
-# повторить процедуру rsync выше
-git checkout main                       # вернуться на main для дальнейшей работы
-```
-
-Если откат вызывает несовместимость со схемой БД — миграции у нас
-add-only (`create table if not exists`), значит откат кода со старыми
-таблицами безопасен. Но если кто-то добавил `alter table ... drop column`
-в новом релизе, сначала восстанови backup БД.
-
-### Долг: переехать на git pull
-
-Текущий manual-upload механизм опасен:
-- нет аудит-trail
-- любой rsync может затереть случайно правленные на сервере файлы
-- если оператор на разных машинах — состояние на проде непредсказуемо
-
-Стандартный фикс — превратить workdir в git-checkout. Это безопасно
-делается без даунтайма:
+### Как проверить, какой коммит сейчас в проде
 
 ```bash
 ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
-  cd /var/www/levelchannel
-  git init
-  git remote add origin https://github.com/Igotsty1e/levelchannel.git
-  git fetch origin main
-  git reset --soft origin/main           # подцепить историю, не трогая working tree
-  git status                              # должно показать diff локального vs git
+  cat /var/www/levelchannel/DEPLOYED_SHA
+  su -s /bin/bash -c "git -C /var/www/levelchannel rev-parse HEAD" levelchannel
+'
+
+cd ~/LevelChannel
+git fetch origin main
+git rev-parse origin/main
+```
+
+Если SHA не совпадают, обычно это значит, что deploy timer ещё не успел
+сходить на GitHub или последний rollout упал. Смотри
+`journalctl -u levelchannel-autodeploy.service`.
+
+### Rollback
+
+Важно: если просто вернуть старую директорию, timer через минуту снова
+накатит текущий `origin/main`. Поэтому rollback всегда начинается с паузы
+autodeploy.
+
+```bash
+ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
+  systemctl stop levelchannel-autodeploy.timer
+  latest_prev=$(ls -1dt /var/www/levelchannel.prev-* | head -n 1)
+  test -n "$latest_prev"
+  systemctl stop levelchannel
+  mv /var/www/levelchannel /var/www/levelchannel.bad-$(date +%Y%m%d-%H%M%S)
+  mv "$latest_prev" /var/www/levelchannel
+  systemctl start levelchannel
+  sleep 2
+  systemctl is-active levelchannel
+  curl -fsS http://127.0.0.1:3000/api/health
 '
 ```
 
-После этого диф между прод-файлами и git-history будет виден честно,
-дальше через `git stash` / `git checkout` / `git pull` всё стандартно.
-Делать только когда есть актуальный бэкап БД и время на возможный
-recovery.
+После этого:
 
-### Pre-deploy чеклист (вручную, если деплой manual)
+1. сделать `git revert` проблемного коммита в `main` или быстро
+   подготовить фикс
+2. запушить исправление
+3. включить timer обратно
+
+```bash
+ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
+  systemctl start levelchannel-autodeploy.timer
+  systemctl status levelchannel-autodeploy.timer --no-pager
+'
+```
+
+Если rollback упирается в несовместимость со схемой БД, правило то же:
+наши текущие изменения безопасны, пока миграции add-only. Если когда-то
+появится destructive schema change, перед rollback нужен restore из backup.
+
+### Pre-push чеклист
 
 - [ ] локально: `npm run test:run` зелёный
 - [ ] локально: `npm run build` зелёный
-- [ ] на сервере: `df -h /` — есть как минимум 2GB свободного
+- [ ] на сервере: `df -h /` показывает запас места для нового release
 - [ ] на сервере: `pg_isready` отвечает ok
-- [ ] изменения в env? — обновил env-файл на сервере ДО рестарта приложения
-- [ ] миграции? — все миграции у нас сейчас идемпотентные `create table if not exists`, схема обновится сама на первом запросе
+- [ ] изменения в env? — сначала обновлён `/etc/levelchannel.env`, потом push
+- [ ] понимаешь, что push в `main` поедет в прод автоматически
 
-### Post-deploy smoke test
+### Запрещённые практики
 
-```bash
-curl -s https://<домен>/api/health | jq
-# ожидаемо: {"status":"ok","provider":"cloudpayments","storage":"postgres",...}
-
-# проверить, что главная отдаётся
-curl -s -o /dev/null -w "%{http_code}\n" https://<домен>/
-
-# проверить webhook reachability (без подписи он отдаст 401, это норма)
-curl -s -X POST https://<домен>/api/payments/webhooks/cloudpayments/check \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "test=1" -w "%{http_code}\n"
-# ожидаемо: 401 (HMAC missing) — значит маршрут жив
-```
-
-### Rollback
-
-```bash
-# локально
-cd ~/LevelChannel
-git checkout <previous-sha>                 # sha из DEPLOYED_SHA / локального git log
-npm ci
-npm run build
-rsync -avz --delete \
-  --exclude='.git/' \
-  --exclude='.next/cache/' \
-  --exclude='data/' \
-  --exclude='tests/' \
-  --exclude='vitest.config.ts' \
-  --exclude='.env' \
-  --exclude='.env.local' \
-  --exclude='.DS_Store' \
-  -e "ssh -i ~/.ssh/levelchannel_timeweb_ed25519" \
-  ./ root@83.217.202.136:/var/www/levelchannel/
-
-ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
-  chown -R levelchannel:levelchannel /var/www/levelchannel
-  systemctl restart levelchannel
-'
-
-git checkout main
-```
-
-Если rollback вызывает несовместимость со схемой БД — миграции у нас
-add-only (`create table if not exists`), значит откат кода со старыми
-таблицами безопасен. Но если ты добавил `alter table ... drop column`,
-сначала восстанови backup БД.
+- ручной `rsync` / `scp` в `/var/www/levelchannel`
+- правки файлов прямо на сервере без коммита
+- restart `levelchannel` как способ "задеплоить код", если `origin/main`
+  не обновлялся
+- rollback без остановки `levelchannel-autodeploy.timer`
 
 ---
 
@@ -829,7 +803,6 @@ ss -tlnp | grep :3000        # убедись, что binding 127.0.0.1, не *
 - настроить uptime monitor на `/api/health` (UptimeRobot free / BetterStack)
 - настроить ежедневный `pg_dump` + retention минимум 14 дней
 - подключить Sentry или хотя бы `journald` → лог-агрегатор
-- автоматизировать deploy (webhook-скрипт или GitHub Actions через SSH)
 - зафиксировать ротацию `CLOUDPAYMENTS_API_SECRET` (раз в N месяцев или по событию)
 - добавить `nginx limit_req_zone` (если в текущем конфиге его нет)
 - backup retention 14 дней не заменяет отдельный архивный контур. По
@@ -840,14 +813,18 @@ ss -tlnp | grep :3000        # убедись, что binding 127.0.0.1, не *
 
 ### git ↔ prod синхронизация
 
-`/var/www/levelchannel` по-прежнему **не git-репо**, поэтому всегда
-проверяй, какой именно коммит сейчас крутится в проде.
+`/var/www/levelchannel` теперь git-checkout последнего успешного release.
+Главный вопрос уже не "есть ли там git", а "дошёл ли последний deploy до
+healthy состояния".
 
 **Как проверить текущий state в любой момент:**
 
 ```bash
 ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
-  cat /var/www/levelchannel/DEPLOYED_SHA 2>/dev/null || echo "DEPLOYED_SHA not written yet"
+  systemctl status levelchannel-autodeploy.timer --no-pager
+  journalctl -u levelchannel-autodeploy.service -n 50 --no-pager
+  cat /var/www/levelchannel/DEPLOYED_SHA
+  su -s /bin/bash -c "git -C /var/www/levelchannel rev-parse HEAD" levelchannel
   curl -s http://127.0.0.1:3000/api/health
 '
 ```
@@ -860,7 +837,7 @@ git fetch origin main
 git rev-parse origin/main
 ```
 
-Если SHA не совпадают, прод отстал от `main` и нужно прогнать процедуру
-деплоя из §6. Следующий шаг после стабилизации, превратить
-`/var/www/levelchannel` в git-checkout
-(см. там же), чтобы дальше иметь честный аудит.
+Если SHA не совпадают дольше пары минут, это уже инцидент deploy pipeline:
+смотри `journalctl -u levelchannel-autodeploy.service`, проверяй GitHub
+доступ ключом `/home/levelchannel/.ssh/github_deploy` и свободное место
+под новый release.
