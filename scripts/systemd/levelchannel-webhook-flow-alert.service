@@ -1,0 +1,21 @@
+# Reference systemd unit for the webhook-flow alert probe. Copy to
+# /etc/systemd/system/ on the VPS during activation; see OPERATIONS.md
+# §9 "Webhook-flow alerting" for the full procedure.
+#
+# This unit is one-shot — invoked by the .timer companion every 30 min.
+# All env (DATABASE_URL, RESEND_API_KEY, EMAIL_FROM, ALERT_EMAIL_TO)
+# is read from __LEVELCHANNEL_ENV_FILE__ so we don't duplicate secrets.
+
+[Unit]
+Description=LevelChannel webhook-flow alert probe
+After=network.target
+
+[Service]
+Type=oneshot
+User=levelchannel
+Group=levelchannel
+WorkingDirectory=__LEVELCHANNEL_APP_DIR__
+EnvironmentFile=__LEVELCHANNEL_ENV_FILE__
+ExecStart=/usr/bin/node scripts/webhook-flow-alert.mjs
+StandardOutput=journal
+StandardError=journal
