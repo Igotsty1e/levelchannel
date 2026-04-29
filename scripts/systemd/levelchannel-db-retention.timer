@@ -1,0 +1,15 @@
+# Reference systemd timer for scripts/db-retention-cleanup.mjs.
+# Copy to /etc/systemd/system/ on the VPS; see OPERATIONS.md §5
+# Retention for activation.
+
+[Unit]
+Description=Run LevelChannel DB retention cleanup daily
+
+[Timer]
+# Run at 04:30 daily — after the daily pg_dump cron at 04:00.
+OnCalendar=*-*-* 04:30:00
+Persistent=true
+Unit=levelchannel-db-retention.service
+
+[Install]
+WantedBy=timers.target

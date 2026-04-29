@@ -383,6 +383,43 @@ gunzip -c /var/backups/levelchannel/db-YYYY-MM-DD.sql.gz | psql "$RECOVERY_DATAB
 4. Отдельно удалить переписку и вспомогательные записи в Telegram / Gmail / Edvibe, если они больше не нужны.
 5. Сохранить краткую внутреннюю отметку: кто удалял, что удалено, на каком основании и в какую дату.
 
+#### Автоматический cleanup expired-записей (TODO — активация на сервере)
+
+`scripts/db-retention-cleanup.mjs` запускается раз в сутки в 04:30 (после `pg_dump` cron в 04:00) и удаляет:
+
+| Таблица | Что удаляет | Why |
+|---|---|---|
+| `account_sessions` | `revoked_at IS NOT NULL` ИЛИ `expires_at < now() - 7d` | Phase 1A debt — без cron'а раздувание revoked + expired сессий |
+| `email_verifications` | `consumed_at IS NOT NULL` ИЛИ `expires_at < now() - 30d` | single-use токены, после consume или истечения уже не нужны |
+| `password_resets` | `consumed_at IS NOT NULL` ИЛИ `expires_at < now() - 30d` | то же |
+| `idempotency_records` | `created_at < now() - 7d` | idempotency window 24h на wire, 7-day forensic tail |
+| `payment_audit_events` | `created_at < now() - 3 years` | 152-ФЗ alignment для финансовых записей; см. `docs/legal/retention-policy.md` |
+
+**НЕ трогается** этим cron'ом: `payment_orders` (54-ФЗ — 5 лет, отдельная политика через legal-rf), `payment_telemetry` (privacy-friendly уже, decision продуктовый), `accounts` / `account_consents` (только через SAR-erasure path).
+
+**Активация (один раз, требует SSH):**
+
+```bash
+ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136
+
+cp /var/www/levelchannel/scripts/systemd/levelchannel-db-retention.{service,timer} \
+   /etc/systemd/system/
+
+systemctl daemon-reload
+systemctl enable --now levelchannel-db-retention.timer
+
+# verify timer schedule:
+systemctl list-timers levelchannel-db-retention.timer
+
+# manual run (without waiting for 04:30):
+systemctl start levelchannel-db-retention.service
+journalctl -u levelchannel-db-retention.service -n 20
+```
+
+В журнале каждый run печатает по одной JSON-строке на таблицу с `rows` (сколько строк удалено). Удобно для аудита: видно объём очистки за каждый день.
+
+**Failure mode:** на ошибке одной таблицы (FK constraint, lock timeout) script продолжает с остальными — логирует error и идёт дальше. Exit non-zero только если **все** таблицы упали (network gone). systemd captures journal в любом случае.
+
 ---
 
 ## 6. Deploy

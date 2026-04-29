@@ -41,7 +41,7 @@ owner-docs и git history важнее старых chat outputs.
 - добавить pre-validation phases в audit (`webhook.check.received`, `webhook.*.declined`, `webhook.pay.validation_failed`) — требует переработки `cloudpayments-route` wrapper'а
 - добавить `charge_token.attempted` / `charge_token.error` (двухфазная запись)
 - консолидировать domain-specific Postgres pools в общий `lib/db/pool.ts` — сейчас 5 отдельных pool'ов (payments, auth, idempotency, telemetry, audit), на multi-instance future это становится ограничением по connection count
-- настроить cron pruning для `payment_audit_events` (>3 года)
+- ~~настроить cron pruning для `payment_audit_events`~~ — **shipped 2026-04-29 (workflow side, активация требует SSH)**: `scripts/db-retention-cleanup.mjs` + systemd unit/timer (04:30 daily) удаляют `payment_audit_events > 3 года` плюс expired-записи из `account_sessions / email_verifications / password_resets / idempotency_records`. Подробно — `OPERATIONS.md §5`
 
 ## P1
 
@@ -59,7 +59,7 @@ owner-docs и git history важнее старых chat outputs.
 ### Auth and consent
 
 - ~~добавить password hash versioning + `needsRehash()` путь для будущей смены cost / алгоритма~~ — **закрыто 2026-04-29**: `passwordNeedsRehash()` в `lib/auth/password.ts` парсит cost из bcrypt prefix; login route после `verifyPassword` silently re-hash'ит и `setAccountPassword`. Best-effort (warn + продолжает на ошибке БД). Покрыто unit + integration тестами. Будущая миграция на argon2id — обновить regex одновременно с введением нового хешера, иначе все login'ы будут перехешировать каждый раз
-- добавить cleanup для истёкших `account_sessions`
+- ~~добавить cleanup для истёкших `account_sessions`~~ — **shipped 2026-04-29**: вошло в `scripts/db-retention-cleanup.mjs` (см. выше)
 - добавить common-password rejection (HIBP / breached list или локальный denylist)
 
 ## P2
