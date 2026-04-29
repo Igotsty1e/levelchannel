@@ -161,7 +161,23 @@ function Header() {
           ))}
         </nav>
 
-        <CTAButton size="sm" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <Link
+            href="/login"
+            style={{
+              color: '#A1A1AA',
+              fontSize: 14,
+              fontWeight: 500,
+              textDecoration: 'none',
+              transition: 'color 0.2s',
+            }}
+            onMouseEnter={(e) => ((e.target as HTMLElement).style.color = '#fff')}
+            onMouseLeave={(e) => ((e.target as HTMLElement).style.color = '#A1A1AA')}
+          >
+            Войти
+          </Link>
+          <CTAButton size="sm" />
+        </div>
       </div>
     </header>
   )

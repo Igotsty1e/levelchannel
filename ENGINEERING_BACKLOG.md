@@ -54,11 +54,24 @@ Multi-phase build из `Output 2` (target architecture). Гостевой checko
     container_name `levelchannel-postgres-test` + port 54329. Parallel
     CI runs would collide. Current single-developer flow OK; parameterize
     when CI matrix grows.
-- **Phase 2 (auth UI)** — pending: `/register`, `/login`, `/forgot`,
-  `/reset`, `/cabinet` (placeholder). Header лендинга получает кнопку
-  «Войти» без удаления существующих CTA. Phase 1B `/verify-failed`
-  placeholder уже стоит — Phase 2 заменит на полный styled UI вместе
-  с остальными страницами.
+- **Phase 2 (auth UI)** — **закрыт 2026-04-29**: 7 страниц поверх
+  Phase 1B endpoints — `/register`, `/verify-pending`, `/login`,
+  `/forgot`, `/reset` (заменил Phase 1B 404 placeholder), `/cabinet`
+  (server-side gate через `lookupSession` + cookie, 307 на `/login`
+  без сессии), `/verify-failed` (полный styled UI вместо minimal
+  placeholder). Кнопка «Войти» добавлена в landing nav без удаления
+  существующих CTA. Shared chrome (`SiteHeader`, `AuthShell`) висит
+  на auth + legal страницах. Anti-enumeration на `/forgot` (нейтральное
+  сообщение всегда), 152-ФЗ согласие checkbox на `/register` со
+  ссылками на `/offer`, `/privacy`, `/consent`. План:
+  `docs/plans/phase-2-auth-ui.md`.
+  Долги из Phase 2 (informational — backlog'd):
+  - **Resend-verify endpoint** — баннер «E-mail не подтверждён» в
+    `/cabinet` сейчас ведёт на `/forgot`. Полноценный
+    `POST /api/auth/resend-verify` + UI кнопка — Phase 3.
+  - **`/verify-pending` без real-time signal** — пользователь не видит,
+    когда e-mail подтверждён, пока не зайдёт в `/cabinet`. Polling /
+    SSE / WebSocket — post-MVP.
 - **Phase 3..6** — детали не разворачиваем в backlog до Phase 2 ship'а;
   high-level: profiles + admin pricing → scheduling → lesson lifecycle
   + 24h rule → cabinet payment + payment_allocations → legal/receipt
