@@ -30,8 +30,9 @@ owner-docs и git history важнее старых chat outputs.
 
 ### Production reliability
 
-- подключить uptime / failure alerting на приложение и webhook-контур
-- добавить сигнал о неуспешном git-based deploy или зависшем `levelchannel-autodeploy`
+- ~~подключить uptime / failure alerting на приложение~~ — **закрыто 2026-04-29**: GitHub Actions cron `*/5 *` пингует `/api/health` и открывает/закрывает issue с лейблом `uptime-incident`. Runbook в `OPERATIONS.md §9`. Detection latency ~5–15 мин (cron + GH Actions schedule jitter). Если потребуется sub-minute precision — добавить второй слой (BetterStack / Healthchecks.io)
+- добавить failure alerting **на webhook-контур** (CloudPayments check/pay/fail) — uptime probe не покрывает; нужен либо отдельный signal от backend на стабильный поток успешных webhook'ов, либо pull-side monitor по `payment_telemetry`
+- добавить сигнал о неуспешном git-based deploy или зависшем `levelchannel-autodeploy.timer` (heartbeat от cron'а либо external check `last successful run > N min` через journald/state file)
 
 ### Security and payment safety
 
