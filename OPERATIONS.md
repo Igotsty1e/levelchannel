@@ -1061,6 +1061,39 @@ curl -s https://<домен>/api/health | jq    # должен быть status: 
 
 ---
 
+## 12.5 One-shot activator: SENTRY + notifications + cron timers + GIT_SHA
+
+После большого batch'а PR (auth debt, audit log, Sentry, retention cron, deploy-freshness probe и т.д.) часть работает «как код в проде», часть требует **разовой настройки на сервере**: env vars, systemd unit'ы и patch к autodeploy script. Раньше это было 4 отдельных copy-paste блока (`§9 Sentry`, `§9 Webhook-flow`, `§5 Retention`, `§6 Deploy freshness`). Сейчас всё собрано в один idempotent script — можно перезапускать сколько угодно, повторный run будет no-op для уже сделанного.
+
+```bash
+ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136
+cd /var/www/levelchannel
+
+# Pull свежее main (autodeploy, конечно, делает это сам, но мы хотим
+# самую свежую версию activator-script'а):
+git fetch origin && git reset --hard origin/main
+
+bash scripts/activate-prod-ops.sh
+```
+
+Скрипт делает (детали — `scripts/activate-prod-ops.sh` начало файла):
+
+1. Append'ит в `/etc/levelchannel.env` 4 новых env-var'а если их нет:
+   `ALERT_EMAIL_TO`, `OPERATOR_NOTIFY_EMAIL`, `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`. Существующие значения **не перезаписываются**.
+
+2. Patch'ит `/usr/local/bin/levelchannel-autodeploy`, чтобы перед каждым `npm run build` он экспортировал `GIT_SHA=$(git rev-parse HEAD)` и обновлял эту строку в `/etc/levelchannel.env`. Перед патчем создаёт backup `*.bak-<timestamp>`. Idempotency: если `export GIT_SHA=$(git rev-parse HEAD)` уже есть в файле — skip.
+
+3. Копирует unit/timer файлы в `/etc/systemd/system/`:
+   - `levelchannel-webhook-flow-alert.{service,timer}`
+   - `levelchannel-db-retention.{service,timer}`
+   `cp -p` — права/владелец из исходника. Если на месте уже identical файл — skip.
+
+4. `systemctl daemon-reload`, `enable --now` оба таймера, `restart levelchannel` (если env действительно изменился).
+
+После завершения скрипт выводит follow-up smoke-команду для Sentry + curl на `/api/health.version`. На прод придёт первый event в Sentry в течение минуты после следующего push'а на main.
+
+---
+
 ## 13. Долги и known ops gaps
 
 ### Closed hardening work — 2026-04-29
