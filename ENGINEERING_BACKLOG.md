@@ -58,7 +58,7 @@ owner-docs и git history важнее старых chat outputs.
 
 ### Auth and consent
 
-- добавить password hash versioning + `needsRehash()` путь для будущей смены cost / алгоритма
+- ~~добавить password hash versioning + `needsRehash()` путь для будущей смены cost / алгоритма~~ — **закрыто 2026-04-29**: `passwordNeedsRehash()` в `lib/auth/password.ts` парсит cost из bcrypt prefix; login route после `verifyPassword` silently re-hash'ит и `setAccountPassword`. Best-effort (warn + продолжает на ошибке БД). Покрыто unit + integration тестами. Будущая миграция на argon2id — обновить regex одновременно с введением нового хешера, иначе все login'ы будут перехешировать каждый раз
 - добавить cleanup для истёкших `account_sessions`
 - добавить common-password rejection (HIBP / breached list или локальный denylist)
 
