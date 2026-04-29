@@ -69,7 +69,7 @@ owner-docs и git history важнее старых chat outputs.
 - добавить нормальный operator-side список оплат вместо ручного просмотра БД или файлов
 - добавить телеметрию по payment funnel в форме, пригодную для принятия решений
 - добавить email / Telegram notification о successful payment на стороне оператора
-- добавить `POST /api/auth/resend-verify` + UI кнопку вместо обхода через `/forgot`
+- ~~добавить `POST /api/auth/resend-verify` + UI кнопку~~ — **закрыто 2026-04-29**: endpoint в `app/api/auth/resend-verify/route.ts` (authenticated, idempotent, rate-limited 10/min/IP + 3/hour/account), UI button в `app/cabinet/resend-verify-button.tsx` заменил Phase 2 хак с ссылкой на `/forgot`
 - добавить модель отзыва согласия в `account_consents`
 - добавить отдельный `accepted_at`-covering index для `account_consents`, если consent-history станет реальным hot path
 

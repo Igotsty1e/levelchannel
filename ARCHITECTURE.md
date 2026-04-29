@@ -145,6 +145,8 @@ Append-only audit-log-of-record для money-bound transitions. Параллел
 - [`app/api/auth/reset-request/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/reset-request/route.ts) — POST. Identical `{ok: true}` for known/unknown email (anti-enumeration)
 - [`app/api/auth/reset-confirm/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/reset-confirm/route.ts) — POST. revokeAllSessionsForAccount **before** createSession (mech-5); password-policy gate keeps token unconsumed on weak input
 - [`app/api/auth/me/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/me/route.ts) — GET. Bootstrap; same-origin, no origin check; 401 with cookie cleared on missing/expired session
+- [`app/api/auth/resend-verify/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/resend-verify/route.ts) — POST. Authenticated; idempotent on already-verified (200 noop); rate-limited 10/min/IP + 3/hour/account. Replaces the Phase 2 cabinet hack of pointing at `/forgot`. Old unconsumed verify tokens are NOT pre-emptively invalidated — single-use enforcement at consume time covers race
+- [`app/cabinet/resend-verify-button.tsx`](/Users/ivankhanaev/LevelChannel/app/cabinet/resend-verify-button.tsx) — client island for the cabinet banner button
 - [`app/verify-failed/page.tsx`](/Users/ivankhanaev/LevelChannel/app/verify-failed/page.tsx) — minimal placeholder for verify-route failure landing (Lane C; full UI in Phase 2)
 
 ### API routes
