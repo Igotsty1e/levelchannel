@@ -8,12 +8,13 @@
 ### Compliance
 
 - подать уведомление в Роскомнадзор о начале обработки ПДн
-- зафиксировать и выполнять retention / deletion policy по ПДн
+- довести retention / deletion policy до ACTIVE — скелет уже лежит в [`docs/legal/retention-policy.md`](docs/legal/retention-policy.md), сроки и правовые формулировки заполняются через `legal-rf-router → legal-rf-private-client → legal-rf-qa`
+- machine-readable data-export endpoint **не планируется** — 152-ФЗ ст.14 закрывается ответом оператора в свободной форме на e-mail
 
 ### Production operations
 
+- ~~подключить uptime monitor на `/api/health`~~ — закрыто (см. `OPERATIONS.md §9`)
 - регулярно проверять `pg_dump` бэкапы и restore drill (cron активен с 2026-04-29)
-- подключить uptime monitor на `/api/health`
 - регулярно проверять rollback drill и состояние git-based autodeploy
 
 ## P1
