@@ -1039,10 +1039,10 @@ export function PricingSection() {
               >
                 <input
                   type="checkbox"
+                  className="payment-form-checkbox"
                   checked={rememberCard}
                   onChange={(event) => setRememberCard(event.target.checked)}
                   disabled={isLoading || hasLockedPendingOrder}
-                  style={{ marginTop: 2 }}
                 />
                 <span>
                   Запомнить карту, чтобы в следующий раз заплатить в один клик.
@@ -1064,11 +1064,11 @@ export function PricingSection() {
             >
               <input
                 type="checkbox"
+                className="payment-form-checkbox"
                 checked={personalDataConsentAccepted}
                 onChange={(event) => setPersonalDataConsentAccepted(event.target.checked)}
                 onBlur={() => setPersonalDataConsentTouched(true)}
                 disabled={isLoading || hasLockedPendingOrder || oneClickPending}
-                style={{ marginTop: 2 }}
                 required
               />
               <span>
