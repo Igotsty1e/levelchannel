@@ -232,3 +232,89 @@ body::before {
     justify-content: center;
   }
 }
+
+/* ──────────────────────────────────────────────────────────────────
+   Mobile-first sweep (≤480px) — точечные правки для iPhone-viewport.
+   Подход: не менять структуру компонентов, не вводить burger-меню,
+   не переписывать inline-стили в Tailwind. Только globals + targeted
+   classnames.
+
+   Breakpoint выбран 480px по рекомендации Plan/Explore агентов:
+   - один брейкпоинт покрывает все iPhone от SE до 14 Plus
+   - 320px брейкпоинт — overengineering для нашей аудитории
+   - 768px / 640px остаются для tablet и mid-screen
+   ────────────────────────────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .container {
+    /* было 24px — впритык на 375-viewport. */
+    padding: 0 16px;
+  }
+
+  .section {
+    padding: 36px 0;
+  }
+
+  /* Stats number: 40px на 320-широком экране — гигант, скукоживаем
+     через clamp но с floor 24px чтобы не пропадало. */
+  .stat-number {
+    font-size: clamp(24px, 7vw, 40px);
+  }
+
+  /* Auth shell — 64/96 padding много на узком экране, оставляем
+     удобный воздух но не пустыни. Класс навешен на main внутри
+     `<AuthShell>` (см. components/auth-shell.tsx). */
+  .auth-shell-main {
+    padding: 32px 16px 48px !important;
+  }
+
+  /* Pay-route и legal-pages контейнеры — то же. */
+  .legal-page-card {
+    padding: 24px 18px !important;
+  }
+
+  /* FinalCTA — было 80×40, на 375px-viewport огромный inset */
+  .final-cta-card {
+    padding: 48px 20px !important;
+  }
+}
+
+/* iOS Safari динамический toolbar: 100vh даёт «слишком высокий первый
+   экран». 100svh / 100dvh — современная норма. Применяем точечно
+   на классе .min-svh, чтобы не ломать существующие 100vh-блоки. */
+.min-svh {
+  min-height: 100vh;
+  min-height: 100svh;
+}
+
+/* Глобальная защита от горизонтального overflow.
+   Hero-секция использует огромные blob'ы в фоне (600x600px). Без
+   overflow:hidden на корне страница на 375-viewport получает
+   horizontal scroll — самое заметное «криво» на мобиле. */
+html, body {
+  overflow-x: hidden;
+}
+
+/* Утилитный класс для блоков с full-width заметным фоном
+   (Hero blobs, gradient layers). Гарантирует что внутренний
+   absolute-позиционированный декор не выпрыгнет за viewport. */
+.no-h-overflow {
+  overflow-x: hidden;
+}
+
+/* Inputs ≥16px на мобиле — фикс iOS zoom-on-focus. */
+@media (max-width: 480px) {
+  input, textarea, select {
+    font-size: max(16px, 1rem);
+  }
+}
+
+/* Touch-friendly checkboxes в платёжной форме (P0 a11y).
+   Целевой target ≥24px по touch-guidelines. */
+.payment-form-checkbox {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  margin-top: 0;
+  cursor: pointer;
+}

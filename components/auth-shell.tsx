@@ -11,6 +11,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
     <>
       <SiteHeader />
       <main
+        className="auth-shell-main"
         style={{
           minHeight: 'calc(100vh - 56px)',
           display: 'flex',

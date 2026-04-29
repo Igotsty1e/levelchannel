@@ -186,8 +186,8 @@ function Header() {
 function Hero() {
   return (
     <section
+      className="min-svh"
       style={{
-        minHeight: '100vh',
         display: 'flex',
         alignItems: 'center',
         position: 'relative',
@@ -832,7 +832,7 @@ function FinalCTA() {
     <section id="cta" className="section">
       <div className="container">
         <div
-          className="fade-in"
+          className="fade-in final-cta-card"
           style={{
             textAlign: 'center',
             padding: '80px 40px',

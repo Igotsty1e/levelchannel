@@ -52,7 +52,7 @@ export default function OfferPage() {
         </div>
 
         {/* Sections */}
-        <div style={{ background: SURFACE, border: '1px solid rgba(255,255,255,0.07)', borderRadius: 20, padding: '36px 40px' }}>
+        <div className="legal-page-card" style={{ background: SURFACE, border: '1px solid rgba(255,255,255,0.07)', borderRadius: 20, padding: '36px 40px' }}>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
 
           <Section num="1" title="Общие положения">
