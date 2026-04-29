@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
 import { buildPersonalDataConsentSnapshot } from '@/lib/legal/personal-data'
 import {
   formatRubles,
@@ -112,6 +113,22 @@ export async function POST(request: Request) {
           }),
         },
       )
+
+      await recordPaymentAuditEvent({
+        eventType: 'order.created',
+        invoiceId: order.invoiceId,
+        customerEmail: emailValidation.email,
+        clientIp: getClientIp(request),
+        userAgent: request.headers.get('user-agent') || null,
+        amountKopecks: rublesToKopecks(order.amountRub),
+        toStatus: order.status,
+        actor: 'user',
+        idempotencyKey: request.headers.get('idempotency-key') || null,
+        payload: {
+          provider: order.provider,
+          rememberCard: body.rememberCard === true,
+        },
+      })
 
       return {
         status: 200,

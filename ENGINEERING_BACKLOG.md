@@ -37,7 +37,11 @@ owner-docs и git history важнее старых chat outputs.
 ### Security and payment safety
 
 - вынести app-level rate limiter в shared backend store для multi-instance future (nginx `limit_req` уже на месте, app-level дополняет per-route семантикой)
-- добавить отдельный audit log persistence для критичных payment transitions
+- ~~добавить отдельный audit log persistence для критичных payment transitions~~ — **закрыто 2026-04-29**: миграция 0012 + `lib/audit/payment-events.ts`, 10 финальных событий пишутся из 7 route handlers (`order.created/cancelled`, `mock.confirmed`, `webhook.pay.processed`, `webhook.fail.received`, `charge_token.succeeded/requires_3ds/declined`, `threeds.callback.received/confirmed/declined`). Best-effort recorder, retention 3 года, full PII за legitimate-interest 152-ФЗ. Документация: `ARCHITECTURE.md` § Audit log + `SECURITY.md` § Audit log + `OPERATIONS.md §5` psql-запросы
+- добавить pre-validation phases в audit (`webhook.check.received`, `webhook.*.declined`, `webhook.pay.validation_failed`) — требует переработки `cloudpayments-route` wrapper'а
+- добавить `charge_token.attempted` / `charge_token.error` (двухфазная запись)
+- консолидировать domain-specific Postgres pools в общий `lib/db/pool.ts` — сейчас 5 отдельных pool'ов (payments, auth, idempotency, telemetry, audit), на multi-instance future это становится ограничением по connection count
+- настроить cron pruning для `payment_audit_events` (>3 года)
 
 ## P1
 

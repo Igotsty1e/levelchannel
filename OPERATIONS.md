@@ -323,6 +323,26 @@ select status, count(*) from payment_orders group by 1;
 select * from payment_orders order by created_at desc limit 10;
 select * from payment_telemetry where type = 'one_click_3ds_paid' order by at desc limit 20;
 select scope, count(*) from idempotency_records group by 1;
+
+-- audit log (полные данные: real email + real IP, см. SECURITY.md):
+select event_type, to_status, actor, created_at
+  from payment_audit_events
+ where invoice_id = 'lc_xxxxxxxx'
+ order by created_at;
+
+select event_type, count(*)
+  from payment_audit_events
+ where created_at > now() - interval '24 hours'
+ group by 1
+ order by 2 desc;
+
+-- "что упало за последний час"
+select id, event_type, invoice_id, customer_email, payload
+  from payment_audit_events
+ where event_type in ('charge_token.declined', 'threeds.declined',
+                      'webhook.fail.received')
+   and created_at > now() - interval '1 hour'
+ order by created_at desc;
 ```
 
 **Backup и restore.** Фактический backup уже настроен:

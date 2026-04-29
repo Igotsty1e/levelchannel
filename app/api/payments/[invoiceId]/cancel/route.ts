@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server'
 
+import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
 import { markOrderCancelled } from '@/lib/payments/provider'
 import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
+  getClientIp,
   isValidInvoiceId,
 } from '@/lib/security/request'
 
@@ -38,6 +40,21 @@ export async function POST(
   if (!order) {
     return NextResponse.json({ error: 'Payment not found.' }, { status: 404 })
   }
+
+  await recordPaymentAuditEvent({
+    eventType: 'order.cancelled',
+    invoiceId: order.invoiceId,
+    customerEmail: order.customerEmail,
+    clientIp: getClientIp(request),
+    userAgent: request.headers.get('user-agent') || null,
+    amountKopecks: rublesToKopecks(order.amountRub),
+    toStatus: order.status,
+    actor: 'user',
+    payload: {
+      source: 'client',
+      reason: 'widget_closed',
+    },
+  })
 
   return NextResponse.json(
     { ok: true },
