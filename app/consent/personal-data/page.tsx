@@ -84,8 +84,8 @@ export default function PersonalDataConsentPage() {
             обработку моих персональных данных на условиях, указанных в настоящем
             документе. Обращения по вопросам персональных данных и отзыв согласия
             принимаются по адресу{' '}
-            <a href="mailto:igptstyle227@gmail.com" style={{ color: '#E89A90' }}>
-              igptstyle227@gmail.com
+            <a href="mailto:igotstyle227@gmail.com" style={{ color: '#E89A90' }}>
+              igotstyle227@gmail.com
             </a>
             .
           </Section>
@@ -160,8 +160,8 @@ export default function PersonalDataConsentPage() {
           <Section title="7. Отзыв согласия">
             Я уведомлён(а), что могу отозвать согласие путём направления обращения
             Оператору на{' '}
-            <a href="mailto:igptstyle227@gmail.com" style={{ color: '#E89A90' }}>
-              igptstyle227@gmail.com
+            <a href="mailto:igotstyle227@gmail.com" style={{ color: '#E89A90' }}>
+              igotstyle227@gmail.com
             </a>
             . Отзыв согласия не влияет на законность обработки, которая
             осуществлялась до его получения, и не прекращает обработку в случаях,

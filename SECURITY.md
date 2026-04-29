@@ -32,11 +32,11 @@
 - телеметрия хешируется отдельным `TELEMETRY_HASH_SECRET`, без fallback на CloudPayments secret
 - `npm audit --omit=dev` чистый на текущем lockfile
 
-## Auth foundation (Phase 1A — backend only)
+## Auth and account layer
 
-Security-контракт первой фазы кабинета. UI и `/api/auth/*` ещё не
-подключены — здесь только инварианты, которые должны выдерживаться,
-когда они появятся.
+Auth backend уже подключён: таблицы, `lib/auth/*`, `lib/email/*` и
+`/api/auth/*` живут в runtime. Полного cabinet UI пока нет, но security
+инварианты ниже уже обязательны для работающих маршрутов.
 
 - пароли: `bcryptjs`, cost=12. Никакого pepper'а в текущей итерации;
   если будем добавлять — отдельная миграция rehash'а.
@@ -48,12 +48,12 @@ Security-контракт первой фазы кабинета. UI и `/api/au
   consumed_at ставится атомарно в одной транзакции с проверкой TTL,
   чтобы replay возвращал тот же "invalid or already used".
 - email enumeration: и для register, и для reset-request ответ должен
-  быть одинаковым "we sent a link if the email exists". В коде это
-  политика того, кто будет писать роуты в Phase 1B; lib/-модули
-  enumeration не предотвращают сами по себе.
+  быть одинаковым "we sent a link if the email exists". В route handlers
+  это уже реализовано, а lib/-модули сами по себе enumeration не
+  предотвращают.
 - password reset должен revoke'ать все active session'ы аккаунта
-  (sign-out everywhere). Реализуется через `revokeAllSessionsForAccount`
-  в Phase 1B handler'е.
+  (sign-out everywhere). Это уже делается через
+  `revokeAllSessionsForAccount` в reset-confirm handler'е.
 - transport (Resend) даёт console-fallback в dev. **В проде гейт уже стоит
   (Phase 1B Lane A):** `lib/email/config.ts` бросает на module load если
   `RESEND_API_KEY` или `AUTH_RATE_LIMIT_SECRET` пусты под `NODE_ENV=production`.

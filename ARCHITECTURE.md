@@ -37,11 +37,12 @@
 - [`lib/payments/store-postgres.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/store-postgres.ts) — PostgreSQL backend для заказов и `payment_card_tokens`
 - [`scripts/migrate-payment-orders-to-postgres.mjs`](/Users/ivankhanaev/LevelChannel/scripts/migrate-payment-orders-to-postgres.mjs) — one-shot перенос заказов из JSON в PostgreSQL
 
-### Auth foundation
+### Auth and account layer
 
-Backend-only слой для будущего кабинета. UI и API-роуты ещё не подключены —
-эта итерация добавляет таблицы и lib/-модули; следующая фаза подключит
-`/api/auth/*` и страницы. Гостевой checkout от него не зависит.
+Auth-контур уже живёт в коде: есть таблицы, `lib/auth/*`, `lib/email/*`
+и `app/api/auth/*`. Полноценный cabinet UI ещё не построен, но backend
+маршруты уже участвуют в build и runtime. Гостевой checkout от этого
+слоя по-прежнему не зависит.
 
 - [`migrations/0005_accounts.sql`](/Users/ivankhanaev/LevelChannel/migrations/0005_accounts.sql) — `accounts` (uuid PK, email UNIQUE, password_hash, email_verified_at, disabled_at)
 - [`migrations/0006_account_roles.sql`](/Users/ivankhanaev/LevelChannel/migrations/0006_account_roles.sql) — `account_roles` (admin / teacher / student через CHECK)

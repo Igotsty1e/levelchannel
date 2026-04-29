@@ -87,8 +87,8 @@ export default function PrivacyPage() {
             при последующем общении с пользователями по вопросам записи, оплаты и
             оказания услуг. Обращения по вопросам персональных данных принимаются по
             адресу электронной почты{' '}
-            <a href="mailto:igptstyle227@gmail.com" style={{ color: '#A78BFA' }}>
-              igptstyle227@gmail.com
+            <a href="mailto:igotstyle227@gmail.com" style={{ color: '#A78BFA' }}>
+              igotstyle227@gmail.com
             </a>
             .
           </Section>
@@ -185,8 +185,8 @@ export default function PrivacyPage() {
             персональных данных, требовать их уточнения, блокирования, удаления
             либо отозвать согласие в пределах, допускаемых законодательством РФ.
             Обращение может быть направлено на{' '}
-            <a href="mailto:igptstyle227@gmail.com" style={{ color: '#A78BFA' }}>
-              igptstyle227@gmail.com
+            <a href="mailto:igotstyle227@gmail.com" style={{ color: '#A78BFA' }}>
+              igotstyle227@gmail.com
             </a>
             . При отсутствии иных законных оснований для хранения данных Оператор
             прекращает обработку и организует удаление персональных данных в сроки,
