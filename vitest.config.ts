@@ -25,6 +25,7 @@ export default defineConfig({
         'lib/auth/password.ts',
         'lib/auth/tokens.ts',
         'lib/auth/policy.ts',
+        'lib/auth/email-hash.ts',
         'lib/email/escape.ts',
       ],
       thresholds: {

@@ -54,11 +54,14 @@ Security-контракт первой фазы кабинета. UI и `/api/au
 - password reset должен revoke'ать все active session'ы аккаунта
   (sign-out everywhere). Реализуется через `revokeAllSessionsForAccount`
   в Phase 1B handler'е.
-- transport (Resend) даёт console-fallback в dev. **В проде пустой
-  `RESEND_API_KEY` означает, что письма уходят в `console.log`** — это
-  ловится при первом же sign-up, но всё равно явная угроза для запуска
-  без письма. Гейт перенесём в `lib/payments/config.ts`-style assertion
-  в Phase 1B одновременно с роутами.
+- transport (Resend) даёт console-fallback в dev. **В проде гейт уже стоит
+  (Phase 1B Lane A):** `lib/email/config.ts` бросает на module load если
+  `RESEND_API_KEY` или `AUTH_RATE_LIMIT_SECRET` пусты под `NODE_ENV=production`.
+- per-email rate-limit scopes (lib/auth/email-hash.ts) keyed by dedicated
+  `AUTH_RATE_LIMIT_SECRET`. **NOT reuse** `TELEMETRY_HASH_SECRET` — разные
+  trust boundaries: telemetry secret keys persistent analytics, rate-limit
+  secret keys ephemeral in-memory buckets. Mixing их couples rotation
+  cadences artificially.
 - email-нормализация: `lib/auth/accounts.ts.normalizeAccountEmail` =
   `email.trim().toLowerCase()` на всех read/write путях. DB-level
   CHECK в `migrations/0010_accounts_email_normalized.sql` ловит bypass
