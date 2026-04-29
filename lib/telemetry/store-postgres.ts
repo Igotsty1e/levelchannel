@@ -1,27 +1,16 @@
-import { Pool } from 'pg'
-
+import { getDbPool } from '@/lib/db/pool'
 import { paymentConfig } from '@/lib/payments/config'
 import type { CheckoutTelemetryEvent } from '@/lib/telemetry/store'
 
-declare global {
-  // eslint-disable-next-line no-var
-  var __levelchannelTelemetryPool: Pool | undefined
-}
-
 let initPromise: Promise<void> | null = null
 
+// Shares the single Postgres pool from `lib/db/pool.ts`. The
+// per-domain getter stays for legibility at call sites.
 function getPool() {
   if (!paymentConfig.databaseUrl) {
     throw new Error('DATABASE_URL is not configured for PostgreSQL storage.')
   }
-
-  if (!global.__levelchannelTelemetryPool) {
-    global.__levelchannelTelemetryPool = new Pool({
-      connectionString: paymentConfig.databaseUrl,
-    })
-  }
-
-  return global.__levelchannelTelemetryPool
+  return getDbPool()
 }
 
 export async function ensureTelemetrySchemaPostgres() {
