@@ -32,6 +32,34 @@
 - телеметрия хешируется отдельным `TELEMETRY_HASH_SECRET`, без fallback на CloudPayments secret
 - `npm audit --omit=dev` чистый на текущем lockfile
 
+## Auth foundation (Phase 1A — backend only)
+
+Security-контракт первой фазы кабинета. UI и `/api/auth/*` ещё не
+подключены — здесь только инварианты, которые должны выдерживаться,
+когда они появятся.
+
+- пароли: `bcryptjs`, cost=12. Никакого pepper'а в текущей итерации;
+  если будем добавлять — отдельная миграция rehash'а.
+- session cookie: `lc_session`, `HttpOnly` + `SameSite=Lax` + `Secure`
+  в проде. В БД хранится только sha256 от cookie value, никогда plain.
+  Запись в `account_sessions` имеет `expires_at` (7 дней) + `revoked_at`
+  для sign-out.
+- single-use токены (verify-email, password-reset) хранятся как sha256;
+  consumed_at ставится атомарно в одной транзакции с проверкой TTL,
+  чтобы replay возвращал тот же "invalid or already used".
+- email enumeration: и для register, и для reset-request ответ должен
+  быть одинаковым "we sent a link if the email exists". В коде это
+  политика того, кто будет писать роуты в Phase 1B; lib/-модули
+  enumeration не предотвращают сами по себе.
+- password reset должен revoke'ать все active session'ы аккаунта
+  (sign-out everywhere). Реализуется через `revokeAllSessionsForAccount`
+  в Phase 1B handler'е.
+- transport (Resend) даёт console-fallback в dev. **В проде пустой
+  `RESEND_API_KEY` означает, что письма уходят в `console.log`** — это
+  ловится при первом же sign-up, но всё равно явная угроза для запуска
+  без письма. Гейт перенесём в `lib/payments/config.ts`-style assertion
+  в Phase 1B одновременно с роутами.
+
 ## Защищаемые активы
 
 - статусы заказов

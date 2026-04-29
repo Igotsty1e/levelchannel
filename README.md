@@ -51,6 +51,8 @@ npm run start
 - `TELEMETRY_HASH_SECRET=...`
 - `CLOUDPAYMENTS_PUBLIC_ID=...`
 - `CLOUDPAYMENTS_API_SECRET=...`
+- `RESEND_API_KEY=...` (transactional email; empty → console fallback in dev)
+- `EMAIL_FROM="LevelChannel <noreply@levelchannel.ru>"`
 
 ## Основные маршруты
 

@@ -22,6 +22,9 @@ export default defineConfig({
         'lib/security/rate-limit.ts',
         'lib/security/idempotency.ts',
         'lib/security/request.ts',
+        'lib/auth/password.ts',
+        'lib/auth/tokens.ts',
+        'lib/auth/policy.ts',
       ],
       thresholds: {
         lines: 70,

@@ -324,6 +324,28 @@ English-tutoring sessions, with server-side CloudPayments integration.
   - `store.ts` — privacy-friendly checkout event log (HMAC-hashed
     e-mail, /24-masked IP). Postgres primary, file fallback if DB
     write fails.
+- **Auth foundation (Phase 1A — backend lib only, no routes/UI yet):**
+  `lib/auth/`
+  - `password.ts` — bcryptjs cost=12. Don't drop the cost without an
+    explicit change-of-policy.
+  - `tokens.ts` — random 32B base64url + sha256. Plain tokens never
+    persisted. Single-use enforced at consume time inside a row lock.
+  - `policy.ts` — password policy (8..128 chars, not all-digits).
+  - `accounts.ts`, `sessions.ts`, `single-use-tokens.ts`,
+    `verifications.ts`, `resets.ts` — store ops. Emails are normalized
+    lower-case at the application layer; DB column is plain `text`.
+  - When Phase 1B routes land, they MUST: rate-limit + origin-check
+    every mutation; revoke all active sessions on successful password
+    reset; return identical "we sent a link if the email exists" for
+    register and reset-request to avoid enumeration.
+- **Email transport:** `lib/email/`
+  - `client.ts` — Resend SDK; falls back to `console.log` when
+    `RESEND_API_KEY` is empty. The fallback is a dev convenience —
+    Phase 1B will add a production assertion that fails boot when key
+    is empty under `NODE_ENV=production`.
+  - `templates/{verify,reset}.ts` — plain HTML + plain text, RU.
+  - `dispatch.ts` — `sendVerifyEmail`, `sendResetEmail`. URLs built
+    from `paymentConfig.siteUrl`.
 - **API routes:** `app/api/`
   - `payments/` — create, status, cancel, events
   - `payments/saved-card/` — POST = lookup, DELETE = forget (opt-out)
@@ -362,13 +384,19 @@ This is **production with real money.** The bar:
 - CloudPayments webhooks (`Pay`, `Check`, `Fail`) point at the real
   domain in the CP cabinet, terminal is in live mode, kassa sends
   receipts.
-- Postgres has the four tables: `payment_orders`, `payment_card_tokens`,
-  `payment_telemetry`, `idempotency_records`. The schema source of truth
-  is `migrations/NNNN_*.sql`, applied via `npm run migrate:up`. Legacy
-  `ensureSchema*` paths in `lib/{payments,security,telemetry}/*-postgres.ts`
-  still create the tables on first use as a safety net, but new schema
-  changes must ship as a migration file. Backup + retention plan is the
-  operator's responsibility.
+- Postgres carries the payment tables (`payment_orders`,
+  `payment_card_tokens`, `payment_telemetry`, `idempotency_records`)
+  AND the auth-foundation tables (`accounts`, `account_roles`,
+  `account_sessions`, `email_verifications`, `password_resets`). The
+  schema source of truth is `migrations/NNNN_*.sql`, applied via
+  `npm run migrate:up`. Legacy `ensureSchema*` paths in
+  `lib/{payments,security,telemetry}/*-postgres.ts` still create the
+  payment tables on first use as a safety net; auth tables exist only
+  through migrations (no `ensureSchema*` for them — the runner is
+  authoritative). Backup + retention plan is the operator's
+  responsibility.
+- Resend env: `RESEND_API_KEY` + `EMAIL_FROM`. Empty key is a console
+  fallback (acceptable for dev, NOT for prod once routes ship).
 
 When you're shipping a payment-domain or security-layer change to this
 production system, the bar is: tests green, build green, manual mock

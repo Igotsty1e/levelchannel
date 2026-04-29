@@ -5,6 +5,31 @@
 
 Если задача уже работает в коде или на сервере, ей не место в backlog.
 
+## Cabinet contract (in progress)
+
+Multi-phase build из `Output 2` (target architecture). Гостевой checkout
+не трогается — все фазы additive. План пофазно:
+
+- **Phase 0 (stabilization)** — частично выполнен: `migrations/` runner +
+  миграции 0001..0004. Остаётся: pg_dump cron + restore drill, nginx
+  `limit_req_zone`, bind `127.0.0.1`, SSH hardening, подключить
+  `migrate:up` в `levelchannel-autodeploy`.
+- **Phase 1A (auth foundation, backend only)** — выполнен: миграции
+  0005..0009, `lib/auth/`, `lib/email/` (Resend + console fallback),
+  unit-тесты на password / tokens / policy.
+- **Phase 1B (auth API routes)** — pending: `/api/auth/{register,login,
+  logout,verify,reset-request,reset-confirm,me}` + rate-limit + origin
+  check + idempotency-style replay-safety + production assertions
+  (`RESEND_API_KEY`, `EMAIL_FROM`).
+- **Phase 2 (auth UI)** — pending: `/register`, `/login`, `/forgot`,
+  `/reset`, `/verify`, `/cabinet` placeholder. Header лендинга получает
+  кнопку «Войти» без удаления существующих CTA.
+- **Phase 3..6** — детали не разворачиваем в backlog до Phase 2 ship'а;
+  high-level: profiles + admin pricing → scheduling → lesson lifecycle
+  + 24h rule → cabinet payment + payment_allocations → legal/receipt
+  polish. Контракт и обоснование — в Output 2 (`/Output 2 — MVP Product
+  & Architecture Proposal` от 2026-04-29).
+
 ## P0
 
 ### Production reliability
