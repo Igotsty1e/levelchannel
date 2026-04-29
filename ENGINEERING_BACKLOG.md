@@ -70,7 +70,7 @@ owner-docs и git history важнее старых chat outputs.
 - добавить телеметрию по payment funnel в форме, пригодную для принятия решений
 - добавить email / Telegram notification о successful payment на стороне оператора
 - ~~добавить `POST /api/auth/resend-verify` + UI кнопку~~ — **закрыто 2026-04-29**: endpoint в `app/api/auth/resend-verify/route.ts` (authenticated, idempotent, rate-limited 10/min/IP + 3/hour/account), UI button в `app/cabinet/resend-verify-button.tsx` заменил Phase 2 хак с ссылкой на `/forgot`
-- добавить модель отзыва согласия в `account_consents`
+- ~~добавить модель отзыва согласия в `account_consents`~~ — **закрыто 2026-04-29**: миграция 0013 — добавила колонку `revoked_at` + partial index `account_consents_active_idx` (where `revoked_at IS NULL`). Store ops в `lib/auth/consents.ts`: `withdrawConsent()` (stamps latest unrevoked row), `getActiveConsent()` (returns latest non-revoked). UI / API endpoint — Phase 3 admin / личный кабинет. Покрыто 5 integration тестами. Реализует 152-ФЗ ст.9 п.5
 - добавить отдельный `accepted_at`-covering index для `account_consents`, если consent-history станет реальным hot path
 
 ### DX and quality

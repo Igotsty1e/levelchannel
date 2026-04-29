@@ -70,7 +70,7 @@ Auth-контур уже живёт в коде: есть таблицы, `lib/a
 - [`lib/auth/sessions.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/sessions.ts) — create / lookup / revoke + cookie helpers (`lc_session`, HttpOnly + SameSite=Lax + Secure в проде)
 - [`lib/auth/single-use-tokens.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/single-use-tokens.ts) — общий store для verify-email и password-reset (whitelist scope в SQL)
 - [`lib/auth/verifications.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/verifications.ts), [`lib/auth/resets.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/resets.ts) — thin wrappers с TTL
-- [`lib/auth/consents.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/consents.ts) — store ops для `account_consents` (recordConsent / listAccountConsents / getLatestConsent). Phase 1B D2.
+- [`lib/auth/consents.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/consents.ts) — store ops для `account_consents` (recordConsent / listAccountConsents / getLatestConsent / **withdrawConsent / getActiveConsent**). Withdrawal model (152-ФЗ ст.9 п.5) добавлен в миграции 0013 — колонка `revoked_at` + partial index по `(account_id, document_kind, accepted_at desc) where revoked_at is null`. Phase 1B D2.
 - [`lib/auth/dummy-hash.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/dummy-hash.ts) — module-load bcrypt-хешированный dummy + `constantTimeVerifyPassword`. Закрывает email-enumeration через timing на login (Phase 1B D3).
 - [`lib/auth/email-hash.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/email-hash.ts) — HMAC-keyed sha256 нормализованного email через `AUTH_RATE_LIMIT_SECRET` для per-email rate-limit scope keys. Не reuse `TELEMETRY_HASH_SECRET` — разные trust boundaries (Phase 1B mech-3).
 
