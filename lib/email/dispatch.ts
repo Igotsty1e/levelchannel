@@ -1,5 +1,9 @@
 import { sendEmail } from '@/lib/email/client'
 import { renderAlreadyRegisteredEmail } from '@/lib/email/templates/already-registered'
+import {
+  renderOperatorPaymentNotifyEmail,
+  type OperatorPaymentNotifyParams,
+} from '@/lib/email/templates/operator-payment-notify'
 import { renderResetEmail } from '@/lib/email/templates/reset'
 import { renderVerifyEmail } from '@/lib/email/templates/verify'
 import { paymentConfig } from '@/lib/payments/config'
@@ -45,4 +49,29 @@ export async function sendAlreadyRegisteredEmail(to: string) {
     resetUrl: buildForgotUrl(),
   })
   return sendEmail({ to, subject: tpl.subject, html: tpl.html, text: tpl.text })
+}
+
+// Operator-facing payment notification. Best-effort: caller wraps in
+// try/catch so a Resend outage cannot block the webhook acknowledgment
+// to CloudPayments. `OPERATOR_NOTIFY_EMAIL` controls the destination;
+// when empty, we silently no-op (returns an `ok: false` shape so the
+// caller sees the skip but doesn't have to handle a thrown error).
+export async function sendOperatorPaymentNotification(
+  params: Omit<OperatorPaymentNotifyParams, 'siteUrl'>,
+) {
+  const to = process.env.OPERATOR_NOTIFY_EMAIL?.trim() || ''
+  if (!to) {
+    return { ok: false as const, reason: 'no_recipient' as const }
+  }
+  const tpl = renderOperatorPaymentNotifyEmail({
+    ...params,
+    siteUrl: paymentConfig.siteUrl,
+  })
+  const result = await sendEmail({
+    to,
+    subject: tpl.subject,
+    html: tpl.html,
+    text: tpl.text,
+  })
+  return { ...result, recipient: to } as const
 }

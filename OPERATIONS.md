@@ -882,9 +882,30 @@ node -e "
 
 **Release tagging:** `instrumentation.ts` читает `process.env.GIT_SHA` (тот же, что использует deploy-freshness workflow). После активации сервер-патча про `GIT_SHA` ([§6 Deploy](#)), Sentry будет группировать issues по релизам.
 
+### Operator email на successful payment
+
+Подключён 2026-04-29. Inline в `app/api/payments/webhooks/cloudpayments/pay/route.ts` — после `markOrderPaid` + audit handler шлёт email-уведомление на `OPERATOR_NOTIFY_EMAIL` через Resend.
+
+Best-effort: ошибка Resend / отсутствие env var **не валит** webhook ACK к CloudPayments. Без ACK CP начнёт re-fire → audit двойной paid event. Поэтому notification обёрнут в try/catch + console.warn в журнал.
+
+**Активация:**
+
+```bash
+ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136
+echo 'OPERATOR_NOTIFY_EMAIL=masteryprojectss@gmail.com' >> /etc/levelchannel.env
+systemctl restart levelchannel
+```
+
+При следующем successful платеже придёт email с сабжом `[LevelChannel] Платёж получен: <amount> ₽ — <invoice>`.
+
+**Когда email НЕ приходит:**
+1. Проверь `journalctl -u levelchannel | grep '\[notify\]'` — там будет warn если что-то порвалось.
+2. Resend account: лимит free-tier 100 email/day; если шкалит — `RESEND_API_KEY` mismatch.
+3. EMAIL_FROM-домен должен быть верифицирован в Resend dashboard.
+
 ### Что НЕ настроено (в roadmap)
 
-- Slack/Telegram алерт по успешному платежу — opt'ed out оператором
+- Slack/Telegram алерт по успешному платежу — отдельная задача в backlog (нужен bot token и parse_mode logic). Email покрывает 80% потребности
 - Disk usage monitoring (косвенно — `db: err` появится когда диск умирает)
 
 ---
