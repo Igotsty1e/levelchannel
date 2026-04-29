@@ -9,6 +9,7 @@ import {
   normalizeCustomerEmail,
   isValidPaymentAmount,
   normalizePaymentAmount,
+  validateCustomerComment,
   validateCustomerEmail,
 } from '@/lib/payments/catalog'
 import { createPayment } from '@/lib/payments/provider'
@@ -43,6 +44,7 @@ export async function POST(request: Request) {
       customerEmail?: string
       rememberCard?: boolean
       personalDataConsentAccepted?: boolean
+      customerComment?: string | null
     }
 
     try {
@@ -54,6 +56,12 @@ export async function POST(request: Request) {
     const amountRub = normalizePaymentAmount(Number(body.amountRub))
     const customerEmail = normalizeCustomerEmail(String(body.customerEmail || ''))
     const emailValidation = validateCustomerEmail(customerEmail)
+
+    const commentValidation = validateCustomerComment(body.customerComment)
+    if (!commentValidation.ok) {
+      return { status: 400, body: { error: commentValidation.message } }
+    }
+    const customerComment = commentValidation.comment
 
     if (!isValidPaymentAmount(amountRub)) {
       await appendCheckoutTelemetryEvent({
@@ -111,6 +119,7 @@ export async function POST(request: Request) {
             ipAddress: getClientIp(request),
             userAgent: request.headers.get('user-agent') || undefined,
           }),
+          customerComment,
         },
       )
 
@@ -127,6 +136,9 @@ export async function POST(request: Request) {
         payload: {
           provider: order.provider,
           rememberCard: body.rememberCard === true,
+          // Only include the comment in audit if non-empty — keeps the
+          // jsonb compact and grep'able.
+          ...(customerComment ? { customerComment } : {}),
         },
       })
 

@@ -90,6 +90,7 @@ export async function createPayment(
   options: {
     rememberCard?: boolean
     personalDataConsent: PersonalDataConsentSnapshot
+    customerComment?: string | null
   },
 ) {
   let order: PaymentOrder
@@ -100,11 +101,13 @@ export async function createPayment(
     order = createCloudPaymentsOrder(amountRub, customerEmail, invoiceId, {
       rememberCard: Boolean(options.rememberCard),
       personalDataConsent: options.personalDataConsent,
+      customerComment: options.customerComment ?? null,
     })
     checkoutIntent = buildCloudPaymentsWidgetIntent(order)
   } else {
     order = createMockOrder(amountRub, customerEmail, {
       personalDataConsent: options.personalDataConsent,
+      customerComment: options.customerComment ?? null,
     })
   }
 

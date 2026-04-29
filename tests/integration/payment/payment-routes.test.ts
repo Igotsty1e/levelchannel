@@ -55,6 +55,7 @@ describe('POST /api/payments — create + idempotency', () => {
         amountRub: 2500,
         customerEmail: 'pay-1@example.com',
         personalDataConsentAccepted: true,
+        customerComment: 'тестовый комментарий',
       }),
     )
 
@@ -78,6 +79,59 @@ describe('POST /api/payments — create + idempotency', () => {
     expect(auditEvents[0].toStatus).toBe('pending')
     expect(auditEvents[0].customerEmail).toBe('pay-1@example.com')
     expect(auditEvents[0].amountKopecks).toBe(250000)
+    expect(auditEvents[0].payload).toMatchObject({
+      customerComment: 'тестовый комментарий',
+    })
+
+    // Comment column persisted on the order itself.
+    const { rows: cmtRows } = await getDbPool().query(
+      `select customer_comment, description from payment_orders where invoice_id = $1`,
+      [invoiceId],
+    )
+    expect(cmtRows[0].customer_comment).toBe('тестовый комментарий')
+    // description includes both PAYMENT_DESCRIPTION + the comment + amount.
+    expect(cmtRows[0].description).toContain('тестовый комментарий')
+    expect(cmtRows[0].description.replace(/\s/g, '')).toContain('2500₽')
+  })
+
+  it('rejects an over-128-char comment with 400, no order created', async () => {
+    const longComment = 'a'.repeat(129)
+    const res = await createHandler(
+      buildCreateRequest({
+        amountRub: 2500,
+        customerEmail: 'long-comment@example.com',
+        personalDataConsentAccepted: true,
+        customerComment: longComment,
+      }),
+    )
+    expect(res.status).toBe(400)
+
+    const { rows } = await getDbPool().query(
+      `select count(*)::int as n from payment_orders where customer_email = $1`,
+      ['long-comment@example.com'],
+    )
+    expect(rows[0].n).toBe(0)
+  })
+
+  it('strips control characters from comment before persist', async () => {
+    const dirty = '\u0000хороший\u001bкомментарий\u007f'
+    const res = await createHandler(
+      buildCreateRequest({
+        amountRub: 1000,
+        customerEmail: 'ctrl-strip@example.com',
+        personalDataConsentAccepted: true,
+        customerComment: dirty,
+      }),
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    const invoiceId = body.order.invoiceId as string
+
+    const { rows } = await getDbPool().query(
+      `select customer_comment from payment_orders where invoice_id = $1`,
+      [invoiceId],
+    )
+    expect(rows[0].customer_comment).toBe('хорошийкомментарий')
   })
 
   it('rejects an out-of-range amount with 400 + telemetry, no order created', async () => {

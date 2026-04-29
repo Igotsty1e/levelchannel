@@ -12,6 +12,9 @@ export type OperatorPaymentNotifyParams = {
   customerEmail: string
   transactionId?: string | number | null
   paymentMethod?: string | null
+  // Free-text comment customer left on the payment form ("за урок 26
+  // апреля" etc). Optional — nullable to mirror the DB column.
+  customerComment?: string | null
   // Public site origin so links in the email work regardless of where
   // the operator opens it. Caller passes paymentConfig.siteUrl.
   siteUrl: string
@@ -33,6 +36,11 @@ export function renderOperatorPaymentNotifyEmail(
   const methodLine = params.paymentMethod
     ? `Способ: ${escapeHtml(String(params.paymentMethod))}`
     : 'Способ: —'
+  const comment = params.customerComment?.trim() || ''
+  const commentTextLine = comment ? `Комментарий клиента: ${comment}` : null
+  const commentHtmlLine = comment
+    ? `<li>Комментарий клиента: <em>${escapeHtml(comment)}</em></li>`
+    : ''
 
   const text = [
     'Платёж успешно подтверждён CloudPayments.',
@@ -40,6 +48,7 @@ export function renderOperatorPaymentNotifyEmail(
     `Сумма: ${amountFormatted} ₽`,
     `Invoice: ${params.invoiceId}`,
     `E-mail клиента: ${params.customerEmail}`,
+    ...(commentTextLine ? [commentTextLine] : []),
     txLine,
     methodLine,
     '',
@@ -51,6 +60,7 @@ export function renderOperatorPaymentNotifyEmail(
   <li>Сумма: <strong>${amountFormatted} ₽</strong></li>
   <li>Invoice: <code>${escapeHtml(params.invoiceId)}</code></li>
   <li>E-mail клиента: ${escapeHtml(params.customerEmail)}</li>
+  ${commentHtmlLine}
   <li>${txLine}</li>
   <li>${methodLine}</li>
 </ul>

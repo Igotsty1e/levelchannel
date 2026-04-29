@@ -38,9 +38,16 @@ async function ensureSchema() {
           receipt jsonb not null,
           metadata jsonb null,
           mock_auto_confirm_at timestamptz null,
-          events jsonb not null default '[]'::jsonb
+          events jsonb not null default '[]'::jsonb,
+          customer_comment text null
         )
       `)
+      // Legacy safety net for DBs that ran the older ensureSchema before
+      // migration 0015 landed. ALTER ADD COLUMN IF NOT EXISTS so it's a
+      // no-op on freshly-migrated databases.
+      await pool.query(
+        `alter table payment_orders add column if not exists customer_comment text null`,
+      )
       await pool.query(`
         create table if not exists payment_card_tokens (
           customer_email text primary key,
@@ -98,6 +105,8 @@ function mapRowToOrder(row: Record<string, unknown>): PaymentOrder {
       ? new Date(String(row.mock_auto_confirm_at)).toISOString()
       : undefined,
     events: Array.isArray(row.events) ? (row.events as PaymentOrder['events']) : [],
+    customerComment:
+      row.customer_comment == null ? null : String(row.customer_comment),
   }
 }
 
@@ -121,6 +130,7 @@ function toInsertValues(order: PaymentOrder) {
     order.metadata ? JSON.stringify(order.metadata) : null,
     order.mockAutoConfirmAt || null,
     JSON.stringify(order.events),
+    order.customerComment ?? null,
   ]
 }
 
@@ -163,9 +173,10 @@ export async function createOrderPostgres(order: PaymentOrder) {
       receipt,
       metadata,
       mock_auto_confirm_at,
-      events
+      events,
+      customer_comment
     ) values (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18::jsonb
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18::jsonb,$19
     )`,
     toInsertValues(order),
   )
@@ -215,7 +226,8 @@ export async function updateOrderPostgres(
         receipt = $15::jsonb,
         metadata = $16::jsonb,
         mock_auto_confirm_at = $17,
-        events = $18::jsonb
+        events = $18::jsonb,
+        customer_comment = $19
       where invoice_id = $1`,
       toInsertValues(next),
     )

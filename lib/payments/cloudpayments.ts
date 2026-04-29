@@ -1,6 +1,6 @@
 import {
+  buildPaymentDescription,
   normalizePaymentAmount,
-  PAYMENT_DESCRIPTION,
   PAYMENT_ITEM_NAME,
 } from '@/lib/payments/catalog'
 import { isCloudPaymentsConfigured, paymentConfig } from '@/lib/payments/config'
@@ -45,6 +45,7 @@ export function createCloudPaymentsOrder(
     rememberCard?: boolean
     source?: string
     personalDataConsent?: PersonalDataConsentSnapshot
+    customerComment?: string | null
   } = {},
 ): PaymentOrder {
   if (!isCloudPaymentsConfigured()) {
@@ -54,12 +55,13 @@ export function createCloudPaymentsOrder(
   const now = new Date().toISOString()
   const normalizedAmount = normalizePaymentAmount(amountRub)
   const receipt = buildReceipt(normalizedAmount, customerEmail)
+  const customerComment = options.customerComment ?? null
 
   return {
     invoiceId,
     amountRub: normalizedAmount,
     currency: 'RUB',
-    description: PAYMENT_DESCRIPTION,
+    description: buildPaymentDescription(normalizedAmount, customerComment),
     provider: 'cloudpayments',
     status: 'pending',
     createdAt: now,
@@ -68,10 +70,12 @@ export function createCloudPaymentsOrder(
     receiptEmail: customerEmail,
     receipt,
     providerMessage: 'Ожидаем завершения оплаты в CloudPayments.',
+    customerComment,
     metadata: {
       source: options.source || 'widget',
       rememberCard: Boolean(options.rememberCard),
       personalDataConsent: options.personalDataConsent,
+      customerComment,
     },
     events: [
       ...(options.personalDataConsent

@@ -48,6 +48,11 @@ export type PaymentOrder = {
   metadata?: Record<string, unknown>
   mockAutoConfirmAt?: string
   events: PaymentOrderEvent[]
+  // Free-text payment note from the customer ("за урок 26 апреля").
+  // Server-validated to ≤128 chars after trim, control characters
+  // stripped. Persisted separately from `description`; description is
+  // composed server-side as PAYMENT_DESCRIPTION + comment + amount.
+  customerComment?: string | null
 }
 
 export type PublicPaymentOrder = Pick<
