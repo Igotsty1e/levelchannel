@@ -9,10 +9,9 @@
 
 ### Production reliability
 
-- перевести prod deployment с manual rsync на git-aware или другой auditable rollout
-- настроить deploy automation без ручного копирования рабочей директории
 - подключить uptime / failure alerting на приложение и webhook-контур
 - настроить и проверить регулярный backup + restore drill для Postgres
+- добавить сигнал о неуспешном git-based deploy или зависшем `levelchannel-autodeploy`
 
 ### Security and payment safety
 

@@ -15,7 +15,7 @@
 - настроить ежедневный backup Postgres и регулярно проверять restore
 - подключить uptime monitor на `/api/health`
 - выключить password auth по SSH и запретить прямой root по паролю
-- уйти от manual deploy к более предсказуемому процессу выката
+- регулярно проверять rollback drill и состояние git-based autodeploy
 
 ## P1
 
@@ -26,7 +26,6 @@
 
 ### Service reliability
 
-- снизить зависимость от ручной операционки вокруг продакшена
 - улучшить наблюдаемость за приложением и webhook-контуром
 
 ## P2
