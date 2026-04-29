@@ -127,6 +127,15 @@ Append-only audit-log-of-record для money-bound transitions. Параллел
 - `charge_token.error` — sync-error path в `chargeWithSavedCard` may throw до или после order INSERT; refactor return type на `{kind:'error', invoiceId, reason}` нужен прежде чем audit row можно honestly attached. Сейчас sync errors пишутся в `console.warn` (journald). `charge_token.attempted` НЕ нужно (см. backlog rationale).
 - HMAC fail / parse fail для webhook'ов: invoice_id ненадёжен в этой точке (FK constraint), audit row не пишется. Эти отказы остаются в nginx + journal logs.
 
+### Error tracking (Sentry)
+
+- [`instrumentation.ts`](/Users/ivankhanaev/LevelChannel/instrumentation.ts) — Next.js auto-loaded boot hook; init Sentry SDK для `nodejs` или `edge` runtime. Реэкспортирует `onRequestError` для server-component / route-handler error capture.
+- [`instrumentation-client.ts`](/Users/ivankhanaev/LevelChannel/instrumentation-client.ts) — browser SDK init, `onRouterTransitionStart` для трасс роутера.
+- [`app/global-error.tsx`](/Users/ivankhanaev/LevelChannel/app/global-error.tsx) — top-level React error boundary, `Sentry.captureException` + ru-fallback UI.
+- [`next.config.js`](/Users/ivankhanaev/LevelChannel/next.config.js) — обёрнут в `withSentryConfig({ org: 'mastery-zs', project: 'levelchannel', silent: !CI })`. CSP в том же файле допускает `*.ingest.{de.,}sentry.io` в `connect-src` плюс `worker-src 'self' blob:`.
+- DSN из env: `SENTRY_DSN` (server) + `NEXT_PUBLIC_SENTRY_DSN` (browser). Без DSN SDK становится no-op. Опциональный `SENTRY_AUTH_TOKEN` нужен для source-maps upload при `npm run build`.
+- `tracesSampleRate=0.1`, `sendDefaultPii: false` в обоих init'ах. `release: process.env.GIT_SHA` — после активации сервер-патча Sentry группирует issues по релизам.
+
 ### Schema migrations
 
 - [`scripts/migrate.mjs`](/Users/ivankhanaev/LevelChannel/scripts/migrate.mjs) — минимальный self-contained runner поверх `pg`. Команды: `npm run migrate:up`, `npm run migrate:status`. Применяет файлы `migrations/NNNN_*.sql` по порядку в транзакциях, фиксирует имена в `_migrations`.
