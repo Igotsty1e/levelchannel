@@ -42,7 +42,11 @@ export function hashEmailForRateLimit(email: string): string {
 //
 // Example: rateLimitScope('login', 'user@example.com') → 'auth:login:email:<hash>'
 export function rateLimitScope(
-  action: 'login' | 'register' | 'reset_request',
+  action:
+    | 'login'
+    | 'register'
+    | 'reset_request'
+    | 'resend-verify',
   email: string,
 ): string {
   return `auth:${action}:email:${hashEmailForRateLimit(email)}`
