@@ -54,7 +54,7 @@ owner-docs и git history важнее старых chat outputs.
 
 ### Observability
 
-- подключить error tracking
+- ~~подключить error tracking~~ — **закрыто 2026-04-29**: Sentry @sentry/nextjs v10 + `instrumentation.ts` (Node/Edge) + `instrumentation-client.ts` (browser) + `app/global-error.tsx`. Project `mastery-zs/levelchannel`. Smoke event прошёл end-to-end. Активация в production = добавить `SENTRY_DSN` + `NEXT_PUBLIC_SENTRY_DSN` в `/etc/levelchannel.env`. Подробно — `OPERATIONS.md §9` Sentry
 - добавить операторские сигналы по сбоям оплаты и webhook failures
 
 ### Auth and consent

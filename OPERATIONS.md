@@ -837,9 +837,53 @@ journalctl -u levelchannel-webhook-flow-alert.service -n 20
 
 **Idempotence:** скрипт НЕ хранит «уже алертил». Каждый run в состоянии alert посылает email. При cron 30 минут — максимум 2 email/час, что приемлемо. Если шум станет проблемой, добавляется state file `/var/lib/levelchannel/last-webhook-alert-at` — отдельный wave.
 
+### Sentry — error tracking
+
+Подключён 2026-04-29. SDK живёт в:
+- `instrumentation.ts` — Node + Edge runtime init (читает `SENTRY_DSN`)
+- `instrumentation-client.ts` — браузерный SDK (читает `NEXT_PUBLIC_SENTRY_DSN`)
+- `app/global-error.tsx` — top-level React error boundary, форвардит в Sentry и рендерит ru-fallback
+- `next.config.js` — обёрнут в `withSentryConfig` (CSP допускает `*.ingest.de.sentry.io` / `*.ingest.sentry.io` в `connect-src` + `worker-src 'self' blob:`)
+
+**Project:** `mastery-zs/levelchannel` на Sentry SaaS (EU regio'n).
+
+**Dashboard:**
+```
+https://sentry.io/organizations/mastery-zs/projects/levelchannel/
+```
+
+Owner подписан на email-нотификации по новым issues по умолчанию (Sentry account-level setting).
+
+**Env vars (production, в `/etc/levelchannel.env`):**
+
+| Var | Что |
+|---|---|
+| `SENTRY_DSN` | DSN — берётся из Sentry → Settings → Projects → levelchannel → Client Keys |
+| `NEXT_PUBLIC_SENTRY_DSN` | то же значение, доступно браузеру (build-time inline) |
+| `SENTRY_AUTH_TOKEN` (опционально) | для source-maps upload во время `npm run build`. Без него стек-трейсы приходят, но ссылаются на bundled JS вместо оригинального TS |
+
+Без DSN SDK становится no-op — что хорошо для dev. В production пустой DSN значит молчаливое отсутствие алертов; контролируется через смок-захват после деплоя:
+
+```bash
+# manual smoke — после изменения SDK или DSN:
+node -e "
+  const S = require('@sentry/nextjs');
+  S.init({ dsn: process.env.SENTRY_DSN });
+  S.captureMessage('manual smoke ' + Date.now());
+  S.flush(5000).then(() => process.exit(0));
+"
+```
+
+Событие появляется в Sentry за ≤30 секунд.
+
+**`tracesSampleRate=0.1`** в обоих init'ах — performance traces семплируются на 10%, чтобы не уйти за free tier limits. Поднимать после реальных нагрузок.
+
+**`sendDefaultPii: false`** — стандартный безопасный вариант. Default integrations Sentry редактируют common auth headers; флаг подкрепляет это.
+
+**Release tagging:** `instrumentation.ts` читает `process.env.GIT_SHA` (тот же, что использует deploy-freshness workflow). После активации сервер-патча про `GIT_SHA` ([§6 Deploy](#)), Sentry будет группировать issues по релизам.
+
 ### Что НЕ настроено (в roadmap)
 
-- Sentry / error tracking — пока ловишь только по логам
 - Slack/Telegram алерт по успешному платежу — opt'ed out оператором
 - Disk usage monitoring (косвенно — `db: err` появится когда диск умирает)
 
