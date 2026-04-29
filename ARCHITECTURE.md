@@ -80,7 +80,8 @@ Auth-контур уже живёт в коде: есть таблицы, `lib/a
 - [`lib/email/client.ts`](/Users/ivankhanaev/LevelChannel/lib/email/client.ts) — Resend SDK + dev console writer.
 - [`lib/email/escape.ts`](/Users/ivankhanaev/LevelChannel/lib/email/escape.ts) — `escapeHtml` для динамических значений в шаблонах (5 опасных символов).
 - [`lib/email/templates/verify.ts`](/Users/ivankhanaev/LevelChannel/lib/email/templates/verify.ts), [`lib/email/templates/reset.ts`](/Users/ivankhanaev/LevelChannel/lib/email/templates/reset.ts), [`lib/email/templates/already-registered.ts`](/Users/ivankhanaev/LevelChannel/lib/email/templates/already-registered.ts) — inline HTML + plain text, RU. URL пропускается через `escapeHtml`. `already-registered` для existing-email path в register flow (Phase 1B D1 timing parity).
-- [`lib/email/dispatch.ts`](/Users/ivankhanaev/LevelChannel/lib/email/dispatch.ts) — `sendVerifyEmail`, `sendResetEmail`, `sendAlreadyRegisteredEmail`. URLs построены через `paymentConfig.siteUrl`.
+- [`lib/email/templates/operator-payment-notify.ts`](/Users/ivankhanaev/LevelChannel/lib/email/templates/operator-payment-notify.ts) — operator-facing «Платёж получен». Все user-supplied поля (transactionId, paymentMethod, customerEmail) через `escapeHtml`. Subject формата `[LevelChannel] Платёж получен: <amount> ₽ — <invoice>`.
+- [`lib/email/dispatch.ts`](/Users/ivankhanaev/LevelChannel/lib/email/dispatch.ts) — `sendVerifyEmail`, `sendResetEmail`, `sendAlreadyRegisteredEmail`, `sendOperatorPaymentNotification`. URLs построены через `paymentConfig.siteUrl`. Operator dispatch читает `OPERATOR_NOTIFY_EMAIL` env, при пустом — silent no-op (returns `{ok:false, reason:'no_recipient'}`).
 
 ### Test infrastructure (integration)
 

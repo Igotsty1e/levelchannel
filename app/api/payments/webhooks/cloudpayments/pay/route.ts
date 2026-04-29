@@ -1,4 +1,5 @@
 import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
+import { sendOperatorPaymentNotification } from '@/lib/email/dispatch'
 import { handleCloudPaymentsWebhook } from '@/lib/payments/cloudpayments-route'
 import { getCloudPaymentsInvoiceId } from '@/lib/payments/cloudpayments-webhook'
 import { markOrderPaid } from '@/lib/payments/provider'
@@ -36,6 +37,33 @@ export async function POST(request: Request) {
           providerStatus: payload.Status,
         },
       })
+
+      // Operator notification — best-effort. A Resend outage must NOT
+      // break the webhook ACK to CloudPayments (which would make CP
+      // re-fire the Pay webhook, double-marking the order). All errors
+      // get swallowed + warn'd here; the order is already paid in DB
+      // and audit captured the transition, so the operator can still
+      // see the event by other means even if email never arrives.
+      try {
+        const result = await sendOperatorPaymentNotification({
+          invoiceId: order.invoiceId,
+          amountRub: order.amountRub,
+          customerEmail: order.customerEmail,
+          transactionId: payload.TransactionId ?? null,
+          paymentMethod: payload.PaymentMethod ?? null,
+        })
+        if (!result.ok && result.reason === 'no_recipient') {
+          // No-op path — OPERATOR_NOTIFY_EMAIL not configured. Don't
+          // log to keep webhook journal noise low.
+        } else if (!result.ok) {
+          console.warn('[notify] operator payment email failed:', result)
+        }
+      } catch (err) {
+        console.warn('[notify] operator payment email threw:', {
+          invoiceId: order.invoiceId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
     }
   } })
 }
