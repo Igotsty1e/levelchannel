@@ -8,7 +8,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
-  return handleCloudPaymentsWebhook(request, async (payload) => {
+  return handleCloudPaymentsWebhook(request, { kind: 'pay', handler: async (payload) => {
     const order = await markOrderPaid(getCloudPaymentsInvoiceId(payload), {
       transactionId: payload.TransactionId,
       paymentMethod: payload.PaymentMethod,
@@ -37,5 +37,5 @@ export async function POST(request: Request) {
         },
       })
     }
-  })
+  } })
 }

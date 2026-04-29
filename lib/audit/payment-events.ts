@@ -22,11 +22,11 @@ export const PAYMENT_AUDIT_EVENT_TYPES = [
   'webhook.pay.processed',
   'webhook.pay.validation_failed',
   'webhook.fail.received',
-  'charge_token.attempted',
+  'webhook.fail.declined',
+  'webhook.fail.processed',
   'charge_token.succeeded',
   'charge_token.requires_3ds',
   'charge_token.declined',
-  'charge_token.error',
   'threeds.callback.received',
   'threeds.confirmed',
   'threeds.declined',
@@ -53,7 +53,12 @@ export type RecordPaymentAuditEvent = {
   eventType: PaymentAuditEventType
   invoiceId: string
   accountId?: string | null
-  customerEmail: string
+  // Nullable as of migration 0014. Pre-validation phase webhook events
+  // may not have a trustworthy email at the moment of recording (the
+  // Order lookup may fail, the payload's `Email` field is not yet
+  // cross-checked). Caller passes null in that case rather than a
+  // placeholder that could later be confused with real data.
+  customerEmail: string | null
   clientIp?: string | null
   userAgent?: string | null
   amountKopecks: number
@@ -95,7 +100,7 @@ export async function recordPaymentAuditEvent(
         event.eventType,
         event.invoiceId,
         event.accountId ?? null,
-        event.customerEmail,
+        event.customerEmail ?? null,
         event.clientIp ?? null,
         event.userAgent ?? null,
         event.amountKopecks,
@@ -129,7 +134,7 @@ export type StoredPaymentAuditEvent = {
   eventType: PaymentAuditEventType
   invoiceId: string
   accountId: string | null
-  customerEmail: string
+  customerEmail: string | null
   clientIp: string | null
   userAgent: string | null
   amountKopecks: number
@@ -168,7 +173,7 @@ function rowToEvent(row: Record<string, unknown>): StoredPaymentAuditEvent {
     eventType: row.event_type as PaymentAuditEventType,
     invoiceId: String(row.invoice_id),
     accountId: row.account_id == null ? null : String(row.account_id),
-    customerEmail: String(row.customer_email),
+    customerEmail: row.customer_email == null ? null : String(row.customer_email),
     clientIp: row.client_ip == null ? null : String(row.client_ip),
     userAgent: row.user_agent == null ? null : String(row.user_agent),
     amountKopecks: Number(row.amount_kopecks),

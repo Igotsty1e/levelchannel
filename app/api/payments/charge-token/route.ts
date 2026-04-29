@@ -99,15 +99,33 @@ export async function POST(request: Request) {
       }
     }
 
-    const result = await chargeWithSavedCard({
-      amountRub,
-      customerEmail: emailValidation.email,
-      ipAddress: ip === 'unknown' ? undefined : ip,
-      personalDataConsent: buildPersonalDataConsentSnapshot({
+    let result: Awaited<ReturnType<typeof chargeWithSavedCard>>
+    try {
+      result = await chargeWithSavedCard({
+        amountRub,
+        customerEmail: emailValidation.email,
         ipAddress: ip === 'unknown' ? undefined : ip,
-        userAgent: request.headers.get('user-agent') || undefined,
-      }),
-    })
+        personalDataConsent: buildPersonalDataConsentSnapshot({
+          ipAddress: ip === 'unknown' ? undefined : ip,
+          userAgent: request.headers.get('user-agent') || undefined,
+        }),
+      })
+    } catch (err) {
+      // Synchronous failure inside the charge path — most likely a CP
+      // 5xx, network blip, or a provider-side schema mismatch. We DO
+      // NOT have a guaranteed invoice_id here (chargeWithSavedCard
+      // creates it internally and may throw before or after that),
+      // so we can only log to journald via console.warn. This is a
+      // gap relative to the post-success / post-decline events but
+      // it's the honest accounting — see migration 0014 for why
+      // charge_token.attempted isn't a separate audit row either.
+      console.warn('[audit] charge_token sync error:', {
+        email: emailValidation.email,
+        amountRub,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      throw err
+    }
 
     if (result.kind === 'no_saved_card') {
       return {

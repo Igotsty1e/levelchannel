@@ -105,7 +105,8 @@ Auth-контур уже живёт в коде: есть таблицы, `lib/a
 
 Append-only audit-log-of-record для money-bound transitions. Параллельный канал к `payment_telemetry` (которая privacy-friendly funnel-аналитика, HMAC email + /24 IP) — audit хранит full email + full IP для расследования инцидентов. Доступ admin-only; см. `SECURITY.md` § "Audit log — payment lifecycle".
 
-- [`migrations/0012_payment_audit_events.sql`](/Users/ivankhanaev/LevelChannel/migrations/0012_payment_audit_events.sql) — append-only таблица. CHECK enum `event_type` (17 transitions), FK `invoice_id` → `payment_orders` ON DELETE NO ACTION (audit переживает order), structured columns + JSONB `payload`. Индексы: per-invoice, per-account (partial WHERE NOT NULL), per-type-time.
+- [`migrations/0012_payment_audit_events.sql`](/Users/ivankhanaev/LevelChannel/migrations/0012_payment_audit_events.sql) — append-only таблица. CHECK enum `event_type`, FK `invoice_id` → `payment_orders` ON DELETE NO ACTION (audit переживает order), structured columns + JSONB `payload`. Индексы: per-invoice, per-account (partial WHERE NOT NULL), per-type-time.
+- [`migrations/0014_payment_audit_events_more_phases.sql`](/Users/ivankhanaev/LevelChannel/migrations/0014_payment_audit_events_more_phases.sql) — расширение enum'а до 17 типов: добавляет phase-0 события для webhook'ов (`webhook.check.received`, `webhook.pay.received`, `webhook.fail.received`) и validation-failure события (`webhook.check.declined`, `webhook.pay.validation_failed`, `webhook.fail.declined`). Старый `webhook.fail.received` (semantically finalize) переименован в `webhook.fail.processed` через UPDATE в той же транзакции. `customer_email` стал nullable (phase-0 событие не всегда имеет проверенный email). `charge_token.attempted` / `charge_token.error` намеренно НЕ добавлены — нет clean attach point (FK к payment_orders требует invoice_id).
 - [`lib/audit/payment-events.ts`](/Users/ivankhanaev/LevelChannel/lib/audit/payment-events.ts) — `recordPaymentAuditEvent(...)` (best-effort: catch + warn + return false; не throw'ит, чтобы business path не валился). `listPaymentAuditEventsByInvoice(invoiceId)` для admin tooling. Экспорт `PAYMENT_AUDIT_EVENT_TYPES` — single source of truth для enum, должен совпадать с миграционным CHECK (закрыто integration-тестом).
 - [`lib/audit/pool.ts`](/Users/ivankhanaev/LevelChannel/lib/audit/pool.ts) — изолированный pg Pool (max=4) под audit. Будущая консолидация всех domain pool'ов в общий `lib/db/pool.ts` — backlog item.
 
@@ -116,12 +117,14 @@ Append-only audit-log-of-record для money-bound transitions. Параллел
 - [`app/api/payments/mock/[invoiceId]/confirm/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/mock/[invoiceId]/confirm/route.ts) → `mock.confirmed`
 - [`app/api/payments/charge-token/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/charge-token/route.ts) → `charge_token.succeeded` / `charge_token.requires_3ds` / `charge_token.declined`
 - [`app/api/payments/3ds-callback/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/3ds-callback/route.ts) → `threeds.callback.received` + `threeds.confirmed` / `threeds.declined`
-- [`app/api/payments/webhooks/cloudpayments/pay/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/webhooks/cloudpayments/pay/route.ts) → `webhook.pay.processed`
-- [`app/api/payments/webhooks/cloudpayments/fail/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/webhooks/cloudpayments/fail/route.ts) → `webhook.fail.received`
+- [`app/api/payments/webhooks/cloudpayments/pay/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/webhooks/cloudpayments/pay/route.ts) → `webhook.pay.processed` (плюс `webhook.pay.received` / `.validation_failed` через wrapper)
+- [`app/api/payments/webhooks/cloudpayments/fail/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/webhooks/cloudpayments/fail/route.ts) → `webhook.fail.processed` (плюс `webhook.fail.received` / `.declined` через wrapper)
+- [`app/api/payments/webhooks/cloudpayments/check/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/webhooks/cloudpayments/check/route.ts) → `webhook.check.received` / `.declined` через wrapper (no business handler — Check только валидирует)
+- [`lib/payments/cloudpayments-route.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/cloudpayments-route.ts) — wrapper handles HMAC verify → parse → order lookup → audit phase-0 (`received`) → validate → audit phase-1 (`declined` / `validation_failed`) → call `handler(payload)` for business finalize
 
-Не покрыто (открытые backlog-items, см. `ENGINEERING_BACKLOG.md`):
-- `webhook.check.received` / `webhook.*.declined` / `webhook.pay.validation_failed` — пока пишется только финальный business transition; pre-validation phases требуют переработки `cloudpayments-route` wrapper'а.
-- `charge_token.attempted` / `charge_token.error` — pre-call recording требует двухфазной записи; для MVP отдан только финальный исход.
+Не покрыто (см. `ENGINEERING_BACKLOG.md` для контекста):
+- `charge_token.error` — sync-error path в `chargeWithSavedCard` may throw до или после order INSERT; refactor return type на `{kind:'error', invoiceId, reason}` нужен прежде чем audit row можно honestly attached. Сейчас sync errors пишутся в `console.warn` (journald). `charge_token.attempted` НЕ нужно (см. backlog rationale).
+- HMAC fail / parse fail для webhook'ов: invoice_id ненадёжен в этой точке (FK constraint), audit row не пишется. Эти отказы остаются в nginx + journal logs.
 
 ### Schema migrations
 
