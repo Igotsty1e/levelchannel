@@ -10,6 +10,15 @@ Single source of truth по инфраструктуре, деплою, git work
 > как полагаться на этот раздел". Эти маркеры рассчитаны на то, что их
 > заменят на реальные хосты/пути/имена.
 
+> **⚠ Production drift (зафиксировано аудитом 2026-04-29):** на сервере
+> `/var/www/levelchannel` НЕ является git-репозиторием, и его содержимое
+> отстаёт от `origin/main` минимум на 5 коммитов (legal-блок + opt-in
+> tokens + one-click + 3DS + idempotency + telemetry-postgres + health +
+> tests + docs). На проде сейчас работает версия от 28 апреля. Деплой
+> делается через прямой upload (scp / rsync с локальной машины), не через
+> `git pull`. Перед любой работой с прод-инцидентами помни: код там
+> другой. См. §6 для процедуры догнать.
+
 ---
 
 ## 1. TL;DR — где что лежит
@@ -17,21 +26,25 @@ Single source of truth по инфраструктуре, деплою, git work
 | Контур | Где | Примечание |
 |---|---|---|
 | Source code | GitHub: `Igotsty1e/levelchannel` (private) | default branch `main` |
-| Production runtime | `83.217.202.136` (Timeweb VPS) | systemd unit `levelchannel` |
-| Production database | тот же VPS, Postgres слушает только `127.0.0.1:5432` | БД `levelchannel`, app-юзер `levelchannel` |
-| Domain | <!-- FILL IN: домен, через который доступен сайт --> | A-запись на `83.217.202.136` |
-| TLS | <!-- FILL IN: предположительно Let's Encrypt (nginx + certbot) --> | <!-- FILL IN --> |
-| Reverse proxy | `nginx` на том же VPS | конфиг: `/etc/nginx/sites-enabled/...` |
-| Process manager | `systemd` (`systemctl status levelchannel`) | Next слушает `*:3000` (gap, см. §13) |
-| SSH | root + ed25519 ключ `~/.ssh/levelchannel_timeweb_ed25519` (на машине оператора) | password auth включён сейчас (gap, см. §13) |
-| Firewall (ufw) | наружу только `22/80/443` | прикрывает gap с `*:3000` в краткосроке |
+| Production runtime | `83.217.202.136` (Timeweb VPS), Ubuntu 24.04.4 LTS, kernel 6.8 | systemd unit `levelchannel` |
+| Production database | тот же VPS, Postgres 16.13, слушает `127.0.0.1:5432` + `[::1]:5432` | БД `levelchannel`, app-юзер `levelchannel` |
+| Node.js | v20.20.2 (npm 10.8.2) | `/usr/bin/npm`, `/usr/bin/node` |
+| Domain | `levelchannel.ru` + `www.levelchannel.ru` (A → `83.217.202.136`) | TLS обязателен (`http://` редиректится 301) |
+| TLS | Let's Encrypt, `/etc/letsencrypt/live/levelchannel.ru/` | `certbot.timer` активен → автообновление |
+| Reverse proxy | `nginx`, `/etc/nginx/sites-enabled/levelchannel` | простой `proxy_pass http://127.0.0.1:3000`, без `limit_req` (см. §13) |
+| Process manager | `systemd`, юнит `/etc/systemd/system/levelchannel.service` | `User=levelchannel`, `WorkingDirectory=/var/www/levelchannel`, `ExecStart=/usr/bin/npm run start` |
+| Env file | `/etc/levelchannel.env` (chmod 600, root:root) | подключается через `EnvironmentFile=` в systemd unit |
+| SSH | root + ed25519 ключ `~/.ssh/levelchannel_timeweb_ed25519` (на машине оператора) | password auth включён (gap, §13) |
+| Firewall (ufw) | OpenSSH + Nginx Full + `10050/tcp` (Zabbix agent от Timeweb) | прикрывает gap с `*:3000` в краткосроке |
+| **Деплой** | **Manual upload (scp/rsync с локальной машины)** | На сервере НЕТ `.git` — workdir не git-репо. См. §6. |
 | Email транспорт | пока не нужен (чеки шлёт CloudKassir) | — |
-| Платёжный провайдер | CloudPayments | <!-- FILL IN: ID кабинета --> |
-| Онлайн-касса | CloudKassir (входит в CloudPayments) | <!-- FILL IN --> |
-| Логи | `journalctl -u levelchannel`, `/var/log/nginx/` | см. §8 |
-| Бэкапы БД | <!-- FILL IN: пока не настроено --> | см. §13 |
-| Uptime monitor | <!-- FILL IN: пока не настроено --> | подключай на `/api/health` |
-| Error tracking | пока не подключено (Sentry в roadmap) | — |
+| Платёжный провайдер | CloudPayments | <!-- FILL IN: ID кабинета (есть в .env как CLOUDPAYMENTS_PUBLIC_ID) --> |
+| Онлайн-касса | CloudKassir (входит в CloudPayments) | <!-- FILL IN: статус ОФД --> |
+| Логи | `journalctl -u levelchannel`, `/var/log/nginx/access.log`, `/var/log/nginx/error.log` | см. §8 |
+| Бэкапы БД | **не настроены** | см. §13 |
+| Uptime monitor | **не настроен** | подключай на `/api/health` (после деплоя — сейчас 404) |
+| Error tracking | не подключено (Sentry в roadmap) | — |
+| External monitoring | Zabbix agent на `:10050` (от Timeweb) | внутренние метрики хоста, не приложения |
 
 ---
 
@@ -69,11 +82,12 @@ Single source of truth по инфраструктуре, деплою, git work
 ## 3. Server / runtime
 
 **Хост:** `83.217.202.136`, VPS на Timeweb.
-**OS:** <!-- FILL IN: на сервере `cat /etc/os-release | grep PRETTY_NAME` --> (предположительно Ubuntu).
-**Node.js версия:** <!-- FILL IN: `node -v` на сервере, должна быть >= 20.x -->.
-**Рабочая директория:** <!-- FILL IN: путь репо на сервере, например `/opt/levelchannel` -->.
-**Пользователь, под которым крутится app:** <!-- FILL IN: `ps aux | grep node` -->.
-**Порт, который слушает Next:** `3000`. Сейчас bind на `*:3000` (см. gap в §13). Должен быть `127.0.0.1:3000`, перед ним nginx.
+**OS:** Ubuntu 24.04.4 LTS (kernel 6.8.0-110-generic).
+**Node.js версия:** v20.20.2, npm 10.8.2.
+**Рабочая директория:** `/var/www/levelchannel` (НЕ git-репо — см. §6).
+**Пользователь, под которым крутится app:** `levelchannel` (system user).
+**Env file:** `/etc/levelchannel.env` (chmod 600, root:root, подключается через `EnvironmentFile=` в systemd unit).
+**Порт, который слушает Next:** `3000`. Сейчас bind на `*:3000` (gap, §13). Должен быть `127.0.0.1:3000`, перед ним nginx.
 
 ### SSH
 
@@ -102,11 +116,35 @@ sudo journalctl -u levelchannel -f         # follow логов
 sudo journalctl -u levelchannel --since "1 hour ago"
 ```
 
-Файл юнита: <!-- FILL IN: `/etc/systemd/system/levelchannel.service`, проверить `systemctl cat levelchannel` -->.
+Файл юнита: `/etc/systemd/system/levelchannel.service`. Текущее
+содержимое:
+
+```ini
+[Unit]
+Description=LevelChannel Next.js app
+After=network.target
+
+[Service]
+Type=simple
+User=levelchannel
+Group=levelchannel
+WorkingDirectory=/var/www/levelchannel
+EnvironmentFile=/etc/levelchannel.env
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
 
 ### Reverse proxy — nginx
 
-Конфиг: <!-- FILL IN: предположительно `/etc/nginx/sites-enabled/levelchannel.conf`, проверить `ls /etc/nginx/sites-enabled/` -->.
+Конфиг: `/etc/nginx/sites-enabled/levelchannel`. Сейчас минимальный —
+TLS termination + proxy_pass. **Нет `limit_req_zone`** на nginx-уровне
+(долг, §13). HTTP→HTTPS редирект работает.
 
 Reverse proxy обязателен для:
 - TLS termination (HTTPS)
@@ -158,31 +196,45 @@ server {
 
 ### TLS
 
-<!-- FILL IN: certbot --nginx / Caddy auto / Cloudflare proxied -->
+**certbot --nginx**, сертификаты в `/etc/letsencrypt/live/levelchannel.ru/`,
+автообновление через `certbot.timer` (active). Конфиг nginx уже включает
+`include /etc/letsencrypt/options-ssl-nginx.conf` и `ssl_dhparam`.
 
-Если **certbot**: автообновление через `systemctl status certbot.timer`.
-Сертификаты в `/etc/letsencrypt/live/<домен>/`.
+```bash
+# проверить
+sudo certbot certificates
+sudo systemctl status certbot.timer
+
+# принудительное обновление (обычно не надо)
+sudo certbot renew --dry-run            # тест
+sudo certbot renew                       # реальное
+```
 
 ---
 
 ## 4. Domain & DNS
 
-<!-- FILL IN -->
+**Домен:** `levelchannel.ru` + `www.levelchannel.ru` (оба обслуживаются
+тем же nginx server-block'ом). HTTP редиректится 301 на HTTPS.
 
 | Запись | Значение |
 |---|---|
-| A `<!-- домен -->` | `<!-- IP сервера -->` |
-| AAAA `<!-- домен -->` | `<!-- IPv6, если есть -->` |
-| MX | `<!-- если используется почта на этом домене -->` |
-| TXT (SPF/DKIM/DMARC) | `<!-- если шлёшь почту с домена -->` |
+| A `levelchannel.ru` | `83.217.202.136` |
+| A `www.levelchannel.ru` | `83.217.202.136` (или CNAME → `levelchannel.ru`) |
+| AAAA | <!-- FILL IN: проверить, есть ли IPv6 у VPS, и AAAA-запись --> |
+| MX | <!-- FILL IN: если на домене настроена почта --> |
+| TXT (SPF/DKIM/DMARC) | <!-- FILL IN: если шлёшь почту с домена; сейчас для лендинга не нужно --> |
+
+Регистратор и панель управления DNS: <!-- FILL IN: REG.RU / NameSilo / у Timeweb? -->.
 
 ---
 
 ## 5. Database
 
-**Engine:** PostgreSQL <!-- FILL IN: проверить `psql --version` на сервере -->
-**Хост:** `127.0.0.1:5432` на том же VPS (`83.217.202.136`). Слушает
-**только** loopback — наружу БД не торчит, доступ только через SSH-туннель.
+**Engine:** PostgreSQL 16.13 (Ubuntu пакет `postgresql-16`).
+**Хост:** `127.0.0.1:5432` + `[::1]:5432` на том же VPS (`83.217.202.136`).
+Наружу БД не торчит — доступ только локально на сервере или через
+SSH-туннель.
 **База:** `levelchannel`
 **Пользователь приложения:** `levelchannel`
 **Пароль:** хранится только в `.env` на сервере, не в репозитории.
@@ -294,44 +346,121 @@ gunzip -c /var/backups/levelchannel/db-2026-04-29.sql.gz | psql "$RECOVERY_DATAB
 
 ## 6. Deploy
 
-**Текущий механизм:** manual `git pull` + restart по SSH. Нет
-`Dockerfile`, нет `docker-compose.yml`, нет `.github/workflows/`, нет pm2.
+**Текущий механизм: manual upload через rsync/scp с локальной машины оператора.**
+Нет `Dockerfile`, нет `docker-compose.yml`, нет `.github/workflows/`,
+нет pm2, и **нет `.git` в `/var/www/levelchannel`** — workdir на сервере
+**не git-репозиторий**. Файлы попадают туда копированием, без аудит-trail
+"какой sha сейчас крутится".
+
 `postbuild.js` и `public/.htaccess` — legacy от первой static-export
 версии, в текущем server-режиме не используются.
 
-```bash
-# 1. С локальной машины: убедись что коммит уже в origin/main
-git push origin main
+### Процедура деплоя: build-локально → rsync → restart
 
-# 2. На сервере: подтяни и пересобери
-ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136
-cd <!-- FILL IN: путь репо на сервере -->
-git fetch origin
-git pull --ff-only origin main          # упадёт, если на сервере незакоммиченные изменения — см. §13
+```bash
+# 1. На локальной машине: подтянуть последний main, прогнать gates
+cd ~/LevelChannel
+git checkout main
+git pull --ff-only origin main
+npm ci
+npm run test:run                        # 87 tests должны быть зелёные
+npm run build                           # должен дойти до "✓ Compiled successfully"
+
+# 2. Rsync артефактов на прод. Исключаем dev-only мусор и data-store.
+#    Включаем .next (готовый билд), node_modules (production deps),
+#    исходники (Next в server-режиме читает их при старте).
+rsync -avz --delete \
+  --exclude='.git/' \
+  --exclude='.next/cache/' \
+  --exclude='data/' \
+  --exclude='tests/' \
+  --exclude='vitest.config.ts' \
+  --exclude='.env' \
+  --exclude='.env.local' \
+  --exclude='.DS_Store' \
+  -e "ssh -i ~/.ssh/levelchannel_timeweb_ed25519" \
+  ./ root@83.217.202.136:/var/www/levelchannel/
+
+# 3. На сервере: вернуть владельца файлам и рестартнуть
+ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
+  chown -R levelchannel:levelchannel /var/www/levelchannel
+  systemctl restart levelchannel
+  sleep 2
+  systemctl is-active levelchannel
+  curl -sS -o /dev/null -w "/api/health -> %%{http_code}\n" http://127.0.0.1:3000/api/health
+'
+```
+
+### Smoke test после деплоя
+
+```bash
+# С внешней сети — health endpoint должен вернуть 200 ok
+curl -s https://levelchannel.ru/api/health | jq
+
+# Webhook reachability (без HMAC он отдаст 401, это норма)
+curl -s -X POST https://levelchannel.ru/api/payments/webhooks/cloudpayments/check \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "test=1" -w "\nHTTP %{http_code}\n"
+# ожидаем: HTTP 401 (HMAC missing/invalid) — значит роут жив
+```
+
+### Записать что катилось
+
+Поскольку `.git` на проде нет, sha из коммита нужно класть рядом с
+артефактами, иначе через неделю никто не вспомнит что в проде. Пока
+делаем так — после rsync дописать `git rev-parse HEAD` в файл на сервере:
+
+```bash
+ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 \
+  "echo $(git rev-parse HEAD) > /var/www/levelchannel/DEPLOYED_SHA"
+```
+
+Тогда `cat /var/www/levelchannel/DEPLOYED_SHA` всегда покажет что катилось.
+
+### Rollback
+
+Поскольку git на проде нет, rollback = выкатить старый sha с локальной
+машины:
+
+```bash
+cd ~/LevelChannel
+git checkout <previous-sha>            # sha из DEPLOYED_SHA из бэкапа /var/www/levelchannel/
 npm ci
 npm run build
-
-# 3. Рестарт runtime
-sudo systemctl restart levelchannel
-sudo journalctl -u levelchannel -f       # подтверди, что встал чисто (Ctrl-C после Ready)
-
-# 4. Smoke test (см. ниже)
+# повторить процедуру rsync выше
+git checkout main                       # вернуться на main для дальнейшей работы
 ```
 
-### Если на сервере есть untracked / модифицированные файлы
+Если откат вызывает несовместимость со схемой БД — миграции у нас
+add-only (`create table if not exists`), значит откат кода со старыми
+таблицами безопасен. Но если кто-то добавил `alter table ... drop column`
+в новом релизе, сначала восстанови backup БД.
 
-Сейчас именно такая ситуация (см. §13 — legal-блок). `git pull --ff-only`
-завалится с конфликтом. До деплоя коммитни их отдельным коммитом на сервере:
+### Долг: переехать на git pull
+
+Текущий manual-upload механизм опасен:
+- нет аудит-trail
+- любой rsync может затереть случайно правленные на сервере файлы
+- если оператор на разных машинах — состояние на проде непредсказуемо
+
+Стандартный фикс — превратить workdir в git-checkout. Это безопасно
+делается без даунтайма:
 
 ```bash
-cd <!-- FILL IN: путь репо на сервере -->
-git status
-git add lib/legal app/api/payments components/payments lib/payments
-git commit -m "feat(legal): personal data consent capture (deployed manually)"
-git push origin main
+ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
+  cd /var/www/levelchannel
+  git init
+  git remote add origin https://github.com/Igotsty1e/levelchannel.git
+  git fetch origin main
+  git reset --soft origin/main           # подцепить историю, не трогая working tree
+  git status                              # должно показать diff локального vs git
+'
 ```
 
-После этого рабочее дерево чистое и `git pull --ff-only` снова безопасен.
+После этого диф между прод-файлами и git-history будет виден честно,
+дальше через `git stash` / `git checkout` / `git pull` всё стандартно.
+Делать только когда есть актуальный бэкап БД и время на возможный
+recovery.
 
 ### Pre-deploy чеклист (вручную, если деплой manual)
 
@@ -675,19 +804,38 @@ ss -tlnp | grep :3000        # убедись, что binding 127.0.0.1, не *
 
 ### git ↔ prod синхронизация
 
-Legal-блок (`lib/legal/personal-data.ts` + интеграция `personalDataConsent`
-во все money-роуты и `pricing-section.tsx`) попал в git коммитом
-`98f7219 feat(legal): add personal data consent flow`. На случай рассинхрона
-проверяй так:
+Текущее состояние (на 2026-04-29): `/var/www/levelchannel` **не git-репо**,
+файлы датированы 28 апреля, отстают от `origin/main` на 5+ коммитов:
+
+- `12ac8e7` chore(deps): add vitest, bump tsconfig target
+- `b3dedcc` feat(payments): opt-in tokens, one-click + 3-D Secure, idempotency, telemetry, health
+- `7b1f1bc` test: vitest with 87% coverage
+- `73a0d0e` docs: refresh AGENTS, ARCHITECTURE, PAYMENTS_SETUP, SECURITY
+- `98f7219` feat(legal): add personal data consent flow
+- `88d7959` docs: add OPERATIONS.md
+- `ecb40b2` docs: fill OPERATIONS with real prod facts
+
+То есть на проде НЕТ:
+- legal/personal-data consent capture (на проде сайт принимает платежи без
+  записи согласия — это юридический долг под 152-ФЗ);
+- one-click + 3DS + saved-card endpoints;
+- idempotency на money-роутах;
+- health endpoint (`/api/health` отвечает 404);
+- postgres-таблицы `payment_card_tokens`, `payment_telemetry`,
+  `idempotency_records` (создадутся автоматически при первом hit
+  соответствующего кода после деплоя).
+
+**Как проверить расхождение в любой момент:**
 
 ```bash
-ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136
-cd <!-- FILL IN: путь репо -->
-git status                           # должно быть clean
-git log --oneline -5                 # head должен совпадать с origin/main
-git rev-parse HEAD                   # сравни с локальным `git ls-remote origin main`
+ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
+  ls /var/www/levelchannel/lib/legal/ 2>/dev/null && echo "legal: present" || echo "legal: MISSING"
+  ls /var/www/levelchannel/app/api/health/ 2>/dev/null && echo "health: present" || echo "health: MISSING"
+  ls /var/www/levelchannel/lib/payments/cloudpayments-api.ts 2>/dev/null && echo "one-click: present" || echo "one-click: MISSING"
+  cat /var/www/levelchannel/DEPLOYED_SHA 2>/dev/null || echo "DEPLOYED_SHA not written yet"
+'
 ```
 
-Если на сервере есть `M`-файлы (модифицированные после последнего
-deploy) — НЕ делай `git pull --ff-only` сразу. Сначала зафиксируй или
-сбрось эти правки, иначе pull завалится с конфликтом.
+**Что делать:** прогнать процедуру деплоя из §6. После первого успешного
+деплоя — желательно превратить `/var/www/levelchannel` в git-checkout
+(см. там же), чтобы дальше иметь честный аудит.
