@@ -604,19 +604,102 @@ journalctl -u levelchannel | grep -E "(charge-token|tokens/charge|requires_3ds|d
 
 ## 9. Monitoring
 
-**Health endpoint:** `GET /api/health` (см. PAYMENTS_SETUP.md). Возвращает
-200 / 503. Подключи uptime monitor:
+### Uptime probe — GitHub Actions
 
-- <!-- FILL IN: UptimeRobot / BetterStack / Healthchecks.io / самописный cron -->
-- интервал: 60s
-- timeout: 10s
-- алерт: <!-- FILL IN: куда -->
+**Health endpoint:** `GET /api/health`. Возвращает 200 + JSON
+`{"status":"ok","provider":"cloudpayments","storage":"postgres","checks":{...}}`
+или 503. См. `PAYMENTS_SETUP.md` про точный shape.
 
-**Что НЕ настроено (в roadmap):**
+**Кто пингует.** Workflow [`/.github/workflows/uptime-probe.yml`](../.github/workflows/uptime-probe.yml)
+запускается раз в 5 минут (`cron: '*/5 * * * *'`) через GitHub Actions
+runners — внешний relative прода. В одном run-е делается 3 попытки
+с паузой 20 сек; OK считается если **хоть одна** вернула HTTP 200 +
+`"status":"ok"` + `"database":"ok"`. Это фильтрует короткие cold
+starts и Actions-side network jitter.
+
+**Где видеть алерты.** При FAIL workflow открывает GitHub Issue с
+лейблом `uptime-incident` в этом же репо. Owner репо подписан на
+issue create / comment по умолчанию — уведомление падает на email,
+который привязан к GitHub аккаунту. Дашборд активных инцидентов:
+
+```
+https://github.com/Igotsty1e/levelchannel/issues?q=is%3Aopen+label%3Auptime-incident
+```
+
+**Жизненный цикл инцидента (idempotent — workflow знает все 4 состояния):**
+
+| Состояние | Что делает workflow |
+|---|---|
+| FAIL + нет открытого issue | создаёт новый `[uptime] ... is DOWN` |
+| FAIL + есть открытый issue | дописывает комментарий «Still failing at ...» (без spam'а новых issue) |
+| OK + есть открытый issue | пишет «Recovered at ...» и закрывает issue |
+| OK + нет открытого issue | no-op |
+
+Issue body содержит timestamp обнаружения, last HTTP code, last response
+body (обрезано до 1500 символов), ссылку на конкретный run в Actions.
+
+**Detection latency.** Practical floor ~5 минут (cron interval) +
+до ~10 минут (Actions cron sometimes delays under load) → worst-case
+~15 минут. Если когда-нибудь нужна 30-сек precision — добавляем
+external probe (BetterStack / Healthchecks.io) как второй слой,
+этот workflow остаётся.
+
+### Runbook — что делать когда пришёл алерт
+
+1. **Открыть issue, проверить last response body в issue body.** Если там виден HTTP code != 200 — переходим к шагу 2. Если timeout / curl exit без HTTP code — DNS / TLS / нет ответа от сервера; шаги 3 и 5.
+
+2. **Проверить руками с своей машины:**
+   ```bash
+   curl -i https://levelchannel.ru/api/health
+   ```
+   - 200 + `"status":"ok"` → false-positive в Actions (run flap'нул, GH closed issue сам). Можно вручную закомментировать причину в issue.
+   - 503 + `"database":"err"` → Postgres сдох, шаг 4.
+   - 502 / 504 → app не отвечает, шаг 3.
+   - таймаут / ничего → server / nginx / DNS, шаг 5.
+
+3. **App не отвечает.** SSH на VPS:
+   ```bash
+   ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136
+   systemctl status levelchannel
+   journalctl -u levelchannel --since "10 min ago" | tail -100
+   ```
+   Если service died — `systemctl restart levelchannel`. Если loop'ит на crash — журнал покажет stack; подними нужный hotfix (auth secret пропал, миграция упала, OOM и т.д.).
+
+4. **Postgres недоступен.** SSH на VPS:
+   ```bash
+   pg_isready -d "$DATABASE_URL"
+   systemctl status postgresql
+   journalctl -u postgresql --since "30 min ago" | tail -50
+   df -h
+   ```
+   Чаще всего — disk full (бэкапы накопились) или OOM. См. §13 retention drill, §5 backup commands.
+
+5. **Сервер / nginx / DNS.**
+   ```bash
+   ssh root@83.217.202.136 'systemctl status nginx; nginx -t'
+   dig +short levelchannel.ru
+   ```
+   - nginx упал — `systemctl restart nginx`.
+   - dig возвращает не наш IP → registrar incident (см. §4).
+   - SSH timeout → провайдерский incident, проверь Timeweb status page.
+
+6. **После восстановления** — workflow закроет issue автоматически
+   на следующем successful probe (макс 5 мин). Если нужно
+   вручную — закрывай и подпиши причину в комментарии для
+   incident retro.
+
+### Ручной запуск probe
+
+Если хочется проверить вне cron — Actions tab → uptime-probe →
+**Run workflow** (button). Использует `workflow_dispatch` trigger.
+
+### Что НЕ настроено (в roadmap)
+
 - Sentry / error tracking — пока ловишь только по логам
 - Slack/Telegram алерт по успешному платежу — opt'ed out оператором
 - Webhook failure alerting — пока разбирается вручную через `journalctl`
-- Disk usage monitoring
+- Disk usage monitoring (косвенно — `db: err` появится когда диск умирает)
+- Heartbeat от `levelchannel-autodeploy.timer` (если timer развалится — узнаем когда сломается deploy и потом /api/health)
 
 ---
 
