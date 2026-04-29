@@ -57,4 +57,49 @@ describe('renderOperatorPaymentNotifyEmail', () => {
     expect(t.text).toContain('Transaction id: —')
     expect(t.text).toContain('Способ: —')
   })
+
+  it('includes customer comment in body when present', () => {
+    const t = renderOperatorPaymentNotifyEmail({
+      invoiceId: 'lc_d',
+      amountRub: 1500,
+      customerEmail: 'a@b.com',
+      siteUrl: 'https://levelchannel.ru',
+      customerComment: 'за урок 26 апреля',
+    })
+    expect(t.text).toContain('Комментарий клиента: за урок 26 апреля')
+    expect(t.html).toContain('за урок 26 апреля')
+  })
+
+  it('escapes HTML in customer comment', () => {
+    const t = renderOperatorPaymentNotifyEmail({
+      invoiceId: 'lc_e',
+      amountRub: 100,
+      customerEmail: 'x@y.com',
+      siteUrl: 'https://levelchannel.ru',
+      customerComment: '<script>alert(1)</script>',
+    })
+    expect(t.html).not.toContain('<script>alert(1)</script>')
+    expect(t.html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
+  })
+
+  it('omits comment line entirely when comment is empty / null', () => {
+    const empty = renderOperatorPaymentNotifyEmail({
+      invoiceId: 'lc_f',
+      amountRub: 100,
+      customerEmail: 'x@y.com',
+      siteUrl: 'https://levelchannel.ru',
+      customerComment: null,
+    })
+    expect(empty.text).not.toContain('Комментарий клиента')
+    expect(empty.html).not.toContain('Комментарий клиента')
+
+    const blank = renderOperatorPaymentNotifyEmail({
+      invoiceId: 'lc_g',
+      amountRub: 100,
+      customerEmail: 'x@y.com',
+      siteUrl: 'https://levelchannel.ru',
+      customerComment: '   ',
+    })
+    expect(blank.text).not.toContain('Комментарий клиента')
+  })
 })

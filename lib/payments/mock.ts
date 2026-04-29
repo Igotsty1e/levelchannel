@@ -1,6 +1,10 @@
 import { randomUUID } from 'crypto'
 
-import { normalizePaymentAmount, PAYMENT_DESCRIPTION } from '@/lib/payments/catalog'
+import {
+  buildPaymentDescription,
+  normalizePaymentAmount,
+  PAYMENT_DESCRIPTION,
+} from '@/lib/payments/catalog'
 import { paymentConfig } from '@/lib/payments/config'
 import type { PersonalDataConsentSnapshot } from '@/lib/legal/personal-data'
 import type { PaymentOrder } from '@/lib/payments/types'
@@ -8,7 +12,10 @@ import type { PaymentOrder } from '@/lib/payments/types'
 export function createMockOrder(
   amountRub: number,
   customerEmail: string,
-  options: { personalDataConsent?: PersonalDataConsentSnapshot } = {},
+  options: {
+    personalDataConsent?: PersonalDataConsentSnapshot
+    customerComment?: string | null
+  } = {},
 ): PaymentOrder {
   const now = new Date()
   const invoiceId = `lc_${now.toISOString().slice(0, 10).replace(/-/g, '')}_${randomUUID().slice(0, 8)}`
@@ -16,12 +23,13 @@ export function createMockOrder(
     now.getTime() + paymentConfig.mockAutoConfirmSeconds * 1000,
   ).toISOString()
   const normalizedAmount = normalizePaymentAmount(amountRub)
+  const customerComment = options.customerComment ?? null
 
   return {
     invoiceId,
     amountRub: normalizedAmount,
     currency: 'RUB',
-    description: PAYMENT_DESCRIPTION,
+    description: buildPaymentDescription(normalizedAmount, customerComment),
     provider: 'mock',
     status: 'pending',
     createdAt: now.toISOString(),
@@ -51,9 +59,11 @@ export function createMockOrder(
     },
     mockAutoConfirmAt: autoConfirmAt,
     providerMessage: 'Mock-режим: оплата будет автоматически подтверждена.',
+    customerComment,
     metadata: {
       mockBankSessionId: randomUUID(),
       personalDataConsent: options.personalDataConsent,
+      customerComment,
     },
     events: [
       ...(options.personalDataConsent

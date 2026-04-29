@@ -13,7 +13,9 @@ import {
   formatRubles,
   MAX_PAYMENT_AMOUNT_RUB,
   MIN_PAYMENT_AMOUNT_RUB,
+  PAYMENT_COMMENT_MAX_LENGTH,
   normalizeCustomerEmail,
+  validateCustomerComment,
   validateCustomerEmail,
 } from '@/lib/payments/catalog'
 import type {
@@ -209,6 +211,7 @@ export function PricingSection() {
   const router = useRouter()
   const [amountRub, setAmountRub] = useState('3500')
   const [email, setEmail] = useState('')
+  const [comment, setComment] = useState('')
   const [emailTouched, setEmailTouched] = useState(false)
   const [amountTouched, setAmountTouched] = useState(false)
   const [paymentFailed, setPaymentFailed] = useState(false)
@@ -242,6 +245,9 @@ export function PricingSection() {
     personalDataConsentTouched && !personalDataConsentAccepted
       ? 'Чтобы перейти к оплате, подтвердите согласие на обработку персональных данных.'
       : null
+  const commentValidation = validateCustomerComment(comment)
+  const commentError = commentValidation.ok ? null : commentValidation.message
+  const commentLength = comment.trim().length
   const emailHelperText = emailError
     ? emailError
     : 'На этот e-mail придёт электронный чек после успешной оплаты.'
@@ -448,6 +454,7 @@ export function PricingSection() {
           customerEmail: emailValidation.email,
           rememberCard,
           personalDataConsentAccepted,
+          customerComment: commentValidation.ok ? commentValidation.comment : null,
         }),
       })
 
@@ -994,6 +1001,28 @@ export function PricingSection() {
                 required
               />
               <span style={emailError ? fieldErrorStyle : fieldHintStyle}>{emailHelperText}</span>
+            </label>
+
+            <label style={{ display: 'grid', gap: 8 }}>
+              <span style={{ fontSize: 14, color: '#D4D4D8', fontWeight: 600 }}>
+                Комментарий{' '}
+                <span style={{ color: '#A1A1AA', fontWeight: 400 }}>(не обязательно)</span>
+              </span>
+              <input
+                type="text"
+                value={comment}
+                onChange={(event) => setComment(event.target.value)}
+                disabled={isLoading || hasLockedPendingOrder}
+                maxLength={PAYMENT_COMMENT_MAX_LENGTH}
+                placeholder="например: за урок 26 апреля"
+                style={inputStyle(Boolean(commentError))}
+                aria-invalid={commentError ? true : undefined}
+              />
+              <span style={commentError ? fieldErrorStyle : fieldHintStyle}>
+                {commentError
+                  ? commentError
+                  : `Появится в назначении платежа. Осталось ${PAYMENT_COMMENT_MAX_LENGTH - commentLength} симв.`}
+              </span>
             </label>
 
             {!savedCard ? (

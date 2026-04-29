@@ -4,6 +4,64 @@ export const MAX_PAYMENT_AMOUNT_RUB = 50000
 export const PAYMENT_DESCRIPTION = 'Оплата дополнительных занятий по английскому языку'
 export const PAYMENT_ITEM_NAME = 'Оплата дополнительных занятий по английскому языку'
 
+export const PAYMENT_COMMENT_MAX_LENGTH = 128
+
+// Validate and normalize the optional customer comment field. Returns
+// the cleaned string (≤128 chars after trim, control chars stripped),
+// or `null` for empty/unset, or an error object for too-long input.
+//
+// Why strip control chars: the comment ends up in the CloudPayments
+// `description` field and on the bank statement / chek; control bytes
+// in those fields cause unpredictable rendering and are a tiny info-
+// channel for someone trying to embed steering bytes into a receipt.
+// Visible Unicode (cyrillic, emoji, etc) is fine.
+export function validateCustomerComment(
+  value: unknown,
+):
+  | { ok: true; comment: string | null }
+  | { ok: false; reason: 'too_long'; message: string } {
+  if (value == null || value === '') {
+    return { ok: true, comment: null }
+  }
+  if (typeof value !== 'string') {
+    return { ok: true, comment: null } // be lenient on bad type — treat as empty
+  }
+  // Strip C0 / C1 control characters before measuring length so a
+  // sneaky `\u0000` * 200 doesn't flag the user's 50-char text.
+  const stripped = value.replace(/[\u0000-\u001F\u007F-\u009F]/g, '').trim()
+  if (!stripped) {
+    return { ok: true, comment: null }
+  }
+  if (stripped.length > PAYMENT_COMMENT_MAX_LENGTH) {
+    return {
+      ok: false,
+      reason: 'too_long',
+      message: `Комментарий не должен превышать ${PAYMENT_COMMENT_MAX_LENGTH} символов.`,
+    }
+  }
+  return { ok: true, comment: stripped }
+}
+
+// Compose the human-readable description shown on the bank statement /
+// chek. Always begins with the canonical PAYMENT_DESCRIPTION; if the
+// customer supplied a comment, append it; always append the amount so
+// even contextless statements read clearly.
+export function buildPaymentDescription(
+  amountRub: number,
+  customerComment: string | null,
+): string {
+  const formatted = new Intl.NumberFormat('ru-RU', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(amountRub)
+  const parts = [PAYMENT_DESCRIPTION]
+  if (customerComment) {
+    parts.push(customerComment)
+  }
+  parts.push(`${formatted} ₽`)
+  return parts.join(' — ')
+}
+
 export function normalizePaymentAmount(amount: number) {
   return Math.round(amount * 100) / 100
 }
