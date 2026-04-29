@@ -40,6 +40,7 @@ export function createCloudPaymentsOrder(
   amountRub: number,
   customerEmail: string,
   invoiceId: string,
+  options: { rememberCard?: boolean; source?: string } = {},
 ): PaymentOrder {
   if (!isCloudPaymentsConfigured()) {
     throw new Error('CloudPayments credentials are not configured.')
@@ -63,7 +64,8 @@ export function createCloudPaymentsOrder(
     receipt,
     providerMessage: 'Ожидаем завершения оплаты в CloudPayments.',
     metadata: {
-      source: 'widget',
+      source: options.source || 'widget',
+      rememberCard: Boolean(options.rememberCard),
     },
     events: [
       {
@@ -77,6 +79,11 @@ export function createCloudPaymentsOrder(
 export function buildCloudPaymentsWidgetIntent(
   order: PaymentOrder,
 ): CloudPaymentsWidgetIntent {
+  const rememberCard =
+    typeof order.metadata?.rememberCard === 'boolean'
+      ? order.metadata.rememberCard
+      : false
+
   return {
     publicTerminalId: paymentConfig.cloudpayments.publicId,
     amount: order.amountRub,
@@ -104,7 +111,9 @@ export function buildCloudPaymentsWidgetIntent(
     metadata: {
       invoiceId: order.invoiceId,
       customerEmail: order.customerEmail,
+      rememberCard,
     },
+    tokenize: rememberCard,
     successRedirectUrl: `${paymentConfig.siteUrl}/thank-you?invoiceId=${encodeURIComponent(order.invoiceId)}`,
     failRedirectUrl: `${paymentConfig.siteUrl}/?payment=failed&invoiceId=${encodeURIComponent(order.invoiceId)}`,
     retryPayment: false,

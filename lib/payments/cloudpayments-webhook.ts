@@ -14,6 +14,14 @@ export type CloudPaymentsWebhookPayload = {
   PaymentMethod?: string
   Reason?: string
   ReasonCode?: number | string
+  Token?: string
+  CardLastFour?: string
+  CardType?: string
+  CardExpDate?: string
+  // CloudPayments возвращает наш widget metadata здесь как JSON-строку.
+  // У некоторых терминалов поле приходит как Data, у некоторых как JsonData.
+  Data?: string
+  JsonData?: string
   [key: string]: unknown
 }
 
@@ -29,14 +37,18 @@ export function getCloudPaymentsEmail(payload: CloudPaymentsWebhookPayload) {
   return String(payload.Email || '')
 }
 
-export function verifyCloudPaymentsSignature(rawBody: string, signature: string | null) {
+function buildCloudPaymentsHmac(message: string) {
+  return createHmac('sha256', paymentConfig.cloudpayments.apiSecret)
+    .update(message, 'utf8')
+    .digest('base64')
+}
+
+function verifyCloudPaymentsHmac(message: string, signature: string | null) {
   if (!signature || !paymentConfig.cloudpayments.apiSecret) {
     return false
   }
 
-  const expected = createHmac('sha256', paymentConfig.cloudpayments.apiSecret)
-    .update(rawBody, 'utf8')
-    .digest('base64')
+  const expected = buildCloudPaymentsHmac(message)
 
   const actualBuffer = Buffer.from(signature)
   const expectedBuffer = Buffer.from(expected)
@@ -46,6 +58,20 @@ export function verifyCloudPaymentsSignature(rawBody: string, signature: string 
   }
 
   return timingSafeEqual(actualBuffer, expectedBuffer)
+}
+
+// CloudPayments подписывает сырое тело POST-запроса:
+// base64(HMAC-SHA256(rawBody, ApiSecret)). Заголовок может быть в одной
+// из двух форм: X-Content-HMAC или Content-HMAC. Подпись одна и та же.
+export function verifyCloudPaymentsSignature(
+  rawBody: string,
+  xContentHmac: string | null,
+  contentHmac: string | null,
+) {
+  return (
+    verifyCloudPaymentsHmac(rawBody, xContentHmac) ||
+    verifyCloudPaymentsHmac(rawBody, contentHmac)
+  )
 }
 
 export function parseCloudPaymentsPayload(

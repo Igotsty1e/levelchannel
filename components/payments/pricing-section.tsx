@@ -15,6 +15,7 @@ import {
 import type {
   CloudPaymentsWidgetIntent,
   PublicPaymentOrder,
+  PublicSavedCard,
 } from '@/lib/payments/types'
 
 type CloudPaymentsWidgetResult = {
@@ -52,6 +53,14 @@ function getSavedInvoiceId() {
   return window.localStorage.getItem('levelchannel:activePaymentInvoiceId')
 }
 
+function getSavedCompletedInvoiceId() {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  return window.localStorage.getItem('levelchannel:lastCompletedPaymentInvoiceId')
+}
+
 function saveInvoiceId(invoiceId: string | null) {
   if (typeof window === 'undefined') {
     return
@@ -63,6 +72,55 @@ function saveInvoiceId(invoiceId: string | null) {
   }
 
   window.localStorage.removeItem('levelchannel:activePaymentInvoiceId')
+}
+
+function saveCompletedInvoiceId(invoiceId: string | null) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  if (invoiceId) {
+    window.localStorage.setItem('levelchannel:lastCompletedPaymentInvoiceId', invoiceId)
+    return
+  }
+
+  window.localStorage.removeItem('levelchannel:lastCompletedPaymentInvoiceId')
+}
+
+// Перенаправляет браузер на ACS-страницу банка через auto-submit формы.
+// PaReq и MD никогда не попадают в URL — только в тело POST. Поведение
+// диктуется протоколом 3-D Secure 1.0.2 / EMV 3DS 2.x.
+function submitThreeDsForm(params: {
+  acsUrl: string
+  paReq: string
+  transactionId: string
+  termUrl: string
+}) {
+  if (typeof document === 'undefined') {
+    return
+  }
+
+  const form = document.createElement('form')
+  form.method = 'POST'
+  form.action = params.acsUrl
+  form.style.display = 'none'
+
+  const fields: Record<string, string> = {
+    PaReq: params.paReq,
+    MD: params.transactionId,
+    TermUrl: params.termUrl,
+  }
+
+  for (const [name, value] of Object.entries(fields)) {
+    const input = document.createElement('input')
+    input.type = 'hidden'
+    input.name = name
+    input.value = value
+    form.appendChild(input)
+  }
+
+  document.body.appendChild(form)
+  form.submit()
 }
 
 async function fetchOrder(invoiceId: string) {
@@ -156,6 +214,10 @@ export function PricingSection() {
     order: null,
     error: null,
   })
+  const [savedCard, setSavedCard] = useState<PublicSavedCard | null>(null)
+  const [oneClickPending, setOneClickPending] = useState(false)
+  // Карта по умолчанию НЕ запоминается. Чекбокс — opt-in.
+  const [rememberCard, setRememberCard] = useState(false)
 
   const activeOrder = checkout.order
   const normalizedEmail = normalizeCustomerEmail(email)
@@ -187,7 +249,7 @@ export function PricingSection() {
   }, [])
 
   useEffect(() => {
-    const invoiceId = failedInvoiceId || getSavedInvoiceId()
+    const invoiceId = failedInvoiceId || getSavedInvoiceId() || getSavedCompletedInvoiceId()
 
     if (!invoiceId) {
       return
@@ -205,6 +267,10 @@ export function PricingSection() {
           return
         }
 
+        if (order.status === 'paid') {
+          saveCompletedInvoiceId(order.invoiceId)
+        }
+
         setCheckout({
           phase: order.status === 'pending' ? 'pending' : 'idle',
           order,
@@ -217,6 +283,46 @@ export function PricingSection() {
         saveInvoiceId(null)
       })
   }, [failedInvoiceId, paymentFailed])
+
+  // Подгружаем сохранённую карту, когда e-mail валиден. Endpoint защищён
+  // origin-check + rate-limit; всё равно дебаунсим, чтобы не светить тем,
+  // кто просто опечатался.
+  useEffect(() => {
+    if (!emailValidation.ok) {
+      setSavedCard(null)
+      return
+    }
+
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch('/api/payments/saved-card', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customerEmail: emailValidation.email }),
+          cache: 'no-store',
+        })
+
+        if (!response.ok) {
+          if (!cancelled) setSavedCard(null)
+          return
+        }
+
+        const payload = (await response.json()) as { savedCard?: PublicSavedCard | null }
+
+        if (!cancelled) {
+          setSavedCard(payload.savedCard || null)
+        }
+      } catch {
+        if (!cancelled) setSavedCard(null)
+      }
+    }, 500)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [emailValidation.ok, emailValidation.ok ? emailValidation.email : ''])
 
   useEffect(() => {
     if (!activeOrder || activeOrder.status !== 'pending') {
@@ -234,6 +340,10 @@ export function PricingSection() {
               error: 'Оплата не завершена. Можно попробовать ещё раз.',
             })
             return
+          }
+
+          if (order.status === 'paid') {
+            saveCompletedInvoiceId(order.invoiceId)
           }
 
           setCheckout((current) => ({
@@ -306,14 +416,17 @@ export function PricingSection() {
     }))
 
     try {
+      const idempotencyKey = `lc-create-${crypto.randomUUID()}`
       const response = await fetch('/api/payments', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
         },
         body: JSON.stringify({
           amountRub,
           customerEmail: emailValidation.email,
+          rememberCard,
         }),
       })
 
@@ -357,6 +470,7 @@ export function PricingSection() {
       const widgetResult = await openCloudPaymentsWidget(payload.checkoutIntent)
 
       if (widgetResult.status === 'success') {
+        saveCompletedInvoiceId(payload.order.invoiceId)
         void logCheckoutEvent({
           type: 'checkout_widget_success',
           invoiceId: payload.order.invoiceId,
@@ -436,6 +550,179 @@ export function PricingSection() {
     }
   }
 
+  async function handleOneClick() {
+    setAmountTouched(true)
+    setEmailTouched(true)
+
+    if (!amountIsValid || !emailValidation.ok) {
+      setCheckout((current) => ({
+        ...current,
+        error: !amountIsValid
+          ? `Введите сумму от ${formatRubles(MIN_PAYMENT_AMOUNT_RUB)} до ${formatRubles(MAX_PAYMENT_AMOUNT_RUB)} ₽.`
+          : emailValidation.message || 'Укажите корректный e-mail.',
+      }))
+      return
+    }
+
+    if (hasLockedPendingOrder) {
+      return
+    }
+
+    void logCheckoutEvent({
+      type: 'checkout_one_click_clicked',
+      amountRub: Number(amountRub),
+      email: emailValidation.email,
+      emailValid: true,
+    })
+
+    setOneClickPending(true)
+    setCheckout((current) => ({ ...current, error: null }))
+
+    try {
+      const idempotencyKey = `lc-charge-${crypto.randomUUID()}`
+      const response = await fetch('/api/payments/charge-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify({
+          amountRub: Number(amountRub),
+          customerEmail: emailValidation.email,
+        }),
+        cache: 'no-store',
+      })
+
+      const payload = (await response.json()) as {
+        order?: PublicPaymentOrder
+        status?: 'paid' | 'requires_3ds' | 'declined'
+        message?: string
+        error?: string
+        threeDs?: {
+          acsUrl: string
+          paReq: string
+          transactionId: string
+          termUrl: string
+        }
+      }
+
+      if (response.status === 404) {
+        setSavedCard(null)
+        setCheckout((current) => ({
+          ...current,
+          error:
+            payload.error ||
+            'Сохранённая карта не найдена. Оплатите обычным способом.',
+        }))
+        return
+      }
+
+      if (!response.ok && payload.status !== 'declined') {
+        throw new Error(payload.error || 'Не удалось списать с сохранённой карты.')
+      }
+
+      if (payload.status === 'paid' && payload.order) {
+        saveCompletedInvoiceId(payload.order.invoiceId)
+        void logCheckoutEvent({
+          type: 'checkout_one_click_paid',
+          invoiceId: payload.order.invoiceId,
+          amountRub: payload.order.amountRub,
+          email: emailValidation.email,
+          emailValid: true,
+        })
+        setCheckout({ phase: 'idle', order: payload.order, error: null })
+        router.push(`/thank-you?invoiceId=${encodeURIComponent(payload.order.invoiceId)}`)
+        return
+      }
+
+      if (payload.status === 'requires_3ds' && payload.order && payload.threeDs) {
+        void logCheckoutEvent({
+          type: 'checkout_one_click_3ds_started',
+          invoiceId: payload.order.invoiceId,
+          amountRub: payload.order.amountRub,
+          email: emailValidation.email,
+          emailValid: true,
+          reason: '3ds_required',
+        })
+        // Сохраняем invoiceId как активный pending — если пользователь
+        // вернётся с фейлом, мы его подхватим через polling.
+        saveInvoiceId(payload.order.invoiceId)
+        submitThreeDsForm(payload.threeDs)
+        // Браузер уйдёт на acsUrl, дальнейший код не выполнится.
+        return
+      }
+
+      if (payload.status === 'declined' && payload.order) {
+        void logCheckoutEvent({
+          type: 'checkout_one_click_declined',
+          invoiceId: payload.order.invoiceId,
+          amountRub: payload.order.amountRub,
+          email: emailValidation.email,
+          emailValid: true,
+          message: payload.message,
+        })
+        setCheckout({
+          phase: 'idle',
+          order: payload.order,
+          error: payload.message || 'Платёж отклонён банком.',
+        })
+        return
+      }
+
+      throw new Error(payload.error || payload.message || 'Не удалось обработать платёж.')
+    } catch (error) {
+      void logCheckoutEvent({
+        type: 'checkout_one_click_failed',
+        amountRub: Number(amountRub),
+        email: emailValidation.email,
+        emailValid: true,
+        message: error instanceof Error ? error.message : 'unknown_error',
+      })
+      setCheckout((current) => ({
+        ...current,
+        error: error instanceof Error ? error.message : 'Не удалось списать с карты.',
+      }))
+    } finally {
+      setOneClickPending(false)
+    }
+  }
+
+  async function forgetSavedCard() {
+    if (!emailValidation.ok || !savedCard) {
+      return
+    }
+
+    void logCheckoutEvent({
+      type: 'checkout_saved_card_forget_clicked',
+      email: emailValidation.email,
+      emailValid: true,
+    })
+
+    try {
+      const response = await fetch('/api/payments/saved-card', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerEmail: emailValidation.email }),
+        cache: 'no-store',
+      })
+
+      if (!response.ok) {
+        throw new Error('Не удалось удалить сохранённую карту.')
+      }
+
+      setSavedCard(null)
+      setCheckout((current) => ({
+        ...current,
+        error: 'Сохранённая карта удалена.',
+      }))
+    } catch (error) {
+      setCheckout((current) => ({
+        ...current,
+        error: error instanceof Error ? error.message : 'Не удалось удалить карту.',
+      }))
+    }
+  }
+
   async function refreshStatus() {
     if (!activeOrder) {
       return
@@ -469,6 +756,7 @@ export function PricingSection() {
 
       if (order.status === 'paid') {
         saveInvoiceId(null)
+        saveCompletedInvoiceId(order.invoiceId)
         router.push(`/thank-you?invoiceId=${encodeURIComponent(order.invoiceId)}`)
       }
     } catch (error) {
@@ -477,6 +765,14 @@ export function PricingSection() {
         error: error instanceof Error ? error.message : 'Не удалось обновить статус.',
       }))
     }
+  }
+
+  function dismissCompletedPayment() {
+    saveCompletedInvoiceId(null)
+    setCheckout((current) => ({
+      ...current,
+      order: current.order?.status === 'paid' ? null : current.order,
+    }))
   }
 
   async function resetPendingPayment() {
@@ -669,6 +965,69 @@ export function PricingSection() {
               <span style={emailError ? fieldErrorStyle : fieldHintStyle}>{emailHelperText}</span>
             </label>
 
+            {!savedCard ? (
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 10,
+                  fontSize: 13,
+                  color: '#A1A1AA',
+                  lineHeight: 1.45,
+                  cursor: 'pointer',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={rememberCard}
+                  onChange={(event) => setRememberCard(event.target.checked)}
+                  disabled={isLoading || hasLockedPendingOrder}
+                  style={{ marginTop: 2 }}
+                />
+                <span>
+                  Запомнить карту, чтобы в следующий раз заплатить в один клик.
+                  Карту сохраняет CloudPayments, у нас — только токен.
+                </span>
+              </label>
+            ) : null}
+
+            {savedCard && !hasLockedPendingOrder ? (
+              <div style={{ display: 'grid', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={handleOneClick}
+                  disabled={
+                    isLoading || oneClickPending || !amountIsValid || !emailValidation.ok
+                  }
+                  style={buttonStyle(
+                    isLoading || oneClickPending || !amountIsValid || !emailValidation.ok,
+                  )}
+                >
+                  {oneClickPending
+                    ? 'Списываем с сохранённой карты…'
+                    : `Оплатить картой ··${savedCard.cardLastFour || 'сохранённой'}`}
+                </button>
+                <button
+                  type="button"
+                  onClick={forgetSavedCard}
+                  disabled={isLoading || oneClickPending}
+                  style={{
+                    appearance: 'none',
+                    background: 'transparent',
+                    color: '#A1A1AA',
+                    border: 'none',
+                    fontSize: 13,
+                    cursor: 'pointer',
+                    padding: '4px 0',
+                    textAlign: 'left',
+                    textDecoration: 'underline',
+                  }}
+                >
+                  Забыть эту карту
+                </button>
+              </div>
+            ) : null}
+
             <div
               style={{
                 display: 'flex',
@@ -679,14 +1038,16 @@ export function PricingSection() {
             >
               <button
                 type="submit"
-                disabled={isLoading || hasLockedPendingOrder}
-                style={buttonStyle(isLoading || hasLockedPendingOrder)}
+                disabled={isLoading || hasLockedPendingOrder || oneClickPending}
+                style={buttonStyle(isLoading || hasLockedPendingOrder || oneClickPending)}
               >
                 {isLoading
                   ? 'Готовим платёж…'
                   : hasLockedPendingOrder
                     ? 'Сначала завершите текущий платёж'
-                    : 'Перейти к оплате'}
+                    : savedCard
+                      ? 'Оплатить другой картой'
+                      : 'Перейти к оплате'}
               </button>
               <div style={legalTextStyle}>
                 Нажимая кнопку, вы соглашаетесь с{' '}
@@ -778,15 +1139,24 @@ export function PricingSection() {
             ) : null}
 
             {isPaid ? (
-              <button
-                type="button"
-                onClick={() =>
-                  router.push(`/thank-you?invoiceId=${encodeURIComponent(activeOrder.invoiceId)}`)
-                }
-                style={secondaryButtonStyle}
-              >
-                Открыть подтверждение
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() =>
+                    router.push(`/thank-you?invoiceId=${encodeURIComponent(activeOrder.invoiceId)}`)
+                  }
+                  style={secondaryButtonStyle}
+                >
+                  Открыть подтверждение
+                </button>
+                <button
+                  type="button"
+                  onClick={dismissCompletedPayment}
+                  style={ghostButtonStyle}
+                >
+                  Скрыть подтверждение
+                </button>
+              </>
             ) : null}
           </aside>
         ) : (

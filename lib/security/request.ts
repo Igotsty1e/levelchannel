@@ -3,7 +3,10 @@ import { NextResponse } from 'next/server'
 import { paymentConfig } from '@/lib/payments/config'
 import { takeRateLimit } from '@/lib/security/rate-limit'
 
-const INVOICE_ID_PATTERN = /^lc_[a-z0-9_]+$/i
+// Mock: lc_YYYYMMDD_xxxxxxxx (27 символов).
+// CloudPayments: lc_ + 18 hex (21 символ).
+// Один общий паттерн с верхней границей, чтобы не пускать произвольно длинные id.
+const INVOICE_ID_PATTERN = /^lc_[a-z0-9_]{8,48}$/i
 
 function normalizeOrigin(value: string) {
   try {

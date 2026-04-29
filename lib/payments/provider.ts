@@ -1,12 +1,24 @@
 import { randomUUID } from 'crypto'
 
 import {
+  chargeWithSavedToken,
+  confirmThreeDs,
+} from '@/lib/payments/cloudpayments-api'
+import {
   buildCloudPaymentsWidgetIntent,
   createCloudPaymentsOrder,
 } from '@/lib/payments/cloudpayments'
 import { paymentConfig } from '@/lib/payments/config'
 import { createMockOrder } from '@/lib/payments/mock'
-import { createOrder, getOrder, updateOrder } from '@/lib/payments/store'
+import {
+  createOrder,
+  deleteCardToken,
+  getCardTokenByEmail,
+  getOrder,
+  touchCardTokenUsedAt,
+  updateOrder,
+  upsertCardToken,
+} from '@/lib/payments/store'
 import type {
   CloudPaymentsWidgetIntent,
   PaymentOrder,
@@ -71,13 +83,19 @@ export function toPublicOrder(order: PaymentOrder): PublicPaymentOrder {
   }
 }
 
-export async function createPayment(amountRub: number, customerEmail: string) {
+export async function createPayment(
+  amountRub: number,
+  customerEmail: string,
+  options: { rememberCard?: boolean } = {},
+) {
   let order: PaymentOrder
   let checkoutIntent: CloudPaymentsWidgetIntent | null = null
 
   if (paymentConfig.provider === 'cloudpayments') {
     const invoiceId = `lc_${randomUUID().replace(/-/g, '').slice(0, 18)}`
-    order = createCloudPaymentsOrder(amountRub, customerEmail, invoiceId)
+    order = createCloudPaymentsOrder(amountRub, customerEmail, invoiceId, {
+      rememberCard: Boolean(options.rememberCard),
+    })
     checkoutIntent = buildCloudPaymentsWidgetIntent(order)
   } else {
     order = createMockOrder(amountRub, customerEmail)
@@ -176,6 +194,245 @@ export async function markOrderFailed(
       payload,
     )
   })
+}
+
+export type ChargeWithSavedCardOutcome =
+  | { kind: 'no_saved_card' }
+  | { kind: 'paid'; order: PublicPaymentOrder }
+  | {
+      kind: 'requires_3ds'
+      order: PublicPaymentOrder
+      threeDs: {
+        transactionId: string
+        paReq: string
+        acsUrl: string
+        threeDsCallbackId?: string
+      }
+    }
+  | { kind: 'declined'; order: PublicPaymentOrder; reason: string }
+
+export type ConfirmThreeDsOutcome =
+  | { kind: 'paid'; order: PublicPaymentOrder }
+  | { kind: 'declined'; order: PublicPaymentOrder; reason: string }
+  | { kind: 'unknown_invoice' }
+  | { kind: 'invalid_state'; order: PublicPaymentOrder }
+
+export async function chargeWithSavedCard(params: {
+  amountRub: number
+  customerEmail: string
+  ipAddress?: string
+}): Promise<ChargeWithSavedCardOutcome> {
+  if (paymentConfig.provider !== 'cloudpayments') {
+    return { kind: 'no_saved_card' }
+  }
+
+  const saved = await getCardTokenByEmail(params.customerEmail)
+
+  if (!saved) {
+    return { kind: 'no_saved_card' }
+  }
+
+  const invoiceId = `lc_${randomUUID().replace(/-/g, '').slice(0, 18)}`
+  const order = createCloudPaymentsOrder(
+    params.amountRub,
+    params.customerEmail,
+    invoiceId,
+  )
+
+  const orderWithMetadata: PaymentOrder = {
+    ...order,
+    metadata: {
+      ...(order.metadata || {}),
+      source: 'one_click',
+    },
+    events: [
+      ...order.events,
+      { type: 'one_click.charge_attempt', at: nowIso() },
+    ],
+  }
+
+  await createOrder(orderWithMetadata)
+
+  const result = await chargeWithSavedToken({
+    amount: orderWithMetadata.amountRub,
+    token: saved.token,
+    accountId: saved.customerEmail,
+    invoiceId: orderWithMetadata.invoiceId,
+    description: orderWithMetadata.description,
+    ipAddress: params.ipAddress,
+    email: saved.customerEmail,
+  })
+
+  if (result.kind === 'success') {
+    const paid = await markOrderPaid(orderWithMetadata.invoiceId, {
+      transactionId: result.transactionId,
+      source: 'one_click',
+    })
+    await touchCardTokenUsedAt(saved.customerEmail, nowIso())
+    return {
+      kind: 'paid',
+      order: toPublicOrder(paid || orderWithMetadata),
+    }
+  }
+
+  if (result.kind === 'requires_3ds') {
+    const updated = await updateOrder(orderWithMetadata.invoiceId, (current) =>
+      appendEvent(
+        {
+          ...current,
+          providerMessage:
+            'Подтвердите оплату в окне 3-D Secure вашего банка.',
+          metadata: {
+            ...(current.metadata || {}),
+            threeDs: {
+              transactionId: result.transactionId,
+              acsUrl: result.acsUrl,
+              threeDsCallbackId: result.threeDsCallbackId,
+              startedAt: nowIso(),
+            },
+          },
+        },
+        'one_click.requires_3ds',
+        {
+          transactionId: result.transactionId,
+          threeDsCallbackId: result.threeDsCallbackId,
+        },
+      ),
+    )
+    return {
+      kind: 'requires_3ds',
+      order: toPublicOrder(updated || orderWithMetadata),
+      threeDs: {
+        transactionId: result.transactionId,
+        paReq: result.paReq,
+        acsUrl: result.acsUrl,
+        threeDsCallbackId: result.threeDsCallbackId,
+      },
+    }
+  }
+
+  if (result.kind === 'declined') {
+    const failed = await markOrderFailed(orderWithMetadata.invoiceId, {
+      transactionId: result.transactionId,
+      reason: result.message,
+      reasonCode: result.reasonCode,
+      source: 'one_click',
+    })
+
+    // Если карта помечена банком как недействительная — удаляем токен,
+    // чтобы пользователь не видел "оплатить сохранённой картой" впустую.
+    if (
+      result.reasonCode === '5051' ||
+      result.reasonCode === '5054' ||
+      result.reasonCode === '5057'
+    ) {
+      await deleteCardToken(saved.customerEmail)
+    }
+
+    return {
+      kind: 'declined',
+      order: toPublicOrder(failed || orderWithMetadata),
+      reason: result.message,
+    }
+  }
+
+  const failed = await markOrderFailed(orderWithMetadata.invoiceId, {
+    reason: result.message,
+    source: 'one_click',
+  })
+
+  return {
+    kind: 'declined',
+    order: toPublicOrder(failed || orderWithMetadata),
+    reason: result.message,
+  }
+}
+
+export async function confirmThreeDsAndFinalize(params: {
+  invoiceId: string
+  paRes: string
+}): Promise<ConfirmThreeDsOutcome> {
+  const order = await getOrder(params.invoiceId)
+
+  if (!order) {
+    return { kind: 'unknown_invoice' }
+  }
+
+  if (order.status === 'paid') {
+    // Двойной коллбэк банка (или пользователь рефрешнул) — отдаём как есть.
+    return { kind: 'paid', order: toPublicOrder(order) }
+  }
+
+  const threeDs = (order.metadata?.threeDs as
+    | {
+        transactionId?: string
+      }
+    | undefined) || undefined
+  const transactionId = threeDs?.transactionId
+
+  if (!transactionId || order.status !== 'pending') {
+    return { kind: 'invalid_state', order: toPublicOrder(order) }
+  }
+
+  const result = await confirmThreeDs({
+    transactionId,
+    paRes: params.paRes,
+  })
+
+  if (result.kind === 'success') {
+    const paid = await markOrderPaid(order.invoiceId, {
+      transactionId: result.transactionId,
+      source: 'one_click_3ds',
+    })
+
+    if (order.customerEmail && order.metadata?.rememberCard === true && result.token) {
+      // post3ds может вернуть свежий Token — обновляем сохранённую карту.
+      await upsertCardToken({
+        customerEmail: order.customerEmail,
+        token: result.token,
+        cardLastFour: result.cardLastFour,
+        cardType: result.cardType,
+        cardExpMonth: result.cardExpDate?.split('/')?.[0],
+        cardExpYear: result.cardExpDate?.split('/')?.[1],
+        createdAt: nowIso(),
+        lastUsedAt: nowIso(),
+      })
+    } else if (order.customerEmail) {
+      await touchCardTokenUsedAt(order.customerEmail, nowIso())
+    }
+
+    return {
+      kind: 'paid',
+      order: toPublicOrder(paid || order),
+    }
+  }
+
+  if (result.kind === 'declined') {
+    const failed = await markOrderFailed(order.invoiceId, {
+      transactionId: result.transactionId,
+      reason: result.message,
+      reasonCode: result.reasonCode,
+      source: 'one_click_3ds',
+    })
+
+    return {
+      kind: 'declined',
+      order: toPublicOrder(failed || order),
+      reason: result.message,
+    }
+  }
+
+  // result.kind === 'error' — не помечаем ордер как failed, чтобы пользователь
+  // мог попробовать ещё раз. Логируем как событие.
+  await updateOrder(order.invoiceId, (current) =>
+    appendEvent(current, 'one_click.3ds_error', { message: result.message }),
+  )
+
+  return {
+    kind: 'declined',
+    order: toPublicOrder(order),
+    reason: result.message,
+  }
 }
 
 export async function markOrderCancelled(

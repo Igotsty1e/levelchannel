@@ -65,6 +65,23 @@ export type PublicPaymentOrder = Pick<
   | 'providerMessage'
 >
 
+export type SavedCardToken = {
+  customerEmail: string
+  token: string
+  cardLastFour?: string
+  cardType?: string
+  cardExpMonth?: string
+  cardExpYear?: string
+  createdAt: string
+  lastUsedAt: string
+}
+
+export type PublicSavedCard = {
+  cardLastFour?: string
+  cardType?: string
+  createdAt: string
+}
+
 export type CloudPaymentsWidgetIntent = {
   publicTerminalId: string
   amount: number
@@ -90,7 +107,12 @@ export type CloudPaymentsWidgetIntent = {
   metadata: {
     invoiceId: string
     customerEmail: string
+    rememberCard: boolean
   }
+  // Виджет CloudPayments принимает tokenize: false, чтобы вообще не
+  // сохранять карту в этой транзакции. Это работает как локальный override
+  // даже если в кабинете включено «сохранять по умолчанию».
+  tokenize?: boolean
   successRedirectUrl: string
   failRedirectUrl: string
   retryPayment: false

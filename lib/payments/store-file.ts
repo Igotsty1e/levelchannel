@@ -2,13 +2,14 @@ import { promises as fs } from 'fs'
 import path from 'path'
 
 import { paymentConfig } from '@/lib/payments/config'
-import type { PaymentOrder } from '@/lib/payments/types'
+import type { PaymentOrder, SavedCardToken } from '@/lib/payments/types'
 
 type StoreShape = {
   orders: PaymentOrder[]
+  tokens: SavedCardToken[]
 }
 
-const DEFAULT_STORE: StoreShape = { orders: [] }
+const DEFAULT_STORE: StoreShape = { orders: [], tokens: [] }
 
 let writeQueue = Promise.resolve()
 
@@ -41,6 +42,7 @@ async function readStore(): Promise<StoreShape> {
   const parsed = JSON.parse(raw) as Partial<StoreShape>
   return {
     orders: Array.isArray(parsed.orders) ? parsed.orders : [],
+    tokens: Array.isArray(parsed.tokens) ? parsed.tokens : [],
   }
 }
 
@@ -92,5 +94,50 @@ export async function updateOrderFile(
     store.orders[index] = updater(store.orders[index])
     await writeStore(store)
     return store.orders[index]
+  })
+}
+
+export async function getCardTokenByEmailFile(email: string) {
+  const store = await readStore()
+  return store.tokens.find((token) => token.customerEmail === email)
+}
+
+export async function upsertCardTokenFile(token: SavedCardToken) {
+  return withWriteLock(async () => {
+    const store = await readStore()
+    const index = store.tokens.findIndex(
+      (item) => item.customerEmail === token.customerEmail,
+    )
+
+    if (index === -1) {
+      store.tokens.unshift(token)
+    } else {
+      store.tokens[index] = token
+    }
+
+    await writeStore(store)
+    return token
+  })
+}
+
+export async function touchCardTokenUsedAtFile(email: string, usedAt: string) {
+  return withWriteLock(async () => {
+    const store = await readStore()
+    const index = store.tokens.findIndex((item) => item.customerEmail === email)
+
+    if (index === -1) {
+      return
+    }
+
+    store.tokens[index] = { ...store.tokens[index], lastUsedAt: usedAt }
+    await writeStore(store)
+  })
+}
+
+export async function deleteCardTokenFile(email: string) {
+  return withWriteLock(async () => {
+    const store = await readStore()
+    store.tokens = store.tokens.filter((item) => item.customerEmail !== email)
+    await writeStore(store)
   })
 }

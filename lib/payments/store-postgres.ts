@@ -1,7 +1,7 @@
 import { Pool } from 'pg'
 
 import { paymentConfig } from '@/lib/payments/config'
-import type { PaymentOrder } from '@/lib/payments/types'
+import type { PaymentOrder, SavedCardToken } from '@/lib/payments/types'
 
 declare global {
   // eslint-disable-next-line no-var
@@ -50,6 +50,18 @@ async function ensureSchema() {
           events jsonb not null default '[]'::jsonb
         )
       `)
+      await pool.query(`
+        create table if not exists payment_card_tokens (
+          customer_email text primary key,
+          token text not null,
+          card_last_four text null,
+          card_type text null,
+          card_exp_month text null,
+          card_exp_year text null,
+          created_at timestamptz not null,
+          last_used_at timestamptz not null
+        )
+      `)
     })().catch((error) => {
       initPromise = null
       throw error
@@ -63,7 +75,14 @@ function mapRowToOrder(row: Record<string, unknown>): PaymentOrder {
   return {
     invoiceId: String(row.invoice_id),
     amountRub: Number(row.amount_rub),
-    currency: row.currency === 'RUB' ? 'RUB' : 'RUB',
+    // Currency пока поддерживаем только RUB. Если в DB прилетит что-то иное —
+    // это сигнал поломки данных, лучше явно бросить, чем тихо переписать.
+    currency: ((): 'RUB' => {
+      if (row.currency !== 'RUB') {
+        throw new Error(`Unexpected currency in payment_orders row: ${String(row.currency)}`)
+      }
+      return 'RUB'
+    })(),
     description: String(row.description),
     provider: row.provider === 'cloudpayments' ? 'cloudpayments' : 'mock',
     status:
@@ -169,35 +188,120 @@ export async function updateOrderPostgres(
 ) {
   await ensureSchema()
   const pool = getPool()
-  const current = await getOrderPostgres(invoiceId)
+  const client = await pool.connect()
 
-  if (!current) {
-    return null
+  try {
+    await client.query('begin')
+
+    const result = await client.query(
+      `select * from payment_orders where invoice_id = $1 for update`,
+      [invoiceId],
+    )
+
+    if (result.rows.length === 0) {
+      await client.query('rollback')
+      return null
+    }
+
+    const current = mapRowToOrder(result.rows[0])
+    const next = updater(current)
+
+    await client.query(
+      `update payment_orders set
+        amount_rub = $2,
+        currency = $3,
+        description = $4,
+        provider = $5,
+        status = $6,
+        created_at = $7,
+        updated_at = $8,
+        paid_at = $9,
+        failed_at = $10,
+        provider_transaction_id = $11,
+        provider_message = $12,
+        customer_email = $13,
+        receipt_email = $14,
+        receipt = $15::jsonb,
+        metadata = $16::jsonb,
+        mock_auto_confirm_at = $17,
+        events = $18::jsonb
+      where invoice_id = $1`,
+      toInsertValues(next),
+    )
+
+    await client.query('commit')
+    return next
+  } catch (error) {
+    await client.query('rollback').catch(() => undefined)
+    throw error
+  } finally {
+    client.release()
   }
+}
 
-  const next = updater(current)
-  await pool.query(
-    `update payment_orders set
-      amount_rub = $2,
-      currency = $3,
-      description = $4,
-      provider = $5,
-      status = $6,
-      created_at = $7,
-      updated_at = $8,
-      paid_at = $9,
-      failed_at = $10,
-      provider_transaction_id = $11,
-      provider_message = $12,
-      customer_email = $13,
-      receipt_email = $14,
-      receipt = $15::jsonb,
-      metadata = $16::jsonb,
-      mock_auto_confirm_at = $17,
-      events = $18::jsonb
-    where invoice_id = $1`,
-    toInsertValues(next),
+function mapRowToToken(row: Record<string, unknown>): SavedCardToken {
+  return {
+    customerEmail: String(row.customer_email),
+    token: String(row.token),
+    cardLastFour: row.card_last_four ? String(row.card_last_four) : undefined,
+    cardType: row.card_type ? String(row.card_type) : undefined,
+    cardExpMonth: row.card_exp_month ? String(row.card_exp_month) : undefined,
+    cardExpYear: row.card_exp_year ? String(row.card_exp_year) : undefined,
+    createdAt: new Date(String(row.created_at)).toISOString(),
+    lastUsedAt: new Date(String(row.last_used_at)).toISOString(),
+  }
+}
+
+export async function getCardTokenByEmailPostgres(email: string) {
+  await ensureSchema()
+  const pool = getPool()
+  const result = await pool.query(
+    `select * from payment_card_tokens where customer_email = $1`,
+    [email],
   )
+  return result.rows[0] ? mapRowToToken(result.rows[0]) : undefined
+}
 
-  return next
+export async function upsertCardTokenPostgres(token: SavedCardToken) {
+  await ensureSchema()
+  const pool = getPool()
+  await pool.query(
+    `insert into payment_card_tokens (
+      customer_email, token, card_last_four, card_type,
+      card_exp_month, card_exp_year, created_at, last_used_at
+    ) values ($1, $2, $3, $4, $5, $6, $7, $8)
+    on conflict (customer_email) do update set
+      token = excluded.token,
+      card_last_four = excluded.card_last_four,
+      card_type = excluded.card_type,
+      card_exp_month = excluded.card_exp_month,
+      card_exp_year = excluded.card_exp_year,
+      last_used_at = excluded.last_used_at`,
+    [
+      token.customerEmail,
+      token.token,
+      token.cardLastFour || null,
+      token.cardType || null,
+      token.cardExpMonth || null,
+      token.cardExpYear || null,
+      token.createdAt,
+      token.lastUsedAt,
+    ],
+  )
+  return token
+}
+
+export async function touchCardTokenUsedAtPostgres(email: string, usedAt: string) {
+  await ensureSchema()
+  const pool = getPool()
+  await pool.query(
+    `update payment_card_tokens set last_used_at = $2 where customer_email = $1`,
+    [email, usedAt],
+  )
+}
+
+export async function deleteCardTokenPostgres(email: string) {
+  await ensureSchema()
+  const pool = getPool()
+  await pool.query(`delete from payment_card_tokens where customer_email = $1`, [email])
 }

@@ -2,7 +2,13 @@ import { createHmac } from 'crypto'
 import { promises as fs } from 'fs'
 import path from 'path'
 
-type CheckoutTelemetryEvent = {
+import { paymentConfig } from '@/lib/payments/config'
+import {
+  ensureTelemetrySchemaPostgres,
+  insertTelemetryEventPostgres,
+} from '@/lib/telemetry/store-postgres'
+
+export type CheckoutTelemetryEvent = {
   at: string
   type: string
   invoiceId?: string
@@ -89,15 +95,21 @@ async function withWriteLock<T>(fn: () => Promise<T>) {
   return run
 }
 
-export async function appendCheckoutTelemetryEvent(
+async function appendToFile(event: CheckoutTelemetryEvent) {
+  const filePath = await ensureTelemetryFile()
+  await withWriteLock(async () => {
+    await fs.appendFile(filePath, `${JSON.stringify(event)}\n`, 'utf8')
+  })
+}
+
+export function buildCheckoutTelemetryEvent(
   event: Omit<CheckoutTelemetryEvent, 'at' | 'emailHash' | 'emailDomain'> & {
     email?: string
   },
-) {
-  const filePath = await ensureTelemetryFile()
+): CheckoutTelemetryEvent {
   const email = event.email?.trim().toLowerCase()
 
-  const normalized: CheckoutTelemetryEvent = {
+  return {
     at: new Date().toISOString(),
     type: event.type,
     invoiceId: event.invoiceId,
@@ -111,8 +123,30 @@ export async function appendCheckoutTelemetryEvent(
     emailHash: email ? hashEmail(email) : undefined,
     emailDomain: email ? getEmailDomain(email) : undefined,
   }
+}
 
-  await withWriteLock(async () => {
-    await fs.appendFile(filePath, `${JSON.stringify(normalized)}\n`, 'utf8')
-  })
+export async function appendCheckoutTelemetryEvent(
+  event: Omit<CheckoutTelemetryEvent, 'at' | 'emailHash' | 'emailDomain'> & {
+    email?: string
+  },
+) {
+  const normalized = buildCheckoutTelemetryEvent(event)
+
+  // Postgres backend — основной путь для multi-instance деплоя.
+  // Если запись падает (DB вне доступа), скатываемся на файловый append,
+  // чтобы не терять события и не ронять checkout flow.
+  if (paymentConfig.storageBackend === 'postgres') {
+    try {
+      await ensureTelemetrySchemaPostgres()
+      await insertTelemetryEventPostgres(normalized)
+      return
+    } catch (error) {
+      console.warn(
+        'telemetry: postgres insert failed, falling back to file',
+        error instanceof Error ? error.message : error,
+      )
+    }
+  }
+
+  await appendToFile(normalized)
 }

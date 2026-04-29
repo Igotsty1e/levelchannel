@@ -8,6 +8,7 @@ import {
 } from '@/lib/payments/catalog'
 import { createPayment } from '@/lib/payments/provider'
 import { appendCheckoutTelemetryEvent } from '@/lib/telemetry/store'
+import { withIdempotency } from '@/lib/security/idempotency'
 import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
@@ -28,10 +29,20 @@ export async function POST(request: Request) {
     return originResponse
   }
 
-  try {
-    const body = (await request.json()) as {
+  // Читаем body один раз — он нужен и для idempotency hash, и для бизнес-логики.
+  const rawBody = await request.text()
+
+  return withIdempotency(request, 'payments:create', rawBody, async () => {
+    let body: {
       amountRub?: number | string
       customerEmail?: string
+      rememberCard?: boolean
+    }
+
+    try {
+      body = rawBody ? JSON.parse(rawBody) : {}
+    } catch {
+      return { status: 400, body: { error: 'Invalid request body.' } }
     }
 
     const amountRub = normalizePaymentAmount(Number(body.amountRub))
@@ -50,10 +61,10 @@ export async function POST(request: Request) {
         ip: getClientIp(request),
       })
 
-      return NextResponse.json(
-        { error: 'Введите сумму от 10 до 10000 ₽.' },
-        { status: 400 },
-      )
+      return {
+        status: 400,
+        body: { error: 'Введите сумму от 10 до 10000 ₽.' },
+      }
     }
 
     if (!emailValidation.ok) {
@@ -69,30 +80,36 @@ export async function POST(request: Request) {
         ip: getClientIp(request),
       })
 
-      return NextResponse.json(
-        { error: emailValidation.message },
-        { status: 400 },
-      )
+      return {
+        status: 400,
+        body: { error: emailValidation.message },
+      }
     }
 
-    const { order, checkoutIntent } = await createPayment(amountRub, emailValidation.email)
+    try {
+      const { order, checkoutIntent } = await createPayment(
+        amountRub,
+        emailValidation.email,
+        { rememberCard: body.rememberCard === true },
+      )
 
-    return NextResponse.json(
-      { order, checkoutIntent },
-      {
-        headers: {
-          'Cache-Control': 'no-store, max-age=0',
-        },
-      },
-    )
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'Unable to create payment.'
-    const status =
-      message === 'CloudPayments credentials are not configured.'
-        ? 503
-        : 500
+      return {
+        status: 200,
+        body: { order, checkoutIntent },
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unable to create payment.'
+      const status =
+        message === 'CloudPayments credentials are not configured.' ? 503 : 500
 
-    return NextResponse.json({ error: message }, { status })
-  }
+      return { status, body: { error: message } }
+    }
+  })
+}
+
+// Глобальный fallback на случай неожиданного выхода — не должен срабатывать,
+// все ветки above уже возвращают NextResponse / outcome.
+export async function GET() {
+  return NextResponse.json({ error: 'Method Not Allowed' }, { status: 405 })
 }
