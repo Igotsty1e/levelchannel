@@ -2,27 +2,25 @@
 
 ## Статус
 
-Проект уже готов к следующему этапу: реальный server deployment и подключение боевого CloudPayments.
+Production runtime на VPS и боевой CloudPayments уже запущены. Следующий
+этап, операционное дожатие production и юридический контур вокруг ПДн.
 
 ## Ближайшие задачи
 
 ### P0
 
-- развернуть production runtime на VPS или Vercel
-- получить `CLOUDPAYMENTS_PUBLIC_ID`
-- получить `CLOUDPAYMENTS_API_SECRET`
-- проверить боевую форму CloudPayments и включённые методы оплаты
-- проверить боевой CloudKassir и отправку чеков на e-mail
-- настроить реальные webhook URL
-- отключить `PAYMENTS_ALLOW_MOCK_CONFIRM` в production
-- прогнать реальный end-to-end тест оплаты
+- подать уведомление в Роскомнадзор о начале обработки ПДн
+- настроить ежедневный backup Postgres и проверить restore
+- подключить uptime monitor на `/api/health`
+- выключить password auth по SSH и запретить прямой root по паролю
+- зафиксировать и выполнять retention / deletion policy по ПДн
+- перевести продовый workdir на git-aware deploy или другой auditable rollout
 
 ### P1
 
-- довести PostgreSQL storage до полного production rollout
-- добавить uptime / error monitoring
+- добавить error monitoring
 - добавить reverse proxy rate limiting
-- зафиксировать deployment playbook
+- зафиксировать deploy automation без ручного rsync
 
 ### P2
 
