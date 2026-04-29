@@ -1,22 +1,9 @@
-import { Pool } from 'pg'
+import { getDbPool } from '@/lib/db/pool'
 
-import { paymentConfig } from '@/lib/payments/config'
-
-declare global {
-  // eslint-disable-next-line no-var
-  var __levelchannelAuthPool: Pool | undefined
-}
-
+// Auth code reaches Postgres through a single shared pool now —
+// `lib/db/pool.ts`. The thin re-export here exists for legibility:
+// auth call sites still type `getAuthPool().query(...)`, which makes
+// the trust boundary clear at the call site.
 export function getAuthPool() {
-  if (!paymentConfig.databaseUrl) {
-    throw new Error('DATABASE_URL is not configured for auth storage.')
-  }
-
-  if (!global.__levelchannelAuthPool) {
-    global.__levelchannelAuthPool = new Pool({
-      connectionString: paymentConfig.databaseUrl,
-    })
-  }
-
-  return global.__levelchannelAuthPool
+  return getDbPool()
 }
