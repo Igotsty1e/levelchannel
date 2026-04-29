@@ -8,17 +8,32 @@
 # of pg-mem (per /plan-eng-review D5): FOR UPDATE row locks, jsonb
 # operators, FK cascades, CHECK constraints all behave identically to
 # prod.
+#
+# Parameterization (parallel-CI safe):
+#
+# Container name and host port are templated from env vars so multiple
+# runs on the same host don't collide. Defaults match the historical
+# single-developer values, so `docker compose -f docker-compose.test.yml
+# up -d` still works without flags.
+#
+#   LC_TEST_DB_NAMESPACE  unique suffix (default `default`)
+#                         shows up in container_name + project_name
+#   LC_TEST_DB_PORT       host port for forwarding (default 54329)
+#
+# scripts/test-integration.sh derives these from $LC_TEST_PARALLEL_ID
+# (CI run id / job id / matrix shard, etc) so concurrent shards on
+# the same runner host don't fight over the same port.
 
 services:
   postgres-test:
     image: postgres:16.13
-    container_name: levelchannel-postgres-test
+    container_name: "levelchannel-postgres-test-${LC_TEST_DB_NAMESPACE:-default}"
     environment:
       POSTGRES_USER: levelchannel_test
       POSTGRES_PASSWORD: levelchannel_test
       POSTGRES_DB: levelchannel_test
     ports:
-      - "127.0.0.1:54329:5432"
+      - "127.0.0.1:${LC_TEST_DB_PORT:-54329}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U levelchannel_test -d levelchannel_test"]
       interval: 1s
