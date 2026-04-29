@@ -4,14 +4,23 @@
 //
 // We deliberately do not enforce mixed-case / digit / symbol rules — NIST
 // SP 800-63B walked away from those after empirical evidence that they
-// pushed users toward predictable patterns.
+// pushed users toward predictable patterns. Instead we reject the
+// well-known leaked passwords at the top of every credential-stuffing
+// dictionary (lib/auth/common-passwords.ts) — the highest-value 1%
+// of the policy work.
+
+import { isCommonPassword } from '@/lib/auth/common-passwords'
 
 export const PASSWORD_MIN_LENGTH = 8
 export const PASSWORD_MAX_LENGTH = 128
 
 export type PasswordPolicyResult =
   | { ok: true }
-  | { ok: false; reason: 'too_short' | 'too_long' | 'all_digits'; message: string }
+  | {
+      ok: false
+      reason: 'too_short' | 'too_long' | 'all_digits' | 'too_common'
+      message: string
+    }
 
 export function validatePasswordPolicy(password: unknown): PasswordPolicyResult {
   if (typeof password !== 'string') {
@@ -43,6 +52,15 @@ export function validatePasswordPolicy(password: unknown): PasswordPolicyResult 
       ok: false,
       reason: 'all_digits',
       message: 'Пароль не должен состоять только из цифр.',
+    }
+  }
+
+  if (isCommonPassword(password)) {
+    return {
+      ok: false,
+      reason: 'too_common',
+      message:
+        'Этот пароль слишком распространён и встречается в утечках. Выберите другой.',
     }
   }
 
