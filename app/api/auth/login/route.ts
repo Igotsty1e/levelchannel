@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 
-import { getAccountByEmail, listAccountRoles } from '@/lib/auth/accounts'
+import { getAccountByEmail, listAccountRoles, setAccountPassword } from '@/lib/auth/accounts'
 import { constantTimeVerifyPassword } from '@/lib/auth/dummy-hash'
 import { rateLimitScope } from '@/lib/auth/email-hash'
+import { hashPassword, passwordNeedsRehash } from '@/lib/auth/password'
 import {
   buildSessionCookie,
   createSession,
@@ -76,6 +77,24 @@ export async function POST(request: Request) {
       { error: 'Неверный e-mail или пароль.' },
       { status: 401, headers: noStore },
     )
+  }
+
+  // Silent password upgrade: if the stored hash was produced under
+  // weaker parameters than current policy (e.g. legacy cost=10 after
+  // a future bump to 12, or non-bcrypt after migration to argon2id),
+  // re-hash the just-verified plaintext and persist. Best-effort —
+  // a transient PG error here must NOT block login. The next login
+  // will retry.
+  if (passwordNeedsRehash(account.passwordHash)) {
+    try {
+      const upgraded = await hashPassword(password)
+      await setAccountPassword(account.id, upgraded)
+    } catch (err) {
+      console.warn('[auth:login] silent rehash failed:', {
+        accountId: account.id,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
   }
 
   const { cookieValue } = await createSession({
