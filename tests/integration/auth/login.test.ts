@@ -1,7 +1,9 @@
+import bcrypt from 'bcryptjs'
 import { describe, expect, it } from 'vitest'
 
 import { POST as loginHandler } from '@/app/api/auth/login/route'
 import { POST as registerHandler } from '@/app/api/auth/register/route'
+import { getAuthPool } from '@/lib/auth/pool'
 
 import '../setup'
 import { buildRequest, extractSessionCookie } from '../helpers'
@@ -85,5 +87,35 @@ describe('POST /api/auth/login', () => {
 
     // ±100ms per /plan-eng-review mech-6, with retry headroom.
     expect(delta).toBeLessThan(150)
+  })
+
+  it('silently upgrades a legacy lower-cost password hash on successful login', async () => {
+    const email = 'rehash@example.com'
+    const password = 'CorrectHorse77!'
+    const pool = getAuthPool()
+
+    // Plant an account with a legacy bcrypt hash (cost=10, current is 12).
+    // We bypass register so we can control the hash.
+    const legacyHash = await bcrypt.hash(password, 10)
+    await pool.query(
+      `insert into accounts (id, email, password_hash, created_at, updated_at)
+       values (gen_random_uuid(), $1, $2, now(), now())`,
+      [email, legacyHash],
+    )
+
+    // Login. Should succeed and silently re-hash.
+    const res = await loginHandler(
+      buildRequest('/api/auth/login', { body: { email, password } }),
+    )
+    expect(res.status).toBe(200)
+
+    // Verify the stored hash is no longer cost=10.
+    const { rows } = await pool.query(
+      `select password_hash from accounts where email = $1`,
+      [email],
+    )
+    const storedHash = rows[0].password_hash as string
+    expect(storedHash).not.toBe(legacyHash)
+    expect(storedHash).toMatch(/^\$2[aby]\$12\$/) // upgraded to current cost
   })
 })
