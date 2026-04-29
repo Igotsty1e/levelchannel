@@ -85,15 +85,19 @@
 ## Известные server-side hardening долги (production VPS)
 
 Найдены в ходе аудита 2026-04-29. Краткосрочно прикрыты `ufw`, который
-пропускает наружу только `22/80/443`, но это митигация, не решение.
+пропускает наружу только `22/80/443/10050`, но это митигация, не решение.
 
 | Что | Текущее | Должно быть | Риск |
 |---|---|---|---|
 | `PermitRootLogin` | `yes` | `prohibit-password` или `no` | прямой root по SSH |
 | `PasswordAuthentication` | `yes` | `no` (только ключи) | brute-force на 22 порт |
 | Bind `next start` | `*:3000` | `127.0.0.1:3000` | при ошибке firewall — голое приложение в интернете без TLS |
+| nginx rate limiting | отсутствует (только app-level in-memory) | `limit_req_zone` на mutation роутах | DDoS на `/api/payments/*` пробивает к Node |
+| Backup БД | не настроен | ежедневный `pg_dump`, retention 14+ дней | при отказе диска — потеря всех платёжных записей |
+| Production drift | прод не на git, отстаёт от `main` на 5+ коммитов | git-checkout на сервере + автоматизированный deploy | в проде сейчас работает версия БЕЗ consent capture для 152-ФЗ |
 
-Конкретные шаги по закрытию — в `OPERATIONS.md §13`.
+Конкретные шаги по закрытию — в `OPERATIONS.md §6` (deploy / переход на
+git) и `§13` (SSH hardening, app binding).
 
 ## Обязательные меры перед production
 
