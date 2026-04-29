@@ -99,7 +99,7 @@ step "Patch $AUTODEPLOY for GIT_SHA export"
 
 if [ ! -f "$AUTODEPLOY" ]; then
   warn "$AUTODEPLOY not found — skipping (deploy-freshness will stay inactive)"
-elif grep -qE 'export GIT_SHA=\$\(git rev-parse HEAD\)' "$AUTODEPLOY"; then
+elif grep -qE '^[[:space:]]*export GIT_SHA=' "$AUTODEPLOY"; then
   skip "autodeploy already exports GIT_SHA"
 else
   TS=$(date +%Y%m%d%H%M%S)
@@ -107,36 +107,76 @@ else
   cp -p "$AUTODEPLOY" "$BACKUP"
   ok "backed up to $BACKUP"
 
-  # Insert two lines before the first `npm run build` invocation:
-  #   1. export GIT_SHA=$(git rev-parse HEAD)
-  #   2. update GIT_SHA= line in /etc/levelchannel.env (so the systemd
-  #      app process picks it up at next restart)
+  # Inject GIT_SHA export at the right point in the autodeploy script.
+  # Production script structure:
+  #   ...
+  #   target_sha=$(git ls-remote ...)        ← already validated above
+  #   ...
+  #   set -a
+  #   source /etc/levelchannel.env
+  #   set +a                                  ← OUR INSERT POINT (after)
+  #   env -u NODE_ENV npm run build           ← fallback insert (before)
+  #
+  # We anchor on `set +a` first so our `export GIT_SHA=...` lands in the
+  # already-exported scope (otherwise sourcing the env-file would override
+  # us mid-stream). If `set +a` isn't there, we fall back to inserting
+  # immediately before any `npm run build` line (with optional `env`
+  # prefix in production, or bare in earlier shapes).
   python3 - "$AUTODEPLOY" <<'PYPATCH'
 import sys, re, pathlib
 p = pathlib.Path(sys.argv[1])
 text = p.read_text()
-needle = re.search(r'^(\s*)(npm run build)', text, re.M)
-if not needle:
-    sys.stderr.write("ERROR: could not find `npm run build` line in autodeploy script\n")
+
+# Try `set +a` anchor first (insert AFTER); fall back to npm run build
+# (insert BEFORE).
+anchor_after = re.search(r'^([\t ]*)set \+a[\t ]*$', text, re.M)
+anchor_before = re.search(
+    r'^([\t ]*)(?:env [^\n]*? )?npm run build\b', text, re.M
+)
+
+if anchor_after:
+    insert_after = True
+    match = anchor_after
+elif anchor_before:
+    insert_after = False
+    match = anchor_before
+else:
+    sys.stderr.write(
+        "ERROR: could not find an insertion anchor in autodeploy script.\n"
+        "Looked for `set +a` and `npm run build` lines.\n"
+    )
     sys.exit(1)
-indent = needle.group(1)
+
+indent = match.group(1)
 patch = (
+    f"\n"
     f"{indent}# Inject the deployed commit SHA into env so /api/health.version\n"
     f"{indent}# reports it; deploy-freshness GitHub Action compares against main.\n"
-    f"{indent}export GIT_SHA=$(git rev-parse HEAD)\n"
+    f"{indent}# `target_sha` is already defined + validated above; fall back to\n"
+    f"{indent}# git rev-parse HEAD if for some reason it's empty.\n"
+    f"{indent}export GIT_SHA=\"${{target_sha:-$(git rev-parse HEAD)}}\"\n"
     f"{indent}if grep -qE '^GIT_SHA=' /etc/levelchannel.env; then\n"
     f"{indent}  sed -i \"s|^GIT_SHA=.*|GIT_SHA=$GIT_SHA|\" /etc/levelchannel.env\n"
     f"{indent}else\n"
     f"{indent}  echo \"GIT_SHA=$GIT_SHA\" >> /etc/levelchannel.env\n"
     f"{indent}fi\n"
-    f"\n"
 )
-new = text[:needle.start()] + patch + text[needle.start():]
+
+if insert_after:
+    # Insert after the end of the matched line (preserving its newline).
+    cut = match.end()
+    nl = text.find('\n', cut)
+    if nl == -1:
+        nl = len(text)
+    new = text[: nl + 1] + patch + text[nl + 1 :]
+else:
+    new = text[: match.start()] + patch + "\n" + text[match.start() :]
+
 p.write_text(new)
 print("patched")
 PYPATCH
 
-  if grep -qE 'export GIT_SHA=\$\(git rev-parse HEAD\)' "$AUTODEPLOY"; then
+  if grep -qE '^[[:space:]]*export GIT_SHA=' "$AUTODEPLOY"; then
     ok "autodeploy patched"
   else
     warn "patch did not take — restoring backup"
