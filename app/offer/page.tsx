@@ -2,10 +2,20 @@ import Link from 'next/link'
 import type { Metadata } from 'next'
 
 import { PERSONAL_DATA_CONSENT_PATH } from '@/lib/legal/personal-data'
+import {
+  LEGAL_BANK_ACCOUNT,
+  LEGAL_BANK_BIK,
+  LEGAL_BANK_CITY,
+  LEGAL_BANK_CORR_ACCOUNT,
+  LEGAL_BANK_NAME,
+  LEGAL_OPERATOR_DISPLAY,
+  LEGAL_OPERATOR_TAX_ID,
+  PUBLIC_CONTACT_EMAIL,
+} from '@/lib/legal/public-profile'
 
 export const metadata: Metadata = {
   title: 'Публичная оферта — LevelChannel',
-  description: 'Публичная оферта о заключении договора оказания образовательных услуг. ИП Фирсова Анастасия Геннадьевна.',
+  description: `Публичная оферта о заключении договора оказания образовательных услуг. ИП ${LEGAL_OPERATOR_DISPLAY}.`,
 }
 
 const ACCENT = 'linear-gradient(135deg, #C87878, #E8A890)'
@@ -58,9 +68,9 @@ export default function OfferPage() {
           <Section num="1" title="Общие положения">
             <P>Настоящий документ является официальным предложением (публичной офертой) Индивидуального предпринимателя:</P>
             <Highlight>
-              <strong style={{ color: '#fff', fontSize: 16 }}>Фирсова Анастасия Геннадьевна</strong>
+              <strong style={{ color: '#fff', fontSize: 16 }}>{LEGAL_OPERATOR_DISPLAY}</strong>
               <br />
-              <span style={{ color: '#A1A1AA', fontSize: 14 }}>ИНН: 673202755730</span>
+              <span style={{ color: '#A1A1AA', fontSize: 14 }}>ИНН: {LEGAL_OPERATOR_TAX_ID}</span>
               <br />
               <span style={{ color: '#A1A1AA', fontSize: 14 }}>далее — «Исполнитель»</span>
             </Highlight>
@@ -174,17 +184,17 @@ export default function OfferPage() {
             <div style={{ background: 'rgba(255,255,255,0.03)', border: BORDER, borderRadius: 14, padding: '24px 28px', marginTop: 4 }}>
               <p style={{ fontWeight: 700, fontSize: 16, color: '#fff', marginBottom: 20 }}>
                 Индивидуальный предприниматель<br />
-                <span style={{ background: ACCENT, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Фирсова Анастасия Геннадьевна</span>
+                <span style={{ background: ACCENT, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>{LEGAL_OPERATOR_DISPLAY}</span>
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
                 {[
-                  { label: 'ИНН', value: '673202755730' },
-                  { label: 'E-mail', value: 'igotstyle227@gmail.com' },
-                  { label: 'Расчётный счёт', value: '40802810720000971101' },
-                  { label: 'Банк', value: 'ООО «Банк Точка»' },
-                  { label: 'БИК', value: '044525104' },
-                  { label: 'Корр. счёт', value: '30101810745374525104' },
-                  { label: 'Город', value: 'г. Москва' },
+                  { label: 'ИНН', value: LEGAL_OPERATOR_TAX_ID },
+                  { label: 'E-mail', value: PUBLIC_CONTACT_EMAIL },
+                  { label: 'Расчётный счёт', value: LEGAL_BANK_ACCOUNT },
+                  { label: 'Банк', value: LEGAL_BANK_NAME },
+                  { label: 'БИК', value: LEGAL_BANK_BIK },
+                  { label: 'Корр. счёт', value: LEGAL_BANK_CORR_ACCOUNT },
+                  { label: 'Город', value: LEGAL_BANK_CITY },
                 ].map(item => (
                   <div key={item.label} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 8, padding: '10px 14px' }}>
                     <div style={{ fontSize: 11, color: '#52525B', marginBottom: 3, fontWeight: 500, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{item.label}</div>

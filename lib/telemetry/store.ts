@@ -24,13 +24,28 @@ export type CheckoutTelemetryEvent = {
 }
 
 let writeQueue = Promise.resolve()
+let hasWarnedAboutMissingTelemetrySecret = false
 
 function getTelemetryPath() {
   return path.join(process.cwd(), 'data', 'payment-telemetry.jsonl')
 }
 
+function getTelemetryHashSecret() {
+  const secret = process.env.TELEMETRY_HASH_SECRET?.trim()
+  if (secret) return secret
+
+  if (!hasWarnedAboutMissingTelemetrySecret) {
+    console.warn(
+      'telemetry: TELEMETRY_HASH_SECRET is empty; emailHash will be omitted until it is configured',
+    )
+    hasWarnedAboutMissingTelemetrySecret = true
+  }
+  return null
+}
+
 function hashEmail(email: string) {
-  const secret = process.env.TELEMETRY_HASH_SECRET || 'levelchannel-telemetry'
+  const secret = getTelemetryHashSecret()
+  if (!secret) return undefined
 
   return createHmac('sha256', secret).update(email).digest('hex')
 }
