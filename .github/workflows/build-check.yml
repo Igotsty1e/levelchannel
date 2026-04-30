@@ -1,0 +1,54 @@
+name: build-check
+
+# Catches build-time regressions before merge.
+#
+# Why: PR #40 introduced a strict env validator in lib/legal/public-profile.ts
+# that throws under NEXT_PHASE=phase-production-build when 9 NEXT_PUBLIC_LEGAL_*
+# values are missing. Prod VPS didn't have them set; build failed; autodeploy
+# refused to swap; prod was stuck for ~30 min until /api/health was on the
+# previous SHA. This workflow runs `npm run build` on every PR with placeholder
+# legal env vars so any future change that breaks the production build path
+# fails CI rather than rotting the prod deploy.
+#
+# Note: placeholder values mean CI verifies the build *path* compiles and
+# resolves env contracts, but NOT that prod values are correct. Real values
+# live in /etc/levelchannel.env on the VPS and are operator responsibility.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    name: npm run build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build with placeholder legal env
+        run: npm run build
+        env:
+          # NEXT_PUBLIC_* legal contract — placeholder values for build-only.
+          # These reach the JS bundle; never deployed. Real values are in
+          # /etc/levelchannel.env on the VPS.
+          NEXT_PUBLIC_SITE_URL: https://levelchannel.ru
+          NEXT_PUBLIC_LEGAL_OPERATOR_NAME: ci-placeholder-operator
+          NEXT_PUBLIC_LEGAL_OPERATOR_DISPLAY: ci-placeholder-operator
+          NEXT_PUBLIC_LEGAL_OPERATOR_TAX_ID: "000000000000"
+          NEXT_PUBLIC_PUBLIC_CONTACT_EMAIL: ci@example.invalid
+          NEXT_PUBLIC_LEGAL_BANK_ACCOUNT: "00000000000000000000"
+          NEXT_PUBLIC_LEGAL_BANK_NAME: ci-placeholder-bank
+          NEXT_PUBLIC_LEGAL_BANK_BIK: "000000000"
+          NEXT_PUBLIC_LEGAL_BANK_CORR_ACCOUNT: "00000000000000000000"
+          NEXT_PUBLIC_LEGAL_BANK_CITY: ci-placeholder-city
