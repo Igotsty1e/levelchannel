@@ -56,7 +56,11 @@ function getSavedInvoiceId() {
     return null
   }
 
-  return window.localStorage.getItem('levelchannel:activePaymentInvoiceId')
+  try {
+    return window.localStorage.getItem('levelchannel:activePaymentInvoiceId')
+  } catch {
+    return null
+  }
 }
 
 function getSavedCompletedInvoiceId() {
@@ -64,7 +68,11 @@ function getSavedCompletedInvoiceId() {
     return null
   }
 
-  return window.localStorage.getItem('levelchannel:lastCompletedPaymentInvoiceId')
+  try {
+    return window.localStorage.getItem('levelchannel:lastCompletedPaymentInvoiceId')
+  } catch {
+    return null
+  }
 }
 
 function saveInvoiceId(invoiceId: string | null) {
@@ -72,12 +80,16 @@ function saveInvoiceId(invoiceId: string | null) {
     return
   }
 
-  if (invoiceId) {
-    window.localStorage.setItem('levelchannel:activePaymentInvoiceId', invoiceId)
+  try {
+    if (invoiceId) {
+      window.localStorage.setItem('levelchannel:activePaymentInvoiceId', invoiceId)
+      return
+    }
+
+    window.localStorage.removeItem('levelchannel:activePaymentInvoiceId')
+  } catch {
     return
   }
-
-  window.localStorage.removeItem('levelchannel:activePaymentInvoiceId')
 }
 
 function saveCompletedInvoiceId(invoiceId: string | null) {
@@ -85,12 +97,16 @@ function saveCompletedInvoiceId(invoiceId: string | null) {
     return
   }
 
-  if (invoiceId) {
-    window.localStorage.setItem('levelchannel:lastCompletedPaymentInvoiceId', invoiceId)
+  try {
+    if (invoiceId) {
+      window.localStorage.setItem('levelchannel:lastCompletedPaymentInvoiceId', invoiceId)
+      return
+    }
+
+    window.localStorage.removeItem('levelchannel:lastCompletedPaymentInvoiceId')
+  } catch {
     return
   }
-
-  window.localStorage.removeItem('levelchannel:lastCompletedPaymentInvoiceId')
 }
 
 // Перенаправляет браузер на ACS-страницу банка через auto-submit формы.
@@ -442,7 +458,11 @@ export function PricingSection() {
     }))
 
     try {
-      const idempotencyKey = `lc-create-${crypto.randomUUID()}`
+      const entropy =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+      const idempotencyKey = `lc-create-${entropy}`
       const response = await fetch('/api/payments', {
         method: 'POST',
         headers: {
