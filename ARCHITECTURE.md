@@ -14,7 +14,8 @@ processing of payment statuses.
 
 ### Frontend
 
-- [`app/page.tsx`](app/page.tsx) - main page (with a `<Link href="/login">Войти</Link>` in the nav)
+- [`app/page.tsx`](app/page.tsx) - server wrapper for the main page; reads the public legal profile on the server and passes it into the client landing component so the home route does not depend on client-side `NEXT_PUBLIC_LEGAL_*` env evaluation
+- [`components/home/home-page-client.tsx`](components/home/home-page-client.tsx) - client landing implementation: hero, sections, analytics hooks, sticky header, footer with the server-provided legal profile, and a defensive `IntersectionObserver` fallback for browsers where the API is missing or throws
 - [`components/payments/pricing-section.tsx`](components/payments/pricing-section.tsx) - payment UI with a free amount and an e-mail, mandatory consent checkbox on personal-data processing, payment creation, status polling, widget launch, and a saved last-success confirmation on the main page
 - [`app/thank-you/page.tsx`](app/thank-you/page.tsx) - payment confirmation page
 - [`app/offer/page.tsx`](app/offer/page.tsx) - public oferta
