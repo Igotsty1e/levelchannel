@@ -25,8 +25,8 @@
 //     audit counters via a public HTTP endpoint either leaks business
 //     volume (privacy) or requires an admin auth framework we haven't
 //     built yet. Server-side script reads $DATABASE_URL directly.
-//   - The script runs in the same trust boundary as the app — same
-//     systemd unit family, same env file.
+//   - The script runs in the same trust boundary as the app and reads
+//     the same production env values as the main service.
 //
 // Failure mode:
 //   - PG outage → script throws → systemd service exits non-zero →
@@ -41,7 +41,7 @@
 // If that's too loud, add a state file at /var/lib/levelchannel/last-alert
 // later — for v1 we accept the noise floor.
 //
-// Required env (read from __LEVELCHANNEL_ENV_FILE__ via systemd):
+// Required env (read from the production env file via systemd):
 //   DATABASE_URL        — postgres connection
 //   RESEND_API_KEY      — Resend SDK key (else email skipped, only journal)
 //   EMAIL_FROM          — sender; reused from main app
@@ -160,7 +160,7 @@ async function sendAlertEmail({ stats, verdict }) {
     '',
     'Likely causes:',
     '  - CloudPayments cabinet webhook URLs misconfigured / disabled',
-    '  - HMAC secret rotated without updating __LEVELCHANNEL_ENV_FILE__',
+    '  - HMAC secret rotated without updating the production env file',
     '  - nginx blocking webhook IPs (CP user-agent / origin shifts)',
     '  - app handler error — check journalctl for stack traces',
     '',

@@ -145,13 +145,13 @@ jobs:
                   `Prod \`/api/health\` returned at \`${ts}\` with \`version: null\`. ` +
                   `That means the autodeploy script is not yet exporting \`GIT_SHA\` ` +
                   `before \`npm run build\`, so this freshness workflow has nothing to compare against.\n\n` +
-                  `Fix per \`OPERATIONS.md §6\` — add to \`__LEVELCHANNEL_AUTODEPLOY__\` ` +
+                  `Fix per the private deploy runbook — add the following export to the autodeploy script ` +
                   `right before \`npm run build\`:\n\n` +
                   '```bash\n' +
                   'export GIT_SHA=$(git rev-parse HEAD)\n' +
                   '```\n\n' +
                   `Then ensure \`GIT_SHA\` is forwarded into the systemd unit's environment ` +
-                  `(via \`__LEVELCHANNEL_ENV_FILE__\` or \`Environment=\` directive).\n\n` +
+                  `(via the production env store or an \`Environment=\` directive).\n\n` +
                   `This issue will close itself on the next run after \`/api/health.version\` ` +
                   `becomes a non-null SHA.`,
                 labels: [inactiveLabel],

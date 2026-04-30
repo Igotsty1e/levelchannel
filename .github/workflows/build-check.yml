@@ -12,7 +12,7 @@ name: build-check
 #
 # Note: placeholder values mean CI verifies the build *path* compiles and
 # resolves env contracts, but NOT that prod values are correct. Real values
-# live in __LEVELCHANNEL_ENV_FILE__ on the VPS and are operator responsibility.
+# live in the private production env store and are operator responsibility.
 
 on:
   pull_request:
@@ -41,7 +41,7 @@ jobs:
         env:
           # NEXT_PUBLIC_* legal contract — placeholder values for build-only.
           # These reach the JS bundle; never deployed. Real values are in
-          # __LEVELCHANNEL_ENV_FILE__ on the VPS.
+          # the private production env store.
           NEXT_PUBLIC_SITE_URL: https://levelchannel.ru
           NEXT_PUBLIC_LEGAL_OPERATOR_NAME: ci-placeholder-operator
           NEXT_PUBLIC_LEGAL_OPERATOR_DISPLAY: ci-placeholder-operator

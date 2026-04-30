@@ -1,6 +1,6 @@
 # Reference systemd unit for scripts/db-retention-cleanup.mjs.
-# Copy to /etc/systemd/system/ on the VPS during activation; see
-# OPERATIONS.md §5 Retention for the procedure.
+# `scripts/activate-prod-ops.sh` renders the placeholders below during
+# installation from the private runbook.
 
 [Unit]
 Description=LevelChannel daily DB retention cleanup

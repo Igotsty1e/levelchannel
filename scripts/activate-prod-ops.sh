@@ -14,16 +14,16 @@
 # What it does (every step is IDEMPOTENT — re-running is a no-op if
 # the change is already applied):
 #
-#   1. Append missing env vars to __LEVELCHANNEL_ENV_FILE__:
+#   1. Append missing env vars to the production env file:
 #        ALERT_EMAIL_TO, OPERATOR_NOTIFY_EMAIL,
 #        SENTRY_DSN, NEXT_PUBLIC_SENTRY_DSN
-#      Existing lines are NOT overwritten — only missing keys appended.
+#      Existing lines are NOT overwritten - only missing keys appended.
 #
-#   2. Patch __LEVELCHANNEL_AUTODEPLOY__ so the deployed
+#   2. Patch the production autodeploy script so the deployed
 #      app reports the SHA it was built from:
 #        - inserts `export GIT_SHA=$(git rev-parse HEAD)` before
 #          the `npm run build` line
-#        - inserts a sed-update of GIT_SHA in __LEVELCHANNEL_ENV_FILE__
+#        - inserts a sed-update of GIT_SHA in the production env file
 #          so the systemd-managed app process sees the SHA on the
 #          NEXT run after this swap
 #      Backs up the original to .bak-<timestamp> before editing.
@@ -62,12 +62,13 @@ if [ "$(id -u)" != "0" ]; then
 fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_FILE="__LEVELCHANNEL_ENV_FILE__"
-AUTODEPLOY="__LEVELCHANNEL_AUTODEPLOY__"
+ENV_FILE="${ENV_FILE:-/path/to/app.env}"
+AUTODEPLOY="${AUTODEPLOY:-/path/to/autodeploy}"
 SYSTEMD_DIR="/etc/systemd/system"
+APP_DIR="${APP_DIR:-$REPO_ROOT}"
 
 if [ ! -f "$ENV_FILE" ]; then
-  warn "$ENV_FILE not found — is the production tree set up?"
+  warn "$ENV_FILE not found - set ENV_FILE=... before running this script"
   exit 1
 fi
 
@@ -129,7 +130,7 @@ else
   #   target_sha=$(git ls-remote ...)        ← already validated above
   #   ...
   #   set -a
-  #   source __LEVELCHANNEL_ENV_FILE__
+  #   source the production env file
   #   set +a                                  ← OUR INSERT POINT (after)
   #   env -u NODE_ENV npm run build           ← fallback insert (before)
   #
@@ -138,10 +139,12 @@ else
   # us mid-stream). If `set +a` isn't there, we fall back to inserting
   # immediately before any `npm run build` line (with optional `env`
   # prefix in production, or bare in earlier shapes).
-  python3 - "$AUTODEPLOY" <<'PYPATCH'
+  ENV_FILE_ESCAPED="$ENV_FILE" python3 - "$AUTODEPLOY" <<'PYPATCH'
 import sys, re, pathlib
+from os import environ
 p = pathlib.Path(sys.argv[1])
 text = p.read_text()
+env_file = environ["ENV_FILE_ESCAPED"]
 
 # Try `set +a` anchor first (insert AFTER); fall back to npm run build
 # (insert BEFORE).
@@ -171,10 +174,10 @@ patch = (
     f"{indent}# `target_sha` is already defined + validated above; fall back to\n"
     f"{indent}# git rev-parse HEAD if for some reason it's empty.\n"
     f"{indent}export GIT_SHA=\"${{target_sha:-$(git rev-parse HEAD)}}\"\n"
-    f"{indent}if grep -qE '^GIT_SHA=' __LEVELCHANNEL_ENV_FILE__; then\n"
-    f"{indent}  sed -i \"s|^GIT_SHA=.*|GIT_SHA=$GIT_SHA|\" __LEVELCHANNEL_ENV_FILE__\n"
+    f"{indent}if grep -qE '^GIT_SHA=' {env_file}; then\n"
+    f"{indent}  sed -i \"s|^GIT_SHA=.*|GIT_SHA=$GIT_SHA|\" {env_file}\n"
     f"{indent}else\n"
-    f"{indent}  echo \"GIT_SHA=$GIT_SHA\" >> __LEVELCHANNEL_ENV_FILE__\n"
+    f"{indent}  echo \"GIT_SHA=$GIT_SHA\" >> {env_file}\n"
     f"{indent}fi\n"
 )
 
@@ -223,7 +226,10 @@ for u in "${units[@]}"; do
     skip "$u already in place + identical"
     continue
   fi
-  cp -p "$src" "$dst"
+  sed \
+    -e "s|__LEVELCHANNEL_APP_DIR__|$APP_DIR|g" \
+    -e "s|__LEVELCHANNEL_ENV_FILE__|$ENV_FILE|g" \
+    "$src" > "$dst"
   chmod 644 "$dst"
   ok "installed $u"
   UNITS_CHANGED=1

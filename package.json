@@ -7,6 +7,7 @@
     "build": "next build && node postbuild.js",
     "start": "next start",
     "lint": "next lint",
+    "check:public-surface": "bash scripts/public-surface-check.sh",
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",

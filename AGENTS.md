@@ -45,6 +45,7 @@ Project-specific elaboration of the company-level [SAFETY] guardrails.
 | Create branches, commits | Just do them. |
 | Open PRs, push to remote | Confirm if not explicitly authorized. |
 | Touch `.env`, `.env.local`, anything with real secrets | Hard stop. Never commit secrets. Read-only by default; ask before editing. |
+| Touch `docs/private/`, `*.private.*`, or concrete prod host/path metadata in tracked files | Hard stop. Keep it out of git; `scripts/public-surface-check.sh` is the mechanical guardrail. |
 | Switch `PAYMENTS_PROVIDER` to `cloudpayments` in any committed file | Hard stop. The default in `.env.example` is `mock` for a reason. |
 | `PAYMENTS_ALLOW_MOCK_CONFIRM=1` in any production-bound file | Hard stop. This must be unset in real prod. |
 | Force-push, hard-reset, branch deletion | Confirm and explain why this and not a safer alternative. |

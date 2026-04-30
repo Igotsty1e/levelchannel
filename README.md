@@ -30,6 +30,10 @@ The project combines public marketing pages, direct checkout, payment reconcilia
 - infrastructure-specific environment values
 - incident and retention procedures that belong to operations rather than the public product surface
 
+Tracked files are guarded by `npm run check:public-surface`, which blocks
+private runbooks, `.env` files, and known concrete production paths from
+landing in git.
+
 ## High-level architecture
 
 - `app/` contains public pages, legal pages, auth UI, and API routes

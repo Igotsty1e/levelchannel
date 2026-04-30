@@ -15,7 +15,7 @@ const isProd = process.env.NODE_ENV === 'production' && !isBuildPhase
 
 if (isProd && !(process.env.RESEND_API_KEY?.trim())) {
   throw new Error(
-    'RESEND_API_KEY is required when NODE_ENV=production. Set it in __LEVELCHANNEL_ENV_FILE__.',
+    'RESEND_API_KEY is required when NODE_ENV=production. Set it in the production env store.',
   )
 }
 

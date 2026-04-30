@@ -162,6 +162,8 @@ intentionally.
 - `.env` is excluded from the repository
 - the payment storage file is excluded from the repository
 - CloudPayments credentials are used only on the server
+- `scripts/public-surface-check.sh` blocks private runbooks, `.env*`,
+  and known concrete production paths from both local commits and CI
 
 ## Current limits and accepted gaps
 

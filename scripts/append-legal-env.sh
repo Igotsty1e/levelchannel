@@ -1,10 +1,10 @@
 #!/bin/bash
 #
-# Append missing NEXT_PUBLIC_LEGAL_* env vars to __LEVELCHANNEL_ENV_FILE__.
+# Append missing NEXT_PUBLIC_LEGAL_* env vars to the production env file.
 #
 # Why: PR #40 introduced lib/legal/public-profile.ts which throws at
 # build time when any of these vars are missing under NODE_ENV=production
-# (or NEXT_PHASE=phase-production-build). On a fresh VPS that has never
+# (or NEXT_PHASE=phase-production-build). On a fresh server that has never
 # seen these vars, `npm run build` fails and the systemd-managed
 # autodeploy refuses to swap, so prod stays on the previous SHA.
 #
@@ -23,18 +23,18 @@
 #   bash scripts/append-legal-env.sh
 #
 # Idempotent: existing keys are NOT overwritten. If you typo'd a value,
-# edit __LEVELCHANNEL_ENV_FILE__ by hand, then re-run /usr/local/bin/
-# levelchannel-autodeploy.
+# edit the production env file by hand, then re-run the deploy command.
 #
-# After a successful run, trigger one autodeploy cycle:
-#   __LEVELCHANNEL_AUTODEPLOY__
+# After a successful run, trigger one deploy cycle with DEPLOY_COMMAND:
+#   DEPLOY_COMMAND="/path/to/autodeploy" bash scripts/append-legal-env.sh
 # or wait for the cron tick. /api/health.version will then move to the
 # new GIT_SHA and the deploy-stale GitHub issue auto-closes on the next
 # deploy-freshness run.
 
 set -euo pipefail
 
-ENV_FILE="${ENV_FILE:-__LEVELCHANNEL_ENV_FILE__}"
+ENV_FILE="${ENV_FILE:-/path/to/app.env}"
+DEPLOY_COMMAND="${DEPLOY_COMMAND:-deploy command}"
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "ERROR: $ENV_FILE does not exist. Set ENV_FILE=... if it's elsewhere." >&2
@@ -91,8 +91,8 @@ done
 
 if [ "$changed" = "1" ]; then
   echo ""
-  echo "Done. Now trigger one autodeploy cycle:"
-  echo "  __LEVELCHANNEL_AUTODEPLOY__"
+  echo "Done. Now trigger one deploy cycle:"
+  echo "  $DEPLOY_COMMAND"
   echo ""
   echo "/api/health.version will then move from 6e18300… to the current main SHA."
 else

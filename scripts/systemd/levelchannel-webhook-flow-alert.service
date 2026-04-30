@@ -1,10 +1,10 @@
-# Reference systemd unit for the webhook-flow alert probe. Copy to
-# /etc/systemd/system/ on the VPS during activation; see OPERATIONS.md
-# §9 "Webhook-flow alerting" for the full procedure.
+# Reference systemd unit for the webhook-flow alert probe.
+# `scripts/activate-prod-ops.sh` renders the placeholders below during
+# installation from the private runbook.
 #
 # This unit is one-shot — invoked by the .timer companion every 30 min.
 # All env (DATABASE_URL, RESEND_API_KEY, EMAIL_FROM, ALERT_EMAIL_TO)
-# is read from __LEVELCHANNEL_ENV_FILE__ so we don't duplicate secrets.
+# is read from the production env file so we don't duplicate secrets.
 
 [Unit]
 Description=LevelChannel webhook-flow alert probe

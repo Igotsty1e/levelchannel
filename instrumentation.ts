@@ -2,8 +2,8 @@
 // We dispatch to the right Sentry init for the runtime so the same file
 // covers both API routes (Node) and middleware/edge (Edge).
 //
-// SENTRY_DSN comes from __LEVELCHANNEL_ENV_FILE__ in production. Missing
-// DSN in dev → SDK becomes a no-op, which is what we want.
+// SENTRY_DSN comes from the production env store. Missing DSN in dev
+// makes the SDK a no-op, which is what we want.
 //
 // `onRequestError` is the standard Next.js 16 hook for surfacing
 // otherwise-uncaught errors from server components / route handlers.

@@ -25,6 +25,8 @@ in two places, agents will almost certainly drag in the stale version.
 ### Prod, server, DB, deploy, logs, backups
 
 1. private operations runbook (not committed to the public repository surface)
+2. never stage `docs/private/*` or `*.private.*`; `public-surface-check`
+   blocks them locally and in CI
 
 ### Strategy and next stage
 
@@ -84,6 +86,8 @@ If documents disagree, priority is:
 - If the code structure changes, update `ARCHITECTURE.md`.
 - If the payment flow, env contract, webhook flow, or one-click changes, update `PAYMENTS_SETUP.md`.
 - If prod, deploy, server, retention, backup, or rollback changes, update the private operations runbook and keep `OPERATIONS.md` as a public-safe pointer.
+- If you need a private runbook copy locally, keep it under `docs/private/`
+  only as an ignored file. Do not remove that ignore rule.
 - If the trust boundary, consent capture, headers, rate limit, or webhook verify changes, update `SECURITY.md`.
 - If a new idea or direction appears, first decide whether it is a strategic priority or an implementation task:
   - outcome-level work goes to `ROADMAP.md`

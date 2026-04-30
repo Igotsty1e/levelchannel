@@ -50,6 +50,7 @@ processing of payment statuses.
 - [`lib/payments/store-file.ts`](lib/payments/store-file.ts) - file storage for orders and tokens
 - [`lib/payments/store-postgres.ts`](lib/payments/store-postgres.ts) - PostgreSQL backend for orders and `payment_card_tokens`
 - [`scripts/migrate-payment-orders-to-postgres.mjs`](scripts/migrate-payment-orders-to-postgres.mjs) - one-shot order migration from JSON to PostgreSQL
+- [`scripts/public-surface-check.sh`](scripts/public-surface-check.sh) - repo guardrail for public safety: blocks `.env*`, `docs/private/*`, `*.private.*`, and known concrete production identifiers from entering tracked history; used by both the local pre-commit hook and CI
 
 ### Auth and account layer
 
@@ -89,6 +90,8 @@ Guest checkout still does not depend on this layer.
 
 - [`docker-compose.test.yml`](docker-compose.test.yml) - `postgres:16.13` service on `127.0.0.1:54329`, tmpfs storage. Exact match with prod.
 - [`scripts/test-integration.sh`](scripts/test-integration.sh) - bring up → wait → migrate:up → vitest → tear down. `npm run test:integration`.
+- [`.githooks/pre-commit`](.githooks/pre-commit) - local public-surface gate; runs `scripts/public-surface-check.sh --staged`
+- [`.github/workflows/public-surface-check.yml`](.github/workflows/public-surface-check.yml) - CI copy of the same guardrail for pull requests and pushes to `main`
 - [`vitest.integration.config.ts`](vitest.integration.config.ts) - separate config; `tests/integration/**/*.test.ts`. Unit `npm run test:run` stays fast and free of a Docker dependency.
 
 **Auth invariants covered by the integration suite.** This matrix is the source of truth for which security invariants are already verified by the Postgres-backed tests. If an invariant below is changed in code, the regression must fail in the file shown. Open items are in `ENGINEERING_BACKLOG.md` § DX and quality.

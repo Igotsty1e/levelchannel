@@ -10,6 +10,7 @@
 - converted internal absolute repo links in key docs to relative links
 - removed hardcoded operator contact values and DSN values from tracked ops scripts
 - moved the detailed production runbook out of the tracked repository surface and replaced `OPERATIONS.md` with a public-safe stub
+- added a public-surface guardrail (`scripts/public-surface-check.sh`, pre-commit hook, CI workflow) so private runbooks and concrete prod paths cannot silently re-enter tracked history
 - moved legal operator identity, contact, and bank details out of committed page source into env-driven public-profile config
 - added production-time validation for required public legal profile env vars
 - removed the telemetry hashing fallback secret and replaced it with omit-on-missing behavior
@@ -26,6 +27,7 @@
 ## Remaining risks
 
 - public legal pages now intentionally depend on environment-managed company data, so deployment hygiene still matters
+- old public history still needs force-push cleanup if previously published commits carried infra-specific metadata
 
 ## Is repo ready for public?
 
