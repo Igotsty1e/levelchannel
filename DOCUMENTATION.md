@@ -1,90 +1,89 @@
 # Documentation Map
 
-Этот файл задаёт структуру документации. Если агент не знает, какой
-документ читать первым, он начинает отсюда.
+This file defines the documentation layout. When an agent does not
+know which document to read first, it starts here.
 
-## Принцип
+## Principle
 
-У каждой темы должен быть один основной документ-владелец. Если одно и то
-же правило описано в нескольких местах, агенты почти гарантированно
-утащат устаревшую версию.
+Every topic has a single owner document. If the same rule is described
+in two places, agents will almost certainly drag in the stale version.
 
-## Быстрый маршрут для агента
+## Quick agent routing
 
-### Быстро понять проект
+### Get oriented quickly
 
 1. `README.md`
 2. `DOCUMENTATION.md`
-3. профильный документ по зоне задачи
+3. the topic-specific owner document
 
-### Код и архитектура
+### Code and architecture
 
 1. `ARCHITECTURE.md`
-2. `PAYMENTS_SETUP.md`, если меняется payment contract
-3. `SECURITY.md`, если меняется trust boundary или защита
+2. `PAYMENTS_SETUP.md` if the payment contract changes
+3. `SECURITY.md` if the trust boundary or hardening changes
 
-### Прод, сервер, БД, деплой, логи, бэкапы
+### Prod, server, DB, deploy, logs, backups
 
 1. `OPERATIONS.md`
 
-### Стратегия и следующий этап
+### Strategy and next stage
 
-1. `ROADMAP.md` для продуктовых, операционных и юридических приоритетов
-2. `ENGINEERING_BACKLOG.md` для конкретной implementation queue
+1. `ROADMAP.md` for product, operational, and legal priorities
+2. `ENGINEERING_BACKLOG.md` for the concrete implementation queue
 
-### Публичные юридические тексты
+### Public legal text
 
 1. `app/offer/page.tsx`
 2. `app/privacy/page.tsx`
 3. `app/consent/personal-data/page.tsx`
-4. `OPERATIONS.md`, если вопрос упирается в фактическое хранение, retention или сервер
+4. `OPERATIONS.md` if the question hinges on actual storage, retention, or server
 
-### Исторический контекст
+### Historical context
 
 1. `PRD.md`
-2. `docs/plans/*` — архив планов и review-артефактов, не source of truth
+2. `docs/plans/*`: archive of planning and review artifacts, not source of truth
 
-## Матрица ответственности
+## Ownership matrix
 
-| Документ | Владеет | Не должен хранить |
+| Document | Owns | Should not carry |
 |---|---|---|
-| `README.md` | вход в проект, стек, команды, карта документации | backlog, runbook, временные статусы |
-| `DOCUMENTATION.md` | карта документации, правила навигации, зоны ответственности | продуктовые решения, инфраструктурные детали, backlog |
-| `ARCHITECTURE.md` | file-by-file карта системы и runtime flow | roadmap, deploy checklist, operator instructions |
-| `PAYMENTS_SETUP.md` | payment contract, env contract, webhook contract, режимы оплаты | production runbook, backlog, product strategy |
+| `README.md` | project entry, stack, commands, doc map | backlog, runbook, temporary statuses |
+| `DOCUMENTATION.md` | doc map, navigation rules, ownership zones | product decisions, infra details, backlog |
+| `ARCHITECTURE.md` | file-by-file system map and runtime flow | roadmap, deploy checklist, operator instructions |
+| `PAYMENTS_SETUP.md` | payment contract, env contract, webhook contract, payment modes | production runbook, backlog, product strategy |
 | `SECURITY.md` | security boundaries, threat model, hardening gaps | deploy steps, product roadmap |
-| `OPERATIONS.md` | prod-инфраструктура, сервер, БД, deploy, rollback, retention, incident runbook | продуктовые идеи, кодовые wishlist'ы |
-| `ROADMAP.md` | high-level приоритеты продукта, операционки и compliance | низкоуровневые implementation tasks |
-| `ENGINEERING_BACKLOG.md` | очередь инженерных задач по реализации | deploy facts, public legal text |
-| `PRD.md` | исторический аудит-трейл ранней версии | текущие решения как source of truth |
-| `docs/plans/*` | архив design / implementation plans | текущее shipped-состояние и owner-contracts |
+| `OPERATIONS.md` | prod infra, server, DB, deploy, rollback, retention, incident runbook | product ideas, code wishlists |
+| `ROADMAP.md` | high-level product, operations, and compliance priorities | low-level implementation tasks |
+| `ENGINEERING_BACKLOG.md` | implementation task queue | deploy facts, public legal text |
+| `PRD.md` | historical audit trail of the early version | current decisions as source of truth |
+| `docs/plans/*` | archive of design / implementation plans | current shipped state and owner contracts |
 
-## Правило конфликтов
+## Conflict rule
 
-Если документы расходятся, приоритет такой:
+If documents disagree, priority is:
 
-1. код и фактический runtime
-2. профильный документ-владелец темы
+1. code and actual runtime
+2. the topic owner document
 3. `README.md`
-4. `ROADMAP.md` и `ENGINEERING_BACKLOG.md`, они задают намерение, а не факт
-5. `PRD.md`, только как исторический контекст
+4. `ROADMAP.md` and `ENGINEERING_BACKLOG.md`, which carry intent, not fact
+5. `PRD.md`, as historical context only
 
-## Правила обновления
+## Update rules
 
-- Если меняется структура кода, обновляй `ARCHITECTURE.md`.
-- Если меняется payment flow, env contract, webhook flow или one-click, обновляй `PAYMENTS_SETUP.md`.
-- Если меняется прод, деплой, сервер, retention, backup, rollback, обновляй `OPERATIONS.md`.
-- Если меняется trust boundary, consent capture, headers, rate limit, webhook verify, обновляй `SECURITY.md`.
-- Если появляется новая идея или направление, сначала реши, это стратегический приоритет или implementation task:
-  - outcome-level задача идёт в `ROADMAP.md`
-  - конкретная инженерная задача идёт в `ENGINEERING_BACKLOG.md`
-- Не дублируй один и тот же backlog одновременно в `ROADMAP.md`, `README.md` и `PAYMENTS_SETUP.md`.
+- If the code structure changes, update `ARCHITECTURE.md`.
+- If the payment flow, env contract, webhook flow, or one-click changes, update `PAYMENTS_SETUP.md`.
+- If prod, deploy, server, retention, backup, or rollback changes, update `OPERATIONS.md`.
+- If the trust boundary, consent capture, headers, rate limit, or webhook verify changes, update `SECURITY.md`.
+- If a new idea or direction appears, first decide whether it is a strategic priority or an implementation task:
+  - outcome-level work goes to `ROADMAP.md`
+  - concrete engineering work goes to `ENGINEERING_BACKLOG.md`
+- Do not duplicate the same backlog across `ROADMAP.md`, `README.md`, and `PAYMENTS_SETUP.md`.
 
-## Правило для агентов
+## Rule for agents
 
-Перед правкой документа агент должен ответить себе на два вопроса:
+Before editing a document, answer two questions:
 
-1. Этот файл владеет темой или только ссылается на неё?
-2. Не появится ли после моей правки второй источник истины по той же теме?
+1. Does this file own the topic or only refer to it?
+2. After my edit, will there be a second source of truth on the same topic?
 
-Если ответ на второй вопрос "да", правка неправильная.
+If the second answer is "yes", the edit is wrong.

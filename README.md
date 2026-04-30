@@ -1,30 +1,31 @@
 # LevelChannel
 
-Конверсионный сайт для индивидуальных занятий по английскому языку с серверной интеграцией оплаты через CloudPayments Widget.
+Conversion site for one-on-one English lessons with server-side payment
+integration through the CloudPayments widget.
 
-## Текущее состояние
+## Current state
 
-- стек: `Next.js 16`, `React 18`, `App Router`, `TypeScript`
-- сайт работает как Node.js-приложение, а не как static export
-- оплата уже встроена в UI и API
-- checkout работает по сценарию `согласованная сумма в пределах лимита + e-mail + CloudPayments popup widget`
-- перед созданием платежа пользователь обязан подтвердить отдельное согласие на обработку персональных данных
-- провайдер по умолчанию: `mock`
-- storage backend: `file` или `postgres`
-- реальный режим CloudPayments включается через `.env`
-- проект прошёл базовый hardening: security headers, origin checks, rate limiting, webhook signature verification
+- stack: `Next.js 16`, `React 18`, `App Router`, `TypeScript`
+- runs as a Node.js app, not as static export
+- payment is already wired into UI and API
+- checkout flow: agreed amount within a limit, plus e-mail, plus the CloudPayments popup widget
+- before payment creation the user must confirm a separate consent on personal data processing
+- default provider: `mock`
+- storage backend: `file` or `postgres`
+- real CloudPayments mode is enabled via `.env`
+- the project has passed baseline hardening: security headers, origin checks, rate limiting, webhook signature verification
 
-## Быстрый старт
+## Quickstart
 
-1. Установить зависимости:
+1. Install dependencies:
 
 ```bash
 npm install
 ```
 
-2. Создать `.env` на основе [`.env.example`](/Users/ivankhanaev/LevelChannel/.env.example)
+2. Create `.env` based on [`.env.example`](/Users/ivankhanaev/LevelChannel/.env.example).
 
-3. Запустить локально:
+3. Run locally:
 
 ```bash
 npm run dev
@@ -37,9 +38,9 @@ npm run build
 npm run start
 ```
 
-## Переменные окружения
+## Environment variables
 
-Минимальный набор:
+Minimum set:
 
 - `PAYMENTS_PROVIDER=mock|cloudpayments`
 - `PAYMENTS_STORAGE_BACKEND=file|postgres`
@@ -53,11 +54,11 @@ npm run start
 - `CLOUDPAYMENTS_API_SECRET=...`
 - `RESEND_API_KEY=...` (transactional email; empty → console fallback in dev; **boot fails in prod if empty**)
 - `EMAIL_FROM="LevelChannel <noreply@levelchannel.ru>"`
-- `AUTH_RATE_LIMIT_SECRET=...` (HMAC key для per-email rate-limit scopes; 32+ chars; **boot fails in prod if empty**)
+- `AUTH_RATE_LIMIT_SECRET=...` (HMAC key for per-email rate-limit scopes; 32+ chars; **boot fails in prod if empty**)
 
-## Основные маршруты
+## Main routes
 
-Страницы:
+Pages:
 
 - `/`
 - `/offer`
@@ -74,21 +75,21 @@ Payment API:
 - `POST /api/payments/webhooks/cloudpayments/pay`
 - `POST /api/payments/webhooks/cloudpayments/fail`
 
-## Документация
+## Documentation
 
-- [DOCUMENTATION.md](/Users/ivankhanaev/LevelChannel/DOCUMENTATION.md) — карта документации, кто чем владеет, что читать первым
-- [ARCHITECTURE.md](/Users/ivankhanaev/LevelChannel/ARCHITECTURE.md) — file-by-file карта кода
-- [OPERATIONS.md](/Users/ivankhanaev/LevelChannel/OPERATIONS.md) — где сервер, как деплоим, git, БД, runbook
-- [SECURITY.md](/Users/ivankhanaev/LevelChannel/SECURITY.md) — hardening + threat model
-- [PAYMENTS_SETUP.md](/Users/ivankhanaev/LevelChannel/PAYMENTS_SETUP.md) — CloudPayments, one-click, 3DS, health
-- [AGENTS.md](/Users/ivankhanaev/LevelChannel/AGENTS.md) — operating guide для ИИ-агентов
-- [ROADMAP.md](/Users/ivankhanaev/LevelChannel/ROADMAP.md) — high-level приоритеты
-- [ENGINEERING_BACKLOG.md](/Users/ivankhanaev/LevelChannel/ENGINEERING_BACKLOG.md) — инженерная очередь задач
-- [PRD.md](/Users/ivankhanaev/LevelChannel/PRD.md) — исторический продуктовый документ первой версии
-- [migrations/README.md](/Users/ivankhanaev/LevelChannel/migrations/README.md) — формат и правила работы с SQL-миграциями
+- [DOCUMENTATION.md](/Users/ivankhanaev/LevelChannel/DOCUMENTATION.md): documentation map, ownership, what to read first
+- [ARCHITECTURE.md](/Users/ivankhanaev/LevelChannel/ARCHITECTURE.md): file-by-file code map
+- [OPERATIONS.md](/Users/ivankhanaev/LevelChannel/OPERATIONS.md): server location, deploy, git, DB, runbook
+- [SECURITY.md](/Users/ivankhanaev/LevelChannel/SECURITY.md): hardening and threat model
+- [PAYMENTS_SETUP.md](/Users/ivankhanaev/LevelChannel/PAYMENTS_SETUP.md): CloudPayments, one-click, 3DS, health
+- [AGENTS.md](/Users/ivankhanaev/LevelChannel/AGENTS.md): operating guide for AI agents
+- [ROADMAP.md](/Users/ivankhanaev/LevelChannel/ROADMAP.md): high-level priorities
+- [ENGINEERING_BACKLOG.md](/Users/ivankhanaev/LevelChannel/ENGINEERING_BACKLOG.md): engineering task queue
+- [PRD.md](/Users/ivankhanaev/LevelChannel/PRD.md): historical product doc of the first version
+- [migrations/README.md](/Users/ivankhanaev/LevelChannel/migrations/README.md): format and rules for SQL migrations
 
-## Что важно помнить
+## Things worth keeping in mind
 
-- файловый storage остаётся fallback-режимом, production-целевой backend теперь `PostgreSQL`
-- боевой CloudPayments flow уже работает на VPS, а прод обновляется git-based автодеплоем с сервера по `origin/main`
-- mock confirm должен оставаться выключенным в production
+- file storage stays as a fallback mode; the production target backend is now `PostgreSQL`
+- the live CloudPayments flow already runs on the VPS, and prod is updated by a git-based autodeploy on the server tracking `origin/main`
+- mock confirm must stay disabled in production

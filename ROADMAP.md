@@ -1,43 +1,43 @@
 # Roadmap
 
-Этот файл хранит high-level приоритеты следующего этапа. Конкретные
-инженерные таски вынесены в `ENGINEERING_BACKLOG.md`.
+This file holds high-level priorities for the next stage. Concrete
+engineering tasks live in `ENGINEERING_BACKLOG.md`.
 
 ## P0
 
 ### Compliance
 
-- подать уведомление в Роскомнадзор о начале обработки ПДн
-- довести retention / deletion policy до ACTIVE — скелет уже лежит в [`docs/legal/retention-policy.md`](docs/legal/retention-policy.md), сроки и правовые формулировки заполняются через `legal-rf-router → legal-rf-private-client → legal-rf-qa`
-- machine-readable data-export endpoint **не планируется** — 152-ФЗ ст.14 закрывается ответом оператора в свободной форме на e-mail
+- file the Roskomnadzor notification on the start of personal data processing
+- promote the retention / deletion policy from skeleton to ACTIVE: the skeleton is already at [`docs/legal/retention-policy.md`](docs/legal/retention-policy.md), retention periods and legal wording get filled in through `legal-rf-router → legal-rf-private-client → legal-rf-qa`
+- machine-readable data-export endpoint is **not planned**: 152-FZ art.14 is satisfied by a free-form operator reply over e-mail
 
 ### Production operations
 
-- ~~подключить uptime monitor на `/api/health`~~ — закрыто (см. `OPERATIONS.md §9`)
-- регулярно проверять `pg_dump` бэкапы и restore drill (cron активен с 2026-04-29)
-- регулярно проверять rollback drill и состояние git-based autodeploy
+- ~~wire up uptime monitor on `/api/health`~~: closed (see `OPERATIONS.md §9`)
+- routinely verify `pg_dump` backups and the restore drill (cron active since 2026-04-29)
+- routinely verify the rollback drill and the state of the git-based autodeploy
 
 ## P1
 
 ### Operator visibility
 
-- получить более удобную видимость по оплатам и их статусам
-- получить понятный контроль за сбоями и инцидентами оплаты
+- get usable visibility into payments and their statuses
+- get a clear handle on payment failures and incidents
 
 ### Service reliability
 
-- улучшить наблюдаемость за приложением и webhook-контуром
+- improve observability over the app and the webhook contour
 
 ## P2
 
 ### Operator tooling and growth
 
-- добавить операторские уведомления о важных платёжных событиях
-- улучшить аналитику payment funnel
-- при необходимости вернуться к продуктовым улучшениям checkout, если это даст измеримую конверсию
+- add operator notifications for significant payment events
+- improve payment funnel analytics
+- if a measurable conversion case appears, return to product-level checkout improvements
 
-## Важно
+## Notes
 
-- `ROADMAP.md` отвечает за outcome-level приоритеты
-- `ENGINEERING_BACKLOG.md` отвечает за implementation queue
-- `OPERATIONS.md` отвечает за фактическое состояние production
+- `ROADMAP.md` carries outcome-level priorities
+- `ENGINEERING_BACKLOG.md` carries the implementation queue
+- `OPERATIONS.md` carries the actual production state
