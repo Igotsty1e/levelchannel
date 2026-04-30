@@ -1,91 +1,92 @@
 # Engineering Backlog
 
-Конкретная очередь инженерных задач. Этот файл описывает что ещё нужно
-реализовать, а не текущее фактическое состояние продакшена.
+Concrete engineering task queue. This file describes what still needs
+to be implemented, not the current actual state of production.
 
-Если задача уже работает в коде или на сервере, ей не место в backlog.
+If a task already works in code or on the server, it does not belong
+here.
 
 ## Cabinet expansion (next phases)
 
-Гостевой checkout не трогается — дальнейшие фазы additive.
+Guest checkout is not touched: subsequent phases are additive.
 
-Уже закрыто и не живёт в backlog:
+Already closed and not in the backlog:
 
 - Phase 0 stabilization
 - Phase 1A auth foundation
 - Phase 1B auth API routes
 - Phase 2 auth UI
 
-Открытая high-level очередь:
+Open high-level queue:
 
-- Phase 3 — profiles + admin pricing
-- Phase 4 — scheduling
-- Phase 5 — lesson lifecycle + 24h rule
-- Phase 6 — cabinet payment + `payment_allocations` + legal/receipt polish
+- Phase 3: profiles + admin pricing
+- Phase 4: scheduling
+- Phase 5: lesson lifecycle + 24h rule
+- Phase 6: cabinet payment + `payment_allocations` + legal / receipt polish
 
-Перед стартом любой из этих фаз нужен свежий in-repo design doc. Код,
-owner-docs и git history важнее старых chat outputs.
+Before starting any of these, write a fresh in-repo design doc. Code,
+owner docs, and git history beat old chat outputs.
 
 ## P0
 
 ### Production reliability
 
-- ~~подключить uptime / failure alerting на приложение~~ — **закрыто 2026-04-29**: GitHub Actions cron `*/5 *` пингует `/api/health` и открывает/закрывает issue с лейблом `uptime-incident`. Runbook в `OPERATIONS.md §9`. Detection latency ~5–15 мин (cron + GH Actions schedule jitter). Если потребуется sub-minute precision — добавить второй слой (BetterStack / Healthchecks.io)
-- ~~добавить failure alerting **на webhook-контур** (CloudPayments check/pay/fail)~~ — **shipped 2026-04-29 (workflow side, требует patch на сервере для активации)**: `scripts/webhook-flow-alert.mjs` + systemd unit/timer (`scripts/systemd/`) — каждые 30 минут читает `payment_audit_events` за час и шлёт email через Resend если `(paid + fail) / created < 0.3` при ≥5 созданных заказов. Активация: `cp scripts/systemd/*.service /etc/systemd/system/` + `cp ...timer` + `systemctl enable --now`. Подробно — `OPERATIONS.md §9` Webhook-flow alerting
-- ~~добавить сигнал о неуспешном git-based deploy или зависшем `levelchannel-autodeploy.timer`~~ — **shipped 2026-04-29 (workflow side, требует patch на сервере для активации)**: `.github/workflows/deploy-freshness.yml` сравнивает SHA `main` с `version` из `/api/health` каждые 30 минут, открывает/закрывает issue `deploy-stale`. Активация: добавить `export GIT_SHA=$(git rev-parse HEAD)` перед `npm run build` в `/usr/local/bin/levelchannel-autodeploy` + forward'ить переменную в systemd unit env. Подробно — `OPERATIONS.md §6` Deploy freshness check
+- ~~wire up uptime / failure alerting on the app~~: **closed 2026-04-29**. GitHub Actions cron `*/5 *` pings `/api/health` and opens / closes an issue tagged `uptime-incident`. Runbook: `OPERATIONS.md §9`. Detection latency ~5–15 min (cron + GH Actions schedule jitter). For sub-minute precision, layer in BetterStack / Healthchecks.io.
+- ~~add failure alerting on the **webhook contour** (CloudPayments check / pay / fail)~~: **shipped 2026-04-29 (workflow side; activation requires server-side patch)**. `scripts/webhook-flow-alert.mjs` plus systemd unit / timer (`scripts/systemd/`); every 30 minutes it reads `payment_audit_events` over the last hour and emails via Resend when `(paid + fail) / created < 0.3` with ≥5 created orders. Activation: `cp scripts/systemd/*.service /etc/systemd/system/`, `cp ...timer`, `systemctl enable --now`. Details: `OPERATIONS.md §9` Webhook-flow alerting.
+- ~~signal failed git-based deploy or stuck `levelchannel-autodeploy.timer`~~: **shipped 2026-04-29 (workflow side; activation requires server-side patch)**. `.github/workflows/deploy-freshness.yml` compares `main` SHA with `version` from `/api/health` every 30 minutes; opens / closes a `deploy-stale` issue. Activation: add `export GIT_SHA=$(git rev-parse HEAD)` before `npm run build` in `/usr/local/bin/levelchannel-autodeploy`, forward the variable into the systemd unit env. Details: `OPERATIONS.md §6` Deploy freshness check.
 
 ### Security and payment safety
 
-- вынести app-level rate limiter в shared backend store для multi-instance future (nginx `limit_req` уже на месте, app-level дополняет per-route семантикой)
-- ~~добавить отдельный audit log persistence для критичных payment transitions~~ — **закрыто 2026-04-29**: миграция 0012 + `lib/audit/payment-events.ts`, 10 финальных событий пишутся из 7 route handlers (`order.created/cancelled`, `mock.confirmed`, `webhook.pay.processed`, `webhook.fail.received`, `charge_token.succeeded/requires_3ds/declined`, `threeds.callback.received/confirmed/declined`). Best-effort recorder, retention 3 года, full PII за legitimate-interest 152-ФЗ. Документация: `ARCHITECTURE.md` § Audit log + `SECURITY.md` § Audit log + `OPERATIONS.md §5` psql-запросы
-- ~~добавить pre-validation phases в audit~~ — **закрыто 2026-04-29**: миграция 0014 + рефактор `lib/payments/cloudpayments-route.ts`, который теперь принимает `kind: 'check'|'pay'|'fail'` и пишет phase-0 (`webhook.<kind>.received`) после parse + phase-1 (`webhook.<kind>.declined` / `webhook.pay.validation_failed`) при validation failure. Старый `webhook.fail.received` (semantically finalize) переименован в `webhook.fail.processed`; live data замигрировано в той же транзакции
-- ~~добавить `charge_token.attempted`~~ — **NOT planned**: `chargeWithSavedCard` создаёт `invoice_id` внутри функции, у `attempted` event нет clean attach point (FK constraint к payment_orders); outcome events (`succeeded` / `requires_3ds` / `declined`) покрывают lifecycle полностью
-- **`charge_token.error` (deferred)** — sync-error path требует refactor'а return type `chargeWithSavedCard` чтобы поверхностно отдавать `invoice_id` даже на throw. Сейчас catch в route шлёт `console.warn` в journal (см. `app/api/payments/charge-token/route.ts`). Закрыть когда возникнет реальный инцидент с потерянным contextом
-- ~~консолидировать domain-specific Postgres pools в общий `lib/db/pool.ts`~~ — **закрыто 2026-04-29**: `lib/db/pool.ts` — `getDbPool()` (throws on missing DATABASE_URL) + `getDbPoolOrNull()` (silent — для audit best-effort). Все 5 domain-getter'ов (payments / auth / idempotency / telemetry / audit) делегируют на shared singleton, public API за call sites не сломан. Connection footprint: было 5×10=50 max, стало `DATABASE_POOL_MAX` (default 10).
-- ~~настроить cron pruning для `payment_audit_events`~~ — **shipped 2026-04-29 (workflow side, активация требует SSH)**: `scripts/db-retention-cleanup.mjs` + systemd unit/timer (04:30 daily) удаляют `payment_audit_events > 3 года` плюс expired-записи из `account_sessions / email_verifications / password_resets / idempotency_records`. Подробно — `OPERATIONS.md §5`
+- move the app-level rate limiter into a shared backend store for a multi-instance future (nginx `limit_req` is in place; the app-level layer adds per-route semantics)
+- ~~add a separate audit log for critical payment transitions~~: **closed 2026-04-29**. Migration 0012 plus `lib/audit/payment-events.ts`; 10 final-state events written from 7 route handlers (`order.created` / `cancelled`, `mock.confirmed`, `webhook.pay.processed`, `webhook.fail.received`, `charge_token.succeeded` / `requires_3ds` / `declined`, `threeds.callback.received` / `confirmed` / `declined`). Best-effort recorder, retention 3 years, full PII under 152-FZ legitimate interest. Docs: `ARCHITECTURE.md` Audit log section, `SECURITY.md` Audit log section, `OPERATIONS.md §5` psql queries.
+- ~~add pre-validation phases to audit~~: **closed 2026-04-29**. Migration 0014 plus `lib/payments/cloudpayments-route.ts` refactor; the wrapper now takes `kind: 'check'|'pay'|'fail'` and writes phase-0 (`webhook.<kind>.received`) after parse and phase-1 (`webhook.<kind>.declined` / `webhook.pay.validation_failed`) on validation failure. The old `webhook.fail.received` (semantically a finalize event) was renamed to `webhook.fail.processed`; live data was migrated in the same transaction.
+- ~~add `charge_token.attempted`~~: **NOT planned**. `chargeWithSavedCard` creates `invoice_id` inside the function; an `attempted` event has no clean attach point (FK constraint to payment_orders). The outcome events (`succeeded` / `requires_3ds` / `declined`) cover the lifecycle.
+- **`charge_token.error` (deferred)**: the sync-error path needs the `chargeWithSavedCard` return type to surface `invoice_id` even on throw. The route's catch currently sends `console.warn` to journald (see `app/api/payments/charge-token/route.ts`). Close it when a real incident with lost context shows up.
+- ~~consolidate domain-specific Postgres pools into a shared `lib/db/pool.ts`~~: **closed 2026-04-29**. `lib/db/pool.ts`: `getDbPool()` (throws on missing `DATABASE_URL`) plus `getDbPoolOrNull()` (silent, for audit best-effort). All 5 domain getters (payments / auth / idempotency / telemetry / audit) delegate to the shared singleton; public API at call sites is unchanged. Connection footprint: 5×10=50 max before, `DATABASE_POOL_MAX` (default 10) now.
+- ~~set up cron pruning for `payment_audit_events`~~: **shipped 2026-04-29 (workflow side; activation requires SSH)**. `scripts/db-retention-cleanup.mjs` plus systemd unit / timer (04:30 daily) deletes `payment_audit_events > 3 years` and expired rows from `account_sessions` / `email_verifications` / `password_resets` / `idempotency_records`. Details: `OPERATIONS.md §5`.
 
 ## P1
 
 ### Payment domain
 
-- перейти с polling-only модели к более надёжному способу доставки финального статуса клиенту
-- добавить lifecycle cleanup для старых pending orders
-- оценить необходимость client-visible reconciliation / operator-side payment list
+- move from a polling-only model to a more reliable way to deliver the final status to the client
+- add lifecycle cleanup for old pending orders
+- decide whether client-visible reconciliation or an operator-side payment list is needed
 
 ### Observability
 
-- ~~подключить error tracking~~ — **закрыто 2026-04-29**: Sentry @sentry/nextjs v10 + `instrumentation.ts` (Node/Edge) + `instrumentation-client.ts` (browser) + `app/global-error.tsx`. Project `mastery-zs/levelchannel`. Smoke event прошёл end-to-end. Активация в production = добавить `SENTRY_DSN` + `NEXT_PUBLIC_SENTRY_DSN` в `/etc/levelchannel.env`. Подробно — `OPERATIONS.md §9` Sentry
-- добавить операторские сигналы по сбоям оплаты и webhook failures
+- ~~hook up error tracking~~: **closed 2026-04-29**. Sentry @sentry/nextjs v10 plus `instrumentation.ts` (Node / Edge), `instrumentation-client.ts` (browser), `app/global-error.tsx`. Project: `mastery-zs/levelchannel`. End-to-end smoke event passed. Production activation = add `SENTRY_DSN` and `NEXT_PUBLIC_SENTRY_DSN` to `/etc/levelchannel.env`. Details: `OPERATIONS.md §9` Sentry.
+- add operator signals for payment failures and webhook failures
 
 ### Auth and consent
 
-- ~~добавить password hash versioning + `needsRehash()` путь для будущей смены cost / алгоритма~~ — **закрыто 2026-04-29**: `passwordNeedsRehash()` в `lib/auth/password.ts` парсит cost из bcrypt prefix; login route после `verifyPassword` silently re-hash'ит и `setAccountPassword`. Best-effort (warn + продолжает на ошибке БД). Покрыто unit + integration тестами. Будущая миграция на argon2id — обновить regex одновременно с введением нового хешера, иначе все login'ы будут перехешировать каждый раз
-- ~~добавить cleanup для истёкших `account_sessions`~~ — **shipped 2026-04-29**: вошло в `scripts/db-retention-cleanup.mjs` (см. выше)
-- ~~добавить common-password rejection~~ — **закрыто 2026-04-29**: локальный denylist в `lib/auth/common-passwords.ts` (~100 топ-utечек), normalize'ит case + whitespace; `validatePasswordPolicy` возвращает `too_common`. HIBP k-anonymity API — расширение если понадобится дальше
+- ~~add password hash versioning plus a `needsRehash()` path for future cost / algorithm changes~~: **closed 2026-04-29**. `passwordNeedsRehash()` in `lib/auth/password.ts` parses the cost from the bcrypt prefix; the login route silently re-hashes after `verifyPassword` and calls `setAccountPassword`. Best-effort (warn, continue on DB error). Covered by unit and integration tests. Future migration to argon2id: update the regex at the same time as introducing the new hasher, otherwise every login will rehash every time.
+- ~~add cleanup for expired `account_sessions`~~: **shipped 2026-04-29**. Folded into `scripts/db-retention-cleanup.mjs` (above).
+- ~~add common-password rejection~~: **closed 2026-04-29**. Local denylist in `lib/auth/common-passwords.ts` (~100 top breaches), normalizes case and whitespace; `validatePasswordPolicy` returns `too_common`. HIBP k-anonymity API stays as a future extension if needed.
 
 ## P2
 
 ### Product and operator tooling
 
-- добавить нормальный operator-side список оплат вместо ручного просмотра БД или файлов
-- добавить телеметрию по payment funnel в форме, пригодную для принятия решений
-- ~~добавить email notification о successful payment на стороне оператора~~ — **закрыто 2026-04-29**: inline в pay-webhook handler после `markOrderPaid` + audit. Render через `lib/email/templates/operator-payment-notify.ts`, dispatch через `sendOperatorPaymentNotification()`. Best-effort (try/catch + warn). Активация: `OPERATOR_NOTIFY_EMAIL=...` в `/etc/levelchannel.env`. Когда не задан — silent no-op
-- Telegram notification — отдельный wave если email окажется недостаточным (нужен bot token + parse_mode рассуждения; делаем когда возникнет реальный need)
-- ~~добавить `POST /api/auth/resend-verify` + UI кнопку~~ — **закрыто 2026-04-29**: endpoint в `app/api/auth/resend-verify/route.ts` (authenticated, idempotent, rate-limited 10/min/IP + 3/hour/account), UI button в `app/cabinet/resend-verify-button.tsx` заменил Phase 2 хак с ссылкой на `/forgot`
-- ~~добавить модель отзыва согласия в `account_consents`~~ — **закрыто 2026-04-29**: миграция 0013 — добавила колонку `revoked_at` + partial index `account_consents_active_idx` (where `revoked_at IS NULL`). Store ops в `lib/auth/consents.ts`: `withdrawConsent()` (stamps latest unrevoked row), `getActiveConsent()` (returns latest non-revoked). UI / API endpoint — Phase 3 admin / личный кабинет. Покрыто 5 integration тестами. Реализует 152-ФЗ ст.9 п.5
-- добавить отдельный `accepted_at`-covering index для `account_consents`, если consent-history станет реальным hot path
+- add a proper operator-side payment list instead of manual DB / file inspection
+- add payment funnel telemetry useful for decisions
+- ~~add operator email notification for a successful payment~~: **closed 2026-04-29**. Inline in the pay-webhook handler after `markOrderPaid` plus audit. Renders via `lib/email/templates/operator-payment-notify.ts`, dispatched via `sendOperatorPaymentNotification()`. Best-effort (try / catch plus warn). Activation: `OPERATOR_NOTIFY_EMAIL=...` in `/etc/levelchannel.env`. Silent no-op when unset.
+- Telegram notification: separate wave if email turns out to be insufficient (needs bot token plus parse_mode reasoning; do it when a real need appears).
+- ~~add `POST /api/auth/resend-verify` plus UI button~~: **closed 2026-04-29**. Endpoint in `app/api/auth/resend-verify/route.ts` (authenticated, idempotent, rate-limited 10/min/IP plus 3/hour/account); UI button in `app/cabinet/resend-verify-button.tsx` replaced the Phase 2 hack of linking to `/forgot`.
+- ~~add a consent withdrawal model for `account_consents`~~: **closed 2026-04-29**. Migration 0013 added a `revoked_at` column plus partial index `account_consents_active_idx` (where `revoked_at IS NULL`). Store ops in `lib/auth/consents.ts`: `withdrawConsent()` (stamps the latest unrevoked row), `getActiveConsent()` (returns the latest non-revoked). UI / API endpoint goes with Phase 3 admin / cabinet. Covered by 5 integration tests. Implements 152-FZ art.9 §5.
+- add a separate `accepted_at`-covering index for `account_consents` if consent-history becomes a real hot path
 
 ### DX and quality
 
-- ~~собрать security regression checklist перед релизами~~ — **закрыто 2026-04-29**: `docs/security-regression-checklist.md` — 9 секций (code-review gates, tests must be green, auth invariants matrix cross-ref, payment+webhook invariants, audit log invariants, observability, legal scope, post-merge smoke, quarterly drill). Первый плановый drill: 2026-07-29
-- ~~расширить integration coverage для payment routes~~ — **закрыто 2026-04-29**: `tests/integration/payment/payment-routes.test.ts` покрывает POST /api/payments (create + amount/consent rejection + idempotency replay), cancel (success + 404 + 400-malformed-id), mock-confirm. Каждый тест проверяет DB-состояние + audit-events shape. Всё против реального Docker Postgres в mock-payment mode (через `TEST_INTEGRATION=1` → setup-env переключает provider/storage/allowMockConfirm). Webhook handlers — backlog item ниже (нужны HMAC-tooling).
-- ~~добавить integration test для webhook handlers (HMAC verify path)~~ — **закрыто 2026-04-29**: `tests/integration/payment/webhooks.test.ts` + helper `tests/integration/payment/sign.ts`. 4 теста: Pay valid → paid + received/processed audit; HMAC mismatch → 401, no audit; Pay amount-mismatch → received + validation_failed; Fail valid → failed + received/processed audit. Order seeding идёт через прямой INSERT (не через createPayment), потому что в integration mode провайдер mock; webhook validation требует `provider='cloudpayments'`
-- ~~параметризовать Docker integration stack для параллельного CI~~ — **закрыто 2026-04-29**: `docker-compose.test.yml` теперь читает `LC_TEST_DB_NAMESPACE` (default `default`) и `LC_TEST_DB_PORT` (default 54329) из env. `scripts/test-integration.sh` derive'ит namespace + port из `LC_TEST_PARALLEL_ID` (sha256 → 8-char suffix + port window 54330..54429), плюс уникальный `COMPOSE_PROJECT_NAME`. Single-developer flow без env vars остался byte-equal historical defaults; параллельные shards/runners больше не дерутся за порт/контейнер
-- ~~добавить integration-тест на login с unverified email (Phase 1B D4)~~ — **закрыто 2026-04-29**: `tests/integration/auth/login.test.ts` теперь содержит test `allows login when email is not yet verified` — регистрирует, проверяет что `emailVerifiedAt` null, login возвращает 200 + session cookie + body с `emailVerifiedAt: null`
-- добавить real-time signal для `/verify-pending`, только если это реально нужно пользователям
+- ~~assemble a security regression checklist for releases~~: **closed 2026-04-29**. `docs/security-regression-checklist.md`: 9 sections (code-review gates, tests must be green, auth invariants matrix cross-ref, payment + webhook invariants, audit log invariants, observability, legal scope, post-merge smoke, quarterly drill). First scheduled drill: 2026-07-29.
+- ~~widen integration coverage for payment routes~~: **closed 2026-04-29**. `tests/integration/payment/payment-routes.test.ts` covers `POST /api/payments` (create plus amount / consent rejection plus idempotency replay), cancel (success plus 404 plus 400 malformed id), mock-confirm. Each test asserts DB state plus audit event shape. All against a real Docker Postgres in mock-payment mode (via `TEST_INTEGRATION=1`, which makes setup-env switch provider / storage / allowMockConfirm). Webhook handlers: in the next item.
+- ~~add an integration test for webhook handlers (HMAC verify path)~~: **closed 2026-04-29**. `tests/integration/payment/webhooks.test.ts` plus helper `tests/integration/payment/sign.ts`. 4 tests: Pay valid → paid plus received / processed audit; HMAC mismatch → 401, no audit; Pay amount-mismatch → received plus validation_failed; Fail valid → failed plus received / processed audit. Order seeding goes through a direct INSERT (not through `createPayment`) because in integration mode the provider is mock and webhook validation requires `provider='cloudpayments'`.
+- ~~parameterize the Docker integration stack for parallel CI~~: **closed 2026-04-29**. `docker-compose.test.yml` now reads `LC_TEST_DB_NAMESPACE` (default `default`) and `LC_TEST_DB_PORT` (default 54329) from env. `scripts/test-integration.sh` derives namespace plus port from `LC_TEST_PARALLEL_ID` (sha256 → 8-char suffix plus port window 54330..54429), plus a unique `COMPOSE_PROJECT_NAME`. Single-developer flow stays byte-equal historical defaults; parallel shards / runners no longer fight over the port / container.
+- ~~add an integration test for login with an unverified email (Phase 1B D4)~~: **closed 2026-04-29**. `tests/integration/auth/login.test.ts` now contains the test `allows login when email is not yet verified`: registers, asserts `emailVerifiedAt` is null, login returns 200 plus session cookie plus body with `emailVerifiedAt: null`.
+- add a real-time signal for `/verify-pending`, only if users actually need it
 
 ## Not now
 
-- не раздувать кабинет дальше auth + payment-adjacent сценариев без прямой бизнес-нужды
-- не собирать лишние персональные данные в checkout
-- не усложнять форму оплаты без прямой бизнес-нужды
+- do not bloat the cabinet beyond auth and payment-adjacent scenarios without a direct business need
+- do not collect more personal data at checkout
+- do not complicate the payment form without a direct business need

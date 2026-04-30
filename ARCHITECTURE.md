@@ -2,268 +2,273 @@
 
 ## Overview
 
-Проект состоит из двух частей:
+The project has two halves:
 
-- публичный лендинг на `Next.js App Router`
-- серверный payment-контур внутри того же приложения
+- a public landing on `Next.js App Router`
+- a server-side payment surface inside the same app
 
-Основная продуктовая логика сейчас сосредоточена в checkout flow и обработке статусов оплаты.
+Most of the product logic right now sits in the checkout flow and the
+processing of payment statuses.
 
-## Структура
+## Layout
 
 ### Frontend
 
-- [`app/page.tsx`](/Users/ivankhanaev/LevelChannel/app/page.tsx) — главная страница (с `<Link href="/login">Войти</Link>` в nav)
-- [`components/payments/pricing-section.tsx`](/Users/ivankhanaev/LevelChannel/components/payments/pricing-section.tsx) — UI оплаты со свободной суммой и e-mail, обязательным checkbox согласия на обработку ПДн, созданием платежа, polling статуса, запуском widget, сохранением последнего успешного подтверждения на главной
-- [`app/thank-you/page.tsx`](/Users/ivankhanaev/LevelChannel/app/thank-you/page.tsx) — страница подтверждения оплаты
-- [`app/offer/page.tsx`](/Users/ivankhanaev/LevelChannel/app/offer/page.tsx) — публичная оферта
-- [`app/privacy/page.tsx`](/Users/ivankhanaev/LevelChannel/app/privacy/page.tsx) — политика в отношении обработки персональных данных
-- [`app/consent/personal-data/page.tsx`](/Users/ivankhanaev/LevelChannel/app/consent/personal-data/page.tsx) — отдельный текст согласия на обработку персональных данных
-- [`app/register/page.tsx`](/Users/ivankhanaev/LevelChannel/app/register/page.tsx) — регистрация (Phase 2): email + пароль + 152-ФЗ согласие → `POST /api/auth/register`, успех → `/verify-pending`
-- [`app/verify-pending/page.tsx`](/Users/ivankhanaev/LevelChannel/app/verify-pending/page.tsx) — info-страница после регистрации
-- [`app/login/page.tsx`](/Users/ivankhanaev/LevelChannel/app/login/page.tsx) — вход (Phase 2): email + пароль → `POST /api/auth/login`, успех → `/cabinet`
-- [`app/forgot/page.tsx`](/Users/ivankhanaev/LevelChannel/app/forgot/page.tsx) — запрос сброса пароля (Phase 2): нейтральная confirmation всегда (anti-enumeration)
-- [`app/reset/page.tsx`](/Users/ivankhanaev/LevelChannel/app/reset/page.tsx) — установка нового пароля по токену из URL (Phase 2): после успеха `mech-5` уже создал новую сессию
-- [`app/cabinet/page.tsx`](/Users/ivankhanaev/LevelChannel/app/cabinet/page.tsx) — server-side gate (Phase 2): прямой `lookupSession` через cookie, 307 на `/login` без сессии. Содержание — placeholder «Кабинет в разработке»
-- [`app/cabinet/logout-button.tsx`](/Users/ivankhanaev/LevelChannel/app/cabinet/logout-button.tsx) — client island: `POST /api/auth/logout` + redirect на `/`
-- [`app/verify-failed/page.tsx`](/Users/ivankhanaev/LevelChannel/app/verify-failed/page.tsx) — styled UI для истёкшей/использованной verify-ссылки (Phase 2 заменил Phase 1B placeholder)
-- [`components/site-header.tsx`](/Users/ivankhanaev/LevelChannel/components/site-header.tsx) — sticky header для auth/legal страниц с `useEffect → fetch /api/auth/me` и переключением «Войти» ↔ «Кабинет»
-- [`components/auth-shell.tsx`](/Users/ivankhanaev/LevelChannel/components/auth-shell.tsx) — общая chrome-обёртка для auth страниц (header + центрированная колонка)
-- [`components/auth-form-bits.tsx`](/Users/ivankhanaev/LevelChannel/components/auth-form-bits.tsx) — shared `AuthField`, `AuthErrorBox`, `AuthInfoBox`, `authInputStyle` для 4 форм
-- [`lib/auth/client.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/client.ts) — браузерный `postAuthJson` helper: единый JSON-shape, нормализация ошибок, обработка 429
+- [`app/page.tsx`](/Users/ivankhanaev/LevelChannel/app/page.tsx) - main page (with a `<Link href="/login">Войти</Link>` in the nav)
+- [`components/payments/pricing-section.tsx`](/Users/ivankhanaev/LevelChannel/components/payments/pricing-section.tsx) - payment UI with a free amount and an e-mail, mandatory consent checkbox on personal-data processing, payment creation, status polling, widget launch, and a saved last-success confirmation on the main page
+- [`app/thank-you/page.tsx`](/Users/ivankhanaev/LevelChannel/app/thank-you/page.tsx) - payment confirmation page
+- [`app/offer/page.tsx`](/Users/ivankhanaev/LevelChannel/app/offer/page.tsx) - public oferta
+- [`app/privacy/page.tsx`](/Users/ivankhanaev/LevelChannel/app/privacy/page.tsx) - personal-data processing policy
+- [`app/consent/personal-data/page.tsx`](/Users/ivankhanaev/LevelChannel/app/consent/personal-data/page.tsx) - separate text of consent on personal-data processing
+- [`app/register/page.tsx`](/Users/ivankhanaev/LevelChannel/app/register/page.tsx) - registration (Phase 2): e-mail + password + 152-FZ consent → `POST /api/auth/register`, success → `/verify-pending`
+- [`app/verify-pending/page.tsx`](/Users/ivankhanaev/LevelChannel/app/verify-pending/page.tsx) - info page after registration
+- [`app/login/page.tsx`](/Users/ivankhanaev/LevelChannel/app/login/page.tsx) - login (Phase 2): e-mail + password → `POST /api/auth/login`, success → `/cabinet`
+- [`app/forgot/page.tsx`](/Users/ivankhanaev/LevelChannel/app/forgot/page.tsx) - password reset request (Phase 2): always a neutral confirmation (anti-enumeration)
+- [`app/reset/page.tsx`](/Users/ivankhanaev/LevelChannel/app/reset/page.tsx) - set a new password by the URL token (Phase 2): on success, `mech-5` has already created a new session
+- [`app/cabinet/page.tsx`](/Users/ivankhanaev/LevelChannel/app/cabinet/page.tsx) - server-side gate (Phase 2): direct `lookupSession` via cookie, 307 to `/login` without a session. Body - placeholder «Кабинет в разработке»
+- [`app/cabinet/logout-button.tsx`](/Users/ivankhanaev/LevelChannel/app/cabinet/logout-button.tsx) - client island: `POST /api/auth/logout` plus redirect to `/`
+- [`app/verify-failed/page.tsx`](/Users/ivankhanaev/LevelChannel/app/verify-failed/page.tsx) - styled UI for an expired / used verify link (Phase 2 replaced the Phase 1B placeholder)
+- [`components/site-header.tsx`](/Users/ivankhanaev/LevelChannel/components/site-header.tsx) - sticky header for auth / legal pages with `useEffect → fetch /api/auth/me` and a «Войти» ↔ «Кабинет» switch
+- [`components/auth-shell.tsx`](/Users/ivankhanaev/LevelChannel/components/auth-shell.tsx) - common chrome wrapper for auth pages (header + centered column)
+- [`components/auth-form-bits.tsx`](/Users/ivankhanaev/LevelChannel/components/auth-form-bits.tsx) - shared `AuthField`, `AuthErrorBox`, `AuthInfoBox`, `authInputStyle` for the 4 forms
+- [`lib/auth/client.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/client.ts) - browser `postAuthJson` helper: a single JSON shape, error normalization, 429 handling
 
 ### Payment domain
 
-- [`lib/legal/personal-data.ts`](/Users/ivankhanaev/LevelChannel/lib/legal/personal-data.ts) — версия документов и server-side snapshot акцепта согласия
-- [`lib/payments/catalog.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/catalog.ts) — payment constraints, суммы и описание услуги
-- [`lib/payments/types.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/types.ts) — типы заказа и публичной модели
-- [`lib/payments/config.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/config.ts) — payment env config
-- [`lib/payments/provider.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/provider.ts) — orchestration: create payment, mark paid/failed, public model
-- [`lib/payments/mock.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/mock.ts) — mock provider
-- [`lib/payments/cloudpayments.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/cloudpayments.ts) — формирование server-side order и widget intent для CloudPayments / CloudKassir
-- [`lib/payments/cloudpayments-webhook.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/cloudpayments-webhook.ts) — webhook payload parsing and verification
-- [`lib/payments/cloudpayments-api.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/cloudpayments-api.ts) — server-to-server HTTP клиент для `/payments/tokens/charge` (one-click)
-- [`lib/payments/tokens.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/tokens.ts) — извлечение Token из вебхука и публичная маска карты
-- [`lib/payments/store.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/store.ts) — adapter layer, выбирает file или postgres backend (заказы + токены карт)
-- [`lib/payments/store-file.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/store-file.ts) — файловое хранилище заказов и токенов
-- [`lib/payments/store-postgres.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/store-postgres.ts) — PostgreSQL backend для заказов и `payment_card_tokens`
-- [`scripts/migrate-payment-orders-to-postgres.mjs`](/Users/ivankhanaev/LevelChannel/scripts/migrate-payment-orders-to-postgres.mjs) — one-shot перенос заказов из JSON в PostgreSQL
+- [`lib/legal/personal-data.ts`](/Users/ivankhanaev/LevelChannel/lib/legal/personal-data.ts) - document version and a server-side snapshot of consent acceptance
+- [`lib/payments/catalog.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/catalog.ts) - payment constraints, amounts and the service description
+- [`lib/payments/types.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/types.ts) - order types and the public model
+- [`lib/payments/config.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/config.ts) - payment env config
+- [`lib/payments/provider.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/provider.ts) - orchestration: create payment, mark paid / failed, public model
+- [`lib/payments/mock.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/mock.ts) - mock provider
+- [`lib/payments/cloudpayments.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/cloudpayments.ts) - building the server-side order and the widget intent for CloudPayments / CloudKassir
+- [`lib/payments/cloudpayments-webhook.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/cloudpayments-webhook.ts) - webhook payload parsing and verification
+- [`lib/payments/cloudpayments-api.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/cloudpayments-api.ts) - server-to-server HTTP client for `/payments/tokens/charge` (one-click)
+- [`lib/payments/tokens.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/tokens.ts) - Token extraction from a webhook and the public card mask
+- [`lib/payments/store.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/store.ts) - adapter layer; picks file or postgres backend (orders + card tokens)
+- [`lib/payments/store-file.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/store-file.ts) - file storage for orders and tokens
+- [`lib/payments/store-postgres.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/store-postgres.ts) - PostgreSQL backend for orders and `payment_card_tokens`
+- [`scripts/migrate-payment-orders-to-postgres.mjs`](/Users/ivankhanaev/LevelChannel/scripts/migrate-payment-orders-to-postgres.mjs) - one-shot order migration from JSON to PostgreSQL
 
 ### Auth and account layer
 
-Auth-контур уже живёт в коде: есть таблицы, `lib/auth/*`, `lib/email/*`
-и `app/api/auth/*`. Полноценный cabinet UI ещё не построен, но backend
-маршруты уже участвуют в build и runtime. Гостевой checkout от этого
-слоя по-прежнему не зависит.
+The auth surface already lives in code: tables, `lib/auth/*`,
+`lib/email/*` and `app/api/auth/*`. A full cabinet UI is not built
+yet, but the backend routes already participate in build and runtime.
+Guest checkout still does not depend on this layer.
 
-- [`migrations/0005_accounts.sql`](/Users/ivankhanaev/LevelChannel/migrations/0005_accounts.sql) — `accounts` (uuid PK, email UNIQUE, password_hash, email_verified_at, disabled_at)
-- [`migrations/0006_account_roles.sql`](/Users/ivankhanaev/LevelChannel/migrations/0006_account_roles.sql) — `account_roles` (admin / teacher / student через CHECK)
-- [`migrations/0007_account_sessions.sql`](/Users/ivankhanaev/LevelChannel/migrations/0007_account_sessions.sql) — `account_sessions` (token_hash UNIQUE, expires_at, revoked_at)
-- [`migrations/0008_email_verifications.sql`](/Users/ivankhanaev/LevelChannel/migrations/0008_email_verifications.sql) — single-use verify-email tokens (TTL 24h)
-- [`migrations/0009_password_resets.sql`](/Users/ivankhanaev/LevelChannel/migrations/0009_password_resets.sql) — single-use reset tokens (TTL 1h)
-- [`migrations/0010_accounts_email_normalized.sql`](/Users/ivankhanaev/LevelChannel/migrations/0010_accounts_email_normalized.sql) — `CHECK (email = lower(btrim(email)))` invariant; защита от shadow accounts при bypass app-слоя
-- [`lib/auth/pool.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/pool.ts) — отдельный `pg.Pool` для auth, тот же DATABASE_URL
-- [`lib/auth/password.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/password.ts) — bcryptjs, cost=12
-- [`lib/auth/tokens.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/tokens.ts) — random 32B base64url + sha256 hash; tokens хранятся только хешем
-- [`lib/auth/policy.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/policy.ts) — password policy (8..128 символов, не all-digits)
-- [`lib/auth/accounts.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/accounts.ts) — store ops: create / getByEmail / getById / markVerified / setPassword / role grant/revoke + `normalizeAccountEmail` helper (`trim().toLowerCase()`) — единая точка нормализации для всех путей записи/чтения
-- [`lib/auth/sessions.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/sessions.ts) — create / lookup / revoke + cookie helpers (`lc_session`, HttpOnly + SameSite=Lax + Secure в проде)
-- [`lib/auth/single-use-tokens.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/single-use-tokens.ts) — общий store для verify-email и password-reset (whitelist scope в SQL)
-- [`lib/auth/verifications.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/verifications.ts), [`lib/auth/resets.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/resets.ts) — thin wrappers с TTL
-- [`lib/auth/consents.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/consents.ts) — store ops для `account_consents` (recordConsent / listAccountConsents / getLatestConsent / **withdrawConsent / getActiveConsent**). Withdrawal model (152-ФЗ ст.9 п.5) добавлен в миграции 0013 — колонка `revoked_at` + partial index по `(account_id, document_kind, accepted_at desc) where revoked_at is null`. Phase 1B D2.
-- [`lib/auth/dummy-hash.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/dummy-hash.ts) — module-load bcrypt-хешированный dummy + `constantTimeVerifyPassword`. Закрывает email-enumeration через timing на login (Phase 1B D3).
-- [`lib/auth/email-hash.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/email-hash.ts) — HMAC-keyed sha256 нормализованного email через `AUTH_RATE_LIMIT_SECRET` для per-email rate-limit scope keys. Не reuse `TELEMETRY_HASH_SECRET` — разные trust boundaries (Phase 1B mech-3).
+- [`migrations/0005_accounts.sql`](/Users/ivankhanaev/LevelChannel/migrations/0005_accounts.sql) - `accounts` (uuid PK, email UNIQUE, password_hash, email_verified_at, disabled_at)
+- [`migrations/0006_account_roles.sql`](/Users/ivankhanaev/LevelChannel/migrations/0006_account_roles.sql) - `account_roles` (admin / teacher / student via CHECK)
+- [`migrations/0007_account_sessions.sql`](/Users/ivankhanaev/LevelChannel/migrations/0007_account_sessions.sql) - `account_sessions` (token_hash UNIQUE, expires_at, revoked_at)
+- [`migrations/0008_email_verifications.sql`](/Users/ivankhanaev/LevelChannel/migrations/0008_email_verifications.sql) - single-use verify-email tokens (TTL 24h)
+- [`migrations/0009_password_resets.sql`](/Users/ivankhanaev/LevelChannel/migrations/0009_password_resets.sql) - single-use reset tokens (TTL 1h)
+- [`migrations/0010_accounts_email_normalized.sql`](/Users/ivankhanaev/LevelChannel/migrations/0010_accounts_email_normalized.sql) - `CHECK (email = lower(btrim(email)))` invariant; defends against shadow accounts when the app layer is bypassed
+- [`lib/auth/pool.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/pool.ts) - a separate `pg.Pool` for auth, the same DATABASE_URL
+- [`lib/auth/password.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/password.ts) - bcryptjs, cost=12
+- [`lib/auth/tokens.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/tokens.ts) - random 32B base64url + sha256 hash; tokens are stored only as a hash
+- [`lib/auth/policy.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/policy.ts) - password policy (8..128 chars, not all-digit)
+- [`lib/auth/accounts.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/accounts.ts) - store ops: create / getByEmail / getById / markVerified / setPassword / role grant/revoke + `normalizeAccountEmail` helper (`trim().toLowerCase()`) - the single normalization point for every read / write path
+- [`lib/auth/sessions.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/sessions.ts) - create / lookup / revoke + cookie helpers (`lc_session`, HttpOnly + SameSite=Lax + Secure in prod)
+- [`lib/auth/single-use-tokens.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/single-use-tokens.ts) - common store for verify-email and password-reset (whitelist scope in SQL)
+- [`lib/auth/verifications.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/verifications.ts), [`lib/auth/resets.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/resets.ts) - thin wrappers with TTL
+- [`lib/auth/consents.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/consents.ts) - store ops for `account_consents` (recordConsent / listAccountConsents / getLatestConsent / **withdrawConsent / getActiveConsent**). The withdrawal model (152-FZ art.9 §5) was added in migration 0013 - a `revoked_at` column plus a partial index on `(account_id, document_kind, accepted_at desc) where revoked_at is null`. Phase 1B D2.
+- [`lib/auth/dummy-hash.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/dummy-hash.ts) - module-load bcrypt-hashed dummy + `constantTimeVerifyPassword`. Closes e-mail enumeration via login timing (Phase 1B D3).
+- [`lib/auth/email-hash.ts`](/Users/ivankhanaev/LevelChannel/lib/auth/email-hash.ts) - HMAC-keyed sha256 of the normalized e-mail through `AUTH_RATE_LIMIT_SECRET` for per-email rate-limit scope keys. Do not reuse `TELEMETRY_HASH_SECRET` - different trust boundaries (Phase 1B mech-3).
 
 ### Email transport
 
-- [`lib/email/config.ts`](/Users/ivankhanaev/LevelChannel/lib/email/config.ts) — `RESEND_API_KEY` + `EMAIL_FROM`. Если ключ пустой — console fallback. **Production assertions at module load:** `RESEND_API_KEY` и `AUTH_RATE_LIMIT_SECRET` обязательны при `NODE_ENV=production` — boot аборт если пусты.
-- [`lib/email/client.ts`](/Users/ivankhanaev/LevelChannel/lib/email/client.ts) — Resend SDK + dev console writer.
-- [`lib/email/escape.ts`](/Users/ivankhanaev/LevelChannel/lib/email/escape.ts) — `escapeHtml` для динамических значений в шаблонах (5 опасных символов).
-- [`lib/email/templates/verify.ts`](/Users/ivankhanaev/LevelChannel/lib/email/templates/verify.ts), [`lib/email/templates/reset.ts`](/Users/ivankhanaev/LevelChannel/lib/email/templates/reset.ts), [`lib/email/templates/already-registered.ts`](/Users/ivankhanaev/LevelChannel/lib/email/templates/already-registered.ts) — inline HTML + plain text, RU. URL пропускается через `escapeHtml`. `already-registered` для existing-email path в register flow (Phase 1B D1 timing parity).
-- [`lib/email/templates/operator-payment-notify.ts`](/Users/ivankhanaev/LevelChannel/lib/email/templates/operator-payment-notify.ts) — operator-facing «Платёж получен». Все user-supplied поля (transactionId, paymentMethod, customerEmail) через `escapeHtml`. Subject формата `[LevelChannel] Платёж получен: <amount> ₽ — <invoice>`.
-- [`lib/email/dispatch.ts`](/Users/ivankhanaev/LevelChannel/lib/email/dispatch.ts) — `sendVerifyEmail`, `sendResetEmail`, `sendAlreadyRegisteredEmail`, `sendOperatorPaymentNotification`. URLs построены через `paymentConfig.siteUrl`. Operator dispatch читает `OPERATOR_NOTIFY_EMAIL` env, при пустом — silent no-op (returns `{ok:false, reason:'no_recipient'}`).
+- [`lib/email/config.ts`](/Users/ivankhanaev/LevelChannel/lib/email/config.ts) - `RESEND_API_KEY` + `EMAIL_FROM`. If the key is empty, console fallback. **Production assertions at module load:** `RESEND_API_KEY` and `AUTH_RATE_LIMIT_SECRET` are mandatory under `NODE_ENV=production` - boot aborts if they are empty.
+- [`lib/email/client.ts`](/Users/ivankhanaev/LevelChannel/lib/email/client.ts) - Resend SDK + dev console writer.
+- [`lib/email/escape.ts`](/Users/ivankhanaev/LevelChannel/lib/email/escape.ts) - `escapeHtml` for dynamic values in templates (5 dangerous characters).
+- [`lib/email/templates/verify.ts`](/Users/ivankhanaev/LevelChannel/lib/email/templates/verify.ts), [`lib/email/templates/reset.ts`](/Users/ivankhanaev/LevelChannel/lib/email/templates/reset.ts), [`lib/email/templates/already-registered.ts`](/Users/ivankhanaev/LevelChannel/lib/email/templates/already-registered.ts) - inline HTML + plain text, RU. The URL is run through `escapeHtml`. `already-registered` covers the existing-email path in the register flow (Phase 1B D1 timing parity).
+- [`lib/email/templates/operator-payment-notify.ts`](/Users/ivankhanaev/LevelChannel/lib/email/templates/operator-payment-notify.ts) - operator-facing «Платёж получен». Every user-supplied field (transactionId, paymentMethod, customerEmail) goes through `escapeHtml`. Subject of the form `[LevelChannel] Платёж получен: <amount> ₽ - <invoice>`.
+- [`lib/email/dispatch.ts`](/Users/ivankhanaev/LevelChannel/lib/email/dispatch.ts) - `sendVerifyEmail`, `sendResetEmail`, `sendAlreadyRegisteredEmail`, `sendOperatorPaymentNotification`. URLs are built from `paymentConfig.siteUrl`. Operator dispatch reads `OPERATOR_NOTIFY_EMAIL` env; on empty, silent no-op (returns `{ok:false, reason:'no_recipient'}`).
 
 ### Test infrastructure (integration)
 
-- [`docker-compose.test.yml`](/Users/ivankhanaev/LevelChannel/docker-compose.test.yml) — `postgres:16.13` service на `127.0.0.1:54329`, tmpfs storage. Точное соответствие prod.
-- [`scripts/test-integration.sh`](/Users/ivankhanaev/LevelChannel/scripts/test-integration.sh) — bring up → wait → migrate:up → vitest → tear down. `npm run test:integration`.
-- [`vitest.integration.config.ts`](/Users/ivankhanaev/LevelChannel/vitest.integration.config.ts) — отдельный config; tests/integration/**/*.test.ts. Unit `npm run test:run` остаётся быстрым и без Docker dep.
+- [`docker-compose.test.yml`](/Users/ivankhanaev/LevelChannel/docker-compose.test.yml) - `postgres:16.13` service on `127.0.0.1:54329`, tmpfs storage. Exact match with prod.
+- [`scripts/test-integration.sh`](/Users/ivankhanaev/LevelChannel/scripts/test-integration.sh) - bring up → wait → migrate:up → vitest → tear down. `npm run test:integration`.
+- [`vitest.integration.config.ts`](/Users/ivankhanaev/LevelChannel/vitest.integration.config.ts) - separate config; `tests/integration/**/*.test.ts`. Unit `npm run test:run` stays fast and free of a Docker dependency.
 
-**Auth invariants covered by integration suite.** Эта матрица — source of truth для того, какие security-инварианты уже проверяются Postgres-backed тестами. Если инвариант ниже изменён в коде, регрессия должна падать в указанном файле. Открытые пункты — в `ENGINEERING_BACKLOG.md` § DX and quality.
+**Auth invariants covered by the integration suite.** This matrix is the source of truth for which security invariants are already verified by the Postgres-backed tests. If an invariant below is changed in code, the regression must fail in the file shown. Open items are in `ENGINEERING_BACKLOG.md` § DX and quality.
 
 | Invariant | Where covered |
 |---|---|
-| Register: byte-equal response для known/unknown email (anti-enumeration shape) | [`tests/integration/auth/register.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/register.test.ts) (`returns identical response for already-registered email`) |
-| Register: симметричный wall-clock budget для new/existing email path (anti-enumeration timing) | [`tests/integration/auth/register.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/register.test.ts) (`register paths take similar wall-clock time`) |
-| Login: constant-time через `dummyHash` для unknown-email vs known-email-wrong-password | [`tests/integration/auth/login.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/login.test.ts) (`constant-time D3`) |
-| Reset: запрос на unknown email возвращает 200 ok (anti-enumeration) | [`tests/integration/auth/reset.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/reset.test.ts) (`returns 200 ok for unknown email`) |
-| Reset confirm: revoke всех сессий аккаунта до создания новой (mech-5 sign-out-everywhere) | [`tests/integration/auth/reset.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/reset.test.ts) (`signs out everywhere on success (mech-5 invariant)`) |
-| Session lifecycle: создание / валидация / revoke / expiry | [`tests/integration/auth/session-lifecycle.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/session-lifecycle.test.ts) |
-| Login allows unverified email (Phase 1B D4) — cabinet-allow, payment-gated | [`tests/integration/auth/login.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/login.test.ts) (`allows login when email is not yet verified`) |
-| Silent password rehash on successful login when stored hash is below current cost | [`tests/integration/auth/login.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/login.test.ts) (`silently upgrades a legacy lower-cost password hash`) |
-| Payment route create + idempotency replay + amount/consent rejection (mock provider, postgres backend) | [`tests/integration/payment/payment-routes.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/payment/payment-routes.test.ts) |
+| Register: byte-equal response for known/unknown email (anti-enumeration shape) | [`tests/integration/auth/register.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/register.test.ts) (`returns identical response for already-registered email`) |
+| Register: symmetric wall-clock budget for new vs existing email path (anti-enumeration timing) | [`tests/integration/auth/register.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/register.test.ts) (`register paths take similar wall-clock time`) |
+| Login: constant-time via `dummyHash` for unknown-email vs known-email-wrong-password | [`tests/integration/auth/login.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/login.test.ts) (`constant-time D3`) |
+| Reset: a request for an unknown email returns 200 ok (anti-enumeration) | [`tests/integration/auth/reset.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/reset.test.ts) (`returns 200 ok for unknown email`) |
+| Reset confirm: revoke every session of the account before creating a new one (mech-5 sign-out-everywhere) | [`tests/integration/auth/reset.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/reset.test.ts) (`signs out everywhere on success (mech-5 invariant)`) |
+| Session lifecycle: create / validate / revoke / expiry | [`tests/integration/auth/session-lifecycle.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/session-lifecycle.test.ts) |
+| Login allows unverified email (Phase 1B D4) - cabinet allows, payment gates separately | [`tests/integration/auth/login.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/login.test.ts) (`allows login when email is not yet verified`) |
+| Silent password rehash on a successful login when the stored hash is below the current cost | [`tests/integration/auth/login.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/auth/login.test.ts) (`silently upgrades a legacy lower-cost password hash`) |
+| Payment route create + idempotency replay + amount / consent rejection (mock provider, postgres backend) | [`tests/integration/payment/payment-routes.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/payment/payment-routes.test.ts) |
 | Payment route cancel + mock-confirm transitions, audit events written for each | [`tests/integration/payment/payment-routes.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/payment/payment-routes.test.ts) |
 | CloudPayments Pay/Fail webhooks: HMAC verify, validation, status transitions, audit phases | [`tests/integration/payment/webhooks.test.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/payment/webhooks.test.ts) (test-side HMAC via [`tests/integration/payment/sign.ts`](/Users/ivankhanaev/LevelChannel/tests/integration/payment/sign.ts)) |
 
 ### Audit log (payment lifecycle)
 
-Append-only audit-log-of-record для money-bound transitions. Параллельный канал к `payment_telemetry` (которая privacy-friendly funnel-аналитика, HMAC email + /24 IP) — audit хранит full email + full IP для расследования инцидентов. Доступ admin-only; см. `SECURITY.md` § "Audit log — payment lifecycle".
+Append-only audit-log-of-record for money-bound transitions. A
+parallel channel to `payment_telemetry` (which is privacy-friendly
+funnel analytics, HMAC e-mail + /24 IP) - the audit log keeps the full
+e-mail and full IP for incident investigation. Admin-only access; see
+`SECURITY.md § Audit log - payment lifecycle`.
 
-- [`migrations/0012_payment_audit_events.sql`](/Users/ivankhanaev/LevelChannel/migrations/0012_payment_audit_events.sql) — append-only таблица. CHECK enum `event_type`, FK `invoice_id` → `payment_orders` ON DELETE NO ACTION (audit переживает order), structured columns + JSONB `payload`. Индексы: per-invoice, per-account (partial WHERE NOT NULL), per-type-time.
-- [`migrations/0014_payment_audit_events_more_phases.sql`](/Users/ivankhanaev/LevelChannel/migrations/0014_payment_audit_events_more_phases.sql) — расширение enum'а до 17 типов: добавляет phase-0 события для webhook'ов (`webhook.check.received`, `webhook.pay.received`, `webhook.fail.received`) и validation-failure события (`webhook.check.declined`, `webhook.pay.validation_failed`, `webhook.fail.declined`). Старый `webhook.fail.received` (semantically finalize) переименован в `webhook.fail.processed` через UPDATE в той же транзакции. `customer_email` стал nullable (phase-0 событие не всегда имеет проверенный email). `charge_token.attempted` / `charge_token.error` намеренно НЕ добавлены — нет clean attach point (FK к payment_orders требует invoice_id).
-- [`lib/audit/payment-events.ts`](/Users/ivankhanaev/LevelChannel/lib/audit/payment-events.ts) — `recordPaymentAuditEvent(...)` (best-effort: catch + warn + return false; не throw'ит, чтобы business path не валился). `listPaymentAuditEventsByInvoice(invoiceId)` для admin tooling. Экспорт `PAYMENT_AUDIT_EVENT_TYPES` — single source of truth для enum, должен совпадать с миграционным CHECK (закрыто integration-тестом).
-- [`lib/audit/pool.ts`](/Users/ivankhanaev/LevelChannel/lib/audit/pool.ts) — thin re-export → `getDbPoolOrNull()` из общего `lib/db/pool.ts`. Шейп `OrNull` нужен потому что recorder best-effort (silent skip без DATABASE_URL).
-- [`lib/db/pool.ts`](/Users/ivankhanaev/LevelChannel/lib/db/pool.ts) — единственный pg Pool на проект (5 domain pool'ов было консолидировано 2026-04-29). `getDbPool()` throws при отсутствии DATABASE_URL, `getDbPoolOrNull()` — silent skip. Cap через `DATABASE_POOL_MAX` env (default 10).
+- [`migrations/0012_payment_audit_events.sql`](/Users/ivankhanaev/LevelChannel/migrations/0012_payment_audit_events.sql) - append-only table. CHECK enum on `event_type`, FK `invoice_id` → `payment_orders` ON DELETE NO ACTION (audit outlives the order), structured columns plus a JSONB `payload`. Indexes: per-invoice, per-account (partial WHERE NOT NULL), per-type-time.
+- [`migrations/0014_payment_audit_events_more_phases.sql`](/Users/ivankhanaev/LevelChannel/migrations/0014_payment_audit_events_more_phases.sql) - extends the enum to 17 types: adds phase-0 events for webhooks (`webhook.check.received`, `webhook.pay.received`, `webhook.fail.received`) and validation-failure events (`webhook.check.declined`, `webhook.pay.validation_failed`, `webhook.fail.declined`). The old `webhook.fail.received` (semantically finalize) is renamed to `webhook.fail.processed` via UPDATE in the same transaction. `customer_email` becomes nullable (a phase-0 event does not always carry a verified e-mail). `charge_token.attempted` / `charge_token.error` are intentionally NOT added - there is no clean attach point (FK to `payment_orders` requires `invoice_id`).
+- [`lib/audit/payment-events.ts`](/Users/ivankhanaev/LevelChannel/lib/audit/payment-events.ts) - `recordPaymentAuditEvent(...)` (best-effort: catch + warn + return false; does not throw, so the business path does not fall over). `listPaymentAuditEventsByInvoice(invoiceId)` for admin tooling. Export of `PAYMENT_AUDIT_EVENT_TYPES` is the single source of truth for the enum and must match the migration CHECK (covered by an integration test).
+- [`lib/audit/pool.ts`](/Users/ivankhanaev/LevelChannel/lib/audit/pool.ts) - thin re-export → `getDbPoolOrNull()` from the common `lib/db/pool.ts`. The `OrNull` shape is needed because the recorder is best-effort (silent skip without DATABASE_URL).
+- [`lib/db/pool.ts`](/Users/ivankhanaev/LevelChannel/lib/db/pool.ts) - the single pg Pool for the project (5 domain pools were consolidated 2026-04-29). `getDbPool()` throws when DATABASE_URL is missing; `getDbPoolOrNull()` does a silent skip. Cap via `DATABASE_POOL_MAX` env (default 10).
 
-Точки записи (route handlers):
+Write points (route handlers):
 
 - [`app/api/payments/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/route.ts) → `order.created`
 - [`app/api/payments/[invoiceId]/cancel/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/[invoiceId]/cancel/route.ts) → `order.cancelled`
 - [`app/api/payments/mock/[invoiceId]/confirm/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/mock/[invoiceId]/confirm/route.ts) → `mock.confirmed`
 - [`app/api/payments/charge-token/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/charge-token/route.ts) → `charge_token.succeeded` / `charge_token.requires_3ds` / `charge_token.declined`
 - [`app/api/payments/3ds-callback/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/3ds-callback/route.ts) → `threeds.callback.received` + `threeds.confirmed` / `threeds.declined`
-- [`app/api/payments/webhooks/cloudpayments/pay/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/webhooks/cloudpayments/pay/route.ts) → `webhook.pay.processed` (плюс `webhook.pay.received` / `.validation_failed` через wrapper)
-- [`app/api/payments/webhooks/cloudpayments/fail/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/webhooks/cloudpayments/fail/route.ts) → `webhook.fail.processed` (плюс `webhook.fail.received` / `.declined` через wrapper)
-- [`app/api/payments/webhooks/cloudpayments/check/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/webhooks/cloudpayments/check/route.ts) → `webhook.check.received` / `.declined` через wrapper (no business handler — Check только валидирует)
-- [`lib/payments/cloudpayments-route.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/cloudpayments-route.ts) — wrapper handles HMAC verify → parse → order lookup → audit phase-0 (`received`) → validate → audit phase-1 (`declined` / `validation_failed`) → call `handler(payload)` for business finalize
+- [`app/api/payments/webhooks/cloudpayments/pay/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/webhooks/cloudpayments/pay/route.ts) → `webhook.pay.processed` (plus `webhook.pay.received` / `.validation_failed` via the wrapper)
+- [`app/api/payments/webhooks/cloudpayments/fail/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/webhooks/cloudpayments/fail/route.ts) → `webhook.fail.processed` (plus `webhook.fail.received` / `.declined` via the wrapper)
+- [`app/api/payments/webhooks/cloudpayments/check/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/webhooks/cloudpayments/check/route.ts) → `webhook.check.received` / `.declined` via the wrapper (no business handler - Check only validates)
+- [`lib/payments/cloudpayments-route.ts`](/Users/ivankhanaev/LevelChannel/lib/payments/cloudpayments-route.ts) - wrapper handles HMAC verify → parse → order lookup → audit phase-0 (`received`) → validate → audit phase-1 (`declined` / `validation_failed`) → call `handler(payload)` for business finalize
 
-Не покрыто (см. `ENGINEERING_BACKLOG.md` для контекста):
-- `charge_token.error` — sync-error path в `chargeWithSavedCard` may throw до или после order INSERT; refactor return type на `{kind:'error', invoiceId, reason}` нужен прежде чем audit row можно honestly attached. Сейчас sync errors пишутся в `console.warn` (journald). `charge_token.attempted` НЕ нужно (см. backlog rationale).
-- HMAC fail / parse fail для webhook'ов: invoice_id ненадёжен в этой точке (FK constraint), audit row не пишется. Эти отказы остаются в nginx + journal logs.
+Not covered (see `ENGINEERING_BACKLOG.md` for context):
+- `charge_token.error` - the sync-error path in `chargeWithSavedCard` may throw before or after the order INSERT; a return-type refactor to `{kind:'error', invoiceId, reason}` is needed before an audit row can be honestly attached. For now, sync errors land in `console.warn` (journald). `charge_token.attempted` is not needed (see backlog rationale).
+- HMAC fail / parse fail for webhooks: `invoice_id` is unreliable at this point (FK constraint), so an audit row is not written. These rejections stay in nginx + journal logs.
 
 ### Error tracking (Sentry)
 
-- [`instrumentation.ts`](/Users/ivankhanaev/LevelChannel/instrumentation.ts) — Next.js auto-loaded boot hook; init Sentry SDK для `nodejs` или `edge` runtime. Реэкспортирует `onRequestError` для server-component / route-handler error capture.
-- [`instrumentation-client.ts`](/Users/ivankhanaev/LevelChannel/instrumentation-client.ts) — browser SDK init, `onRouterTransitionStart` для трасс роутера.
-- [`app/global-error.tsx`](/Users/ivankhanaev/LevelChannel/app/global-error.tsx) — top-level React error boundary, `Sentry.captureException` + ru-fallback UI.
-- [`next.config.js`](/Users/ivankhanaev/LevelChannel/next.config.js) — обёрнут в `withSentryConfig({ org: 'mastery-zs', project: 'levelchannel', silent: !CI })`. CSP в том же файле допускает `*.ingest.{de.,}sentry.io` в `connect-src` плюс `worker-src 'self' blob:`.
-- DSN из env: `SENTRY_DSN` (server) + `NEXT_PUBLIC_SENTRY_DSN` (browser). Без DSN SDK становится no-op. Опциональный `SENTRY_AUTH_TOKEN` нужен для source-maps upload при `npm run build`.
-- `tracesSampleRate=0.1`, `sendDefaultPii: false` в обоих init'ах. `release: process.env.GIT_SHA` — после активации сервер-патча Sentry группирует issues по релизам.
+- [`instrumentation.ts`](/Users/ivankhanaev/LevelChannel/instrumentation.ts) - Next.js auto-loaded boot hook; init Sentry SDK for the `nodejs` or `edge` runtime. Re-exports `onRequestError` for server-component / route-handler error capture.
+- [`instrumentation-client.ts`](/Users/ivankhanaev/LevelChannel/instrumentation-client.ts) - browser SDK init; `onRouterTransitionStart` for router traces.
+- [`app/global-error.tsx`](/Users/ivankhanaev/LevelChannel/app/global-error.tsx) - top-level React error boundary; `Sentry.captureException` plus a Russian fallback UI.
+- [`next.config.js`](/Users/ivankhanaev/LevelChannel/next.config.js) - wrapped in `withSentryConfig({ org: 'mastery-zs', project: 'levelchannel', silent: !CI })`. The CSP in the same file allows `*.ingest.{de.,}sentry.io` in `connect-src` plus `worker-src 'self' blob:`.
+- DSN from env: `SENTRY_DSN` (server) + `NEXT_PUBLIC_SENTRY_DSN` (browser). Without a DSN the SDK becomes a no-op. The optional `SENTRY_AUTH_TOKEN` is needed for source-maps upload at `npm run build`.
+- `tracesSampleRate=0.1`, `sendDefaultPii: false` in both inits. `release: process.env.GIT_SHA` - once the server-side patch is active, Sentry groups issues by release.
 
 ### Schema migrations
 
-- [`scripts/migrate.mjs`](/Users/ivankhanaev/LevelChannel/scripts/migrate.mjs) — минимальный self-contained runner поверх `pg`. Команды: `npm run migrate:up`, `npm run migrate:status`. Применяет файлы `migrations/NNNN_*.sql` по порядку в транзакциях, фиксирует имена в `_migrations`.
-- [`migrations/`](/Users/ivankhanaev/LevelChannel/migrations) — SQL-миграции, по одной на изменение схемы.
-  - `0001_payment_orders.sql`, `0002_payment_card_tokens.sql`, `0003_payment_telemetry.sql`, `0004_idempotency_records.sql` — повторяют существующие `ensureSchema*` через `create ... if not exists`. На прод-БД, где таблицы уже существуют, `npm run migrate:up` приносит схему под bookkeeping без диффа.
-- Legacy `ensureSchema*` функции в `lib/payments/store-postgres.ts`, `lib/security/idempotency-postgres.ts`, `lib/telemetry/store-postgres.ts` остаются как safety net. После того как runner подключён в deploy pipeline и накатан хотя бы один раз на проде, их можно постепенно удалять — но не в этом цикле.
+- [`scripts/migrate.mjs`](/Users/ivankhanaev/LevelChannel/scripts/migrate.mjs) - minimal self-contained runner on top of `pg`. Commands: `npm run migrate:up`, `npm run migrate:status`. Applies `migrations/NNNN_*.sql` files in order inside transactions and records the names in `_migrations`.
+- [`migrations/`](/Users/ivankhanaev/LevelChannel/migrations) - SQL migrations, one per schema change.
+  - `0001_payment_orders.sql`, `0002_payment_card_tokens.sql`, `0003_payment_telemetry.sql`, `0004_idempotency_records.sql` - repeat the existing `ensureSchema*` via `create ... if not exists`. On a prod DB where the tables already exist, `npm run migrate:up` brings the schema under bookkeeping with no diff.
+- The legacy `ensureSchema*` functions in `lib/payments/store-postgres.ts`, `lib/security/idempotency-postgres.ts`, `lib/telemetry/store-postgres.ts` stay as a safety net. Once the runner is wired into the deploy pipeline and has rolled at least once on prod, they can be removed gradually - but not in this cycle.
 
 ### Security layer
 
-- [`lib/security/request.ts`](/Users/ivankhanaev/LevelChannel/lib/security/request.ts) — origin checks, invoice id validation, per-IP rate limiting
-- [`lib/security/rate-limit.ts`](/Users/ivankhanaev/LevelChannel/lib/security/rate-limit.ts) — in-memory limiter
-- [`next.config.js`](/Users/ivankhanaev/LevelChannel/next.config.js) — security headers для Node deployment
-- [`public/.htaccess`](/Users/ivankhanaev/LevelChannel/public/.htaccess) — security headers для Apache
+- [`lib/security/request.ts`](/Users/ivankhanaev/LevelChannel/lib/security/request.ts) - origin checks, invoice id validation, per-IP rate limiting
+- [`lib/security/rate-limit.ts`](/Users/ivankhanaev/LevelChannel/lib/security/rate-limit.ts) - in-memory limiter
+- [`next.config.js`](/Users/ivankhanaev/LevelChannel/next.config.js) - security headers for the Node deployment
+- [`public/.htaccess`](/Users/ivankhanaev/LevelChannel/public/.htaccess) - security headers for Apache
 
 ### Auth API routes (Phase 1B Lane B)
 
-- [`app/api/auth/register/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/register/route.ts) — POST. Symmetric work for new vs existing email path; consent recording on new accounts (D1)
-- [`app/api/auth/verify/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/verify/route.ts) — GET click-through; no origin check (mech-4); consumes single-use token; 303 → `/cabinet` on success, `/verify-failed` on failure
-- [`app/api/auth/login/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/login/route.ts) — POST. constantTimeVerifyPassword (D3); identical 401 for unknown/disabled/wrong-password (anti-enumeration); allows login on unverified email (D4)
-- [`app/api/auth/logout/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/logout/route.ts) — POST. Revokes session, clears cookie. Replay-safe.
-- [`app/api/auth/reset-request/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/reset-request/route.ts) — POST. Identical `{ok: true}` for known/unknown email (anti-enumeration)
-- [`app/api/auth/reset-confirm/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/reset-confirm/route.ts) — POST. revokeAllSessionsForAccount **before** createSession (mech-5); password-policy gate keeps token unconsumed on weak input
-- [`app/api/auth/me/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/me/route.ts) — GET. Bootstrap; same-origin, no origin check; 401 with cookie cleared on missing/expired session
-- [`app/api/auth/resend-verify/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/resend-verify/route.ts) — POST. Authenticated; idempotent on already-verified (200 noop); rate-limited 10/min/IP + 3/hour/account. Replaces the Phase 2 cabinet hack of pointing at `/forgot`. Old unconsumed verify tokens are NOT pre-emptively invalidated — single-use enforcement at consume time covers race
-- [`app/cabinet/resend-verify-button.tsx`](/Users/ivankhanaev/LevelChannel/app/cabinet/resend-verify-button.tsx) — client island for the cabinet banner button
-- [`app/verify-failed/page.tsx`](/Users/ivankhanaev/LevelChannel/app/verify-failed/page.tsx) — minimal placeholder for verify-route failure landing (Lane C; full UI in Phase 2)
+- [`app/api/auth/register/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/register/route.ts) - POST. Symmetric work for the new vs existing e-mail path; consent recording on new accounts (D1)
+- [`app/api/auth/verify/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/verify/route.ts) - GET click-through; no origin check (mech-4); consumes a single-use token; 303 → `/cabinet` on success, `/verify-failed` on failure
+- [`app/api/auth/login/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/login/route.ts) - POST. constantTimeVerifyPassword (D3); identical 401 for unknown / disabled / wrong-password (anti-enumeration); allows login on an unverified e-mail (D4)
+- [`app/api/auth/logout/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/logout/route.ts) - POST. Revokes the session, clears the cookie. Replay-safe.
+- [`app/api/auth/reset-request/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/reset-request/route.ts) - POST. Identical `{ok: true}` for known / unknown e-mail (anti-enumeration)
+- [`app/api/auth/reset-confirm/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/reset-confirm/route.ts) - POST. revokeAllSessionsForAccount **before** createSession (mech-5); the password-policy gate keeps the token unconsumed on weak input
+- [`app/api/auth/me/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/me/route.ts) - GET. Bootstrap; same-origin, no origin check; 401 with cookie cleared on missing / expired session
+- [`app/api/auth/resend-verify/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/auth/resend-verify/route.ts) - POST. Authenticated; idempotent on already-verified (200 noop); rate-limited 10/min/IP plus 3/hour/account. Replaces the Phase 2 cabinet hack of pointing at `/forgot`. Old unconsumed verify tokens are NOT pre-emptively invalidated - single-use enforcement at consume time covers the race
+- [`app/cabinet/resend-verify-button.tsx`](/Users/ivankhanaev/LevelChannel/app/cabinet/resend-verify-button.tsx) - client island for the cabinet banner button
+- [`app/verify-failed/page.tsx`](/Users/ivankhanaev/LevelChannel/app/verify-failed/page.tsx) - minimal placeholder for the verify-route failure landing (Lane C; full UI in Phase 2)
 
 ### API routes
 
-- [`app/api/payments/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/route.ts) — создание платежа
-- [`app/api/payments/[invoiceId]/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/%5BinvoiceId%5D/route.ts) — статус
-- [`app/api/payments/[invoiceId]/cancel/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/%5BinvoiceId%5D/cancel/route.ts) — отмена
-- [`app/api/payments/events/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/events/route.ts) — клиентская телеметрия
-- [`app/api/payments/saved-card/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/saved-card/route.ts) — есть ли у e-mail сохранённая карта (one-click)
-- [`app/api/payments/charge-token/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/charge-token/route.ts) — списание по сохранённому токену (one-click)
-- [`app/api/payments/3ds-callback/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/3ds-callback/route.ts) — финализация платежа после 3-D Secure (TermUrl)
-- [`app/api/health/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/health/route.ts) — health-check для мониторинга
+- [`app/api/payments/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/route.ts) - payment creation
+- [`app/api/payments/[invoiceId]/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/%5BinvoiceId%5D/route.ts) - status
+- [`app/api/payments/[invoiceId]/cancel/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/%5BinvoiceId%5D/cancel/route.ts) - cancellation
+- [`app/api/payments/events/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/events/route.ts) - client telemetry
+- [`app/api/payments/saved-card/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/saved-card/route.ts) - does this e-mail have a saved card (one-click)
+- [`app/api/payments/charge-token/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/charge-token/route.ts) - charge by stored token (one-click)
+- [`app/api/payments/3ds-callback/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/3ds-callback/route.ts) - finalize payment after 3-D Secure (TermUrl)
+- [`app/api/health/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/health/route.ts) - health check for monitoring
 - [`app/api/payments/mock/[invoiceId]/confirm/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/mock/%5BinvoiceId%5D/confirm/route.ts)
 - [`app/api/payments/webhooks/cloudpayments/check/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/webhooks/cloudpayments/check/route.ts)
-- [`app/api/payments/webhooks/cloudpayments/pay/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/webhooks/cloudpayments/pay/route.ts) — также сохраняет Token для one-click
+- [`app/api/payments/webhooks/cloudpayments/pay/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/webhooks/cloudpayments/pay/route.ts) - also stores Token for one-click
 - [`app/api/payments/webhooks/cloudpayments/fail/route.ts`](/Users/ivankhanaev/LevelChannel/app/api/payments/webhooks/cloudpayments/fail/route.ts)
 
 ### One-click flow
 
-1. После успешной оплаты CloudPayments присылает в Pay-вебхук поле `Token`
-   (вместе с `CardLastFour`, `CardType`, `CardExpDate`).
-2. Сервер сохраняет токен в `payment_card_tokens`, привязывая к нормализованному
+1. After a successful payment CloudPayments delivers `Token` in the Pay webhook
+   (along with `CardLastFour`, `CardType`, `CardExpDate`).
+2. The server saves the token in `payment_card_tokens`, bound to the normalized
    `customerEmail`.
-3. На следующем визите фронт делает `POST /api/payments/saved-card`
-   с e-mail. Если запись есть, возвращается публичная маска (last4 + тип).
-4. Пользователь жмёт «Оплатить картой ··NNNN» → `POST /api/payments/charge-token`.
-5. Сервер создаёт ордер, вызывает `POST https://api.cloudpayments.ru/payments/tokens/charge`
-   с HTTP Basic (Public ID : API Secret) и ветвится по ответу:
-   - `Success: true` → ордер `paid`, `last_used_at` токена обновляется.
-   - `AcsUrl + PaReq` → клиент строит auto-submit форму на ACS банка,
-     пользователь проходит 3DS, банк POST'ит обратно на
-     `/api/payments/3ds-callback`, мы вызываем `post3ds` и финализируем.
-   - decline → ордер `failed`, при критичных ReasonCode'ах токен удаляется.
+3. On the next visit the frontend calls `POST /api/payments/saved-card`
+   with the e-mail. If a record is there, a public mask comes back (last4 + type).
+4. The user clicks «Оплатить картой ··NNNN» → `POST /api/payments/charge-token`.
+5. The server creates an order, calls `POST https://api.cloudpayments.ru/payments/tokens/charge`
+   with HTTP Basic (`Public ID : API Secret`) and branches on the response:
+   - `Success: true` → order `paid`, the token's `last_used_at` is updated.
+   - `AcsUrl + PaReq` → the client builds an auto-submit form to the bank's ACS;
+     the user passes 3DS; the bank POSTs back to
+     `/api/payments/3ds-callback`; we call `post3ds` and finalize.
+   - decline → order `failed`; for critical ReasonCodes the token is removed.
 
 ## Payment flow
 
 ### Mock mode
 
-1. Пользователь вводит сумму и e-mail
-2. Frontend вызывает `POST /api/payments`
-3. Server создаёт order через `mock` provider
-4. Frontend опрашивает `GET /api/payments/[invoiceId]`
-5. Статус автоматически переходит в `paid` по таймеру
+1. The user enters an amount and an e-mail.
+2. The frontend calls `POST /api/payments`.
+3. The server creates an order through the `mock` provider.
+4. The frontend polls `GET /api/payments/[invoiceId]`.
+5. The status flips to `paid` automatically on a timer.
 
 ### CloudPayments mode
 
-1. Пользователь вводит сумму и e-mail
-2. Frontend вызывает `POST /api/payments`
-3. Backend проверяет отдельное согласие на обработку ПДн и сохраняет proof of consent в metadata заказа
-4. Server создаёт внутренний `invoiceId`, order и widget intent
-5. Клиент запускает CloudPayments Widget поверх сайта
-6. В widget передаются `externalId`, `receiptEmail`, `receipt`, `userInfo.email`
-7. После оплаты CloudPayments отправляет webhook
-8. Server валидирует подпись, сумму и `AccountId`
-9. Клиент видит финальный статус через polling, страницу `/thank-you` и сохранённую success-карточку на главной после возврата
+1. The user enters an amount and an e-mail.
+2. The frontend calls `POST /api/payments`.
+3. The backend checks the separate consent on personal-data processing and saves a proof of consent in the order metadata.
+4. The server creates an internal `invoiceId`, an order and a widget intent.
+5. The client launches the CloudPayments Widget on top of the site.
+6. `externalId`, `receiptEmail`, `receipt`, `userInfo.email` are passed into the widget.
+7. After payment CloudPayments delivers a webhook.
+8. The server validates the signature, the amount and the `AccountId`.
+9. The client sees the final status through polling, the `/thank-you` page and a saved success card on the main page after returning.
 
-## Хранилище заказов
+## Order storage
 
-Теперь storage выбирается через `PAYMENTS_STORAGE_BACKEND`.
+Storage is now picked through `PAYMENTS_STORAGE_BACKEND`.
 
-Варианты:
+Options:
 
-- `file` — JSON-файл в директории `data/`
-- `postgres` — таблица `payment_orders` в PostgreSQL
+- `file` - JSON file in the `data/` directory
+- `postgres` - `payment_orders` table in PostgreSQL
 
-Плюсы:
+Pros:
 
-- просто
-- удобно для локальной проверки и MVP
-- не требует внешней инфраструктуры
+- simple
+- convenient for local checks and the MVP
+- no external infrastructure required
 
-Минусы:
+Cons:
 
-- не годится для multi-instance deployment
-- нет транзакционности уровня БД
-- ограниченная масштабируемость
+- not suitable for a multi-instance deployment
+- no DB-level transactionality
+- limited scalability
 
-Текущий production target: `PostgreSQL`.
+Current production target: `PostgreSQL`.
 
 ## Deployment model
 
-Текущая архитектура требует server runtime.
+The current architecture requires a server runtime.
 
-Подходящие варианты:
+Suitable options:
 
 - Vercel
-- VPS + `next start`
-- любой Node.js hosting с постоянным процессом
+- VPS plus `next start`
+- any Node.js hosting with a long-lived process
 
-Неподходящий вариант:
+Not suitable:
 
-- чистый static export без backend runtime
+- a pure static export with no backend runtime
 
 ## Source of truth
 
-Если между документами есть расхождения:
+If documents disagree:
 
-1. код
-2. профильный документ-владелец темы из `DOCUMENTATION.md`
+1. code
+2. the topic-owning specialized doc from `DOCUMENTATION.md`
 3. `README.md`
-4. `ROADMAP.md` и `ENGINEERING_BACKLOG.md` только как intent-layer
-5. `PRD.md` как исторический документ
+4. `ROADMAP.md` and `ENGINEERING_BACKLOG.md` - only as the intent layer
+5. `PRD.md` as a historical document
