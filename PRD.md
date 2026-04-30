@@ -3,10 +3,10 @@
 > This document describes the first version of the landing page.
 > The current technical implementation has already moved further:
 > the site runs on server-side `Next.js`, and payments and the security perimeter are described in
-> [README.md](/Users/ivankhanaev/LevelChannel/README.md),
-> [ARCHITECTURE.md](/Users/ivankhanaev/LevelChannel/ARCHITECTURE.md),
-> [SECURITY.md](/Users/ivankhanaev/LevelChannel/SECURITY.md), and
-> [PAYMENTS_SETUP.md](/Users/ivankhanaev/LevelChannel/PAYMENTS_SETUP.md).
+> [README.md](README.md),
+> [ARCHITECTURE.md](ARCHITECTURE.md),
+> [SECURITY.md](SECURITY.md), and
+> [PAYMENTS_SETUP.md](PAYMENTS_SETUP.md).
 
 ## LevelChannel - Landing Page
 
