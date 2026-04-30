@@ -27,5 +27,5 @@ configuration, and adds public-facing documentation.
 
 ## Remaining Manual Follow-Up
 
-- confirm each production legal and support contact value is intended
-  for public exposure
+- keep deployment env values aligned with the intended public company
+  profile

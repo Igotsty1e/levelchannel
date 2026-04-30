@@ -2,20 +2,20 @@
 
 ## Summary
 
-- Risk level: Medium
-- Safe for public: Almost
+- Risk level: Low
+- Safe for public: Yes
 - Critical issues:
-  - production legal and support contact values still require an intentional publication review before release
+  - none in the tracked source tree after cleanup
 
 ## Findings
 
 | Severity | File | Issue | Risk | Fix |
 |---|---|---|---|---|
-| Medium | `app/offer/page.tsx`, `app/privacy/page.tsx`, `app/consent/personal-data/page.tsx`, `app/page.tsx`, `lib/legal/public-profile.ts` | legal pages now depend on env-driven operator identity and banking details | wrong or unintended public contact data can still be deployed if env values are reviewed poorly | keep production-time validation and require a human publication pass over the final values |
+| Low | `app/offer/page.tsx`, `app/privacy/page.tsx`, `app/consent/personal-data/page.tsx`, `app/page.tsx`, `lib/legal/public-profile.ts` | legal pages now depend on env-driven operator identity and banking details | deployment can still drift if env values are managed carelessly | keep production-time validation and align deployment env values with the intended public company profile |
 
 ## Required fixes
 
-- confirm the production legal profile values are intentionally public before publication
+- none beyond normal deployment hygiene for public legal profile env values
 
 ## Recommended fixes
 

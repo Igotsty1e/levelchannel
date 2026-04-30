@@ -25,12 +25,12 @@
 
 ## Remaining risks
 
-- deployed public legal pages may intentionally use real contact information via environment configuration, that data still needs a human publication decision
+- public legal pages now intentionally depend on environment-managed company data, so deployment hygiene still matters
 
 ## Is repo ready for public?
 
-Yes, with a final human review of which legal and support contacts are meant to be public.
+Yes.
 
 ## What must be fixed before publishing
 
-- confirm each production legal and support contact value is intentionally public
+- keep deployment env values aligned with the intended public company profile
