@@ -3,6 +3,13 @@
 import React, { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
+import {
+  LEGAL_BANK_ACCOUNT,
+  LEGAL_BANK_BIK,
+  LEGAL_BANK_NAME,
+  LEGAL_OPERATOR_DISPLAY,
+  LEGAL_OPERATOR_TAX_ID,
+} from '@/lib/legal/public-profile'
 
 
 const TELEGRAM_URL = 'https://t.me/anastasiia_englishcoach'
@@ -946,11 +953,11 @@ function Footer() {
           <div>
             <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: '#fff' }}>Реквизиты</h3>
             <div style={{ fontSize: 13, color: '#71717A', lineHeight: 2 }}>
-              <div>ИП Фирсова Анастасия Геннадьевна</div>
-              <div>ИНН: 673202755730</div>
-              <div>Р/С: 40802810720000971101</div>
-              <div>Банк: ООО «Банк Точка»</div>
-              <div>БИК: 044525104</div>
+              <div>ИП {LEGAL_OPERATOR_DISPLAY}</div>
+              <div>ИНН: {LEGAL_OPERATOR_TAX_ID}</div>
+              <div>Р/С: {LEGAL_BANK_ACCOUNT}</div>
+              <div>Банк: {LEGAL_BANK_NAME}</div>
+              <div>БИК: {LEGAL_BANK_BIK}</div>
             </div>
           </div>
 

@@ -30,7 +30,7 @@ Already in place:
 - one-click charge (`/api/payments/charge-token`) proxies the CloudPayments
   Token API through server-side Basic Auth; tokens never reach the browser
 - the payment storage file is excluded from the repository
-- telemetry is hashed with a dedicated `TELEMETRY_HASH_SECRET`, no fallback to the CloudPayments secret
+- telemetry is hashed with a dedicated `TELEMETRY_HASH_SECRET`, and when the secret is empty the app omits `emailHash` instead of using a hardcoded fallback
 - `npm audit --omit=dev` is clean on the current lockfile
 
 ## Auth and account layer
@@ -167,7 +167,8 @@ intentionally.
 
 - the app-level limiter is still in-memory, which means it does not synchronize across instances
 - payment telemetry: Postgres is the primary path, file fallback is for the case
-  of a DB outage (see `lib/telemetry/store.ts`)
+  of a DB outage (see `lib/telemetry/store.ts`). If `TELEMETRY_HASH_SECRET`
+  is empty, telemetry still records the event but drops `emailHash`.
 - there is no centralized audit log storage
 - there is no Sentry / alerting / intrusion visibility
 

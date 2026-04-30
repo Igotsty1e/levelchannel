@@ -24,7 +24,7 @@ in two places, agents will almost certainly drag in the stale version.
 
 ### Prod, server, DB, deploy, logs, backups
 
-1. `OPERATIONS.md`
+1. private operations runbook (not committed to the public repository surface)
 
 ### Strategy and next stage
 
@@ -40,8 +40,19 @@ in two places, agents will almost certainly drag in the stale version.
 
 ### Historical context
 
-1. `PRD.md`
+1. private historical PRD copy
 2. `docs/plans/*`: archive of planning and review artifacts, not source of truth
+
+### Public-facing docs
+
+1. `docs/public/ARCHITECTURE.md`
+2. `docs/public/ROADMAP.md`
+3. `docs/public/AI_WORKFLOW.md`
+
+### Repository readiness
+
+1. `docs/github-readiness/security-audit.md`
+2. `docs/github-readiness/final-report.md`
 
 ## Ownership matrix
 
@@ -52,10 +63,10 @@ in two places, agents will almost certainly drag in the stale version.
 | `ARCHITECTURE.md` | file-by-file system map and runtime flow | roadmap, deploy checklist, operator instructions |
 | `PAYMENTS_SETUP.md` | payment contract, env contract, webhook contract, payment modes | production runbook, backlog, product strategy |
 | `SECURITY.md` | security boundaries, threat model, hardening gaps | deploy steps, product roadmap |
-| `OPERATIONS.md` | prod infra, server, DB, deploy, rollback, retention, incident runbook | product ideas, code wishlists |
+| `OPERATIONS.md` | public-safe operations note that points to the private runbook | detailed server inventory, secrets handling, incident runbook |
 | `ROADMAP.md` | high-level product, operations, and compliance priorities | low-level implementation tasks |
 | `ENGINEERING_BACKLOG.md` | implementation task queue | deploy facts, public legal text |
-| `PRD.md` | historical audit trail of the early version | current decisions as source of truth |
+| `PRD.md` | public-safe note that points to the private historical PRD | current decisions as source of truth |
 | `docs/plans/*` | archive of design / implementation plans | current shipped state and owner contracts |
 
 ## Conflict rule
@@ -66,13 +77,13 @@ If documents disagree, priority is:
 2. the topic owner document
 3. `README.md`
 4. `ROADMAP.md` and `ENGINEERING_BACKLOG.md`, which carry intent, not fact
-5. `PRD.md`, as historical context only
+5. private historical PRD copy, as historical context only
 
 ## Update rules
 
 - If the code structure changes, update `ARCHITECTURE.md`.
 - If the payment flow, env contract, webhook flow, or one-click changes, update `PAYMENTS_SETUP.md`.
-- If prod, deploy, server, retention, backup, or rollback changes, update `OPERATIONS.md`.
+- If prod, deploy, server, retention, backup, or rollback changes, update the private operations runbook and keep `OPERATIONS.md` as a public-safe pointer.
 - If the trust boundary, consent capture, headers, rate limit, or webhook verify changes, update `SECURITY.md`.
 - If a new idea or direction appears, first decide whether it is a strategic priority or an implementation task:
   - outcome-level work goes to `ROADMAP.md`

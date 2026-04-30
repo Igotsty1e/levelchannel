@@ -120,7 +120,7 @@ case "$mode" in
     # Read into array via `while read` for bash 3.2 compatibility (macOS).
     files=()
     while IFS= read -r f; do files+=("$f"); done < <(git diff --cached --name-only)
-    check_one "(pre-commit)" "$msg" "${files[@]}"
+    check_one "(pre-commit)" "$msg" "${files[@]-}"
     ;;
 
   --ci)
@@ -141,7 +141,7 @@ case "$mode" in
       msg="$(git show -s --format=%B "$sha")"
       files=()
       while IFS= read -r f; do files+=("$f"); done < <(git show --name-only --format= "$sha")
-      if ! check_one "$sha" "$msg" "${files[@]}"; then
+      if ! check_one "$sha" "$msg" "${files[@]-}"; then
         failed=1
       fi
     done < <(git log --format=%H "$base..$head")

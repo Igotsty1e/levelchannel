@@ -45,7 +45,7 @@
 //   DATABASE_URL        — postgres connection
 //   RESEND_API_KEY      — Resend SDK key (else email skipped, only journal)
 //   EMAIL_FROM          — sender; reused from main app
-//   ALERT_EMAIL_TO      — destination (operator); fallback masteryprojectss@gmail.com
+//   ALERT_EMAIL_TO      — destination (operator)
 //
 // Tunable env (defaults sane):
 //   WEBHOOK_FLOW_WINDOW_MINUTES   default 60
@@ -61,8 +61,9 @@ const TERMINATED_RATIO_FLOOR = Number(
   process.env.WEBHOOK_FLOW_TERMINATED_RATIO || 0.3,
 )
 
-const ALERT_EMAIL_TO = process.env.ALERT_EMAIL_TO || 'masteryprojectss@gmail.com'
-const EMAIL_FROM = process.env.EMAIL_FROM || 'LevelChannel <noreply@levelchannel.ru>'
+const ALERT_EMAIL_TO = process.env.ALERT_EMAIL_TO?.trim() || ''
+const EMAIL_FROM = process.env.EMAIL_FROM?.trim() || 'LevelChannel <noreply@example.com>'
+const SSH_COMMAND_HINT = process.env.SSH_COMMAND_HINT?.trim() || 'ssh <host>'
 
 function logJson(level, msg, extra = {}) {
   // Single-line JSON so journald can be parsed mechanically later.
@@ -131,6 +132,13 @@ async function sendAlertEmail({ stats, verdict }) {
     })
     return
   }
+  if (!ALERT_EMAIL_TO) {
+    logJson('warn', 'ALERT_EMAIL_TO not set; would have alerted', {
+      stats,
+      verdict,
+    })
+    return
+  }
 
   const resend = new Resend(apiKey)
   const subject = `[LevelChannel] webhook flow stalled — only ${verdict.terminated}/${stats.created} terminated in last ${WINDOW_MINUTES}m`
@@ -146,7 +154,7 @@ async function sendAlertEmail({ stats, verdict }) {
     `Terminated/created ratio: ${verdict.ratio.toFixed(2)} (alert floor ${TERMINATED_RATIO_FLOOR})`,
     '',
     'Diagnose:',
-    '  ssh root@levelchannel.ru',
+    `  ${SSH_COMMAND_HINT}`,
     '  journalctl -u levelchannel --since "1 hour ago" | grep -i webhook',
     `  psql "$DATABASE_URL" -c "select event_type, count(*) from payment_audit_events where created_at > now() - interval '${WINDOW_MINUTES} minutes' group by 1;"`,
     '',

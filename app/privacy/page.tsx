@@ -5,6 +5,11 @@ import {
   PERSONAL_DATA_CONSENT_PATH,
   PERSONAL_DATA_DOCUMENT_VERSION,
 } from '@/lib/legal/personal-data'
+import {
+  LEGAL_OPERATOR_DISPLAY,
+  LEGAL_OPERATOR_TAX_ID,
+  PUBLIC_CONTACT_EMAIL,
+} from '@/lib/legal/public-profile'
 
 export const metadata: Metadata = {
   title: 'Политика обработки персональных данных — LevelChannel',
@@ -83,13 +88,13 @@ export default function PrivacyPage() {
         >
           <Section title="1. Общие положения">
             Настоящая Политика определяет порядок обработки персональных данных
-            Индивидуальным предпринимателем Фирсовой Анастасией Геннадьевной, ИНН
-            673202755730, далее — «Оператор», при использовании сайта LevelChannel и
+            Индивидуальным предпринимателем {LEGAL_OPERATOR_DISPLAY}, ИНН
+            {LEGAL_OPERATOR_TAX_ID}, далее — «Оператор», при использовании сайта LevelChannel и
             при последующем общении с пользователями по вопросам записи, оплаты и
             оказания услуг. Обращения по вопросам персональных данных принимаются по
             адресу электронной почты{' '}
-            <a href="mailto:igotstyle227@gmail.com" style={{ color: '#A78BFA' }}>
-              igotstyle227@gmail.com
+            <a href={`mailto:${PUBLIC_CONTACT_EMAIL}`} style={{ color: '#A78BFA' }}>
+              {PUBLIC_CONTACT_EMAIL}
             </a>
             .
           </Section>
@@ -182,8 +187,8 @@ export default function PrivacyPage() {
             персональных данных, требовать их уточнения, блокирования, удаления
             либо отозвать согласие в пределах, допускаемых законодательством РФ.
             Обращение может быть направлено на{' '}
-            <a href="mailto:igotstyle227@gmail.com" style={{ color: '#A78BFA' }}>
-              igotstyle227@gmail.com
+            <a href={`mailto:${PUBLIC_CONTACT_EMAIL}`} style={{ color: '#A78BFA' }}>
+              {PUBLIC_CONTACT_EMAIL}
             </a>
             . При отсутствии иных законных оснований для хранения данных Оператор
             прекращает обработку и организует удаление персональных данных в сроки,

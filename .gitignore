@@ -23,10 +23,22 @@ yarn-debug.log*
 yarn-error.log*
 
 # local env files
-.env*.local
 .env
+.env.local
+.env.development
+.env.production
+.env.test
+.env.*.local
+!.env.example
 data/payment-orders.json
 data/payment-telemetry.jsonl
+docs/private/
+
+# logs and temp
+*.log
+logs/
+tmp/
+temp/
 
 # vercel
 .vercel
