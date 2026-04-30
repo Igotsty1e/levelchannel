@@ -1,11 +1,14 @@
 #!/bin/bash
 #
 # One-shot activator for the operator-side of every recently shipped
-# observability + retention feature. Run as root on the production VPS,
-# from the repo working tree at /var/www/levelchannel:
+# observability + retention feature. Run as root on the production host
+# from the repo working tree:
 #
-#   ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136
-#   cd /var/www/levelchannel
+#   cd /path/to/levelchannel
+#   ALERT_EMAIL_TO=ops@example.com \
+#   OPERATOR_NOTIFY_EMAIL=ops@example.com \
+#   SENTRY_DSN=... \
+#   NEXT_PUBLIC_SENTRY_DSN=... \
 #   bash scripts/activate-prod-ops.sh
 #
 # What it does (every step is IDEMPOTENT — re-running is a no-op if
@@ -36,9 +39,8 @@
 #      restart levelchannel (so SENTRY_DSN + OPERATOR_NOTIFY_EMAIL
 #      land in env immediately).
 #
-# Reads no secrets from outside the repo. The Sentry DSN is hardcoded
-# below — it's the project's public DSN (browser-side anyway), not a
-# secret in the harmful sense. Auth tokens / API keys are NOT here.
+# Required values are passed in through the shell environment. This
+# script does not hardcode operator addresses or DSN values.
 
 set -euo pipefail
 
@@ -69,14 +71,28 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 1
 fi
 
+required_env_keys=(
+  ALERT_EMAIL_TO
+  OPERATOR_NOTIFY_EMAIL
+  SENTRY_DSN
+  NEXT_PUBLIC_SENTRY_DSN
+)
+
+for key in "${required_env_keys[@]}"; do
+  if [ -z "${!key:-}" ]; then
+    warn "$key must be exported before running this script"
+    exit 1
+  fi
+done
+
 # ── 1. ENV VARS ──────────────────────────────────────────────────────────────
 step "Append missing env vars to $ENV_FILE"
 
 declare -a env_kv=(
-  "ALERT_EMAIL_TO=masteryprojectss@gmail.com"
-  "OPERATOR_NOTIFY_EMAIL=masteryprojectss@gmail.com"
-  "SENTRY_DSN=https://515c38afb2a6ec1ac375e5024e5b12c9@o4511303482212352.ingest.de.sentry.io/4511303502528593"
-  "NEXT_PUBLIC_SENTRY_DSN=https://515c38afb2a6ec1ac375e5024e5b12c9@o4511303482212352.ingest.de.sentry.io/4511303502528593"
+  "ALERT_EMAIL_TO=${ALERT_EMAIL_TO}"
+  "OPERATOR_NOTIFY_EMAIL=${OPERATOR_NOTIFY_EMAIL}"
+  "SENTRY_DSN=${SENTRY_DSN}"
+  "NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN}"
 )
 
 ENV_CHANGED=0
@@ -269,7 +285,7 @@ echo "${B}Sentry smoke (run manually after this script finishes):${N}"
 echo "  node -e \"const S=require('@sentry/nextjs'); S.init({dsn:process.env.SENTRY_DSN}); S.captureMessage('manual smoke '+Date.now()); S.flush(5000).then(()=>process.exit(0));\""
 echo
 echo "${B}/api/health.version after next deploy:${N}"
-echo "  curl -s https://levelchannel.ru/api/health | jq .version"
+echo "  curl -s <site-url>/api/health | jq .version"
 echo "  Should report a SHA matching origin/main HEAD within ~5 min"
 echo "  of the next push (autodeploy runs once per minute)."
 echo

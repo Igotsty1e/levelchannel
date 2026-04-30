@@ -28,7 +28,7 @@ The general doc-maintenance rule (`rg`-sweep, drift = real bug) is in
 | `OPERATIONS.md` | Production infrastructure, deploy, server, DB, rollback, retention, incident runbook. |
 | `ROADMAP.md` | Outcome-level priorities. Product, operations, compliance. No low-level implementation queue here. |
 | `ENGINEERING_BACKLOG.md` | Concrete engineering queue. System tasks not yet shipped. |
-| `PRD.md` | Historical first-version landing PRD. Treat as audit trail; do not decide current behaviour from this. |
+| `PRD.md` | Public-safe note that points to the private historical PRD. Do not decide current behaviour from it. |
 
 If your diff touches `lib/payments/` and you did not update
 `ARCHITECTURE.md` or `PAYMENTS_SETUP.md`, you did not finish.

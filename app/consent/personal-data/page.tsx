@@ -2,6 +2,11 @@ import Link from 'next/link'
 import type { Metadata } from 'next'
 
 import { PERSONAL_DATA_DOCUMENT_VERSION } from '@/lib/legal/personal-data'
+import {
+  LEGAL_OPERATOR_DISPLAY,
+  LEGAL_OPERATOR_TAX_ID,
+  PUBLIC_CONTACT_EMAIL,
+} from '@/lib/legal/public-profile'
 
 export const metadata: Metadata = {
   title: 'Согласие на обработку персональных данных — LevelChannel',
@@ -80,13 +85,13 @@ export default function PersonalDataConsentPage() {
         >
           <Section title="1. Оператор">
             Настоящим я, как субъект персональных данных, свободно, своей волей и в
-            своём интересе даю согласие Индивидуальному предпринимателю Фирсовой
-            Анастасии Геннадьевне, ИНН 673202755730, далее — «Оператор», на
+            своём интересе даю согласие Индивидуальному предпринимателю {LEGAL_OPERATOR_DISPLAY},
+            ИНН {LEGAL_OPERATOR_TAX_ID}, далее — «Оператор», на
             обработку моих персональных данных на условиях, указанных в настоящем
             документе. Обращения по вопросам персональных данных и отзыв согласия
             принимаются по адресу{' '}
-            <a href="mailto:igotstyle227@gmail.com" style={{ color: '#E89A90' }}>
-              igotstyle227@gmail.com
+            <a href={`mailto:${PUBLIC_CONTACT_EMAIL}`} style={{ color: '#E89A90' }}>
+              {PUBLIC_CONTACT_EMAIL}
             </a>
             .
           </Section>
@@ -160,8 +165,8 @@ export default function PersonalDataConsentPage() {
           <Section title="7. Отзыв согласия">
             Я уведомлён(а), что могу отозвать согласие путём направления обращения
             Оператору на{' '}
-            <a href="mailto:igotstyle227@gmail.com" style={{ color: '#E89A90' }}>
-              igotstyle227@gmail.com
+            <a href={`mailto:${PUBLIC_CONTACT_EMAIL}`} style={{ color: '#E89A90' }}>
+              {PUBLIC_CONTACT_EMAIL}
             </a>
             . Отзыв согласия не влияет на законность обработки, которая
             осуществлялась до его получения, и не прекращает обработку в случаях,

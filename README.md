@@ -1,37 +1,62 @@
 # LevelChannel
 
-Conversion site for one-on-one English lessons with server-side payment
-integration through the CloudPayments widget.
+LevelChannel is a conversion site for one-on-one English lessons with a server-side payment flow and a growing account layer.
 
-## Current state
+It is aimed at small education businesses that need a direct landing-to-payment funnel with legal consent capture, webhook-backed payment handling, and room for a future learner cabinet.
 
-- stack: `Next.js 16`, `React 18`, `App Router`, `TypeScript`
-- runs as a Node.js app, not as static export
-- payment is already wired into UI and API
-- checkout flow: agreed amount within a limit, plus e-mail, plus the CloudPayments popup widget
-- before payment creation the user must confirm a separate consent on personal data processing
-- default provider: `mock`
-- storage backend: `file` or `postgres`
-- real CloudPayments mode is enabled via `.env`
-- the project has passed baseline hardening: security headers, origin checks, rate limiting, webhook signature verification
+## Current stage
+
+MVP, in active development.
+
+## Problem it solves
+
+The project combines public marketing pages, direct checkout, payment reconciliation, consent capture, and operational guardrails in one codebase. The goal is a narrow, understandable sales and payment surface rather than a broad learning platform from day one.
+
+## What is implemented
+
+- public site on `Next.js` with legal and consent pages
+- checkout flow with `mock` and CloudPayments-backed modes
+- payment creation, status polling, webhook handling, and one-click charge support
+- server-side consent recording for personal-data processing
+- file and Postgres storage modes
+- auth, registration, verify-email, reset-password, and minimal cabinet surface
+- payment audit and telemetry layers
+- baseline hardening: headers, origin checks, HMAC verification, and rate limiting
+
+## What is intentionally private
+
+- production server layout and deployment runbooks
+- operator contacts and alert destinations
+- infrastructure-specific environment values
+- incident and retention procedures that belong to operations rather than the public product surface
+
+## High-level architecture
+
+- `app/` contains public pages, legal pages, auth UI, and API routes
+- `components/` contains UI building blocks, including the payment surface
+- `lib/payments/` contains payment orchestration, provider integrations, storage, and webhook logic
+- `lib/auth/` and `lib/email/` contain the account layer and transactional email logic
+- `scripts/` contains operational tooling; the full production runbook is kept private
+
+Public-facing architecture and workflow notes live in [`docs/public/ARCHITECTURE.md`](docs/public/ARCHITECTURE.md), [`docs/public/ROADMAP.md`](docs/public/ROADMAP.md), and [`docs/public/AI_WORKFLOW.md`](docs/public/AI_WORKFLOW.md).
 
 ## Quickstart
 
-1. Install dependencies:
+1. Install dependencies.
 
 ```bash
 npm install
 ```
 
-2. Create `.env` based on [`.env.example`](/Users/ivankhanaev/LevelChannel/.env.example).
+2. Create `.env` from [`.env.example`](.env.example).
 
-3. Run locally:
+3. Run locally.
 
 ```bash
 npm run dev
 ```
 
-4. Production build:
+4. Production build.
 
 ```bash
 npm run build
@@ -40,7 +65,7 @@ npm run start
 
 ## Environment variables
 
-Minimum set:
+Minimum local set:
 
 - `PAYMENTS_PROVIDER=mock|cloudpayments`
 - `PAYMENTS_STORAGE_BACKEND=file|postgres`
@@ -52,44 +77,23 @@ Minimum set:
 - `TELEMETRY_HASH_SECRET=...`
 - `CLOUDPAYMENTS_PUBLIC_ID=...`
 - `CLOUDPAYMENTS_API_SECRET=...`
-- `RESEND_API_KEY=...` (transactional email; empty → console fallback in dev; **boot fails in prod if empty**)
-- `EMAIL_FROM="LevelChannel <noreply@levelchannel.ru>"`
-- `AUTH_RATE_LIMIT_SECRET=...` (HMAC key for per-email rate-limit scopes; 32+ chars; **boot fails in prod if empty**)
-
-## Main routes
-
-Pages:
-
-- `/`
-- `/offer`
-- `/privacy`
-- `/consent/personal-data`
-- `/thank-you`
-
-Payment API:
-
-- `POST /api/payments`
-- `GET /api/payments/[invoiceId]`
-- `POST /api/payments/mock/[invoiceId]/confirm`
-- `POST /api/payments/webhooks/cloudpayments/check`
-- `POST /api/payments/webhooks/cloudpayments/pay`
-- `POST /api/payments/webhooks/cloudpayments/fail`
+- `RESEND_API_KEY=...`
+- `EMAIL_FROM="LevelChannel <noreply@example.com>"`
+- `AUTH_RATE_LIMIT_SECRET=...`
 
 ## Documentation
 
-- [DOCUMENTATION.md](/Users/ivankhanaev/LevelChannel/DOCUMENTATION.md): documentation map, ownership, what to read first
-- [ARCHITECTURE.md](/Users/ivankhanaev/LevelChannel/ARCHITECTURE.md): file-by-file code map
-- [OPERATIONS.md](/Users/ivankhanaev/LevelChannel/OPERATIONS.md): server location, deploy, git, DB, runbook
-- [SECURITY.md](/Users/ivankhanaev/LevelChannel/SECURITY.md): hardening and threat model
-- [PAYMENTS_SETUP.md](/Users/ivankhanaev/LevelChannel/PAYMENTS_SETUP.md): CloudPayments, one-click, 3DS, health
-- [AGENTS.md](/Users/ivankhanaev/LevelChannel/AGENTS.md): operating guide for AI agents
-- [ROADMAP.md](/Users/ivankhanaev/LevelChannel/ROADMAP.md): high-level priorities
-- [ENGINEERING_BACKLOG.md](/Users/ivankhanaev/LevelChannel/ENGINEERING_BACKLOG.md): engineering task queue
-- [PRD.md](/Users/ivankhanaev/LevelChannel/PRD.md): historical product doc of the first version
-- [migrations/README.md](/Users/ivankhanaev/LevelChannel/migrations/README.md): format and rules for SQL migrations
+- [DOCUMENTATION.md](DOCUMENTATION.md): documentation map and ownership
+- [ARCHITECTURE.md](ARCHITECTURE.md): internal file-by-file code map
+- [SECURITY.md](SECURITY.md): trust boundaries and hardening notes
+- [PAYMENTS_SETUP.md](PAYMENTS_SETUP.md): payment contract and integration notes
+- [docs/public/ARCHITECTURE.md](docs/public/ARCHITECTURE.md): public-facing system overview
+- [docs/public/ROADMAP.md](docs/public/ROADMAP.md): current phase and next steps
+- [docs/public/AI_WORKFLOW.md](docs/public/AI_WORKFLOW.md): AI usage boundaries
+- [docs/github-readiness/](docs/github-readiness/): repository publication-prep artifacts
 
-## Things worth keeping in mind
+The detailed production runbook and the first-version historical PRD are kept outside the tracked public repository surface.
 
-- file storage stays as a fallback mode; the production target backend is now `PostgreSQL`
-- the live CloudPayments flow already runs on the VPS, and prod is updated by a git-based autodeploy on the server tracking `origin/main`
-- mock confirm must stay disabled in production
+## Status
+
+Active development.
