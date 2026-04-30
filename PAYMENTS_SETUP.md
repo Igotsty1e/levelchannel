@@ -1,118 +1,111 @@
 # Payments Setup
 
-Этот файл описывает текущий payment contract в коде и checklist для
-нового или повторного боевого окружения.
+This file describes the current payment contract in code and the
+checklist for a new or repeated production environment.
 
-## Текущий payment contract
+## Current payment contract
 
-- фронтенд уже подключён к `/api/payments`;
-- пользователь вводит согласованную сумму в пределах технического лимита checkout и `e-mail`, подтверждает отдельное согласие на обработку ПДн, после чего запускается CloudPayments Widget;
-- провайдер по умолчанию: `mock`;
-- storage backend по умолчанию: `file`;
-- реальный режим CloudPayments включается через `.env`.
-- проект работает на `Next.js 16`;
-- mock confirm endpoint должен использоваться только для локальной проверки и staging.
+- frontend is already wired to `/api/payments`
+- the user enters an agreed amount within the technical checkout limit and an `e-mail`, confirms a separate consent on personal data processing, and the CloudPayments widget launches
+- default provider: `mock`
+- default storage backend: `file`
+- real CloudPayments mode is enabled via `.env`
+- the project runs on `Next.js 16`
+- the mock confirm endpoint must only be used for local checks and staging
 
-## Что нужно для нового боевого окружения
+## What a new production environment needs
 
-1. Развернуть сайт как Node.js-приложение:
+1. Deploy the site as a Node.js app:
    - Vercel
-   - VPS + `next start`
-   - любой другой хостинг с постоянным серверным процессом
-2. Заполнить `.env`:
+   - VPS plus `next start`
+   - any other host with a long-lived server process
+2. Fill in `.env`:
    - `PAYMENTS_PROVIDER=cloudpayments`
    - `PAYMENTS_STORAGE_BACKEND=postgres`
    - `PAYMENTS_ALLOW_MOCK_CONFIRM=false`
-   - `NEXT_PUBLIC_SITE_URL=https://ваш-домен`
+   - `NEXT_PUBLIC_SITE_URL=https://your-domain`
    - `DATABASE_URL=postgresql://...`
    - `TELEMETRY_HASH_SECRET=...`
    - `CLOUDPAYMENTS_PUBLIC_ID=...`
    - `CLOUDPAYMENTS_API_SECRET=...`
-3. В кабинете CloudPayments проверить, что включены нужные методы оплаты в форме (`Банковская карта`, при необходимости `T-Pay` и др.).
-4. В кабинете CloudPayments / CloudKassir убедиться, что касса переведена в боевой режим и чеки отправляются на e-mail.
-5. В кабинете CloudPayments настроить webhook'и:
-   - Check -> `https://ваш-домен/api/payments/webhooks/cloudpayments/check`
-   - Pay -> `https://ваш-домен/api/payments/webhooks/cloudpayments/pay`
-   - Fail -> `https://ваш-домен/api/payments/webhooks/cloudpayments/fail`
-6. Накатить схему на новую базу:
+3. In the CloudPayments cabinet, verify that the needed payment methods are enabled in the form (`bank card`, optionally `T-Pay`, others).
+4. In the CloudPayments / CloudKassir cabinet, make sure the cash register is in live mode and chek e-mails are sent.
+5. In the CloudPayments cabinet, set the webhooks:
+   - Check: `https://your-domain/api/payments/webhooks/cloudpayments/check`
+   - Pay: `https://your-domain/api/payments/webhooks/cloudpayments/pay`
+   - Fail: `https://your-domain/api/payments/webhooks/cloudpayments/fail`
+6. Apply the schema to the new database:
 
 ```bash
 DATABASE_URL=postgres://... npm run migrate:up
 ```
 
-   На существующей prod-БД (где таблицы уже созданы legacy `ensureSchema*`)
-   эта же команда безопасна — миграции `0001..0004` идемпотентны и просто
-   зафиксируют bookkeeping в `_migrations`. Подробнее — `migrations/README.md`.
-7. Прогнать тестовый платёж.
-8. Убедиться, что после оплаты status меняется через webhook, а не только через polling.
-9. Убедиться, что на e-mail приходит чек от CloudPayments / CloudKassir.
-10. Если до этого использовался JSON storage заказов, прогнать (one-shot data import, не путать со schema migrations):
+   On an existing prod DB (where the legacy `ensureSchema*` already
+   created the tables), the same command is safe: migrations `0001..0004`
+   are idempotent and simply record bookkeeping in `_migrations`. See
+   `migrations/README.md` for details.
+7. Run a test payment.
+8. Confirm the status changes through the webhook, not only through polling.
+9. Confirm that the chek e-mail from CloudPayments / CloudKassir arrives.
+10. If the previous environment used JSON order storage, run the one-shot data import (different from schema migrations):
 
 ```bash
 npm run migrate:payments:postgres
 ```
 
-Production runtime и фактический VPS runbook сейчас описаны в `OPERATIONS.md`.
-Раздел ниже оставляем как contract-level checklist для нового окружения или
-повторной настройки.
+The production runtime and the actual VPS runbook live in
+`OPERATIONS.md`. The section below stays as a contract-level checklist
+for a new environment or for re-setup.
 
-## Важно перед production
+## Things to verify before production
 
-- Для production теперь целевой backend: `PostgreSQL`.
-- Путь к файловому хранилищу намеренно ограничен директорией `data/`, чтобы конфиг не мог увести запись в произвольное место файловой системы.
-- Чеки уже завязаны на передачу `receipt` и `receiptEmail`, но фактическая отправка зависит от настройки CloudKassir в кабинете.
-- Для multi-instance deployment обязательно заменить in-memory rate limiter.
-- Backup / retention plan для order storage и удаления ПДн должен быть зафиксирован в `OPERATIONS.md`.
+- Production target backend is now `PostgreSQL`.
+- The path to the file store is intentionally locked to the `data/` directory so config cannot move writes to an arbitrary place on the file system.
+- Cheks already rely on passing `receipt` and `receiptEmail`, but actual sending depends on CloudKassir setup in the cabinet.
+- For a multi-instance deployment, the in-memory rate limiter must be replaced.
+- The backup and retention plan for order storage and personal-data deletion must be recorded in `OPERATIONS.md`.
 
-## One-click (платёж в один клик)
+## One-click (single-click payment)
 
-CloudPayments возвращает `Token` в Pay-уведомлении после успешной первой оплаты.
-Токен сохраняется в БД и привязывается к `customerEmail`. На следующем визите
-тот же e-mail увидит кнопку «Оплатить картой ··NNNN».
+CloudPayments returns a `Token` in the Pay notification after the first
+successful payment. The token is stored in the DB and bound to
+`customerEmail`. On the next visit the same e-mail will see an
+«Pay with card ··NNNN» button.
 
-Серверная часть:
+Server side:
 
-1. `POST /api/payments/saved-card` — отдаёт `{ savedCard: { cardLastFour, cardType, createdAt } | null }`.
-   Защищён origin-check + rate limit (10/мин/IP).
-2. `POST /api/payments/charge-token` — создаёт ордер и вызывает
-   `https://api.cloudpayments.ru/payments/tokens/charge` с HTTP Basic Auth
-   (`Public ID : API Secret`). Возможные ответы клиенту:
-   - `{ status: 'paid', order }` — списание прошло, перенаправляем на `/thank-you`.
-   - `{ status: 'requires_widget', order }` — банк потребовал 3-D Secure,
-     ордер остаётся `pending`, фронт предлагает обычную форму.
-   - `{ status: 'declined', order, message }` — отказ, ордер `failed`.
+1. `POST /api/payments/saved-card`: returns `{ savedCard: { cardLastFour, cardType, createdAt } | null }`. Protected by origin-check plus rate limit (10/min/IP).
+2. `POST /api/payments/charge-token`: creates an order and calls `https://api.cloudpayments.ru/payments/tokens/charge` with HTTP Basic Auth (`Public ID : API Secret`). Possible client responses:
+   - `{ status: 'paid', order }`: the charge succeeded; redirect to `/thank-you`.
+   - `{ status: 'requires_widget', order }`: the bank required 3-D Secure; the order stays `pending`, the frontend offers the regular form.
+   - `{ status: 'declined', order, message }`: declined; the order is `failed`.
 
-В кабинете CloudPayments обязательно включить «Оплата по токену» / cofRecurring
-(если терминал не поддерживает, `tokens/charge` вернёт ошибку).
+In the CloudPayments cabinet, «Pay by token» / cofRecurring must be
+enabled (if the terminal does not support it, `tokens/charge` returns
+an error).
 
-### 3-D Secure flow (полностью реализован)
+### 3-D Secure flow (fully implemented)
 
-Если на первом one-click-списании банк требует 3DS, поток такой:
+If on the first one-click charge the bank requires 3DS, the flow is:
 
-1. CloudPayments возвращает `Success: false, Model: { TransactionId, AcsUrl, PaReq, ThreeDsCallbackId }`.
-2. Сервер сохраняет `metadata.threeDs` в ордере и возвращает клиенту
-   `{ status: 'requires_3ds', threeDs: { acsUrl, paReq, transactionId, termUrl } }`.
-3. Клиент строит auto-submitting `<form method="POST" action="acsUrl">` с
-   полями `PaReq`, `MD=transactionId`, `TermUrl=https://site/api/payments/3ds-callback?invoiceId=...`.
-4. Браузер уходит в окно банка, пользователь подтверждает.
-5. Банк POST'ит на `TermUrl` form-данными `MD=...&PaRes=...`.
-6. `app/api/payments/3ds-callback/route.ts` читает `PaRes`, вызывает
-   `https://api.cloudpayments.ru/payments/cards/post3ds` (HTTP Basic),
-   обновляет ордер и редиректит юзера 303 на `/thank-you` или
-   `/?payment=failed`.
+1. CloudPayments returns `Success: false, Model: { TransactionId, AcsUrl, PaReq, ThreeDsCallbackId }`.
+2. The server saves `metadata.threeDs` on the order and returns to the client `{ status: 'requires_3ds', threeDs: { acsUrl, paReq, transactionId, termUrl } }`.
+3. The client builds an auto-submitting `<form method="POST" action="acsUrl">` with the fields `PaReq`, `MD=transactionId`, `TermUrl=https://site/api/payments/3ds-callback?invoiceId=...`.
+4. The browser leaves to the bank window; the user confirms.
+5. The bank POSTs back to `TermUrl` with form data `MD=...&PaRes=...`.
+6. `app/api/payments/3ds-callback/route.ts` reads `PaRes`, calls `https://api.cloudpayments.ru/payments/cards/post3ds` (HTTP Basic), updates the order, and redirects the user 303 to `/thank-you` or to `/?payment=failed`.
 
 ### Health endpoint
 
-`GET /api/health` отдаёт:
+`GET /api/health` returns:
 
-- `{ status: 'ok' }` со статусом 200 — runtime жив, БД пингуется,
-  CloudPayments creds на месте.
-- `{ status: 'degraded' }` со статусом 503 — что-то критичное не настроено.
+- `{ status: 'ok' }` with HTTP 200: runtime alive, DB pingable, CloudPayments creds present.
+- `{ status: 'degraded' }` with HTTP 503: something critical is misconfigured.
 
-Удобно подключить к внешнему uptime-monitor'у или watchdog'у.
+Convenient to plug into an external uptime monitor or watchdog.
 
-## Что делать дальше
+## What's next
 
-Стратегические приоритеты по оплате держим в `ROADMAP.md`, а конкретные
-инженерные задачи по payment domain и observability, в
+Strategic payment priorities live in `ROADMAP.md`; concrete engineering
+tasks for the payment domain and observability live in
 `ENGINEERING_BACKLOG.md`.

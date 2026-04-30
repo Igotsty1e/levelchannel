@@ -3,7 +3,7 @@
 > **When to run:** before every PR merge that touches the payment
 > domain, auth, security headers, the audit log, env-var contract,
 > or the deploy pipeline. For doc-only / unrelated PRs (typo fix,
-> non-legal copy, README) skip — but don't skip *because* the diff
+> non-legal copy, README) skip - but don't skip *because* the diff
 > looks small. A one-line change to `lib/security/request.ts` is
 > not "small."
 >
@@ -22,7 +22,7 @@ For every changed file, ask:
       input without `enforceTrustedBrowserOrigin` (mutation routes)
       or HMAC verify (CloudPayments webhooks).
 - [ ] **No new `new Pool(...)` outside `lib/db/pool.ts`** (single
-      shared pool — `getDbPool()` / `getDbPoolOrNull()`). Per-domain
+      shared pool - `getDbPool()` / `getDbPoolOrNull()`). Per-domain
       getters are fine; new ad-hoc Pools are not.
 - [ ] **No client-supplied amount or email is trusted on the
       server.** Payment amount comes from
@@ -52,14 +52,14 @@ For every changed file, ask:
 
 ## 2. Tests must be green
 
-- [ ] `npm run test:run` — full unit suite, 100% pass.
-- [ ] `npm run test:integration` — Docker Postgres real DB suite,
+- [ ] `npm run test:run` - full unit suite, 100% pass.
+- [ ] `npm run test:integration` - Docker Postgres real DB suite,
       100% pass.
-- [ ] `npm run build` — no TypeScript errors, no Sentry/withSentryConfig
+- [ ] `npm run build` - no TypeScript errors, no Sentry/withSentryConfig
       warnings new in this PR (the `disableLogger` deprecation is
       pre-existing).
 - [ ] If you touched `lib/payments/`, `lib/security/`, `lib/auth/`,
-      or any payment route — coverage threshold (70% lines / branches)
+      or any payment route - coverage threshold (70% lines / branches)
       via `npm run test:coverage` stays green.
 
 ## 3. Auth invariants (only relevant when auth code changes)
@@ -75,7 +75,7 @@ test for each invariant is the contract:
 - [ ] Login: constant-time via `dummyHash` for unknown vs
       known-but-wrong-password (D3).
 - [ ] Login: 200 + session cookie even when `email_verified_at` is
-      null (D4 — payment routes gate separately).
+      null (D4 - payment routes gate separately).
 - [ ] Login: silent password rehash when stored hash is below
       current bcrypt cost.
 - [ ] Reset request: 200 ok identical for known/unknown email.
@@ -86,7 +86,7 @@ test for each invariant is the contract:
 
 If your diff touches the route or its store ops, eyeball that
 the matching test in `tests/integration/auth/*` still asserts
-the invariant — not just that the test is green.
+the invariant - not just that the test is green.
 
 ## 4. Payment + webhook invariants
 
@@ -99,17 +99,17 @@ the invariant — not just that the test is green.
       decoding, no JSON-vs-form branching for signature input. If
       you touch this file, regression test in
       `tests/payments/cloudpayments-webhook.test.ts` covers the
-      exact bytes — re-run it.
+      exact bytes - re-run it.
 - [ ] **CloudPayments webhooks never go through nginx `limit_req`**
       (they're matched by `^~ /api/payments/webhooks/`). HMAC is
       the only auth on these routes.
 - [ ] **No `tokenize: true` or `metadata.rememberCard: true` without
       explicit user consent** at `pricing-section.tsx`. `tokens.ts:
       readRememberCardConsent` enforces this on the webhook side.
-- [ ] **3-D Secure flow** (`/api/payments/3ds-callback`) — every
+- [ ] **3-D Secure flow** (`/api/payments/3ds-callback`) - every
       branch (success / decline / error / unknown invoice / invalid
       state / double callback) returns a 303 redirect, never a 5xx.
-      Bank may POST twice — must not double-charge or double-fail.
+      Bank may POST twice - must not double-charge or double-fail.
 
 ## 5. Audit log invariants
 
@@ -130,16 +130,16 @@ the invariant — not just that the test is green.
 
 ## 6. Observability
 
-- [ ] **Uptime probe** — `.github/workflows/uptime-probe.yml`
+- [ ] **Uptime probe** - `.github/workflows/uptime-probe.yml`
       schedule untouched (or intentionally tightened). If you
       changed `/api/health`, the probe's keyword check (`"status":"ok"`
       AND `"database":"ok"`) still finds those literals.
-- [ ] **Deploy-freshness probe** — if you bumped CSP, `next.config.js`
+- [ ] **Deploy-freshness probe** - if you bumped CSP, `next.config.js`
       tunables, or anything in the build pipeline, manual run of
       `gh workflow run deploy-freshness.yml` after merge should
       either close (prod caught up) or open `deploy-stale` issue
       with a clear diagnosis.
-- [ ] **Sentry** — if you changed `instrumentation.ts` or
+- [ ] **Sentry** - if you changed `instrumentation.ts` or
       `instrumentation-client.ts`, follow the manual smoke in
       `OPERATIONS.md §9 Sentry`:
       `node -e "S.init({dsn:...}); S.captureMessage('manual smoke ' + Date.now()); S.flush(5000)"`
@@ -182,9 +182,9 @@ the invariant — not just that the test is green.
 ## 9. Quarterly drill (operator)
 
 Once per quarter, walk through the actual checklist on a real PR
-even if all items are tedious — this is the opposite of a
+even if all items are tedious - this is the opposite of a
 fire-drill. The goal is muscle memory, not a passing checkmark.
 
 Track: log each quarterly run as a comment in
-`OPERATIONS.md §13` Долги и known ops gaps with date + outcome.
+`OPERATIONS.md §13` Debt and known ops gaps with date + outcome.
 First drill: **2026-07-29**.

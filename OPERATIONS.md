@@ -1,48 +1,48 @@
 # Operations
 
-Single source of truth по инфраструктуре, деплою, git workflow и
-повседневным операциям. Code- и contract-уровень — в [README.md](README.md),
+Single source of truth for infrastructure, deploy, git workflow and
+day-to-day operations. Code- and contract-level docs live in [README.md](README.md),
 [ARCHITECTURE.md](ARCHITECTURE.md), [PAYMENTS_SETUP.md](PAYMENTS_SETUP.md),
-[SECURITY.md](SECURITY.md), [AGENTS.md](AGENTS.md). Этот документ — про то,
-**где это всё крутится** и **как это держать живым**.
+[SECURITY.md](SECURITY.md), [AGENTS.md](AGENTS.md). This document covers
+**where it all runs** and **how to keep it alive**.
 
-> Маркер `<!-- FILL IN -->` означает "впиши конкретное значение перед тем,
-> как полагаться на этот раздел". Эти маркеры рассчитаны на то, что их
-> заменят на реальные хосты/пути/имена.
+> The marker `<!-- FILL IN -->` means "fill in the concrete value before
+> relying on this section". These markers are meant to be replaced with
+> real hosts/paths/names.
 
-> Прод деплоится server-side git autodeploy'ем из `origin/main`. Активный
-> `/var/www/levelchannel` теперь git-checkout, а rollout делает swap на
-> свежий release directory с обязательным health-check после рестарта.
-> Перед любым инцидентом сверяй `DEPLOYED_SHA`, `git rev-parse HEAD` в
-> проде и `origin/main`. См. §6.
+> Production deploys via server-side git autodeploy from `origin/main`. The
+> active `/var/www/levelchannel` is now a git checkout, and rollout swaps to
+> a fresh release directory with a mandatory health-check after restart.
+> Before any incident, cross-check `DEPLOYED_SHA`, `git rev-parse HEAD` on
+> production, and `origin/main`. See §6.
 
 ---
 
-## 1. TL;DR — где что лежит
+## 1. TL;DR - where everything lives
 
-| Контур | Где | Примечание |
+| Layer | Where | Note |
 |---|---|---|
 | Source code | GitHub: `Igotsty1e/levelchannel` (private) | default branch `main` |
 | Production runtime | `83.217.202.136` (Timeweb VPS), Ubuntu 24.04.4 LTS, kernel 6.8 | systemd unit `levelchannel` |
-| Production database | тот же VPS, Postgres 16.13, слушает `127.0.0.1:5432` + `[::1]:5432` | БД `levelchannel`, app-юзер `levelchannel` |
+| Production database | same VPS, Postgres 16.13, listens on `127.0.0.1:5432` + `[::1]:5432` | DB `levelchannel`, app user `levelchannel` |
 | Node.js | v20.20.2 (npm 10.8.2) | `/usr/bin/npm`, `/usr/bin/node` |
-| Domain | `levelchannel.ru` + `www.levelchannel.ru` (A → `83.217.202.136`) | TLS обязателен (`http://` редиректится 301) |
-| TLS | Let's Encrypt, `/etc/letsencrypt/live/levelchannel.ru/` | `certbot.timer` активен → автообновление |
-| Reverse proxy | `nginx`, `/etc/nginx/sites-enabled/levelchannel` | per-IP `limit_req zone=lcapi 30r/m burst=20 nodelay` на `/api/*`; CP webhooks (`^~ /api/payments/webhooks/`) исключены — HMAC + amount cross-check там единственный trust boundary |
-| Process manager | `systemd`, юнит `/etc/systemd/system/levelchannel.service` | `User=levelchannel`, `WorkingDirectory=/var/www/levelchannel`, `ExecStart=/usr/bin/npm run start -- --hostname 127.0.0.1 --port 3000` |
-| Auto-deploy | `systemd` timer `levelchannel-autodeploy.timer` + service `/etc/systemd/system/levelchannel-autodeploy.service` | раз в минуту сверяет `origin/main`, см. §6. Между `npm run build` и swap зовёт `npm run migrate:up` — миграции накатываются под старым live-кодом (additive only), потом swap. |
-| Env file | `/etc/levelchannel.env` (chmod 600, root:root) | подключается через `EnvironmentFile=` в systemd unit |
-| SSH | root + ed25519 ключ `~/.ssh/levelchannel_timeweb_ed25519` (на машине оператора) | **`PermitRootLogin prohibit-password` + `PasswordAuthentication no`** — только publickey. См. §3 |
-| Firewall (ufw) | OpenSSH + Nginx Full + `10050/tcp` (Zabbix agent от Timeweb) | приложение биндится на `127.0.0.1:3000`, ufw нужен только как defense-in-depth |
-| **Деплой** | **Git-based autodeploy с сервера** | `/usr/local/bin/levelchannel-autodeploy` делает clone → `npm ci` → `npm run build` → `npm run migrate:up` → swap → health-check |
-| Email транспорт | Resend (RESEND_API_KEY + EMAIL_FROM) — для verify/reset; платёжные чеки по-прежнему шлёт CloudKassir | в production boot падает, если auth email-контур не сконфигурирован |
-| Платёжный провайдер | CloudPayments | <!-- FILL IN: ID кабинета (есть в .env как CLOUDPAYMENTS_PUBLIC_ID) --> |
-| Онлайн-касса | CloudKassir (входит в CloudPayments) | <!-- FILL IN: статус ОФД --> |
-| Логи | `journalctl -u levelchannel`, `/var/log/nginx/access.log`, `/var/log/nginx/error.log` | см. §8 |
-| Бэкапы БД | ежедневный `pg_dump` через `/etc/cron.daily/levelchannel-db-backup` → `/var/backups/levelchannel/db-YYYY-MM-DD.sql.gz` (mode 600 + dir 700), retention 14 дней. Restore drill пройден 2026-04-29 | для catastrophic recovery — gunzip + `psql -d <recovery_db>`. Дамп: `--no-owner --no-acl --clean --if-exists` |
-| Uptime monitor | **не настроен** | подключай на `/api/health` |
-| Error tracking | не подключено (Sentry в roadmap) | — |
-| External monitoring | Zabbix agent на `:10050` (от Timeweb) | внутренние метрики хоста, не приложения |
+| Domain | `levelchannel.ru` + `www.levelchannel.ru` (A → `83.217.202.136`) | TLS required (`http://` redirected with 301) |
+| TLS | Let's Encrypt, `/etc/letsencrypt/live/levelchannel.ru/` | `certbot.timer` active → auto-renewal |
+| Reverse proxy | `nginx`, `/etc/nginx/sites-enabled/levelchannel` | per-IP `limit_req zone=lcapi 30r/m burst=20 nodelay` on `/api/*`; CP webhooks (`^~ /api/payments/webhooks/`) are excluded - HMAC + amount cross-check is the only trust boundary there |
+| Process manager | `systemd`, unit `/etc/systemd/system/levelchannel.service` | `User=levelchannel`, `WorkingDirectory=/var/www/levelchannel`, `ExecStart=/usr/bin/npm run start -- --hostname 127.0.0.1 --port 3000` |
+| Auto-deploy | `systemd` timer `levelchannel-autodeploy.timer` + service `/etc/systemd/system/levelchannel-autodeploy.service` | once a minute checks `origin/main`, see §6. Between `npm run build` and swap it calls `npm run migrate:up` - migrations are applied under the old live code (additive only), then swap. |
+| Env file | `/etc/levelchannel.env` (chmod 600, root:root) | wired in via `EnvironmentFile=` in the systemd unit |
+| SSH | root + ed25519 key `~/.ssh/levelchannel_timeweb_ed25519` (on operator's machine) | **`PermitRootLogin prohibit-password` + `PasswordAuthentication no`** - publickey only. See §3 |
+| Firewall (ufw) | OpenSSH + Nginx Full + `10050/tcp` (Zabbix agent from Timeweb) | the app binds on `127.0.0.1:3000`, ufw is only defense-in-depth |
+| **Deploy** | **Git-based autodeploy from the server** | `/usr/local/bin/levelchannel-autodeploy` does clone → `npm ci` → `npm run build` → `npm run migrate:up` → swap → health-check |
+| Email transport | Resend (RESEND_API_KEY + EMAIL_FROM) - for verify/reset; payment cheques are still sent by CloudKassir | in production, boot fails if the auth email channel is not configured |
+| Payment provider | CloudPayments | <!-- FILL IN: cabinet ID (it's in .env as CLOUDPAYMENTS_PUBLIC_ID) --> |
+| Online kassa | CloudKassir (part of CloudPayments) | <!-- FILL IN: OFD status --> |
+| Logs | `journalctl -u levelchannel`, `/var/log/nginx/access.log`, `/var/log/nginx/error.log` | see §8 |
+| DB backups | daily `pg_dump` via `/etc/cron.daily/levelchannel-db-backup` → `/var/backups/levelchannel/db-YYYY-MM-DD.sql.gz` (mode 600 + dir 700), retention 14 days. Restore drill passed 2026-04-29 | for catastrophic recovery - gunzip + `psql -d <recovery_db>`. Dump: `--no-owner --no-acl --clean --if-exists` |
+| Uptime monitor | **not configured** | wire it up against `/api/health` |
+| Error tracking | not connected (Sentry on the roadmap) | - |
+| External monitoring | Zabbix agent on `:10050` (from Timeweb) | host-internal metrics, not the app |
 
 ---
 
@@ -50,85 +50,85 @@ Single source of truth по инфраструктуре, деплою, git work
 
 **Remote:** `https://github.com/Igotsty1e/levelchannel.git` (private).
 
-**Default branch:** `main`. Это и dev, и prod. Долгоживущих feature-веток сейчас нет.
-Каждый push в `main` считается production-bound, потому что его подберёт
-`levelchannel-autodeploy.timer`.
+**Default branch:** `main`. It's both dev and prod. There are no long-lived feature branches at the moment.
+Every push to `main` is considered production-bound, because
+`levelchannel-autodeploy.timer` will pick it up.
 
-**Кто пушит:** <!-- FILL IN: ты один / команда из N человек -->.
+**Who pushes:** <!-- FILL IN: just you / a team of N -->.
 
-**Conventional-commit prefix:** обязательный.
-- `feat(payments): ...` — новая функциональность
-- `fix(payments): ...` — баг-фикс
-- `chore(deps): ...` — зависимости
-- `test: ...` — только тесты
-- `docs: ...` — только документация
-- `refactor: ...` — без изменения поведения
+**Conventional-commit prefix:** required.
+- `feat(payments): ...` - new functionality
+- `fix(payments): ...` - bug fix
+- `chore(deps): ...` - dependencies
+- `test: ...` - tests only
+- `docs: ...` - documentation only
+- `refactor: ...` - no behaviour change
 
-**Перед push:** `npm run test:run` + `npm run build` локально. Оба должны
-быть зелёными. Если падает coverage gate (70%) — добавь тест в этом же
-коммите, а не follow-up'ом.
+**Before push:** `npm run test:run` + `npm run build` locally. Both must
+be green. If the coverage gate (70%) fails - add the test in the same
+commit, not as a follow-up.
 
-**Что нельзя делать:**
-- force-push в main
-- amend опубликованного коммита
-- commit `.env` или `data/payment-orders.json`
-- commit чего-либо с `CLOUDPAYMENTS_API_SECRET=` или похожим
+**What you must not do:**
+- force-push to main
+- amend a published commit
+- commit `.env` or `data/payment-orders.json`
+- commit anything containing `CLOUDPAYMENTS_API_SECRET=` or similar
 
-**Tags / релизы:** пока не используются. Если появится релиз-цикл,
-схема: `v0.<minor>.<patch>` через `git tag -a vX.Y.Z -m "..."`.
+**Tags / releases:** not used yet. If a release cycle appears, the
+scheme will be: `v0.<minor>.<patch>` via `git tag -a vX.Y.Z -m "..."`.
 
 ---
 
 ## 3. Server / runtime
 
-**Хост:** `83.217.202.136`, VPS на Timeweb.
+**Host:** `83.217.202.136`, VPS at Timeweb.
 **OS:** Ubuntu 24.04.4 LTS (kernel 6.8.0-110-generic).
-**Node.js версия:** v20.20.2, npm 10.8.2.
-**Рабочая директория:** `/var/www/levelchannel` (активный git-checkout текущего release).
-**Пользователь, под которым крутится app:** `levelchannel` (system user).
-**Env file:** `/etc/levelchannel.env` (chmod 600, root:root, подключается через `EnvironmentFile=` в systemd unit).
-**Порт, который слушает Next:** `127.0.0.1:3000`. Bind закреплён в systemd unit через `--hostname 127.0.0.1 --port 3000` в `ExecStart`. nginx терминирует TLS и проксирует.
+**Node.js version:** v20.20.2, npm 10.8.2.
+**Working directory:** `/var/www/levelchannel` (active git checkout of the current release).
+**User the app runs as:** `levelchannel` (system user).
+**Env file:** `/etc/levelchannel.env` (chmod 600, root:root, wired in via `EnvironmentFile=` in the systemd unit).
+**Port Next listens on:** `127.0.0.1:3000`. The bind is locked in the systemd unit through `--hostname 127.0.0.1 --port 3000` in `ExecStart`. nginx terminates TLS and proxies.
 
 ### SSH
 
 ```bash
-# с машины оператора (Ivan)
+# from the operator's machine (Ivan)
 ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136
 ```
 
-**SSH hardening применён 2026-04-29.** Эффективная конфигурация
-(`sshd -T` подтверждает):
+**SSH hardening applied 2026-04-29.** Effective configuration
+(`sshd -T` confirms):
 
 ```
-permitrootlogin without-password   # alias для prohibit-password
+permitrootlogin without-password   # alias for prohibit-password
 passwordauthentication no
 pubkeyauthentication yes
 kbdinteractiveauthentication no
 ```
 
-- `/etc/ssh/sshd_config` — `PermitRootLogin prohibit-password`
-- `/etc/ssh/sshd_config.d/50-cloud-init.conf` — `PasswordAuthentication no` (cloud-init override; если по какой-то причине будет переопределяться обновлением Ubuntu, проверить здесь)
+- `/etc/ssh/sshd_config` - `PermitRootLogin prohibit-password`
+- `/etc/ssh/sshd_config.d/50-cloud-init.conf` - `PasswordAuthentication no` (cloud-init override; if it ever gets overridden by an Ubuntu update, check here)
 
-Backup исходных файлов: `/etc/ssh/sshd_config.bak-20260429-072458` и
+Backup of the original files: `/etc/ssh/sshd_config.bak-20260429-072458` and
 `/etc/ssh/sshd_config.d/50-cloud-init.conf.bak-20260429-072458`.
 
-**Если потерял SSH-ключ:** root password не работает. Эмерджнси-доступ
-через VNC console у Timeweb (timeweb.cloud → твой VPS → "Консоль") и
-оттуда восстановление авторизованных ключей в `/root/.ssh/authorized_keys`.
+**If you lose the SSH key:** root password does not work. Emergency access
+via Timeweb VNC console (timeweb.cloud → your VPS → "Console") and
+restore authorized keys in `/root/.ssh/authorized_keys` from there.
 
-### Process manager — systemd
+### Process manager - systemd
 
 ```bash
 sudo systemctl status levelchannel
 sudo systemctl restart levelchannel
-sudo journalctl -u levelchannel -f         # follow логов
+sudo journalctl -u levelchannel -f         # follow logs
 sudo journalctl -u levelchannel --since "1 hour ago"
 sudo systemctl status levelchannel-autodeploy.timer
 sudo journalctl -u levelchannel-autodeploy.service --since "1 hour ago"
 ```
 
-Файл юнита: `/etc/systemd/system/levelchannel.service`. Текущее
-содержимое:
+Unit file: `/etc/systemd/system/levelchannel.service`. Current
+contents:
 
 ```ini
 [Unit]
@@ -151,19 +151,19 @@ StandardError=journal
 WantedBy=multi-user.target
 ```
 
-### Reverse proxy — nginx
+### Reverse proxy - nginx
 
-Конфиг: `/etc/nginx/sites-enabled/levelchannel`.
+Config: `/etc/nginx/sites-enabled/levelchannel`.
 
-Текущее состояние:
+Current state:
 
 - TLS termination + HTTP→HTTPS redirect
-- `limit_req_zone lcapi 30r/m burst=20 nodelay` на `/api/*`
-- `^~ /api/payments/webhooks/` исключены из nginx rate limit и живут на
-  HMAC + order cross-check
-- в app прокидываются `Host`, `X-Forwarded-For`, `X-Real-IP`
+- `limit_req_zone lcapi 30r/m burst=20 nodelay` on `/api/*`
+- `^~ /api/payments/webhooks/` excluded from nginx rate limiting and lives
+  on HMAC + order cross-check
+- the app receives `Host`, `X-Forwarded-For`, `X-Real-IP`
 
-Проверить или перечитать текущий конфиг:
+Inspect or reload the current config:
 
 ```bash
 sudo nginx -T
@@ -171,96 +171,96 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-Если меняешь nginx, правь боевой конфиг, потом делай `nginx -t` перед
+If you change nginx, edit the live config, then run `nginx -t` before
 reload.
 
 ### TLS
 
-**certbot --nginx**, сертификаты в `/etc/letsencrypt/live/levelchannel.ru/`,
-автообновление через `certbot.timer` (active). Конфиг nginx уже включает
-`include /etc/letsencrypt/options-ssl-nginx.conf` и `ssl_dhparam`.
+**certbot --nginx**, certificates in `/etc/letsencrypt/live/levelchannel.ru/`,
+auto-renewal via `certbot.timer` (active). The nginx config already includes
+`include /etc/letsencrypt/options-ssl-nginx.conf` and `ssl_dhparam`.
 
 ```bash
-# проверить
+# check
 sudo certbot certificates
 sudo systemctl status certbot.timer
 
-# принудительное обновление (обычно не надо)
-sudo certbot renew --dry-run            # тест
-sudo certbot renew                       # реальное
+# force renewal (usually not needed)
+sudo certbot renew --dry-run            # test
+sudo certbot renew                       # real
 ```
 
 ---
 
 ## 4. Domain & DNS
 
-**Домен:** `levelchannel.ru` + `www.levelchannel.ru` (оба обслуживаются
-тем же nginx server-block'ом). HTTP редиректится 301 на HTTPS.
+**Domain:** `levelchannel.ru` + `www.levelchannel.ru` (both served by
+the same nginx server-block). HTTP is redirected with 301 to HTTPS.
 
-| Запись | Значение |
+| Record | Value |
 |---|---|
 | A `levelchannel.ru` | `83.217.202.136` |
-| A `www.levelchannel.ru` | `83.217.202.136` (или CNAME → `levelchannel.ru`) |
-| AAAA | <!-- FILL IN: проверить, есть ли IPv6 у VPS, и AAAA-запись --> |
-| MX | <!-- FILL IN: если на домене настроена почта --> |
-| TXT (SPF/DKIM/DMARC) | <!-- FILL IN: если шлёшь почту с домена; сейчас для лендинга не нужно --> |
+| A `www.levelchannel.ru` | `83.217.202.136` (or CNAME → `levelchannel.ru`) |
+| AAAA | <!-- FILL IN: check whether the VPS has IPv6 and an AAAA record --> |
+| MX | <!-- FILL IN: if email is configured on the domain --> |
+| TXT (SPF/DKIM/DMARC) | <!-- FILL IN: if you send email from the domain; not needed for the landing right now --> |
 
-Регистратор и панель управления DNS: <!-- FILL IN: REG.RU / NameSilo / у Timeweb? -->.
+Registrar and DNS control panel: <!-- FILL IN: REG.RU / NameSilo / hosted at Timeweb? -->.
 
 ---
 
 ## 5. Database
 
-**Engine:** PostgreSQL 16.13 (Ubuntu пакет `postgresql-16`).
-**Хост:** `127.0.0.1:5432` + `[::1]:5432` на том же VPS (`83.217.202.136`).
-Наружу БД не торчит — доступ только локально на сервере или через
-SSH-туннель.
-**База:** `levelchannel`
-**Пользователь приложения:** `levelchannel`
-**Пароль:** хранится только в `.env` на сервере, не в репозитории.
-**Connection string** (в формате `DATABASE_URL`):
+**Engine:** PostgreSQL 16.13 (Ubuntu package `postgresql-16`).
+**Host:** `127.0.0.1:5432` + `[::1]:5432` on the same VPS (`83.217.202.136`).
+The DB is not exposed externally - access is local on the server only, or via
+SSH tunnel.
+**Database:** `levelchannel`
+**Application user:** `levelchannel`
+**Password:** stored only in `.env` on the server, not in the repository.
+**Connection string** (in `DATABASE_URL` form):
 `postgresql://levelchannel:<password>@127.0.0.1:5432/levelchannel?sslmode=disable`
 
-**Таблицы (источник истины — `migrations/`, см. ниже):**
+**Tables (source of truth - `migrations/`, see below):**
 
-| Таблица | Миграция | Назначение |
+| Table | Migration | Purpose |
 |---|---|---|
-| `payment_orders` | `migrations/0001_payment_orders.sql` | заказы / lifecycle / events |
-| `payment_card_tokens` | `migrations/0002_payment_card_tokens.sql` | сохранённые токены карт (PK = customer_email) |
-| `payment_telemetry` | `migrations/0003_payment_telemetry.sql` | событийный лог checkout (privacy-friendly: e-mail хешируется, IP маскируется до /24) |
-| `idempotency_records` | `migrations/0004_idempotency_records.sql` | dedup для money-роутов |
+| `payment_orders` | `migrations/0001_payment_orders.sql` | orders / lifecycle / events |
+| `payment_card_tokens` | `migrations/0002_payment_card_tokens.sql` | saved card tokens (PK = customer_email) |
+| `payment_telemetry` | `migrations/0003_payment_telemetry.sql` | checkout event log (privacy-friendly: e-mail is hashed, IP masked to /24) |
+| `idempotency_records` | `migrations/0004_idempotency_records.sql` | dedup for money routes |
 | `accounts` | `migrations/0005_accounts.sql` | identity: email, password_hash, email_verified_at, disabled_at |
-| `account_roles` | `migrations/0006_account_roles.sql` | роли (admin / teacher / student) per account |
-| `account_sessions` | `migrations/0007_account_sessions.sql` | session bearer-tokens, хранятся хешем; cookie `lc_session` |
+| `account_roles` | `migrations/0006_account_roles.sql` | roles (admin / teacher / student) per account |
+| `account_sessions` | `migrations/0007_account_sessions.sql` | session bearer tokens, stored as hashes; cookie `lc_session` |
 | `email_verifications` | `migrations/0008_email_verifications.sql` | single-use verify-email tokens (TTL 24h) |
 | `password_resets` | `migrations/0009_password_resets.sql` | single-use password-reset tokens (TTL 1h) |
-| `accounts.email` CHECK | `migrations/0010_accounts_email_normalized.sql` | DB-level enforcement: `email = lower(btrim(email))`. Любой bypass app-слоя получает constraint violation, не shadow account |
+| `accounts.email` CHECK | `migrations/0010_accounts_email_normalized.sql` | DB-level enforcement: `email = lower(btrim(email))`. Any bypass of the app layer hits a constraint violation, not a shadow account |
 | `account_consents` | `migrations/0011_account_consents.sql` | audit table; row per consent acceptance event (`document_kind` ∈ personal_data/offer/marketing_opt_in/parent_consent) |
-| `_migrations` | служебная, создаётся runner'ом | bookkeeping применённых миграций |
+| `_migrations` | service table, created by the runner | bookkeeping of applied migrations |
 
-**Migration runner.** Схема теперь живёт в `migrations/NNNN_*.sql`. Накатить:
+**Migration runner.** The schema now lives in `migrations/NNNN_*.sql`. Apply with:
 
 ```bash
 DATABASE_URL=postgres://... npm run migrate:up
 DATABASE_URL=postgres://... npm run migrate:status
 ```
 
-Ребят `ensureSchema*` функций в коде (`lib/payments/store-postgres.ts`,
+The remaining `ensureSchema*` functions in code (`lib/payments/store-postgres.ts`,
 `lib/security/idempotency-postgres.ts`, `lib/telemetry/store-postgres.ts`)
-оставлены как safety net и idempotent. На прод-БД, где таблицы уже
-существуют, `migrate:up` ничего не меняет — фиксирует bookkeeping в
-`_migrations`. Подробнее — `migrations/README.md`.
+are kept as a safety net and are idempotent. On a prod DB where tables
+already exist, `migrate:up` changes nothing - it just records bookkeeping in
+`_migrations`. Details - `migrations/README.md`.
 
-**Runner подключён в autodeploy с 2026-04-29.**
-`/usr/local/bin/levelchannel-autodeploy` вызывает `npm run migrate:up`
-между `npm run build` и release-swap. Если миграция упадёт, `set -e`
-аварит rollout и текущий live-код продолжает работать на предыдущем
-release directory. Политика: миграции additive-only, поэтому новая
-схема всегда совместима с предыдущей версией кода.
+**The runner is wired into autodeploy as of 2026-04-29.**
+`/usr/local/bin/levelchannel-autodeploy` calls `npm run migrate:up`
+between `npm run build` and the release swap. If a migration fails, `set -e`
+aborts rollout and the current live code keeps running on the previous
+release directory. Policy: migrations are additive-only, so a new
+schema is always compatible with the previous code version.
 
-### Доступ для отладки — три способа
+### Debug access - three ways
 
-**1. Самый быстрый — psql на сервере под `postgres`-суперюзером:**
+**1. The fastest one - psql on the server as the `postgres` superuser:**
 
 ```bash
 ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136
@@ -268,39 +268,39 @@ sudo -u postgres psql -d levelchannel
 ```
 
 ```sql
-\dt                    -- список таблиц
-\q                     -- выйти
+\dt                    -- list tables
+\q                     -- quit
 ```
 
-**2. Однострочник (top-20 платежей, без входа в консоль):**
+**2. One-liner (top-20 payments, without entering the shell):**
 
 ```bash
 ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 \
   "sudo -u postgres psql -d levelchannel -c \"select invoice_id, status, amount_rub, customer_email, created_at from payment_orders order by created_at desc limit 20;\""
 ```
 
-**3. SSH-туннель для GUI (TablePlus / DBeaver / pgAdmin):**
+**3. SSH tunnel for a GUI (TablePlus / DBeaver / pgAdmin):**
 
 ```bash
-# в отдельном терминале:
+# in a separate terminal:
 ssh -i ~/.ssh/levelchannel_timeweb_ed25519 \
     -L 5433:127.0.0.1:5432 \
     root@83.217.202.136
 ```
 
-Подключение в клиенте:
+Connection in the client:
 
-| Поле | Значение |
+| Field | Value |
 |---|---|
 | Host | `127.0.0.1` |
-| Port | `5433` (локальный порт туннеля) |
+| Port | `5433` (local tunnel port) |
 | Database | `levelchannel` |
 | User | `levelchannel` |
-| Password | пароль app-юзера БД (из `.env` на сервере) |
+| Password | the DB app user password (from `.env` on the server) |
 
-Альтернатива — встроенный SSH в TablePlus:
+Alternative - built-in SSH in TablePlus:
 
-| Поле | Значение |
+| Field | Value |
 |---|---|
 | DB Host | `127.0.0.1` |
 | DB Port | `5432` |
@@ -311,20 +311,20 @@ ssh -i ~/.ssh/levelchannel_timeweb_ed25519 \
 | SSH User | `root` |
 | SSH Key | `~/.ssh/levelchannel_timeweb_ed25519` |
 
-### Полезные запросы (под app-юзером через `$DATABASE_URL`)
+### Useful queries (as the app user via `$DATABASE_URL`)
 
 ```bash
 psql "$DATABASE_URL"
 
-# полезные запросы:
-\dt                                                       -- список таблиц
+# useful queries:
+\dt                                                       -- list tables
 select count(*) from payment_orders;
 select status, count(*) from payment_orders group by 1;
 select * from payment_orders order by created_at desc limit 10;
 select * from payment_telemetry where type = 'one_click_3ds_paid' order by at desc limit 20;
 select scope, count(*) from idempotency_records group by 1;
 
--- audit log (полные данные: real email + real IP, см. SECURITY.md):
+-- audit log (full data: real email + real IP, see SECURITY.md):
 select event_type, to_status, actor, created_at
   from payment_audit_events
  where invoice_id = 'lc_xxxxxxxx'
@@ -336,7 +336,7 @@ select event_type, count(*)
  group by 1
  order by 2 desc;
 
--- "что упало за последний час"
+-- "what failed in the last hour"
 select id, event_type, invoice_id, customer_email, payload
   from payment_audit_events
  where event_type in ('charge_token.declined', 'threeds.declined',
@@ -345,59 +345,59 @@ select id, event_type, invoice_id, customer_email, payload
  order by created_at desc;
 ```
 
-**Backup и restore.** Фактический backup уже настроен:
+**Backup and restore.** The actual backup is already configured:
 `/etc/cron.daily/levelchannel-db-backup` → `/var/backups/levelchannel`,
-retention 14 дней, restore drill пройден 2026-04-29.
+retention 14 days, restore drill passed 2026-04-29.
 
 ```bash
-# проверить наличие свежих бэкапов
+# check that fresh backups exist
 ls -lh /var/backups/levelchannel
 
-# проверить содержимое конкретного дампа
+# inspect a specific dump
 gunzip -c /var/backups/levelchannel/db-YYYY-MM-DD.sql.gz | head -100
 
-# применить в recovery БД, не в production
+# apply to a recovery DB, not production
 gunzip -c /var/backups/levelchannel/db-YYYY-MM-DD.sql.gz | psql "$RECOVERY_DATABASE_URL"
 ```
 
-### Retention и удаление персональных данных
+### Retention and deletion of personal data
 
-> **Канонический документ — [`docs/legal/retention-policy.md`](docs/legal/retention-policy.md)** (со скелетом для legal-rf-router pipeline). Эта таблица — operator-facing краткая выписка для runbook'а, не подменяет основной документ. При расхождении источник истины — `docs/legal/retention-policy.md`.
+> **Canonical document - [`docs/legal/retention-policy.md`](docs/legal/retention-policy.md)** (with skeleton for the legal-rf-router pipeline). This table is an operator-facing short excerpt for the runbook, it does not replace the main document. In case of disagreement, the source of truth is `docs/legal/retention-policy.md`.
 
-Минимальная операционная политика хранения для текущего контура:
+Minimum operational retention policy for the current setup:
 
-| Категория данных | Где хранится | Срок |
+| Data category | Where stored | Term |
 |---|---|---|
-| Оплаченные заказы, статусы оплаты, webhook events, proof of consent | `payment_orders` | 5 лет после окончания отчётного года платежа |
-| Неоплаченные / отменённые / failed заказы без спора | `payment_orders` | до 30 дней |
-| Сохранённые токены карт | `payment_card_tokens` | до удаления пользователем, отзыва consent на one-click или прекращения необходимости |
-| Checkout telemetry | `payment_telemetry` | до 90 дней |
-| ФИО / телефон / доп. e-mail из Telegram, Gmail, Edvibe, если они не вошли в бухгалтерские документы | внешние сервисы связи и внутренние рабочие записи | до завершения занятий и расчётов, затем до 30 дней |
-| Backup БД | `/var/backups/levelchannel` | 14 дней |
+| Paid orders, payment statuses, webhook events, proof of consent | `payment_orders` | 5 years after the end of the reporting year of the payment |
+| Unpaid / cancelled / failed orders without dispute | `payment_orders` | up to 30 days |
+| Saved card tokens | `payment_card_tokens` | until the user deletes them, withdraws one-click consent, or the need ceases |
+| Checkout telemetry | `payment_telemetry` | up to 90 days |
+| Names / phones / additional emails from Telegram, Gmail, Edvibe, if not included in accounting documents | external communication services and internal working notes | until classes and settlements are completed, then up to 30 days |
+| DB backup | `/var/backups/levelchannel` | 14 days |
 
-Минимальная процедура удаления по запросу субъекта ПДн:
+Minimum procedure for personal data subject deletion request:
 
-1. Принять запрос на `igotstyle227@gmail.com` и зафиксировать дату получения.
-2. Проверить, какие данные ещё нужны для договора, налогового, бухгалтерского или платёжного учёта.
-3. Удалить или обезличить данные, по которым больше нет законного основания для хранения.
-4. Отдельно удалить переписку и вспомогательные записи в Telegram / Gmail / Edvibe, если они больше не нужны.
-5. Сохранить краткую внутреннюю отметку: кто удалял, что удалено, на каком основании и в какую дату.
+1. Receive the request at `igotstyle227@gmail.com` and record the receipt date.
+2. Check what data is still needed for the contract, tax, accounting, or payment records.
+3. Delete or anonymise data for which there is no longer a legal basis for storage.
+4. Separately delete correspondence and supporting records in Telegram / Gmail / Edvibe if they are no longer needed.
+5. Keep a brief internal note: who deleted, what was deleted, on what basis, and on what date.
 
-#### Автоматический cleanup expired-записей (TODO — активация на сервере)
+#### Automatic cleanup of expired records (TODO - activation on the server)
 
-`scripts/db-retention-cleanup.mjs` запускается раз в сутки в 04:30 (после `pg_dump` cron в 04:00) и удаляет:
+`scripts/db-retention-cleanup.mjs` runs once a day at 04:30 (after the `pg_dump` cron at 04:00) and deletes:
 
-| Таблица | Что удаляет | Why |
+| Table | What it deletes | Why |
 |---|---|---|
-| `account_sessions` | `revoked_at IS NOT NULL` ИЛИ `expires_at < now() - 7d` | Phase 1A debt — без cron'а раздувание revoked + expired сессий |
-| `email_verifications` | `consumed_at IS NOT NULL` ИЛИ `expires_at < now() - 30d` | single-use токены, после consume или истечения уже не нужны |
-| `password_resets` | `consumed_at IS NOT NULL` ИЛИ `expires_at < now() - 30d` | то же |
-| `idempotency_records` | `created_at < now() - 7d` | idempotency window 24h на wire, 7-day forensic tail |
-| `payment_audit_events` | `created_at < now() - 3 years` | 152-ФЗ alignment для финансовых записей; см. `docs/legal/retention-policy.md` |
+| `account_sessions` | `revoked_at IS NOT NULL` OR `expires_at < now() - 7d` | Phase 1A debt - without a cron, revoked + expired sessions bloat |
+| `email_verifications` | `consumed_at IS NOT NULL` OR `expires_at < now() - 30d` | single-use tokens, no longer needed after consume or expiry |
+| `password_resets` | `consumed_at IS NOT NULL` OR `expires_at < now() - 30d` | same |
+| `idempotency_records` | `created_at < now() - 7d` | idempotency window 24h on the wire, 7-day forensic tail |
+| `payment_audit_events` | `created_at < now() - 3 years` | personal-data law (152-FZ) alignment for financial records; see `docs/legal/retention-policy.md` |
 
-**НЕ трогается** этим cron'ом: `payment_orders` (54-ФЗ — 5 лет, отдельная политика через legal-rf), `payment_telemetry` (privacy-friendly уже, decision продуктовый), `accounts` / `account_consents` (только через SAR-erasure path).
+**NOT touched** by this cron: `payment_orders` (cash-register law (54-FZ) - 5 years, separate policy via legal-rf), `payment_telemetry` (already privacy-friendly, product decision), `accounts` / `account_consents` (only via the SAR-erasure path).
 
-**Активация (один раз, требует SSH):**
+**Activation (one-off, requires SSH):**
 
 ```bash
 ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136
@@ -416,74 +416,74 @@ systemctl start levelchannel-db-retention.service
 journalctl -u levelchannel-db-retention.service -n 20
 ```
 
-В журнале каждый run печатает по одной JSON-строке на таблицу с `rows` (сколько строк удалено). Удобно для аудита: видно объём очистки за каждый день.
+In the journal, every run prints one JSON line per table with `rows` (the number of rows deleted). Handy for audit: you can see the volume of each day's cleanup.
 
-**Failure mode:** на ошибке одной таблицы (FK constraint, lock timeout) script продолжает с остальными — логирует error и идёт дальше. Exit non-zero только если **все** таблицы упали (network gone). systemd captures journal в любом случае.
+**Failure mode:** on an error in one table (FK constraint, lock timeout) the script continues with the rest - it logs the error and moves on. Exit non-zero only if **all** tables fail (network gone). systemd captures the journal regardless.
 
 ---
 
 ## 6. Deploy
 
-**Текущий механизм: server-side git autodeploy из `origin/main`.**
-За rollout отвечает `/usr/local/bin/levelchannel-autodeploy`, который
-запускается `systemd` timer'ом `levelchannel-autodeploy.timer` раз в
-минуту. Схема простая:
+**Current mechanism: server-side git autodeploy from `origin/main`.**
+Rollout is owned by `/usr/local/bin/levelchannel-autodeploy`, which is
+launched by the `systemd` timer `levelchannel-autodeploy.timer` once a
+minute. The flow is simple:
 
-1. узнать `target_sha` через `git ls-remote` на `origin/main`
-2. если SHA не изменился, выйти без действий
-3. клонировать свежий release в `/var/www/levelchannel.release-<sha12>`
-4. выполнить `env -u NODE_ENV npm ci`
-5. загрузить `/etc/levelchannel.env` и выполнить `env -u NODE_ENV npm run build`
-6. записать `DEPLOYED_SHA`
-7. остановить `levelchannel`
-8. переименовать текущий `/var/www/levelchannel` в `/var/www/levelchannel.prev-<timestamp>`
-9. переместить новый release в `/var/www/levelchannel`
-10. запустить `levelchannel` и проверить `http://127.0.0.1:3000/api/health`
-11. оставить только три последних `levelchannel.prev-*`
+1. find `target_sha` via `git ls-remote` on `origin/main`
+2. if the SHA hasn't changed, exit without doing anything
+3. clone a fresh release into `/var/www/levelchannel.release-<sha12>`
+4. run `env -u NODE_ENV npm ci`
+5. load `/etc/levelchannel.env` and run `env -u NODE_ENV npm run build`
+6. write `DEPLOYED_SHA`
+7. stop `levelchannel`
+8. rename the current `/var/www/levelchannel` to `/var/www/levelchannel.prev-<timestamp>`
+9. move the new release to `/var/www/levelchannel`
+10. start `levelchannel` and probe `http://127.0.0.1:3000/api/health`
+11. keep only the last three `levelchannel.prev-*`
 
-`postbuild.js` и `public/.htaccess` остаются legacy от первой
-static-export версии, в текущем server-режиме не участвуют в deploy.
+`postbuild.js` and `public/.htaccess` are legacy from the first
+static-export version, in the current server mode they don't take part in deploy.
 
-### Что именно крутит deploy
+### What actually drives deploy
 
-| Компонент | Где | Роль |
+| Component | Where | Role |
 |---|---|---|
-| Deploy script | `/usr/local/bin/levelchannel-autodeploy` | весь rollout, build и swap |
-| Deploy unit | `/etc/systemd/system/levelchannel-autodeploy.service` | oneshot запуск скрипта |
+| Deploy script | `/usr/local/bin/levelchannel-autodeploy` | the entire rollout, build and swap |
+| Deploy unit | `/etc/systemd/system/levelchannel-autodeploy.service` | one-shot script run |
 | Deploy timer | `/etc/systemd/system/levelchannel-autodeploy.timer` | `OnBootSec=2min`, `OnUnitActiveSec=1min`, `Persistent=true` |
-| GitHub auth | `/home/levelchannel/.ssh/github_deploy` + `/home/levelchannel/.ssh/config` | read-only deploy key для `git@github.com:Igotsty1e/levelchannel.git` |
+| GitHub auth | `/home/levelchannel/.ssh/github_deploy` + `/home/levelchannel/.ssh/config` | read-only deploy key for `git@github.com:Igotsty1e/levelchannel.git` |
 
-### Deploy freshness check (TODO — патч скрипта на сервере)
+### Deploy freshness check (TODO - patch the script on the server)
 
-`.github/workflows/deploy-freshness.yml` каждые 30 минут сравнивает SHA `main` с `version` из `/api/health` и алертит через GitHub Issue (`deploy-stale`), если прод отстал больше чем на 15 минут. Чтобы это заработало, **нужен один patch на сервере**:
+`.github/workflows/deploy-freshness.yml` compares the SHA of `main` against `version` from `/api/health` every 30 minutes and alerts via a GitHub Issue (`deploy-stale`) if production is more than 15 minutes behind. To make this work, **a single patch on the server is required**:
 
-В `/usr/local/bin/levelchannel-autodeploy` **перед** `npm run build` добавить:
+In `/usr/local/bin/levelchannel-autodeploy`, **before** `npm run build`, add:
 
 ```bash
 export GIT_SHA=$(git rev-parse HEAD)
 ```
 
-Эту переменную нужно forward'ить в systemd unit, который запускает `next start` — иначе `process.env.GIT_SHA` в `/api/health` останется пустым и workflow откроет issue `deploy-freshness-inactive`.
+This variable needs to be forwarded into the systemd unit that launches `next start` - otherwise `process.env.GIT_SHA` in `/api/health` stays empty and the workflow opens an issue `deploy-freshness-inactive`.
 
-Способа два:
+There are two ways:
 
-1. **Через `/etc/levelchannel.env`** (рекомендуется): записывать `GIT_SHA=...` в env-файл при каждом деплое перед swap. Systemd unit уже читает этот файл через `EnvironmentFile=/etc/levelchannel.env`.
+1. **Via `/etc/levelchannel.env`** (recommended): write `GIT_SHA=...` to the env file at every deploy before swap. The systemd unit already reads this file via `EnvironmentFile=/etc/levelchannel.env`.
 
-2. **Через `Environment=` директиву** в `/etc/systemd/system/levelchannel.service` — работает только если deploy script делает `systemctl edit levelchannel.service` для подмены значения, что усложняет атомарность swap'а. Лучше первый способ.
+2. **Via an `Environment=` directive** in `/etc/systemd/system/levelchannel.service` - works only if the deploy script runs `systemctl edit levelchannel.service` to substitute the value, which complicates swap atomicity. The first approach is better.
 
-Smoke test после patch'а:
+Smoke test after the patch:
 
 ```bash
 curl -s https://levelchannel.ru/api/health | jq '.version'
-# ожидается: "<sha-from-main>"
+# expected: "<sha-from-main>"
 ```
 
-Workflow `deploy-freshness` сам закроет issue `deploy-freshness-inactive` на следующем своём run'е, как только `version` станет non-null.
+The `deploy-freshness` workflow will close issue `deploy-freshness-inactive` itself on its next run, as soon as `version` becomes non-null.
 
-### Нормальный путь выката
+### Normal rollout path
 
 ```bash
-# 1. Локально: подготовить чистый main и пройти gates
+# 1. Locally: prepare a clean main and pass the gates
 cd ~/LevelChannel
 git checkout main
 git pull --ff-only origin main
@@ -491,10 +491,10 @@ npm ci
 npm run test:run
 npm run build
 
-# 2. Закоммитить и запушить в main
+# 2. Commit and push to main
 git push origin main
 
-# 3. Подождать до минуты и проверить rollout
+# 3. Wait up to a minute and verify rollout
 ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
   systemctl status levelchannel-autodeploy.timer --no-pager
   journalctl -u levelchannel-autodeploy.service --since "10 minutes ago" --no-pager
@@ -504,7 +504,7 @@ ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
 '
 ```
 
-### Ручной запуск deploy без ожидания timer'а
+### Manual deploy without waiting for the timer
 
 ```bash
 ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
@@ -513,22 +513,22 @@ ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
 '
 ```
 
-### Smoke test после deploy
+### Smoke test after deploy
 
 ```bash
 curl -s https://levelchannel.ru/api/health | jq
-# ожидаемо: {"status":"ok","provider":"cloudpayments","storage":"postgres",...}
+# expected: {"status":"ok","provider":"cloudpayments","storage":"postgres",...}
 
 curl -s -o /dev/null -w "%{http_code}\n" https://levelchannel.ru/
-# ожидаемо: 200
+# expected: 200
 
 curl -s -X POST https://levelchannel.ru/api/payments/webhooks/cloudpayments/check \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "test=1" -w "\nHTTP %{http_code}\n"
-# ожидаемо: HTTP 401, потому что HMAC нет, но маршрут жив
+# expected: HTTP 401, because there is no HMAC, but the route is alive
 ```
 
-### Как проверить, какой коммит сейчас в проде
+### How to check which commit is currently in production
 
 ```bash
 ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
@@ -541,15 +541,15 @@ git fetch origin main
 git rev-parse origin/main
 ```
 
-Если SHA не совпадают, обычно это значит, что deploy timer ещё не успел
-сходить на GitHub или последний rollout упал. Смотри
+If the SHAs don't match, that usually means the deploy timer hasn't yet
+gone to GitHub, or the latest rollout failed. See
 `journalctl -u levelchannel-autodeploy.service`.
 
 ### Rollback
 
-Важно: если просто вернуть старую директорию, timer через минуту снова
-накатит текущий `origin/main`. Поэтому rollback всегда начинается с паузы
-autodeploy.
+Important: if you simply restore the old directory, the timer will
+re-apply the current `origin/main` within a minute. So rollback always
+starts by pausing autodeploy.
 
 ```bash
 ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
@@ -566,12 +566,12 @@ ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
 '
 ```
 
-После этого:
+After that:
 
-1. сделать `git revert` проблемного коммита в `main` или быстро
-   подготовить фикс
-2. запушить исправление
-3. включить timer обратно
+1. `git revert` the offending commit on `main` or quickly
+   prepare a fix
+2. push the correction
+3. enable the timer again
 
 ```bash
 ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
@@ -580,32 +580,33 @@ ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
 '
 ```
 
-Если rollback упирается в несовместимость со схемой БД, правило то же:
-наши текущие изменения безопасны, пока миграции add-only. Если когда-то
-появится destructive schema change, перед rollback нужен restore из backup.
+If rollback runs into incompatibility with the DB schema, the rule is
+the same: our current changes are safe as long as migrations are add-only.
+If a destructive schema change ever appears, a backup restore is required
+before rollback.
 
-### Pre-push чеклист
+### Pre-push checklist
 
-- [ ] локально: `npm run test:run` зелёный
-- [ ] локально: `npm run build` зелёный
-- [ ] на сервере: `df -h /` показывает запас места для нового release
-- [ ] на сервере: `pg_isready` отвечает ok
-- [ ] изменения в env? — сначала обновлён `/etc/levelchannel.env`, потом push
-- [ ] понимаешь, что push в `main` поедет в прод автоматически
+- [ ] locally: `npm run test:run` green
+- [ ] locally: `npm run build` green
+- [ ] on the server: `df -h /` shows headroom for a new release
+- [ ] on the server: `pg_isready` returns ok
+- [ ] env changes? - `/etc/levelchannel.env` updated first, then push
+- [ ] you understand that a push to `main` goes to production automatically
 
-### Запрещённые практики
+### Forbidden practices
 
-- ручной `rsync` / `scp` в `/var/www/levelchannel`
-- правки файлов прямо на сервере без коммита
-- restart `levelchannel` как способ "задеплоить код", если `origin/main`
-  не обновлялся
-- rollback без остановки `levelchannel-autodeploy.timer`
+- manual `rsync` / `scp` into `/var/www/levelchannel`
+- editing files directly on the server without a commit
+- restarting `levelchannel` as a way to "deploy code" if `origin/main`
+  hasn't been updated
+- rollback without stopping `levelchannel-autodeploy.timer`
 
 ---
 
 ## 7. Environment variables (production)
 
-Файл живёт **только** на app-сервере, не в репозитории:
+The file lives **only** on the app server, not in the repository:
 
 ```dotenv
 NODE_ENV=production
@@ -613,76 +614,76 @@ NODE_ENV=production
 PAYMENTS_PROVIDER=cloudpayments
 PAYMENTS_STORAGE_BACKEND=postgres
 
-# критично: false. config.ts уронит boot если =true в проде.
+# critical: false. config.ts will fail boot if =true in production.
 PAYMENTS_ALLOW_MOCK_CONFIRM=false
 
-# реальный домен с https. config.ts проверит на старте.
-NEXT_PUBLIC_SITE_URL=https://<!-- FILL IN: домен -->
+# the real domain over https. config.ts validates this on startup.
+NEXT_PUBLIC_SITE_URL=https://<!-- FILL IN: domain -->
 
-DATABASE_URL=postgresql://<user>:<password>@<host>:5432/<db>?sslmode=<!-- prefer для managed PG, disable для local -->
+DATABASE_URL=postgresql://<user>:<password>@<host>:5432/<db>?sslmode=<!-- prefer for managed PG, disable for local -->
 
-# 32+ случайных символов; используется для HMAC-хеша e-mail в телеметрии.
-# Не должен совпадать с CLOUDPAYMENTS_API_SECRET.
+# 32+ random characters; used for the HMAC hash of the e-mail in telemetry.
+# Must not coincide with CLOUDPAYMENTS_API_SECRET.
 TELEMETRY_HASH_SECRET=<!-- FILL IN -->
 
-CLOUDPAYMENTS_PUBLIC_ID=<!-- FILL IN из кабинета CloudPayments -->
-CLOUDPAYMENTS_API_SECRET=<!-- FILL IN из кабинета CloudPayments -->
+CLOUDPAYMENTS_PUBLIC_ID=<!-- FILL IN from the CloudPayments cabinet -->
+CLOUDPAYMENTS_API_SECRET=<!-- FILL IN from the CloudPayments cabinet -->
 
-# Resend transactional email (verify + reset + already-registered). При пустом
-# ключе под NODE_ENV=production lib/email/config.ts падает на boot.
-RESEND_API_KEY=<!-- FILL IN из кабинета Resend -->
+# Resend transactional email (verify + reset + already-registered). With an
+# empty key under NODE_ENV=production, lib/email/config.ts fails on boot.
+RESEND_API_KEY=<!-- FILL IN from the Resend cabinet -->
 EMAIL_FROM="LevelChannel <noreply@levelchannel.ru>"
 
 # HMAC key for per-email rate-limit scope strings (lib/auth/email-hash.ts).
-# 32+ random chars. NOT the same value as TELEMETRY_HASH_SECRET — different
+# 32+ random chars. NOT the same value as TELEMETRY_HASH_SECRET - different
 # trust boundary, different rotation cadence (Phase 1B mech-3).
 # Boot fails under NODE_ENV=production if empty.
 AUTH_RATE_LIMIT_SECRET=<!-- FILL IN: 32+ random chars -->
 ```
 
-`.env` на сервере — права `chmod 600`, владелец `root:root`, читается
-через `EnvironmentFile=` в systemd unit. Не в git, не в публичной
-директории.
+`.env` on the server - permissions `chmod 600`, owner `root:root`, read
+via `EnvironmentFile=` in the systemd unit. Not in git, not in a public
+directory.
 
-### Ротация секретов
+### Secret rotation
 
-- **`CLOUDPAYMENTS_API_SECRET`**: ротация в личном кабинете CloudPayments,
-  затем на сервере: `vim .env`, `systemctl restart levelchannel`. Старые
-  webhook подписи перестанут проверяться сразу — координируй с тем, чтобы
-  у CP не висели в очереди ретраи на старом ключе.
-- **`TELEMETRY_HASH_SECRET`**: можно ротировать без бизнес-импакта — это
-  сломает связку «один и тот же e-mail в телеметрии до и после ротации»,
-  но сами события не теряются.
-- **`DATABASE_URL`**: смена пароля БД — обновить в `.env`, рестарт.
-- **`RESEND_API_KEY`**: ротация в кабинете Resend, обновить `.env`, рестарт.
-  Старый ключ можно отозвать сразу — verify/reset токены идут от нашего
-  сервера, доставка не зависит от истории.
+- **`CLOUDPAYMENTS_API_SECRET`**: rotation in the CloudPayments cabinet,
+  then on the server: `vim .env`, `systemctl restart levelchannel`. Old
+  webhook signatures stop validating immediately - coordinate so that
+  CP doesn't have queued retries on the old key.
+- **`TELEMETRY_HASH_SECRET`**: can be rotated without business impact - it
+  breaks the linkage "the same e-mail in telemetry before and after rotation",
+  but the events themselves are not lost.
+- **`DATABASE_URL`**: DB password change - update in `.env`, restart.
+- **`RESEND_API_KEY`**: rotation in the Resend cabinet, update `.env`, restart.
+  The old key can be revoked immediately - verify/reset tokens come from
+  our server, delivery does not depend on history.
 
 ---
 
 ## 8. Logs
 
-| Источник | Где смотреть |
+| Source | Where to look |
 |---|---|
 | App stdout/stderr | `journalctl -u levelchannel` |
 | Reverse proxy access | `/var/log/nginx/access.log` |
 | Reverse proxy errors | `/var/log/nginx/error.log` |
-| Database slow query | <!-- если включён `log_min_duration_statement` --> |
+| Database slow query | <!-- if `log_min_duration_statement` is enabled --> |
 | OS / auth | `/var/log/auth.log` |
 
-### Что искать при разборе платёжной проблемы
+### What to look for when debugging a payment problem
 
 ```bash
-# все события по конкретному invoiceId
+# all events for a specific invoiceId
 journalctl -u levelchannel --since "1 day ago" | grep "lc_<invoiceId>"
 
-# только webhook'и от CloudPayments
+# only webhooks from CloudPayments
 journalctl -u levelchannel --since "1 day ago" | grep "/api/payments/webhooks/"
 
-# 401 на webhook = подпись не сошлась — это самое больное место
+# 401 on a webhook = the signature did not match - this is the most painful spot
 journalctl -u levelchannel --since "6 hours ago" | grep -E "(HMAC|401)"
 
-# отказы CloudPayments tokens/charge
+# CloudPayments tokens/charge rejections
 journalctl -u levelchannel | grep -E "(charge-token|tokens/charge|requires_3ds|declined)"
 ```
 
@@ -690,182 +691,182 @@ journalctl -u levelchannel | grep -E "(charge-token|tokens/charge|requires_3ds|d
 
 ## 9. Monitoring
 
-### Uptime probe — GitHub Actions
+### Uptime probe - GitHub Actions
 
-**Health endpoint:** `GET /api/health`. Возвращает 200 + JSON
+**Health endpoint:** `GET /api/health`. Returns 200 + JSON
 `{"status":"ok","provider":"cloudpayments","storage":"postgres","checks":{...}}`
-или 503. См. `PAYMENTS_SETUP.md` про точный shape.
+or 503. See `PAYMENTS_SETUP.md` for the exact shape.
 
-**Кто пингует.** Workflow [`/.github/workflows/uptime-probe.yml`](../.github/workflows/uptime-probe.yml)
-запускается раз в 5 минут (`cron: '*/5 * * * *'`) через GitHub Actions
-runners — внешний relative прода. В одном run-е делается 3 попытки
-с паузой 20 сек; OK считается если **хоть одна** вернула HTTP 200 +
-`"status":"ok"` + `"database":"ok"`. Это фильтрует короткие cold
-starts и Actions-side network jitter.
+**Who pings.** The workflow [`/.github/workflows/uptime-probe.yml`](../.github/workflows/uptime-probe.yml)
+runs every 5 minutes (`cron: '*/5 * * * *'`) on GitHub Actions
+runners - external relative to production. In one run it makes 3 attempts
+with a 20-second pause; OK is registered if **at least one** returns HTTP 200 +
+`"status":"ok"` + `"database":"ok"`. This filters out short cold
+starts and Actions-side network jitter.
 
-**Где видеть алерты.** При FAIL workflow открывает GitHub Issue с
-лейблом `uptime-incident` в этом же репо. Owner репо подписан на
-issue create / comment по умолчанию — уведомление падает на email,
-который привязан к GitHub аккаунту. Дашборд активных инцидентов:
+**Where to see alerts.** On FAIL, the workflow opens a GitHub Issue with
+the `uptime-incident` label in the same repo. The repo owner is subscribed
+to issue create / comment events by default - notification lands at the
+email tied to the GitHub account. Active incidents dashboard:
 
 ```
 https://github.com/Igotsty1e/levelchannel/issues?q=is%3Aopen+label%3Auptime-incident
 ```
 
-**Жизненный цикл инцидента (idempotent — workflow знает все 4 состояния):**
+**Incident lifecycle (idempotent - the workflow handles all 4 states):**
 
-| Состояние | Что делает workflow |
+| State | What the workflow does |
 |---|---|
-| FAIL + нет открытого issue | создаёт новый `[uptime] ... is DOWN` |
-| FAIL + есть открытый issue | дописывает комментарий «Still failing at ...» (без spam'а новых issue) |
-| OK + есть открытый issue | пишет «Recovered at ...» и закрывает issue |
-| OK + нет открытого issue | no-op |
+| FAIL + no open issue | creates a new `[uptime] ... is DOWN` |
+| FAIL + open issue exists | appends a "Still failing at ..." comment (no new-issue spam) |
+| OK + open issue exists | writes "Recovered at ..." and closes the issue |
+| OK + no open issue | no-op |
 
-Issue body содержит timestamp обнаружения, last HTTP code, last response
-body (обрезано до 1500 символов), ссылку на конкретный run в Actions.
+The issue body contains the timestamp of detection, the last HTTP code, the last response
+body (truncated to 1500 characters), and a link to the specific Actions run.
 
-**Detection latency.** Practical floor ~5 минут (cron interval) +
-до ~10 минут (Actions cron sometimes delays under load) → worst-case
-~15 минут. Если когда-нибудь нужна 30-сек precision — добавляем
-external probe (BetterStack / Healthchecks.io) как второй слой,
-этот workflow остаётся.
+**Detection latency.** Practical floor ~5 minutes (cron interval) +
+up to ~10 minutes (Actions cron sometimes delays under load) → worst case
+~15 minutes. If 30-second precision is ever needed - we add an
+external probe (BetterStack / Healthchecks.io) as a second layer,
+this workflow stays.
 
-### Runbook — что делать когда пришёл алерт
+### Runbook - what to do when an alert fires
 
-1. **Открыть issue, проверить last response body в issue body.** Если там виден HTTP code != 200 — переходим к шагу 2. Если timeout / curl exit без HTTP code — DNS / TLS / нет ответа от сервера; шаги 3 и 5.
+1. **Open the issue, check the last response body in the issue body.** If you see HTTP code != 200 there - go to step 2. If timeout / curl exit without an HTTP code - DNS / TLS / no answer from the server; steps 3 and 5.
 
-2. **Проверить руками с своей машины:**
+2. **Check by hand from your machine:**
    ```bash
    curl -i https://levelchannel.ru/api/health
    ```
-   - 200 + `"status":"ok"` → false-positive в Actions (run flap'нул, GH closed issue сам). Можно вручную закомментировать причину в issue.
-   - 503 + `"database":"err"` → Postgres сдох, шаг 4.
-   - 502 / 504 → app не отвечает, шаг 3.
-   - таймаут / ничего → server / nginx / DNS, шаг 5.
+   - 200 + `"status":"ok"` → false-positive in Actions (the run flapped, GH closed the issue itself). You can manually comment the cause in the issue.
+   - 503 + `"database":"err"` → Postgres is down, step 4.
+   - 502 / 504 → the app is not responding, step 3.
+   - timeout / nothing → server / nginx / DNS, step 5.
 
-3. **App не отвечает.** SSH на VPS:
+3. **App is not responding.** SSH to the VPS:
    ```bash
    ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136
    systemctl status levelchannel
    journalctl -u levelchannel --since "10 min ago" | tail -100
    ```
-   Если service died — `systemctl restart levelchannel`. Если loop'ит на crash — журнал покажет stack; подними нужный hotfix (auth secret пропал, миграция упала, OOM и т.д.).
+   If the service died - `systemctl restart levelchannel`. If it's looping on crash - the journal will show the stack; deploy the necessary hotfix (auth secret missing, migration failed, OOM, etc.).
 
-4. **Postgres недоступен.** SSH на VPS:
+4. **Postgres unreachable.** SSH to the VPS:
    ```bash
    pg_isready -d "$DATABASE_URL"
    systemctl status postgresql
    journalctl -u postgresql --since "30 min ago" | tail -50
    df -h
    ```
-   Чаще всего — disk full (бэкапы накопились) или OOM. См. §13 retention drill, §5 backup commands.
+   Most often - disk full (backups piled up) or OOM. See §13 retention drill, §5 backup commands.
 
-5. **Сервер / nginx / DNS.**
+5. **Server / nginx / DNS.**
    ```bash
    ssh root@83.217.202.136 'systemctl status nginx; nginx -t'
    dig +short levelchannel.ru
    ```
-   - nginx упал — `systemctl restart nginx`.
-   - dig возвращает не наш IP → registrar incident (см. §4).
-   - SSH timeout → провайдерский incident, проверь Timeweb status page.
+   - nginx is down - `systemctl restart nginx`.
+   - dig returns a non-our IP → registrar incident (see §4).
+   - SSH timeout → provider incident, check the Timeweb status page.
 
-6. **После восстановления** — workflow закроет issue автоматически
-   на следующем successful probe (макс 5 мин). Если нужно
-   вручную — закрывай и подпиши причину в комментарии для
+6. **After recovery** - the workflow will close the issue automatically
+   on the next successful probe (max 5 min). If you need to do it
+   manually - close it and add the cause as a comment for the
    incident retro.
 
-### Ручной запуск probe
+### Manual probe run
 
-Если хочется проверить вне cron — Actions tab → uptime-probe →
-**Run workflow** (button). Использует `workflow_dispatch` trigger.
+If you want to check outside cron - Actions tab → uptime-probe →
+**Run workflow** (button). Uses the `workflow_dispatch` trigger.
 
-### Webhook-flow alerting (TODO — активация на сервере)
+### Webhook-flow alerting (TODO - activation on the server)
 
-`scripts/webhook-flow-alert.mjs` каждые 30 минут читает `payment_audit_events` за последний час и шлёт email на `ALERT_EMAIL_TO`, если CloudPayments webhook contour выглядит сломанным:
+`scripts/webhook-flow-alert.mjs` reads `payment_audit_events` for the last hour every 30 minutes and sends an email to `ALERT_EMAIL_TO` if the CloudPayments webhook contour looks broken:
 
-| Сигнал | Verdict |
+| Signal | Verdict |
 |---|---|
-| создано <5 заказов за окно | `low_volume_skip` (молчим — слишком тихо чтобы судить) |
-| `paid + fail + cancelled ≥ created` | `all_resolved` (всё разрешилось) |
-| `(paid + fail) / created < 0.3` | **`alert`** — webhook stall |
-| иначе | `ok` |
+| <5 orders created in the window | `low_volume_skip` (silence - too quiet to judge) |
+| `paid + fail + cancelled ≥ created` | `all_resolved` (everything resolved) |
+| `(paid + fail) / created < 0.3` | **`alert`** - webhook stall |
+| otherwise | `ok` |
 
-Что значит "webhook stall": заказы создаются, но pay/fail webhook'и не приходят (или приходят, но не обрабатываются). Чаще всего — CP cabinet URL'ы сломаны, HMAC secret разъехался с `/etc/levelchannel.env`, или handler упал в loop.
+What "webhook stall" means: orders are being created but pay/fail webhooks aren't arriving (or are arriving but aren't being processed). Most often - CP cabinet URLs are broken, the HMAC secret has drifted from `/etc/levelchannel.env`, or the handler crashed in a loop.
 
-**Активация (один раз, требует SSH):**
+**Activation (one-off, requires SSH):**
 
 ```bash
-# 1) убедиться что scripts/webhook-flow-alert.mjs уже на сервере
-#    (попадает на VPS обычным autodeploy — зеркало git репо)
+# 1) make sure scripts/webhook-flow-alert.mjs is already on the server
+#    (it lands on the VPS via the usual autodeploy - mirror of the git repo)
 ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136
 
-# 2) установить unit + timer
+# 2) install unit + timer
 cp /var/www/levelchannel/scripts/systemd/levelchannel-webhook-flow-alert.service \
    /etc/systemd/system/
 cp /var/www/levelchannel/scripts/systemd/levelchannel-webhook-flow-alert.timer \
    /etc/systemd/system/
 
-# 3) добавить ALERT_EMAIL_TO в /etc/levelchannel.env (если ещё не задан;
-#    EMAIL_FROM, RESEND_API_KEY, DATABASE_URL уже там)
+# 3) add ALERT_EMAIL_TO to /etc/levelchannel.env (if not yet set;
+#    EMAIL_FROM, RESEND_API_KEY, DATABASE_URL are already there)
 echo 'ALERT_EMAIL_TO=masteryprojectss@gmail.com' >> /etc/levelchannel.env
 
-# 4) запустить timer
+# 4) start the timer
 systemctl daemon-reload
 systemctl enable --now levelchannel-webhook-flow-alert.timer
 
-# 5) проверить
+# 5) verify
 systemctl status levelchannel-webhook-flow-alert.timer
 journalctl -u levelchannel-webhook-flow-alert.service --since "5 min ago"
 ```
 
-**Ручной запуск без ожидания таймера:**
+**Manual run without waiting for the timer:**
 
 ```bash
 systemctl start levelchannel-webhook-flow-alert.service
 journalctl -u levelchannel-webhook-flow-alert.service -n 20
 ```
 
-В журнале каждый run печатает одну JSON-строку с `verdict` — это `low_volume_skip` / `all_resolved` / `ok` / `alert`.
+In the journal, every run prints one JSON line with `verdict` - which is `low_volume_skip` / `all_resolved` / `ok` / `alert`.
 
-**Тонкая настройка (env vars):**
+**Fine-tuning (env vars):**
 
-| Var | Default | Что делает |
+| Var | Default | What it does |
 |---|---|---|
-| `WEBHOOK_FLOW_WINDOW_MINUTES` | `60` | окно для подсчёта |
-| `WEBHOOK_FLOW_MIN_VOLUME` | `5` | минимум заказов для срабатывания (избегает false-positive на малых объёмах) |
-| `WEBHOOK_FLOW_TERMINATED_RATIO` | `0.3` | floor отношения (paid+fail)/created для alert |
+| `WEBHOOK_FLOW_WINDOW_MINUTES` | `60` | window for the count |
+| `WEBHOOK_FLOW_MIN_VOLUME` | `5` | minimum orders to trigger (avoids false-positive on small volumes) |
+| `WEBHOOK_FLOW_TERMINATED_RATIO` | `0.3` | floor for the (paid+fail)/created ratio for alert |
 
-**Idempotence:** скрипт НЕ хранит «уже алертил». Каждый run в состоянии alert посылает email. При cron 30 минут — максимум 2 email/час, что приемлемо. Если шум станет проблемой, добавляется state file `/var/lib/levelchannel/last-webhook-alert-at` — отдельный wave.
+**Idempotence:** the script does NOT keep "already alerted" state. Every run in alert state sends an email. With cron 30 minutes - max 2 emails/hour, which is acceptable. If noise becomes a problem, add a state file `/var/lib/levelchannel/last-webhook-alert-at` - separate wave.
 
-### Sentry — error tracking
+### Sentry - error tracking
 
-Подключён 2026-04-29. SDK живёт в:
-- `instrumentation.ts` — Node + Edge runtime init (читает `SENTRY_DSN`)
-- `instrumentation-client.ts` — браузерный SDK (читает `NEXT_PUBLIC_SENTRY_DSN`)
-- `app/global-error.tsx` — top-level React error boundary, форвардит в Sentry и рендерит ru-fallback
-- `next.config.js` — обёрнут в `withSentryConfig` (CSP допускает `*.ingest.de.sentry.io` / `*.ingest.sentry.io` в `connect-src` + `worker-src 'self' blob:`)
+Connected 2026-04-29. The SDK lives in:
+- `instrumentation.ts` - Node + Edge runtime init (reads `SENTRY_DSN`)
+- `instrumentation-client.ts` - browser SDK (reads `NEXT_PUBLIC_SENTRY_DSN`)
+- `app/global-error.tsx` - top-level React error boundary, forwards to Sentry and renders the ru fallback
+- `next.config.js` - wrapped in `withSentryConfig` (CSP allows `*.ingest.de.sentry.io` / `*.ingest.sentry.io` in `connect-src` + `worker-src 'self' blob:`)
 
-**Project:** `mastery-zs/levelchannel` на Sentry SaaS (EU regio'n).
+**Project:** `mastery-zs/levelchannel` on Sentry SaaS (EU region).
 
 **Dashboard:**
 ```
 https://sentry.io/organizations/mastery-zs/projects/levelchannel/
 ```
 
-Owner подписан на email-нотификации по новым issues по умолчанию (Sentry account-level setting).
+The owner is subscribed to email notifications for new issues by default (Sentry account-level setting).
 
-**Env vars (production, в `/etc/levelchannel.env`):**
+**Env vars (production, in `/etc/levelchannel.env`):**
 
-| Var | Что |
+| Var | What |
 |---|---|
-| `SENTRY_DSN` | DSN — берётся из Sentry → Settings → Projects → levelchannel → Client Keys |
-| `NEXT_PUBLIC_SENTRY_DSN` | то же значение, доступно браузеру (build-time inline) |
-| `SENTRY_AUTH_TOKEN` (опционально) | для source-maps upload во время `npm run build`. Без него стек-трейсы приходят, но ссылаются на bundled JS вместо оригинального TS |
+| `SENTRY_DSN` | DSN - taken from Sentry → Settings → Projects → levelchannel → Client Keys |
+| `NEXT_PUBLIC_SENTRY_DSN` | the same value, available to the browser (build-time inline) |
+| `SENTRY_AUTH_TOKEN` (optional) | for source-maps upload during `npm run build`. Without it, stack traces still come, but they reference the bundled JS instead of the original TS |
 
-Без DSN SDK становится no-op — что хорошо для dev. В production пустой DSN значит молчаливое отсутствие алертов; контролируется через смок-захват после деплоя:
+Without a DSN the SDK becomes a no-op - which is good for dev. In production an empty DSN means silent absence of alerts; controlled via a smoke capture after deploy:
 
 ```bash
-# manual smoke — после изменения SDK или DSN:
+# manual smoke - after changing the SDK or DSN:
 node -e "
   const S = require('@sentry/nextjs');
   S.init({ dsn: process.env.SENTRY_DSN });
@@ -874,21 +875,21 @@ node -e "
 "
 ```
 
-Событие появляется в Sentry за ≤30 секунд.
+The event appears in Sentry within ≤30 seconds.
 
-**`tracesSampleRate=0.1`** в обоих init'ах — performance traces семплируются на 10%, чтобы не уйти за free tier limits. Поднимать после реальных нагрузок.
+**`tracesSampleRate=0.1`** in both inits - performance traces are sampled at 10% so as not to exceed free tier limits. Raise after real load.
 
-**`sendDefaultPii: false`** — стандартный безопасный вариант. Default integrations Sentry редактируют common auth headers; флаг подкрепляет это.
+**`sendDefaultPii: false`** - the standard safe option. Sentry default integrations redact common auth headers; the flag reinforces this.
 
-**Release tagging:** `instrumentation.ts` читает `process.env.GIT_SHA` (тот же, что использует deploy-freshness workflow). После активации сервер-патча про `GIT_SHA` ([§6 Deploy](#)), Sentry будет группировать issues по релизам.
+**Release tagging:** `instrumentation.ts` reads `process.env.GIT_SHA` (the same one the deploy-freshness workflow uses). After activating the server-side patch for `GIT_SHA` ([§6 Deploy](#)), Sentry will group issues by release.
 
-### Operator email на successful payment
+### Operator email on successful payment
 
-Подключён 2026-04-29. Inline в `app/api/payments/webhooks/cloudpayments/pay/route.ts` — после `markOrderPaid` + audit handler шлёт email-уведомление на `OPERATOR_NOTIFY_EMAIL` через Resend.
+Connected 2026-04-29. Inline in `app/api/payments/webhooks/cloudpayments/pay/route.ts` - after `markOrderPaid` + audit, the handler sends an email notification to `OPERATOR_NOTIFY_EMAIL` via Resend.
 
-Best-effort: ошибка Resend / отсутствие env var **не валит** webhook ACK к CloudPayments. Без ACK CP начнёт re-fire → audit двойной paid event. Поэтому notification обёрнут в try/catch + console.warn в журнал.
+Best-effort: a Resend error / missing env var **does not** break the webhook ACK to CloudPayments. Without ACK, CP starts re-firing → audit gets a duplicate paid event. So the notification is wrapped in try/catch + console.warn into the journal.
 
-**Активация:**
+**Activation:**
 
 ```bash
 ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136
@@ -896,47 +897,47 @@ echo 'OPERATOR_NOTIFY_EMAIL=masteryprojectss@gmail.com' >> /etc/levelchannel.env
 systemctl restart levelchannel
 ```
 
-При следующем successful платеже придёт email с сабжом `[LevelChannel] Платёж получен: <amount> ₽ — <invoice>`.
+On the next successful payment, an email arrives with the subject `[LevelChannel] «Платёж получен»: <amount> ₽ - <invoice>`.
 
-**Когда email НЕ приходит:**
-1. Проверь `journalctl -u levelchannel | grep '\[notify\]'` — там будет warn если что-то порвалось.
-2. Resend account: лимит free-tier 100 email/day; если шкалит — `RESEND_API_KEY` mismatch.
-3. EMAIL_FROM-домен должен быть верифицирован в Resend dashboard.
+**When the email does NOT arrive:**
+1. Check `journalctl -u levelchannel | grep '\[notify\]'` - there will be a warn if something broke.
+2. Resend account: free-tier limit 100 emails/day; if you're hitting it - `RESEND_API_KEY` mismatch.
+3. The EMAIL_FROM domain must be verified in the Resend dashboard.
 
-### Что НЕ настроено (в roadmap)
+### What is NOT configured (on the roadmap)
 
-- Slack/Telegram алерт по успешному платежу — отдельная задача в backlog (нужен bot token и parse_mode logic). Email покрывает 80% потребности
-- Disk usage monitoring (косвенно — `db: err` появится когда диск умирает)
+- Slack/Telegram alert on a successful payment - separate task in the backlog (needs a bot token and parse_mode logic). Email covers 80% of the need
+- Disk usage monitoring (indirectly - `db: err` will show up when the disk is dying)
 
 ---
 
-## 10. CloudPayments кабинет
+## 10. CloudPayments cabinet
 
-<!-- FILL IN: ID кабинета, контактный e-mail аккаунта -->
+<!-- FILL IN: cabinet ID, contact email of the account -->
 
-**Webhooks** (настраиваются в кабинете → Сайт → Уведомления):
+**Webhooks** (configured in the cabinet → Site → Notifications):
 
-| Событие | URL |
+| Event | URL |
 |---|---|
 | Check | `https://levelchannel.ru/api/payments/webhooks/cloudpayments/check` |
 | Pay | `https://levelchannel.ru/api/payments/webhooks/cloudpayments/pay` |
 | Fail | `https://levelchannel.ru/api/payments/webhooks/cloudpayments/fail` |
 
-Все три — POST, формат: `application/x-www-form-urlencoded` или
-`application/json` (мы понимаем оба). HMAC включить обязательно
+All three - POST, format: `application/x-www-form-urlencoded` or
+`application/json` (we accept both). HMAC must be enabled
 (`X-Content-HMAC` / `Content-HMAC`).
 
-**Платежи в один клик / cofRecurring** — **включить**, иначе
-`/payments/tokens/charge` будет возвращать ошибку.
+**One-click payments / cofRecurring** - **must be enabled**, otherwise
+`/payments/tokens/charge` will return an error.
 
-**ОФД / онлайн-касса** — переведена в боевой режим, чеки шлются на
-e-mail из `receiptEmail`.
+**OFD / online kassa** - switched to live mode, cheks are sent to the
+e-mail from `receiptEmail`.
 
 ---
 
 ## 11. Common ops runbook
 
-### Найти заказ по e-mail клиента
+### Find an order by client e-mail
 
 ```bash
 psql "$DATABASE_URL" -c "
@@ -947,7 +948,7 @@ psql "$DATABASE_URL" -c "
 "
 ```
 
-### Найти заказ, который «застрял» в pending
+### Find an order "stuck" in pending
 
 ```bash
 psql "$DATABASE_URL" -c "
@@ -958,15 +959,15 @@ psql "$DATABASE_URL" -c "
 "
 ```
 
-Если это CloudPayments-ордер — webhook не дошёл. Проверь:
-1. `/api/health` отвечает 200
-2. nginx access log: приходил ли POST на `/api/payments/webhooks/cloudpayments/pay`
-3. CloudPayments кабинет → история уведомлений → есть ли ретраи
-4. Если нужно вручную закрыть — НЕ через mock confirm (он закрыт в проде).
-   Используй CP кабинет: запусти повтор уведомления, наша обработка
-   идемпотентна.
+If this is a CloudPayments order - the webhook didn't arrive. Check:
+1. `/api/health` returns 200
+2. nginx access log: did a POST arrive at `/api/payments/webhooks/cloudpayments/pay`
+3. CloudPayments cabinet → notification history → are there retries
+4. If you need to close it manually - NOT through mock confirm (it's disabled in production).
+   Use the CP cabinet: trigger a notification re-send, our processing
+   is idempotent.
 
-### Посмотреть события одного заказа
+### Look at the events of a single order
 
 ```bash
 psql "$DATABASE_URL" -c "
@@ -976,7 +977,7 @@ psql "$DATABASE_URL" -c "
 "
 ```
 
-### Посмотреть, у кого есть сохранённая карта
+### Check who has a saved card
 
 ```bash
 psql "$DATABASE_URL" -c "
@@ -986,7 +987,7 @@ psql "$DATABASE_URL" -c "
 "
 ```
 
-### Удалить токен по запросу клиента (152-ФЗ)
+### Delete a token at the client's request (personal-data law, 152-FZ)
 
 ```bash
 psql "$DATABASE_URL" -c "
@@ -994,10 +995,10 @@ psql "$DATABASE_URL" -c "
 "
 ```
 
-То же делает кнопка «Забыть эту карту» в UI — но иногда клиент пишет
-вручную.
+The «Забыть эту карту» button in the UI does the same - but sometimes
+clients write in by hand.
 
-### Очистить старые idempotency-записи
+### Clean up old idempotency records
 
 ```bash
 psql "$DATABASE_URL" -c "
@@ -1005,126 +1006,126 @@ psql "$DATABASE_URL" -c "
 "
 ```
 
-Опционально через cron: `0 3 * * * psql ... -c "delete ..."`.
+Optionally via cron: `0 3 * * * psql ... -c "delete ..."`.
 
-### Перезапустить runtime
+### Restart the runtime
 
 ```bash
-sudo systemctl restart levelchannel    # или pm2 restart levelchannel
-sudo journalctl -u levelchannel -f     # подтвердить, что встал чисто
-curl -s https://<домен>/api/health | jq    # должен быть status: ok
+sudo systemctl restart levelchannel    # or pm2 restart levelchannel
+sudo journalctl -u levelchannel -f     # confirm it came up clean
+curl -s https://<domain>/api/health | jq    # status should be ok
 ```
 
-### Включить временно verbose logging
+### Temporarily enable verbose logging
 
-В коде нет log-level переключателя. Если нужен глубокий debug — поставь
-`console.log` точечно в нужное место, задеплой, отключи после.
+There's no log-level switch in the code. If you need deep debug - drop
+`console.log` at the right spot, deploy, then remove.
 
 ---
 
 ## 12. Incident playbook
 
-### Симптом: «оплата прошла, но клиент видит pending»
+### Symptom: "the payment went through but the client sees pending"
 
-1. Найди ордер по invoice_id или email (см. §11).
-2. Проверь `status` в БД — реально pending?
-3. Проверь, дошёл ли webhook: `journalctl ... | grep "/webhooks/cloudpayments/pay"` за последние 30 мин.
-4. Если webhook не дошёл: CP кабинет → отправь уведомление повторно. У нас обработка идемпотентна — не задвоится.
-5. Если webhook дошёл, но ордер всё равно pending: смотри events ордера, скорее всего HMAC не сошёлся (`{"code":13}`). Проверь `CLOUDPAYMENTS_API_SECRET` в .env vs в кабинете.
+1. Find the order by invoice_id or email (see §11).
+2. Check `status` in the DB - is it really pending?
+3. Check whether the webhook arrived: `journalctl ... | grep "/webhooks/cloudpayments/pay"` for the last 30 min.
+4. If the webhook didn't arrive: CP cabinet → resend the notification. Our processing is idempotent - it won't duplicate.
+5. If the webhook did arrive but the order is still pending: look at the order events, most likely HMAC didn't match (`{"code":13}`). Check `CLOUDPAYMENTS_API_SECRET` in .env vs in the cabinet.
 
-### Симптом: `/api/health` отдаёт 503
+### Symptom: `/api/health` returns 503
 
-1. `journalctl -u levelchannel -n 100` — что в логах?
-2. `pg_isready -d "$DATABASE_URL"` — БД жива?
-3. Проверь `df -h /` — диск не забит ли?
-4. Если runtime упал и не поднимается: `systemctl status levelchannel`,
-   `systemctl restart levelchannel`, смотри stderr.
+1. `journalctl -u levelchannel -n 100` - what's in the logs?
+2. `pg_isready -d "$DATABASE_URL"` - is the DB alive?
+3. Check `df -h /` - is the disk full?
+4. If the runtime crashed and won't come up: `systemctl status levelchannel`,
+   `systemctl restart levelchannel`, look at stderr.
 
-### Симптом: «банк не пускает на 3DS»
+### Symptom: "the bank won't let through 3DS"
 
-1. Найди ордер с `metadata.threeDs.transactionId`.
-2. Проверь telemetry: `select * from payment_telemetry where invoice_id = '<id>' order by at`.
-3. Если `one_click_3ds_callback` есть, а `one_click_3ds_paid` нет —
-   `confirmThreeDsAndFinalize` отдала `declined` или `error`. В `events`
-   ордера должна быть запись `one_click.3ds_error` или `payment.failed`.
-4. Если `one_click_3ds_callback` нет — пользователь не вернулся с ACS
-   банка. Это не наш баг, но мы можем не получить webhook от CP. Через
-   несколько минут CP сам пометит транзакцию как timeout и пришлёт Fail.
+1. Find the order with `metadata.threeDs.transactionId`.
+2. Check telemetry: `select * from payment_telemetry where invoice_id = '<id>' order by at`.
+3. If `one_click_3ds_callback` is there but `one_click_3ds_paid` is not -
+   `confirmThreeDsAndFinalize` returned `declined` or `error`. The order's
+   `events` should contain a `one_click.3ds_error` or `payment.failed` record.
+4. If `one_click_3ds_callback` is missing - the user did not return from the
+   bank's ACS. This is not our bug, but we may not get a webhook from CP.
+   After a few minutes CP itself will mark the transaction as timeout and send Fail.
 
-### Симптом: подозрение на брутфорс / DDoS
+### Symptom: suspicion of brute-force / DDoS
 
-1. `tail -f /var/log/nginx/access.log` — посмотри топ IP
-2. `journalctl -u levelchannel | grep "Too many requests"` — наш limiter
-   уже отбивает что-то
-3. Если поток выше limiter capacity — ужесточи `limit_req_zone` в nginx
-   (см. §3) и сделай `nginx -s reload`
+1. `tail -f /var/log/nginx/access.log` - look at the top IPs
+2. `journalctl -u levelchannel | grep "Too many requests"` - our limiter
+   is already pushing back something
+3. If the flow is above limiter capacity - tighten `limit_req_zone` in nginx
+   (see §3) and run `nginx -s reload`
 
 ---
 
 ## 12.5 One-shot activator: SENTRY + notifications + cron timers + GIT_SHA
 
-После большого batch'а PR (auth debt, audit log, Sentry, retention cron, deploy-freshness probe и т.д.) часть работает «как код в проде», часть требует **разовой настройки на сервере**: env vars, systemd unit'ы и patch к autodeploy script. Раньше это было 4 отдельных copy-paste блока (`§9 Sentry`, `§9 Webhook-flow`, `§5 Retention`, `§6 Deploy freshness`). Сейчас всё собрано в один idempotent script — можно перезапускать сколько угодно, повторный run будет no-op для уже сделанного.
+After a big batch of PRs (auth debt, audit log, Sentry, retention cron, deploy-freshness probe, etc.), some of it works "as code in production", and some requires **a one-off setup on the server**: env vars, systemd units and a patch to the autodeploy script. Previously this was 4 separate copy-paste blocks (`§9 Sentry`, `§9 Webhook-flow`, `§5 Retention`, `§6 Deploy freshness`). Now it's all bundled into one idempotent script - you can rerun it as many times as you want, the second run will be a no-op for whatever has already been done.
 
 ```bash
 ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136
 cd /var/www/levelchannel
 
-# Pull свежее main (autodeploy, конечно, делает это сам, но мы хотим
-# самую свежую версию activator-script'а):
+# Pull the freshest main (autodeploy does this itself, of course, but we want
+# the very latest version of the activator script):
 git fetch origin && git reset --hard origin/main
 
 bash scripts/activate-prod-ops.sh
 ```
 
-Скрипт делает (детали — `scripts/activate-prod-ops.sh` начало файла):
+The script does (details - the top of `scripts/activate-prod-ops.sh`):
 
-1. Append'ит в `/etc/levelchannel.env` 4 новых env-var'а если их нет:
-   `ALERT_EMAIL_TO`, `OPERATOR_NOTIFY_EMAIL`, `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`. Существующие значения **не перезаписываются**.
+1. Appends 4 new env vars to `/etc/levelchannel.env` if they are missing:
+   `ALERT_EMAIL_TO`, `OPERATOR_NOTIFY_EMAIL`, `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`. Existing values are **not overwritten**.
 
-2. Patch'ит `/usr/local/bin/levelchannel-autodeploy`, чтобы перед каждым `npm run build` он экспортировал `GIT_SHA=$(git rev-parse HEAD)` и обновлял эту строку в `/etc/levelchannel.env`. Перед патчем создаёт backup `*.bak-<timestamp>`. Idempotency: если `export GIT_SHA=$(git rev-parse HEAD)` уже есть в файле — skip.
+2. Patches `/usr/local/bin/levelchannel-autodeploy` so that before each `npm run build` it exports `GIT_SHA=$(git rev-parse HEAD)` and updates that line in `/etc/levelchannel.env`. Before patching it creates a backup `*.bak-<timestamp>`. Idempotency: if `export GIT_SHA=$(git rev-parse HEAD)` is already in the file - skip.
 
-3. Копирует unit/timer файлы в `/etc/systemd/system/`:
+3. Copies unit/timer files into `/etc/systemd/system/`:
    - `levelchannel-webhook-flow-alert.{service,timer}`
    - `levelchannel-db-retention.{service,timer}`
-   `cp -p` — права/владелец из исходника. Если на месте уже identical файл — skip.
+   `cp -p` - permissions/owner from the source. If an identical file is already in place - skip.
 
-4. `systemctl daemon-reload`, `enable --now` оба таймера, `restart levelchannel` (если env действительно изменился).
+4. `systemctl daemon-reload`, `enable --now` for both timers, `restart levelchannel` (if env actually changed).
 
-После завершения скрипт выводит follow-up smoke-команду для Sentry + curl на `/api/health.version`. На прод придёт первый event в Sentry в течение минуты после следующего push'а на main.
+When done, the script prints a follow-up smoke command for Sentry + curl on `/api/health.version`. The first event will appear in Sentry within a minute after the next push to main.
 
 ---
 
-## 13. Долги и known ops gaps
+## 13. Debt and known ops gaps
 
-### Closed hardening work — 2026-04-29
+### Closed hardening work - 2026-04-29
 
-Закрыто: SSH publickey-only, bind `127.0.0.1:3000`, nginx `limit_req`
-на `/api/*`, ежедневный DB backup + restore drill, `npm run migrate:up`
-в autodeploy pipeline. Детали живут в §§1, 3, 5 и 6.
+Closed: SSH publickey-only, bind `127.0.0.1:3000`, nginx `limit_req`
+on `/api/*`, daily DB backup + restore drill, `npm run migrate:up`
+in the autodeploy pipeline. Details live in §§1, 3, 5 and 6.
 
-Из фактических blanks ещё не закрыты: CloudPayments cabinet ID, ОФД
+Of the actual blanks not yet closed: CloudPayments cabinet ID, OFD
 status, DNS registrar.
 
-### Открытые долги (operations)
+### Open debt (operations)
 
-- настроить uptime monitor на `/api/health` (UptimeRobot free / BetterStack)
-- подключить Sentry или хотя бы `journald` → лог-агрегатор
-- зафиксировать ротацию `CLOUDPAYMENTS_API_SECRET` (раз в N месяцев или по событию)
-- backup retention 14 дней не заменяет отдельный архивный контур. По
-  152-ФЗ персональные данные надо хранить только пока цель обработки
-  актуальна, а платёжные записи и связанные доказательства согласия
-  должны оставаться доступными в основной БД и рабочих архивах весь
-  обязательный срок хранения
-- alerting на неуспешный autodeploy / зависший `levelchannel-autodeploy.service`
-- session cleanup cron для `account_sessions` (Phase 1A backlog)
+- set up an uptime monitor on `/api/health` (UptimeRobot free / BetterStack)
+- connect Sentry, or at least `journald` → log aggregator
+- formalise rotation of `CLOUDPAYMENTS_API_SECRET` (every N months or by event)
+- a 14-day backup retention does not replace a separate archival contour. Under
+  the personal-data law (152-FZ), personal data must be kept only while the
+  processing purpose is current, while payment records and the related proofs
+  of consent must remain available in the main DB and working archives for the
+  full mandatory retention period
+- alerting on a failed autodeploy / a hung `levelchannel-autodeploy.service`
+- session cleanup cron for `account_sessions` (Phase 1A backlog)
 
-### git ↔ prod синхронизация
+### git ↔ prod sync
 
-`/var/www/levelchannel` теперь git-checkout последнего успешного release.
-Главный вопрос уже не "есть ли там git", а "дошёл ли последний deploy до
-healthy состояния".
+`/var/www/levelchannel` is now a git checkout of the last successful release.
+The main question is no longer "is there a git repo there", but "did the
+last deploy reach a healthy state".
 
-**Как проверить текущий state в любой момент:**
+**How to check current state at any time:**
 
 ```bash
 ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
@@ -1136,7 +1137,7 @@ ssh -i ~/.ssh/levelchannel_timeweb_ed25519 root@83.217.202.136 '
 '
 ```
 
-Потом локально:
+Then locally:
 
 ```bash
 cd ~/LevelChannel
@@ -1144,7 +1145,7 @@ git fetch origin main
 git rev-parse origin/main
 ```
 
-Если SHA не совпадают дольше пары минут, это уже инцидент deploy pipeline:
-смотри `journalctl -u levelchannel-autodeploy.service`, проверяй GitHub
-доступ ключом `/home/levelchannel/.ssh/github_deploy` и свободное место
-под новый release.
+If the SHAs do not match for more than a couple of minutes, this is already a
+deploy pipeline incident: see `journalctl -u levelchannel-autodeploy.service`,
+verify GitHub access via the key `/home/levelchannel/.ssh/github_deploy` and
+free space for a new release.

@@ -1,10 +1,11 @@
 # Security
 
-## Текущее состояние
+## Current state
 
-Проект прошёл базовый hardening для публичного сайта с payment API.
+The project has gone through a baseline hardening pass for a public site
+with a payment API.
 
-Уже внедрено:
+Already in place:
 
 - `Content-Security-Policy`
 - `Strict-Transport-Security`
@@ -13,148 +14,175 @@
 - `Permissions-Policy`
 - `Cross-Origin-Opener-Policy`
 - `Cross-Origin-Resource-Policy`
-- запрет DNS prefetch
-- origin checks для browser-initiated payment requests
+- DNS prefetch disabled
+- origin checks for browser-initiated payment requests
 - `sec-fetch-site` filtering
-- in-memory rate limiting по IP
-- валидация `invoiceId`
-- `Cache-Control: no-store` для payment responses
-- HMAC verification для CloudPayments webhook'ов по `X-Content-HMAC` и `Content-HMAC`
-  (HMAC-SHA256 в base64 поверх raw body, без перекодировки)
-- валидация суммы на сервере, без доверия сумме и e-mail с клиента
-- отдельное server-side доказательство акцепта согласия на обработку ПДн
-  (timestamp, версия документа, путь документа, IP, user-agent)
-- ограничение mock confirm в production (по умолчанию закрыто, открывается явным `PAYMENTS_ALLOW_MOCK_CONFIRM=true`)
-- transactional `SELECT ... FOR UPDATE` на изменение ордера в Postgres — защита от TOCTOU при конкурентных вебхуках
-- one-click charge (`/api/payments/charge-token`) проксирует CloudPayments
-  Token API через server-side Basic Auth, токены никогда не уходят в браузер
-- payment storage file исключён из репозитория
-- телеметрия хешируется отдельным `TELEMETRY_HASH_SECRET`, без fallback на CloudPayments secret
-- `npm audit --omit=dev` чистый на текущем lockfile
+- in-memory rate limiting per IP
+- `invoiceId` validation
+- `Cache-Control: no-store` for payment responses
+- HMAC verification for CloudPayments webhooks via `X-Content-HMAC` and `Content-HMAC`
+  (HMAC-SHA256 in base64 over the raw body, no re-encoding)
+- amount validation on the server, no trust in the amount or e-mail from the client
+- a separate server-side proof of personal-data consent acceptance
+  (timestamp, document version, document path, IP, user agent)
+- mock confirm restricted in production (closed by default, opened by an explicit `PAYMENTS_ALLOW_MOCK_CONFIRM=true`)
+- transactional `SELECT ... FOR UPDATE` on order mutations in Postgres - TOCTOU protection against concurrent webhooks
+- one-click charge (`/api/payments/charge-token`) proxies the CloudPayments
+  Token API through server-side Basic Auth; tokens never reach the browser
+- the payment storage file is excluded from the repository
+- telemetry is hashed with a dedicated `TELEMETRY_HASH_SECRET`, no fallback to the CloudPayments secret
+- `npm audit --omit=dev` is clean on the current lockfile
 
 ## Auth and account layer
 
-Auth backend уже подключён: таблицы, `lib/auth/*`, `lib/email/*`,
-`/api/auth/*` и минимальный auth/cabinet UI живут в runtime. Полноценная
-product-surface кабинета ещё не раздута, но security инварианты ниже уже
-обязательны для работающих маршрутов.
+The auth backend is wired in: tables, `lib/auth/*`, `lib/email/*`,
+`/api/auth/*` and a minimal auth/cabinet UI live in the runtime. The
+full product surface of the cabinet is not built out yet, but the
+security invariants below are already mandatory for the routes that
+do work.
 
-- пароли: `bcryptjs`, cost=12. Никакого pepper'а в текущей итерации;
-  если будем добавлять — отдельная миграция rehash'а.
+- passwords: `bcryptjs`, cost=12. No pepper in the current iteration;
+  if we add one later, it goes through a separate rehash migration.
 - session cookie: `lc_session`, `HttpOnly` + `SameSite=Lax` + `Secure`
-  в проде. В БД хранится только sha256 от cookie value, никогда plain.
-  Запись в `account_sessions` имеет `expires_at` (7 дней) + `revoked_at`
-  для sign-out.
-- single-use токены (verify-email, password-reset) хранятся как sha256;
-  consumed_at ставится атомарно в одной транзакции с проверкой TTL,
-  чтобы replay возвращал тот же "invalid or already used".
-- email enumeration: и для register, и для reset-request ответ должен
-  быть одинаковым "we sent a link if the email exists". В route handlers
-  это уже реализовано, а lib/-модули сами по себе enumeration не
-  предотвращают.
-- password reset должен revoke'ать все active session'ы аккаунта
-  (sign-out everywhere). Это уже делается через
-  `revokeAllSessionsForAccount` в reset-confirm handler'е.
-- transport (Resend) даёт console-fallback в dev. **В проде гейт уже стоит
-  (Phase 1B Lane A):** `lib/email/config.ts` бросает на module load если
-  `RESEND_API_KEY` или `AUTH_RATE_LIMIT_SECRET` пусты под `NODE_ENV=production`.
-- per-email rate-limit scopes (lib/auth/email-hash.ts) keyed by dedicated
-  `AUTH_RATE_LIMIT_SECRET`. **NOT reuse** `TELEMETRY_HASH_SECRET` — разные
-  trust boundaries: telemetry secret keys persistent analytics, rate-limit
-  secret keys ephemeral in-memory buckets. Mixing их couples rotation
-  cadences artificially.
-- email-нормализация: `lib/auth/accounts.ts.normalizeAccountEmail` =
-  `email.trim().toLowerCase()` на всех read/write путях. DB-level
-  CHECK в `migrations/0010_accounts_email_normalized.sql` ловит bypass
-  app-слоя (data migration, ручной psql), отвергая non-normalized
-  insert до того, как он создаст shadow account. UNIQUE-индекс на
-  `accounts.email` остаётся обычным — на нормализованных данных он
-  эквивалентен функциональному без оверхеда.
-- HTML-escape для transactional templates: `lib/email/escape.ts`
-  применяется к каждому динамическому значению (verify/reset URL),
-  даже если значение сегодня заведомо безопасно. Защита от того, что
-  завтра кто-то поменяет format токена на содержащий `"` или `<`.
-- single-use-tokens whitelist invariant: `tableFor(scope)` бросает
-  типизированную ошибку, если scope невалиден; SQL никогда не строится
-  на `undefined`-имени таблицы.
+  in production. The DB stores only sha256 of the cookie value, never
+  plain. The `account_sessions` row carries `expires_at` (7 days) plus
+  `revoked_at` for sign-out.
+- single-use tokens (verify-email, password-reset) are stored as sha256;
+  `consumed_at` is set atomically in the same transaction as the TTL
+  check, so a replay returns the same "invalid or already used".
+- email enumeration: both register and reset-request must reply with
+  the same "we sent a link if the e-mail exists". The route handlers
+  already do this; the lib/-modules themselves do not prevent
+  enumeration on their own.
+- password reset must revoke all active sessions of the account
+  (sign-out everywhere). This is done via
+  `revokeAllSessionsForAccount` in the reset-confirm handler.
+- transport (Resend) gives a console fallback in dev. **The prod gate is
+  in place (Phase 1B Lane A):** `lib/email/config.ts` throws on module
+  load if `RESEND_API_KEY` or `AUTH_RATE_LIMIT_SECRET` is empty under
+  `NODE_ENV=production`.
+- per-email rate-limit scopes (`lib/auth/email-hash.ts`) keyed by a
+  dedicated `AUTH_RATE_LIMIT_SECRET`. **Do not reuse**
+  `TELEMETRY_HASH_SECRET`: different trust boundaries - the telemetry
+  secret keys persistent analytics, the rate-limit secret keys
+  ephemeral in-memory buckets. Mixing them couples rotation cadences
+  artificially.
+- e-mail normalization: `lib/auth/accounts.ts.normalizeAccountEmail` =
+  `email.trim().toLowerCase()` on every read/write path. A DB-level
+  CHECK in `migrations/0010_accounts_email_normalized.sql` catches
+  bypasses of the app layer (data migrations, manual psql), rejecting
+  a non-normalized insert before it can create a shadow account. The
+  UNIQUE index on `accounts.email` stays as a regular index - on
+  normalized data it is equivalent to a functional one without the
+  overhead.
+- HTML escape for transactional templates: `lib/email/escape.ts` is
+  applied to every dynamic value (verify / reset URL), even when the
+  value is provably safe today. Defends against a future change to
+  the token format that introduces `"` or `<`.
+- single-use-tokens whitelist invariant: `tableFor(scope)` throws a
+  typed error if the scope is invalid; SQL is never built on top of
+  an `undefined` table name.
 
-## Защищаемые активы
+## Protected assets
 
-- статусы заказов
-- суммы платежей
+- order statuses
+- payment amounts
 - CloudPayments credentials
 - webhook endpoints
-- server logs и технические данные заказа
-- `payment_audit_events` (audit-log-of-record для платежей — содержит full email + full IP, см. ниже)
+- server logs and technical order data
+- `payment_audit_events` (audit-log-of-record for payments - contains the full e-mail and full IP, see below)
 
-## Audit log — payment lifecycle
+## Audit log - payment lifecycle
 
-`payment_audit_events` — append-only audit-log-of-record для всех money-bound transitions (создание заказа, отмена, paid через webhook, fail через webhook, charge_token / 3DS branches, mock confirm). Source-of-truth для расследования инцидентов и SAR'ов 152-ФЗ.
+`payment_audit_events` is an append-only audit-log-of-record for every
+money-bound transition (order creation, cancellation, paid via
+webhook, fail via webhook, charge_token / 3DS branches, mock confirm).
+Source of truth for incident investigations and 152-FZ subject access
+requests.
 
-В отличие от `payment_telemetry` (privacy-friendly funnel — HMAC email + /24-masked IP), audit хранит **полные** данные: реальный e-mail и реальный client IP. Это нужно чтобы реконструировать "что именно произошло с конкретным заказом этого конкретного пользователя".
+Unlike `payment_telemetry` (privacy-friendly funnel - HMAC e-mail plus
+/24-masked IP), the audit log stores **full** data: the real e-mail
+and the real client IP. This is necessary to reconstruct "what exactly
+happened with this specific order of this specific user".
 
-**Доступ.** Read-only psql соединение под admin-аккаунтом DB. UI пока нет (Phase 6). Ни один публичный route к этой таблице не обращается. Строки **immutable** — никаких UPDATE/DELETE из application code; только INSERT через `recordPaymentAuditEvent()`. ON DELETE NO ACTION на FK к `payment_orders` гарантирует, что audit переживёт любые будущие очистки orders.
+**Access.** Read-only psql connection under the admin DB account. No
+UI yet (Phase 6). No public route reaches this table. The rows are
+**immutable** - no UPDATE/DELETE from application code, only INSERT
+via `recordPaymentAuditEvent()`. ON DELETE NO ACTION on the FK to
+`payment_orders` guarantees that audit survives any future cleanup
+of orders.
 
-**152-ФЗ basis.** Обработка полного e-mail + IP в audit-логе оправдана как **legitimate interest** (ст.6 п.7 152-ФЗ): аудиторская обязанность по платежным операциям, защита от мошенничества, выполнение требований CloudPayments / банка-эквайера / ФНС.
+**152-FZ basis.** Processing a full e-mail and IP in the audit log is
+justified as **legitimate interest** (art.6 §7 of 152-FZ): audit
+obligation on payment operations, fraud protection, complying with
+CloudPayments / acquirer / FNS requirements.
 
-**Retention.** ~3 года (alignment с 152-ФЗ для финансовых записей). На уровне схемы TTL не задан — pruning через cron, который ставится отдельно когда таблица станет существенной по объёму.
+**Retention.** ~3 years (aligned with 152-FZ for financial records).
+No TTL on the schema level - pruning will be a cron, set up
+separately when the table grows large enough to matter.
 
-**Failure mode.** Recorder best-effort: PG outage → warn в journalctl + return false, но business path не валится. Это значит, что **отдельная outage Postgres может привести к gap'у в audit логе**. Defense: uptime monitor (`OPERATIONS.md §9`) ловит outage отдельно. Сама запись audit transaction-bound с business INSERT — **нет** (намеренно).
+**Failure mode.** The recorder is best-effort: a PG outage logs a
+warning to journalctl and returns false, but the business path does
+not fall over. That means **a separate Postgres outage can produce a
+gap in the audit log**. Defense: the uptime monitor
+(`OPERATIONS.md §9`) catches the outage independently. The audit
+INSERT itself is **not** transaction-bound to the business INSERT,
+intentionally.
 
-## Реализованные меры
+## Implemented controls
 
 ### 1. Frontend / Browser
 
-- жёсткий CSP для снижения XSS и injection surface
-- пользовательская форма оплаты ограничена только `amount + email`
-- создание платежа и one-click charge запрещены без явного checkbox consent на обработку ПДн
-- нет `dangerouslySetInnerHTML`
-- чувствительный order state хранится только как `invoiceId` в `localStorage`
+- a strict CSP to reduce XSS and injection surface
+- the user-facing payment form is limited to `amount + email`
+- payment creation and one-click charge are forbidden without an explicit consent checkbox on personal-data processing
+- no `dangerouslySetInnerHTML`
+- sensitive order state is stored only as `invoiceId` in `localStorage`
 
 ### 2. API
 
-- `POST /api/payments` принимает только `amountRub`, `customerEmail` и флаг подтверждённого consent
-- invalid invoice ids отклоняются до обращения к storage
-- rate limiting на create / status / mock confirm routes
-- nginx держит per-IP `limit_req` на `/api/*`, а CloudPayments webhooks исключены из него и защищаются HMAC + order cross-check'ами
-- browser-origin filtering для mutation endpoints
-- чувствительные ответы не кешируются
+- `POST /api/payments` accepts only `amountRub`, `customerEmail` and a confirmed-consent flag
+- invalid invoice ids are rejected before any storage call
+- rate limiting on create / status / mock confirm routes
+- nginx holds per-IP `limit_req` on `/api/*`; CloudPayments webhooks are excluded from it and protected by HMAC plus order cross-checks
+- browser-origin filtering for mutation endpoints
+- sensitive responses are not cached
 
 ### 3. Payments
 
-- webhook подпись CloudPayments проверяется через HMAC
-- webhook amount сверяется с сохранённым order amount
-- webhook `AccountId` / `Email` сверяется с сохранённым e-mail заказа
-- duplicate events сохраняются как audit trail
-- `fail` после `paid` не перетирает успешный статус
-- чек уходит на e-mail через CloudPayments / CloudKassir, сайт не отправляет его сам
+- the CloudPayments webhook signature is checked via HMAC
+- the webhook amount is reconciled against the stored order amount
+- the webhook `AccountId` / `Email` is reconciled against the stored order e-mail
+- duplicate events are kept as an audit trail
+- a `fail` after `paid` does not overwrite the successful status
+- the chek is delivered to e-mail through CloudPayments / CloudKassir; the site does not send it itself
 
 ### 4. Secrets
 
-- `.env` исключён из репозитория
-- payment storage file исключён из репозитория
-- CloudPayments credentials используются только на сервере
+- `.env` is excluded from the repository
+- the payment storage file is excluded from the repository
+- CloudPayments credentials are used only on the server
 
-## Текущие ограничения и accepted gaps
+## Current limits and accepted gaps
 
-- app-level limiter остаётся in-memory, значит не синхронизируется между инстансами
-- payment telemetry: postgres основной путь, файловый fallback на случай
-  сбоя БД (см. `lib/telemetry/store.ts`)
-- нет централизованного audit log storage
-- нет Sentry / alerting / intrusion visibility
+- the app-level limiter is still in-memory, which means it does not synchronize across instances
+- payment telemetry: Postgres is the primary path, file fallback is for the case
+  of a DB outage (see `lib/telemetry/store.ts`)
+- there is no centralized audit log storage
+- there is no Sentry / alerting / intrusion visibility
 
-## Граница владения
+## Ownership boundary
 
-Infra hardening, SSH, nginx, backup, deploy, rollback и фактическое
-production-состояние живут в `OPERATIONS.md`. Этот документ описывает
-текущие security boundaries, обязательные инварианты и открытые security
-gaps, а не исторический ход серверных работ.
+Infra hardening, SSH, nginx, backup, deploy, rollback and the actual
+production state live in `OPERATIONS.md`. This document describes the
+current security boundaries, mandatory invariants and open security
+gaps, not the historical timeline of server work.
 
-## Правило по изменениям
+## Change rule
 
-Любые будущие изменения payment flow должны сопровождаться:
+Any future changes to the payment flow must be accompanied by:
 
-- обновлением `README.md`
-- обновлением `PAYMENTS_SETUP.md`
-- пересмотром `SECURITY.md`, если меняются trust boundaries или секреты
-- прохождением [`docs/security-regression-checklist.md`](docs/security-regression-checklist.md) перед merge
+- an update to `README.md`
+- an update to `PAYMENTS_SETUP.md`
+- a revisit of `SECURITY.md` if trust boundaries or secrets change
+- a pass through [`docs/security-regression-checklist.md`](docs/security-regression-checklist.md) before merge

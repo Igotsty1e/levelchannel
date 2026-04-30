@@ -1,27 +1,27 @@
-# 📄 PRODUCT REQUIREMENTS DOCUMENT (HISTORICAL)
+# PRODUCT REQUIREMENTS DOCUMENT (HISTORICAL)
 
-> Этот документ описывает первую версию лендинга.
-> Текущая техническая реализация уже ушла дальше:
-> сайт работает на серверном `Next.js`, а оплата и security-контур описаны в
-> [README.md](/Users/ivankhanaev/LevelChannel/README.md),
-> [ARCHITECTURE.md](/Users/ivankhanaev/LevelChannel/ARCHITECTURE.md),
-> [SECURITY.md](/Users/ivankhanaev/LevelChannel/SECURITY.md) и
-> [PAYMENTS_SETUP.md](/Users/ivankhanaev/LevelChannel/PAYMENTS_SETUP.md).
+> This document describes the first version of the landing page.
+> The current technical implementation has already moved further:
+> the site runs on server-side `Next.js`, and payments and the security perimeter are described in
+> [README.md](README.md),
+> [ARCHITECTURE.md](ARCHITECTURE.md),
+> [SECURITY.md](SECURITY.md), and
+> [PAYMENTS_SETUP.md](PAYMENTS_SETUP.md).
 
-## LevelChannel — Landing Page
+## LevelChannel - Landing Page
 
 ---
 
-# 🧠 1. Product Overview
+# 1. Product Overview
 
 **Product:** LevelChannel Landing Page
-**Тип:** Конверсионный лендинг
-**Модель:** Индивидуальные онлайн-занятия по английскому (1:1)
-**Цель:** Генерация лидов через Telegram
+**Type:** Conversion landing page
+**Model:** Individual online English lessons (1:1)
+**Goal:** Lead generation via Telegram
 
 ---
 
-# 🎯 2. Goals & Metrics
+# 2. Goals & Metrics
 
 ## North Star
 
@@ -29,45 +29,45 @@
 
 ---
 
-## Метрики
+## Metrics
 
 | Metric          | Target |
 | --------------- | ------ |
-| Conversion Rate | 5–10%+ |
+| Conversion Rate | 5-10%+ |
 | Telegram CTR    | >10%   |
 | CTA Click Rate  | >15%   |
 | Scroll Depth    | >60%   |
 
 ---
 
-# 👤 3. Target Audience
+# 3. Target Audience
 
-* 18–40 лет
-* специалисты (IT, бизнес, продукты и др.)
-* цели:
+* 18-40 years old
+* professionals (IT, business, product, etc.)
+* goals:
 
-  * экзамены (IELTS и др.)
-  * работа / международка
-  * разговорный английский
-
----
-
-# 💡 4. Value Proposition
-
-> Индивидуальный английский под конкретную цель
-> с измеримым результатом
+  * exams (IELTS and others)
+  * work / international career
+  * conversational English
 
 ---
 
-# 🧭 5. User Flow
+# 4. Value Proposition
+
+> Individual English tailored to a specific goal
+> with a measurable result
+
+---
+
+# 5. User Flow
 
 ```
-Landing → Hero → Trust → UseCases → Results → CTA → Telegram → Диалог
+Landing → Hero → Trust → UseCases → Results → CTA → Telegram → Conversation
 ```
 
 ---
 
-# 🧩 6. Page Structure (Strict Order)
+# 6. Page Structure (Strict Order)
 
 ```
 Header  
@@ -85,7 +85,7 @@ Footer
 
 ---
 
-# ⚙️ 7. Core Functionality
+# 7. Core Functionality
 
 ---
 
@@ -99,13 +99,13 @@ Footer
 
 ## 7.2 CTA System
 
-### Основной CTA (везде):
+### Primary CTA (everywhere):
 
-**Написать в Telegram**
+**Write to us on Telegram**
 
 ---
 
-## Ссылка:
+## Link:
 
 ```
 https://t.me/anastasiia_englishcoach
@@ -113,7 +113,7 @@ https://t.me/anastasiia_englishcoach
 
 ---
 
-## Размещение CTA:
+## CTA placement:
 
 * Hero
 * Results
@@ -122,53 +122,53 @@ https://t.me/anastasiia_englishcoach
 
 ---
 
-## Поведение:
+## Behavior:
 
-* открытие в новой вкладке
-* hover эффект
-* иконка Telegram (опционально)
-
----
-
-## ❌ 7.3 Form
-
-Форма полностью отсутствует.
-
-Запрещено:
-
-* любые input поля
-* сбор данных
-* хранение данных
+* opens in a new tab
+* hover effect
+* Telegram icon (optional)
 
 ---
 
-# 💳 8. Payment
+## 7.3 Form
 
-* способ: **СБП**
-* интеграция: CloudPayments (в будущем)
+The form is completely absent.
 
----
+Forbidden:
 
-## Требования:
-
-* сайт не хранит платёжные данные
-* только редирект / инструкция
+* any input fields
+* data collection
+* data storage
 
 ---
 
-# 🎨 9. UX/UI Requirements
+# 8. Payment
+
+* method: **SBP (Faster Payments System)**
+* integration: CloudPayments (in the future)
 
 ---
 
-## Стиль:
+## Requirements:
 
-* минимализм
+* the site does not store payment data
+* redirect / instructions only
+
+---
+
+# 9. UX/UI Requirements
+
+---
+
+## Style:
+
+* minimalism
 * premium
-* тёмная тема
+* dark theme
 
 ---
 
-## Цвета:
+## Colors:
 
 * background: #0B0B0C
 * text: #FFFFFF
@@ -179,9 +179,9 @@ https://t.me/anastasiia_englishcoach
 
 ## Typography:
 
-* H1: 36–48px
-* H2: 24–32px
-* body: 16–18px
+* H1: 36-48px
+* H2: 24-32px
+* body: 16-18px
 
 ---
 
@@ -195,14 +195,14 @@ https://t.me/anastasiia_englishcoach
 
 ---
 
-# 🧱 10. Content Specification
+# 10. Content Specification
 
 ---
 
 ## 10.1 Header
 
-* логотип: **LevelChannel**
-* CTA: Написать в Telegram
+* logo: **LevelChannel**
+* CTA: Write to us on Telegram
 
 ---
 
@@ -210,121 +210,121 @@ https://t.me/anastasiia_englishcoach
 
 ### H1:
 
-Английский под вашу цель — от экзамена до работы с иностранными клиентами
+English for your goal: from exams to working with international clients
 
 ---
 
 ### Subheading:
 
-Индивидуальные занятия 1:1
-8 лет опыта и более 10 000 часов преподавания
+Individual 1:1 lessons
+8 years of experience and over 10,000 hours of teaching
 
 ---
 
 ### Bullets:
 
-* Подготовка к IELTS и экзаменам
-* Английский для работы
-* Разговорный английский
+* Preparation for IELTS and other exams
+* English for work
+* Conversational English
 
 ---
 
 ### CTA:
 
-**Написать в Telegram**
+**Write to us on Telegram**
 
 ---
 
 ## 10.3 TrustStats
 
-* 8 лет преподавания
-* 10 000+ часов
-* 1:1 формат
-* международный опыт
+* 8 years of teaching
+* 10,000+ hours
+* 1:1 format
+* international experience
 
 ---
 
 ## 10.4 UseCases
 
-* Экзамены
-* Работа
-* Разговорный
+* Exams
+* Work
+* Conversational
 
 ---
 
 ## 10.5 Process
 
-1. Определение цели
-2. Индивидуальный план
-3. Занятия 1:1
-4. ДЗ + обратная связь
+1. Goal definition
+2. Individual plan
+3. 1:1 lessons
+4. Homework + feedback
 
 ---
 
-## 10.6 Results (кейсы)
+## 10.6 Results (case studies)
 
 1. IELTS 4.5 → 6.5
-2. Экзамен за 6 недель
-3. Работа (B2 → оффер)
-4. Разговорный (3 месяца)
-5. Нетворкинг (B1 → B2)
+2. Exam in 6 weeks
+3. Work (B2 → offer)
+4. Conversational (3 months)
+5. Networking (B1 → B2)
 
 ---
 
 CTA:
-**Хочу такой же результат → Telegram**
+**I want the same result → Telegram**
 
 ---
 
 ## 10.7 Teacher
 
-Анастасия
-8 лет опыта
-10 000+ часов
-международный опыт
+Anastasia
+8 years of experience
+10,000+ hours
+international experience
 
 ---
 
 ## 10.8 Pricing
 
-* 60 минут — 3500 ₽
-* 90 минут — 5000 ₽
+* 60 minutes - «3 500 ₽»
+* 90 minutes - «5 000 ₽»
 
 ---
 
 ## 10.9 Payment
 
-Оплата через СБП
-Быстро и без комиссии
+Payment via SBP (Faster Payments System)
+Fast and commission-free
 
 ---
 
 CTA:
-**Написать в Telegram**
+**Write to us on Telegram**
 
 ---
 
 ## 10.10 Final CTA
 
-Заголовок:
-Начните обучение под свою цель
+Heading:
+Start learning toward your goal
 
 ---
 
-Кнопка:
-**Написать в Telegram**
+Button:
+**Write to us on Telegram**
 
 ---
 
-# 🎞 11. Animations
+# 11. Animations
 
-* fade-in при скролле
-* staggered появление
-* hover эффекты
+* fade-in on scroll
+* staggered appearance
+* hover effects
 
 ---
 
-# ⚡ 12. Performance Requirements
+# 12. Performance Requirements
 
 * TTI < 2s
 * LCP < 2.5s
@@ -332,7 +332,7 @@ CTA:
 
 ---
 
-# 📊 13. Analytics
+# 13. Analytics
 
 ## Events:
 
@@ -346,109 +346,109 @@ CTA:
 
 ---
 
-# 🧾 14. LEGAL
+# 14. LEGAL
 
 ---
 
 ## 14.1 Footer
 
-Содержит:
+Contains:
 
-* Реквизиты
-* Публичная оферта
-* Политика конфиденциальности
-
----
-
-## 14.2 Реквизиты
-
-```
-Индивидуальный предприниматель Фирсова Анастасия Геннадьевна  
-
-ИНН: 673202755730  
-
-Расчётный счёт: 40802810720000971101  
-
-Банк: ООО "Банк Точка"  
-
-БИК: 044525104  
-
-Корреспондентский счёт: 30101810745374525104  
-
-Город банка: г. Москва  
-```
+* Legal details (реквизиты)
+* Public oferta (публичная оферта)
+* Privacy policy
 
 ---
 
-## 14.3 Политика конфиденциальности
+## 14.2 Legal details (реквизиты)
+
+```
+Individual Entrepreneur Firsova Anastasia Gennadievna  
+
+INN (taxpayer ID): 673202755730  
+
+Settlement account: 40802810720000971101  
+
+Bank: LLC "Bank Tochka"  
+
+BIC: 044525104  
+
+Correspondent account: 30101810745374525104  
+
+Bank city: Moscow  
+```
+
+---
+
+## 14.3 Privacy Policy
 
 URL: `/privacy`
 
 ---
 
-### Текст:
+### Text:
 
 ```
-Сайт не собирает и не хранит персональные данные пользователей.
+The site does not collect or store personal data of users.
 
-Связь осуществляется через Telegram, где обработка данных регулируется политикой соответствующего сервиса.
+Communication is carried out via Telegram, where data processing is governed by the policy of the respective service.
 
-Платежи обрабатываются через сторонние платёжные системы.
+Payments are processed through third-party payment systems.
 ```
 
 ---
 
-## 14.4 Публичная оферта
+## 14.4 Public oferta (публичная оферта)
 
 URL: `/offer`
 
 ---
 
-Содержит:
+Contains:
 
-* описание услуги
-* формат (1:1 онлайн)
-* стоимость (3500 / 5000 ₽)
-* порядок оплаты (СБП)
-* условия оказания
-
----
-
-# ⚠️ 15. Constraints
-
-* не добавлять формы
-* не хранить данные
-* не добавлять другие способы оплаты
-* не менять тексты
-* не перегружать UI
+* description of the service
+* format (1:1 online)
+* price («3 500 ₽» / «5 000 ₽»)
+* payment procedure (SBP / Faster Payments System)
+* terms of service delivery
 
 ---
 
-# 📱 16. Mobile Requirements
+# 15. Constraints
+
+* do not add forms
+* do not store data
+* do not add other payment methods
+* do not change texts
+* do not overload the UI
+
+---
+
+# 16. Mobile Requirements
 
 * mobile-first
-* кнопки ≥44px
-* читаемость
+* buttons ≥44px
+* readability
 
 ---
 
-# 🧪 17. QA Checklist
+# 17. QA Checklist
 
-* [ ] все CTA ведут в Telegram
-* [ ] нет форм
-* [ ] Telegram работает
-* [ ] есть реквизиты
-* [ ] есть оферта
-* [ ] есть privacy
-* [ ] mobile корректен
-* [ ] нет лагов
+* [ ] all CTAs lead to Telegram
+* [ ] no forms
+* [ ] Telegram works
+* [ ] legal details (реквизиты) present
+* [ ] oferta present
+* [ ] privacy present
+* [ ] mobile is correct
+* [ ] no lag
 
 ---
 
-# 🚀 18. Launch Plan
+# 18. Launch Plan
 
 1. Deploy (Vercel)
-2. Проверка Telegram
-3. Проверка mobile
-4. Проверка аналитики
-5. Запуск
+2. Telegram check
+3. Mobile check
+4. Analytics check
+5. Launch
