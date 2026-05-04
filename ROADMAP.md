@@ -7,7 +7,7 @@ engineering tasks live in `ENGINEERING_BACKLOG.md`.
 
 ### Compliance
 
-- file the Roskomnadzor notification on the start of personal data processing
+- ~~file the Roskomnadzor notification on the start of personal data processing~~: **closed 2026-05-04**. Filed by the operator.
 - promote the retention / deletion policy from skeleton to ACTIVE: the skeleton is already at [`docs/legal/retention-policy.md`](docs/legal/retention-policy.md), retention periods and legal wording get filled in through `legal-rf-router → legal-rf-private-client → legal-rf-qa`
 - machine-readable data-export endpoint is **not planned**: 152-FZ art.14 is satisfied by a free-form operator reply over e-mail
 

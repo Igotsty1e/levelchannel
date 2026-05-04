@@ -39,7 +39,7 @@ export const dynamic = 'force-dynamic'
 const noStore = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function POST(request: Request) {
-  const rl = enforceRateLimit(request, 'auth:register:ip', 5, 60_000)
+  const rl = await enforceRateLimit(request, 'auth:register:ip', 5, 60_000)
   if (rl) return rl
 
   const origin = enforceTrustedBrowserOrigin(request)
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
   const email = emailValidation.email
   const password = String(body.password)
 
-  const emailRl = enforceRateLimit(
+  const emailRl = await enforceRateLimit(
     request,
     rateLimitScope('register', email),
     3,

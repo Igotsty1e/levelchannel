@@ -22,6 +22,10 @@
 //                             (152-FZ alignment for financial records;
 //                             see docs/legal/retention-policy.md §3
 //                             when filled in by legal-rf)
+//   rate_limit_buckets      — delete where reset_at < now() - 1 hour
+//                             (longest current rate-limit window is 60s;
+//                             1h grace keeps active buckets safe and
+//                             clears the tail otherwise)
 //
 // What this DOES NOT touch:
 //
@@ -115,6 +119,12 @@ async function main() {
         'payment_audit_events',
         `delete from payment_audit_events
           where created_at < now() - interval '3 years'`,
+      ),
+      deleteWindow(
+        pool,
+        'rate_limit_buckets',
+        `delete from rate_limit_buckets
+          where reset_at < now() - interval '1 hour'`,
       ),
     ])
 

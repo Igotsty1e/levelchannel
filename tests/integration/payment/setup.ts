@@ -35,7 +35,7 @@ afterEach(async () => {
       payment_telemetry
     restart identity cascade
   `)
-  __resetRateLimitsForTesting()
+  await __resetRateLimitsForTesting()
 })
 
 afterAll(async () => {

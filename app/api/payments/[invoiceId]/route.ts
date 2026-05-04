@@ -10,7 +10,7 @@ export async function GET(
   request: Request,
   context: { params: Promise<{ invoiceId: string }> },
 ) {
-  const rateLimitResponse = enforceRateLimit(request, 'payments:status', 60, 60_000)
+  const rateLimitResponse = await enforceRateLimit(request, 'payments:status', 60, 60_000)
   if (rateLimitResponse) {
     return rateLimitResponse
   }

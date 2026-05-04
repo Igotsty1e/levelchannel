@@ -31,9 +31,9 @@ afterEach(async () => {
       accounts
     restart identity cascade
   `)
-  // Reset in-memory rate-limit buckets so per-IP and per-email-hash
-  // counters don't leak across test cases.
-  __resetRateLimitsForTesting()
+  // Reset in-memory and Postgres rate-limit buckets so per-IP and
+  // per-email-hash counters don't leak across test cases.
+  await __resetRateLimitsForTesting()
 })
 
 afterAll(async () => {

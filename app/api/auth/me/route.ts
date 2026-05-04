@@ -20,7 +20,7 @@ const noStore = { 'Cache-Control': 'no-store, max-age=0' }
 const isProd = process.env.NODE_ENV === 'production'
 
 export async function GET(request: Request) {
-  const rl = enforceRateLimit(request, 'auth:me:ip', 60, 60_000)
+  const rl = await enforceRateLimit(request, 'auth:me:ip', 60, 60_000)
   if (rl) return rl
 
   const current = await getCurrentSession(request)

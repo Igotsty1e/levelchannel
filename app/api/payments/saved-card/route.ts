@@ -19,7 +19,7 @@ export const dynamic = 'force-dynamic'
 // Этот эндпоинт раскрывает факт «у этого e-mail есть сохранённая карта»,
 // поэтому стоит за жёстким per-IP rate-limit и origin-check.
 export async function POST(request: Request) {
-  const rateLimitResponse = enforceRateLimit(
+  const rateLimitResponse = await enforceRateLimit(
     request,
     'payments:saved-card',
     10,
@@ -69,7 +69,7 @@ export async function POST(request: Request) {
 
 // DELETE с email в теле — не GET-параметром, чтобы e-mail не оседал в логах.
 export async function DELETE(request: Request) {
-  const rateLimitResponse = enforceRateLimit(
+  const rateLimitResponse = await enforceRateLimit(
     request,
     'payments:saved-card-forget',
     10,

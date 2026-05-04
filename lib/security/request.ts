@@ -43,14 +43,14 @@ export function getClientIp(request: Request) {
   )
 }
 
-export function enforceRateLimit(
+export async function enforceRateLimit(
   request: Request,
   scope: string,
   limit: number,
   windowMs: number,
 ) {
   const ip = getClientIp(request)
-  const result = takeRateLimit(`${scope}:${ip}`, limit, windowMs)
+  const result = await takeRateLimit(`${scope}:${ip}`, limit, windowMs)
 
   if (result.allowed) {
     return null

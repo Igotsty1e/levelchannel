@@ -1,5 +1,7 @@
 # LevelChannel
 
+Production: https://levelchannel.ru/
+
 LevelChannel is a conversion site for one-on-one English lessons with a server-side payment flow and a growing account layer.
 
 It is aimed at small education businesses that need a direct landing-to-payment funnel with legal consent capture, webhook-backed payment handling, and room for a future learner cabinet.

@@ -32,7 +32,7 @@ const noStore = { 'Cache-Control': 'no-store, max-age=0' }
 const isProd = process.env.NODE_ENV === 'production'
 
 export async function POST(request: Request) {
-  const rl = enforceRateLimit(request, 'auth:login:ip', 10, 60_000)
+  const rl = await enforceRateLimit(request, 'auth:login:ip', 10, 60_000)
   if (rl) return rl
 
   const origin = enforceTrustedBrowserOrigin(request)
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
   const password = String(body.password || '')
 
   if (email) {
-    const emailRl = enforceRateLimit(
+    const emailRl = await enforceRateLimit(
       request,
       rateLimitScope('login', email),
       5,

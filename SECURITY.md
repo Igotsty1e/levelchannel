@@ -17,7 +17,7 @@ Already in place:
 - DNS prefetch disabled
 - origin checks for browser-initiated payment requests
 - `sec-fetch-site` filtering
-- in-memory rate limiting per IP
+- shared-store rate limiting per IP (Postgres-backed `rate_limit_buckets`; in-memory fallback when `DATABASE_URL` is unset or transiently unreachable)
 - `invoiceId` validation
 - `Cache-Control: no-store` for payment responses
 - HMAC verification for CloudPayments webhooks via `X-Content-HMAC` and `Content-HMAC`
@@ -65,8 +65,8 @@ do work.
   dedicated `AUTH_RATE_LIMIT_SECRET`. **Do not reuse**
   `TELEMETRY_HASH_SECRET`: different trust boundaries - the telemetry
   secret keys persistent analytics, the rate-limit secret keys
-  ephemeral in-memory buckets. Mixing them couples rotation cadences
-  artificially.
+  shared-store buckets in `rate_limit_buckets` (and an in-memory
+  fallback). Mixing them couples rotation cadences artificially.
 - e-mail normalization: `lib/auth/accounts.ts.normalizeAccountEmail` =
   `email.trim().toLowerCase()` on every read/write path. A DB-level
   CHECK in `migrations/0010_accounts_email_normalized.sql` catches
@@ -167,7 +167,6 @@ intentionally.
 
 ## Current limits and accepted gaps
 
-- the app-level limiter is still in-memory, which means it does not synchronize across instances
 - payment telemetry: Postgres is the primary path, file fallback is for the case
   of a DB outage (see `lib/telemetry/store.ts`). If `TELEMETRY_HASH_SECRET`
   is empty, telemetry still records the event but drops `emailHash`.

@@ -24,7 +24,7 @@ export const dynamic = 'force-dynamic'
 // На выходе всегда 303 redirect — пользователь возвращается из ACS-окна
 // на /thank-you (успех) или на главную с ?payment=failed (отказ).
 export async function POST(request: Request) {
-  const rateLimitResponse = enforceRateLimit(
+  const rateLimitResponse = await enforceRateLimit(
     request,
     'payments:3ds-callback',
     30,

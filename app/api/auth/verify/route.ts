@@ -33,7 +33,7 @@ function verifyFailedRedirect(): NextResponse {
 }
 
 export async function GET(request: Request) {
-  const rl = enforceRateLimit(request, 'auth:verify:ip', 20, 60_000)
+  const rl = await enforceRateLimit(request, 'auth:verify:ip', 20, 60_000)
   if (rl) return rl
 
   const url = new URL(request.url)

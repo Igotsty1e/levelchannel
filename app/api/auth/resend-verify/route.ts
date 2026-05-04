@@ -33,7 +33,7 @@ export const dynamic = 'force-dynamic'
 const noStore = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function POST(request: Request) {
-  const ipRl = enforceRateLimit(request, 'auth:resend-verify:ip', 10, 60_000)
+  const ipRl = await enforceRateLimit(request, 'auth:resend-verify:ip', 10, 60_000)
   if (ipRl) return ipRl
 
   const origin = enforceTrustedBrowserOrigin(request)
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
   // Per-account hourly cap. Uses the same rateLimitScope() helper as
   // register/reset-request so the bucket key is HMAC-keyed off the
   // normalized account email.
-  const accountRl = enforceRateLimit(
+  const accountRl = await enforceRateLimit(
     request,
     rateLimitScope('resend-verify', account.email),
     3,

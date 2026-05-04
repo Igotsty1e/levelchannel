@@ -28,7 +28,7 @@ const noStore = { 'Cache-Control': 'no-store, max-age=0' }
 const isProd = process.env.NODE_ENV === 'production'
 
 export async function POST(request: Request) {
-  const rl = enforceRateLimit(request, 'auth:reset-confirm:ip', 10, 60_000)
+  const rl = await enforceRateLimit(request, 'auth:reset-confirm:ip', 10, 60_000)
   if (rl) return rl
 
   const origin = enforceTrustedBrowserOrigin(request)

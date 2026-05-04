@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic'
 const EVENT_TYPE_PATTERN = /^checkout_[a-z0-9_]{2,64}$/i
 
 export async function POST(request: Request) {
-  const rateLimitResponse = enforceRateLimit(request, 'payments:events', 120, 60_000)
+  const rateLimitResponse = await enforceRateLimit(request, 'payments:events', 120, 60_000)
   if (rateLimitResponse) {
     return rateLimitResponse
   }

@@ -25,7 +25,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
-  const rateLimitResponse = enforceRateLimit(request, 'payments:create', 10, 60_000)
+  const rateLimitResponse = await enforceRateLimit(request, 'payments:create', 10, 60_000)
   if (rateLimitResponse) {
     return rateLimitResponse
   }

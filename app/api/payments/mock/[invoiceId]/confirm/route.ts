@@ -17,7 +17,7 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ invoiceId: string }> },
 ) {
-  const rateLimitResponse = enforceRateLimit(request, 'payments:mock-confirm', 20, 60_000)
+  const rateLimitResponse = await enforceRateLimit(request, 'payments:mock-confirm', 20, 60_000)
   if (rateLimitResponse) {
     return rateLimitResponse
   }
