@@ -42,11 +42,21 @@ describe('validateProfileUpdate', () => {
     })
   })
 
-  it('rejects malformed timezone', () => {
-    expect(validateProfileUpdate({ timezone: 'not a tz' })).toEqual({
+  it('rejects timezone outside the whitelist', () => {
+    expect(validateProfileUpdate({ timezone: 'Moscow' })).toEqual({
       field: 'timezone',
-      reason: 'invalid_format',
+      reason: 'unsupported',
     })
+    expect(validateProfileUpdate({ timezone: 'Mars/Olympus' })).toEqual({
+      field: 'timezone',
+      reason: 'unsupported',
+    })
+  })
+
+  it('accepts a whitelisted timezone', () => {
+    expect(
+      validateProfileUpdate({ timezone: 'Europe/Moscow' }),
+    ).toBeNull()
   })
 
   it('rejects unsupported locale', () => {

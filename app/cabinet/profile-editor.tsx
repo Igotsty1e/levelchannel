@@ -3,6 +3,7 @@
 import { useState } from 'react'
 
 import type { AccountProfile } from '@/lib/auth/profiles'
+import { TIMEZONE_OPTIONS } from '@/lib/auth/profiles'
 
 export function ProfileEditor({
   initialProfile,
@@ -14,7 +15,12 @@ export function ProfileEditor({
   const [displayName, setDisplayName] = useState(
     initialProfile?.displayName ?? '',
   )
-  const [timezone, setTimezone] = useState(initialProfile?.timezone ?? '')
+  // Default to Europe/Moscow when profile has no tz yet (most learners
+  // are RU). The dropdown's options are curated IANA names; saving any
+  // other string is now refused server-side.
+  const [timezone, setTimezone] = useState(
+    initialProfile?.timezone ?? 'Europe/Moscow',
+  )
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [savedAt, setSavedAt] = useState<string | null>(null)
@@ -70,14 +76,18 @@ export function ProfileEditor({
           maxLength={60}
         />
       </Field>
-      <Field label="Часовой пояс (IANA)">
-        <input
+      <Field label="Часовой пояс">
+        <select
           value={timezone}
           onChange={(e) => setTimezone(e.target.value)}
-          placeholder="Europe/Moscow"
           style={inputStyle}
-          maxLength={64}
-        />
+        >
+          {TIMEZONE_OPTIONS.map((opt) => (
+            <option key={opt.id} value={opt.id}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
       </Field>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 12 }}>
         <button

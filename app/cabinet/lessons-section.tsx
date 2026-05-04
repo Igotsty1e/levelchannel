@@ -57,7 +57,18 @@ export function LessonsSection({
   emailVerified,
   initialPaidSlotIds,
 }: Props) {
-  const tz = learnerTimezone ?? TZ_DEFAULT
+  // Defensive: if a pre-whitelist profile carries a bad value, fall
+  // back to Europe/Moscow rather than crash the cabinet on the first
+  // Date.toLocaleString call.
+  const tz = (() => {
+    const candidate = learnerTimezone ?? TZ_DEFAULT
+    try {
+      new Intl.DateTimeFormat('ru-RU', { timeZone: candidate })
+      return candidate
+    } catch {
+      return TZ_DEFAULT
+    }
+  })()
   const [mine, setMine] = useState<LessonSlot[]>(initialMine)
   const [available, setAvailable] = useState<LessonSlot[]>(initialAvailable)
   const paidSet = new Set(initialPaidSlotIds)

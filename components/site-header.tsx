@@ -20,8 +20,12 @@ export function SiteHeader() {
       .then((res) => (res.ok ? res.json() : null))
       .then((body) => {
         if (cancelled) return
-        if (body && typeof body.email === 'string') {
-          setState({ kind: 'user', email: body.email })
+        // /api/auth/me returns { account: { email, ... }, session: ... }.
+        // The earlier flat shape (body.email) was the bug that made
+        // the header always render the guest variant.
+        const email = body?.account?.email
+        if (typeof email === 'string') {
+          setState({ kind: 'user', email })
         } else {
           setState({ kind: 'guest' })
         }
@@ -33,6 +37,18 @@ export function SiteHeader() {
       cancelled = true
     }
   }, [])
+
+  async function logout() {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+      })
+    } catch {
+      // ignore — UI redirects regardless to give the user a clean exit
+    }
+    window.location.href = '/'
+  }
 
   return (
     <header
@@ -70,19 +86,49 @@ export function SiteHeader() {
           LevelChannel
         </Link>
 
-        <nav style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <nav style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           {state.kind === 'user' ? (
-            <Link
-              href="/cabinet"
-              style={{
-                color: 'var(--text)',
-                textDecoration: 'none',
-                fontSize: 14,
-                fontWeight: 500,
-              }}
-            >
-              Кабинет
-            </Link>
+            <>
+              <span
+                style={{
+                  color: 'var(--secondary)',
+                  fontSize: 12,
+                  maxWidth: 200,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+                title={state.email}
+              >
+                {state.email}
+              </span>
+              <Link
+                href="/cabinet"
+                style={{
+                  color: 'var(--text)',
+                  textDecoration: 'none',
+                  fontSize: 14,
+                  fontWeight: 500,
+                }}
+              >
+                Кабинет
+              </Link>
+              <button
+                type="button"
+                onClick={logout}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--border)',
+                  borderRadius: 6,
+                  color: 'var(--text)',
+                  fontSize: 13,
+                  padding: '4px 10px',
+                  cursor: 'pointer',
+                }}
+              >
+                Выйти
+              </button>
+            </>
           ) : (
             <Link
               href="/login"

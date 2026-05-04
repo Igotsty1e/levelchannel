@@ -388,29 +388,37 @@ function BulkCreate({
           </Select>
         </Field>
         <Field label="Дни недели">
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-            {WEEKDAY_LABELS.map((lbl, i) => (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {WEEKDAY_LABELS.map((lbl, i) => {
+              const selected = weekdays.has(i)
+              return (
               <button
                 key={i}
                 type="button"
+                aria-pressed={selected}
                 onClick={() => toggleWeekday(i)}
                 style={{
-                  padding: '4px 8px',
-                  borderRadius: 4,
-                  fontSize: 12,
-                  border: '1px solid var(--border)',
-                  background: weekdays.has(i)
-                    ? 'var(--accent)'
-                    : 'transparent',
-                  color: weekdays.has(i)
-                    ? 'var(--accent-contrast)'
-                    : 'var(--text)',
+                  minWidth: 36,
+                  padding: '6px 12px',
+                  borderRadius: 6,
+                  fontSize: 13,
+                  fontWeight: selected ? 600 : 500,
+                  border: selected
+                    ? '1px solid var(--accent)'
+                    : '1px solid var(--border)',
+                  background: selected ? 'var(--accent)' : 'transparent',
+                  color: selected ? 'var(--accent-contrast)' : 'var(--text)',
+                  boxShadow: selected
+                    ? '0 0 0 2px rgba(255,255,255,0.06) inset'
+                    : 'none',
                   cursor: 'pointer',
+                  transition: 'background 80ms ease, border-color 80ms ease',
                 }}
               >
                 {lbl}
               </button>
-            ))}
+              )
+            })}
           </div>
         </Field>
         <Field label="Время (МСК)">

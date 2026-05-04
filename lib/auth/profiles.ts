@@ -17,15 +17,55 @@ export type AccountProfileUpdate = {
 
 const ALLOWED_LOCALES = new Set<string>(['ru'])
 
-// IANA timezone names: simple regex gate. We don't ship the full IANA
-// db; if Postgres `AT TIME ZONE` rejects an unknown name later (Phase
-// 4 scheduling) the failure surfaces there. For now this only blocks
-// trivially malformed input.
-const TIMEZONE_PATTERN = /^[A-Za-z][A-Za-z0-9_+/-]{0,63}$/
+// Curated IANA timezone whitelist for the profile dropdown. Russian
+// regions are listed first (operator-relevant), then a small set of
+// nearby useful zones. The list is intentionally short — the cabinet
+// is for Russian learners; an exhaustive picker is overkill and lets
+// users save a value that crashes Date.toLocaleString later (e.g.
+// raw "Moscow" is NOT a valid IANA name and throws in the browser /
+// Node Intl API).
+//
+// If a learner needs a tz that's not here, they can ask the operator
+// to add it; broadening the list without adding the corresponding
+// dropdown entries leaves the UI inconsistent.
+export const TIMEZONE_OPTIONS: Array<{ id: string; label: string }> = [
+  { id: 'Europe/Moscow', label: 'Москва (UTC+3)' },
+  { id: 'Europe/Kaliningrad', label: 'Калининград (UTC+2)' },
+  { id: 'Europe/Samara', label: 'Самара (UTC+4)' },
+  { id: 'Asia/Yekaterinburg', label: 'Екатеринбург (UTC+5)' },
+  { id: 'Asia/Omsk', label: 'Омск (UTC+6)' },
+  { id: 'Asia/Krasnoyarsk', label: 'Красноярск (UTC+7)' },
+  { id: 'Asia/Irkutsk', label: 'Иркутск (UTC+8)' },
+  { id: 'Asia/Yakutsk', label: 'Якутск (UTC+9)' },
+  { id: 'Asia/Vladivostok', label: 'Владивосток (UTC+10)' },
+  { id: 'Asia/Magadan', label: 'Магадан (UTC+11)' },
+  { id: 'Asia/Kamchatka', label: 'Петропавловск-Камчатский (UTC+12)' },
+  // Common nearby zones for учащихся за рубежом:
+  { id: 'Asia/Tbilisi', label: 'Тбилиси (UTC+4)' },
+  { id: 'Asia/Yerevan', label: 'Ереван (UTC+4)' },
+  { id: 'Asia/Almaty', label: 'Алматы (UTC+6)' },
+  { id: 'Asia/Dubai', label: 'Дубай (UTC+4)' },
+  { id: 'Europe/London', label: 'Лондон (UTC+0/+1)' },
+  { id: 'Europe/Berlin', label: 'Берлин (UTC+1/+2)' },
+  { id: 'America/New_York', label: 'Нью-Йорк (UTC-5/-4)' },
+  { id: 'America/Los_Angeles', label: 'Лос-Анджелес (UTC-8/-7)' },
+]
+
+const ALLOWED_TIMEZONES = new Set<string>(TIMEZONE_OPTIONS.map((t) => t.id))
+
+// Defensive helper for render paths: returns a guaranteed-valid IANA
+// tz, falling back to Europe/Moscow if the stored value is unknown.
+// This is the last line of defence after the validator + DB constraint;
+// it exists so a single bad row from a pre-whitelist era can't 500
+// the entire cabinet page.
+export function safeTimezone(tz: string | null | undefined): string {
+  if (tz && ALLOWED_TIMEZONES.has(tz)) return tz
+  return 'Europe/Moscow'
+}
 
 export type ProfileValidationError =
   | { field: 'displayName'; reason: 'too_long' | 'too_short' }
-  | { field: 'timezone'; reason: 'invalid_format' }
+  | { field: 'timezone'; reason: 'unsupported' }
   | { field: 'locale'; reason: 'unsupported' }
 
 export function validateProfileUpdate(
@@ -41,8 +81,8 @@ export function validateProfileUpdate(
     }
   }
   if (update.timezone !== undefined && update.timezone !== null) {
-    if (!TIMEZONE_PATTERN.test(update.timezone)) {
-      return { field: 'timezone', reason: 'invalid_format' }
+    if (!ALLOWED_TIMEZONES.has(update.timezone)) {
+      return { field: 'timezone', reason: 'unsupported' }
     }
   }
   if (update.locale !== undefined && update.locale !== null) {
