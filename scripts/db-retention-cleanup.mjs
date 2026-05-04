@@ -26,8 +26,14 @@
 //                             (longest current rate-limit window is 60s;
 //                             1h grace keeps active buckets safe and
 //                             clears the tail otherwise)
-//
-// What this DOES NOT touch:
+//   accounts (purge)        — anonymize rows where scheduled_purge_at
+//                             <= now() AND purged_at IS NULL. Email
+//                             becomes deleted-<uuid>@example.invalid;
+//                             password_hash becomes 'PURGED' (no
+//                             bcrypt prefix → never matches);
+//                             account_profiles row is cleared. The
+//                             auth row stays for audit (financial
+//                             history needs it under 54-FZ).
 //
 //   payment_orders          — owned by 54-FZ retention rules (chek/kassa
 //                             records ~5 years). Cleanup, if any, lives
@@ -72,6 +78,73 @@ async function deleteWindow(pool, label, sql) {
       error: err instanceof Error ? err.message : String(err),
     })
     return { table: label, rows: 0, ok: false }
+  }
+}
+
+// Account purge: rows where scheduled_purge_at has elapsed AND we
+// haven't already anonymized them. Two updates per row, run inside a
+// single transaction per row so a row is never observed half-purged.
+//
+// Email becomes 'deleted-<uuid>@example.invalid'. The placeholder
+// uses the row id (already unique) so the unique-on-email index never
+// trips. password_hash becomes 'PURGED' (no bcrypt $2 prefix → no
+// possible match on login).
+async function purgeAccounts(pool) {
+  const label = 'accounts (purge)'
+  let purged = 0
+  try {
+    const candidates = await pool.query(
+      `select id from accounts
+        where scheduled_purge_at is not null
+          and scheduled_purge_at <= now()
+          and purged_at is null
+        order by scheduled_purge_at asc
+        limit 500`,
+    )
+    for (const row of candidates.rows) {
+      const id = String(row.id)
+      const client = await pool.connect()
+      try {
+        await client.query('begin')
+        await client.query(
+          `update accounts
+              set email = 'deleted-' || id::text || '@example.invalid',
+                  password_hash = 'PURGED',
+                  purged_at = now(),
+                  updated_at = now()
+            where id = $1
+              and purged_at is null`,
+          [id],
+        )
+        await client.query(
+          `update account_profiles
+              set display_name = null,
+                  timezone = null,
+                  locale = null,
+                  updated_at = now()
+            where account_id = $1`,
+          [id],
+        )
+        await client.query('commit')
+        purged += 1
+      } catch (rowErr) {
+        await client.query('rollback').catch(() => {})
+        logJson('error', 'account purge failed for row', {
+          id,
+          error: rowErr instanceof Error ? rowErr.message : String(rowErr),
+        })
+      } finally {
+        client.release()
+      }
+    }
+    logJson('info', 'cleaned', { table: label, rows: purged })
+    return { table: label, rows: purged, ok: true }
+  } catch (err) {
+    logJson('error', 'cleanup failed', {
+      table: label,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return { table: label, rows: purged, ok: false }
   }
 }
 
@@ -126,6 +199,7 @@ async function main() {
         `delete from rate_limit_buckets
           where reset_at < now() - interval '1 hour'`,
       ),
+      purgeAccounts(pool),
     ])
 
     const allFailed = results.every((r) => !r.ok)

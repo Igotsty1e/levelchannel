@@ -26,8 +26,16 @@ processing of payment statuses.
 - [`app/login/page.tsx`](app/login/page.tsx) - login (Phase 2): e-mail + password → `POST /api/auth/login`, success → `/cabinet`
 - [`app/forgot/page.tsx`](app/forgot/page.tsx) - password reset request (Phase 2): always a neutral confirmation (anti-enumeration)
 - [`app/reset/page.tsx`](app/reset/page.tsx) - set a new password by the URL token (Phase 2): on success, `mech-5` has already created a new session
-- [`app/cabinet/page.tsx`](app/cabinet/page.tsx) - server-side gate (Phase 2): direct `lookupSession` via cookie, 307 to `/login` without a session. Body - placeholder «Кабинет в разработке»
+- [`app/cabinet/page.tsx`](app/cabinet/page.tsx) - server-side gate (Phase 2): direct `lookupSession` via cookie, 307 to `/login` without a session. Phase 3 added the profile editor, an admin-only entry-point card, and the destructive «Опасные действия» block (consent withdrawal + 30-day-grace deletion)
 - [`app/cabinet/logout-button.tsx`](app/cabinet/logout-button.tsx) - client island: `POST /api/auth/logout` plus redirect to `/`
+- [`app/cabinet/profile-editor.tsx`](app/cabinet/profile-editor.tsx) - client island for `PATCH /api/account/profile` (display name + IANA timezone). Phase 3
+- [`app/cabinet/danger-zone.tsx`](app/cabinet/danger-zone.tsx) - client island with two destructive actions: withdraw personal-data consent (152-ФЗ ст.9 §5 — disables account, keeps data) and delete account (30-day grace then anonymization). Phase 3
+- [`app/admin/layout.tsx`](app/admin/layout.tsx) - admin chrome with `requireAdminRole` gate and a left-side nav. Phase 3
+- [`app/admin/page.tsx`](app/admin/page.tsx) - admin dashboard. Phase 3
+- [`app/admin/accounts/page.tsx`](app/admin/accounts/page.tsx) - paginated learner list with e-mail search. Phase 3
+- [`app/admin/accounts/[id]/page.tsx`](app/admin/accounts/[id]/page.tsx) - learner detail: status, role grants, profile, deletion-grace banner with cancel. Phase 3
+- [`app/admin/pricing/page.tsx`](app/admin/pricing/page.tsx) + [`tariff-editor.tsx`](app/admin/pricing/tariff-editor.tsx) - tariff CRUD. Public `/pay` stays free-amount in Phase 3; the catalog wires into checkout in Phase 6
+- [`app/admin/admin-action-button.tsx`](app/admin/admin-action-button.tsx) - tiny client island so SSR admin pages can POST to JSON admin routes and reload
 - [`app/verify-failed/page.tsx`](app/verify-failed/page.tsx) - styled UI for an expired / used verify link (Phase 2 replaced the Phase 1B placeholder)
 - [`components/site-header.tsx`](components/site-header.tsx) - sticky header for auth / legal pages with `useEffect → fetch /api/auth/me` and a «Войти» ↔ «Кабинет» switch
 - [`components/auth-shell.tsx`](components/auth-shell.tsx) - common chrome wrapper for auth pages (header + centered column)
@@ -69,7 +77,10 @@ Guest checkout still does not depend on this layer.
 - [`lib/auth/password.ts`](lib/auth/password.ts) - bcryptjs, cost=12
 - [`lib/auth/tokens.ts`](lib/auth/tokens.ts) - random 32B base64url + sha256 hash; tokens are stored only as a hash
 - [`lib/auth/policy.ts`](lib/auth/policy.ts) - password policy (8..128 chars, not all-digit)
-- [`lib/auth/accounts.ts`](lib/auth/accounts.ts) - store ops: create / getByEmail / getById / markVerified / setPassword / role grant/revoke + `normalizeAccountEmail` helper (`trim().toLowerCase()`) - the single normalization point for every read / write path
+- [`lib/auth/accounts.ts`](lib/auth/accounts.ts) - store ops: create / getByEmail / getById / markVerified / setPassword / role grant/revoke + `disableAccount` / `reenableAccount` / `requestAccountDeletion` / `cancelAccountDeletion` (Phase 3 deletion grace) + `listAccounts` for /admin + `normalizeAccountEmail` helper (`trim().toLowerCase()`) - the single normalization point for every read / write path
+- [`lib/auth/profiles.ts`](lib/auth/profiles.ts) - store ops + validation for the `account_profiles` table (display_name + timezone + locale). Phase 3
+- [`lib/auth/guards.ts`](lib/auth/guards.ts) - `requireAuthenticated` and `requireAdminRole` wrappers used by cabinet + admin route handlers. Phase 3
+- [`lib/pricing/tariffs.ts`](lib/pricing/tariffs.ts) - store ops + validation for `pricing_tariffs`. Money lives in kopecks; rubles is a derived display. Phase 3
 - [`lib/auth/sessions.ts`](lib/auth/sessions.ts) - create / lookup / revoke + cookie helpers (`lc_session`, HttpOnly + SameSite=Lax + Secure in prod)
 - [`lib/auth/single-use-tokens.ts`](lib/auth/single-use-tokens.ts) - common store for verify-email and password-reset (whitelist scope in SQL)
 - [`lib/auth/verifications.ts`](lib/auth/verifications.ts), [`lib/auth/resets.ts`](lib/auth/resets.ts) - thin wrappers with TTL

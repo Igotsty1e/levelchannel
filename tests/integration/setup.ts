@@ -21,6 +21,10 @@ afterEach(async () => {
   // Truncate all auth-domain tables in dependency order. Payment domain
   // is intentionally left alone — these tests don't touch it.
   const pool = getAuthPool()
+  // accounts CASCADE removes account_profiles automatically (FK on
+  // delete cascade), so it's not listed explicitly. pricing_tariffs is
+  // domain-orthogonal but small; truncating it here keeps cabinet
+  // integration cases independent.
   await pool.query(`
     truncate table
       account_consents,
@@ -28,7 +32,8 @@ afterEach(async () => {
       email_verifications,
       password_resets,
       account_roles,
-      accounts
+      accounts,
+      pricing_tariffs
     restart identity cascade
   `)
   // Reset in-memory and Postgres rate-limit buckets so per-IP and

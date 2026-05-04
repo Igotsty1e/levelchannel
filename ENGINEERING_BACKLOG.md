@@ -16,10 +16,10 @@ Already closed and not in the backlog:
 - Phase 1A auth foundation
 - Phase 1B auth API routes
 - Phase 2 auth UI
+- Phase 3 profiles + admin pricing — **closed 2026-05-04**. Migrations 0017 / 0018 / 0019. Cabinet got profile editor, consent withdrawal, and 30-day-grace account deletion. Operator-side admin surface at `/admin` (dashboard, accounts list / detail, pricing CRUD) gated by `requireAdminRole`. Bootstrap via `scripts/grant-admin.mjs`. The retention cleanup job picks up rows where `scheduled_purge_at <= now()` and anonymizes them. Public `/pay` left free-amount in this wave; catalog wiring is in this same backlog under "Cabinet Phase 6 deferments". See `docs/plans/phase-3-profiles-admin-pricing.md`.
 
 Open high-level queue:
 
-- Phase 3: profiles + admin pricing
 - Phase 4: scheduling
 - Phase 5: lesson lifecycle + 24h rule
 - Phase 6: cabinet payment + `payment_allocations` + legal / receipt polish
@@ -63,6 +63,11 @@ owner docs, and git history beat old chat outputs.
 - ~~add password hash versioning plus a `needsRehash()` path for future cost / algorithm changes~~: **closed 2026-04-29**. `passwordNeedsRehash()` in `lib/auth/password.ts` parses the cost from the bcrypt prefix; the login route silently re-hashes after `verifyPassword` and calls `setAccountPassword`. Best-effort (warn, continue on DB error). Covered by unit and integration tests. Future migration to argon2id: update the regex at the same time as introducing the new hasher, otherwise every login will rehash every time.
 - ~~add cleanup for expired `account_sessions`~~: **shipped 2026-04-29**. Folded into `scripts/db-retention-cleanup.mjs` (above).
 - ~~add common-password rejection~~: **closed 2026-04-29**. Local denylist in `lib/auth/common-passwords.ts` (~100 top breaches), normalizes case and whitespace; `validatePasswordPolicy` returns `too_common`. HIBP k-anonymity API stays as a future extension if needed.
+
+### Cabinet Phase 6 deferments (parked here so they don't get forgotten)
+
+- **wire `/pay` to the pricing catalog** with a free-amount fallback. Phase 3 ships the catalog table + admin CRUD; the public checkout stays free-amount until the cabinet payment flow lands in Phase 6, at which point both the cabinet payment surface and the public `/pay` form route through the catalog (with a manual-amount fallback for one-off operator-DM payments).
+- **collect `phone_e164` on the profile** if and when an operator workflow actually needs to call or Telegram a learner. Until then we don't widen the PD surface.
 
 ## P2
 

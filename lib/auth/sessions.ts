@@ -51,6 +51,8 @@ export async function lookupSession(
     `select s.id as session_id, s.account_id as session_account_id, s.expires_at as session_expires_at,
             s.revoked_at as session_revoked_at, s.created_at as session_created_at,
             a.id as account_id, a.email, a.password_hash, a.email_verified_at, a.disabled_at,
+            a.scheduled_purge_at as account_scheduled_purge_at,
+            a.purged_at as account_purged_at,
             a.created_at as account_created_at, a.updated_at as account_updated_at
      from account_sessions s
      join accounts a on a.id = s.account_id
@@ -80,6 +82,12 @@ export async function lookupSession(
         : null,
       disabledAt: row.disabled_at
         ? new Date(String(row.disabled_at)).toISOString()
+        : null,
+      scheduledPurgeAt: row.account_scheduled_purge_at
+        ? new Date(String(row.account_scheduled_purge_at)).toISOString()
+        : null,
+      purgedAt: row.account_purged_at
+        ? new Date(String(row.account_purged_at)).toISOString()
         : null,
       createdAt: new Date(String(row.account_created_at)).toISOString(),
       updatedAt: new Date(String(row.account_updated_at)).toISOString(),
