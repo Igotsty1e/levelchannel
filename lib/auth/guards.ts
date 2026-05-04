@@ -47,3 +47,26 @@ export async function requireAdminRole(request: Request): Promise<GuardResult> {
   }
   return { ok: true, account: auth.account, session: auth.session }
 }
+
+// Phase 4 booking gate: authenticated AND email-verified. Slot
+// booking creates a real-world commitment; we require the learner to
+// have proved they own the e-mail before they can occupy a teacher's
+// time. Returns 403 with a structured `error: 'email_not_verified'`
+// so the UI can surface a "подтвердите e-mail" hint instead of a
+// generic forbidden.
+export async function requireAuthenticatedAndVerified(
+  request: Request,
+): Promise<GuardResult> {
+  const auth = await requireAuthenticated(request)
+  if (!auth.ok) return auth
+  if (!auth.account.emailVerifiedAt) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: 'email_not_verified' },
+        { status: 403, headers: { 'Cache-Control': 'no-store, max-age=0' } },
+      ),
+    }
+  }
+  return { ok: true, account: auth.account, session: auth.session }
+}

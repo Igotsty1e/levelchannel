@@ -1,7 +1,7 @@
 # Phase 4 — Scheduling (proposal)
 
-Status: **draft, not approved**. Scope and decisions still open.
-Review and either approve as-is, trim, or extend before any code.
+Status: **approved 2026-05-04**. Decisions D1–D5 settled with the
+operator. Implementation can proceed.
 
 ## Why this wave exists
 
@@ -87,7 +87,7 @@ Rejected alternatives:
   + JOIN. If we ever support per-teacher availability windows that
   *generate* slots on demand, we'll split.
 
-### D2. Booking endpoint shape
+### D2. Booking endpoint shape (now reflects settled D2 + D4)
 
 Proposed:
 
@@ -106,7 +106,17 @@ Proposed:
 
 Admin endpoints:
 
-- `POST /api/admin/slots` — create open slot
+- `POST /api/admin/slots` — create one open slot
+- `POST /api/admin/slots/bulk-preview` — body
+  `{ teacherAccountId, weekdays:[0..6], startTime:'HH:MM',
+     durationMinutes, startDate:'YYYY-MM-DD', weeks, skipDates? }`
+  → returns the array of `{ startAt }` it would generate. Pure
+  function over the input, no DB write. Lets the admin UI render a
+  preview and deselect individual rows
+- `POST /api/admin/slots/bulk-create` — body
+  `{ teacherAccountId, durationMinutes, notes?, slots: [{ startAt }] }`
+  → atomic insert of the final operator-curated list in one tx;
+  conflicts on `(teacher_account_id, start_at)` skip-with-report
 - `PATCH /api/admin/slots/[id]` — edit start_at / duration / notes;
   forbidden once status != 'open' (force operator to cancel + recreate)
 - `DELETE /api/admin/slots/[id]` — only allowed for open slots; for
@@ -226,26 +236,15 @@ Roughly:
 ≈ 2.5 days of focused work. Same shape as Phase 3 — additive, no new
 auth mechanism, no new payment surface.
 
-## Decisions to confirm before code
+## Decisions — settled 2026-05-04
 
-D1 — schema fields: anything missing or unwanted? specifically the
-`notes` and `cancellation_reason` text fields — keep or drop?
-
-D2 — booking gate: should the learner need a verified e-mail to book,
-or is `requireAuthenticated` enough?
-
-D3 — should we ship "book as operator" in this wave or wait until a
-real workflow demands it?
-
-D4 — operator slot creation: bulk create ("create one slot per day
-this week at 18:00") in this wave, or operator clicks "create" once
-per slot? Bulk creation is the recurring-slots story in disguise — if
-"yes, bulk", we're adding a recurring shape.
-
-D5 — what timezone should the operator default to in /admin/slots?
-`Europe/Moscow` per BASE_LEGAL_RF, or pull from operator's profile?
-(default is settled — Europe/Moscow — unless you have a different
-preference.)
-
-Everything else (D6 / D7 / D8) is offered as the proposed shape
-unless you flag a change.
+| ID | Settled |
+|---|---|
+| D1 | Schema keeps `notes` (operator-side) and `cancellation_reason` (free text on cancel) |
+| D2 | Booking gate = authenticated **+ email verified**. New helper `requireAuthenticatedAndVerified` in `lib/auth/guards.ts`. Unverified learner gets a 403 with a hint to confirm their e-mail; the cabinet UI shows the existing «E-mail не подтверждён» banner |
+| D3 | "Book as operator" ships in this wave. Operator picks a learner by e-mail in the bulk create + per-slot UI |
+| D4 | Bulk creation **with precise control**: operator picks teacher + weekdays + start time + duration + start date + weeks count + optional skip dates → server returns a *preview* of every concrete `start_at` it would generate → operator can deselect individual slots → submit commits the final list in one tx. No "recurring template" table; bulk just generates N rows in `lesson_slots`. Per-slot edits / cancels stay on the existing per-row endpoints. |
+| D5 | Default timezone in `/admin/slots` = `Europe/Moscow`. Learner's display tz comes from `account_profiles.timezone`; null → `Europe/Moscow`. UTC stored everywhere |
+| D6 | Atomic UPDATE-with-WHERE-status='open' for concurrent-book races; loser gets 409 |
+| D7 | Per-row `events JSONB` event log; no separate audit table for slots in this wave |
+| D8 | Unit + integration tests; no e2e through a headless browser in this phase |

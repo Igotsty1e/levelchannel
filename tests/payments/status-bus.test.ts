@@ -6,18 +6,18 @@ import {
   subscribeToStatus,
 } from '@/lib/payments/status-bus'
 
-const baseOrder = {
+import type { PublicPaymentOrder } from '@/lib/payments/types'
+
+const baseOrder: PublicPaymentOrder = {
   invoiceId: '',
   amountRub: 1500,
   currency: 'RUB',
   description: 'Test order',
-  provider: 'mock' as const,
-  status: 'paid' as const,
+  provider: 'mock',
+  status: 'paid',
   createdAt: '2026-05-04T00:00:00Z',
   updatedAt: '2026-05-04T00:01:00Z',
   paidAt: '2026-05-04T00:01:00Z',
-  failedAt: null,
-  providerMessage: 'Платёж подтверждён.',
 }
 
 describe('payments/status-bus', () => {

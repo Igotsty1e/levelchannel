@@ -149,6 +149,28 @@ export async function listAccounts(params: {
   }
 }
 
+// Operator-side: list every account holding a given role. Used by
+// /admin/slots to populate the teacher picker. Sorted by e-mail asc
+// for predictable dropdown order.
+export async function listAccountsByRole(
+  role: AccountRole,
+): Promise<Array<{ id: string; email: string }>> {
+  const pool = getAuthPool()
+  const result = await pool.query(
+    `select a.id, a.email
+       from accounts a
+       join account_roles r on r.account_id = a.id
+      where r.role = $1
+        and a.purged_at is null
+      order by a.email asc`,
+    [role],
+  )
+  return result.rows.map((r) => ({
+    id: String(r.id),
+    email: String(r.email),
+  }))
+}
+
 export async function listAccountRoles(accountId: string): Promise<AccountRole[]> {
   const pool = getAuthPool()
   const result = await pool.query(

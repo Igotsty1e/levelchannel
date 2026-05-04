@@ -68,6 +68,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
             <AdminNavLink href="/admin">Дашборд</AdminNavLink>
             <AdminNavLink href="/admin/accounts">Аккаунты</AdminNavLink>
             <AdminNavLink href="/admin/pricing">Тарифы</AdminNavLink>
+            <AdminNavLink href="/admin/slots">Слоты</AdminNavLink>
           </nav>
           <p
             style={{

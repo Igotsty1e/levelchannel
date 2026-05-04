@@ -32,6 +32,7 @@ afterEach(async () => {
       email_verifications,
       password_resets,
       account_roles,
+      lesson_slots,
       accounts,
       pricing_tariffs
     restart identity cascade

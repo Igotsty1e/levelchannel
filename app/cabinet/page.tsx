@@ -6,8 +6,13 @@ import { AuthInfoBox } from '@/components/auth-form-bits'
 import { listAccountRoles } from '@/lib/auth/accounts'
 import { getAccountProfile } from '@/lib/auth/profiles'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import {
+  listOpenFutureSlots,
+  listSlotsForLearner,
+} from '@/lib/scheduling/slots'
 
 import { DangerZone } from './danger-zone'
+import { LessonsSection } from './lessons-section'
 import { LogoutButton } from './logout-button'
 import { ProfileEditor } from './profile-editor'
 import { ResendVerifyButton } from './resend-verify-button'
@@ -39,9 +44,11 @@ export default async function CabinetPage() {
   const { account } = current
   const isVerified = account.emailVerifiedAt !== null
 
-  const [profile, roles] = await Promise.all([
+  const [profile, roles, mySlots, openSlots] = await Promise.all([
     getAccountProfile(account.id),
     listAccountRoles(account.id),
+    listSlotsForLearner(account.id, 20),
+    listOpenFutureSlots({ limit: 50 }),
   ])
   const isAdmin = roles.includes('admin')
   const greetingName = profile?.displayName?.trim() || account.email
@@ -78,6 +85,13 @@ export default async function CabinetPage() {
 
       <ProfileEditor initialProfile={profile} fallbackEmail={account.email} />
 
+      <LessonsSection
+        initialMine={mySlots}
+        initialAvailable={openSlots}
+        learnerTimezone={profile?.timezone ?? null}
+        emailVerified={isVerified}
+      />
+
       <div className="card" style={{ padding: 24, marginBottom: 24 }}>
         <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
           Кабинет в разработке
@@ -94,7 +108,6 @@ export default async function CabinetPage() {
             marginTop: 8,
           }}
         >
-          <li>расписание ваших занятий</li>
           <li>оплата уроков и история платежей</li>
           <li>история занятий и материалы</li>
         </ul>
