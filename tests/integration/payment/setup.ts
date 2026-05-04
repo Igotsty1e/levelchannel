@@ -28,6 +28,7 @@ afterEach(async () => {
   // payment_card_tokens / idempotency_records is fine independently.
   await pool.query(`
     truncate table
+      payment_allocations,
       payment_audit_events,
       payment_orders,
       payment_card_tokens,

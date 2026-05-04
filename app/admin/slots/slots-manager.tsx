@@ -5,10 +5,17 @@ import { useEffect, useState } from 'react'
 import type { LessonSlot } from '@/lib/scheduling/slots'
 
 type Teacher = { id: string; email: string }
+type TariffOption = {
+  id: string
+  slug: string
+  titleRu: string
+  amountKopecks: number
+}
 
 type Props = {
   initialTeachers: Teacher[]
   initialSlots: LessonSlot[]
+  initialTariffs: TariffOption[]
 }
 
 const TZ = 'Europe/Moscow'
@@ -54,7 +61,11 @@ function todayYmd(): string {
   }).format(new Date())
 }
 
-export function SlotsManager({ initialTeachers, initialSlots }: Props) {
+export function SlotsManager({
+  initialTeachers,
+  initialSlots,
+  initialTariffs,
+}: Props) {
   const [slots, setSlots] = useState<LessonSlot[]>(initialSlots)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -83,6 +94,7 @@ export function SlotsManager({ initialTeachers, initialSlots }: Props) {
 
       <SingleCreate
         teachers={initialTeachers}
+        tariffs={initialTariffs}
         onCreated={(msg) => {
           flash(msg)
           refresh()
@@ -94,6 +106,7 @@ export function SlotsManager({ initialTeachers, initialSlots }: Props) {
 
       <BulkCreate
         teachers={initialTeachers}
+        tariffs={initialTariffs}
         onCreated={(msg) => {
           flash(msg)
           refresh()
@@ -117,12 +130,14 @@ export function SlotsManager({ initialTeachers, initialSlots }: Props) {
 
 function SingleCreate({
   teachers,
+  tariffs,
   onCreated,
   onError,
   busy,
   setBusy,
 }: {
   teachers: Teacher[]
+  tariffs: TariffOption[]
   onCreated: (msg: string) => void
   onError: (m: string) => void
   busy: boolean
@@ -133,6 +148,7 @@ function SingleCreate({
   const [time, setTime] = useState('18:00')
   const [duration, setDuration] = useState('60')
   const [notes, setNotes] = useState('')
+  const [tariffId, setTariffId] = useState('')
 
   async function submit() {
     if (!teacherId || !date) return
@@ -147,6 +163,7 @@ function SingleCreate({
           startAt,
           durationMinutes: Number(duration),
           notes: notes || null,
+          tariffId: tariffId || null,
         }),
       })
       if (!res.ok) {
@@ -219,6 +236,16 @@ function SingleCreate({
               onChange={(e) => setNotes(e.target.value)}
             />
           </Field>
+          <Field label="Тариф (опц.)">
+            <Select value={tariffId} onChange={(v) => setTariffId(v)}>
+              <option value="">— без тарифа —</option>
+              {tariffs.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.titleRu} ({(t.amountKopecks / 100).toLocaleString('ru-RU')} ₽)
+                </option>
+              ))}
+            </Select>
+          </Field>
           <div style={{ display: 'flex', alignItems: 'end' }}>
             <button
               type="button"
@@ -237,12 +264,14 @@ function SingleCreate({
 
 function BulkCreate({
   teachers,
+  tariffs,
   onCreated,
   onError,
   busy,
   setBusy,
 }: {
   teachers: Teacher[]
+  tariffs: TariffOption[]
   onCreated: (msg: string) => void
   onError: (m: string) => void
   busy: boolean
@@ -255,6 +284,7 @@ function BulkCreate({
   const [weeks, setWeeks] = useState('4')
   const [duration, setDuration] = useState('60')
   const [notes, setNotes] = useState('')
+  const [tariffId, setTariffId] = useState('')
   const [preview, setPreview] = useState<
     { startAt: string; date: string; time: string; selected: boolean }[]
   >([])
@@ -316,6 +346,7 @@ function BulkCreate({
           teacherAccountId: teacherId,
           durationMinutes: Number(duration),
           notes: notes || null,
+          tariffId: tariffId || null,
           slots: finalSlots,
         }),
       })
@@ -422,6 +453,16 @@ function BulkCreate({
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
           />
+        </Field>
+        <Field label="Тариф (опц.)">
+          <Select value={tariffId} onChange={(v) => setTariffId(v)}>
+            <option value="">— без тарифа —</option>
+            {tariffs.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.titleRu} ({(t.amountKopecks / 100).toLocaleString('ru-RU')} ₽)
+              </option>
+            ))}
+          </Select>
         </Field>
         <div style={{ display: 'flex', alignItems: 'end', gap: 8 }}>
           <button
@@ -638,6 +679,7 @@ function SlotList({
                 <th style={{ padding: '8px 10px' }}>Когда</th>
                 <th style={{ padding: '8px 10px' }}>Учитель</th>
                 <th style={{ padding: '8px 10px' }}>Учащийся</th>
+                <th style={{ padding: '8px 10px' }}>Тариф</th>
                 <th style={{ padding: '8px 10px' }}>Статус</th>
                 <th style={{ padding: '8px 10px' }}>Действия</th>
               </tr>
@@ -651,6 +693,11 @@ function SlotList({
                   </td>
                   <td style={{ padding: '8px 10px', color: 'var(--secondary)' }}>
                     {s.learnerEmail ?? '—'}
+                  </td>
+                  <td style={{ padding: '8px 10px', color: 'var(--secondary)' }}>
+                    {s.tariffSlug
+                      ? `${s.tariffSlug}${s.tariffAmountKopecks ? ` · ${(s.tariffAmountKopecks / 100).toLocaleString('ru-RU')}\u00a0₽` : ''}`
+                      : '—'}
                   </td>
                   <td style={{ padding: '8px 10px' }}>{statusLabel(s.status)}</td>
                   <td style={{ padding: '8px 10px' }}>

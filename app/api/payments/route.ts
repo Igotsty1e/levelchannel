@@ -45,6 +45,10 @@ export async function POST(request: Request) {
       rememberCard?: boolean
       personalDataConsentAccepted?: boolean
       customerComment?: string | null
+      // Phase 6: optional binding to a lesson_slot. The webhook
+      // handler reads order.metadata.slotId on `paid` and writes a
+      // payment_allocations row.
+      slotId?: string | null
     }
 
     try {
@@ -109,6 +113,19 @@ export async function POST(request: Request) {
       }
     }
 
+    // Phase 6: shape-validate the optional slotId. UUIDs only; if
+    // the caller supplied a malformed value we drop it silently
+    // rather than 400 — the field is operator-side metadata, not a
+    // user-facing parameter, and silently dropping is safer than
+    // failing a money-moving call on a metadata typo.
+    const UUID_PATTERN_LOCAL =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    const slotIdRaw = body.slotId
+    const slotId =
+      typeof slotIdRaw === 'string' && UUID_PATTERN_LOCAL.test(slotIdRaw)
+        ? slotIdRaw
+        : null
+
     try {
       const { order, checkoutIntent } = await createPayment(
         amountRub,
@@ -120,6 +137,7 @@ export async function POST(request: Request) {
             userAgent: request.headers.get('user-agent') || undefined,
           }),
           customerComment,
+          slotId,
         },
       )
 

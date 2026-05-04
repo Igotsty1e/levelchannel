@@ -9,6 +9,7 @@ type Props = {
   initialAvailable: LessonSlot[]
   learnerTimezone: string | null
   emailVerified: boolean
+  initialPaidSlotIds: string[]
 }
 
 const TZ_DEFAULT = 'Europe/Moscow'
@@ -54,10 +55,12 @@ export function LessonsSection({
   initialAvailable,
   learnerTimezone,
   emailVerified,
+  initialPaidSlotIds,
 }: Props) {
   const tz = learnerTimezone ?? TZ_DEFAULT
   const [mine, setMine] = useState<LessonSlot[]>(initialMine)
   const [available, setAvailable] = useState<LessonSlot[]>(initialAvailable)
+  const paidSet = new Set(initialPaidSlotIds)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
@@ -188,6 +191,40 @@ export function LessonsSection({
                                   {s.durationMinutes} мин ·{' '}
                                   {statusLabel(s.status)}
                                 </span>
+                                {s.status === 'booked' && s.tariffSlug ? (
+                                  paidSet.has(s.id) ? (
+                                    <span
+                                      style={{
+                                        marginLeft: 8,
+                                        fontSize: 11,
+                                        padding: '1px 8px',
+                                        borderRadius: 4,
+                                        background: 'rgba(155,223,155,0.15)',
+                                        color: '#9bdf9b',
+                                      }}
+                                    >
+                                      оплачено
+                                    </span>
+                                  ) : (
+                                    <a
+                                      href={`/checkout/${encodeURIComponent(s.tariffSlug)}?slot=${s.id}`}
+                                      style={{
+                                        marginLeft: 8,
+                                        fontSize: 11,
+                                        padding: '1px 8px',
+                                        borderRadius: 4,
+                                        background: 'rgba(255,196,0,0.15)',
+                                        color: '#ffd166',
+                                        textDecoration: 'none',
+                                      }}
+                                    >
+                                      оплатить{' '}
+                                      {s.tariffAmountKopecks
+                                        ? `${(s.tariffAmountKopecks / 100).toLocaleString('ru-RU')}\u00a0₽`
+                                        : ''}
+                                    </a>
+                                  )
+                                ) : null}
                               </span>
                               {s.status === 'booked' && !tooLate ? (
                                 <button

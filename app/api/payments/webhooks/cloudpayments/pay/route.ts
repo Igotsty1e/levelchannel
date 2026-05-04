@@ -1,7 +1,9 @@
 import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
 import { sendOperatorPaymentNotification } from '@/lib/email/dispatch'
+import { recordAllocation } from '@/lib/payments/allocations'
 import { handleCloudPaymentsWebhook } from '@/lib/payments/cloudpayments-route'
 import { getCloudPaymentsInvoiceId } from '@/lib/payments/cloudpayments-webhook'
+import { getOrder } from '@/lib/payments/store'
 import { markOrderPaid } from '@/lib/payments/provider'
 import { maybePersistTokenFromWebhook } from '@/lib/payments/tokens'
 
@@ -61,6 +63,30 @@ export async function POST(request: Request) {
         }
       } catch (err) {
         console.warn('[notify] operator payment email threw:', {
+          invoiceId: order.invoiceId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+
+      // Phase 6: if the order's metadata names a slotId, write a
+      // payment_allocations row binding this paid invoice to that
+      // slot. Best-effort: a failed allocation insert MUST NOT block
+      // the webhook ack — the order is already paid in DB and audit
+      // captured the transition, so the operator can stitch the slot
+      // ↔ payment link manually if needed.
+      try {
+        const fullOrder = await getOrder(order.invoiceId)
+        const metaSlotId = fullOrder?.metadata?.slotId
+        if (typeof metaSlotId === 'string' && metaSlotId) {
+          await recordAllocation({
+            paymentOrderId: order.invoiceId,
+            kind: 'lesson_slot',
+            targetId: metaSlotId,
+            amountKopecks: rublesToKopecks(order.amountRub),
+          })
+        }
+      } catch (err) {
+        console.warn('[allocations] webhook recordAllocation threw:', {
           invoiceId: order.invoiceId,
           error: err instanceof Error ? err.message : String(err),
         })

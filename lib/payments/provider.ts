@@ -114,6 +114,10 @@ export async function createPayment(
     rememberCard?: boolean
     personalDataConsent: PersonalDataConsentSnapshot
     customerComment?: string | null
+    // Phase 6: optional binding to a lesson_slot. Persisted on the
+    // order's metadata; the webhook handler reads this on `paid` and
+    // writes the corresponding payment_allocations row.
+    slotId?: string | null
   },
 ) {
   let order: PaymentOrder
@@ -125,12 +129,14 @@ export async function createPayment(
       rememberCard: Boolean(options.rememberCard),
       personalDataConsent: options.personalDataConsent,
       customerComment: options.customerComment ?? null,
+      slotId: options.slotId ?? null,
     })
     checkoutIntent = buildCloudPaymentsWidgetIntent(order)
   } else {
     order = createMockOrder(amountRub, customerEmail, {
       personalDataConsent: options.personalDataConsent,
       customerComment: options.customerComment ?? null,
+      slotId: options.slotId ?? null,
     })
   }
 

@@ -1,4 +1,5 @@
 import { listAccountsByRole } from '@/lib/auth/accounts'
+import { listActiveTariffs } from '@/lib/pricing/tariffs'
 import { listAllSlotsForAdmin } from '@/lib/scheduling/slots'
 
 import { SlotsManager } from './slots-manager'
@@ -7,9 +8,10 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export default async function AdminSlotsPage() {
-  const [teachers, slots] = await Promise.all([
+  const [teachers, slots, tariffs] = await Promise.all([
     listAccountsByRole('teacher'),
     listAllSlotsForAdmin({ status: 'all', limit: 200 }),
+    listActiveTariffs(),
   ])
 
   return (
@@ -25,11 +27,20 @@ export default async function AdminSlotsPage() {
           lineHeight: 1.6,
         }}
       >
-        Слоты — это конкретное «время + учитель». Свободные видны учащимся в
-        кабинете. Бронирование пока без оплаты — связь с тарифами и платежом
-        приходит в Phase 6.
+        Слоты — это «время + учитель + опционально тариф». Тариф нужен,
+        если хотите чтобы учащийся мог оплатить через кабинет — без
+        тарифа платёж операторский (через DM / прямой <code>/checkout</code>).
       </p>
-      <SlotsManager initialTeachers={teachers} initialSlots={slots} />
+      <SlotsManager
+        initialTeachers={teachers}
+        initialSlots={slots}
+        initialTariffs={tariffs.map((t) => ({
+          id: t.id,
+          slug: t.slug,
+          titleRu: t.titleRu,
+          amountKopecks: t.amountKopecks,
+        }))}
+      />
     </>
   )
 }

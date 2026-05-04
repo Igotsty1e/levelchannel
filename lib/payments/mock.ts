@@ -15,6 +15,7 @@ export function createMockOrder(
   options: {
     personalDataConsent?: PersonalDataConsentSnapshot
     customerComment?: string | null
+    slotId?: string | null
   } = {},
 ): PaymentOrder {
   const now = new Date()
@@ -64,6 +65,7 @@ export function createMockOrder(
       mockBankSessionId: randomUUID(),
       personalDataConsent: options.personalDataConsent,
       customerComment,
+      ...(options.slotId ? { slotId: options.slotId } : {}),
     },
     events: [
       ...(options.personalDataConsent

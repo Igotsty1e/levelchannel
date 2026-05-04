@@ -79,6 +79,13 @@ export type LessonSlot = {
   // stamps it, operator "mark" endpoint stamps it). Null on rows
   // that never reached completed / no_show_*.
   markedAt: string | null
+  // Phase 6: optional binding to a pricing tariff. Operator picks at
+  // create time. Null = no auto-bound price (cabinet shows no
+  // «оплатить» action for that slot).
+  tariffId: string | null
+  tariffSlug?: string | null
+  tariffTitleRu?: string | null
+  tariffAmountKopecks?: number | null
   notes: string | null
   events: SlotEvent[]
   createdAt: string
@@ -104,6 +111,7 @@ const SLOT_COLUMNS = `
   cancelled_by_account_id,
   cancellation_reason,
   marked_at,
+  tariff_id,
   notes,
   events,
   created_at,
@@ -112,7 +120,13 @@ const SLOT_COLUMNS = `
 
 function rowToSlot(
   row: Record<string, unknown>,
-  extra: { teacherEmail?: string | null; learnerEmail?: string | null } = {},
+  extra: {
+    teacherEmail?: string | null
+    learnerEmail?: string | null
+    tariffSlug?: string | null
+    tariffTitleRu?: string | null
+    tariffAmountKopecks?: number | null
+  } = {},
 ): LessonSlot {
   return {
     id: String(row.id),
@@ -140,6 +154,10 @@ function rowToSlot(
     markedAt: row.marked_at
       ? new Date(String(row.marked_at)).toISOString()
       : null,
+    tariffId: row.tariff_id ? String(row.tariff_id) : null,
+    tariffSlug: extra.tariffSlug ?? null,
+    tariffTitleRu: extra.tariffTitleRu ?? null,
+    tariffAmountKopecks: extra.tariffAmountKopecks ?? null,
     notes: row.notes ? String(row.notes) : null,
     events: Array.isArray(row.events)
       ? (row.events as SlotEvent[])
@@ -423,18 +441,31 @@ export async function listOpenFutureSlots(params: {
   const result = await pool.query(
     `select s.id, s.teacher_account_id, s.start_at, s.duration_minutes,
             s.status, s.learner_account_id, s.booked_at, s.cancelled_at,
-            s.cancelled_by_account_id, s.cancellation_reason, s.marked_at, s.notes,
+            s.cancelled_by_account_id, s.cancellation_reason, s.marked_at,
+            s.tariff_id, s.notes,
             s.events, s.created_at, s.updated_at,
-            ta.email as teacher_email
+            ta.email as teacher_email,
+            t.slug as tariff_slug,
+            t.title_ru as tariff_title_ru,
+            t.amount_kopecks as tariff_amount_kopecks
        from lesson_slots s
        join accounts ta on ta.id = s.teacher_account_id
+       left join pricing_tariffs t on t.id = s.tariff_id
       where ${where}
       order by s.start_at asc
       limit $${args.length}`,
     args,
   )
   return result.rows.map((r) =>
-    rowToSlot(r, { teacherEmail: r.teacher_email ? String(r.teacher_email) : null }),
+    rowToSlot(r, {
+      teacherEmail: r.teacher_email ? String(r.teacher_email) : null,
+      tariffSlug: r.tariff_slug ? String(r.tariff_slug) : null,
+      tariffTitleRu: r.tariff_title_ru ? String(r.tariff_title_ru) : null,
+      tariffAmountKopecks:
+        r.tariff_amount_kopecks !== null && r.tariff_amount_kopecks !== undefined
+          ? Number(r.tariff_amount_kopecks)
+          : null,
+    }),
   )
 }
 
@@ -446,18 +477,31 @@ export async function listSlotsForLearner(
   const result = await pool.query(
     `select s.id, s.teacher_account_id, s.start_at, s.duration_minutes,
             s.status, s.learner_account_id, s.booked_at, s.cancelled_at,
-            s.cancelled_by_account_id, s.cancellation_reason, s.marked_at, s.notes,
+            s.cancelled_by_account_id, s.cancellation_reason, s.marked_at,
+            s.tariff_id, s.notes,
             s.events, s.created_at, s.updated_at,
-            ta.email as teacher_email
+            ta.email as teacher_email,
+            t.slug as tariff_slug,
+            t.title_ru as tariff_title_ru,
+            t.amount_kopecks as tariff_amount_kopecks
        from lesson_slots s
        join accounts ta on ta.id = s.teacher_account_id
+       left join pricing_tariffs t on t.id = s.tariff_id
       where s.learner_account_id = $1
       order by s.start_at desc
       limit $2`,
     [learnerAccountId, Math.min(Math.max(limit, 1), 200)],
   )
   return result.rows.map((r) =>
-    rowToSlot(r, { teacherEmail: r.teacher_email ? String(r.teacher_email) : null }),
+    rowToSlot(r, {
+      teacherEmail: r.teacher_email ? String(r.teacher_email) : null,
+      tariffSlug: r.tariff_slug ? String(r.tariff_slug) : null,
+      tariffTitleRu: r.tariff_title_ru ? String(r.tariff_title_ru) : null,
+      tariffAmountKopecks:
+        r.tariff_amount_kopecks !== null && r.tariff_amount_kopecks !== undefined
+          ? Number(r.tariff_amount_kopecks)
+          : null,
+    }),
   )
 }
 
@@ -488,13 +532,18 @@ export async function listAllSlotsForAdmin(params: {
   const result = await pool.query(
     `select s.id, s.teacher_account_id, s.start_at, s.duration_minutes,
             s.status, s.learner_account_id, s.booked_at, s.cancelled_at,
-            s.cancelled_by_account_id, s.cancellation_reason, s.marked_at, s.notes,
+            s.cancelled_by_account_id, s.cancellation_reason, s.marked_at,
+            s.tariff_id, s.notes,
             s.events, s.created_at, s.updated_at,
             ta.email as teacher_email,
-            la.email as learner_email
+            la.email as learner_email,
+            t.slug as tariff_slug,
+            t.title_ru as tariff_title_ru,
+            t.amount_kopecks as tariff_amount_kopecks
        from lesson_slots s
        join accounts ta on ta.id = s.teacher_account_id
        left join accounts la on la.id = s.learner_account_id
+       left join pricing_tariffs t on t.id = s.tariff_id
        ${where}
        order by s.start_at asc
        limit $${args.length}`,
@@ -504,6 +553,12 @@ export async function listAllSlotsForAdmin(params: {
     rowToSlot(r, {
       teacherEmail: r.teacher_email ? String(r.teacher_email) : null,
       learnerEmail: r.learner_email ? String(r.learner_email) : null,
+      tariffSlug: r.tariff_slug ? String(r.tariff_slug) : null,
+      tariffTitleRu: r.tariff_title_ru ? String(r.tariff_title_ru) : null,
+      tariffAmountKopecks:
+        r.tariff_amount_kopecks !== null && r.tariff_amount_kopecks !== undefined
+          ? Number(r.tariff_amount_kopecks)
+          : null,
     }),
   )
 }
@@ -523,6 +578,7 @@ export type CreateSlotInput = {
   startAt: string
   durationMinutes: number
   notes?: string | null
+  tariffId?: string | null
 }
 
 export async function createSlot(
@@ -532,17 +588,23 @@ export async function createSlot(
   if (validation) {
     throw new Error(`slot/${validation.field}/${validation.reason}`)
   }
+  if (input.tariffId !== undefined && input.tariffId !== null) {
+    if (!UUID_PATTERN.test(input.tariffId)) {
+      throw new Error('slot/tariffId/invalid')
+    }
+  }
   const pool = getDbPool()
   const result = await pool.query(
     `insert into lesson_slots (
-       teacher_account_id, start_at, duration_minutes, notes, events
-     ) values ($1, $2, $3, $4, $5::jsonb)
+       teacher_account_id, start_at, duration_minutes, notes, tariff_id, events
+     ) values ($1, $2, $3, $4, $5, $6::jsonb)
      returning ${SLOT_COLUMNS}`,
     [
       input.teacherAccountId,
       input.startAt,
       input.durationMinutes,
       input.notes ?? null,
+      input.tariffId ?? null,
       JSON.stringify([
         {
           type: 'slot.created',
@@ -559,6 +621,7 @@ export type BulkCreateInput = {
   teacherAccountId: string
   durationMinutes: number
   notes?: string | null
+  tariffId?: string | null
   slots: { startAt: string }[]
 }
 
@@ -588,6 +651,11 @@ export async function bulkCreateSlots(
     const v = validateSlotInput({ startAt: s.startAt })
     if (v) throw new Error(`slot/${v.field}/${v.reason}`)
   }
+  if (input.tariffId !== undefined && input.tariffId !== null) {
+    if (!UUID_PATTERN.test(input.tariffId)) {
+      throw new Error('slot/tariffId/invalid')
+    }
+  }
 
   const pool = getDbPool()
   const created: LessonSlot[] = []
@@ -608,8 +676,8 @@ export async function bulkCreateSlots(
       try {
         const result = await client.query(
           `insert into lesson_slots (
-             teacher_account_id, start_at, duration_minutes, notes, events
-           ) values ($1, $2, $3, $4, $5::jsonb)
+             teacher_account_id, start_at, duration_minutes, notes, tariff_id, events
+           ) values ($1, $2, $3, $4, $5, $6::jsonb)
            on conflict (teacher_account_id, start_at) do nothing
            returning ${SLOT_COLUMNS}`,
           [
@@ -617,6 +685,7 @@ export async function bulkCreateSlots(
             s.startAt,
             input.durationMinutes,
             input.notes ?? null,
+            input.tariffId ?? null,
             eventBlob,
           ],
         )

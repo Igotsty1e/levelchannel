@@ -46,6 +46,10 @@ export function createCloudPaymentsOrder(
     source?: string
     personalDataConsent?: PersonalDataConsentSnapshot
     customerComment?: string | null
+    // Phase 6: optional binding to a lesson_slot. The webhook handler
+    // reads metadata.slotId on `paid` and writes a row in
+    // payment_allocations linking this order to the slot.
+    slotId?: string | null
   } = {},
 ): PaymentOrder {
   if (!isCloudPaymentsConfigured()) {
@@ -76,6 +80,7 @@ export function createCloudPaymentsOrder(
       rememberCard: Boolean(options.rememberCard),
       personalDataConsent: options.personalDataConsent,
       customerComment,
+      ...(options.slotId ? { slotId: options.slotId } : {}),
     },
     events: [
       ...(options.personalDataConsent

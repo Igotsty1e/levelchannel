@@ -72,6 +72,9 @@ export async function POST(request: Request) {
   if (typeof raw.notes === 'string' || raw.notes === null) {
     input.notes = raw.notes as string | null
   }
+  if (typeof raw.tariffId === 'string' || raw.tariffId === null) {
+    input.tariffId = raw.tariffId as string | null
+  }
 
   if (
     typeof input.teacherAccountId !== 'string' ||

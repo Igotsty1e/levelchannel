@@ -6,6 +6,7 @@ import { AuthInfoBox } from '@/components/auth-form-bits'
 import { listAccountRoles } from '@/lib/auth/accounts'
 import { getAccountProfile } from '@/lib/auth/profiles'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { listSlotPaidStatus } from '@/lib/payments/allocations'
 import {
   listOpenFutureSlots,
   listSlotsForLearner,
@@ -52,6 +53,7 @@ export default async function CabinetPage() {
   ])
   const isAdmin = roles.includes('admin')
   const greetingName = profile?.displayName?.trim() || account.email
+  const paidMap = await listSlotPaidStatus(mySlots.map((s) => s.id))
 
   return (
     <AuthShell>
@@ -90,6 +92,7 @@ export default async function CabinetPage() {
         initialAvailable={openSlots}
         learnerTimezone={profile?.timezone ?? null}
         emailVerified={isVerified}
+        initialPaidSlotIds={Array.from(paidMap.keys())}
       />
 
       <div className="card" style={{ padding: 24, marginBottom: 24 }}>
