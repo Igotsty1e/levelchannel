@@ -1,4 +1,5 @@
 import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
+import { sendOperatorPaymentFailureNotification } from '@/lib/email/dispatch'
 import { handleCloudPaymentsWebhook } from '@/lib/payments/cloudpayments-route'
 import { getCloudPaymentsInvoiceId } from '@/lib/payments/cloudpayments-webhook'
 import { markOrderFailed } from '@/lib/payments/provider'
@@ -34,6 +35,26 @@ export async function POST(request: Request) {
             reasonCode: payload.ReasonCode,
           },
         })
+
+        // Per-event operator notification. Best-effort: a Resend
+        // outage cannot block the webhook ack to CloudPayments.
+        try {
+          await sendOperatorPaymentFailureNotification({
+            invoiceId: order.invoiceId,
+            amountRub: order.amountRub,
+            customerEmail: order.customerEmail,
+            source: 'CloudPayments Fail webhook',
+            reason: payload.Reason ?? null,
+            reasonCode: payload.ReasonCode ?? null,
+            transactionId: payload.TransactionId ?? null,
+            customerComment: order.customerComment ?? null,
+          })
+        } catch (err) {
+          console.warn('[notify] operator failure email failed:', {
+            invoiceId: order.invoiceId,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        }
       }
     },
   })

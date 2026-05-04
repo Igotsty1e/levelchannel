@@ -1,6 +1,10 @@
 import { sendEmail } from '@/lib/email/client'
 import { renderAlreadyRegisteredEmail } from '@/lib/email/templates/already-registered'
 import {
+  renderOperatorPaymentFailureEmail,
+  type OperatorPaymentFailureParams,
+} from '@/lib/email/templates/operator-payment-failure'
+import {
   renderOperatorPaymentNotifyEmail,
   type OperatorPaymentNotifyParams,
 } from '@/lib/email/templates/operator-payment-notify'
@@ -64,6 +68,30 @@ export async function sendOperatorPaymentNotification(
     return { ok: false as const, reason: 'no_recipient' as const }
   }
   const tpl = renderOperatorPaymentNotifyEmail({
+    ...params,
+    siteUrl: paymentConfig.siteUrl,
+  })
+  const result = await sendEmail({
+    to,
+    subject: tpl.subject,
+    html: tpl.html,
+    text: tpl.text,
+  })
+  return { ...result, recipient: to } as const
+}
+
+// Per-event failure notification. Symmetric with the success path —
+// best-effort, silent skip when OPERATOR_NOTIFY_EMAIL is empty. Wired
+// into terminal failure paths only (Fail webhook + 3DS decline); the
+// aggregate webhook-flow alert keeps watching low-ratio trends.
+export async function sendOperatorPaymentFailureNotification(
+  params: Omit<OperatorPaymentFailureParams, 'siteUrl'>,
+) {
+  const to = process.env.OPERATOR_NOTIFY_EMAIL?.trim() || ''
+  if (!to) {
+    return { ok: false as const, reason: 'no_recipient' as const }
+  }
+  const tpl = renderOperatorPaymentFailureEmail({
     ...params,
     siteUrl: paymentConfig.siteUrl,
   })

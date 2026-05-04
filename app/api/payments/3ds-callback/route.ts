@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
+import { sendOperatorPaymentFailureNotification } from '@/lib/email/dispatch'
 import { paymentConfig } from '@/lib/payments/config'
 import { confirmThreeDsAndFinalize } from '@/lib/payments/provider'
 import { getOrder } from '@/lib/payments/store'
@@ -140,6 +141,28 @@ export async function POST(request: Request) {
       toStatus: result.order.status,
       payload: { reason: result.reason },
     })
+  }
+
+  // Per-event operator notification on 3DS decline. Best-effort: a
+  // Resend outage cannot block the user redirect to /payment=failed.
+  // PublicPaymentOrder doesn't carry e-mail / comment — pull from the
+  // already-loaded `fullOrder`.
+  if (fullOrder) {
+    try {
+      await sendOperatorPaymentFailureNotification({
+        invoiceId: fullOrder.invoiceId,
+        amountRub: fullOrder.amountRub,
+        customerEmail: fullOrder.customerEmail,
+        source: '3DS callback decline',
+        reason: result.reason ?? null,
+        customerComment: fullOrder.customerComment ?? null,
+      })
+    } catch (err) {
+      console.warn('[notify] operator failure email failed:', {
+        invoiceId: fullOrder.invoiceId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
   }
 
   return redirectFailed(invoiceId)
