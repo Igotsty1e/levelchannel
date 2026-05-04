@@ -50,7 +50,7 @@ owner docs, and git history beat old chat outputs.
 ### Payment domain
 
 - move from a polling-only model to a more reliable way to deliver the final status to the client
-- add lifecycle cleanup for old pending orders
+- ~~add lifecycle cleanup for old pending orders~~: **shipped 2026-05-04 (workflow side; activation requires server-side patch)**. `scripts/cancel-stale-orders.mjs` plus systemd unit / timer (`scripts/systemd/`); hourly at minute 7 it finds rows with `status='pending'` and `created_at < now() - <threshold>` (default 60 min, floor 30 min via `STALE_ORDER_THRESHOLD_MINUTES`), runs a per-row tx that flips status to `cancelled`, appends a `payment.cancelled` event with reason `stale_pending_timeout`, and writes a matching `order.cancelled` audit row with `actor='system'`. 4 integration tests cover stale cancel / fresh skip / terminal-status untouched / threshold-floor. Activation lives in the private operations runbook.
 - decide whether client-visible reconciliation or an operator-side payment list is needed
 
 ### Observability

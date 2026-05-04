@@ -1,0 +1,16 @@
+# Reference systemd timer for scripts/cancel-stale-orders.mjs.
+# Copy to /etc/systemd/system/ on the VPS; activation lives in the
+# private operations runbook.
+
+[Unit]
+Description=Run LevelChannel stale-order cleanup hourly
+
+[Timer]
+# Top of every hour, ~7 minutes offset so it doesn't tangle with
+# the daily retention cleanup or the half-hourly webhook-flow alert.
+OnCalendar=*-*-* *:07:00
+Persistent=true
+Unit=levelchannel-stale-orders.service
+
+[Install]
+WantedBy=timers.target

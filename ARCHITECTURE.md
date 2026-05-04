@@ -169,6 +169,7 @@ Not covered (see `ENGINEERING_BACKLOG.md` for context):
 
 ### Security layer
 
+- [`scripts/cancel-stale-orders.mjs`](scripts/cancel-stale-orders.mjs) - hourly systemd job that flips abandoned pending orders to `cancelled` past `STALE_ORDER_THRESHOLD_MINUTES` (default 60, floor 30). Per-row tx writes the order event + audit row. Reference unit / timer in `scripts/systemd/levelchannel-stale-orders.{service,timer}`
 - [`lib/security/request.ts`](lib/security/request.ts) - origin checks, invoice id validation, per-IP rate limiting (`enforceRateLimit` is async)
 - [`lib/security/rate-limit.ts`](lib/security/rate-limit.ts) - shared-store rate limiter. Postgres-backed bucket (table `rate_limit_buckets`, migration 0016) with an in-memory fallback when `DATABASE_URL` is unset or transiently unreachable. Atomic upsert with fixed-window semantics; the same counter agrees across replicas. Cleanup folded into `scripts/db-retention-cleanup.mjs` (rows with `reset_at` older than 1 hour are removed daily)
 - [`next.config.js`](next.config.js) - security headers for the Node deployment
