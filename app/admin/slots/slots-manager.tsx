@@ -27,7 +27,22 @@ function fmt(iso: string): string {
 }
 
 function statusLabel(s: string): string {
-  return s === 'open' ? 'свободен' : s === 'booked' ? 'занят' : 'отменён'
+  switch (s) {
+    case 'open':
+      return 'свободен'
+    case 'booked':
+      return 'занят'
+    case 'cancelled':
+      return 'отменён'
+    case 'completed':
+      return 'проведён'
+    case 'no_show_learner':
+      return 'не пришёл (учащийся)'
+    case 'no_show_teacher':
+      return 'не пришёл (учитель)'
+    default:
+      return s
+  }
 }
 
 function todayYmd(): string {
@@ -498,11 +513,19 @@ function SlotList({
   busy: boolean
   setBusy: (b: boolean) => void
 }) {
-  const [filter, setFilter] = useState<'all' | 'open' | 'booked' | 'cancelled'>(
-    'all',
-  )
+  const [filter, setFilter] = useState<
+    'all' | 'open' | 'booked' | 'cancelled' | 'completed' | 'no_show'
+  >('all')
   const filtered =
-    filter === 'all' ? slots : slots.filter((s) => s.status === filter)
+    filter === 'all'
+      ? slots
+      : filter === 'no_show'
+        ? slots.filter(
+            (s) =>
+              s.status === 'no_show_learner' ||
+              s.status === 'no_show_teacher',
+          )
+        : slots.filter((s) => s.status === filter)
 
   async function call(method: string, url: string, body?: unknown) {
     setBusy(true)
@@ -557,6 +580,18 @@ function SlotList({
     onMutated()
   }
 
+  async function mark(
+    s: LessonSlot,
+    status: 'completed' | 'no_show_learner' | 'no_show_teacher',
+  ) {
+    if (
+      !(await call('POST', `/api/admin/slots/${s.id}/mark`, { status }))
+    )
+      return
+    onInfo('Статус обновлён.')
+    onMutated()
+  }
+
   return (
     <Card>
       <div
@@ -575,6 +610,8 @@ function SlotList({
           <option value="all">все</option>
           <option value="open">свободные</option>
           <option value="booked">забронированные</option>
+          <option value="completed">проведённые</option>
+          <option value="no_show">не пришли</option>
           <option value="cancelled">отменённые</option>
         </Select>
       </div>
@@ -638,7 +675,37 @@ function SlotList({
                           </button>
                         </>
                       ) : null}
-                      {s.status !== 'cancelled' ? (
+                      {s.status === 'booked' &&
+                      new Date(s.startAt).getTime() <= Date.now() ? (
+                        <>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => mark(s, 'completed')}
+                            style={smallBtnStyle()}
+                          >
+                            Прошёл
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => mark(s, 'no_show_learner')}
+                            style={smallDangerStyle()}
+                          >
+                            Не пришёл (учащ.)
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => mark(s, 'no_show_teacher')}
+                            style={smallDangerStyle()}
+                          >
+                            Не пришёл (учит.)
+                          </button>
+                        </>
+                      ) : null}
+                      {s.status === 'booked' ||
+                      s.status === 'open' ? (
                         <button
                           type="button"
                           disabled={busy}

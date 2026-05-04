@@ -1,0 +1,17 @@
+# Reference systemd unit for scripts/auto-complete-slots.mjs.
+# `scripts/activate-prod-ops.sh` renders the placeholders below during
+# installation from the private runbook.
+
+[Unit]
+Description=LevelChannel daily auto-complete past-booked lesson slots
+After=network.target
+
+[Service]
+Type=oneshot
+User=levelchannel
+Group=levelchannel
+WorkingDirectory=__LEVELCHANNEL_APP_DIR__
+EnvironmentFile=__LEVELCHANNEL_ENV_FILE__
+ExecStart=/usr/bin/node scripts/auto-complete-slots.mjs
+StandardOutput=journal
+StandardError=journal

@@ -214,6 +214,8 @@ declare -a units=(
   "levelchannel-db-retention.timer"
   "levelchannel-stale-orders.service"
   "levelchannel-stale-orders.timer"
+  "levelchannel-auto-complete-slots.service"
+  "levelchannel-auto-complete-slots.timer"
 )
 
 UNITS_CHANGED=0
@@ -251,6 +253,7 @@ declare -a timers=(
   "levelchannel-webhook-flow-alert.timer"
   "levelchannel-db-retention.timer"
   "levelchannel-stale-orders.timer"
+  "levelchannel-auto-complete-slots.timer"
 )
 
 for t in "${timers[@]}"; do
@@ -286,7 +289,7 @@ step "Post-activation summary"
 echo
 echo "${B}Active timers:${N}"
 systemctl list-timers --no-pager 2>/dev/null \
-  | grep -E "levelchannel-(webhook-flow-alert|db-retention|stale-orders)" \
+  | grep -E "levelchannel-(webhook-flow-alert|db-retention|stale-orders|auto-complete-slots)" \
   || echo "  (timers not yet shown — they appear after first scheduled run)"
 
 echo

@@ -209,7 +209,7 @@ describe('Phase 4 slot flow', () => {
     expect(statuses).toEqual([200, 409])
   })
 
-  it('learner cancels their own booking', async () => {
+  it('learner cancels their own booking (>24h ahead)', async () => {
     const teacher = await registerAndCookie('teacher-e@example.com', {
       verifyEmail: true,
       role: 'teacher',
@@ -227,7 +227,8 @@ describe('Phase 4 slot flow', () => {
         cookie: admin.cookie,
         body: {
           teacherAccountId: teacher.accountId,
-          startAt: futureIsoMinutes(60),
+          // Phase 5 24h rule: must be ≥24h ahead for the learner cancel.
+          startAt: futureIsoMinutes(48 * 60),
           durationMinutes: 60,
         },
       }),

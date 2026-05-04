@@ -1,6 +1,66 @@
 import { getDbPool } from '@/lib/db/pool'
 
-export type SlotStatus = 'open' | 'booked' | 'cancelled'
+export type SlotStatus =
+  | 'open'
+  | 'booked'
+  | 'cancelled'
+  | 'completed'
+  | 'no_show_learner'
+  | 'no_show_teacher'
+
+// Statuses that the operator can stamp on a booked slot whose start
+// has already passed. Phase 5 lifecycle.
+export type SlotLifecycleStatus =
+  | 'completed'
+  | 'no_show_learner'
+  | 'no_show_teacher'
+
+export const LIFECYCLE_STATUSES: SlotLifecycleStatus[] = [
+  'completed',
+  'no_show_learner',
+  'no_show_teacher',
+]
+
+export const TERMINAL_STATUSES: SlotStatus[] = [
+  'cancelled',
+  'completed',
+  'no_show_learner',
+  'no_show_teacher',
+]
+
+// Phase 5 — 24-hour rule: a learner can cancel only if start_at is
+// at least 24 hours away. Operator/admin paths bypass this — they
+// have the override.
+//
+// Pure function so the cabinet UI can check it client-side too without
+// re-implementing the threshold.
+export const LEARNER_CANCEL_THRESHOLD_MS = 24 * 60 * 60 * 1000
+
+export type LearnerCancelDecision =
+  | { ok: true }
+  | { ok: false; reason: 'already_terminal' | 'too_late_to_cancel'; minutesUntilStart?: number }
+
+export function canLearnerCancel(
+  slot: { status: SlotStatus; startAt: string },
+  nowMs = Date.now(),
+): LearnerCancelDecision {
+  if (slot.status !== 'booked') {
+    return { ok: false, reason: 'already_terminal' }
+  }
+  const startMs = new Date(slot.startAt).getTime()
+  if (Number.isNaN(startMs)) {
+    return { ok: false, reason: 'already_terminal' }
+  }
+  const diffMs = startMs - nowMs
+  if (diffMs < LEARNER_CANCEL_THRESHOLD_MS) {
+    return {
+      ok: false,
+      reason: 'too_late_to_cancel',
+      minutesUntilStart: Math.max(0, Math.floor(diffMs / 60_000)),
+    }
+  }
+  return { ok: true }
+}
 
 export type LessonSlot = {
   id: string
@@ -15,6 +75,10 @@ export type LessonSlot = {
   cancelledAt: string | null
   cancelledByAccountId: string | null
   cancellationReason: string | null
+  // Phase 5: when the lifecycle status was set (auto-complete cron
+  // stamps it, operator "mark" endpoint stamps it). Null on rows
+  // that never reached completed / no_show_*.
+  markedAt: string | null
   notes: string | null
   events: SlotEvent[]
   createdAt: string
@@ -39,6 +103,7 @@ const SLOT_COLUMNS = `
   cancelled_at,
   cancelled_by_account_id,
   cancellation_reason,
+  marked_at,
   notes,
   events,
   created_at,
@@ -71,6 +136,9 @@ function rowToSlot(
       : null,
     cancellationReason: row.cancellation_reason
       ? String(row.cancellation_reason)
+      : null,
+    markedAt: row.marked_at
+      ? new Date(String(row.marked_at)).toISOString()
       : null,
     notes: row.notes ? String(row.notes) : null,
     events: Array.isArray(row.events)
@@ -355,7 +423,7 @@ export async function listOpenFutureSlots(params: {
   const result = await pool.query(
     `select s.id, s.teacher_account_id, s.start_at, s.duration_minutes,
             s.status, s.learner_account_id, s.booked_at, s.cancelled_at,
-            s.cancelled_by_account_id, s.cancellation_reason, s.notes,
+            s.cancelled_by_account_id, s.cancellation_reason, s.marked_at, s.notes,
             s.events, s.created_at, s.updated_at,
             ta.email as teacher_email
        from lesson_slots s
@@ -378,7 +446,7 @@ export async function listSlotsForLearner(
   const result = await pool.query(
     `select s.id, s.teacher_account_id, s.start_at, s.duration_minutes,
             s.status, s.learner_account_id, s.booked_at, s.cancelled_at,
-            s.cancelled_by_account_id, s.cancellation_reason, s.notes,
+            s.cancelled_by_account_id, s.cancellation_reason, s.marked_at, s.notes,
             s.events, s.created_at, s.updated_at,
             ta.email as teacher_email
        from lesson_slots s
@@ -420,7 +488,7 @@ export async function listAllSlotsForAdmin(params: {
   const result = await pool.query(
     `select s.id, s.teacher_account_id, s.start_at, s.duration_minutes,
             s.status, s.learner_account_id, s.booked_at, s.cancelled_at,
-            s.cancelled_by_account_id, s.cancellation_reason, s.notes,
+            s.cancelled_by_account_id, s.cancellation_reason, s.marked_at, s.notes,
             s.events, s.created_at, s.updated_at,
             ta.email as teacher_email,
             la.email as learner_email
@@ -688,6 +756,79 @@ export async function editOpenSlot(
     ],
   )
   return result.rows[0] ? rowToSlot(result.rows[0]) : null
+}
+
+// Phase 5: operator stamps a lifecycle status on a booked slot whose
+// start has already passed. Refuses if the row is not booked or if
+// start_at is still in the future.
+export async function markSlotLifecycle(
+  slotId: string,
+  status: SlotLifecycleStatus,
+  actorAccountId: string,
+): Promise<{ ok: true; slot: LessonSlot } | { ok: false; reason: 'not_found' | 'not_booked' | 'not_yet_started' }> {
+  if (!UUID_PATTERN.test(slotId)) return { ok: false, reason: 'not_found' }
+  const pool = getDbPool()
+  const result = await pool.query(
+    `update lesson_slots
+        set status = $2,
+            marked_at = coalesce(marked_at, now()),
+            updated_at = now(),
+            events = $3::jsonb || events
+      where id = $1
+        and status = 'booked'
+        and start_at <= now()
+      returning ${SLOT_COLUMNS}`,
+    [
+      slotId,
+      status,
+      appendEventSql('slot.lifecycle', 'admin', {
+        toStatus: status,
+        actorAccountId,
+      }),
+    ],
+  )
+  if (result.rows[0]) {
+    return { ok: true, slot: rowToSlot(result.rows[0]) }
+  }
+  // Distinguish reasons for friendly errors.
+  const sniff = await pool.query(
+    `select status, start_at from lesson_slots where id = $1`,
+    [slotId],
+  )
+  if (sniff.rows.length === 0) return { ok: false, reason: 'not_found' }
+  if (sniff.rows[0].status !== 'booked') {
+    return { ok: false, reason: 'not_booked' }
+  }
+  return { ok: false, reason: 'not_yet_started' }
+}
+
+// Phase 5: auto-complete cron — flip every still-`booked` row whose
+// `start_at + duration_minutes` has elapsed to `completed`. Operator
+// overrides set status away from `booked` first, so they're naturally
+// skipped by the WHERE clause.
+export async function autoCompletePastBookedSlots(): Promise<{
+  completed: number
+}> {
+  const pool = getDbPool()
+  const event = JSON.stringify([
+    {
+      type: 'slot.completed',
+      at: new Date().toISOString(),
+      actor: 'system',
+      payload: { source: 'auto-complete' },
+    },
+  ])
+  const result = await pool.query(
+    `update lesson_slots
+        set status = 'completed',
+            marked_at = now(),
+            updated_at = now(),
+            events = $1::jsonb || events
+      where status = 'booked'
+        and start_at + (duration_minutes || ' minutes')::interval <= now()`,
+    [event],
+  )
+  return { completed: result.rowCount ?? 0 }
 }
 
 export async function deleteOpenSlot(slotId: string): Promise<boolean> {

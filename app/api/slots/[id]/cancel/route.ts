@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server'
 
 import { requireAuthenticated } from '@/lib/auth/guards'
-import { cancelSlot, getSlotById } from '@/lib/scheduling/slots'
+import {
+  cancelSlot,
+  canLearnerCancel,
+  getSlotById,
+} from '@/lib/scheduling/slots'
 import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
@@ -54,6 +58,19 @@ export async function POST(request: Request, { params }: RouteParams) {
   if (slot.learnerAccountId !== auth.account.id) {
     return NextResponse.json(
       { error: 'Можно отменить только своё бронирование.' },
+      { status: 403, headers: noStore },
+    )
+  }
+
+  // Phase 5 24-hour rule. Operator/admin path bypasses this gate via
+  // /api/admin/slots/[id]/cancel.
+  const decision = canLearnerCancel(slot)
+  if (!decision.ok && decision.reason === 'too_late_to_cancel') {
+    return NextResponse.json(
+      {
+        error: 'too_late_to_cancel',
+        minutesUntilStart: decision.minutesUntilStart,
+      },
       { status: 403, headers: noStore },
     )
   }

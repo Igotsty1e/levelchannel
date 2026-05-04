@@ -32,9 +32,21 @@ function statusLabel(status: string): string {
       return 'забронирован'
     case 'cancelled':
       return 'отменён'
+    case 'completed':
+      return 'проведён'
+    case 'no_show_learner':
+      return 'не пришёл (вы)'
+    case 'no_show_teacher':
+      return 'не пришёл учитель'
     default:
       return status
   }
+}
+
+const HOURS_24_MS = 24 * 60 * 60 * 1000
+
+function isTooLateToCancel(startAtIso: string): boolean {
+  return new Date(startAtIso).getTime() - Date.now() < HOURS_24_MS
 }
 
 export function LessonsSection({
@@ -105,7 +117,13 @@ export function LessonsSection({
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setErr(data?.error || `HTTP ${res.status}`)
+        if (data?.error === 'too_late_to_cancel') {
+          setErr(
+            'До начала менее 24 часов — отменить через систему уже нельзя. Напишите оператору.',
+          )
+        } else {
+          setErr(data?.error || `HTTP ${res.status}`)
+        }
         return
       }
       setInfo('Запись отменена.')
@@ -126,47 +144,122 @@ export function LessonsSection({
             У вас пока нет записей. Запишитесь на свободный слот ниже.
           </p>
         ) : (
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-            {mine.map((s) => (
-              <li
-                key={s.id}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '10px 0',
-                  borderTop: '1px solid var(--border)',
-                  fontSize: 14,
-                }}
-              >
-                <span>
-                  {fmt(s.startAt, tz)} ·{' '}
-                  <span style={{ color: 'var(--secondary)' }}>
-                    {s.durationMinutes} мин · {statusLabel(s.status)}
-                  </span>
-                </span>
-                {s.status === 'booked' &&
-                new Date(s.startAt).getTime() > Date.now() ? (
-                  <button
-                    type="button"
-                    onClick={() => cancel(s.id)}
-                    disabled={busy}
-                    style={{
-                      padding: '4px 10px',
-                      background: 'transparent',
-                      color: '#ffcfcf',
-                      border: '1px solid #ff8a8a55',
-                      borderRadius: 6,
-                      fontSize: 12,
-                      cursor: busy ? 'wait' : 'pointer',
-                    }}
-                  >
-                    Отменить
-                  </button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+          <>
+            {(() => {
+              const upcoming = mine.filter(
+                (s) => new Date(s.startAt).getTime() > Date.now(),
+              )
+              const past = mine.filter(
+                (s) => new Date(s.startAt).getTime() <= Date.now(),
+              )
+              return (
+                <>
+                  {upcoming.length > 0 ? (
+                    <>
+                      <p
+                        style={{
+                          color: 'var(--secondary)',
+                          fontSize: 12,
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.4,
+                          marginBottom: 4,
+                        }}
+                      >
+                        Предстоящие
+                      </p>
+                      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                        {upcoming.map((s) => {
+                          const tooLate = isTooLateToCancel(s.startAt)
+                          return (
+                            <li
+                              key={s.id}
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: '10px 0',
+                                borderTop: '1px solid var(--border)',
+                                fontSize: 14,
+                              }}
+                            >
+                              <span>
+                                {fmt(s.startAt, tz)} ·{' '}
+                                <span style={{ color: 'var(--secondary)' }}>
+                                  {s.durationMinutes} мин ·{' '}
+                                  {statusLabel(s.status)}
+                                </span>
+                              </span>
+                              {s.status === 'booked' && !tooLate ? (
+                                <button
+                                  type="button"
+                                  onClick={() => cancel(s.id)}
+                                  disabled={busy}
+                                  style={{
+                                    padding: '4px 10px',
+                                    background: 'transparent',
+                                    color: '#ffcfcf',
+                                    border: '1px solid #ff8a8a55',
+                                    borderRadius: 6,
+                                    fontSize: 12,
+                                    cursor: busy ? 'wait' : 'pointer',
+                                  }}
+                                >
+                                  Отменить
+                                </button>
+                              ) : s.status === 'booked' && tooLate ? (
+                                <span
+                                  style={{
+                                    color: 'var(--secondary)',
+                                    fontSize: 11,
+                                    fontStyle: 'italic',
+                                  }}
+                                  title="До начала менее 24 часов. Напишите оператору."
+                                >
+                                  &lt;24ч — через оператора
+                                </span>
+                              ) : null}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </>
+                  ) : null}
+                  {past.length > 0 ? (
+                    <>
+                      <p
+                        style={{
+                          color: 'var(--secondary)',
+                          fontSize: 12,
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.4,
+                          marginTop: upcoming.length > 0 ? 16 : 0,
+                          marginBottom: 4,
+                        }}
+                      >
+                        Прошедшие
+                      </p>
+                      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                        {past.map((s) => (
+                          <li
+                            key={s.id}
+                            style={{
+                              padding: '10px 0',
+                              borderTop: '1px solid var(--border)',
+                              fontSize: 14,
+                              color: 'var(--secondary)',
+                            }}
+                          >
+                            {fmt(s.startAt, tz)} ·{' '}
+                            {s.durationMinutes} мин · {statusLabel(s.status)}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : null}
+                </>
+              )
+            })()}
+          </>
         )}
       </div>
 
