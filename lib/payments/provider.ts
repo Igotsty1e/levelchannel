@@ -11,6 +11,7 @@ import {
 import type { PersonalDataConsentSnapshot } from '@/lib/legal/personal-data'
 import { paymentConfig } from '@/lib/payments/config'
 import { createMockOrder } from '@/lib/payments/mock'
+import { emitStatusChange } from '@/lib/payments/status-bus'
 import {
   createOrder,
   deleteCardToken,
@@ -82,6 +83,28 @@ export function toPublicOrder(order: PaymentOrder): PublicPaymentOrder {
     failedAt: order.failedAt,
     providerMessage: order.providerMessage,
   }
+}
+
+// Real-transition event names produced by markOrderPaid /
+// markOrderFailed / markOrderCancelled. Duplicates (paid_duplicate,
+// fail_duplicate, etc.) are appended with different names; if we see
+// only those, no SSE emit happens — the listener already saw the
+// terminal status on the prior call.
+const TRANSITION_EVENT_TYPES = new Set([
+  'payment.paid',
+  'payment.failed',
+  'payment.cancelled',
+])
+
+function maybeEmitStatusChange(order: PaymentOrder | null) {
+  if (!order) return
+  const latest = order.events[0]
+  if (!latest || !TRANSITION_EVENT_TYPES.has(latest.type)) return
+  emitStatusChange({
+    invoiceId: order.invoiceId,
+    status: order.status,
+    order: toPublicOrder(order),
+  })
 }
 
 export async function createPayment(
@@ -156,7 +179,7 @@ export async function markOrderPaid(
   invoiceId: string,
   payload?: Record<string, unknown>,
 ) {
-  return updateOrder(invoiceId, (order) => {
+  const order = await updateOrder(invoiceId, (order) => {
     if (order.status === 'paid') {
       return appendEvent(order, 'payment.paid_duplicate', payload)
     }
@@ -174,13 +197,15 @@ export async function markOrderPaid(
       payload,
     )
   })
+  maybeEmitStatusChange(order)
+  return order
 }
 
 export async function markOrderFailed(
   invoiceId: string,
   payload?: Record<string, unknown>,
 ) {
-  return updateOrder(invoiceId, (order) => {
+  const order = await updateOrder(invoiceId, (order) => {
     const reason = getPayloadString(payload, 'reason')
 
     if (order.status === 'paid') {
@@ -204,6 +229,8 @@ export async function markOrderFailed(
       payload,
     )
   })
+  maybeEmitStatusChange(order)
+  return order
 }
 
 export type ChargeWithSavedCardOutcome =
@@ -451,7 +478,7 @@ export async function markOrderCancelled(
   invoiceId: string,
   payload?: Record<string, unknown>,
 ) {
-  return updateOrder(invoiceId, (order) => {
+  const order = await updateOrder(invoiceId, (order) => {
     if (order.status === 'paid') {
       return appendEvent(order, 'payment.cancel_ignored_after_paid', payload)
     }
@@ -474,4 +501,6 @@ export async function markOrderCancelled(
       payload,
     )
   })
+  maybeEmitStatusChange(order)
+  return order
 }

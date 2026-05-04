@@ -361,43 +361,78 @@ export function PricingSection() {
       return
     }
 
+    // Idempotent reducer: takes a fresh order, advances UI state if the
+    // status moved off pending. Called by both the SSE push path AND
+    // the slow-poll fallback. Calling it twice with the same order is
+    // a no-op (React's setState short-circuits on shallow-equal refs
+    // when nothing changed; we always pass the new ref so the latest
+    // serverSide updatedAt sticks).
+    const applyOrder = (order: PublicPaymentOrder) => {
+      if (order.status === 'cancelled') {
+        saveInvoiceId(null)
+        setCheckout({
+          phase: 'idle',
+          order: null,
+          error: 'Оплата не завершена. Можно попробовать ещё раз.',
+        })
+        return
+      }
+
+      if (order.status === 'paid') {
+        saveCompletedInvoiceId(order.invoiceId)
+      }
+
+      setCheckout((current) => ({
+        ...current,
+        phase: order.status === 'pending' ? 'pending' : 'idle',
+        order,
+        error: current.error,
+      }))
+
+      if (order.status !== 'pending') {
+        saveInvoiceId(null)
+      }
+    }
+
+    // Push path: SSE stream from /api/payments/[invoiceId]/stream.
+    // EventSource reconnects automatically on transport errors;
+    // the slow-poll below is a belt-and-suspenders fallback for
+    // ad-blockers / corporate proxies that strip SSE responses.
+    let eventSource: EventSource | null = null
+    if (typeof window !== 'undefined' && 'EventSource' in window) {
+      eventSource = new window.EventSource(
+        `/api/payments/${encodeURIComponent(activeOrder.invoiceId)}/stream`,
+      )
+      eventSource.addEventListener('status', (rawEvent) => {
+        try {
+          const event = rawEvent as MessageEvent
+          const data = JSON.parse(event.data) as { order?: PublicPaymentOrder }
+          if (data.order) applyOrder(data.order)
+        } catch {
+          // Malformed frame — ignore; slow-poll will catch up.
+        }
+      })
+      // Errors are silent: EventSource auto-retries; if the network is
+      // truly down, the slow poll will surface the error path below.
+    }
+
+    // Slow-poll fallback (10s). Pre-SSE this was 4s; SSE makes the
+    // tight cadence unnecessary, but we keep a coarse safety net.
     const interval = window.setInterval(() => {
       fetchOrder(activeOrder.invoiceId)
-        .then((order) => {
-          if (order.status === 'cancelled') {
-            saveInvoiceId(null)
-            setCheckout({
-              phase: 'idle',
-              order: null,
-              error: 'Оплата не завершена. Можно попробовать ещё раз.',
-            })
-            return
-          }
-
-          if (order.status === 'paid') {
-            saveCompletedInvoiceId(order.invoiceId)
-          }
-
-          setCheckout((current) => ({
-            ...current,
-            phase: order.status === 'pending' ? 'pending' : 'idle',
-            order,
-            error: current.error,
-          }))
-
-          if (order.status !== 'pending') {
-            saveInvoiceId(null)
-          }
-        })
+        .then(applyOrder)
         .catch((error) => {
           setCheckout((current) => ({
             ...current,
             error: error instanceof Error ? error.message : 'Ошибка статуса оплаты.',
           }))
         })
-    }, 4000)
+    }, 10_000)
 
-    return () => window.clearInterval(interval)
+    return () => {
+      window.clearInterval(interval)
+      eventSource?.close()
+    }
   }, [activeOrder])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
