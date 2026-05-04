@@ -1,6 +1,6 @@
 import Link from 'next/link'
 
-import { listAccounts } from '@/lib/auth/accounts'
+import { listAccounts, listRolesForAccounts } from '@/lib/auth/accounts'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -24,6 +24,7 @@ export default async function AdminAccountsPage({
     limit: PAGE_SIZE,
     offset,
   })
+  const rolesMap = await listRolesForAccounts(accounts.map((a) => a.id))
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
@@ -87,13 +88,16 @@ export default async function AdminAccountsPage({
               }}
             >
               <th style={{ padding: '10px 14px' }}>E-mail</th>
-              <th style={{ padding: '10px 14px' }}>Подтверждён</th>
-              <th style={{ padding: '10px 14px' }}>Статус</th>
+              <th style={{ padding: '10px 14px' }}>Роли</th>
+              <th style={{ padding: '10px 14px' }}>E-mail подтверждён</th>
+              <th style={{ padding: '10px 14px' }}>Состояние</th>
               <th style={{ padding: '10px 14px' }}>Создан</th>
             </tr>
           </thead>
           <tbody>
-            {accounts.map((acct) => (
+            {accounts.map((acct) => {
+              const roles = rolesMap.get(acct.id) ?? []
+              return (
               <tr key={acct.id} style={{ borderTop: '1px solid var(--border)' }}>
                 <td style={{ padding: '10px 14px' }}>
                   <Link
@@ -102,6 +106,36 @@ export default async function AdminAccountsPage({
                   >
                     {acct.email}
                   </Link>
+                </td>
+                <td style={{ padding: '10px 14px' }}>
+                  {roles.length === 0 ? (
+                    <span style={{ color: 'var(--secondary)', fontSize: 12 }}>
+                      —
+                    </span>
+                  ) : (
+                    <span style={{ display: 'inline-flex', gap: 4 }}>
+                      {roles.map((r) => (
+                        <span
+                          key={r}
+                          style={{
+                            fontFamily: 'monospace',
+                            fontSize: 11,
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                            border: '1px solid var(--border)',
+                            color:
+                              r === 'admin'
+                                ? '#ffd166'
+                                : r === 'teacher'
+                                  ? '#9bdf9b'
+                                  : 'var(--text)',
+                          }}
+                        >
+                          {r}
+                        </span>
+                      ))}
+                    </span>
+                  )}
                 </td>
                 <td style={{ padding: '10px 14px', color: 'var(--secondary)' }}>
                   {acct.emailVerifiedAt ? 'да' : '—'}
@@ -119,11 +153,12 @@ export default async function AdminAccountsPage({
                   {formatDate(acct.createdAt)}
                 </td>
               </tr>
-            ))}
+              )
+            })}
             {accounts.length === 0 ? (
               <tr>
                 <td
-                  colSpan={4}
+                  colSpan={5}
                   style={{
                     padding: '24px 14px',
                     textAlign: 'center',

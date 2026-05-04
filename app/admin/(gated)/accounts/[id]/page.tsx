@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
-import { AdminActionButton } from '@/app/admin/admin-action-button'
+import { AdminActionButton } from '@/app/admin/(gated)/admin-action-button'
 import {
   type AccountRole,
   getAccountById,

@@ -58,8 +58,7 @@ export default async function AdminPaymentDetailPage({ params }: RouteParams) {
 
       <Section title="Заказ">
         <Field label="Сумма">
-          {new Intl.NumberFormat('ru-RU').format(order.amountRub)}\u00a0
-          {order.currency}
+          {`${new Intl.NumberFormat('ru-RU').format(order.amountRub)}\u00a0${order.currency}`}
         </Field>
         <Field label="Статус">{order.status}</Field>
         <Field label="Провайдер">{order.provider}</Field>
@@ -116,8 +115,7 @@ export default async function AdminPaymentDetailPage({ params }: RouteParams) {
                         {slot.durationMinutes} мин
                       </Link>{' '}
                       <span style={{ color: 'var(--secondary)' }}>
-                        ({slot.status} ·{' '}
-                        {(a.amountKopecks / 100).toLocaleString('ru-RU')}\u00a0₽)
+                        {`(${slot.status} · ${(a.amountKopecks / 100).toLocaleString('ru-RU')}\u00a0₽)`}
                       </span>
                     </>
                   ) : (

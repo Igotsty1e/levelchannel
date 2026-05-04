@@ -61,6 +61,22 @@ async function main() {
       process.exit(0)
     }
 
+    // Admin is mutually exclusive with teacher / student. Strip
+    // consumer roles before inserting admin so the constraint enforced
+    // at the application layer (lib/auth/accounts.ts:grantAccountRole)
+    // isn't bypassed by the CLI bootstrap path.
+    const stripped = await pool.query(
+      `delete from account_roles
+        where account_id = $1
+          and role in ('teacher', 'student')`,
+      [accountId],
+    )
+    if ((stripped.rowCount ?? 0) > 0) {
+      console.log(
+        `Stripped ${stripped.rowCount} consumer role(s) from ${email} before granting admin.`,
+      )
+    }
+
     await pool.query(
       `insert into account_roles (account_id, role, granted_by_account_id)
        values ($1, 'admin', null)`,

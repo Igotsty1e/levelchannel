@@ -9,6 +9,7 @@ import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { listSlotPaidStatus } from '@/lib/payments/allocations'
 import {
   listOpenFutureSlots,
+  listSlotsAsTeacher,
   listSlotsForLearner,
 } from '@/lib/scheduling/slots'
 
@@ -17,10 +18,20 @@ import { LessonsSection } from './lessons-section'
 import { LogoutButton } from './logout-button'
 import { ProfileEditor } from './profile-editor'
 import { ResendVerifyButton } from './resend-verify-button'
+import { TeacherSection } from './teacher-section'
 
 // Server-side cabinet gate. Reads the session cookie directly (no HTTP
 // round-trip to /api/auth/me) and SSR-redirects to /login when unauth'd.
 // This avoids a flash of unauthenticated content.
+//
+// Role-based UI:
+//   - admin (mutually exclusive with teacher/student) → redirect to
+//     /admin. Admins don't have a learner workflow, so dropping them
+//     here is the right shape.
+//   - teacher → «Мои занятия как учитель» (read-only schedule)
+//   - student-or-no-role → existing learner UI
+//   - teacher + student → both sections shown
+//   - email-unverified → banner + resend button (independent of role)
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -45,12 +56,19 @@ export default async function CabinetPage() {
   const { account } = current
   const isVerified = account.emailVerifiedAt !== null
 
-  // Phase 6+: only surface open slots from the learner's assigned
-  // teacher. If there's no assignment yet, openSlots stays empty and
-  // the cabinet renders a "ваш учитель ещё не назначен" hint.
-  const [profile, roles, mySlots, openSlots] = await Promise.all([
+  const roles = await listAccountRoles(account.id)
+  const isAdmin = roles.includes('admin')
+  const isTeacher = roles.includes('teacher')
+
+  // Admin lands on /admin instead of /cabinet — operator workflow,
+  // separate UI surface. Mutually exclusive with teacher/student so
+  // we don't lose any learner content this way.
+  if (isAdmin) {
+    redirect('/admin')
+  }
+
+  const [profile, mySlots, openSlots, teacherSlots] = await Promise.all([
     getAccountProfile(account.id),
-    listAccountRoles(account.id),
     listSlotsForLearner(account.id, 20),
     account.assignedTeacherId
       ? listOpenFutureSlots({
@@ -58,8 +76,8 @@ export default async function CabinetPage() {
           limit: 50,
         })
       : Promise.resolve([]),
+    isTeacher ? listSlotsAsTeacher(account.id, 50) : Promise.resolve([]),
   ])
-  const isAdmin = roles.includes('admin')
   const greetingName = profile?.displayName?.trim() || account.email
   const paidMap = await listSlotPaidStatus(mySlots.map((s) => s.id))
 
@@ -81,19 +99,14 @@ export default async function CabinetPage() {
         </AuthInfoBox>
       ) : null}
 
-      {isAdmin ? (
-        <div className="card" style={{ padding: 16, marginBottom: 24 }}>
-          <p style={{ fontSize: 13, lineHeight: 1.6 }}>
-            У этого аккаунта есть роль <code>admin</code>. Перейти в{' '}
-            <a href="/admin" style={{ color: 'var(--accent)' }}>
-              админку
-            </a>
-            .
-          </p>
-        </div>
-      ) : null}
-
       <ProfileEditor initialProfile={profile} fallbackEmail={account.email} />
+
+      {isTeacher ? (
+        <TeacherSection
+          initialSlots={teacherSlots}
+          teacherTimezone={profile?.timezone ?? null}
+        />
+      ) : null}
 
       <LessonsSection
         initialMine={mySlots}

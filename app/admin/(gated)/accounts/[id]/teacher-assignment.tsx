@@ -46,8 +46,11 @@ export function TeacherAssignment({
   if (teachers.length === 0) {
     return (
       <p style={{ color: 'var(--secondary)', fontSize: 13, lineHeight: 1.6 }}>
-        Нет аккаунтов с ролью <code>teacher</code>. Сначала выдайте роль{' '}
-        <code>teacher</code> подходящему аккаунту в этом списке.
+        В системе нет других аккаунтов с ролью <code>teacher</code>.
+        Чтобы назначить учителя этому учащемуся, заведите отдельный
+        teacher-аккаунт через обычную регистрацию и выдайте ему роль{' '}
+        <code>teacher</code> в админке. Админ-аккаунт не может быть
+        учителем — это два разных трудовых процесса.
       </p>
     )
   }

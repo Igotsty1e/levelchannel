@@ -77,10 +77,27 @@ export async function POST(request: Request, { params }: RouteParams) {
     )
   }
 
-  if (op === 'grant') {
-    await grantAccountRole(id, role as AccountRole, guard.account.id)
-  } else {
-    await revokeAccountRole(id, role as AccountRole)
+  try {
+    if (op === 'grant') {
+      await grantAccountRole(id, role as AccountRole, guard.account.id)
+    } else {
+      await revokeAccountRole(id, role as AccountRole)
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown'
+    if (msg === 'role/admin_exclusive') {
+      return NextResponse.json(
+        {
+          error:
+            'Аккаунт с ролью admin не может быть одновременно teacher или student. Сначала отзовите admin.',
+        },
+        { status: 400, headers: noStore },
+      )
+    }
+    return NextResponse.json(
+      { error: msg },
+      { status: 400, headers: noStore },
+    )
   }
 
   return NextResponse.json({ ok: true }, { status: 200, headers: noStore })

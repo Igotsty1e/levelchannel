@@ -149,7 +149,7 @@ export default async function AdminPaymentsPage({
                 </td>
                 <td style={tdSecondary}>{o.customerEmail}</td>
                 <td style={td}>
-                  {new Intl.NumberFormat('ru-RU').format(o.amountRub)}\u00a0₽
+                  {`${new Intl.NumberFormat('ru-RU').format(o.amountRub)}\u00a0₽`}
                 </td>
                 <td style={td}>{STATUS_LABEL[o.status] ?? o.status}</td>
                 <td style={tdSecondary}>

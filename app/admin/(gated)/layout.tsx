@@ -8,8 +8,13 @@ import { listAccountRoles } from '@/lib/auth/accounts'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 
 // Shared admin chrome. Server-renders on every request, gates on the
-// session cookie + admin role. Anonymous → /login; logged-in non-admin
-// → /cabinet (we don't surface the existence of /admin to non-admins).
+// session cookie + admin role. Anonymous → /admin/login; logged-in
+// non-admin → /cabinet (we don't surface the existence of /admin to
+// non-admins).
+//
+// Note: /admin/login lives OUTSIDE this route group (`app/admin/login/`
+// is not under `(gated)/`), so anonymous visitors going to
+// /admin/login don't trigger this redirect.
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -23,11 +28,11 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   const cookieValue = cookieStore.get(SESSION_COOKIE_NAME)?.value ?? null
 
   if (!cookieValue) {
-    redirect('/login')
+    redirect('/admin/login')
   }
   const current = await lookupSession(cookieValue)
   if (!current) {
-    redirect('/login')
+    redirect('/admin/login')
   }
 
   const roles = await listAccountRoles(current.account.id)

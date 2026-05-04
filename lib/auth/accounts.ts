@@ -180,6 +180,31 @@ export async function listAccountsByRole(
   }))
 }
 
+// Bulk-load roles for a set of accounts. Used by /admin/accounts list
+// view to render a Роли column without an N+1 query.
+export async function listRolesForAccounts(
+  accountIds: string[],
+): Promise<Map<string, AccountRole[]>> {
+  const out = new Map<string, AccountRole[]>()
+  if (accountIds.length === 0) return out
+  const pool = getAuthPool()
+  const result = await pool.query(
+    `select account_id, role
+       from account_roles
+      where account_id = any($1)
+      order by role asc`,
+    [accountIds],
+  )
+  for (const row of result.rows) {
+    const id = String(row.account_id)
+    const role = String(row.role) as AccountRole
+    const list = out.get(id) ?? []
+    list.push(role)
+    out.set(id, list)
+  }
+  return out
+}
+
 export async function listAccountRoles(accountId: string): Promise<AccountRole[]> {
   const pool = getAuthPool()
   const result = await pool.query(
@@ -189,12 +214,45 @@ export async function listAccountRoles(accountId: string): Promise<AccountRole[]
   return result.rows.map((r) => String(r.role) as AccountRole)
 }
 
+// Role exclusivity: an account is either an `admin` (operator-only,
+// no learning workflow) OR a `teacher` / `student` (consumer side).
+// The two trust boundaries don't overlap — granting one strips the
+// other. This prevents the "operator is also their own teacher" mess
+// that came up in manual testing 2026-05-04.
+//
+// Admin grants:
+//   - revoke teacher / student first, then insert admin
+// Teacher / student grants:
+//   - refuse if account already holds admin (operator must lose
+//     admin first; we don't silently demote them)
+const ADMIN_ROLE: AccountRole = 'admin'
+const CONSUMER_ROLES: AccountRole[] = ['teacher', 'student']
+
 export async function grantAccountRole(
   accountId: string,
   role: AccountRole,
   grantedByAccountId: string | null,
 ): Promise<void> {
   const pool = getAuthPool()
+  if (role === ADMIN_ROLE) {
+    // Strip any consumer roles; they're mutually exclusive.
+    await pool.query(
+      `delete from account_roles
+        where account_id = $1
+          and role = any($2::text[])`,
+      [accountId, CONSUMER_ROLES],
+    )
+  } else if (CONSUMER_ROLES.includes(role)) {
+    // Refuse if admin is held — operator must explicitly revoke
+    // admin first, otherwise we'd silently demote them.
+    const existing = await pool.query(
+      `select 1 from account_roles where account_id = $1 and role = $2`,
+      [accountId, ADMIN_ROLE],
+    )
+    if (existing.rows.length > 0) {
+      throw new Error('role/admin_exclusive')
+    }
+  }
   await pool.query(
     `insert into account_roles (account_id, role, granted_by_account_id)
      values ($1, $2, $3)

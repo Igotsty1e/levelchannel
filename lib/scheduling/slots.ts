@@ -469,6 +469,49 @@ export async function listOpenFutureSlots(params: {
   )
 }
 
+// Phase 7+: cabinet view for users holding the `teacher` role.
+// Returns slots they're teaching ordered by start_at desc so upcoming
+// + recent past are visible. Read-only — teachers don't yet self-
+// manage their schedule (operator manages /admin/slots).
+export async function listSlotsAsTeacher(
+  teacherAccountId: string,
+  limit = 50,
+): Promise<LessonSlot[]> {
+  const pool = getDbPool()
+  const result = await pool.query(
+    `select s.id, s.teacher_account_id, s.start_at, s.duration_minutes,
+            s.status, s.learner_account_id, s.booked_at, s.cancelled_at,
+            s.cancelled_by_account_id, s.cancellation_reason, s.marked_at,
+            s.tariff_id, s.notes,
+            s.events, s.created_at, s.updated_at,
+            ta.email as teacher_email,
+            la.email as learner_email,
+            t.slug as tariff_slug,
+            t.title_ru as tariff_title_ru,
+            t.amount_kopecks as tariff_amount_kopecks
+       from lesson_slots s
+       join accounts ta on ta.id = s.teacher_account_id
+       left join accounts la on la.id = s.learner_account_id
+       left join pricing_tariffs t on t.id = s.tariff_id
+      where s.teacher_account_id = $1
+      order by s.start_at desc
+      limit $2`,
+    [teacherAccountId, Math.min(Math.max(limit, 1), 200)],
+  )
+  return result.rows.map((r) =>
+    rowToSlot(r, {
+      teacherEmail: r.teacher_email ? String(r.teacher_email) : null,
+      learnerEmail: r.learner_email ? String(r.learner_email) : null,
+      tariffSlug: r.tariff_slug ? String(r.tariff_slug) : null,
+      tariffTitleRu: r.tariff_title_ru ? String(r.tariff_title_ru) : null,
+      tariffAmountKopecks:
+        r.tariff_amount_kopecks !== null && r.tariff_amount_kopecks !== undefined
+          ? Number(r.tariff_amount_kopecks)
+          : null,
+    }),
+  )
+}
+
 export async function listSlotsForLearner(
   learnerAccountId: string,
   limit = 50,
