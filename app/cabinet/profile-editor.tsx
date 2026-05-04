@@ -3,7 +3,10 @@
 import { useState } from 'react'
 
 import type { AccountProfile } from '@/lib/auth/profiles'
-import { TIMEZONE_OPTIONS } from '@/lib/auth/profiles'
+// Pulling TIMEZONE_OPTIONS from the DB-backed profiles module would
+// drag pg into the client bundle (Module not found: 'tls'); use the
+// pure constants module instead.
+import { TIMEZONE_OPTIONS } from '@/lib/auth/timezones'
 
 export function ProfileEditor({
   initialProfile,
