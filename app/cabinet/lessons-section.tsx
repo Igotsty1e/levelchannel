@@ -10,6 +10,10 @@ type Props = {
   learnerTimezone: string | null
   emailVerified: boolean
   initialPaidSlotIds: string[]
+  // When false, the cabinet renders a "ваш учитель ещё не назначен"
+  // hint instead of an empty available-list. The page passes this
+  // from `account.assignedTeacherId ? true : false`.
+  hasAssignedTeacher: boolean
 }
 
 const TZ_DEFAULT = 'Europe/Moscow'
@@ -56,6 +60,7 @@ export function LessonsSection({
   learnerTimezone,
   emailVerified,
   initialPaidSlotIds,
+  hasAssignedTeacher,
 }: Props) {
   // Defensive: if a pre-whitelist profile carries a bad value, fall
   // back to Europe/Moscow rather than crash the cabinet on the first
@@ -326,9 +331,16 @@ export function LessonsSection({
         {err ? (
           <p style={{ color: '#ff8a8a', fontSize: 13, marginBottom: 8 }}>{err}</p>
         ) : null}
-        {available.length === 0 ? (
+        {!hasAssignedTeacher ? (
           <p style={{ color: 'var(--secondary)', fontSize: 14 }}>
-            Сейчас нет свободных слотов. Напишите оператору, чтобы добавил.
+            Учитель пока не назначен — напишите оператору, чтобы добавил.
+            Расписание появится здесь, когда он будет привязан к вашему
+            аккаунту.
+          </p>
+        ) : available.length === 0 ? (
+          <p style={{ color: 'var(--secondary)', fontSize: 14 }}>
+            У вашего учителя сейчас нет свободных слотов. Напишите
+            оператору, чтобы добавил.
           </p>
         ) : (
           <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>

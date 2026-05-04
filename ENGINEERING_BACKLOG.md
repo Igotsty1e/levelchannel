@@ -23,6 +23,7 @@ Already closed and not in the backlog:
 
 Open high-level queue:
 
+- **Calendar / grid UI for slots** (both operator and learner side). The current list view works but does not scale visually past ~10 slots; a standard week × hour grid (think Google Calendar / email scheduling) would let the operator paint slots with click-and-drag and the learner pick a time visually. Surfaced from manual testing 2026-05-04.
 - Phase 7 (when needed): refund / credit on cancellation; sunset `/pay` free-amount → tariff picker once the new flow is proven
 
 Before starting any of these, write a fresh in-repo design doc. Code,

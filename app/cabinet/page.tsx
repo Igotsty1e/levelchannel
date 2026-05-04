@@ -45,11 +45,19 @@ export default async function CabinetPage() {
   const { account } = current
   const isVerified = account.emailVerifiedAt !== null
 
+  // Phase 6+: only surface open slots from the learner's assigned
+  // teacher. If there's no assignment yet, openSlots stays empty and
+  // the cabinet renders a "ваш учитель ещё не назначен" hint.
   const [profile, roles, mySlots, openSlots] = await Promise.all([
     getAccountProfile(account.id),
     listAccountRoles(account.id),
     listSlotsForLearner(account.id, 20),
-    listOpenFutureSlots({ limit: 50 }),
+    account.assignedTeacherId
+      ? listOpenFutureSlots({
+          teacherAccountId: account.assignedTeacherId,
+          limit: 50,
+        })
+      : Promise.resolve([]),
   ])
   const isAdmin = roles.includes('admin')
   const greetingName = profile?.displayName?.trim() || account.email
@@ -93,6 +101,7 @@ export default async function CabinetPage() {
         learnerTimezone={profile?.timezone ?? null}
         emailVerified={isVerified}
         initialPaidSlotIds={Array.from(paidMap.keys())}
+        hasAssignedTeacher={Boolean(account.assignedTeacherId)}
       />
 
       <div className="card" style={{ padding: 24, marginBottom: 24 }}>

@@ -10,6 +10,11 @@ export type Account = {
   disabledAt: string | null
   scheduledPurgeAt: string | null
   purgedAt: string | null
+  // Phase 6+: 1:1 binding to a teacher account. Cabinet uses this to
+  // filter open slots so a learner only sees their teacher's
+  // availability. Null = no teacher assigned yet (cabinet renders a
+  // "обратитесь к оператору" hint).
+  assignedTeacherId: string | null
   createdAt: string
   updatedAt: string
 }
@@ -43,6 +48,9 @@ function rowToAccount(row: Record<string, unknown>): Account {
     purgedAt: row.purged_at
       ? new Date(String(row.purged_at)).toISOString()
       : null,
+    assignedTeacherId: row.assigned_teacher_id
+      ? String(row.assigned_teacher_id)
+      : null,
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
   }
@@ -51,7 +59,7 @@ function rowToAccount(row: Record<string, unknown>): Account {
 export async function getAccountByEmail(email: string): Promise<Account | null> {
   const pool = getAuthPool()
   const result = await pool.query(
-    `select id, email, password_hash, email_verified_at, disabled_at, scheduled_purge_at, purged_at, created_at, updated_at
+    `select id, email, password_hash, email_verified_at, disabled_at, scheduled_purge_at, purged_at, assigned_teacher_id, created_at, updated_at
      from accounts where email = $1 limit 1`,
     [normalizeAccountEmail(email)],
   )
@@ -61,7 +69,7 @@ export async function getAccountByEmail(email: string): Promise<Account | null> 
 export async function getAccountById(id: string): Promise<Account | null> {
   const pool = getAuthPool()
   const result = await pool.query(
-    `select id, email, password_hash, email_verified_at, disabled_at, scheduled_purge_at, purged_at, created_at, updated_at
+    `select id, email, password_hash, email_verified_at, disabled_at, scheduled_purge_at, purged_at, assigned_teacher_id, created_at, updated_at
      from accounts where id = $1 limit 1`,
     [id],
   )
@@ -76,7 +84,7 @@ export async function createAccount(params: {
   const id = randomUUID()
   const result = await pool.query(
     `insert into accounts (id, email, password_hash) values ($1, $2, $3)
-     returning id, email, password_hash, email_verified_at, disabled_at, scheduled_purge_at, purged_at, created_at, updated_at`,
+     returning id, email, password_hash, email_verified_at, disabled_at, scheduled_purge_at, purged_at, assigned_teacher_id, created_at, updated_at`,
     [id, normalizeAccountEmail(params.email), params.passwordHash],
   )
   return rowToAccount(result.rows[0])
@@ -132,7 +140,8 @@ export async function listAccounts(params: {
 
   const rowsResult = await pool.query(
     `select id, email, password_hash, email_verified_at, disabled_at,
-            scheduled_purge_at, purged_at, created_at, updated_at
+            scheduled_purge_at, purged_at, assigned_teacher_id,
+            created_at, updated_at
      from accounts
      ${where}
      order by created_at desc
@@ -233,6 +242,28 @@ export async function reenableAccount(accountId: string): Promise<void> {
       where id = $1
         and purged_at is null`,
     [accountId],
+  )
+}
+
+// Phase 6+: assign / unassign a learner to a teacher account.
+// Operator-side; admin /admin/accounts/[id] is the only call site.
+//
+// We do NOT enforce that the teacher account holds the `teacher` role
+// at this layer — that's a UX guard in the admin UI (the dropdown
+// only lists teacher-role accounts). The DB just stores a uuid FK.
+// Pass null to unassign.
+export async function setAssignedTeacher(
+  learnerId: string,
+  teacherId: string | null,
+): Promise<void> {
+  const pool = getAuthPool()
+  await pool.query(
+    `update accounts
+        set assigned_teacher_id = $2,
+            updated_at = now()
+      where id = $1
+        and purged_at is null`,
+    [learnerId, teacherId],
   )
 }
 

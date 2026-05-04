@@ -6,8 +6,11 @@ import {
   type AccountRole,
   getAccountById,
   listAccountRoles,
+  listAccountsByRole,
 } from '@/lib/auth/accounts'
 import { getAccountProfile } from '@/lib/auth/profiles'
+
+import { TeacherAssignment } from './teacher-assignment'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -21,9 +24,10 @@ export default async function AdminAccountDetailPage({ params }: RouteParams) {
   const account = await getAccountById(id)
   if (!account) notFound()
 
-  const [roles, profile] = await Promise.all([
+  const [roles, profile, teachers] = await Promise.all([
     listAccountRoles(account.id),
     getAccountProfile(account.id),
+    listAccountsByRole('teacher'),
   ])
 
   return (
@@ -134,6 +138,16 @@ export default async function AdminAccountDetailPage({ params }: RouteParams) {
           })}
         </div>
       </Section>
+
+      {!account.purgedAt ? (
+        <Section title="Учитель">
+          <TeacherAssignment
+            accountId={account.id}
+            currentTeacherId={account.assignedTeacherId}
+            teachers={teachers.filter((t) => t.id !== account.id)}
+          />
+        </Section>
+      ) : null}
 
       <Section title="Профиль">
         {profile ? (

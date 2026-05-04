@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { getCurrentSession } from '@/lib/auth/sessions'
 import { listOpenFutureSlots } from '@/lib/scheduling/slots'
 import { enforceRateLimit } from '@/lib/security/request'
 
@@ -10,21 +11,46 @@ const noStore = { 'Cache-Control': 'no-store, max-age=0' }
 
 // GET /api/slots/available?teacher=<uuid>&from=<iso>&to=<iso>
 //
-// Read-only list of open future slots. Anonymous-readable in this
-// wave (mirrors GET /api/payments/[invoiceId] — same loose model);
-// booking is gated separately at /api/slots/[id]/book.
+// Default behaviour:
+//   - if the request carries a session, return ONLY the open slots
+//     of that learner's `assigned_teacher_id`. Unassigned → empty
+//     list (cabinet renders the «учитель не назначен» hint).
+//   - if anonymous (no session), no implicit filter — caller may
+//     pass `?teacher=<uuid>` for explicit filter, otherwise gets all
+//     open slots. Anonymous "browse all open slots" is the existing
+//     loose contract; tightening it would break standalone browsing.
+//   - explicit `?teacher=<uuid>` overrides the session-derived
+//     filter (useful for operator browsing in the future).
 
 export async function GET(request: Request) {
   const rl = await enforceRateLimit(request, 'slots:available:ip', 60, 60_000)
   if (rl) return rl
 
   const url = new URL(request.url)
-  const teacher = url.searchParams.get('teacher')
+  const teacherFromQuery = url.searchParams.get('teacher')
   const from = url.searchParams.get('from')
   const to = url.searchParams.get('to')
 
+  let teacherFilter: string | null | undefined = teacherFromQuery
+  if (!teacherFilter) {
+    const session = await getCurrentSession(request)
+    if (session) {
+      const assigned = session.account.assignedTeacherId
+      if (assigned) {
+        teacherFilter = assigned
+      } else {
+        // Logged-in learner with no assigned teacher → return empty,
+        // surface the hint in the cabinet.
+        return NextResponse.json(
+          { slots: [] },
+          { status: 200, headers: noStore },
+        )
+      }
+    }
+  }
+
   const slots = await listOpenFutureSlots({
-    teacherAccountId: teacher,
+    teacherAccountId: teacherFilter,
     fromIso: from ?? undefined,
     toIso: to ?? undefined,
   })
