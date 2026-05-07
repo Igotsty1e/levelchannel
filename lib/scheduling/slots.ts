@@ -802,11 +802,24 @@ function appendEventSql(eventType: string, actor: string | null, payload?: Recor
 
 // Atomic book-the-slot. Re-asserts status='open' in the WHERE so two
 // concurrent POSTs don't both win.
+//
+// Codex 2026-05-07 #5 — also re-asserts `teacher_account_id <> $learner`
+// so a learner can never book a slot where they are listed as the
+// teacher. Defense-in-depth: an admin route may have allowed the
+// pathological combination upstream (slot created with a non-teacher
+// account_id, learner has no teacher role, learner books). The DB
+// invariant catches it regardless of upstream bugs.
 export async function bookSlot(
   slotId: string,
   learnerAccountId: string,
   actor: 'learner' | 'admin' = 'learner',
-): Promise<{ ok: true; slot: LessonSlot } | { ok: false; reason: 'not_found' | 'not_open' | 'in_past' }> {
+): Promise<
+  | { ok: true; slot: LessonSlot }
+  | {
+      ok: false
+      reason: 'not_found' | 'not_open' | 'in_past' | 'self_booking_blocked'
+    }
+> {
   if (!UUID_PATTERN.test(slotId)) return { ok: false, reason: 'not_found' }
   const pool = getDbPool()
   const result = await pool.query(
@@ -819,6 +832,7 @@ export async function bookSlot(
       where id = $1
         and status = 'open'
         and start_at > now()
+        and teacher_account_id <> $2
       returning ${SLOT_COLUMNS}`,
     [
       slotId,
@@ -829,12 +843,16 @@ export async function bookSlot(
   if (result.rows[0]) {
     return { ok: true, slot: rowToSlot(result.rows[0]) }
   }
-  // Distinguish not-found vs not-open vs in-past for nicer errors.
+  // Distinguish not-found vs not-open vs in-past vs self-booking for
+  // nicer errors.
   const sniff = await pool.query(
-    `select status, start_at from lesson_slots where id = $1`,
+    `select status, start_at, teacher_account_id from lesson_slots where id = $1`,
     [slotId],
   )
   if (sniff.rows.length === 0) return { ok: false, reason: 'not_found' }
+  if (String(sniff.rows[0].teacher_account_id ?? '') === learnerAccountId) {
+    return { ok: false, reason: 'self_booking_blocked' }
+  }
   const startAt = new Date(String(sniff.rows[0].start_at)).getTime()
   if (startAt <= Date.now()) return { ok: false, reason: 'in_past' }
   return { ok: false, reason: 'not_open' }

@@ -49,6 +49,17 @@ export async function POST(request: Request, { params }: RouteParams) {
       { status: 410, headers: noStore },
     )
   }
+  if (result.reason === 'self_booking_blocked') {
+    // Codex 2026-05-07 #5 — DB invariant rejected a self-booking.
+    // Reaches this branch only when an admin route created a slot
+    // pairing a learner's account_id as the teacher. The book route
+    // refuses cleanly; the upstream operator config still needs
+    // fixing (audit log surfaces it via the per-row event payload).
+    return NextResponse.json(
+      { error: 'Нельзя забронировать слот, где вы числитесь преподавателем.' },
+      { status: 403, headers: noStore },
+    )
+  }
   // not_open — race with another booking or operator-side state change.
   return NextResponse.json(
     { error: 'Этот слот только что забронировал кто-то другой. Обновите список.' },
