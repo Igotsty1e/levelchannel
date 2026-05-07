@@ -1,3 +1,4 @@
+import { getAuditEncryptionKey } from '@/lib/audit/encryption'
 import { getAuditPool } from '@/lib/audit/pool'
 
 // Audit-log-of-record for payment lifecycle transitions. See
@@ -11,6 +12,16 @@ import { getAuditPool } from '@/lib/audit/pool'
 // Identity: full e-mail and full IP are recorded (NOT hashed/masked).
 // This is intentional. Audit logs are admin-only and serve the
 // legitimate-interest basis under 152-FZ — see SECURITY.md.
+//
+// Wave 2.1 (security) — encryption-at-rest:
+//   When AUDIT_ENCRYPTION_KEY is set, every insert dual-writes the
+//   sensitive columns (customer_email, client_ip) into both the
+//   plaintext column AND a pgcrypto-encrypted bytea column
+//   (customer_email_enc, client_ip_enc). Reads prefer the encrypted
+//   column with a plaintext fallback so the operator's eventual
+//   "null out plaintext" step (Phase B in migration 0025) is invisible
+//   to consumers. See migrations/0025_payment_audit_events_pgcrypto.sql
+//   for the three-phase migration plan.
 
 export const PAYMENT_AUDIT_EVENT_TYPES = [
   'order.created',
@@ -83,18 +94,45 @@ export async function recordPaymentAuditEvent(
     return false
   }
 
+  // Resolve the encryption key. In production a missing key throws,
+  // which lands in the catch below; the audit insert is then
+  // swallowed (best-effort), surfaces a warn in journalctl, and the
+  // business path continues. The operator gets a loud signal at the
+  // very next audit attempt and fixes the env. We deliberately do
+  // not start dual-writing without the key — partial state is worse
+  // than transient logging.
+  let encryptionKey: string | null = null
   try {
+    encryptionKey = getAuditEncryptionKey()
+  } catch (err) {
+    console.warn('[audit] encryption key unavailable:', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return false
+  }
+
+  try {
+    // The CASE WHEN ... pgp_sym_encrypt(...) END pattern returns
+    // bytea when both key and plaintext are non-null, and NULL
+    // otherwise. We pass the key as $14 so it never reaches the
+    // application logs (parameter values are visible in pg_stat
+    // tables, but not in plain query strings).
     await pool.query(
       `insert into payment_audit_events (
         event_type, invoice_id, account_id,
         customer_email, client_ip, user_agent,
         amount_kopecks, from_status, to_status,
-        actor, idempotency_key, request_id, payload
+        actor, idempotency_key, request_id, payload,
+        customer_email_enc, client_ip_enc
       ) values (
         $1, $2, $3,
         $4, $5, $6,
         $7, $8, $9,
-        $10, $11, $12, $13
+        $10, $11, $12, $13,
+        case when $14::text is not null and $4::text is not null
+             then pgp_sym_encrypt($4::text, $14::text) end,
+        case when $14::text is not null and $5::text is not null
+             then pgp_sym_encrypt($5::text, $14::text) end
       )`,
       [
         event.eventType,
@@ -110,6 +148,7 @@ export async function recordPaymentAuditEvent(
         event.idempotencyKey ?? null,
         event.requestId ?? null,
         JSON.stringify(event.payload ?? {}),
+        encryptionKey,
       ],
     )
     return true
@@ -151,15 +190,43 @@ export async function listPaymentAuditEventsByInvoice(
 ): Promise<StoredPaymentAuditEvent[]> {
   const pool = getAuditPool()
   if (!pool) return []
+
+  // Prefer the encrypted column when present, fall back to plaintext.
+  // This makes the eventual Phase-B "null out plaintext" step
+  // invisible to callers — they keep getting the same shape, sourced
+  // from whichever column has data. In dev (no key set), the
+  // encrypted column is always null and we transparently read
+  // plaintext as before.
+  let key: string | null = null
+  try {
+    key = getAuditEncryptionKey()
+  } catch {
+    // Production-mandatory key missing. Surface a clear warning but
+    // still return what we can read via plaintext, so admin tooling
+    // doesn't go dark just because the env is misconfigured.
+    console.warn(
+      '[audit] AUDIT_ENCRYPTION_KEY missing in production — reading plaintext only.',
+    )
+    key = null
+  }
+
   const { rows } = await pool.query(
     `select id, created_at, event_type, invoice_id, account_id,
-            customer_email, client_ip, user_agent,
+            case when customer_email_enc is not null and $2::text is not null
+                 then pgp_sym_decrypt(customer_email_enc, $2::text)
+                 else customer_email
+            end as customer_email,
+            case when client_ip_enc is not null and $2::text is not null
+                 then pgp_sym_decrypt(client_ip_enc, $2::text)
+                 else client_ip
+            end as client_ip,
+            user_agent,
             amount_kopecks, from_status, to_status,
             actor, idempotency_key, request_id, payload
        from payment_audit_events
       where invoice_id = $1
       order by created_at asc`,
-    [invoiceId],
+    [invoiceId, key],
   )
   return rows.map(rowToEvent)
 }
