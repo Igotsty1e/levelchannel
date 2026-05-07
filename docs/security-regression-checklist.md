@@ -154,6 +154,16 @@ the invariant - not just that the test is green.
 - [ ] **`AUDIT_ENCRYPTION_KEY` floor**: `lib/audit/encryption.ts` enforces
       ≥32 chars and a production-mandatory presence. Do not relax these
       without an explicit security review.
+- [ ] **Postgres bind-value capture stays disabled.** The audit
+      recorder passes `AUDIT_ENCRYPTION_KEY` as a parameter bind. If
+      `pg_stat_statements` (track=all + save=on), `log_statement`,
+      `log_min_duration_statement`, or `log_parameter_max_length_on_error`
+      are widened, the key leaks into Postgres internals visible to any
+      DBA with `pg_read_all_stats` or read access to `pg_log`. The
+      operator-side invariants are listed in `SECURITY.md § Operator-
+      side invariants`. Verified disabled on prod 2026-05-07. If you
+      flip any of these for performance triage, rotate the encryption
+      key after.
 
 ## 6. Observability
 

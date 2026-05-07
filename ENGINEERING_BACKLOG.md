@@ -41,6 +41,39 @@ Concrete follow-ups (open queue):
   integration tests are now blocking — a regression caught by a real-
   Postgres test fails CI before merge.
 
+## Today — 2026-05-07 — after 18:06 UTC
+
+### Re-run Codex adversarial review after usage-cap reset
+
+The first attempt at the Codex adversarial review against PRs #45–#52
+hit the per-account daily cap mid-prompt (`/tmp/codex-review.jsonl`
+line 4: `You've hit your usage limit. ... try again at 6:06 PM`).
+A manual self-review was done in the same session and produced 8
+findings, of which fixes #1, #5, #7, #8 will land before this entry
+fires (see PRs / commits chained off `ab6ac07`).
+
+After 18:06 UTC re-run codex against the **updated** codebase:
+
+```bash
+cat /tmp/codex-review-prompt.md | \
+  /Applications/Codex.app/Contents/Resources/codex exec \
+    --skip-git-repo-check --json \
+    | tee /tmp/codex-review-2.jsonl
+```
+
+Compare codex findings against the self-review:
+
+- Anything codex finds that the self-review missed → file as new
+  backlog entry, severity-rate, schedule.
+- Anything codex confirms the self-review caught → close the loop in
+  this backlog entry with a note.
+- Anything codex marks as "blocked" that the self-review flagged as
+  active → re-examine; one of us is wrong.
+
+This is the loop-closure for "second mind" — the self-review has a
+known conflict-of-interest (the same agent that wrote the code is
+reviewing it). Codex's independent run is the validation step.
+
 ## TOMORROW — 2026-05-08 — verify and execute
 
 ### Wave 2.1 Phase B — null out plaintext PII in `payment_audit_events`
