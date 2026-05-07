@@ -1,4 +1,4 @@
-import { Pool } from 'pg'
+import { Pool, type PoolConfig } from 'pg'
 
 // Single shared `pg.Pool` for every Postgres-backed module:
 // payments, auth, idempotency, telemetry, audit. Replaces five
@@ -42,6 +42,100 @@ function readPoolMax(): number {
   return Math.floor(parsed)
 }
 
+// TLS policy. Default: enforce TLS with strict cert verification on
+// every non-local host. The pg library's JS-side `ssl` option
+// overrides any `?sslmode=...` hint in the URL, so this is the
+// authoritative policy.
+//
+// Auto-detect:
+//   - localhost / 127.0.0.1 / ::1 / *.local → no TLS (local dev)
+//   - everything else → `{ rejectUnauthorized: true }`
+//
+// Explicit overrides via `DB_SSL`:
+//   - `disable` / `off` / `false` → no TLS (rejected in production)
+//   - `require` / `on` / `true`   → strict TLS even on localhost
+//
+// In production:
+//   - `DB_SSL=disable` is rejected (throws).
+//   - `DATABASE_URL` pointing at localhost is rejected (throws) —
+//     a real Postgres host is mandatory.
+//   - `DB_SSL_REJECT_UNAUTHORIZED=false` is rejected (throws). We do
+//     not silently accept self-signed certs in prod.
+export function resolveSslConfig(
+  url: string,
+  env: NodeJS.ProcessEnv = process.env,
+): PoolConfig['ssl'] {
+  const isProd = env.NODE_ENV === 'production'
+  const explicit = (env.DB_SSL ?? '').trim().toLowerCase()
+
+  if (
+    explicit === 'disable' ||
+    explicit === 'off' ||
+    explicit === 'false' ||
+    explicit === '0' ||
+    explicit === 'no'
+  ) {
+    if (isProd) {
+      throw new Error(
+        'DB_SSL=disable is rejected in production. Postgres connections must use TLS.',
+      )
+    }
+    return false
+  }
+
+  const rejectUnauthorizedRaw = (env.DB_SSL_REJECT_UNAUTHORIZED ?? '')
+    .trim()
+    .toLowerCase()
+  const rejectUnauthorized = rejectUnauthorizedRaw !== 'false'
+
+  if (isProd && !rejectUnauthorized) {
+    throw new Error(
+      'DB_SSL_REJECT_UNAUTHORIZED=false is rejected in production.',
+    )
+  }
+
+  if (
+    explicit === 'require' ||
+    explicit === 'on' ||
+    explicit === 'true' ||
+    explicit === '1' ||
+    explicit === 'yes'
+  ) {
+    return { rejectUnauthorized }
+  }
+
+  // Auto path: parse the URL, decide by host.
+  let host: string | null = null
+  try {
+    host = new URL(url).hostname.toLowerCase()
+    // WHATWG URL keeps the brackets on IPv6 hostnames (`[::1]`).
+    // Strip them so the localhost check below sees a bare address.
+    if (host.startsWith('[') && host.endsWith(']')) {
+      host = host.slice(1, -1)
+    }
+  } catch {
+    // Malformed URL — let pg surface the parse error downstream.
+    // Strict TLS is the safe default until then.
+  }
+
+  const isLocal =
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '::1' ||
+    (host !== null && host.endsWith('.local'))
+
+  if (isLocal) {
+    if (isProd) {
+      throw new Error(
+        'DATABASE_URL points at localhost in production. Set it to a real Postgres host.',
+      )
+    }
+    return false
+  }
+
+  return { rejectUnauthorized }
+}
+
 // The throw-on-missing variant. Used by code that assumes Postgres
 // is configured (the production payment / auth path); throws so the
 // failure surfaces immediately rather than silently no-op'ing.
@@ -55,6 +149,7 @@ export function getDbPool(): Pool {
     global.__levelchannelDbPool = new Pool({
       connectionString: url,
       max: readPoolMax(),
+      ssl: resolveSslConfig(url),
     })
   }
   return global.__levelchannelDbPool
