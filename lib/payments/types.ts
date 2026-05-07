@@ -53,6 +53,13 @@ export type PaymentOrder = {
   // stripped. Persisted separately from `description`; description is
   // composed server-side as PAYMENT_DESCRIPTION + comment + amount.
   customerComment?: string | null
+  // Wave 6.1 #4 — sha256 hex of the plain receipt_token issued at
+  // create-order time. The plain token is returned ONCE in the
+  // create-order response and never persisted. Routes that need to
+  // gate on token will hash the incoming token and compare against
+  // this column. Phase 1.5 (this wave) only mints + persists; the
+  // gate is Phase 2.
+  receiptTokenHash?: string | null
 }
 
 export type PublicPaymentOrder = Pick<

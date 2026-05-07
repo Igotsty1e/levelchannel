@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 
+import { mintToken } from '@/lib/auth/tokens'
 import {
   chargeWithSavedToken,
   confirmThreeDs,
@@ -140,11 +141,21 @@ export async function createPayment(
     })
   }
 
+  // Wave 6.1 #4 Phase 1.5 — mint a receipt token. Hash is persisted on
+  // the order; plain token is returned ONCE in this response and never
+  // stored. Phase 2 will gate `/api/payments/[invoiceId]/{,cancel,stream}`
+  // on this token; right now those routes still accept anyone-with-the-
+  // invoiceId, but new orders carry a token in the response so the UI
+  // can start threading it through redirects ahead of the gate.
+  const receiptTokenPair = mintToken()
+  order.receiptTokenHash = receiptTokenPair.hash
+
   await createOrder(order)
 
   return {
     order: toPublicOrder(order),
     checkoutIntent,
+    receiptToken: receiptTokenPair.plain,
   }
 }
 
@@ -284,8 +295,15 @@ export async function chargeWithSavedCard(params: {
     { personalDataConsent: params.personalDataConsent },
   )
 
+  // Wave 6.1 #4 Phase 1.5 — mint receipt token for the one-click path
+  // too, so Phase 2's gate on [invoiceId]/{,cancel,stream} works
+  // uniformly for both regular and one-click orders. The plain token
+  // is currently discarded (one-click flow returns redirect/result,
+  // not a token) — Phase 2 will surface it where needed.
+  const oneClickReceiptToken = mintToken()
   const orderWithMetadata: PaymentOrder = {
     ...order,
+    receiptTokenHash: oneClickReceiptToken.hash,
     metadata: {
       ...(order.metadata || {}),
       source: 'one_click',

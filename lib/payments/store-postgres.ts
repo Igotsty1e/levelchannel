@@ -107,6 +107,8 @@ function mapRowToOrder(row: Record<string, unknown>): PaymentOrder {
     events: Array.isArray(row.events) ? (row.events as PaymentOrder['events']) : [],
     customerComment:
       row.customer_comment == null ? null : String(row.customer_comment),
+    receiptTokenHash:
+      row.receipt_token_hash == null ? null : String(row.receipt_token_hash),
   }
 }
 
@@ -131,6 +133,7 @@ function toInsertValues(order: PaymentOrder) {
     order.mockAutoConfirmAt || null,
     JSON.stringify(order.events),
     order.customerComment ?? null,
+    order.receiptTokenHash ?? null,
   ]
 }
 
@@ -174,9 +177,10 @@ export async function createOrderPostgres(order: PaymentOrder) {
       metadata,
       mock_auto_confirm_at,
       events,
-      customer_comment
+      customer_comment,
+      receipt_token_hash
     ) values (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18::jsonb,$19
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18::jsonb,$19,$20
     )`,
     toInsertValues(order),
   )
@@ -227,7 +231,8 @@ export async function updateOrderPostgres(
         metadata = $16::jsonb,
         mock_auto_confirm_at = $17,
         events = $18::jsonb,
-        customer_comment = $19
+        customer_comment = $19,
+        receipt_token_hash = $20
       where invoice_id = $1`,
       toInsertValues(next),
     )
