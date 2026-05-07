@@ -33,7 +33,7 @@ Already in place:
   Token API through server-side Basic Auth; tokens never reach the browser
 - the payment storage file is excluded from the repository
 - telemetry is hashed with a dedicated `TELEMETRY_HASH_SECRET`, and when the secret is empty the app omits `emailHash` instead of using a hardcoded fallback
-- TLS-required Postgres connections in production: `lib/db/pool.ts` enforces `ssl: { rejectUnauthorized: true }` on every non-localhost host. Production refuses to start on `localhost` / `DB_SSL=disable` / `DB_SSL_REJECT_UNAUTHORIZED=false` (the JS-side `ssl` option overrides any URL hint, so the policy is owned in code, not in the URL)
+- TLS-required Postgres connections to remote hosts: `lib/db/pool.ts` auto-detects `localhost` / `127.0.0.1` / `::1` / `*.local` as no-TLS (loopback — single-server deploys are valid) and forces `ssl: { rejectUnauthorized: true }` on every non-local host. Production refuses `DB_SSL=disable` and `DB_SSL_REJECT_UNAUTHORIZED=false` ONLY for non-local hosts — disabling TLS on a remote Postgres in prod is the actual leak; on the loopback path TLS is meaningless. The JS-side `ssl` option overrides any `?sslmode=...` URL hint, so the policy is owned in code, not in the URL
 - `npm audit --omit=dev` is clean on the current lockfile
 
 ## Auth and account layer
@@ -215,7 +215,7 @@ key. Until rotation is wired in, the active key is the only key.
 - the payment storage file is excluded from the repository
 - CloudPayments credentials are used only on the server
 - `AUDIT_ENCRYPTION_KEY` (Wave 2.1) is mandatory in production; `lib/audit/encryption.ts` throws on first use without it. Minimum length is 32 characters. The key is the only thing that makes a `payment_audit_events` DB-dump useful — treat it as a peer of `CLOUDPAYMENTS_API_SECRET` and `AUTH_RATE_LIMIT_SECRET` for rotation cadence
-- `DB_SSL` / `DB_SSL_REJECT_UNAUTHORIZED` (Wave 1.1) opt-outs are only honored outside production. Both `DB_SSL=disable` and `DB_SSL_REJECT_UNAUTHORIZED=false` throw on pool init in `NODE_ENV=production`; a `DATABASE_URL` pointing at `localhost` in production also throws
+- `DB_SSL` / `DB_SSL_REJECT_UNAUTHORIZED` (Wave 1.1) opt-outs that disable TLS are honored only on the loopback path or outside production. `DB_SSL=disable` and `DB_SSL_REJECT_UNAUTHORIZED=false` throw on pool init when `NODE_ENV=production` AND the host is non-local (a remote Postgres without TLS in prod is a real leak; on `127.0.0.1` it's a no-op). `DATABASE_URL` pointing at `localhost` in production is allowed — single-server deploys (Postgres on the same VPS) are a valid topology
 - `scripts/public-surface-check.sh` blocks private runbooks, `.env*`,
   and known concrete production paths from both local commits and CI
 

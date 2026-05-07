@@ -42,25 +42,33 @@ function readPoolMax(): number {
   return Math.floor(parsed)
 }
 
-// TLS policy. Default: enforce TLS with strict cert verification on
-// every non-local host. The pg library's JS-side `ssl` option
-// overrides any `?sslmode=...` hint in the URL, so this is the
-// authoritative policy.
+// TLS policy. The pg library's JS-side `ssl` option overrides any
+// `?sslmode=...` hint in the URL, so this is the authoritative policy.
 //
-// Auto-detect:
-//   - localhost / 127.0.0.1 / ::1 / *.local → no TLS (local dev)
+// Auto-detect by host:
+//   - localhost / 127.0.0.1 / ::1 / *.local → no TLS (loopback —
+//     same-host Postgres is the legit single-server deploy shape)
 //   - everything else → `{ rejectUnauthorized: true }`
 //
 // Explicit overrides via `DB_SSL`:
-//   - `disable` / `off` / `false` → no TLS (rejected in production)
+//   - `disable` / `off` / `false` → no TLS (rejected in production
+//     ONLY for non-local hosts — disabling TLS on a remote Postgres
+//     in prod is the actual leak; on loopback it is meaningless)
 //   - `require` / `on` / `true`   → strict TLS even on localhost
 //
-// In production:
-//   - `DB_SSL=disable` is rejected (throws).
-//   - `DATABASE_URL` pointing at localhost is rejected (throws) —
-//     a real Postgres host is mandatory.
-//   - `DB_SSL_REJECT_UNAUTHORIZED=false` is rejected (throws). We do
-//     not silently accept self-signed certs in prod.
+// `DB_SSL_REJECT_UNAUTHORIZED=false`: encrypted-but-lax cert check.
+// Rejected in production for non-local hosts (we don't silently
+// accept self-signed certs from a remote Postgres in prod). Allowed
+// for localhost because the loopback path doesn't carry a cert
+// chain that matters.
+//
+// Note: this resolver does NOT block a localhost `DATABASE_URL` in
+// production. A single-server deploy with Postgres on the same VPS
+// is a valid topology; the original "refuse localhost in prod" rule
+// was overzealous and broke real prod. The `DATABASE_URL is not
+// configured` throw in `getDbPool()` already covers the
+// implicit-fallback risk (forgotten env → loud failure, not silent
+// localhost connect).
 export function resolveSslConfig(
   url: string,
   env: NodeJS.ProcessEnv = process.env,
@@ -68,43 +76,7 @@ export function resolveSslConfig(
   const isProd = env.NODE_ENV === 'production'
   const explicit = (env.DB_SSL ?? '').trim().toLowerCase()
 
-  if (
-    explicit === 'disable' ||
-    explicit === 'off' ||
-    explicit === 'false' ||
-    explicit === '0' ||
-    explicit === 'no'
-  ) {
-    if (isProd) {
-      throw new Error(
-        'DB_SSL=disable is rejected in production. Postgres connections must use TLS.',
-      )
-    }
-    return false
-  }
-
-  const rejectUnauthorizedRaw = (env.DB_SSL_REJECT_UNAUTHORIZED ?? '')
-    .trim()
-    .toLowerCase()
-  const rejectUnauthorized = rejectUnauthorizedRaw !== 'false'
-
-  if (isProd && !rejectUnauthorized) {
-    throw new Error(
-      'DB_SSL_REJECT_UNAUTHORIZED=false is rejected in production.',
-    )
-  }
-
-  if (
-    explicit === 'require' ||
-    explicit === 'on' ||
-    explicit === 'true' ||
-    explicit === '1' ||
-    explicit === 'yes'
-  ) {
-    return { rejectUnauthorized }
-  }
-
-  // Auto path: parse the URL, decide by host.
+  // Detect host first; production safety only matters for non-local hosts.
   let host: string | null = null
   try {
     host = new URL(url).hostname.toLowerCase()
@@ -115,7 +87,7 @@ export function resolveSslConfig(
     }
   } catch {
     // Malformed URL — let pg surface the parse error downstream.
-    // Strict TLS is the safe default until then.
+    // Treat as "non-local" so the strict TLS default kicks in.
   }
 
   const isLocal =
@@ -124,12 +96,47 @@ export function resolveSslConfig(
     host === '::1' ||
     (host !== null && host.endsWith('.local'))
 
-  if (isLocal) {
-    if (isProd) {
+  // DB_SSL=disable: production safety applies only to non-local hosts.
+  if (
+    explicit === 'disable' ||
+    explicit === 'off' ||
+    explicit === 'false' ||
+    explicit === '0' ||
+    explicit === 'no'
+  ) {
+    if (isProd && !isLocal) {
       throw new Error(
-        'DATABASE_URL points at localhost in production. Set it to a real Postgres host.',
+        'DB_SSL=disable is rejected for non-local hosts in production. Postgres connections to remote hosts must use TLS.',
       )
     }
+    return false
+  }
+
+  // DB_SSL_REJECT_UNAUTHORIZED=false: production safety for remote hosts.
+  const rejectUnauthorizedRaw = (env.DB_SSL_REJECT_UNAUTHORIZED ?? '')
+    .trim()
+    .toLowerCase()
+  const rejectUnauthorized = rejectUnauthorizedRaw !== 'false'
+
+  if (isProd && !rejectUnauthorized && !isLocal) {
+    throw new Error(
+      'DB_SSL_REJECT_UNAUTHORIZED=false is rejected for non-local hosts in production.',
+    )
+  }
+
+  // DB_SSL=require: strict TLS regardless of host.
+  if (
+    explicit === 'require' ||
+    explicit === 'on' ||
+    explicit === 'true' ||
+    explicit === '1' ||
+    explicit === 'yes'
+  ) {
+    return { rejectUnauthorized }
+  }
+
+  // Auto path: localhost gets no TLS, every other host gets strict TLS.
+  if (isLocal) {
     return false
   }
 
