@@ -19,15 +19,12 @@ smoke claimed everything was OK while every authenticated route was
 
 Concrete follow-ups (open queue):
 
-- **Health probe should exercise the shared pool too.** Either fold
-  `app/api/health/route.ts`'s probe onto `getDbPool()` (so a future
-  `resolveSslConfig` regression fires on health and stops the deploy
-  proceeding), or add a parallel `database_shared` check that
-  explicitly calls `getDbPool().query('select 1')`. Trade-off:
-  exercising the shared singleton from health caches it in `global`
-  on cold start, which is fine. The current ad-hoc `Pool` was meant
-  to keep health independent of any pool-init bug — but the
-  symmetric failure mode is the bigger risk now.
+- ~~**Health probe should exercise the shared pool too.**~~
+  **Closed 2026-05-07.** `app/api/health/route.ts` now calls
+  `getDbPool()` and races a `select 1` against a 2 s timeout. A
+  future regression in `resolveSslConfig` / env handling fires on
+  the health probe and stops the deploy. The 2 s race preserves the
+  bounded latency the old ad-hoc Pool got from `connectionTimeoutMillis`.
 - **Deploy-time smoke runner.** Add a `scripts/post-deploy-smoke.sh`
   (or a workflow step) that hits 5–8 routes the operator cares about:
   `/api/health`, `/api/auth/me` (anon → expect 401), `/login`,
