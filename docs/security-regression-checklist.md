@@ -209,15 +209,17 @@ the invariant - not just that the test is green.
       `"status":"ok"`.
 - [ ] If your diff touched a public route, hit it once with curl
       to confirm shape.
-- [ ] `/api/health` now goes through the shared `getDbPool()` (closed
-      2026-05-07, see `app/api/health/route.ts`). A regression in
-      `lib/db/pool.ts` (`resolveSslConfig`, env handling, etc.) will
-      fail the health probe loudly — the pool-factory class of bug
-      is no longer a blind spot. Note: this only catches pool-init
-      breakage. **Route-level regressions** (auth gate logic, role
-      checks, `bookSlot` invariants, webhook handler shape) still
-      need targeted smoke — hit the route your diff actually changed
-      with curl, not just `/api/health`.
+- [ ] `/api/health` goes through `getHealthProbePool()` — a dedicated
+      max=2 pool that shares the `resolveSslConfig` gate with
+      `getDbPool()`. A regression in pool init / TLS resolver still
+      fails the health probe loud (the 2026-05-07 lesson is closed),
+      but the production singleton's connection cap can't make health
+      time out and trigger false-positive uptime alerts. **Route-level
+      regressions** (auth gate logic, role checks, `bookSlot`
+      invariants, webhook handler shape) still need targeted smoke —
+      hit the route your diff actually changed with curl, not just
+      `/api/health`. The `scripts/post-deploy-smoke.sh` runner does
+      this for the standard set automatically.
 - [ ] Watch `gh issue list --label uptime-incident --state open`
       for the next 15 minutes. New issue → roll back via
       `OPERATIONS.md §6` runbook before debugging in place.
