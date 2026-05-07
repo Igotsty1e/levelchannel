@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { recordAuthAuditEvent } from '@/lib/audit/auth-events'
 import { getAccountByEmail } from '@/lib/auth/accounts'
 import { rateLimitScope } from '@/lib/auth/email-hash'
 import { createPasswordReset } from '@/lib/auth/resets'
@@ -8,6 +9,7 @@ import { validateCustomerEmail } from '@/lib/payments/catalog'
 import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
+  getClientIp,
 } from '@/lib/security/request'
 
 export const runtime = 'nodejs'
@@ -68,6 +70,20 @@ export async function POST(request: Request) {
     const { token } = await createPasswordReset(account.id)
     await sendResetEmail(email, token)
   }
+
+  // Wave 5 — record on EVERY path (known + unknown + disabled) using
+  // email_hash + nullable account_id. The audit row exists regardless
+  // of whether the email matched, so a row alone does not leak
+  // existence. The alert query keys off email_hash + count; an
+  // attacker spraying emails to enumerate creates a high-volume
+  // pattern that the alert catches.
+  await recordAuthAuditEvent({
+    eventType: 'auth.reset.requested',
+    accountId: account?.id ?? null,
+    email,
+    clientIp: getClientIp(request),
+    userAgent: request.headers.get('user-agent'),
+  })
 
   return NextResponse.json({ ok: true }, { status: 200, headers: noStore })
 }

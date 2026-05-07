@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { recordAuthAuditEvent } from '@/lib/audit/auth-events'
 import {
   createAccount,
   getAccountByEmail,
@@ -99,6 +100,18 @@ export async function POST(request: Request) {
     // Existing-email path: same wall-clock budget as new-email path.
     await verifyPassword(password, await getDummyHash())
     await sendAlreadyRegisteredEmail(email)
+    // Wave 5 — audit the register attempt on a known email. Reason
+    // tag distinguishes from a legit register so the alert query can
+    // tell "abuser sweeping known emails" apart from organic load.
+    // Response stays generic for anti-enumeration; reason is INTERNAL.
+    await recordAuthAuditEvent({
+      eventType: 'auth.register.created',
+      accountId: existing.id,
+      email,
+      clientIp: getClientIp(request),
+      userAgent: request.headers.get('user-agent'),
+      payload: { branch: 'already_registered' },
+    })
   } else {
     // New-email path.
     const passwordHash = await hashPassword(password)
@@ -115,6 +128,14 @@ export async function POST(request: Request) {
     })
     const { token } = await createEmailVerification(account.id)
     await sendVerifyEmail(email, token)
+    await recordAuthAuditEvent({
+      eventType: 'auth.register.created',
+      accountId: account.id,
+      email,
+      clientIp: getClientIp(request),
+      userAgent: request.headers.get('user-agent'),
+      payload: { branch: 'new_account' },
+    })
   }
 
   return NextResponse.json({ ok: true }, { status: 200, headers: noStore })
