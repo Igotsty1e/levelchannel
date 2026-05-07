@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-import { getDbPool } from '@/lib/db/pool'
+import { getHealthProbePool } from '@/lib/db/pool'
 import { paymentConfig, isCloudPaymentsConfigured } from '@/lib/payments/config'
 
 export const runtime = 'nodejs'
@@ -29,7 +29,7 @@ const PROBE_TIMEOUT_MS = 2_000
 
 async function probeDatabase(): Promise<'ok' | 'fail'> {
   try {
-    const pool = getDbPool()
+    const pool = getHealthProbePool()
     await Promise.race([
       pool.query('select 1'),
       new Promise<never>((_, reject) =>
@@ -51,15 +51,17 @@ async function probeDatabase(): Promise<'ok' | 'fail'> {
 // payments=cloudpayments, но нет API Secret. В таком состоянии платить
 // нельзя, и мы не должны казаться "здоровыми".
 //
-// Pool factory parity (lesson learned 2026-05-07): the database probe
-// goes through the SAME shared `getDbPool()` singleton that production
-// routes use. An earlier version spun up its own ad-hoc `pg.Pool`,
-// which silently bypassed any future regression in `lib/db/pool.ts`
-// (Wave 1.1's overzealous localhost-prod throw shipped clean to prod
-// because health came back green from a probe that didn't share the
-// gate). If `getDbPool()` throws — bad config, missing env, broken
-// `resolveSslConfig` — health now fails-loud so the deploy stops
-// pretending nothing is wrong.
+// Pool factory parity (lesson learned 2026-05-07, refined 2026-05-07):
+// the database probe goes through `getHealthProbePool()`, a tiny
+// max=2 pool dedicated to health checks, instead of the shared
+// production singleton. The dedicated pool reuses the SAME
+// `resolveSslConfig` factory, so a regression in TLS / env handling
+// (the 2026-05-07 hotfix class of bug) still fails health loud — the
+// blind spot is closed by sharing the SSL resolver, not by sharing
+// the singleton. The dedication prevents a saturated production pool
+// from making health-probe latency tip over and triggering false
+// uptime alerts. See `lib/db/pool.ts:HEALTH_POOL_MAX` for the
+// rationale.
 export async function GET() {
   const checks: Record<string, 'ok' | 'fail' | 'skip'> = {
     runtime: 'ok',

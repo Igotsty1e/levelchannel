@@ -32,6 +32,8 @@ import { Pool, type PoolConfig } from 'pg'
 declare global {
   // eslint-disable-next-line no-var
   var __levelchannelDbPool: Pool | undefined
+  // eslint-disable-next-line no-var
+  var __levelchannelHealthPool: Pool | undefined
 }
 
 function readPoolMax(): number {
@@ -41,6 +43,25 @@ function readPoolMax(): number {
   if (!Number.isFinite(parsed) || parsed < 1) return 10
   return Math.floor(parsed)
 }
+
+// Dedicated tiny pool for `/api/health` probes. Two reasons:
+//
+//   1. Isolation. The shared `getDbPool()` is capped at 10 connections
+//      (per `DATABASE_POOL_MAX`). If real production traffic saturates
+//      that pool, a probe through it queues, hits the 2-second race
+//      timeout in the health route, and reports `database: fail`. The
+//      external uptime monitor escalates a false positive — the DB is
+//      fine, the app pool is just busy. The dedicated pool's max=2
+//      means health-probe latency depends on Postgres responsiveness
+//      only, not on application-side load.
+//
+//   2. TLS gate parity. The probe still goes through the same
+//      `resolveSslConfig` factory as the shared pool, so a regression
+//      in pool init (the 2026-05-07 hotfix class of bug) fails the
+//      health probe loud. The blind spot from the original ad-hoc
+//      `new Pool({})` is closed by sharing the SSL resolver, not by
+//      sharing the singleton.
+const HEALTH_POOL_MAX = 2
 
 // TLS policy. The pg library's JS-side `ssl` option overrides any
 // `?sslmode=...` hint in the URL, so this is the authoritative policy.
@@ -168,4 +189,27 @@ export function getDbPool(): Pool {
 export function getDbPoolOrNull(): Pool | null {
   if (!process.env.DATABASE_URL) return null
   return getDbPool()
+}
+
+// Tiny dedicated pool for health-probe queries. See `HEALTH_POOL_MAX`
+// comment above for the rationale. Same `resolveSslConfig` gate as
+// the production singleton.
+export function getHealthProbePool(): Pool {
+  const url = process.env.DATABASE_URL
+  if (!url) {
+    throw new Error('DATABASE_URL is not configured.')
+  }
+  if (!global.__levelchannelHealthPool) {
+    global.__levelchannelHealthPool = new Pool({
+      connectionString: url,
+      max: HEALTH_POOL_MAX,
+      ssl: resolveSslConfig(url),
+      // The health route races the query against `PROBE_TIMEOUT_MS`;
+      // cap connection-acquisition latency to fail loud on a wedged
+      // Postgres without waiting for the route-level timer.
+      connectionTimeoutMillis: 1500,
+      idleTimeoutMillis: 1000,
+    })
+  }
+  return global.__levelchannelHealthPool
 }
