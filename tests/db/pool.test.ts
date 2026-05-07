@@ -17,10 +17,25 @@ describe('resolveSslConfig', () => {
       'postgres://u:p@localhost:5432/db',
       'postgres://u:p@127.0.0.1:5432/db',
       'postgres://u:p@[::1]:5432/db',
-      'postgres://u:p@dev-db.local:5432/db',
     ])('disables TLS for %s in dev', (url) => {
       expect(resolveSslConfig(url, dev)).toBe(false)
     })
+
+    it.each([
+      // Codex finding 2026-05-07 — `.local` mDNS hosts are NOT loopback.
+      // Any attacker-controlled mDNS responder on the LAN (or a CNAME
+      // they own) ending in `.local` would have downgraded TLS in
+      // production. The allowlist is now literal-loopback only.
+      'postgres://u:p@db.attacker.local:5432/db',
+      'postgres://u:p@dev-db.local:5432/db',
+    ])(
+      'forces strict TLS for %s (.local is NOT loopback)',
+      (url) => {
+        expect(resolveSslConfig(url, dev)).toEqual({
+          rejectUnauthorized: true,
+        })
+      },
+    )
 
     it.each([
       'postgres://u:p@localhost:5432/db',

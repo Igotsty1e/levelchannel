@@ -82,6 +82,25 @@ describe('Phase 4 slot flow', () => {
     const json = await list.json()
     expect(json.slots.length).toBe(1)
     expect(json.slots[0].status).toBe('open')
+
+    // Codex 2026-05-07 — anonymous /api/slots/available MUST return
+    // the public DTO. Operator-internal data (teacher email, internal
+    // account IDs, free-form notes, lifecycle audit fields) MUST be
+    // absent. The DTO whitelist: id, startAt, durationMinutes, status,
+    // tariff fields.
+    const slot = json.slots[0]
+    expect(slot).not.toHaveProperty('teacherEmail')
+    expect(slot).not.toHaveProperty('teacherAccountId')
+    expect(slot).not.toHaveProperty('learnerEmail')
+    expect(slot).not.toHaveProperty('learnerAccountId')
+    expect(slot).not.toHaveProperty('notes')
+    expect(slot).not.toHaveProperty('events')
+    expect(slot).not.toHaveProperty('cancelledAt')
+    expect(slot).not.toHaveProperty('cancelledByAccountId')
+    expect(slot).not.toHaveProperty('cancellationReason')
+    expect(slot).not.toHaveProperty('markedAt')
+    expect(slot).not.toHaveProperty('createdAt')
+    expect(slot).not.toHaveProperty('updatedAt')
   })
 
   it('learner with verified email books an open slot', async () => {

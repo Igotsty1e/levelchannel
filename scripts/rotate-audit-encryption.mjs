@@ -45,6 +45,8 @@ import process from 'node:process'
 
 import pg from 'pg'
 
+import { resolveSslConfig } from './_pg-ssl.mjs'
+
 const DEFAULT_BATCH_SIZE = 1000
 const MIN_KEY_LENGTH = 32
 
@@ -106,14 +108,52 @@ async function main() {
     process.exit(2)
   }
 
-  const pool = new pg.Pool({ connectionString: url, max: 2 })
+  // TLS gate: same policy as the app's lib/db/pool.ts. Rotation
+  // sends BOTH the new PRIMARY key AND the OLD key as bind parameters
+  // to the DB; without strict TLS that is a key-material leak on the
+  // wire. `resolveSslConfig` throws on a remote-host plaintext config
+  // in production rather than fall through silently.
+  const pool = new pg.Pool({
+    connectionString: url,
+    max: 2,
+    ssl: resolveSslConfig(url),
+  })
 
   try {
+    // Preflight against the wrong-OLD-key footgun.
+    //
+    // Codex 2026-05-07: countOldOnly() alone is insufficient. If the
+    // operator supplies the WRONG AUDIT_ENCRYPTION_KEY_OLD (e.g. a dev
+    // key in prod, or yesterday's key when the real previous key is
+    // two rotations back), every "decrypt under OLD" check fails, and
+    // the script reports `nothing to do` and exits 0. The operator
+    // then drops the real OLD key from env, and every legacy row is
+    // permanently bricked.
+    //
+    // Defense: count rows that the PRIMARY alone cannot decrypt
+    // (`needs-rotation`). Those rows MUST equal `countOldOnly` —
+    // otherwise some rows decrypt under neither key, which means
+    // either the OLD key is wrong, OR the data was encrypted with a
+    // third key we don't know about. Either way, refuse to proceed.
+    const needsRotation = await countNeedsRotation(pool, primaryKey)
     const remainingBefore = await countOldOnly(pool, primaryKey, oldKey)
     console.log(
-      `[rotate] rows still encrypted under OLD only: customer_email=${remainingBefore.email}, client_ip=${remainingBefore.ip}`,
+      `[rotate] rows that PRIMARY alone cannot decrypt: customer_email=${needsRotation.email}, client_ip=${needsRotation.ip}`,
     )
-    if (remainingBefore.email === 0 && remainingBefore.ip === 0) {
+    console.log(
+      `[rotate] of those, rows that decrypt under the supplied OLD: customer_email=${remainingBefore.email}, client_ip=${remainingBefore.ip}`,
+    )
+
+    const undecipherableEmail = needsRotation.email - remainingBefore.email
+    const undecipherableIp = needsRotation.ip - remainingBefore.ip
+    if (undecipherableEmail > 0 || undecipherableIp > 0) {
+      console.error(
+        `[rotate] ABORT — ${undecipherableEmail} email + ${undecipherableIp} client_ip rows are encrypted but decrypt under NEITHER PRIMARY nor the supplied OLD. The supplied AUDIT_ENCRYPTION_KEY_OLD is likely wrong, or the data was encrypted with a third key. Treating "zero OLD-only rows" as success here would brick those rows on the next env cleanup. Re-check both keys before re-running.`,
+      )
+      process.exit(2)
+    }
+
+    if (needsRotation.email === 0 && needsRotation.ip === 0) {
       console.log('[rotate] nothing to do — all rows already on PRIMARY.')
       return
     }
@@ -165,6 +205,30 @@ async function main() {
     }
   } finally {
     await pool.end()
+  }
+}
+
+// "Needs rotation" predicate: the row has an _enc column that does
+// NOT decrypt under PRIMARY. The set MUST equal countOldOnly when the
+// supplied OLD key is correct; the gap between the two is the wrong-
+// OLD-key footgun the rotate preflight refuses to step on.
+async function countNeedsRotation(pool, primaryKey) {
+  const result = await pool.query(
+    `select
+       count(*) filter (
+         where customer_email_enc is not null
+           and pgp_sym_decrypt_either(customer_email_enc, $1, null) is null
+       ) as email_n,
+       count(*) filter (
+         where client_ip_enc is not null
+           and pgp_sym_decrypt_either(client_ip_enc, $1, null) is null
+       ) as ip_n
+     from payment_audit_events`,
+    [primaryKey],
+  )
+  return {
+    email: Number(result.rows[0].email_n),
+    ip: Number(result.rows[0].ip_n),
   }
 }
 
