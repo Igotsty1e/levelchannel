@@ -6,6 +6,44 @@ to be implemented, not the current actual state of production.
 If a task already works in code or on the server, it does not belong
 here.
 
+## Lesson learned — 2026-05-07 — close the smoke blind spot
+
+`/api/health` instantiates its own ad-hoc `Pool` (see
+`app/api/health/route.ts:44`). It does NOT exercise the shared
+`getDbPool()` factory in `lib/db/pool.ts` that production routes
+(cabinet, admin, slots, payments) actually use. Wave 1.1's overzealous
+"refuse localhost in prod" throw fired only on the shared path; the
+health probe came back green from its private pool, so post-deploy
+smoke claimed everything was OK while every authenticated route was
+500-ing.
+
+Concrete follow-ups (open queue):
+
+- **Health probe should exercise the shared pool too.** Either fold
+  `app/api/health/route.ts`'s probe onto `getDbPool()` (so a future
+  `resolveSslConfig` regression fires on health and stops the deploy
+  proceeding), or add a parallel `database_shared` check that
+  explicitly calls `getDbPool().query('select 1')`. Trade-off:
+  exercising the shared singleton from health caches it in `global`
+  on cold start, which is fine. The current ad-hoc `Pool` was meant
+  to keep health independent of any pool-init bug — but the
+  symmetric failure mode is the bigger risk now.
+- **Deploy-time smoke runner.** Add a `scripts/post-deploy-smoke.sh`
+  (or a workflow step) that hits 5–8 routes the operator cares about:
+  `/api/health`, `/api/auth/me` (anon → expect 401), `/login`,
+  `/cabinet` (anon → expect 307), `/admin/login`, `/admin/slots`
+  (anon → expect 307), `/checkout/<some-tariff-slug>` (200), and
+  asserts each returns the expected status. Fail loudly, don't just
+  log. Wired into the autodeploy script so a 500-ing prod doesn't
+  ship silently.
+- **CI integration tests.** Wave 1+2 added 51 integration tests
+  (`tests/integration/payment/webhook-dedup.test.ts`,
+  `tests/integration/audit/encryption.test.ts`,
+  `tests/integration/scheduling/learner-archetype-gate.test.ts`).
+  CI today doesn't run `npm run test:integration` (Docker-dependent).
+  Wire it as a job in `.github/workflows/` so dormant integration
+  tests stop being a polite suggestion.
+
 ## TOMORROW — 2026-05-08 — verify and execute
 
 ### Wave 2.1 Phase B — null out plaintext PII in `payment_audit_events`
