@@ -99,6 +99,42 @@ export type SlotEvent = {
   payload?: Record<string, unknown>
 }
 
+// Public projection of a slot for anonymous callers.
+//
+// Codex 2026-05-07: `GET /api/slots/available` is intentionally
+// anonymous-friendly so the public marketing surface can render a
+// "book a lesson" widget. The full LessonSlot shape leaks operator-
+// internal data (teacher email, internal account IDs, free-form
+// notes, lifecycle audit fields). Anonymous responses MUST go through
+// `toPublicSlot` so a UI bug or curl probe cannot exfiltrate that
+// metadata.
+//
+// Authenticated learner / operator paths keep the full shape — they
+// already have a session and the data is appropriate for them.
+export type PublicSlot = {
+  id: string
+  startAt: string
+  durationMinutes: number
+  status: SlotStatus
+  tariffId: string | null
+  tariffSlug?: string | null
+  tariffTitleRu?: string | null
+  tariffAmountKopecks?: number | null
+}
+
+export function toPublicSlot(slot: LessonSlot): PublicSlot {
+  return {
+    id: slot.id,
+    startAt: slot.startAt,
+    durationMinutes: slot.durationMinutes,
+    status: slot.status,
+    tariffId: slot.tariffId,
+    tariffSlug: slot.tariffSlug ?? null,
+    tariffTitleRu: slot.tariffTitleRu ?? null,
+    tariffAmountKopecks: slot.tariffAmountKopecks ?? null,
+  }
+}
+
 const SLOT_COLUMNS = `
   id,
   teacher_account_id,

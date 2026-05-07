@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 
 import { listAccountRoles } from '@/lib/auth/accounts'
 import { getCurrentSession } from '@/lib/auth/sessions'
-import { listOpenFutureSlots } from '@/lib/scheduling/slots'
+import { listOpenFutureSlots, toPublicSlot } from '@/lib/scheduling/slots'
 import { enforceRateLimit } from '@/lib/security/request'
 
 export const runtime = 'nodejs'
@@ -72,6 +72,18 @@ export async function GET(request: Request) {
     fromIso: from ?? undefined,
     toIso: to ?? undefined,
   })
+
+  // Codex 2026-05-07 — anonymous callers MUST receive the public DTO.
+  // Authenticated learners get the full shape (their cabinet UI uses
+  // teacher email + lifecycle fields). Anonymous browse strips
+  // operator-internal data: teacher email, internal account IDs,
+  // notes, lifecycle audit fields, scheduling timestamps.
+  if (!session) {
+    return NextResponse.json(
+      { slots: slots.map(toPublicSlot) },
+      { status: 200, headers: noStore },
+    )
+  }
 
   return NextResponse.json({ slots }, { status: 200, headers: noStore })
 }
