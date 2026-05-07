@@ -178,3 +178,29 @@ fires only on key-leak flood.
 4. Run `scripts/backfill-audit-encryption.mjs` to encrypt legacy rows.
 5. Verify `/api/health` returns 200 + `database: ok`.
 6. Phase B null-out queued for 24h+ later.
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | — | not run (retrospective) |
+| Codex Review | `/codex review` | Independent 2nd opinion | 0 | — | usage-cap until 18:06; backlog reminder logged |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | CLEAR (PLAN) | 7 issues, 2 critical gaps |
+| Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | n/a (backend security) |
+| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | not in scope |
+
+**ENG REVIEW (calibration result):** Would have caught 4.5 of 5 post-deploy issues at planning time:
+
+- ✓ Localhost-prod throw (P0) — blast-radius instinct
+- ✓ Health-pool blind spot (P1) — pool-factory-parity reasoning
+- ✓ TxId collision attack (P2) — leaked-secret threat model
+- ✓ Key rotation gap (P2) — operator-runbook reasoning
+- ⚠ pg_stat_statements bind capture (P2) — niche Postgres-ops, depends on reviewer background
+
+**CRITICAL GAPS surfaced (Wave 3):**
+1. `AUDIT_ENCRYPTION_KEY` rotation has no fallback path; key loss = permanent data loss after Phase B.
+2. Webhook handler concurrency race produces duplicate operator email under sub-second concurrent retries (intentional simplification, documented).
+
+**UNRESOLVED:** 0 (both critical gaps logged in `BACKLOG § Wave 3`).
+
+**VERDICT:** ENG CLEARED. Calibration confirms `/plan-eng-review` is the right gate for any future wave > 2 PRs (now codified in `AGENTS.md § Skill routing`).
