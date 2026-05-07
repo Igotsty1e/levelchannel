@@ -1,10 +1,10 @@
 import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
+import { getCurrentSession } from '@/lib/auth/sessions'
 import {
   formatRubles,
   isValidPaymentAmount,
   MAX_PAYMENT_AMOUNT_RUB,
   MIN_PAYMENT_AMOUNT_RUB,
-  normalizeCustomerEmail,
   normalizePaymentAmount,
   validateCustomerEmail,
 } from '@/lib/payments/catalog'
@@ -45,13 +45,38 @@ export async function POST(request: Request) {
     )
   }
 
+  // Codex 2026-05-07 (P0) — required session.
+  //
+  // Was: anonymous POST with `{customerEmail}` would charge the saved
+  // card bound to that email. The token store is keyed by email, so an
+  // attacker who knew the victim's email could trigger a charge against
+  // their saved card (3-D Secure mitigates most banks but ANY
+  // one-click-without-3DS card was fully exposed).
+  //
+  // Now: session is required, email comes from session.account.email,
+  // body.customerEmail is ignored to avoid confused-deputy patterns.
+  const session = await getCurrentSession(request)
+  if (!session) {
+    return Response.json(
+      { error: 'Войдите в аккаунт, чтобы оплатить сохранённой картой.' },
+      { status: 401 },
+    )
+  }
+  const sessionEmailValidation = validateCustomerEmail(session.account.email)
+  if (!sessionEmailValidation.ok) {
+    return Response.json(
+      { error: sessionEmailValidation.message },
+      { status: 400 },
+    )
+  }
+  const customerEmail = sessionEmailValidation.email
+
   const rawBody = await request.text()
   const ip = getClientIp(request)
 
   return withIdempotency(request, 'payments:charge-token', rawBody, async () => {
     let body: {
       amountRub?: number | string
-      customerEmail?: string
       personalDataConsentAccepted?: boolean
     }
 
@@ -62,15 +87,13 @@ export async function POST(request: Request) {
     }
 
     const amountRub = normalizePaymentAmount(Number(body.amountRub))
-    const normalizedEmail = normalizeCustomerEmail(String(body.customerEmail || ''))
-    const emailValidation = validateCustomerEmail(normalizedEmail)
 
     if (!isValidPaymentAmount(amountRub)) {
       await appendCheckoutTelemetryEvent({
         type: 'one_click_rejected',
         amountRub,
-        email: normalizedEmail,
-        emailValid: emailValidation.ok,
+        email: customerEmail,
+        emailValid: true,
         reason: 'invalid_amount',
         path: '/api/payments/charge-token',
         userAgent: request.headers.get('user-agent') || undefined,
@@ -85,13 +108,6 @@ export async function POST(request: Request) {
       }
     }
 
-    if (!emailValidation.ok) {
-      return {
-        status: 400,
-        body: { error: emailValidation.message },
-      }
-    }
-
     if (body.personalDataConsentAccepted !== true) {
       return {
         status: 400,
@@ -103,7 +119,7 @@ export async function POST(request: Request) {
     try {
       result = await chargeWithSavedCard({
         amountRub,
-        customerEmail: emailValidation.email,
+        customerEmail: customerEmail,
         ipAddress: ip === 'unknown' ? undefined : ip,
         personalDataConsent: buildPersonalDataConsentSnapshot({
           ipAddress: ip === 'unknown' ? undefined : ip,
@@ -120,7 +136,7 @@ export async function POST(request: Request) {
       // it's the honest accounting — see migration 0014 for why
       // charge_token.attempted isn't a separate audit row either.
       console.warn('[audit] charge_token sync error:', {
-        email: emailValidation.email,
+        email: customerEmail,
         amountRub,
         error: err instanceof Error ? err.message : String(err),
       })
@@ -135,7 +151,7 @@ export async function POST(request: Request) {
     }
 
     const auditCommonFields = {
-      customerEmail: emailValidation.email,
+      customerEmail: customerEmail,
       clientIp: ip === 'unknown' ? null : ip,
       userAgent: request.headers.get('user-agent') || null,
       amountKopecks: rublesToKopecks(amountRub),
@@ -147,7 +163,7 @@ export async function POST(request: Request) {
       await appendCheckoutTelemetryEvent({
         type: 'one_click_paid',
         amountRub,
-        email: emailValidation.email,
+        email: customerEmail,
         emailValid: true,
         invoiceId: result.order.invoiceId,
         path: '/api/payments/charge-token',
@@ -173,7 +189,7 @@ export async function POST(request: Request) {
       await appendCheckoutTelemetryEvent({
         type: 'one_click_requires_3ds',
         amountRub,
-        email: emailValidation.email,
+        email: customerEmail,
         emailValid: true,
         invoiceId: result.order.invoiceId,
         reason: '3ds_required',
@@ -214,7 +230,7 @@ export async function POST(request: Request) {
     await appendCheckoutTelemetryEvent({
       type: 'one_click_declined',
       amountRub,
-      email: emailValidation.email,
+      email: customerEmail,
       emailValid: true,
       invoiceId: result.order.invoiceId,
       reason: result.reason,

@@ -179,6 +179,60 @@ The handler's own DB writes (`markOrderPaid`, audit, allocation) happen on diffe
 
 5 unit tests pin the OLD-key resolver. 4 integration tests pin the SQL contract: helper returns NULL on both-keys-wrong (no throw), the rotation flow round-trips a row from OLD to NEW with no plaintext touch, the predicate-guarded UPDATE is idempotent (already-PRIMARY rows are skipped), the reader logs warn on invalid OLD without crashing.
 
+## Wave 6 — Codex pass on older app surface, 2026-05-07
+
+Codex adversarial review of the OLDER surface (out of scope for the earlier review which covered only the recent security batch). Six findings; one CRITICAL closed in PR #63, four still open below, one duplicate of Wave 4 #4b (XFF). For each: severity, bypass shape, file:line, fix sketch. Schedule per severity; #3 + #5 are both 1-2h fixes worth picking off next.
+
+### #3 HIGH — learner can cancel a terminal slot or skip the 24h rule on a race boundary
+
+**Status:** open. **Found:** 2026-05-07 by Codex.
+
+**Bypass shape.** A learner waits until the operator marks a slot `completed` / `no_show_*` (or fires the cancel a few ms before the 24h-before-start cutoff). The route reads the slot row, locally evaluates the rule, then issues a wide `UPDATE`. Between the read and the write the status can have transitioned to terminal or the time window can have slid past the cutoff — the cancel still goes through.
+
+**Why it works.** The route blocks the `too_late_to_cancel` reason but does NOT block `already_terminal` (`app/api/slots/[id]/cancel/route.ts:67-76`). `cancelSlot()` itself permits any status except already-cancelled (`lib/scheduling/slots.ts:843-872`). Net: a `completed` row can be retroactively rewritten as `cancelled`, and the 24h rule lives in JS on a stale read instead of in the SQL invariant.
+
+**Fix.** Move ownership + state + 24h threshold into a single atomic UPDATE:
+
+```sql
+update lesson_slots
+   set status = 'cancelled', cancelled_at = now(), cancelled_by_account_id = $2, cancellation_reason = $3
+ where id = $1
+   and learner_account_id = $2
+   and status = 'booked'
+   and start_at - now() >= interval '24 hours'
+returning id
+```
+
+Use `rowCount` to distinguish the failure modes: 0 rows + `start_at < now()+24h` → too_late, 0 rows + status≠booked → already_terminal, 0 rows + learner mismatch → not_owner. Drop the local pre-read entirely.
+
+### #4 HIGH — `invoiceId` is treated as a capability-secret
+
+**Status:** open. **Found:** 2026-05-07 by Codex.
+
+**Bypass shape.** Anyone who learns an `invoiceId` (leaked URL, browser history on a shared device, screenshot) can: read order status via `GET /api/payments/[invoiceId]`, open an unlimited-duration SSE stream, and cancel a pending order. None of the three routes require a session.
+
+**Why it works.** All three authorize ONLY by `invoiceId` shape (`app/api/payments/[invoiceId]/route.ts:9-37`, `[invoiceId]/stream/route.ts:48-160`, `[invoiceId]/cancel/route.ts:15-67`). `markOrderCancelled()` flips pending → cancelled (`lib/payments/provider.ts:483-512`). Origin-check returns null when `Origin` is missing (same class as #1).
+
+**Fix.** Two paths:
+
+- **Cleaner:** introduce a separate `receipt_token` (server-issued, 32-byte random, hashed in DB) and require it on the read / cancel routes. `invoiceId` stays as the public reference; the token is the capability.
+- **Simpler:** require a session on these routes when the order has an `account_id`; for guest checkout (no account_id), keep current behaviour but cap SSE stream duration and require a known `idempotency-key` to cancel.
+
+Either is multi-day work — schedule as Wave 6.1 after #3 + #5 land.
+
+### #5 MEDIUM — self-booking not enforced at the data layer
+
+**Status:** open. **Found:** 2026-05-07 by Codex.
+
+**Bypass shape.** An admin creates a slot whose `teacher_account_id` is also the booking learner's `account_id`, OR designates a non-teacher account as a teacher. If the target account is NOT in the `admin` / `teacher` role list, it passes the learner-archetype guard and books the slot for itself.
+
+**Why it works.** `requireLearnerArchetypeAndVerified` is a deny-list on admin+teacher, not an allow-list on student (`lib/auth/guards.ts:123-132`, used at `app/api/slots/[id]/book/route.ts:33-37`). `bookSlot()` does NOT enforce `teacher_account_id <> learner_account_id` at the data layer (`lib/scheduling/slots.ts:803-841`). Admin teacher-assignment routes don't verify the target has the `teacher` role (`app/api/admin/accounts/[id]/teacher/route.ts:50-64`).
+
+**Fix.** Three coordinated changes:
+1. Admin teacher-assignment routes: refuse if target account doesn't have `teacher` role.
+2. Slot-create / bulk-create: refuse if `teacher_account_id` is not a teacher.
+3. `bookSlot()` SQL: add `where teacher_account_id <> $learner_account_id` to the booking UPDATE; the DB invariant is the only one a future bug can't bypass.
+
 ## Wave 5 — auth observability (deferred)
 
 ### Auth audit log missing — slow brute-force is invisible
