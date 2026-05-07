@@ -189,37 +189,9 @@ tx). Refactor cost: ~1 day with thorough integration testing.
 
 ### #4 — `AUDIT_ENCRYPTION_KEY` rotation story (MEDIUM severity)
 
-**Finding.** No fallback path in code. If the operator rotates the
-key, every previously-encrypted row (`customer_email_enc`,
-`client_ip_enc`) becomes unreadable — `pgp_sym_decrypt` fails, the
-SELECT returns SQL error, admin tooling crashes. Until Phase B
-(plaintext null-out) is done, the read path falls back to plaintext;
-after Phase B, this becomes a hard data-loss event.
+**Closed 2026-05-07** in PR #59 (`<TBD>`). Migration 0027 + `lib/audit/encryption.ts` `getAuditEncryptionKeyOld()` + `scripts/rotate-audit-encryption.mjs` ship the dual-key (PRIMARY + OLD) flow. Reader uses `pgp_sym_decrypt_either` SQL helper (PL/pgSQL with EXCEPTION block) — primary tried first, OLD as fallback during the rotation window. Operator runbook in `SECURITY.md § At-rest encryption — Key rotation`.
 
-**Today's only protection.** Back up the key alongside
-`CLOUDPAYMENTS_API_SECRET` in operator vault. Loss of the key is
-permanent loss of all encrypted audit data.
-
-**The fix when we take it on.**
-
-1. Schema: add nothing — pgcrypto handles multiple keys natively.
-2. Env contract: `AUDIT_ENCRYPTION_KEY_PRIMARY` (write + first-try
-   read) plus `AUDIT_ENCRYPTION_KEY_OLD` (second-try read only).
-3. `lib/audit/encryption.ts`: return both keys; reader tries
-   PRIMARY then OLD via `coalesce(case when ... then pgp_sym_decrypt
-   (..., $primary) end, case when ... then pgp_sym_decrypt(..., $old)
-   end, customer_email)`. Use `pg_temp` table to suppress decrypt
-   error on first key, fall through to second.
-4. Operator runbook for rotation:
-   - day 0: set OLD = current, PRIMARY = new, restart. App writes new
-     rows with PRIMARY; reads succeed for both old + new rows.
-   - day N: re-encrypt sweep — `scripts/rotate-audit-encryption.mjs`
-     reads each row decrypted-via-OLD, writes back encrypted-via-PRIMARY.
-   - day N+1: drop OLD from env, restart. All rows now PRIMARY-only.
-5. Tests: roundtrip OLD → PRIMARY swap; mid-rotation read; rotation
-   script idempotency under concurrent writes (FOR UPDATE SKIP LOCKED).
-
-Estimate: 2 days including the runbook + integration tests.
+5 unit tests pin the OLD-key resolver. 4 integration tests pin the SQL contract: helper returns NULL on both-keys-wrong (no throw), the rotation flow round-trips a row from OLD to NEW with no plaintext touch, the predicate-guarded UPDATE is idempotent (already-PRIMARY rows are skipped), the reader logs warn on invalid OLD without crashing.
 
 ## Cabinet expansion (next phases)
 
