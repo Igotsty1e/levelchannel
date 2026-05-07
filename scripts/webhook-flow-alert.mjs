@@ -55,6 +55,8 @@
 import pg from 'pg'
 import { Resend } from 'resend'
 
+import { resolveSslConfig } from './_pg-ssl.mjs'
+
 const WINDOW_MINUTES = Number(process.env.WEBHOOK_FLOW_WINDOW_MINUTES || 60)
 const MIN_VOLUME = Number(process.env.WEBHOOK_FLOW_MIN_VOLUME || 5)
 const TERMINATED_RATIO_FLOOR = Number(
@@ -203,6 +205,7 @@ async function main() {
   const pool = new pg.Pool({
     connectionString: process.env.DATABASE_URL,
     max: 1,
+    ssl: resolveSslConfig(process.env.DATABASE_URL),
   })
   try {
     const stats = await readWindowStats(pool)
