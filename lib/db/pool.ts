@@ -111,11 +111,13 @@ export function resolveSslConfig(
     // Treat as "non-local" so the strict TLS default kicks in.
   }
 
+  // Strict loopback allowlist. NEVER add wildcard suffixes (e.g.
+  // `.local` was previously here — Codex found that any
+  // attacker-controlled mDNS host like `db.attacker.local` would
+  // bypass the TLS gate in production). Only literal loopback
+  // addresses qualify; everything else gets strict TLS.
   const isLocal =
-    host === 'localhost' ||
-    host === '127.0.0.1' ||
-    host === '::1' ||
-    (host !== null && host.endsWith('.local'))
+    host === 'localhost' || host === '127.0.0.1' || host === '::1'
 
   // DB_SSL=disable: production safety applies only to non-local hosts.
   if (
