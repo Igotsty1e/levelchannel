@@ -207,18 +207,26 @@ Use `rowCount` to distinguish the failure modes: 0 rows + `start_at < now()+24h`
 
 ### #4 HIGH — `invoiceId` is treated as a capability-secret
 
-**Status:** open. **Found:** 2026-05-07 by Codex.
+**Status:** open. **Confirmed during 2026-05-07 triage:** the `payment_orders` table has no `account_id` column at all. There is no current way to gate by ownership at the data layer; the routes can ONLY validate by `invoiceId` shape. Receipt_token is the right design.
 
-**Bypass shape.** Anyone who learns an `invoiceId` (leaked URL, browser history on a shared device, screenshot) can: read order status via `GET /api/payments/[invoiceId]`, open an unlimited-duration SSE stream, and cancel a pending order. None of the three routes require a session.
+**Bypass shape.** Anyone who learns an `invoiceId` (leaked URL, browser history on a shared device, screenshot, GitHub issue comment) can: read order status via `GET /api/payments/[invoiceId]`, open an unlimited-duration SSE stream, and cancel a pending order. None of the three routes require a session.
 
-**Why it works.** All three authorize ONLY by `invoiceId` shape (`app/api/payments/[invoiceId]/route.ts:9-37`, `[invoiceId]/stream/route.ts:48-160`, `[invoiceId]/cancel/route.ts:15-67`). `markOrderCancelled()` flips pending → cancelled (`lib/payments/provider.ts:483-512`). Origin-check returns null when `Origin` is missing (same class as #1).
+**Why it works.** All three authorize ONLY by `invoiceId` shape (`app/api/payments/[invoiceId]/route.ts:9-37`, `[invoiceId]/stream/route.ts:48-160`, `[invoiceId]/cancel/route.ts:15-67`). `markOrderCancelled()` flips pending → cancelled (`lib/payments/provider.ts:483-512`). Origin-check returns null when `Origin` is missing (same class as Codex #1, separately closed).
 
-**Fix.** Two paths:
+**Why this is genuinely multi-day work, not a one-line fix.**
 
-- **Cleaner:** introduce a separate `receipt_token` (server-issued, 32-byte random, hashed in DB) and require it on the read / cancel routes. `invoiceId` stays as the public reference; the token is the capability.
-- **Simpler:** require a session on these routes when the order has an `account_id`; for guest checkout (no account_id), keep current behaviour but cap SSE stream duration and require a known `idempotency-key` to cancel.
+The naive "require session" breaks guest checkout. The naive "require session AND match customerEmail" doesn't help anonymous attackers (who never log in). The correct fix is a server-issued `receipt_token`:
 
-Either is multi-day work — schedule as Wave 6.1 after #3 + #5 land.
+1. **Migration** — `payment_orders` gets `receipt_token_hash` column (sha256 hex, indexed unique).
+2. **`createOrder`** — mint a 32-byte token via `crypto.randomBytes(32).toString('base64url')`; store the hash; return the plain token in the response.
+3. **Three routes** — accept either `?token=<plain>` query param OR `X-Receipt-Token` header; reject with 401 when neither is present and the order is more than ~5 minutes old (a small grace window keeps the existing post-redirect UX from breaking instantly during the migration). When present, hash and compare to the row's `receipt_token_hash`.
+4. **UI threading** — every redirect to `/thank-you` and every poll/SSE call must carry the token. `app/checkout/[tariffSlug]/`, `app/pay/`, the SSE consumer in the thank-you page, the cancel button.
+5. **Backfill plan** — historical orders have no `receipt_token_hash`; migrate by setting it to `NULL`. The route refuses any request to a NULL-token order older than 5 minutes; pending orders younger than that pass through (the grace window). Old paid orders are unreachable via these endpoints — that's intentional, the customer has already received the receipt email.
+6. **Tests** — unit tests for the route gate; integration test that asserts a legit redirect with token works AND a curl with just invoiceId returns 401.
+
+**Estimate.** 4-6 hours including the UI threading. Schedule as Wave 6.1, dedicated session.
+
+**Interim mitigation.** Until this lands, treat `invoiceId` values as confidential. The widest exposure is via screenshots / browser history; mitigation is operator awareness (do not paste prod invoiceIds into shared docs / chat).
 
 ### #5 MEDIUM — self-booking not enforced at the data layer
 
