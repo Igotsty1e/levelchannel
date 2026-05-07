@@ -154,12 +154,15 @@ invisible to consumers. The migration is three-phase:
 1. **Phase A (live now).** Both columns dual-write. Plaintext stays
    for safe rollback during the migration window. Backfill of
    pre-Wave-2.1 rows handled by `scripts/backfill-audit-encryption.mjs`.
-2. **Phase B (operator-driven, no schema change).** A single SQL
-   `UPDATE ... SET customer_email = NULL, client_ip = NULL WHERE
-   customer_email_enc IS NOT NULL OR client_ip_enc IS NOT NULL`
-   wipes plaintext from disk. From here on, a DB-dump leak is useless
-   without `AUDIT_ENCRYPTION_KEY`. Tracked in `ENGINEERING_BACKLOG.md
-   § TOMORROW — 2026-05-08`.
+2. **Phase B (operator-driven, no schema change).** Run
+   `scripts/null-plaintext-audit-pii.mjs --execute --confirm` on the
+   prod VPS. The script does preflight (zero plaintext-only rows + at
+   least one encrypted row + sample roundtrip decrypt under the
+   current key), takes a row-level snapshot
+   (`payment_audit_events_pre_phase_b`), runs the destructive UPDATE
+   inside a transaction, and post-verifies. From here on, a DB-dump
+   leak is useless without `AUDIT_ENCRYPTION_KEY`. Drop the snapshot
+   only after ≥7 days with no rollback need.
 3. **Phase C (future wave).** Drop the now-empty plaintext columns
    for good. Sequenced ≥30 days after Phase B with no rollback need.
 
