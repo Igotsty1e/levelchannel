@@ -23,7 +23,7 @@ Already in place:
 - `Cache-Control: no-store` for payment responses
 - HMAC verification for CloudPayments webhooks via `X-Content-HMAC` and `Content-HMAC`
   (HMAC-SHA256 in base64 over the raw body, no re-encoding)
-- delivery-level dedup on the CloudPayments webhook contour: every accepted webhook is recorded by `(provider, kind, transaction_id)` in `webhook_deliveries`; a retried delivery returns the cached response with a `Webhook-Replay: true` header and is short-circuited before `markOrderPaid`, audit, operator email, or allocation runs again
+- delivery-level dedup on the CloudPayments webhook contour: every accepted webhook is recorded by `(provider, kind, transaction_id)` in `webhook_deliveries` plus a sha256 fingerprint over `(invoice_id, amount, email, account_id)`. A retried delivery whose fingerprint matches the cached one returns the cached response with a `Webhook-Replay: true` header and is short-circuited before `markOrderPaid`, audit, operator email, or allocation runs again. A fingerprint mismatch (a collision attempt by a holder of the leaked HMAC secret who spoofed the TransactionId) does NOT trust the cache and runs the handler — the cached entry is preserved so the attacker can't poison future legit retries either
 - amount validation on the server, no trust in the amount or e-mail from the client
 - a separate server-side proof of personal-data consent acceptance
   (timestamp, document version, document path, IP, user agent)

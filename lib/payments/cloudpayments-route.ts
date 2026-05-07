@@ -1,3 +1,5 @@
+import { createHash } from 'crypto'
+
 import { NextResponse } from 'next/server'
 
 import {
@@ -57,6 +59,27 @@ function readTransactionId(
   const str = String(raw).trim()
   if (str.length === 0) return null
   return str
+}
+
+// Wave 2.3 — fingerprint over the cross-check fields so the dedup
+// gate can detect a TxId-collision attack. The chosen fields mirror
+// the inputs `validateCloudPaymentsOrder` actually checks (invoice +
+// amount + email/account); a webhook with a different invoice or
+// amount but the same TxId would fingerprint differently and bypass
+// the cache. Empty values normalised to empty string so the hash
+// stays stable; the canonical separator '\x1f' (Unit Separator) is a
+// non-printable ASCII byte that cannot appear in invoice / email /
+// amount strings. Returns hex sha256.
+function computeRequestFingerprint(
+  payload: CloudPaymentsWebhookPayload,
+): string {
+  const invoice = String(getCloudPaymentsInvoiceId(payload) ?? '')
+  const amount = String(payload.Amount ?? '')
+  const email = String(payload.Email ?? '')
+  const accountId = String(payload.AccountId ?? '')
+  return createHash('sha256')
+    .update([invoice, amount, email, accountId].join('\x1f'))
+    .digest('hex')
 }
 
 function jsonResponse(outcome: WebhookDeliveryOutcome, replay: boolean) {
@@ -136,10 +159,16 @@ export async function handleCloudPaymentsWebhook(
   const transactionId = readTransactionId(payload)
   const dedupEnabled =
     paymentConfig.storageBackend === 'postgres' && transactionId !== null
+  const requestFingerprint = dedupEnabled
+    ? computeRequestFingerprint(payload)
+    : null
 
   // Replay short-circuit. We trust the source (HMAC verified) and the
   // transaction key, so a hit here is a legitimate retry — return the
-  // bit-for-bit response we returned the first time.
+  // bit-for-bit response we returned the first time. Wave 2.3 also
+  // requires the request fingerprint to match the cached one; a
+  // mismatch is the TxId-collision-attack signature, in which case
+  // we fall through and run the handler.
   if (dedupEnabled && transactionId) {
     try {
       await ensureWebhookDeliveriesSchema()
@@ -147,9 +176,21 @@ export async function handleCloudPaymentsWebhook(
         PROVIDER,
         options.kind,
         transactionId,
+        requestFingerprint,
       )
-      if (cached) {
-        return jsonResponse(cached, true)
+      if (cached.kind === 'hit') {
+        return jsonResponse(cached.outcome, true)
+      }
+      if (cached.kind === 'fingerprint_mismatch') {
+        console.warn(
+          '[webhook-dedup] fingerprint mismatch on cache hit; running handler:',
+          {
+            kind: options.kind,
+            transactionId,
+            cachedFingerprint: cached.cachedFingerprint,
+            incomingFingerprint: requestFingerprint,
+          },
+        )
       }
     } catch (error) {
       // Dedup is best-effort: a Postgres outage cannot block a real
@@ -223,6 +264,7 @@ export async function handleCloudPaymentsWebhook(
         transactionId,
         invoiceId: order?.invoiceId ?? invoiceId ?? null,
         outcome,
+        requestFingerprint,
       })
     } catch (error) {
       console.warn(

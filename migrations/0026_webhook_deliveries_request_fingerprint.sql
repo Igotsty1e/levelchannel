@@ -1,0 +1,36 @@
+-- Wave 2.3 (security, post-Wave-2 adversarial fix #7) —
+-- request fingerprint on webhook_deliveries.
+--
+-- The Wave 1.2 dedup gate keys responses by
+-- (provider, kind, transaction_id). HMAC verifies that the request
+-- came from a holder of CLOUDPAYMENTS_API_SECRET. If that secret
+-- leaks, an attacker can submit a webhook with a fabricated
+-- TransactionId chosen to collide with a future legit one. The
+-- attacker's outcome — a `code: <nonzero>` validation failure —
+-- gets cached. When the legit webhook arrives later with the same
+-- TransactionId, our lookup short-circuits to the cached failure,
+-- skipping the real handler. Pay never reaches the order.
+--
+-- The fingerprint defends by adding a content check on top of the
+-- TxId match. We compute sha256 of (invoice_id, amount, email) on
+-- both write and read; on cache hit, we compare the cached
+-- fingerprint to the incoming one. Mismatch → ignore cache → run
+-- handler → process the legit webhook normally.
+--
+-- nullable: pre-migration rows in webhook_deliveries (if any)
+-- carry NULL fingerprints. The lookup logic treats either-side-NULL
+-- as "no comparison performed; trust the cache" — backward-
+-- compatible with the historical 90-day retention window. New rows
+-- always carry a fingerprint, so the protection is live for every
+-- post-migration delivery.
+--
+-- not in PK: the fingerprint is a content check, not part of the
+-- delivery identity. (provider, kind, transaction_id) is the
+-- delivery; the fingerprint just tells us whether two requests with
+-- the same identity are actually the same request. Putting it in
+-- the PK would let an attacker submit two webhooks with the same
+-- TxId but different content and have BOTH cached — defeating the
+-- whole point.
+
+alter table webhook_deliveries
+  add column if not exists request_fingerprint text null;
