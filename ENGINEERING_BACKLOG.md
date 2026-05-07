@@ -157,6 +157,70 @@ Phase C (drop the now-empty plaintext columns) goes into a separate
 backlog entry **once Phase B has been in prod ≥30 days with no
 rollback need**. Do not chain Phase B + Phase C in the same window.
 
+## Wave 3 — security hardening, deferred from 2026-05-07 self-review
+
+Two findings from the self-adversarial review that ARE real but are
+medium-effort design work — not safe to chain onto the in-flight
+security batch. Schedule for a dedicated wave with planning + tests.
+
+### #3 — webhook handler concurrency (LOW severity, intentional simplification)
+
+**Findings.** Two CloudPayments retries arriving milliseconds apart
+both pass the dedup lookup (no row yet), both run the handler, both
+attempt to insert the dedup row — second `ON CONFLICT DO NOTHING`
+drops. Side effect: the handler's operator email fires twice. Audit
+rows from the second run carry `webhook.pay.received` again, but no
+business state is corrupted (`markOrderPaid` is paid→paid no-op,
+`payment_allocations` PK rejects dup, tokens upsert by email).
+
+**Why it's parked.** CloudPayments retry cadence is minutes, not
+milliseconds. The race requires their retry infrastructure to fire
+two concurrent retries — not the documented behaviour. The duplicate
+operator email is the only user-visible cost; we ship with it
+documented.
+
+**The fix when we take it on.** Wrap the lookup → handler → record
+sequence in a `pg_advisory_xact_lock(hashtext(provider || ':' || kind
+|| ':' || transaction_id))` inside a transaction. The second concurrent
+caller waits for the lock, then sees the cache hit, returns cached.
+Trade-off: handler ops become tx-bound; not all are currently safe
+under that constraint (operator email send, recordAllocation outside
+tx). Refactor cost: ~1 day with thorough integration testing.
+
+### #4 — `AUDIT_ENCRYPTION_KEY` rotation story (MEDIUM severity)
+
+**Finding.** No fallback path in code. If the operator rotates the
+key, every previously-encrypted row (`customer_email_enc`,
+`client_ip_enc`) becomes unreadable — `pgp_sym_decrypt` fails, the
+SELECT returns SQL error, admin tooling crashes. Until Phase B
+(plaintext null-out) is done, the read path falls back to plaintext;
+after Phase B, this becomes a hard data-loss event.
+
+**Today's only protection.** Back up the key alongside
+`CLOUDPAYMENTS_API_SECRET` in operator vault. Loss of the key is
+permanent loss of all encrypted audit data.
+
+**The fix when we take it on.**
+
+1. Schema: add nothing — pgcrypto handles multiple keys natively.
+2. Env contract: `AUDIT_ENCRYPTION_KEY_PRIMARY` (write + first-try
+   read) plus `AUDIT_ENCRYPTION_KEY_OLD` (second-try read only).
+3. `lib/audit/encryption.ts`: return both keys; reader tries
+   PRIMARY then OLD via `coalesce(case when ... then pgp_sym_decrypt
+   (..., $primary) end, case when ... then pgp_sym_decrypt(..., $old)
+   end, customer_email)`. Use `pg_temp` table to suppress decrypt
+   error on first key, fall through to second.
+4. Operator runbook for rotation:
+   - day 0: set OLD = current, PRIMARY = new, restart. App writes new
+     rows with PRIMARY; reads succeed for both old + new rows.
+   - day N: re-encrypt sweep — `scripts/rotate-audit-encryption.mjs`
+     reads each row decrypted-via-OLD, writes back encrypted-via-PRIMARY.
+   - day N+1: drop OLD from env, restart. All rows now PRIMARY-only.
+5. Tests: roundtrip OLD → PRIMARY swap; mid-rotation read; rotation
+   script idempotency under concurrent writes (FOR UPDATE SKIP LOCKED).
+
+Estimate: 2 days including the runbook + integration tests.
+
 ## Cabinet expansion (next phases)
 
 Guest checkout is not touched: subsequent phases are additive.
