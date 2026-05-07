@@ -80,8 +80,8 @@ Minimum local set:
 - `PAYMENTS_ALLOW_MOCK_CONFIRM=true|false`
 - `NEXT_PUBLIC_SITE_URL=http://localhost:3000`
 - `DATABASE_URL=postgresql://...`
-- `DB_SSL=require|disable` (optional; production refuses `disable`. Auto-detect: localhost → no TLS, everything else → strict TLS with cert verify. See `lib/db/pool.ts`)
-- `DB_SSL_REJECT_UNAUTHORIZED=false` (optional, **dev only**; rejected in production. Allows encrypted-but-lax cert verification when targeting a managed host with a self-signed cert)
+- `DB_SSL=require|disable` (optional; production refuses `disable` for **non-local** hosts. Auto-detect: localhost / 127.0.0.1 / ::1 / `*.local` → no TLS in any env, everything else → strict TLS with cert verify. See `lib/db/pool.ts`)
+- `DB_SSL_REJECT_UNAUTHORIZED=false` (optional, **dev or local-only**; rejected in production for non-local hosts. Allows encrypted-but-lax cert verification when targeting a managed host with a self-signed cert)
 - `TELEMETRY_HASH_SECRET=...`
 - `CLOUDPAYMENTS_PUBLIC_ID=...`
 - `CLOUDPAYMENTS_API_SECRET=...`
