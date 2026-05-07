@@ -103,12 +103,18 @@ the invariant - not just that the test is green.
       you touch this file, regression test in
       `tests/payments/cloudpayments-webhook.test.ts` covers the
       exact bytes - re-run it.
-- [ ] **Webhook delivery dedup intact** (Wave 1.2). Every webhook
-      flowing through `handleCloudPaymentsWebhook` must consult
-      `webhook_deliveries` keyed by `(provider, kind, transaction_id)`
-      after HMAC + parse and short-circuit on a hit. Regression
-      tests in `tests/payments/cloudpayments-webhook-dedup.test.ts`
-      and `tests/integration/payment/webhook-dedup.test.ts`.
+- [ ] **Webhook delivery dedup intact** (Wave 1.2 + Wave 2.3
+      fingerprint). Every webhook flowing through
+      `handleCloudPaymentsWebhook` must consult `webhook_deliveries`
+      keyed by `(provider, kind, transaction_id)` after HMAC + parse
+      and short-circuit on a hit. The lookup also takes a sha256
+      fingerprint over (invoice_id, amount, email, account_id); a
+      cache row with mismatched fingerprint must NOT short-circuit —
+      it must fall through and run the handler (the attacker-collision
+      defence). Regression tests in
+      `tests/payments/cloudpayments-webhook-dedup.test.ts` (12 unit)
+      and `tests/integration/payment/webhook-dedup.test.ts` (12
+      integration).
 - [ ] **Webhook secondary rate limit intact** (Wave 2.2). 60/min/
       kind/IP cap sits AFTER HMAC; HMAC-fail flood must consume
       zero bucket budget. Regression test in

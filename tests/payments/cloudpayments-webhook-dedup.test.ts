@@ -1,17 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Wave 1 (security) — webhook delivery dedup tests.
+// Wave 1.2 (security) — webhook delivery dedup tests.
+// Wave 2.3 (security) — request-fingerprint additions.
 //
 // Pins the contract:
 //   1. First delivery for (provider, kind, txId) runs the handler and
-//      records the response.
-//   2. Duplicate delivery (same triple) returns the cached response
-//      with `Webhook-Replay: true` header and does NOT re-run the
-//      handler — no duplicate audit, no duplicate side effects.
+//      records the response + fingerprint.
+//   2. Duplicate delivery (same triple, same fingerprint) returns the
+//      cached response with `Webhook-Replay: true` header and does NOT
+//      re-run the handler.
 //   3. Different TransactionId is treated as a separate delivery.
-//   4. Missing TransactionId falls through (no dedup key, handler
-//      runs as before).
+//   4. Missing TransactionId falls through (no dedup key).
 //   5. HMAC failure stops the request before dedup is consulted.
+//   6. Wave 2.3: fingerprint mismatch on cache hit forces re-run.
 
 const recordPaymentAuditEventMock = vi.fn().mockResolvedValue(true)
 const ensureWebhookDeliveriesSchemaMock = vi.fn().mockResolvedValue(undefined)
@@ -58,7 +59,12 @@ vi.mock('@/lib/payments/cloudpayments-webhook', async () => {
       Email: 'a@b.com',
       TransactionId: 999,
     })),
-    getCloudPaymentsInvoiceId: vi.fn(() => 'lc_test12345678'),
+    // Read invoice straight from the parsed payload so tests that
+    // change the InvoiceId field flow through to the fingerprint.
+    getCloudPaymentsInvoiceId: vi.fn(
+      (payload: { InvoiceId?: unknown }) =>
+        typeof payload?.InvoiceId === 'string' ? payload.InvoiceId : null,
+    ),
     validateCloudPaymentsOrder: vi.fn(async () => ({ ok: true as const })),
   }
 })
@@ -136,8 +142,8 @@ describe('handleCloudPaymentsWebhook — delivery dedup', () => {
     vi.clearAllMocks()
   })
 
-  it('first delivery runs the handler and records the response', async () => {
-    lookupWebhookDeliveryMock.mockResolvedValue(null)
+  it('first delivery runs the handler and records the response with a fingerprint', async () => {
+    lookupWebhookDeliveryMock.mockResolvedValue({ kind: 'miss' })
     const handler = vi.fn().mockResolvedValue(undefined)
 
     const res = await handleCloudPaymentsWebhook(fakeRequest(), {
@@ -154,22 +160,25 @@ describe('handleCloudPaymentsWebhook — delivery dedup', () => {
       'cloudpayments',
       'pay',
       '999',
+      expect.stringMatching(/^[a-f0-9]{64}$/),
     )
 
     expect(recordWebhookDeliveryMock).toHaveBeenCalledOnce()
-    expect(recordWebhookDeliveryMock.mock.calls[0][0]).toMatchObject({
+    const recorded = recordWebhookDeliveryMock.mock.calls[0][0]
+    expect(recorded).toMatchObject({
       provider: 'cloudpayments',
       kind: 'pay',
       transactionId: '999',
       invoiceId: 'lc_test12345678',
       outcome: { status: 200, body: { code: 0 } },
     })
+    expect(recorded.requestFingerprint).toMatch(/^[a-f0-9]{64}$/)
   })
 
-  it('duplicate delivery returns cached response with Webhook-Replay header', async () => {
+  it('duplicate delivery (kind:hit) returns cached response with Webhook-Replay header', async () => {
     lookupWebhookDeliveryMock.mockResolvedValue({
-      status: 200,
-      body: { code: 0 },
+      kind: 'hit',
+      outcome: { status: 200, body: { code: 0 } },
     })
     const handler = vi.fn()
 
@@ -182,17 +191,43 @@ describe('handleCloudPaymentsWebhook — delivery dedup', () => {
     expect(await res.json()).toEqual({ code: 0 })
     expect(res.headers.get('Webhook-Replay')).toBe('true')
 
-    // Critical: the handler MUST NOT run on a replay.
     expect(handler).not.toHaveBeenCalled()
-
-    // No new audit row, no new dedup row.
     expect(recordPaymentAuditEventMock).not.toHaveBeenCalled()
     expect(recordWebhookDeliveryMock).not.toHaveBeenCalled()
   })
 
+  it('Wave 2.3: fingerprint_mismatch on cache hit re-runs the handler and warns', async () => {
+    lookupWebhookDeliveryMock.mockResolvedValue({
+      kind: 'fingerprint_mismatch',
+      cachedFingerprint: 'a'.repeat(64),
+    })
+    const handler = vi.fn().mockResolvedValue(undefined)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const res = await handleCloudPaymentsWebhook(fakeRequest(), {
+      kind: 'pay',
+      handler,
+    })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ code: 0 })
+
+    // The cache was NOT trusted — handler ran.
+    expect(handler).toHaveBeenCalledOnce()
+    // The mismatch surfaced via console.warn so the operator can grep
+    // for `[webhook-dedup] fingerprint mismatch`.
+    expect(warn).toHaveBeenCalled()
+    const matched = warn.mock.calls.some(
+      (args) =>
+        typeof args[0] === 'string' &&
+        args[0].includes('fingerprint mismatch'),
+    )
+    expect(matched).toBe(true)
+  })
+
   it('different kind is treated as separate delivery (check vs pay)', async () => {
-    lookupWebhookDeliveryMock.mockResolvedValueOnce(null)
-    lookupWebhookDeliveryMock.mockResolvedValueOnce(null)
+    lookupWebhookDeliveryMock.mockResolvedValueOnce({ kind: 'miss' })
+    lookupWebhookDeliveryMock.mockResolvedValueOnce({ kind: 'miss' })
     const checkHandler = vi.fn()
     const payHandler = vi.fn()
 
@@ -213,12 +248,14 @@ describe('handleCloudPaymentsWebhook — delivery dedup', () => {
       'cloudpayments',
       'check',
       '999',
+      expect.any(String),
     )
     expect(lookupWebhookDeliveryMock).toHaveBeenNthCalledWith(
       2,
       'cloudpayments',
       'pay',
       '999',
+      expect.any(String),
     )
   })
 
@@ -237,8 +274,6 @@ describe('handleCloudPaymentsWebhook — delivery dedup', () => {
     })
 
     expect(handler).toHaveBeenCalledOnce()
-
-    // No dedup lookup, no dedup persist — there's no key to dedup on.
     expect(lookupWebhookDeliveryMock).not.toHaveBeenCalled()
     expect(recordWebhookDeliveryMock).not.toHaveBeenCalled()
   })
@@ -269,7 +304,7 @@ describe('handleCloudPaymentsWebhook — delivery dedup', () => {
       Email: 'a@b.com',
       TransactionId: 4242,
     })
-    lookupWebhookDeliveryMock.mockResolvedValue(null)
+    lookupWebhookDeliveryMock.mockResolvedValue({ kind: 'miss' })
 
     await handleCloudPaymentsWebhook(fakeRequest(), {
       kind: 'pay',
@@ -280,7 +315,40 @@ describe('handleCloudPaymentsWebhook — delivery dedup', () => {
       'cloudpayments',
       'pay',
       '4242',
+      expect.any(String),
     )
+  })
+
+  it('Wave 2.3: fingerprint depends on payload content (different invoices → different fps)', async () => {
+    lookupWebhookDeliveryMock.mockResolvedValue({ kind: 'miss' })
+
+    parseMock.mockReturnValueOnce({
+      InvoiceId: 'lc_alpha',
+      Amount: '1000',
+      Email: 'a@b.com',
+      TransactionId: 100,
+    })
+    await handleCloudPaymentsWebhook(fakeRequest(), {
+      kind: 'pay',
+      handler: vi.fn(),
+    })
+
+    parseMock.mockReturnValueOnce({
+      InvoiceId: 'lc_beta', // different invoice
+      Amount: '1000',
+      Email: 'a@b.com',
+      TransactionId: 100, // same TxId
+    })
+    await handleCloudPaymentsWebhook(fakeRequest(), {
+      kind: 'pay',
+      handler: vi.fn(),
+    })
+
+    const fp1 = lookupWebhookDeliveryMock.mock.calls[0][3]
+    const fp2 = lookupWebhookDeliveryMock.mock.calls[1][3]
+    expect(fp1).toMatch(/^[a-f0-9]{64}$/)
+    expect(fp2).toMatch(/^[a-f0-9]{64}$/)
+    expect(fp1).not.toBe(fp2)
   })
 
   it('HMAC failure short-circuits before dedup is consulted', async () => {
@@ -299,7 +367,7 @@ describe('handleCloudPaymentsWebhook — delivery dedup', () => {
   })
 
   it('dedup persist failure does not block the webhook ack', async () => {
-    lookupWebhookDeliveryMock.mockResolvedValue(null)
+    lookupWebhookDeliveryMock.mockResolvedValue({ kind: 'miss' })
     recordWebhookDeliveryMock.mockRejectedValueOnce(new Error('pg down'))
     const handler = vi.fn()
 
@@ -332,7 +400,7 @@ describe('handleCloudPaymentsWebhook — delivery dedup', () => {
     )
     ;(validateCloudPaymentsOrder as unknown as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({ ok: false, code: 11 })
-    lookupWebhookDeliveryMock.mockResolvedValue(null)
+    lookupWebhookDeliveryMock.mockResolvedValue({ kind: 'miss' })
 
     const res = await handleCloudPaymentsWebhook(fakeRequest(), {
       kind: 'pay',
