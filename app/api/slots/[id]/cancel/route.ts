@@ -1,11 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { requireLearnerArchetype } from '@/lib/auth/guards'
-import {
-  cancelSlot,
-  canLearnerCancel,
-  getSlotById,
-} from '@/lib/scheduling/slots'
+import { cancelLearnerSlot } from '@/lib/scheduling/slots'
 import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
@@ -19,8 +15,18 @@ const noStore = { 'Cache-Control': 'no-store, max-age=0' }
 type RouteParams = { params: Promise<{ id: string }> }
 
 // POST /api/slots/[id]/cancel — learner cancels their own booking.
-// 24-hour rule is Phase 5 territory; this wave just stamps cancelled_at.
-// Operator-side cancel goes through /api/admin/slots/[id]/cancel.
+//
+// Codex 2026-05-07 #3 — the previous implementation read the slot,
+// evaluated the 24h rule in JS, then issued a wide UPDATE that
+// allowed any status except 'cancelled' to flip. That left two TOCTOU
+// windows AND let a `completed` / `no_show_*` row be retroactively
+// rewritten as `cancelled`. The new flow folds ownership + booked-state
+// + 24h cutoff into a single atomic UPDATE — `cancelLearnerSlot` is
+// the security boundary; this route just maps the disambiguation to
+// HTTP statuses.
+//
+// Operator-side cancel goes through /api/admin/slots/[id]/cancel and
+// bypasses the 24h gate by design (admin override).
 
 export async function POST(request: Request, { params }: RouteParams) {
   const { id } = await params
@@ -47,43 +53,41 @@ export async function POST(request: Request, { params }: RouteParams) {
       ? ((body as Record<string, unknown>).reason as string)
       : null
 
-  // Authz: learner can only cancel slots they booked. Look up first.
-  const slot = await getSlotById(id)
-  if (!slot) {
-    return NextResponse.json(
-      { error: 'Slot not found.' },
-      { status: 404, headers: noStore },
-    )
-  }
-  if (slot.learnerAccountId !== auth.account.id) {
-    return NextResponse.json(
-      { error: 'Можно отменить только своё бронирование.' },
-      { status: 403, headers: noStore },
-    )
-  }
-
-  // Phase 5 24-hour rule. Operator/admin path bypasses this gate via
-  // /api/admin/slots/[id]/cancel.
-  const decision = canLearnerCancel(slot)
-  if (!decision.ok && decision.reason === 'too_late_to_cancel') {
-    return NextResponse.json(
-      {
-        error: 'too_late_to_cancel',
-        minutesUntilStart: decision.minutesUntilStart,
-      },
-      { status: 403, headers: noStore },
-    )
-  }
-
   try {
-    const cancelled = await cancelSlot(id, auth.account.id, reason, 'learner')
-    if (!cancelled) {
+    const result = await cancelLearnerSlot(id, auth.account.id, reason)
+    if (result.ok) {
       return NextResponse.json(
-        { error: 'Слот уже отменён.' },
+        { slot: result.slot },
+        { status: 200, headers: noStore },
+      )
+    }
+
+    if (result.reason === 'not_found') {
+      return NextResponse.json(
+        { error: 'Slot not found.' },
+        { status: 404, headers: noStore },
+      )
+    }
+    if (result.reason === 'not_owner') {
+      return NextResponse.json(
+        { error: 'Можно отменить только своё бронирование.' },
+        { status: 403, headers: noStore },
+      )
+    }
+    if (result.reason === 'already_terminal') {
+      return NextResponse.json(
+        { error: 'already_terminal' },
         { status: 409, headers: noStore },
       )
     }
-    return NextResponse.json({ slot: cancelled }, { status: 200, headers: noStore })
+    // too_late_to_cancel
+    return NextResponse.json(
+      {
+        error: 'too_late_to_cancel',
+        minutesUntilStart: result.minutesUntilStart,
+      },
+      { status: 403, headers: noStore },
+    )
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown'
     return NextResponse.json({ error: msg }, { status: 400, headers: noStore })

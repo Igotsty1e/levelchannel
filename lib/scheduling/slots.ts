@@ -872,6 +872,95 @@ export async function cancelSlot(
   return result.rows[0] ? rowToSlot(result.rows[0]) : null
 }
 
+// Codex 2026-05-07 #3 — race-safe learner cancel.
+//
+// Was: route called `getSlotById` → `canLearnerCancel` → `cancelSlot`.
+// Three round-trips, two TOCTOU windows: between read and decision the
+// status could flip to `completed`/`no_show_*`; between decision and
+// UPDATE the 24-hour boundary could slip. The UPDATE in `cancelSlot`
+// allowed ANY status except already-cancelled to flip to cancelled —
+// so a `completed` row could be retroactively rewritten as cancelled.
+//
+// Now: ownership + status + 24-hour rule live in the WHERE clause of a
+// single UPDATE. The DB invariant is the security boundary; the route
+// just disambiguates the failure reason for UX.
+//
+// Disambiguation: on 0 rows, fetch the row state and classify why the
+// UPDATE matched nothing. The classification is for UX only — the
+// authoritative decision was already made by the UPDATE.
+export type CancelLearnerSlotResult =
+  | { ok: true; slot: LessonSlot }
+  | {
+      ok: false
+      reason: 'not_found' | 'not_owner' | 'already_terminal' | 'too_late_to_cancel'
+      minutesUntilStart?: number
+    }
+
+export async function cancelLearnerSlot(
+  slotId: string,
+  learnerAccountId: string,
+  reason: string | null,
+): Promise<CancelLearnerSlotResult> {
+  if (!UUID_PATTERN.test(slotId)) return { ok: false, reason: 'not_found' }
+  if (reason && reason.length > MAX_REASON_LEN) {
+    throw new Error('slot/cancellationReason/too_long')
+  }
+  const pool = getDbPool()
+  const result = await pool.query(
+    `update lesson_slots
+        set status = 'cancelled',
+            cancelled_at = now(),
+            cancelled_by_account_id = $2,
+            cancellation_reason = $3,
+            updated_at = now(),
+            events = $4::jsonb || events
+      where id = $1
+        and learner_account_id = $2
+        and status = 'booked'
+        and start_at - now() >= interval '24 hours'
+      returning ${SLOT_COLUMNS}`,
+    [
+      slotId,
+      learnerAccountId,
+      reason,
+      appendEventSql('slot.cancelled', 'learner', {
+        cancelledByAccountId: learnerAccountId,
+        reason,
+      }),
+    ],
+  )
+  if (result.rows[0]) {
+    return { ok: true, slot: rowToSlot(result.rows[0]) }
+  }
+
+  // The atomic UPDATE matched nothing — classify why for UX. Any
+  // re-read here can drift from the moment the UPDATE evaluated, but
+  // that drift only affects the error message, not the authority.
+  const lookup = await pool.query(
+    `select id, learner_account_id, status, start_at
+       from lesson_slots
+      where id = $1`,
+    [slotId],
+  )
+  const row = lookup.rows[0]
+  if (!row) return { ok: false, reason: 'not_found' }
+  if (String(row.learner_account_id ?? '') !== learnerAccountId) {
+    return { ok: false, reason: 'not_owner' }
+  }
+  if (String(row.status) !== 'booked') {
+    return { ok: false, reason: 'already_terminal' }
+  }
+  const startMs = new Date(String(row.start_at)).getTime()
+  const diffMs = Number.isNaN(startMs)
+    ? -Infinity
+    : startMs - Date.now()
+  return {
+    ok: false,
+    reason: 'too_late_to_cancel',
+    minutesUntilStart: Math.max(0, Math.floor(diffMs / 60_000)),
+  }
+}
+
 export async function editOpenSlot(
   slotId: string,
   patch: { startAt?: string; durationMinutes?: number; notes?: string | null },
