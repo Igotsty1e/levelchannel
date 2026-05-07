@@ -22,6 +22,8 @@
 
 import pg from 'pg'
 
+import { resolveSslConfig } from './_pg-ssl.mjs'
+
 function normalizeEmail(email) {
   return email.trim().toLowerCase()
 }
@@ -38,7 +40,11 @@ async function main() {
   }
 
   const email = normalizeEmail(arg)
-  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 1 })
+  const pool = new pg.Pool({
+    connectionString: process.env.DATABASE_URL,
+    max: 1,
+    ssl: resolveSslConfig(process.env.DATABASE_URL),
+  })
 
   try {
     const acct = await pool.query(

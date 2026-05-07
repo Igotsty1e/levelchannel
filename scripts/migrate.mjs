@@ -29,6 +29,8 @@ import { fileURLToPath } from 'node:url'
 
 import pg from 'pg'
 
+import { resolveSslConfig } from './_pg-ssl.mjs'
+
 const { Pool } = pg
 
 const __filename = fileURLToPath(import.meta.url)
@@ -43,7 +45,10 @@ if (!process.env.DATABASE_URL) {
   process.exit(1)
 }
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL })
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: resolveSslConfig(process.env.DATABASE_URL),
+})
 
 async function ensureMetaTable() {
   await pool.query(`

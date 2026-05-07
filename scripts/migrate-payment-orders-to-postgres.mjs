@@ -2,6 +2,8 @@ import fs from 'fs/promises'
 import path from 'path'
 import { Pool } from 'pg'
 
+import { resolveSslConfig } from './_pg-ssl.mjs'
+
 const databaseUrl = process.env.DATABASE_URL
 const sourceFile = process.env.PAYMENTS_STORAGE_FILE || 'payment-orders.json'
 
@@ -10,7 +12,10 @@ if (!databaseUrl) {
 }
 
 const sourcePath = path.join(process.cwd(), 'data', path.basename(sourceFile))
-const pool = new Pool({ connectionString: databaseUrl })
+const pool = new Pool({
+  connectionString: databaseUrl,
+  ssl: resolveSslConfig(databaseUrl),
+})
 
 async function ensureSchema() {
   await pool.query(`

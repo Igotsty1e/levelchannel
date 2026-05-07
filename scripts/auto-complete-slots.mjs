@@ -21,6 +21,8 @@
 
 import pg from 'pg'
 
+import { resolveSslConfig } from './_pg-ssl.mjs'
+
 function logJson(level, msg, extra = {}) {
   console.log(
     JSON.stringify({
@@ -42,6 +44,7 @@ async function main() {
   const pool = new pg.Pool({
     connectionString: process.env.DATABASE_URL,
     max: 1,
+    ssl: resolveSslConfig(process.env.DATABASE_URL),
   })
 
   try {
