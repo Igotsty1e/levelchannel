@@ -173,11 +173,50 @@ and fixes the env. Reads in `listPaymentAuditEventsByInvoice` log a
 warning and fall back to plaintext if the key is missing in
 production, so admin tooling does not go dark on a misconfiguration.
 
-Key rotation (operator runbook, not yet automated): set the new key
-alongside the old (`AUDIT_ENCRYPTION_KEY=new`,
-`AUDIT_ENCRYPTION_KEY_OLD=old` — note the latter is a future
-extension, not yet in code), run a re-encrypt sweep, drop the old
-key. Until rotation is wired in, the active key is the only key.
+Key rotation (Wave 3.1, operator-driven, automated by
+`scripts/rotate-audit-encryption.mjs`):
+
+1. **Generate** a fresh key:
+   ```bash
+   openssl rand -base64 48
+   ```
+
+2. **Set both keys** in the operator-side env store:
+   - `AUDIT_ENCRYPTION_KEY` = the new value (PRIMARY)
+   - `AUDIT_ENCRYPTION_KEY_OLD` = the previous value
+   Restart the app. From this point, NEW audit rows are encrypted
+   with the new PRIMARY; reads succeed for both old + new rows via
+   the `pgp_sym_decrypt_either` SQL helper (migration 0027).
+
+3. **Run the rotation script** to re-encrypt every legacy row from
+   OLD to PRIMARY:
+   ```bash
+   AUDIT_ENCRYPTION_KEY=<new> \
+   AUDIT_ENCRYPTION_KEY_OLD=<previous> \
+   DATABASE_URL=<url> \
+     node scripts/rotate-audit-encryption.mjs
+   ```
+   Idempotent — already-PRIMARY-encrypted rows are skipped via the
+   try-decrypt-either predicate. Re-runnable.
+
+4. **Verify** in psql:
+   ```sql
+   select count(*) from payment_audit_events
+     where customer_email_enc is not null
+       and pgp_sym_decrypt_either(customer_email_enc, '<new>', null) is null
+       and pgp_sym_decrypt_either(customer_email_enc, '<previous>', null) is not null;
+   ```
+   Expect 0. (Same shape for `client_ip_enc`.)
+
+5. **Drop `AUDIT_ENCRYPTION_KEY_OLD`** from env. Restart. Rotation
+   window closed. The previous key is no longer needed and SHOULD
+   be wiped from the operator vault as well — its reuse is no
+   longer required.
+
+If you ever lose `AUDIT_ENCRYPTION_KEY` without doing rotation
+first, **every encrypted row becomes permanently unreadable**.
+Treat the key as a peer of `CLOUDPAYMENTS_API_SECRET` — back it up
+in the same vault, rotate it through the same cadence.
 
 ## Implemented controls
 

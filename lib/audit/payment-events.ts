@@ -1,4 +1,7 @@
-import { getAuditEncryptionKey } from '@/lib/audit/encryption'
+import {
+  getAuditEncryptionKey,
+  getAuditEncryptionKeyOld,
+} from '@/lib/audit/encryption'
 import { getAuditPool } from '@/lib/audit/pool'
 
 // Audit-log-of-record for payment lifecycle transitions. See
@@ -197,7 +200,13 @@ export async function listPaymentAuditEventsByInvoice(
   // from whichever column has data. In dev (no key set), the
   // encrypted column is always null and we transparently read
   // plaintext as before.
+  //
+  // Wave 3.1: use `pgp_sym_decrypt_either(_enc, $primary, $old)` so a
+  // rotation window with both keys present can read rows encrypted
+  // under EITHER key. The OLD key is only used during the rotation
+  // window — most reads return from the PRIMARY branch.
   let key: string | null = null
+  let oldKey: string | null = null
   try {
     key = getAuditEncryptionKey()
   } catch {
@@ -209,15 +218,27 @@ export async function listPaymentAuditEventsByInvoice(
     )
     key = null
   }
+  try {
+    oldKey = getAuditEncryptionKeyOld()
+  } catch (err) {
+    // Length-validation failure on the OLD key. Treat as absent so the
+    // reader still works on PRIMARY-only rows; surface the warn so the
+    // operator knows to fix the env (or unset it if rotation is over).
+    console.warn(
+      '[audit] AUDIT_ENCRYPTION_KEY_OLD invalid; ignoring during read:',
+      err instanceof Error ? err.message : String(err),
+    )
+    oldKey = null
+  }
 
   const { rows } = await pool.query(
     `select id, created_at, event_type, invoice_id, account_id,
             case when customer_email_enc is not null and $2::text is not null
-                 then pgp_sym_decrypt(customer_email_enc, $2::text)
+                 then pgp_sym_decrypt_either(customer_email_enc, $2::text, $3::text)
                  else customer_email
             end as customer_email,
             case when client_ip_enc is not null and $2::text is not null
-                 then pgp_sym_decrypt(client_ip_enc, $2::text)
+                 then pgp_sym_decrypt_either(client_ip_enc, $2::text, $3::text)
                  else client_ip
             end as client_ip,
             user_agent,
@@ -226,7 +247,7 @@ export async function listPaymentAuditEventsByInvoice(
        from payment_audit_events
       where invoice_id = $1
       order by created_at asc`,
-    [invoiceId, key],
+    [invoiceId, key, oldKey],
   )
   return rows.map(rowToEvent)
 }

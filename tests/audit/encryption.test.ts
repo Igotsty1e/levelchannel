@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   __resetAuditEncryptionKeyCache,
   getAuditEncryptionKey,
+  getAuditEncryptionKeyOld,
 } from '@/lib/audit/encryption'
 
 // Wave 2.1 — pure-function key resolver tests. The real pgcrypto
@@ -11,11 +12,13 @@ import {
 describe('getAuditEncryptionKey', () => {
   beforeEach(() => {
     delete process.env.AUDIT_ENCRYPTION_KEY
+    delete process.env.AUDIT_ENCRYPTION_KEY_OLD
     __resetAuditEncryptionKeyCache()
   })
 
   afterEach(() => {
     delete process.env.AUDIT_ENCRYPTION_KEY
+    delete process.env.AUDIT_ENCRYPTION_KEY_OLD
     __resetAuditEncryptionKeyCache()
   })
 
@@ -88,5 +91,69 @@ describe('getAuditEncryptionKey', () => {
     // Mutate the explicit env and verify the new value is read on next call.
     env.AUDIT_ENCRYPTION_KEY = 'd'.repeat(32)
     expect(getAuditEncryptionKey(env)).toBe('d'.repeat(32))
+  })
+})
+
+describe('getAuditEncryptionKeyOld (Wave 3.1 rotation fallback)', () => {
+  beforeEach(() => {
+    delete process.env.AUDIT_ENCRYPTION_KEY
+    delete process.env.AUDIT_ENCRYPTION_KEY_OLD
+    __resetAuditEncryptionKeyCache()
+  })
+
+  afterEach(() => {
+    delete process.env.AUDIT_ENCRYPTION_KEY
+    delete process.env.AUDIT_ENCRYPTION_KEY_OLD
+    __resetAuditEncryptionKeyCache()
+  })
+
+  it('returns null when not set (any env)', () => {
+    expect(
+      getAuditEncryptionKeyOld({ NODE_ENV: 'development' } as NodeJS.ProcessEnv),
+    ).toBeNull()
+    expect(
+      getAuditEncryptionKeyOld({ NODE_ENV: 'production' } as NodeJS.ProcessEnv),
+    ).toBeNull()
+  })
+
+  it('returns the value when set and >= 32 chars', () => {
+    expect(
+      getAuditEncryptionKeyOld({
+        NODE_ENV: 'production',
+        AUDIT_ENCRYPTION_KEY_OLD: 'x'.repeat(40),
+      } as NodeJS.ProcessEnv),
+    ).toBe('x'.repeat(40))
+  })
+
+  it('throws when set but < 32 chars (any env, even dev — explicit value is opt-in)', () => {
+    expect(() =>
+      getAuditEncryptionKeyOld({
+        NODE_ENV: 'development',
+        AUDIT_ENCRYPTION_KEY_OLD: 'short',
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/at least 32 characters/i)
+  })
+
+  it('treats whitespace-only as not set', () => {
+    expect(
+      getAuditEncryptionKeyOld({
+        NODE_ENV: 'production',
+        AUDIT_ENCRYPTION_KEY_OLD: '   ',
+      } as NodeJS.ProcessEnv),
+    ).toBeNull()
+  })
+
+  it('caches independently of the PRIMARY key', () => {
+    process.env.AUDIT_ENCRYPTION_KEY = 'p'.repeat(32)
+    process.env.AUDIT_ENCRYPTION_KEY_OLD = 'o'.repeat(32)
+    expect(getAuditEncryptionKey()).toBe('p'.repeat(32))
+    expect(getAuditEncryptionKeyOld()).toBe('o'.repeat(32))
+    // Resetting clears both. Important so a rotation that drops OLD
+    // mid-deploy doesn't leave stale cache.
+    __resetAuditEncryptionKeyCache()
+    delete process.env.AUDIT_ENCRYPTION_KEY_OLD
+    expect(getAuditEncryptionKeyOld()).toBeNull()
+    // PRIMARY is still set — cache populates anew.
+    expect(getAuditEncryptionKey()).toBe('p'.repeat(32))
   })
 })
