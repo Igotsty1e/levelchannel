@@ -219,6 +219,37 @@ key. Until rotation is wired in, the active key is the only key.
 - `scripts/public-surface-check.sh` blocks private runbooks, `.env*`,
   and known concrete production paths from both local commits and CI
 
+## Operator-side invariants (non-app surface)
+
+These are NOT enforced by the application — they are Postgres-level
+config that the operator must keep correct. A change in any of them
+silently breaks the at-rest encryption story.
+
+- **`pg_stat_statements` MUST NOT be loaded** in `shared_preload_libraries`,
+  or — if loaded for performance triage — must run with `track = top`
+  (NOT `all`) and `save = off`. The audit recorder passes the
+  encryption key as parameter bind values (`$14` on insert, `$2` on
+  read). With `track = all + save = on`, the key would land in
+  `pg_stat_statements` as a captured bind value visible to any DBA
+  with `pg_read_all_stats`. Verified disabled on prod 2026-05-07.
+
+- **`log_statement` MUST be `none`** (or `ddl` / `mod` — anything that
+  excludes SELECT/INSERT). Same threat: the encryption key bind value
+  ends up in `pg_log` if statements are logged. Verified `none` on
+  prod 2026-05-07.
+
+- **`log_min_duration_statement` SHOULD be `-1`** or ≥ 1000ms with
+  `log_parameter_max_length = 0`. A wide slow-log captures bind values
+  for any query above the threshold. Verified `-1` on prod 2026-05-07.
+
+- **`log_parameter_max_length_on_error` MUST be `0`** or unset. On a
+  query error, full parameter values are dumped into the error log
+  unless this is clamped. Verified `0` on prod 2026-05-07.
+
+If any of these flips on, the encryption-at-rest layer is downgraded
+to "encrypted on disk, key-also-on-disk-elsewhere." Treat the change
+as a SECURITY incident, rotate the key, re-encrypt the audit table.
+
 ## Current limits and accepted gaps
 
 - payment telemetry: Postgres is the primary path, file fallback is for the case

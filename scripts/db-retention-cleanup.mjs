@@ -26,6 +26,12 @@
 //                             (longest current rate-limit window is 60s;
 //                             1h grace keeps active buckets safe and
 //                             clears the tail otherwise)
+//   webhook_deliveries      — delete where received_at < now() - 90 days
+//                             (Wave 1.2 dedup table; 90-day retention
+//                             is long enough to debug a production
+//                             escalation, short enough to bound disk
+//                             pressure as the dedup row count grows
+//                             with every webhook over the years)
 //   accounts (purge)        — anonymize rows where scheduled_purge_at
 //                             <= now() AND purged_at IS NULL. Email
 //                             becomes deleted-<uuid>@example.invalid;
@@ -198,6 +204,16 @@ async function main() {
         'rate_limit_buckets',
         `delete from rate_limit_buckets
           where reset_at < now() - interval '1 hour'`,
+      ),
+      // Wave 1.2 webhook delivery dedup. 90-day retention matches the
+      // janitor doc on `purgeStaleWebhookDeliveries` in
+      // lib/payments/webhook-dedup.ts — long enough to debug a real
+      // production escalation, short enough to keep the table small.
+      deleteWindow(
+        pool,
+        'webhook_deliveries',
+        `delete from webhook_deliveries
+          where received_at < now() - interval '90 days'`,
       ),
       purgeAccounts(pool),
     ])
