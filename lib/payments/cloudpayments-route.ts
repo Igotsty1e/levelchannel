@@ -20,6 +20,7 @@ import {
   recordWebhookDelivery,
   type WebhookDeliveryOutcome,
 } from '@/lib/payments/webhook-dedup'
+import { enforceRateLimit } from '@/lib/security/request'
 
 type WebhookHandler = (payload: CloudPaymentsWebhookPayload) => Promise<void>
 
@@ -109,6 +110,21 @@ export async function handleCloudPaymentsWebhook(
   if (!verifyCloudPaymentsSignature(rawBody, xContentHmac, contentHmac)) {
     return NextResponse.json({ code: 13 }, { status: 401 })
   }
+
+  // Wave 2.2 — secondary rate limit on verified webhooks. Bucket is
+  // applied AFTER HMAC so unauth flood attempts (HMAC-fail → 401)
+  // never consume the budget, leaving CloudPayments' own retries
+  // unaffected. The ceiling (60/min per IP per kind) sits ~1000x
+  // above the legitimate CloudPayments retry cadence (minutes apart
+  // per provider docs), so this only fires on a key-leak flood —
+  // which is the exact scenario this bucket guards against.
+  const rl = await enforceRateLimit(
+    request,
+    `webhook:cloudpayments:${options.kind}:ip`,
+    60,
+    60_000,
+  )
+  if (rl) return rl
 
   let payload: CloudPaymentsWebhookPayload
   try {
