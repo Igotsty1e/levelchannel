@@ -143,6 +143,22 @@ gap in the audit log**. Defense: the uptime monitor
 INSERT itself is **not** transaction-bound to the business INSERT,
 intentionally.
 
+**Integrity (Wave 3 #2).** When `AUDIT_DATABASE_URL` is set in
+the operator-side env store, the audit recorder uses a dedicated DB
+connection authenticated as the `levelchannel_audit_writer` role.
+That role has INSERT-only grants on `payment_audit_events` and
+`auth_audit_events` (migration 0029) — no SELECT, no UPDATE, no
+DELETE. A SQL-injection bug elsewhere in the app cannot tamper
+with audit history through this connection. The retention janitor
+(`scripts/db-retention-cleanup.mjs`) keeps using `DATABASE_URL`
+because it needs DELETE.
+
+When `AUDIT_DATABASE_URL` is unset (local dev or pre-rollout
+production), the recorder falls back to the shared primary pool —
+the historical contract. Operator rollout: apply migration 0029,
+`ALTER USER levelchannel_audit_writer WITH PASSWORD '<secret>'`,
+build the URL, add to env file, restart.
+
 **At-rest encryption.** From Wave 2.1 (PR #45 squash `a094337`,
 shipped 2026-05-07), `customer_email` and `client_ip` are also
 written to bytea columns `customer_email_enc` and `client_ip_enc`
