@@ -41,6 +41,8 @@ import process from 'node:process'
 
 import pg from 'pg'
 
+import { resolveSslConfig } from './_pg-ssl.mjs'
+
 const DEFAULT_BATCH_SIZE = 1000
 const MIN_KEY_LENGTH = 32
 
@@ -88,7 +90,15 @@ async function main() {
     process.exit(2)
   }
 
-  const pool = new pg.Pool({ connectionString: url, max: 2 })
+  // TLS gate: same policy as the app's lib/db/pool.ts. A backfill
+  // pass that hits a remote Postgres without TLS would expose the
+  // AUDIT_ENCRYPTION_KEY parameter on the wire — `resolveSslConfig`
+  // throws in that case rather than fall through silently.
+  const pool = new pg.Pool({
+    connectionString: url,
+    max: 2,
+    ssl: resolveSslConfig(url),
+  })
 
   try {
     const remainingBefore = await countRemaining(pool)
