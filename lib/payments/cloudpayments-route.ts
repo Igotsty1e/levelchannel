@@ -1,6 +1,7 @@
 import { createHash } from 'crypto'
 
 import { NextResponse } from 'next/server'
+import type { PoolClient } from 'pg'
 
 import {
   recordPaymentAuditEvent,
@@ -174,6 +175,69 @@ async function runWebhookPipeline(
 // happen on DIFFERENT pool connections — they are NOT inside this
 // transaction. That's intentional: the lock just serialises "who runs
 // the pipeline"; per-op atomicity stays at the data layer.
+// Codex 2026-05-07 — acquisition-timeout DoS amplifier.
+//
+// `pool.connect()` queues without a deadline. When the shared pool is
+// saturated by application traffic, every CloudPayments retry stacks
+// on top of the previous one waiting for a slot. The provider's own
+// HTTP timeout fires (~30 s) and CP retries — which lands the next
+// retry in the same queue. Webhooks are money-moving traffic; they
+// must fail FAST when infra is overloaded so CP's retry budget
+// surfaces a real outage, not a silent hang.
+//
+// 2.5 s is well below CP's request timeout (≈30 s per provider docs)
+// and below their retry cadence (minutes), so a healthy pool never
+// trips this. A tripped acquisition throws — caught by the outer
+// `try/catch` in `handleCloudPaymentsWebhook` and falls through to
+// the legacy non-dedup path. That path also uses the shared pool, so
+// it isn't a true escape hatch under sustained saturation; but it
+// avoids the lock-then-process queue and reduces the per-request
+// latency floor while ops investigate.
+const POOL_ACQUIRE_TIMEOUT_MS = 2500
+
+async function acquireClientWithTimeout(
+  pool: ReturnType<typeof getDbPool>,
+): Promise<PoolClient> {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let timedOut = false
+  const connectPromise = pool.connect()
+  try {
+    return await Promise.race([
+      connectPromise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true
+          reject(
+            new Error(
+              `pool.connect() timed out after ${POOL_ACQUIRE_TIMEOUT_MS}ms — webhook pool is saturated`,
+            ),
+          )
+        }, POOL_ACQUIRE_TIMEOUT_MS)
+      }),
+    ])
+  } catch (err) {
+    // If the timeout fires first, the underlying connect() may still
+    // resolve later with a real client. Release it back to the pool so
+    // we don't leak a connection slot every time this path trips.
+    if (timedOut) {
+      void connectPromise
+        .then((client) => {
+          try {
+            client.release()
+          } catch {
+            // best-effort
+          }
+        })
+        .catch(() => {
+          // best-effort
+        })
+    }
+    throw err
+  } finally {
+    if (timer !== null) clearTimeout(timer)
+  }
+}
+
 async function processSerialized(
   payload: CloudPaymentsWebhookPayload,
   transactionId: string,
@@ -183,7 +247,7 @@ async function processSerialized(
   await ensureWebhookDeliveriesSchema()
 
   const pool = getDbPool()
-  const client = await pool.connect()
+  const client = await acquireClientWithTimeout(pool)
   // Track whether the handler ran so the post-handler error path
   // doesn't fall through to the legacy pipeline (which would re-run
   // the handler and duplicate side effects). Pre-handler errors fall
@@ -338,8 +402,27 @@ export async function handleCloudPaymentsWebhook(
   }
 
   const transactionId = readTransactionId(payload)
-  const dedupEnabled =
-    paymentConfig.storageBackend === 'postgres' && transactionId !== null
+
+  // Codex 2026-05-07 — replay-protection bypass via missing TransactionId.
+  //
+  // CloudPayments always sends a non-empty `TransactionId` on legitimate
+  // check / pay / fail webhooks (per provider docs). A verified-HMAC
+  // request that omits or blanks the field cannot be a real CP delivery —
+  // it can only be an attacker holding the HMAC secret who wants the
+  // dedup gate to silently disable so the paid handler runs N times. We
+  // refuse rather than fall through to the legacy non-dedup path. 400
+  // matches the parse-failure shape; CloudPayments interprets non-200 as
+  // "retry later", which is harmless here because their next retry will
+  // carry a real TransactionId.
+  if (transactionId === null) {
+    console.warn(
+      '[cloudpayments] verified webhook with missing/blank TransactionId rejected (kind=%s)',
+      options.kind,
+    )
+    return NextResponse.json({ code: 13 }, { status: 400 })
+  }
+
+  const dedupEnabled = paymentConfig.storageBackend === 'postgres'
   const requestFingerprint = dedupEnabled
     ? computeRequestFingerprint(payload)
     : null
@@ -348,7 +431,7 @@ export async function handleCloudPaymentsWebhook(
   // the lookup is reported via console.warn and we fall through to
   // the legacy non-dedup path so a real CloudPayments retry is never
   // blocked by dedup infra.
-  if (dedupEnabled && transactionId && requestFingerprint) {
+  if (dedupEnabled && requestFingerprint) {
     try {
       return await processSerialized(
         payload,
@@ -367,14 +450,15 @@ export async function handleCloudPaymentsWebhook(
 
   // Legacy non-dedup / fall-through path. Runs the same pipeline
   // without the lock or the dedup row. Compatible with file-storage
-  // backends and missing-TransactionId requests; also the failure
-  // recovery path when the dedup-aware code throws (rare).
+  // backends; also the failure recovery path when the dedup-aware
+  // code throws (rare). Missing-TransactionId requests are no longer
+  // routed here — they are rejected at the entry guard above.
   const result = await runWebhookPipeline(payload, options)
 
   // If dedup is theoretically enabled but the locked path threw, we
   // STILL try to record the outcome with the pool-based recorder so
   // future retries can short-circuit. Best-effort.
-  if (dedupEnabled && transactionId && requestFingerprint) {
+  if (dedupEnabled && requestFingerprint) {
     try {
       // Re-check cache one more time (defensive; in case a parallel
       // request stored a result while we were processing).

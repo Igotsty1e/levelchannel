@@ -299,7 +299,10 @@ describe('handleCloudPaymentsWebhook — delivery dedup', () => {
     )
   })
 
-  it('missing TransactionId falls through with no dedup', async () => {
+  // Codex 2026-05-07: a verified-HMAC webhook without TransactionId
+  // can only be abuse — CloudPayments always sends one. The handler
+  // pipeline must NOT run; the request is rejected at the entry guard.
+  it('missing TransactionId is rejected (not allowed to fall through)', async () => {
     parseMock.mockReturnValue({
       InvoiceId: 'lc_test12345678',
       Amount: '1000',
@@ -308,17 +311,18 @@ describe('handleCloudPaymentsWebhook — delivery dedup', () => {
     })
     const handler = vi.fn()
 
-    await handleCloudPaymentsWebhook(fakeRequest(), {
+    const response = await handleCloudPaymentsWebhook(fakeRequest(), {
       kind: 'pay',
       handler,
     })
 
-    expect(handler).toHaveBeenCalledOnce()
+    expect(response.status).toBe(400)
+    expect(handler).not.toHaveBeenCalled()
     expect(lookupWebhookDeliveryMock).not.toHaveBeenCalled()
     expect(recordWebhookDeliveryMock).not.toHaveBeenCalled()
   })
 
-  it('empty-string TransactionId is treated as missing', async () => {
+  it('blank-string TransactionId is rejected (treated as missing)', async () => {
     parseMock.mockReturnValue({
       InvoiceId: 'lc_test12345678',
       Amount: '1000',
@@ -327,12 +331,13 @@ describe('handleCloudPaymentsWebhook — delivery dedup', () => {
     })
     const handler = vi.fn()
 
-    await handleCloudPaymentsWebhook(fakeRequest(), {
+    const response = await handleCloudPaymentsWebhook(fakeRequest(), {
       kind: 'pay',
       handler,
     })
 
-    expect(handler).toHaveBeenCalledOnce()
+    expect(response.status).toBe(400)
+    expect(handler).not.toHaveBeenCalled()
     expect(lookupWebhookDeliveryMock).not.toHaveBeenCalled()
     expect(recordWebhookDeliveryMock).not.toHaveBeenCalled()
   })
