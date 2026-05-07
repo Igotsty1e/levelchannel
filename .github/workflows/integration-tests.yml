@@ -1,0 +1,51 @@
+name: integration-tests
+
+# Runs the Postgres-backed integration suite on every PR and on every
+# push to main. Until 2026-05-07 the 51 tests under `tests/integration/`
+# were dormant in CI: only `npm run test:run` (unit suite) and
+# `npm run build` were wired up, so a regression that needed a real DB
+# to surface (FOR UPDATE locks, jsonb roundtrip, FK cascades, pgcrypto
+# decrypt, dedup PK conflicts, learner-archetype role gates) could
+# ship clean. Wave 1 + Wave 2 added 51 new tests in this category;
+# this workflow makes them blocking.
+#
+# Why call `npm run test:integration` directly instead of using a GHA
+# `services:` Postgres container: the local script already brings up
+# `postgres:16.13` (matching prod per OPERATIONS.md §1) via Docker
+# Compose with the right migration + env wiring. Re-using the same
+# script keeps local dev and CI on one path — a tweak to the bring-up
+# happens in one place, not two. GHA runners ship with Docker Compose
+# v2 out of the box.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  integration:
+    name: npm run test:integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run integration tests
+        run: npm run test:integration
+        env:
+          # Disambiguate this run from any other parallel shard. The
+          # bring-up script derives a unique Postgres container name +
+          # host port from this id so concurrent CI runs on the same
+          # host can't collide. GHA runners are usually single-tenant
+          # but the future-proofing is free.
+          LC_TEST_PARALLEL_ID: ${{ github.run_id }}-${{ github.job }}

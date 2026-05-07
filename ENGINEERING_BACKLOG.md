@@ -33,13 +33,13 @@ Concrete follow-ups (open queue):
   asserts each returns the expected status. Fail loudly, don't just
   log. Wired into the autodeploy script so a 500-ing prod doesn't
   ship silently.
-- **CI integration tests.** Wave 1+2 added 51 integration tests
-  (`tests/integration/payment/webhook-dedup.test.ts`,
-  `tests/integration/audit/encryption.test.ts`,
-  `tests/integration/scheduling/learner-archetype-gate.test.ts`).
-  CI today doesn't run `npm run test:integration` (Docker-dependent).
-  Wire it as a job in `.github/workflows/` so dormant integration
-  tests stop being a polite suggestion.
+- ~~**CI integration tests.**~~
+  **Closed 2026-05-07.** `.github/workflows/integration-tests.yml`
+  runs `npm run test:integration` on every PR and every push to main.
+  The Wave 1 + Wave 2 integration tests (webhook dedup, audit
+  encryption, learner-archetype gate) and all auth/payment/scheduling
+  integration tests are now blocking — a regression caught by a real-
+  Postgres test fails CI before merge.
 
 ## TOMORROW — 2026-05-08 — verify and execute
 
