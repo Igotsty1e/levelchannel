@@ -30,12 +30,31 @@ function getAllowedOrigins() {
   return origins
 }
 
+// Codex 2026-05-07 #4b — closed.
+//
+// Was: `getClientIp` read the FIRST hop of `X-Forwarded-For`. The first
+// hop is whatever the client sent — `X-Forwarded-For: 1.2.3.4` makes us
+// see `1.2.3.4` regardless of the real socket IP. Per-IP rate limits
+// (`auth:login:ip`, `webhook:cloudpayments:*`, etc.) became per-XFF-value,
+// so an attacker rotating the header bypassed every per-IP bucket.
+//
+// Now: trust ONLY `X-Real-IP`. Production nginx config sets
+// `proxy_set_header X-Real-IP $remote_addr` — `$remote_addr` is the
+// socket IP that nginx itself sees, NOT a client header, and
+// `proxy_set_header` always OVERWRITES whatever the client sent. So
+// `X-Real-IP` arrives at Node bound to the actual TCP-connected
+// address. We deliberately do NOT trust `X-Forwarded-For` because
+// nginx's `$proxy_add_x_forwarded_for` APPENDS to (does not overwrite)
+// whatever the client sent — the first hop is still attacker-supplied.
+//
+// `cf-connecting-ip` is kept as a secondary because if a future
+// deployment puts Cloudflare in front, CF's header is the trust anchor.
+// Today there is no CF in front of levelchannel.ru.
+//
+// Local dev: no nginx, so `X-Real-IP` is unset → returns `unknown`.
+// That's fine — rate-limit buckets keyed by `unknown` clamp local
+// abuse to a single bucket, which is the desired behaviour.
 export function getClientIp(request: Request) {
-  const forwardedFor = request.headers.get('x-forwarded-for')
-  if (forwardedFor) {
-    return forwardedFor.split(',')[0]?.trim() || 'unknown'
-  }
-
   return (
     request.headers.get('x-real-ip') ||
     request.headers.get('cf-connecting-ip') ||
