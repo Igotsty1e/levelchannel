@@ -33,7 +33,8 @@ afterEach(async () => {
       payment_orders,
       payment_card_tokens,
       idempotency_records,
-      payment_telemetry
+      payment_telemetry,
+      webhook_deliveries
     restart identity cascade
   `)
   await __resetRateLimitsForTesting()

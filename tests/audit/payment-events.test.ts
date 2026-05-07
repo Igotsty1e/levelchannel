@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { __resetAuditEncryptionKeyCache } from '@/lib/audit/encryption'
+
 // We test the recorder's behaviour without touching real Postgres:
 // mock `@/lib/audit/pool` to return a fake pool whose .query() we
 // observe. The recorder under test must:
 //   1. forward all fields to the right SQL columns
 //   2. swallow errors (best-effort) and log a warning
 //   3. silently no-op when pool is null (no DATABASE_URL configured)
+//   4. (Wave 2.1) pass the AUDIT_ENCRYPTION_KEY as the last bind so
+//      pgcrypto's pgp_sym_encrypt can populate the *_enc columns;
+//      pass null when the key is absent (dev fallback)
 
 const queryMock = vi.fn()
 const getAuditPoolMock = vi.fn()
@@ -22,10 +27,14 @@ describe('recordPaymentAuditEvent', () => {
     queryMock.mockResolvedValue({ rowCount: 1 })
     getAuditPoolMock.mockReset()
     getAuditPoolMock.mockReturnValue({ query: queryMock })
+    delete process.env.AUDIT_ENCRYPTION_KEY
+    __resetAuditEncryptionKeyCache()
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
+    delete process.env.AUDIT_ENCRYPTION_KEY
+    __resetAuditEncryptionKeyCache()
   })
 
   it('inserts all fields in the right SQL bind order', async () => {
@@ -50,6 +59,8 @@ describe('recordPaymentAuditEvent', () => {
 
     const [sql, binds] = queryMock.mock.calls[0]
     expect(sql).toContain('insert into payment_audit_events')
+    expect(sql).toContain('customer_email_enc')
+    expect(sql).toContain('pgp_sym_encrypt')
 
     expect(binds).toEqual([
       'order.created',
@@ -65,6 +76,9 @@ describe('recordPaymentAuditEvent', () => {
       'idem-key-1',
       'req-1',
       JSON.stringify({ description: 'Lesson' }),
+      // No AUDIT_ENCRYPTION_KEY in test env → encryption key bind is null;
+      // the SQL CASE clauses leave the *_enc columns NULL.
+      null,
     ])
   })
 
@@ -88,6 +102,7 @@ describe('recordPaymentAuditEvent', () => {
     expect(binds[10]).toBeNull() // idempotencyKey
     expect(binds[11]).toBeNull() // requestId
     expect(binds[12]).toBe(JSON.stringify({}))
+    expect(binds[13]).toBeNull() // encryption key
   })
 
   it('returns false but does not throw when the insert fails', async () => {
@@ -128,5 +143,42 @@ describe('recordPaymentAuditEvent', () => {
     expect(ok).toBe(false)
     expect(queryMock).not.toHaveBeenCalled()
     expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('passes AUDIT_ENCRYPTION_KEY as the last bind when set', async () => {
+    process.env.AUDIT_ENCRYPTION_KEY = 'a'.repeat(40)
+    __resetAuditEncryptionKeyCache()
+
+    await recordPaymentAuditEvent({
+      eventType: 'order.created',
+      invoiceId: 'lc_enc12345',
+      customerEmail: 'enc@example.com',
+      clientIp: '198.51.100.1',
+      amountKopecks: 100000,
+      actor: 'user',
+    })
+
+    const [, binds] = queryMock.mock.calls[0]
+    expect(binds[13]).toBe('a'.repeat(40))
+  })
+
+  it('returns false (best-effort) when AUDIT_ENCRYPTION_KEY is too short', async () => {
+    process.env.AUDIT_ENCRYPTION_KEY = 'short-key'
+    __resetAuditEncryptionKeyCache()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const ok = await recordPaymentAuditEvent({
+      eventType: 'order.created',
+      invoiceId: 'lc_shortkey1',
+      customerEmail: 'a@b.com',
+      amountKopecks: 100000,
+      actor: 'user',
+    })
+
+    expect(ok).toBe(false)
+    expect(queryMock).not.toHaveBeenCalled()
+    expect(warn).toHaveBeenCalled()
+    const [, ctx] = warn.mock.calls[0]
+    expect(ctx.error).toMatch(/at least 32 characters/i)
   })
 })

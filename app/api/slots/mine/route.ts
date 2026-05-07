@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-import { requireAuthenticated } from '@/lib/auth/guards'
+import { requireLearnerArchetype } from '@/lib/auth/guards'
 import { listSlotsForLearner } from '@/lib/scheduling/slots'
 import { enforceRateLimit } from '@/lib/security/request'
 
@@ -13,7 +13,7 @@ export async function GET(request: Request) {
   const rl = await enforceRateLimit(request, 'slots:mine:ip', 60, 60_000)
   if (rl) return rl
 
-  const auth = await requireAuthenticated(request)
+  const auth = await requireLearnerArchetype(request)
   if (!auth.ok) return auth.response
 
   const slots = await listSlotsForLearner(auth.account.id, 50)

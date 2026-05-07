@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-import { requireAuthenticated } from '@/lib/auth/guards'
+import { requireLearnerArchetype } from '@/lib/auth/guards'
 import {
   cancelSlot,
   canLearnerCancel,
@@ -31,7 +31,7 @@ export async function POST(request: Request, { params }: RouteParams) {
   const rl = await enforceRateLimit(request, 'slots:cancel:ip', 30, 60_000)
   if (rl) return rl
 
-  const auth = await requireAuthenticated(request)
+  const auth = await requireLearnerArchetype(request)
   if (!auth.ok) return auth.response
 
   let body: unknown = null
