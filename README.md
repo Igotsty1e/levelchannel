@@ -80,12 +80,15 @@ Minimum local set:
 - `PAYMENTS_ALLOW_MOCK_CONFIRM=true|false`
 - `NEXT_PUBLIC_SITE_URL=http://localhost:3000`
 - `DATABASE_URL=postgresql://...`
+- `DB_SSL=require|disable` (optional; production refuses `disable`. Auto-detect: localhost → no TLS, everything else → strict TLS with cert verify. See `lib/db/pool.ts`)
+- `DB_SSL_REJECT_UNAUTHORIZED=false` (optional, **dev only**; rejected in production. Allows encrypted-but-lax cert verification when targeting a managed host with a self-signed cert)
 - `TELEMETRY_HASH_SECRET=...`
 - `CLOUDPAYMENTS_PUBLIC_ID=...`
 - `CLOUDPAYMENTS_API_SECRET=...`
 - `RESEND_API_KEY=...`
 - `EMAIL_FROM="LevelChannel <noreply@example.com>"`
 - `AUTH_RATE_LIMIT_SECRET=...`
+- `AUDIT_ENCRYPTION_KEY=...` (mandatory in production; ≥32 chars random; encrypts PII in `payment_audit_events` via pgcrypto. Generate with `openssl rand -base64 48`. **Treat as a peer of `CLOUDPAYMENTS_API_SECRET` for rotation cadence — losing it means losing every encrypted audit row.**)
 
 ## Documentation
 

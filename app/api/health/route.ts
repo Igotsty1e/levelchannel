@@ -20,7 +20,7 @@ function readDeployedVersion(): string | null {
   return /^[a-f0-9]{7,64}$/i.test(sha) ? sha : null
 }
 
-// Render и uptime monitor пингуют этот эндпоинт.
+// Хост-process и внешний uptime monitor пингуют этот эндпоинт.
 // Возвращаем 200, если приложение в принципе живо и базовые контуры
 // сконфигурированы; 503, если что-то критичное отсутствует — например,
 // payments=cloudpayments, но нет API Secret. В таком состоянии платить

@@ -23,7 +23,10 @@ For every changed file, ask:
       or HMAC verify (CloudPayments webhooks).
 - [ ] **No new `new Pool(...)` outside `lib/db/pool.ts`** (single
       shared pool - `getDbPool()` / `getDbPoolOrNull()`). Per-domain
-      getters are fine; new ad-hoc Pools are not.
+      getters are fine; new ad-hoc Pools are not. Bypassing
+      `getDbPool` also bypasses the Wave 1.1 TLS gate
+      (`resolveSslConfig`); standalone scripts that need a pool
+      should mirror the same auto-detect logic or import the helper.
 - [ ] **No client-supplied amount or email is trusted on the
       server.** Payment amount comes from
       `lib/payments/catalog.normalizePaymentAmount` +
@@ -100,9 +103,20 @@ the invariant - not just that the test is green.
       you touch this file, regression test in
       `tests/payments/cloudpayments-webhook.test.ts` covers the
       exact bytes - re-run it.
+- [ ] **Webhook delivery dedup intact** (Wave 1.2). Every webhook
+      flowing through `handleCloudPaymentsWebhook` must consult
+      `webhook_deliveries` keyed by `(provider, kind, transaction_id)`
+      after HMAC + parse and short-circuit on a hit. Regression
+      tests in `tests/payments/cloudpayments-webhook-dedup.test.ts`
+      and `tests/integration/payment/webhook-dedup.test.ts`.
+- [ ] **Webhook secondary rate limit intact** (Wave 2.2). 60/min/
+      kind/IP cap sits AFTER HMAC; HMAC-fail flood must consume
+      zero bucket budget. Regression test in
+      `tests/payments/cloudpayments-webhook-rate-limit.test.ts`.
 - [ ] **CloudPayments webhooks never go through nginx `limit_req`**
       (they're matched by `^~ /api/payments/webhooks/`). HMAC is
-      the only auth on these routes.
+      the only auth on these routes; the application-level rate
+      limit above is the only post-HMAC bound.
 - [ ] **No `tokenize: true` or `metadata.rememberCard: true` without
       explicit user consent** at `pricing-section.tsx`. `tokens.ts:
       readRememberCardConsent` enforces this on the webhook side.
@@ -127,6 +141,19 @@ the invariant - not just that the test is green.
       test (which iterates the TS array).
 - [ ] FK constraint `invoice_id → payment_orders` ON DELETE NO
       ACTION stays intact. Audit must outlive the order.
+- [ ] **Audit at-rest encryption intact** (Wave 2.1). `recordPaymentAuditEvent`
+      passes `AUDIT_ENCRYPTION_KEY` as the last bind so
+      `pgp_sym_encrypt(...)` populates `customer_email_enc` /
+      `client_ip_enc` whenever the plaintext column is non-null.
+      `listPaymentAuditEventsByInvoice` reads via
+      `pgp_sym_decrypt(_enc, key)` with plaintext fallback. Regression
+      tests: `tests/audit/encryption.test.ts`,
+      `tests/integration/audit/encryption.test.ts`. If you change the
+      bind order in the recorder, update the unit test's `binds[13]`
+      assertion.
+- [ ] **`AUDIT_ENCRYPTION_KEY` floor**: `lib/audit/encryption.ts` enforces
+      ≥32 chars and a production-mandatory presence. Do not relax these
+      without an explicit security review.
 
 ## 6. Observability
 
