@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { listPaymentAuditEventsByInvoice } from '@/lib/audit/payment-events'
 import { getDbPool } from '@/lib/db/pool'
 import {
   ensureWebhookDeliveriesSchema,
