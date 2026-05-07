@@ -207,7 +207,15 @@ Use `rowCount` to distinguish the failure modes: 0 rows + `start_at < now()+24h`
 
 ### #4 HIGH — `invoiceId` is treated as a capability-secret
 
-**Status:** open. **Confirmed during 2026-05-07 triage:** the `payment_orders` table has no `account_id` column at all. There is no current way to gate by ownership at the data layer; the routes can ONLY validate by `invoiceId` shape. Receipt_token is the right design.
+**Status:** Phase 1 schema in flight; runtime + UI threading still open.
+**Confirmed during 2026-05-07 triage:** the `payment_orders` table has no `account_id` column at all. There is no current way to gate by ownership at the data layer; the routes can ONLY validate by `invoiceId` shape. Receipt_token is the right design.
+
+**Phase status (2026-05-07 evening):**
+
+  - ✅ **Phase 1 — schema** — Migration 0030 adds `receipt_token_hash` column (nullable, partial unique index). No runtime change yet. PR in flight.
+  - ⏳ **Phase 1.5 — runtime mint** — `createOrder` mints a 32-byte token via `crypto.randomBytes(32).toString('base64url')`, hashes with sha256, stores hash in the new column, returns the plain token in the response of `POST /api/payments`. Routes accept `?token=<plain>` query param OR `X-Receipt-Token` header but do NOT enforce yet — token presence is a no-op for now. This phase is non-breaking: existing UI continues to work; new orders quietly get a token in the response that the UI ignores.
+  - ⏳ **Phase 2 — enforcement + UI threading** — Routes refuse when the token is missing AND the order is older than the grace window (proposed: 5 min for new orders, 24h for legacy NULL-token rows). UI threads the token through redirects to `/thank-you`, the SSE EventSource URL, the cancel button POST. After this phase the finding is closed.
+  - ⏳ **Phase 3 — drop grace window** — Once Phase 2 has been in prod for 7+ days with no rollback need, drop the legacy NULL-token grace window. Pre-wave orders become unreachable via these routes; that's the intended end state (operators have audit-log access, customers got their receipt email).
 
 **Bypass shape.** Anyone who learns an `invoiceId` (leaked URL, browser history on a shared device, screenshot, GitHub issue comment) can: read order status via `GET /api/payments/[invoiceId]`, open an unlimited-duration SSE stream, and cancel a pending order. None of the three routes require a session.
 
