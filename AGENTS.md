@@ -107,6 +107,32 @@ Read the owner doc before touching:
 - `lib/auth/`, `lib/email/`, `app/api/auth/*`
 - anything production-bound or server-facing
 
+### Skill routing — non-negotiable for this project
+
+These four rules close gaps surfaced during the 2026-05-07 Wave 1+2
++ adversarial-review session. Each rule names a concrete moment in
+the workflow and the gstack skill that owns it. The skills are
+listed in `~/.claude/SKILLS.md`; invoke via the `Skill` tool, not
+ad-hoc Bash.
+
+| When | Skill | Why this rule exists |
+|---|---|---|
+| **Before any wave that spans more than two PRs** | `/plan-eng-review` | Independent eng-manager pass on the plan **before** code lands. Wave 1.1's overzealous "refuse localhost in prod" ship-clean-then-incident would have been caught here as «single-server topology is valid; do not throw». 10 minutes saves a hotfix. |
+| **Before merging any PR that touches `lib/payments/` or `lib/security/`** | `/review` | Goes deeper than `public-surface` + `build` — checks SQL safety, LLM trust boundary violations, conditional side-effects. CI runs the mechanical gates; `/review` runs the structural ones. |
+| **After every prod deploy with a route-level change** | `/qa` (or `/qa-only` if read-only) | Browser-driven regression check. `post-deploy-smoke.sh` covers status-code shape; `/qa` covers actual flows (registration → verify-email → cabinet, checkout → 3DS → /thank-you). The Resend-sandbox-from issue would have surfaced here on day one. |
+| **For any second-opinion / adversarial review** | `/codex` | Self-review of own work has a known conflict-of-interest. Codex is the independent counterweight. Invoke via `Skill('codex', ...)`, not via raw `Bash('codex exec ...')` — the skill handles the stdin / usage-cap fallbacks. |
+
+These rules are mandatory, not advisory. Skipping them is a process
+debt that surfaces as a Sentry alert at midnight. If a step is
+inapplicable (e.g. doc-only PR doesn't need `/qa`), say so explicitly
+in the PR description; don't quietly drop the gate.
+
+The reciprocal: do NOT call code-writing skills (`/qa`, `/investigate`,
+`/design-review`) on a problem you already understand and can fix in
+under 15 minutes — they add coordination cost. The point is to
+delegate the work that benefits from a structured pass, not every
+keystroke.
+
 ### Deploy posture
 
 This is **production with real money.** The bar:
