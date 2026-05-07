@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
-import { markAccountVerified } from '@/lib/auth/accounts'
+import { recordAuthAuditEvent } from '@/lib/audit/auth-events'
+import { getAccountById, markAccountVerified } from '@/lib/auth/accounts'
 import {
   buildSessionCookie,
   createSession,
@@ -50,6 +51,20 @@ export async function GET(request: Request) {
     ip: getClientIp(request),
     userAgent: request.headers.get('user-agent') || null,
   })
+
+  // Wave 5 — successful verification audit. Best-effort; falling
+  // through on a missing-account read keeps the user-visible redirect
+  // working even if audit pool is down.
+  const account = await getAccountById(consumed.accountId)
+  if (account) {
+    await recordAuthAuditEvent({
+      eventType: 'auth.verify.success',
+      accountId: account.id,
+      email: account.email,
+      clientIp: getClientIp(request),
+      userAgent: request.headers.get('user-agent'),
+    })
+  }
 
   const response = NextResponse.redirect(
     `${paymentConfig.siteUrl}/cabinet`,

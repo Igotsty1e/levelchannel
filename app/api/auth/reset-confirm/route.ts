@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
-import { setAccountPassword } from '@/lib/auth/accounts'
+import { recordAuthAuditEvent } from '@/lib/audit/auth-events'
+import { getAccountById, setAccountPassword } from '@/lib/auth/accounts'
 import { hashPassword } from '@/lib/auth/password'
 import { validatePasswordPolicy } from '@/lib/auth/policy'
 import { consumePasswordReset } from '@/lib/auth/resets'
@@ -70,6 +71,20 @@ export async function POST(request: Request) {
     ip: getClientIp(request),
     userAgent: request.headers.get('user-agent') || null,
   })
+
+  // Wave 5 — record the successful reset. The token has been consumed
+  // by here; refusing to record on a missing email lookup would lose
+  // the audit signal, so we look up the account row and use its email.
+  const account = await getAccountById(consumed.accountId)
+  if (account) {
+    await recordAuthAuditEvent({
+      eventType: 'auth.reset.confirmed',
+      accountId: account.id,
+      email: account.email,
+      clientIp: getClientIp(request),
+      userAgent: request.headers.get('user-agent'),
+    })
+  }
 
   return NextResponse.json(
     { ok: true },

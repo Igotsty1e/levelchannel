@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { recordAuthAuditEvent } from '@/lib/audit/auth-events'
 import {
   buildSessionClearCookie,
   getCurrentSession,
@@ -8,6 +9,7 @@ import {
 import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
+  getClientIp,
 } from '@/lib/security/request'
 
 export const runtime = 'nodejs'
@@ -32,6 +34,16 @@ export async function POST(request: Request) {
   const current = await getCurrentSession(request)
   if (current) {
     await revokeSession(current.session.id)
+    // Wave 5 — explicit session-revocation audit. Distinct from the
+    // janitor's bulk revoke (`scripts/db-retention-cleanup.mjs`) so the
+    // alert query can tell user-driven logout from background cleanup.
+    await recordAuthAuditEvent({
+      eventType: 'auth.session.revoked',
+      accountId: current.account.id,
+      email: current.account.email,
+      clientIp: getClientIp(request),
+      userAgent: request.headers.get('user-agent'),
+    })
   }
 
   return NextResponse.json(
