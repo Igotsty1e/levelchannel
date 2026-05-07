@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { getDbPool } from '@/lib/db/pool'
 import { paymentConfig, isCloudPaymentsConfigured } from '@/lib/payments/config'
 
 export const runtime = 'nodejs'
@@ -20,11 +21,45 @@ function readDeployedVersion(): string | null {
   return /^[a-f0-9]{7,64}$/i.test(sha) ? sha : null
 }
 
+// Race a query against a 2-second timeout. The shared pool exposes us
+// to a congested-pool worst-case latency that an ad-hoc Pool with
+// `connectionTimeoutMillis: 2_000` used to cap. Keep the same upper
+// bound here so external uptime probes don't hang.
+const PROBE_TIMEOUT_MS = 2_000
+
+async function probeDatabase(): Promise<'ok' | 'fail'> {
+  try {
+    const pool = getDbPool()
+    await Promise.race([
+      pool.query('select 1'),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`db probe timeout > ${PROBE_TIMEOUT_MS}ms`)),
+          PROBE_TIMEOUT_MS,
+        ),
+      ),
+    ])
+    return 'ok'
+  } catch {
+    return 'fail'
+  }
+}
+
 // Хост-process и внешний uptime monitor пингуют этот эндпоинт.
 // Возвращаем 200, если приложение в принципе живо и базовые контуры
 // сконфигурированы; 503, если что-то критичное отсутствует — например,
 // payments=cloudpayments, но нет API Secret. В таком состоянии платить
 // нельзя, и мы не должны казаться "здоровыми".
+//
+// Pool factory parity (lesson learned 2026-05-07): the database probe
+// goes through the SAME shared `getDbPool()` singleton that production
+// routes use. An earlier version spun up its own ad-hoc `pg.Pool`,
+// which silently bypassed any future regression in `lib/db/pool.ts`
+// (Wave 1.1's overzealous localhost-prod throw shipped clean to prod
+// because health came back green from a probe that didn't share the
+// gate). If `getDbPool()` throws — bad config, missing env, broken
+// `resolveSslConfig` — health now fails-loud so the deploy stops
+// pretending nothing is wrong.
 export async function GET() {
   const checks: Record<string, 'ok' | 'fail' | 'skip'> = {
     runtime: 'ok',
@@ -40,21 +75,7 @@ export async function GET() {
     if (!paymentConfig.databaseUrl) {
       checks.database = 'fail'
     } else {
-      try {
-        const { Pool } = await import('pg')
-        const probe = new Pool({
-          connectionString: paymentConfig.databaseUrl,
-          // Health-check не должен висеть дольше пары секунд.
-          connectionTimeoutMillis: 2_000,
-          idleTimeoutMillis: 1_000,
-          max: 1,
-        })
-        await probe.query('select 1')
-        await probe.end()
-        checks.database = 'ok'
-      } catch {
-        checks.database = 'fail'
-      }
+      checks.database = await probeDatabase()
     }
   } else {
     checks.database = 'skip'
