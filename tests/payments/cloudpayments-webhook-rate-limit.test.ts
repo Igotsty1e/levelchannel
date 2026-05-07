@@ -82,7 +82,11 @@ function reqFromIp(ip: string): Request {
     headers: {
       'content-type': 'application/json',
       'x-content-hmac': 'whatever',
-      'x-forwarded-for': ip,
+      // Codex 2026-05-07 #4b — x-forwarded-for is no longer trusted
+      // (client-controlled). The rate-limit bucket key now derives
+      // from x-real-ip, which production nginx sets from
+      // $remote_addr. Tests synthesize the same trust path.
+      'x-real-ip': ip,
     },
   })
 }

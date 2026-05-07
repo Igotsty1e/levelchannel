@@ -54,27 +54,46 @@ describe('enforceTrustedBrowserOrigin', () => {
   })
 })
 
-describe('getClientIp', () => {
-  it('uses first hop in x-forwarded-for', () => {
+describe('getClientIp (Codex #4b — XFF spoof closed)', () => {
+  it('IGNORES x-forwarded-for entirely (was the bypass shape)', () => {
+    // Pre-fix: this returned '203.0.113.5' (the attacker-supplied first
+    // hop). Now we never trust XFF — nginx appends to it instead of
+    // overwriting, so the first hop is always client-controlled. The
+    // bucket key for rate-limit MUST NOT change based on this header.
     const ip = getClientIp(
       buildRequest({ 'x-forwarded-for': '203.0.113.5, 10.0.0.1' }),
     )
-    expect(ip).toBe('203.0.113.5')
+    expect(ip).toBe('unknown')
   })
 
-  it('falls back to x-real-ip', () => {
+  it('uses x-real-ip (production nginx sets it from $remote_addr)', () => {
     expect(getClientIp(buildRequest({ 'x-real-ip': '203.0.113.9' }))).toBe(
       '203.0.113.9',
     )
   })
 
-  it('falls back to cf-connecting-ip', () => {
+  it('x-real-ip wins even when x-forwarded-for is also present', () => {
+    // An attacker who learns the X-Real-IP convention may try sending
+    // both headers. nginx OVERWRITES X-Real-IP from the socket, so by
+    // the time this code runs, X-Real-IP is the trusted anchor. XFF is
+    // ignored regardless.
+    expect(
+      getClientIp(
+        buildRequest({
+          'x-real-ip': '203.0.113.9',
+          'x-forwarded-for': '1.2.3.4',
+        }),
+      ),
+    ).toBe('203.0.113.9')
+  })
+
+  it('falls back to cf-connecting-ip when x-real-ip is absent', () => {
     expect(
       getClientIp(buildRequest({ 'cf-connecting-ip': '198.51.100.1' })),
     ).toBe('198.51.100.1')
   })
 
-  it('returns "unknown" when nothing is set', () => {
+  it('returns "unknown" when nothing is set (local dev / no proxy)', () => {
     expect(getClientIp(buildRequest({}))).toBe('unknown')
   })
 })
