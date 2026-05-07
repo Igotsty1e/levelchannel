@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-import { requireAuthenticatedAndVerified } from '@/lib/auth/guards'
+import { requireLearnerArchetypeAndVerified } from '@/lib/auth/guards'
 import { bookSlot } from '@/lib/scheduling/slots'
 import {
   enforceRateLimit,
@@ -30,7 +30,7 @@ export async function POST(request: Request, { params }: RouteParams) {
   const rl = await enforceRateLimit(request, 'slots:book:ip', 30, 60_000)
   if (rl) return rl
 
-  const auth = await requireAuthenticatedAndVerified(request)
+  const auth = await requireLearnerArchetypeAndVerified(request)
   if (!auth.ok) return auth.response
 
   const result = await bookSlot(id, auth.account.id, 'learner')

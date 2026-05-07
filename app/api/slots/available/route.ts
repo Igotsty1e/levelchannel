@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { listAccountRoles } from '@/lib/auth/accounts'
 import { getCurrentSession } from '@/lib/auth/sessions'
 import { listOpenFutureSlots } from '@/lib/scheduling/slots'
 import { enforceRateLimit } from '@/lib/security/request'
@@ -32,8 +33,25 @@ export async function GET(request: Request) {
   const to = url.searchParams.get('to')
 
   let teacherFilter: string | null | undefined = teacherFromQuery
+  const session = await getCurrentSession(request)
+
+  // Wave 1 (security) — elevated roles are not learners; this is the
+  // learner-browse endpoint. Block authenticated admin/teacher from
+  // calling it. Anonymous browsing stays open per the comment above.
+  if (session) {
+    const roles = await listAccountRoles(session.account.id)
+    if (roles.includes('admin') || roles.includes('teacher')) {
+      return NextResponse.json(
+        {
+          error: 'wrong_role',
+          message: 'Эта операция доступна только ученикам.',
+        },
+        { status: 403, headers: noStore },
+      )
+    }
+  }
+
   if (!teacherFilter) {
-    const session = await getCurrentSession(request)
     if (session) {
       const assigned = session.account.assignedTeacherId
       if (assigned) {

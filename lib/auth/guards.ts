@@ -70,3 +70,64 @@ export async function requireAuthenticatedAndVerified(
   }
   return { ok: true, account: auth.account, session: auth.session }
 }
+
+// Wave 1 (security) — learner-archetype gate.
+//
+// "Learner archetype" = an account that is allowed to book / cancel /
+// list lessons as a student. Two archetypes today fall under this:
+//   - accounts with no role at all (the default after registration);
+//   - accounts with the explicit `student` role (assigned by an
+//     operator for accounting / reporting; semantically identical
+//     to "no role" at the gate level).
+//
+// Accounts with `admin` or `teacher` roles are NOT learners. Per
+// migration 0023, those roles are mutually exclusive with `student`,
+// so we don't need to special-case "admin who is also student" —
+// that combination is rejected at role-grant time.
+//
+// Why deny-list (admin/teacher) instead of allow-list (student):
+// historical accounts pre-dating the role system have no role row.
+// An allow-list would lock those accounts out of their own bookings
+// after a deploy. A deny-list reads "block elevated roles, anyone
+// else passes" and keeps the existing user base unbroken.
+//
+// Use these for any /api/slots/* endpoint a learner reaches; they
+// preserve the existing 401 (no session) and 403 (verified-required)
+// shape AND add a `wrong_role` 403 with a translatable message so
+// the UI can render an explanation instead of a bare forbidden.
+function rejectElevated(): GuardResult {
+  return {
+    ok: false,
+    response: NextResponse.json(
+      {
+        error: 'wrong_role',
+        message: 'Эта операция доступна только ученикам.',
+      },
+      { status: 403, headers: { 'Cache-Control': 'no-store, max-age=0' } },
+    ),
+  }
+}
+
+export async function requireLearnerArchetype(
+  request: Request,
+): Promise<GuardResult> {
+  const auth = await requireAuthenticated(request)
+  if (!auth.ok) return auth
+  const roles = await listAccountRoles(auth.account.id)
+  if (roles.includes('admin') || roles.includes('teacher')) {
+    return rejectElevated()
+  }
+  return { ok: true, account: auth.account, session: auth.session }
+}
+
+export async function requireLearnerArchetypeAndVerified(
+  request: Request,
+): Promise<GuardResult> {
+  const auth = await requireAuthenticatedAndVerified(request)
+  if (!auth.ok) return auth
+  const roles = await listAccountRoles(auth.account.id)
+  if (roles.includes('admin') || roles.includes('teacher')) {
+    return rejectElevated()
+  }
+  return { ok: true, account: auth.account, session: auth.session }
+}
