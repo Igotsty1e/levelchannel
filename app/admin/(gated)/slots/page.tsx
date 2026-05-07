@@ -1,4 +1,7 @@
-import { listAccountsByRole } from '@/lib/auth/accounts'
+import {
+  listAccountsByRole,
+  listLearnerCandidates,
+} from '@/lib/auth/accounts'
 import { listActiveTariffs } from '@/lib/pricing/tariffs'
 import { listAllSlotsForAdmin } from '@/lib/scheduling/slots'
 
@@ -8,10 +11,11 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export default async function AdminSlotsPage() {
-  const [teachers, slots, tariffs] = await Promise.all([
+  const [teachers, slots, tariffs, learners] = await Promise.all([
     listAccountsByRole('teacher'),
     listAllSlotsForAdmin({ status: 'all', limit: 200 }),
     listActiveTariffs(),
+    listLearnerCandidates(),
   ])
 
   return (
@@ -40,6 +44,7 @@ export default async function AdminSlotsPage() {
           titleRu: t.titleRu,
           amountKopecks: t.amountKopecks,
         }))}
+        initialLearners={learners}
       />
     </>
   )

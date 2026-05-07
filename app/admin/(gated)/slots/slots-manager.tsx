@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import type { LessonSlot } from '@/lib/scheduling/slots'
 
 type Teacher = { id: string; email: string }
+type Learner = { id: string; email: string }
 type TariffOption = {
   id: string
   slug: string
@@ -16,6 +17,7 @@ type Props = {
   initialTeachers: Teacher[]
   initialSlots: LessonSlot[]
   initialTariffs: TariffOption[]
+  initialLearners: Learner[]
 }
 
 const TZ = 'Europe/Moscow'
@@ -65,6 +67,7 @@ export function SlotsManager({
   initialTeachers,
   initialSlots,
   initialTariffs,
+  initialLearners,
 }: Props) {
   const [slots, setSlots] = useState<LessonSlot[]>(initialSlots)
   const [busy, setBusy] = useState(false)
@@ -118,6 +121,7 @@ export function SlotsManager({
 
       <SlotList
         slots={slots}
+        learners={initialLearners}
         onMutated={refresh}
         onError={(m) => setErr(m)}
         onInfo={(m) => flash(m)}
@@ -549,6 +553,7 @@ function BulkCreate({
 
 function SlotList({
   slots,
+  learners,
   onMutated,
   onError,
   onInfo,
@@ -556,6 +561,7 @@ function SlotList({
   setBusy,
 }: {
   slots: LessonSlot[]
+  learners: Learner[]
   onMutated: () => void
   onError: (m: string) => void
   onInfo: (m: string) => void
@@ -565,6 +571,13 @@ function SlotList({
   const [filter, setFilter] = useState<
     'all' | 'open' | 'booked' | 'cancelled' | 'completed' | 'no_show'
   >('all')
+  // Inline booking picker: which slot is in "picking learner" mode.
+  // `null` = none expanded. Replaces window.prompt with a real
+  // dropdown so the operator picks from existing learners.
+  const [bookingForId, setBookingForId] = useState<string | null>(null)
+  const [pickedLearnerEmail, setPickedLearnerEmail] = useState<string>(
+    learners[0]?.email ?? '',
+  )
   const filtered =
     filter === 'all'
       ? slots
@@ -616,9 +629,23 @@ function SlotList({
     onMutated()
   }
 
-  async function bookAsOp(s: LessonSlot) {
-    const learnerEmail = window.prompt('E-mail учащегося')?.trim()
-    if (!learnerEmail) return
+  function startBooking(s: LessonSlot) {
+    setBookingForId(s.id)
+    if (!pickedLearnerEmail && learners[0]) {
+      setPickedLearnerEmail(learners[0].email)
+    }
+  }
+
+  function cancelBooking() {
+    setBookingForId(null)
+  }
+
+  async function confirmBooking(s: LessonSlot) {
+    const learnerEmail = pickedLearnerEmail.trim()
+    if (!learnerEmail) {
+      onError('Выберите ученика из списка.')
+      return
+    }
     if (
       !(await call('POST', `/api/admin/slots/${s.id}/book-as-operator`, {
         learnerEmail,
@@ -626,6 +653,7 @@ function SlotList({
     )
       return
     onInfo(`Забронировано на ${learnerEmail}.`)
+    setBookingForId(null)
     onMutated()
   }
 
@@ -709,68 +737,128 @@ function SlotList({
                   </td>
                   <td style={{ padding: '8px 10px' }}>{statusLabel(s.status)}</td>
                   <td style={{ padding: '8px 10px' }}>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {s.status === 'open' ? (
-                        <>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => bookAsOp(s)}
-                            style={smallBtnStyle()}
+                    {bookingForId === s.id ? (
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: 6,
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        {learners.length === 0 ? (
+                          <span
+                            style={{
+                              color: 'var(--secondary)',
+                              fontSize: 11,
+                            }}
                           >
-                            Забронировать
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => del(s)}
-                            style={smallDangerStyle()}
+                            Нет подходящих учеников. Зарегистрируйте
+                            ученика и подтвердите его e-mail сначала.
+                          </span>
+                        ) : (
+                          <select
+                            value={pickedLearnerEmail}
+                            onChange={(e) =>
+                              setPickedLearnerEmail(e.target.value)
+                            }
+                            style={{
+                              background: 'transparent',
+                              border: '1px solid var(--border)',
+                              borderRadius: 4,
+                              padding: '4px 6px',
+                              color: 'var(--text)',
+                              fontSize: 12,
+                              minWidth: 200,
+                            }}
                           >
-                            Удалить
-                          </button>
-                        </>
-                      ) : null}
-                      {s.status === 'booked' &&
-                      new Date(s.startAt).getTime() <= Date.now() ? (
-                        <>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => mark(s, 'completed')}
-                            style={smallBtnStyle()}
-                          >
-                            Прошёл
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => mark(s, 'no_show_learner')}
-                            style={smallDangerStyle()}
-                          >
-                            Не пришёл (учащ.)
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => mark(s, 'no_show_teacher')}
-                            style={smallDangerStyle()}
-                          >
-                            Не пришёл (учит.)
-                          </button>
-                        </>
-                      ) : null}
-                      {s.status === 'booked' ||
-                      s.status === 'open' ? (
+                            {learners.map((l) => (
+                              <option key={l.id} value={l.email}>
+                                {l.email}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <button
+                          type="button"
+                          disabled={busy || learners.length === 0}
+                          onClick={() => confirmBooking(s)}
+                          style={smallBtnStyle()}
+                        >
+                          Подтвердить
+                        </button>
                         <button
                           type="button"
                           disabled={busy}
-                          onClick={() => cancel(s)}
+                          onClick={cancelBooking}
                           style={smallDangerStyle()}
                         >
-                          Отменить
+                          Отмена
                         </button>
-                      ) : null}
-                    </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {s.status === 'open' ? (
+                          <>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => startBooking(s)}
+                              style={smallBtnStyle()}
+                            >
+                              Забронировать
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => del(s)}
+                              style={smallDangerStyle()}
+                            >
+                              Удалить
+                            </button>
+                          </>
+                        ) : null}
+                        {s.status === 'booked' &&
+                        new Date(s.startAt).getTime() <= Date.now() ? (
+                          <>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => mark(s, 'completed')}
+                              style={smallBtnStyle()}
+                            >
+                              Прошёл
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => mark(s, 'no_show_learner')}
+                              style={smallDangerStyle()}
+                            >
+                              Не пришёл (учащ.)
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => mark(s, 'no_show_teacher')}
+                              style={smallDangerStyle()}
+                            >
+                              Не пришёл (учит.)
+                            </button>
+                          </>
+                        ) : null}
+                        {s.status === 'booked' || s.status === 'open' ? (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => cancel(s)}
+                            style={smallDangerStyle()}
+                          >
+                            Отменить
+                          </button>
+                        ) : null}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

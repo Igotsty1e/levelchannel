@@ -180,6 +180,34 @@ export async function listAccountsByRole(
   }))
 }
 
+// Operator-side: list accounts that could be booked into a slot —
+// verified, not disabled, not purged, NOT holding the admin role
+// (admin is mutually exclusive with the learner workflow per the
+// 2026-05-04 separation). Used by the /admin/slots booking dropdown
+// so the operator picks an existing learner instead of typing the
+// e-mail by hand.
+export async function listLearnerCandidates(): Promise<
+  Array<{ id: string; email: string }>
+> {
+  const pool = getAuthPool()
+  const result = await pool.query(
+    `select a.id, a.email
+       from accounts a
+      where a.email_verified_at is not null
+        and a.disabled_at is null
+        and a.purged_at is null
+        and not exists (
+          select 1 from account_roles r
+           where r.account_id = a.id and r.role = 'admin'
+        )
+      order by a.email asc`,
+  )
+  return result.rows.map((r) => ({
+    id: String(r.id),
+    email: String(r.email),
+  }))
+}
+
 // Bulk-load roles for a set of accounts. Used by /admin/accounts list
 // view to render a Роли column without an N+1 query.
 export async function listRolesForAccounts(
