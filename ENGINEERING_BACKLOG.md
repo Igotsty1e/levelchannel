@@ -6,6 +6,89 @@ to be implemented, not the current actual state of production.
 If a task already works in code or on the server, it does not belong
 here.
 
+## TOMORROW — 2026-05-08 — verify and execute
+
+### Wave 2.1 Phase B — null out plaintext PII in `payment_audit_events`
+
+**This is the destructive completion of Wave 2.1 (encryption-at-rest).
+After 24h+ of real prod traffic on the dual-write path it should be
+the first thing checked next morning.**
+
+Wave 2.1 (PR #45 squash `a094337`, shipped 2026-05-07) added
+`customer_email_enc` + `client_ip_enc` bytea columns and started
+dual-writing them via pgcrypto. The plaintext columns are still
+populated for safe rollback during the migration window. Real
+security gain (DB-dump leak useless without the key) only kicks in
+once plaintext is wiped.
+
+Pre-flight checks (must all pass before running the destructive UPDATE):
+
+- [ ] At least 24 hours have elapsed since the Wave 2.1 deploy.
+- [ ] `/api/health` reports the post-Wave SHA + `database: ok`.
+- [ ] No `[audit]` warns in `journalctl -u levelchannel` over the last
+      24h (an `AUDIT_ENCRYPTION_KEY` mismatch / missing key surfaces
+      there).
+- [ ] Re-run the verification probe and confirm zero plaintext-only
+      rows AND non-zero `_enc` populated rows:
+
+      ```sql
+      select
+        count(*) filter (where customer_email is not null and customer_email_enc is null) as plaintext_only_email,
+        count(*) filter (where client_ip is not null and client_ip_enc is null)         as plaintext_only_ip,
+        count(*) filter (where customer_email_enc is not null)                          as encrypted_email_rows,
+        count(*) filter (where client_ip_enc is not null)                               as encrypted_ip_rows
+      from payment_audit_events;
+      ```
+
+      Expect `plaintext_only_*` = 0 and `encrypted_*_rows` ≥ 18 (the
+      backfilled count from 2026-05-07; should grow with every new
+      audit event since).
+
+- [ ] Sample roundtrip: pick three rows by hand and confirm
+      `pgp_sym_decrypt(customer_email_enc, '<key>') = customer_email`.
+      If any row mismatches, STOP and investigate before the
+      destructive step.
+
+- [ ] Snapshot the table before the destructive UPDATE so a rollback
+      is one query away:
+
+      ```sql
+      create table payment_audit_events_pre_phase_b as
+        select * from payment_audit_events;
+      ```
+
+      Drop the snapshot only after Phase B has been in prod for ≥7 days
+      with no rollback need.
+
+Destructive step (run inside a transaction, eyes on the dashboard):
+
+```sql
+begin;
+update payment_audit_events
+   set customer_email = null,
+       client_ip      = null
+ where customer_email_enc is not null
+    or client_ip_enc       is not null;
+-- expect a row count matching the backfilled set + new rows since.
+-- if the count looks wrong, ROLLBACK; do not COMMIT.
+commit;
+```
+
+Post-flight:
+
+- [ ] `/api/admin/payments/[invoiceId]` still renders audit events
+      with `customer_email` populated (reads now exclusively go
+      through `pgp_sym_decrypt`).
+- [ ] `/api/health` still reports `database: ok`.
+- [ ] Write one smoke audit event post-update (e.g. by issuing a
+      throwaway `POST /api/payments` on the mock backend) and confirm
+      the new row has `customer_email IS NULL` and
+      `customer_email_enc IS NOT NULL`.
+
+Phase C (drop the now-empty plaintext columns) goes into a separate
+backlog entry **once Phase B has been in prod ≥30 days with no
+rollback need**. Do not chain Phase B + Phase C in the same window.
+
 ## Cabinet expansion (next phases)
 
 Guest checkout is not touched: subsequent phases are additive.

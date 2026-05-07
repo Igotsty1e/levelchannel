@@ -18,10 +18,12 @@ Already in place:
 - origin checks for browser-initiated payment requests
 - `sec-fetch-site` filtering
 - shared-store rate limiting per IP (Postgres-backed `rate_limit_buckets`; in-memory fallback when `DATABASE_URL` is unset or transiently unreachable)
+- a secondary IP-keyed rate limit on the CloudPayments webhook endpoints (60/min per kind) sitting AFTER HMAC verify, so unauth flood (HMAC-fail → 401) consumes zero budget while a key-leak flood is bounded
 - `invoiceId` validation
 - `Cache-Control: no-store` for payment responses
 - HMAC verification for CloudPayments webhooks via `X-Content-HMAC` and `Content-HMAC`
   (HMAC-SHA256 in base64 over the raw body, no re-encoding)
+- delivery-level dedup on the CloudPayments webhook contour: every accepted webhook is recorded by `(provider, kind, transaction_id)` in `webhook_deliveries`; a retried delivery returns the cached response with a `Webhook-Replay: true` header and is short-circuited before `markOrderPaid`, audit, operator email, or allocation runs again
 - amount validation on the server, no trust in the amount or e-mail from the client
 - a separate server-side proof of personal-data consent acceptance
   (timestamp, document version, document path, IP, user agent)
@@ -31,6 +33,7 @@ Already in place:
   Token API through server-side Basic Auth; tokens never reach the browser
 - the payment storage file is excluded from the repository
 - telemetry is hashed with a dedicated `TELEMETRY_HASH_SECRET`, and when the secret is empty the app omits `emailHash` instead of using a hardcoded fallback
+- TLS-required Postgres connections in production: `lib/db/pool.ts` enforces `ssl: { rejectUnauthorized: true }` on every non-localhost host. Production refuses to start on `localhost` / `DB_SSL=disable` / `DB_SSL_REJECT_UNAUTHORIZED=false` (the JS-side `ssl` option overrides any URL hint, so the policy is owned in code, not in the URL)
 - `npm audit --omit=dev` is clean on the current lockfile
 
 ## Auth and account layer
@@ -82,6 +85,17 @@ do work.
 - single-use-tokens whitelist invariant: `tableFor(scope)` throws a
   typed error if the scope is invalid; SQL is never built on top of
   an `undefined` table name.
+- learner-archetype gate on `/api/slots/*`: `requireLearnerArchetype`
+  and `requireLearnerArchetypeAndVerified` (`lib/auth/guards.ts`)
+  block authenticated `admin` and `teacher` accounts from learner-side
+  slot endpoints (`mine`, `available`, `[id]/book`, `[id]/cancel`)
+  with `error: 'wrong_role'`. Deny-list rather than allow-list because
+  legacy accounts have no role row at all (the cabinet treats "no
+  role" as an implicit student); per migration 0023 admin is mutually
+  exclusive with student / teacher, so the deny-list is sufficient.
+  Anonymous browse on `/api/slots/available` stays open (loose
+  contract, no learner data leaks since open slots carry teacher +
+  tariff + timing only).
 
 ## Protected assets
 
@@ -129,6 +143,42 @@ gap in the audit log**. Defense: the uptime monitor
 INSERT itself is **not** transaction-bound to the business INSERT,
 intentionally.
 
+**At-rest encryption.** From Wave 2.1 (PR #45 squash `a094337`,
+shipped 2026-05-07), `customer_email` and `client_ip` are also
+written to bytea columns `customer_email_enc` and `client_ip_enc`
+via `pgp_sym_encrypt(plaintext, AUDIT_ENCRYPTION_KEY)` (pgcrypto
+extension; migration 0025). Reads prefer the encrypted column with
+plaintext fallback so the eventual operator-driven null-out is
+invisible to consumers. The migration is three-phase:
+
+1. **Phase A (live now).** Both columns dual-write. Plaintext stays
+   for safe rollback during the migration window. Backfill of
+   pre-Wave-2.1 rows handled by `scripts/backfill-audit-encryption.mjs`.
+2. **Phase B (operator-driven, no schema change).** A single SQL
+   `UPDATE ... SET customer_email = NULL, client_ip = NULL WHERE
+   customer_email_enc IS NOT NULL OR client_ip_enc IS NOT NULL`
+   wipes plaintext from disk. From here on, a DB-dump leak is useless
+   without `AUDIT_ENCRYPTION_KEY`. Tracked in `ENGINEERING_BACKLOG.md
+   § TOMORROW — 2026-05-08`.
+3. **Phase C (future wave).** Drop the now-empty plaintext columns
+   for good. Sequenced ≥30 days after Phase B with no rollback need.
+
+`AUDIT_ENCRYPTION_KEY` is mandatory in `NODE_ENV=production` and
+must be at least 32 characters. `lib/audit/encryption.ts` enforces
+both invariants and throws on first use if the key is missing in
+production. A throw is caught by `recordPaymentAuditEvent` (the
+recorder is best-effort) which surfaces a `console.warn` and skips
+the row — operator sees a loud signal at the very next audit event
+and fixes the env. Reads in `listPaymentAuditEventsByInvoice` log a
+warning and fall back to plaintext if the key is missing in
+production, so admin tooling does not go dark on a misconfiguration.
+
+Key rotation (operator runbook, not yet automated): set the new key
+alongside the old (`AUDIT_ENCRYPTION_KEY=new`,
+`AUDIT_ENCRYPTION_KEY_OLD=old` — note the latter is a future
+extension, not yet in code), run a re-encrypt sweep, drop the old
+key. Until rotation is wired in, the active key is the only key.
+
 ## Implemented controls
 
 ### 1. Frontend / Browser
@@ -153,6 +203,8 @@ intentionally.
 - the CloudPayments webhook signature is checked via HMAC
 - the webhook amount is reconciled against the stored order amount
 - the webhook `AccountId` / `Email` is reconciled against the stored order e-mail
+- delivery-level dedup: a retried CloudPayments webhook (same `TransactionId`, same kind) returns the cached response with `Webhook-Replay: true` and is short-circuited before re-running the handler — no double `markOrderPaid`, no duplicate audit row, no duplicate operator email, no duplicate allocation insert. Backed by `webhook_deliveries` (migration 0024) keyed by `(provider, kind, transaction_id)`. Best-effort: a Postgres outage on the dedup lookup or persist falls through to the legacy non-dedup path so a real webhook is never blocked by dedup infra
+- secondary IP-keyed rate limit on the webhook endpoints (60/min per kind) sits AFTER HMAC verify; an unauth flood (HMAC-fail → 401) consumes zero budget while a key-leak flood is bounded
 - duplicate events are kept as an audit trail
 - a `fail` after `paid` does not overwrite the successful status
 - the chek is delivered to e-mail through CloudPayments / CloudKassir; the site does not send it itself
@@ -162,6 +214,8 @@ intentionally.
 - `.env` is excluded from the repository
 - the payment storage file is excluded from the repository
 - CloudPayments credentials are used only on the server
+- `AUDIT_ENCRYPTION_KEY` (Wave 2.1) is mandatory in production; `lib/audit/encryption.ts` throws on first use without it. Minimum length is 32 characters. The key is the only thing that makes a `payment_audit_events` DB-dump useful — treat it as a peer of `CLOUDPAYMENTS_API_SECRET` and `AUTH_RATE_LIMIT_SECRET` for rotation cadence
+- `DB_SSL` / `DB_SSL_REJECT_UNAUTHORIZED` (Wave 1.1) opt-outs are only honored outside production. Both `DB_SSL=disable` and `DB_SSL_REJECT_UNAUTHORIZED=false` throw on pool init in `NODE_ENV=production`; a `DATABASE_URL` pointing at `localhost` in production also throws
 - `scripts/public-surface-check.sh` blocks private runbooks, `.env*`,
   and known concrete production paths from both local commits and CI
 
@@ -170,8 +224,8 @@ intentionally.
 - payment telemetry: Postgres is the primary path, file fallback is for the case
   of a DB outage (see `lib/telemetry/store.ts`). If `TELEMETRY_HASH_SECRET`
   is empty, telemetry still records the event but drops `emailHash`.
-- there is no centralized audit log storage
-- there is no Sentry / alerting / intrusion visibility
+- audit-log encryption is **mid-migration** until Phase B lands (see § Audit log → At-rest encryption). Until then a DB dump still leaks plaintext — the bytea ciphertext just lives alongside it.
+- audit-log key rotation is operator-only and not automated. There is no `AUDIT_ENCRYPTION_KEY_OLD` fallback path in code yet; rotating means a one-shot re-encrypt sweep with both keys held momentarily. If the key is lost, every encrypted row is unrecoverable — back up the env-var alongside `CLOUDPAYMENTS_API_SECRET`.
 
 ## Ownership boundary
 

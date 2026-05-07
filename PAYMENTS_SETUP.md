@@ -24,10 +24,12 @@ checklist for a new or repeated production environment.
    - `PAYMENTS_STORAGE_BACKEND=postgres`
    - `PAYMENTS_ALLOW_MOCK_CONFIRM=false`
    - `NEXT_PUBLIC_SITE_URL=https://your-domain`
-   - `DATABASE_URL=postgresql://...`
+   - `DATABASE_URL=postgresql://...` (must reach Postgres over TLS unless the host is `localhost` — `lib/db/pool.ts` forces strict TLS in production)
    - `TELEMETRY_HASH_SECRET=...`
    - `CLOUDPAYMENTS_PUBLIC_ID=...`
    - `CLOUDPAYMENTS_API_SECRET=...`
+   - `AUTH_RATE_LIMIT_SECRET=...` (32+ random chars; mandatory in prod)
+   - `AUDIT_ENCRYPTION_KEY=...` (32+ random chars; mandatory in prod. Generate with `openssl rand -base64 48`. Encrypts `payment_audit_events.customer_email` + `client_ip` via pgcrypto. Losing this key loses every encrypted audit row — back it up alongside `CLOUDPAYMENTS_API_SECRET`)
 3. In the CloudPayments cabinet, verify that the needed payment methods are enabled in the form (`bank card`, optionally `T-Pay`, others).
 4. In the CloudPayments / CloudKassir cabinet, make sure the cash register is in live mode and chek e-mails are sent.
 5. In the CloudPayments cabinet, set the webhooks:
@@ -43,7 +45,20 @@ DATABASE_URL=postgres://... npm run migrate:up
    On an existing prod DB (where the legacy `ensureSchema*` already
    created the tables), the same command is safe: migrations `0001..0004`
    are idempotent and simply record bookkeeping in `_migrations`. See
-   `migrations/README.md` for details.
+   `migrations/README.md` for details. Migrations 0024 (webhook dedup)
+   and 0025 (pgcrypto-backed audit encryption) are also idempotent and
+   safe to re-run.
+
+   After 0025 has been applied **and** `AUDIT_ENCRYPTION_KEY` is set,
+   run a one-shot backfill to encrypt pre-Wave-2.1 audit rows:
+
+   ```bash
+   DATABASE_URL=postgres://... AUDIT_ENCRYPTION_KEY=... \
+     node scripts/backfill-audit-encryption.mjs
+   ```
+
+   Then track the destructive Phase-B null-out in `ENGINEERING_BACKLOG.md`
+   for the day after deploy (≥24h soak before wiping the plaintext columns).
 7. Run a test payment.
 8. Confirm the status changes through the webhook, not only through polling.
 9. Confirm that the chek e-mail from CloudPayments / CloudKassir arrives.
