@@ -19,6 +19,31 @@ const ensureWebhookDeliveriesSchemaMock = vi.fn().mockResolvedValue(undefined)
 const lookupWebhookDeliveryMock = vi.fn()
 const recordWebhookDeliveryMock = vi.fn().mockResolvedValue(undefined)
 
+// Wave 3.2 — the route now goes through `pool.connect()` + client
+// transaction + advisory_xact_lock for dedup-enabled cases. We mock
+// pool.connect to return a stub client that no-ops the BEGIN /
+// pg_advisory_xact_lock / COMMIT / release sequence, and we wire the
+// client variants of lookup/record to the SAME mocks as the pool
+// variants so existing assertions still see calls.
+const clientQueryMock = vi.fn().mockResolvedValue({ rows: [], rowCount: 0 })
+const clientReleaseMock = vi.fn()
+const poolConnectMock = vi.fn().mockResolvedValue({
+  query: clientQueryMock,
+  release: clientReleaseMock,
+})
+
+vi.mock('@/lib/db/pool', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/db/pool')>(
+    '@/lib/db/pool',
+  )
+  return {
+    ...actual,
+    // Override only the throw-on-missing variant; the OrNull /
+    // resolveSslConfig / getHealthProbePool surfaces stay real.
+    getDbPool: () => ({ connect: poolConnectMock }),
+  }
+})
+
 vi.mock('@/lib/audit/payment-events', async () => {
   const actual = await vi.importActual<
     typeof import('@/lib/audit/payment-events')
@@ -36,6 +61,13 @@ vi.mock('@/lib/payments/webhook-dedup', () => ({
     lookupWebhookDeliveryMock(...args),
   recordWebhookDelivery: (...args: unknown[]) =>
     recordWebhookDeliveryMock(...args),
+  // Client variants delegate to the same mocks (the route's serialized
+  // path passes the stub client as args[0]; we ignore it and forward
+  // the rest so existing assertions continue to work).
+  lookupWebhookDeliveryClient: (_client: unknown, ...rest: unknown[]) =>
+    lookupWebhookDeliveryMock(...rest),
+  recordWebhookDeliveryClient: (_client: unknown, opts: unknown) =>
+    recordWebhookDeliveryMock(opts),
 }))
 
 vi.mock('@/lib/payments/config', () => ({
@@ -129,6 +161,14 @@ describe('handleCloudPaymentsWebhook — delivery dedup', () => {
     ensureWebhookDeliveriesSchemaMock.mockClear()
     lookupWebhookDeliveryMock.mockReset()
     recordWebhookDeliveryMock.mockClear()
+    clientQueryMock.mockClear()
+    clientQueryMock.mockResolvedValue({ rows: [], rowCount: 0 })
+    clientReleaseMock.mockClear()
+    poolConnectMock.mockClear()
+    poolConnectMock.mockResolvedValue({
+      query: clientQueryMock,
+      release: clientReleaseMock,
+    })
     verifyMock.mockReturnValue(true)
     parseMock.mockReturnValue({
       InvoiceId: 'lc_test12345678',

@@ -165,27 +165,13 @@ security batch. Schedule for a dedicated wave with planning + tests.
 
 ### #3 — webhook handler concurrency (LOW severity, intentional simplification)
 
-**Findings.** Two CloudPayments retries arriving milliseconds apart
-both pass the dedup lookup (no row yet), both run the handler, both
-attempt to insert the dedup row — second `ON CONFLICT DO NOTHING`
-drops. Side effect: the handler's operator email fires twice. Audit
-rows from the second run carry `webhook.pay.received` again, but no
-business state is corrupted (`markOrderPaid` is paid→paid no-op,
-`payment_allocations` PK rejects dup, tokens upsert by email).
+**Closed 2026-05-07** in PR #60. `lib/payments/cloudpayments-route.ts:processSerialized` wraps lookup → handler → record on a sticky pool client inside one transaction with `pg_advisory_xact_lock(hashtext("cp:<kind>:<txId>"))`. Concurrent retries serialise: first acquires lock, runs handler, records, commits (lock auto-released); second waits at lock, then post-lock re-check finds the cached row and short-circuits.
 
-**Why it's parked.** CloudPayments retry cadence is minutes, not
-milliseconds. The race requires their retry infrastructure to fire
-two concurrent retries — not the documented behaviour. The duplicate
-operator email is the only user-visible cost; we ship with it
-documented.
+Edge case handled: if `recordWebhookDeliveryClient` throws AFTER the handler ran (e.g. Postgres outage mid-INSERT), the path swallows the record error and returns the handler outcome directly — does NOT fall through to the legacy pipeline (which would re-run the handler and duplicate side effects). Pre-handler errors fall through to the legacy non-dedup path.
 
-**The fix when we take it on.** Wrap the lookup → handler → record
-sequence in a `pg_advisory_xact_lock(hashtext(provider || ':' || kind
-|| ':' || transaction_id))` inside a transaction. The second concurrent
-caller waits for the lock, then sees the cache hit, returns cached.
-Trade-off: handler ops become tx-bound; not all are currently safe
-under that constraint (operator email send, recordAllocation outside
-tx). Refactor cost: ~1 day with thorough integration testing.
+The handler's own DB writes (`markOrderPaid`, audit, allocation) happen on different pool connections — they're NOT inside the lock-holding transaction. The lock just serialises "who runs the pipeline"; per-op atomicity stays at the data layer.
+
+3 unit tests pin the new pool.connect / BEGIN / advisory lock / COMMIT / release flow. 1 integration test (real Postgres) fires two concurrent `payHandler` requests with the same TxId in `Promise.all` and asserts: handler runs once, exactly one response carries `Webhook-Replay: true`, exactly one `webhook_deliveries` row exists, exactly one `webhook.pay.processed` audit row exists.
 
 ### #4 — `AUDIT_ENCRYPTION_KEY` rotation story (MEDIUM severity)
 

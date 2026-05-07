@@ -7,6 +7,7 @@ import {
   rublesToKopecks,
   type PaymentAuditEventType,
 } from '@/lib/audit/payment-events'
+import { getDbPool } from '@/lib/db/pool'
 import {
   getCloudPaymentsInvoiceId,
   parseCloudPaymentsPayload,
@@ -19,7 +20,9 @@ import { getOrder } from '@/lib/payments/store'
 import {
   ensureWebhookDeliveriesSchema,
   lookupWebhookDelivery,
+  lookupWebhookDeliveryClient,
   recordWebhookDelivery,
+  recordWebhookDeliveryClient,
   type WebhookDeliveryOutcome,
 } from '@/lib/payments/webhook-dedup'
 import { enforceRateLimit } from '@/lib/security/request'
@@ -94,6 +97,187 @@ function jsonResponse(outcome: WebhookDeliveryOutcome, replay: boolean) {
   })
 }
 
+// The audit + validate + run-handler chain. Reused by both the dedup-
+// serialized path (Wave 3.2) and the legacy non-dedup path. Returns
+// the WebhookDeliveryOutcome that the caller persists / replies with.
+async function runWebhookPipeline(
+  payload: CloudPaymentsWebhookPayload,
+  options: { kind: WebhookKind; handler?: WebhookHandler },
+): Promise<{
+  outcome: WebhookDeliveryOutcome
+  invoiceId: string | null
+  orderInvoiceId: string | null
+}> {
+  const invoiceId = getCloudPaymentsInvoiceId(payload)
+  const order = invoiceId ? await getOrder(invoiceId) : null
+
+  if (order) {
+    await recordPaymentAuditEvent({
+      eventType: RECEIVED_EVENT[options.kind],
+      invoiceId: order.invoiceId,
+      customerEmail: order.customerEmail,
+      amountKopecks: rublesToKopecks(order.amountRub),
+      fromStatus: order.status,
+      actor: `webhook:cloudpayments:${options.kind}`,
+      payload: {
+        transactionId: payload.TransactionId,
+        amountInPayload: payload.Amount,
+        emailInPayload: payload.Email,
+      },
+    })
+  }
+
+  const validation = await validateCloudPaymentsOrder(payload)
+  if (!validation.ok) {
+    if (order) {
+      await recordPaymentAuditEvent({
+        eventType: VALIDATION_FAILED_EVENT[options.kind],
+        invoiceId: order.invoiceId,
+        customerEmail: order.customerEmail,
+        amountKopecks: rublesToKopecks(order.amountRub),
+        fromStatus: order.status,
+        actor: `webhook:cloudpayments:${options.kind}`,
+        payload: { code: validation.code },
+      })
+    }
+    return {
+      outcome: { status: 200, body: { code: validation.code } },
+      invoiceId,
+      orderInvoiceId: order?.invoiceId ?? null,
+    }
+  }
+
+  if (options.handler) {
+    await options.handler(payload)
+  }
+  return {
+    outcome: { status: 200, body: { code: 0 } },
+    invoiceId,
+    orderInvoiceId: order?.invoiceId ?? null,
+  }
+}
+
+// Wave 3.2 — serialised dedup-aware pipeline.
+//
+// Holds a sticky pool client. Inside one transaction:
+//   1. acquire `pg_advisory_xact_lock(hashtext("cp:<kind>:<txId>"))`
+//      — second concurrent retry waits at this point;
+//   2. re-check the cache (the first retry may have committed
+//      while we were waiting for the lock);
+//   3. if hit → COMMIT, return cached;
+//      if mismatch → log + run handler;
+//      if miss → run handler;
+//   4. record outcome on the same client (in-tx);
+//   5. COMMIT — releases the advisory lock atomically.
+//
+// The handler's own DB writes (markOrderPaid, audit, allocation, ...)
+// happen on DIFFERENT pool connections — they are NOT inside this
+// transaction. That's intentional: the lock just serialises "who runs
+// the pipeline"; per-op atomicity stays at the data layer.
+async function processSerialized(
+  payload: CloudPaymentsWebhookPayload,
+  transactionId: string,
+  requestFingerprint: string,
+  options: { kind: WebhookKind; handler?: WebhookHandler },
+): Promise<NextResponse> {
+  await ensureWebhookDeliveriesSchema()
+
+  const pool = getDbPool()
+  const client = await pool.connect()
+  // Track whether the handler ran so the post-handler error path
+  // doesn't fall through to the legacy pipeline (which would re-run
+  // the handler and duplicate side effects). Pre-handler errors fall
+  // through; post-handler errors swallow and return the outcome.
+  let handlerResult: Awaited<ReturnType<typeof runWebhookPipeline>> | null =
+    null
+  try {
+    await client.query('BEGIN')
+    try {
+      const lockKey = `${PROVIDER}:${options.kind}:${transactionId}`
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        lockKey,
+      ])
+
+      const cached = await lookupWebhookDeliveryClient(
+        client,
+        PROVIDER,
+        options.kind,
+        transactionId,
+        requestFingerprint,
+      )
+      if (cached.kind === 'hit') {
+        await client.query('COMMIT')
+        return jsonResponse(cached.outcome, true)
+      }
+      if (cached.kind === 'fingerprint_mismatch') {
+        console.warn(
+          '[webhook-dedup] fingerprint mismatch on cache hit; running handler:',
+          {
+            kind: options.kind,
+            transactionId,
+            cachedFingerprint: cached.cachedFingerprint,
+            incomingFingerprint: requestFingerprint,
+          },
+        )
+      }
+
+      handlerResult = await runWebhookPipeline(payload, options)
+
+      try {
+        await recordWebhookDeliveryClient(client, {
+          provider: PROVIDER,
+          kind: options.kind,
+          transactionId,
+          invoiceId:
+            handlerResult.orderInvoiceId ?? handlerResult.invoiceId ?? null,
+          outcome: handlerResult.outcome,
+          requestFingerprint,
+        })
+        await client.query('COMMIT')
+      } catch (recordErr) {
+        // Handler already ran; record failed. Roll back to release the
+        // lock; the dedup row is missing — the next retry from
+        // CloudPayments will re-run the handler (operator email may
+        // duplicate). Acceptable: better than re-running the handler
+        // RIGHT NOW via fall-through, which is guaranteed duplication.
+        try {
+          await client.query('ROLLBACK')
+        } catch {
+          // best-effort
+        }
+        console.warn(
+          '[webhook-dedup] record failed after handler ran; outcome returned, dedup row missing:',
+          recordErr instanceof Error ? recordErr.message : recordErr,
+        )
+      }
+
+      return jsonResponse(handlerResult.outcome, false)
+    } catch (err) {
+      // Pre-handler error (lock acquire, lookup, schema). Roll back.
+      try {
+        await client.query('ROLLBACK')
+      } catch {
+        // best-effort
+      }
+      if (handlerResult !== null) {
+        // Handler ran AND a downstream operation threw — return the
+        // outcome; do NOT fall through. This branch should not be
+        // reachable today (the only post-handler op is record, which
+        // is wrapped in its own try/catch above), but the guard is
+        // load-bearing if a future change adds a post-handler op.
+        console.warn(
+          '[webhook-dedup] unexpected post-handler error swallowed:',
+          err instanceof Error ? err.message : err,
+        )
+        return jsonResponse(handlerResult.outcome, false)
+      }
+      throw err
+    }
+  } finally {
+    client.release()
+  }
+}
+
 // HMAC and parse failures NEVER produce audit rows or dedup rows: at
 // that point we don't trust the body's invoice_id or transaction_id.
 // The audit table's invoice_id column has a FK on payment_orders, so
@@ -113,14 +297,11 @@ function jsonResponse(outcome: WebhookDeliveryOutcome, replay: boolean) {
 // for an unknown invoice_id won't show up in audit, only in journald.
 // The uptime/webhook-flow alerts catch the broader pattern.
 //
-// Wave 1 (security) — webhook delivery dedup:
-//
-// After HMAC + parse pass and we have a verified-source TransactionId,
-// look up `webhook_deliveries`. If we've already processed this
-// (provider, kind, transactionId), return the cached response with
-// a `Webhook-Replay: true` header and skip the rest of the pipeline.
-// If TransactionId is missing or storage is non-Postgres, fall
-// through to the legacy non-dedup path.
+// Wave 1.2 (security) — webhook delivery dedup.
+// Wave 2.2 (security) — secondary IP rate limit AFTER HMAC.
+// Wave 2.3 (security) — TxId-collision-proof fingerprint check.
+// Wave 3.2 (security) — pg_advisory_xact_lock serialises concurrent
+//                       retries so the handler runs exactly once.
 export async function handleCloudPaymentsWebhook(
   request: Request,
   options: { kind: WebhookKind; handler?: WebhookHandler },
@@ -163,116 +344,63 @@ export async function handleCloudPaymentsWebhook(
     ? computeRequestFingerprint(payload)
     : null
 
-  // Replay short-circuit. We trust the source (HMAC verified) and the
-  // transaction key, so a hit here is a legitimate retry — return the
-  // bit-for-bit response we returned the first time. Wave 2.3 also
-  // requires the request fingerprint to match the cached one; a
-  // mismatch is the TxId-collision-attack signature, in which case
-  // we fall through and run the handler.
-  if (dedupEnabled && transactionId) {
+  // Serialised dedup path. A Postgres outage on the lock acquire or
+  // the lookup is reported via console.warn and we fall through to
+  // the legacy non-dedup path so a real CloudPayments retry is never
+  // blocked by dedup infra.
+  if (dedupEnabled && transactionId && requestFingerprint) {
     try {
-      await ensureWebhookDeliveriesSchema()
+      return await processSerialized(
+        payload,
+        transactionId,
+        requestFingerprint,
+        options,
+      )
+    } catch (error) {
+      console.warn(
+        '[webhook-dedup] serialised path failed; falling back to non-dedup processing:',
+        error instanceof Error ? error.message : error,
+      )
+      // Fall through to legacy path below.
+    }
+  }
+
+  // Legacy non-dedup / fall-through path. Runs the same pipeline
+  // without the lock or the dedup row. Compatible with file-storage
+  // backends and missing-TransactionId requests; also the failure
+  // recovery path when the dedup-aware code throws (rare).
+  const result = await runWebhookPipeline(payload, options)
+
+  // If dedup is theoretically enabled but the locked path threw, we
+  // STILL try to record the outcome with the pool-based recorder so
+  // future retries can short-circuit. Best-effort.
+  if (dedupEnabled && transactionId && requestFingerprint) {
+    try {
+      // Re-check cache one more time (defensive; in case a parallel
+      // request stored a result while we were processing).
       const cached = await lookupWebhookDelivery(
         PROVIDER,
         options.kind,
         transactionId,
         requestFingerprint,
       )
-      if (cached.kind === 'hit') {
-        return jsonResponse(cached.outcome, true)
-      }
-      if (cached.kind === 'fingerprint_mismatch') {
-        console.warn(
-          '[webhook-dedup] fingerprint mismatch on cache hit; running handler:',
-          {
-            kind: options.kind,
-            transactionId,
-            cachedFingerprint: cached.cachedFingerprint,
-            incomingFingerprint: requestFingerprint,
-          },
-        )
+      if (cached.kind !== 'hit') {
+        await recordWebhookDelivery({
+          provider: PROVIDER,
+          kind: options.kind,
+          transactionId,
+          invoiceId: result.orderInvoiceId ?? result.invoiceId ?? null,
+          outcome: result.outcome,
+          requestFingerprint,
+        })
       }
     } catch (error) {
-      // Dedup is best-effort: a Postgres outage cannot block a real
-      // webhook from being processed (CloudPayments would just retry
-      // forever). Log and fall through.
       console.warn(
-        '[webhook-dedup] lookup failed; proceeding without dedup:',
+        '[webhook-dedup] persist-after-fallback failed; response still returned:',
         error instanceof Error ? error.message : error,
       )
     }
   }
 
-  // Phase 0: parsed payload, source verified. Audit the receipt — but
-  // ONLY if the invoice_id matches a real order (FK constraint). If
-  // the invoice is unknown, skip audit and let validation produce the
-  // expected `code: <nonzero>` response; the unknown-invoice case is
-  // expected and not worth a polluted audit row.
-  const invoiceId = getCloudPaymentsInvoiceId(payload)
-  const order = invoiceId ? await getOrder(invoiceId) : null
-
-  if (order) {
-    await recordPaymentAuditEvent({
-      eventType: RECEIVED_EVENT[options.kind],
-      invoiceId: order.invoiceId,
-      customerEmail: order.customerEmail,
-      amountKopecks: rublesToKopecks(order.amountRub),
-      fromStatus: order.status,
-      actor: `webhook:cloudpayments:${options.kind}`,
-      payload: {
-        transactionId: payload.TransactionId,
-        amountInPayload: payload.Amount,
-        emailInPayload: payload.Email,
-      },
-    })
-  }
-
-  let outcome: WebhookDeliveryOutcome
-
-  const validation = await validateCloudPaymentsOrder(payload)
-  if (!validation.ok) {
-    if (order) {
-      await recordPaymentAuditEvent({
-        eventType: VALIDATION_FAILED_EVENT[options.kind],
-        invoiceId: order.invoiceId,
-        customerEmail: order.customerEmail,
-        amountKopecks: rublesToKopecks(order.amountRub),
-        fromStatus: order.status,
-        actor: `webhook:cloudpayments:${options.kind}`,
-        payload: { code: validation.code },
-      })
-    }
-    outcome = { status: 200, body: { code: validation.code } }
-  } else {
-    if (options.handler) {
-      await options.handler(payload)
-    }
-    outcome = { status: 200, body: { code: 0 } }
-  }
-
-  // Persist the dedup row AFTER the handler ran so a retry that
-  // arrives during processing falls through and re-runs (acceptable
-  // — handler-level operations are individually idempotent per the
-  // module-level comment in webhook-dedup). Best-effort: if the
-  // insert fails, the response we just produced is still correct;
-  // the next retry will simply re-process.
-  if (dedupEnabled && transactionId) {
-    try {
-      await recordWebhookDelivery({
-        provider: PROVIDER,
-        kind: options.kind,
-        transactionId,
-        invoiceId: order?.invoiceId ?? invoiceId ?? null,
-        outcome,
-        requestFingerprint,
-      })
-    } catch (error) {
-      console.warn(
-        '[webhook-dedup] persist failed; response still returned:',
-        error instanceof Error ? error.message : error,
-      )
-    }
-  }
-
-  return jsonResponse(outcome, false)
+  return jsonResponse(result.outcome, false)
 }

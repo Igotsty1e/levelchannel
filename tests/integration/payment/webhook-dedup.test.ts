@@ -320,3 +320,116 @@ describe('webhook_deliveries (integration)', () => {
     expect(stale).toEqual({ kind: 'miss' })
   })
 })
+
+describe('Wave 3.2 — concurrent retry serialization (advisory_xact_lock)', () => {
+  it('two parallel handleCloudPaymentsWebhook calls run the handler exactly once', async () => {
+    // Seed an order that the Pay webhook will mark paid.
+    const invoiceId = `lc_concurrent_${Date.now().toString(36)}`
+    const amountRub = 199
+    const email = `concurrent-${Date.now()}@example.com`
+
+    await getDbPool().query(
+      `insert into payment_orders (
+         invoice_id, amount_rub, currency, description, provider, status,
+         created_at, updated_at, customer_email, receipt_email, receipt
+       ) values (
+         $1, $2, 'RUB', 'Concurrent webhook race test',
+         'cloudpayments', 'pending',
+         now(), now(), $3, $3, '{}'::jsonb
+       )`,
+      [invoiceId, amountRub, email],
+    )
+
+    // Hand-roll a Pay webhook body + HMAC. We use the same TransactionId
+    // for both retries so the dedup gate has something to dedup on.
+    const transactionId = `tx-race-${Date.now()}`
+    const rawBody = new URLSearchParams({
+      InvoiceId: invoiceId,
+      Amount: String(amountRub),
+      Email: email,
+      TransactionId: transactionId,
+      Status: 'Completed',
+      PaymentMethod: 'Card',
+    }).toString()
+    const { signCloudPaymentsBody } = await import('./sign')
+    const sig = signCloudPaymentsBody(rawBody)
+
+    function buildRequest(): Request {
+      return new Request(
+        'http://localhost:3000/api/payments/webhooks/cloudpayments/pay',
+        {
+          method: 'POST',
+          body: rawBody,
+          headers: {
+            'content-type': 'application/x-www-form-urlencoded',
+            'x-content-hmac': sig,
+          },
+        },
+      )
+    }
+
+    const { POST: payHandler } = await import(
+      '@/app/api/payments/webhooks/cloudpayments/pay/route'
+    )
+
+    // Fire two retries in parallel. Both pass HMAC, both pass rate
+    // limit, both enter the route. The Wave 3.2 advisory lock should
+    // serialise them — one runs the handler, the other sees cached.
+    const [resA, resB] = await Promise.all([
+      payHandler(buildRequest()),
+      payHandler(buildRequest()),
+    ])
+
+    expect([resA.status, resB.status]).toEqual([200, 200])
+
+    // Exactly one of the two responses should be a replay.
+    const replays = [resA, resB].filter(
+      (r) => r.headers.get('Webhook-Replay') === 'true',
+    )
+    expect(replays).toHaveLength(1)
+
+    // The order should be marked paid.
+    const orderAfter = await getDbPool().query(
+      `select status from payment_orders where invoice_id = $1`,
+      [invoiceId],
+    )
+    expect(orderAfter.rows[0].status).toBe('paid')
+
+    // Exactly ONE webhook delivery row should exist for this TxId.
+    const deliveryCount = await getDbPool().query(
+      `select count(*)::int as n from webhook_deliveries
+       where transaction_id = $1`,
+      [transactionId],
+    )
+    expect(deliveryCount.rows[0].n).toBe(1)
+
+    // Exactly ONE 'webhook.pay.processed' audit row should exist.
+    // (The 'webhook.pay.received' / 'order.created' phase events
+    // may have one or two rows depending on timing — we only assert
+    // the finalize event count, which is what the dedup is meant to
+    // bound.)
+    const events = await listPaymentAuditEventsByInvoice(invoiceId)
+    const finalizeRows = events.filter(
+      (e) => e.eventType === 'webhook.pay.processed',
+    )
+    expect(finalizeRows).toHaveLength(1)
+
+    // Cleanup.
+    await getDbPool().query(
+      `delete from payment_audit_events where invoice_id = $1`,
+      [invoiceId],
+    )
+    await getDbPool().query(
+      `delete from payment_allocations where payment_order_id = $1`,
+      [invoiceId],
+    )
+    await getDbPool().query(
+      `delete from webhook_deliveries where transaction_id = $1`,
+      [transactionId],
+    )
+    await getDbPool().query(
+      `delete from payment_orders where invoice_id = $1`,
+      [invoiceId],
+    )
+  })
+})

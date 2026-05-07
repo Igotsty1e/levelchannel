@@ -1,3 +1,5 @@
+import type { PoolClient } from 'pg'
+
 import { getDbPool } from '@/lib/db/pool'
 
 // Webhook delivery dedup. Wraps `handleCloudPaymentsWebhook` so a
@@ -205,5 +207,90 @@ export async function purgeStaleWebhookDeliveries(maxAgeDays = 90): Promise<void
   await pool.query(
     `delete from webhook_deliveries where received_at < now() - ($1::int || ' days')::interval`,
     [maxAgeDays],
+  )
+}
+
+// Wave 3.2 — sticky-client variants for serialized processing.
+//
+// `handleCloudPaymentsWebhook` wraps lookup → handler → record in a
+// single pg transaction holding `pg_advisory_xact_lock` keyed by
+// `(provider, kind, transaction_id)`. A second concurrent retry that
+// arrives while the first is mid-handler waits at the lock, then
+// re-checks the cache after acquiring it — sees the row the first
+// retry just committed and short-circuits. Result: handler runs
+// exactly once per delivery, no duplicate operator email.
+//
+// These variants do the same work as the pool-based versions above
+// but on a caller-supplied `PoolClient` so the lookup + record stay
+// inside the lock-holding transaction. The pool-based versions stay
+// for legacy / non-dedup paths and tests.
+
+export async function lookupWebhookDeliveryClient(
+  client: PoolClient,
+  provider: string,
+  kind: string,
+  transactionId: string,
+  incomingFingerprint: string | null = null,
+): Promise<WebhookDeliveryLookup> {
+  const result = await client.query(
+    `select response_status, response_body, request_fingerprint
+     from webhook_deliveries
+     where provider = $1 and kind = $2 and transaction_id = $3`,
+    [provider, kind, transactionId],
+  )
+
+  if (result.rows.length === 0) {
+    return { kind: 'miss' }
+  }
+
+  const row = result.rows[0]
+  const cachedFingerprint =
+    row.request_fingerprint != null && row.request_fingerprint !== ''
+      ? String(row.request_fingerprint)
+      : null
+
+  if (
+    cachedFingerprint !== null &&
+    incomingFingerprint !== null &&
+    cachedFingerprint !== incomingFingerprint
+  ) {
+    return { kind: 'fingerprint_mismatch', cachedFingerprint }
+  }
+
+  return {
+    kind: 'hit',
+    outcome: {
+      status: Number(row.response_status),
+      body: row.response_body as unknown,
+    },
+  }
+}
+
+export async function recordWebhookDeliveryClient(
+  client: PoolClient,
+  opts: {
+    provider: string
+    kind: string
+    transactionId: string
+    invoiceId: string | null
+    outcome: WebhookDeliveryOutcome
+    requestFingerprint?: string | null
+  },
+): Promise<void> {
+  await client.query(
+    `insert into webhook_deliveries (
+      provider, kind, transaction_id, invoice_id,
+      response_status, response_body, request_fingerprint
+    ) values ($1, $2, $3, $4, $5, $6::jsonb, $7)
+    on conflict (provider, kind, transaction_id) do nothing`,
+    [
+      opts.provider,
+      opts.kind,
+      opts.transactionId,
+      opts.invoiceId,
+      opts.outcome.status,
+      JSON.stringify(opts.outcome.body),
+      opts.requestFingerprint ?? null,
+    ],
   )
 }
