@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { recordAuthAuditEvent } from '@/lib/audit/auth-events'
 import { getAccountByEmail, listAccountRoles, setAccountPassword } from '@/lib/auth/accounts'
 import { constantTimeVerifyPassword } from '@/lib/auth/dummy-hash'
 import { rateLimitScope } from '@/lib/auth/email-hash'
@@ -73,6 +74,27 @@ export async function POST(request: Request) {
   const valid = await constantTimeVerifyPassword(password, accountUsableHash)
 
   if (!valid || !account || account.disabledAt) {
+    // Wave 5 — failed-login audit. Reason tag is INTERNAL: the route
+    // response stays generic to preserve anti-enumeration. The audit
+    // row distinguishes unknown_email / wrong_password / disabled so
+    // the slow-brute-force alert query can tell the patterns apart.
+    const reason = !email
+      ? 'malformed_email'
+      : !account
+        ? 'unknown_email'
+        : account.disabledAt
+          ? 'disabled_account'
+          : 'wrong_password'
+    await recordAuthAuditEvent({
+      eventType: 'auth.login.failed',
+      accountId: account?.id ?? null,
+      // Use the original body email when normalization rejected it,
+      // so the email_hash bucket lines up with rate-limit attempts.
+      email: email || String(body.email || ''),
+      clientIp: getClientIp(request),
+      userAgent: request.headers.get('user-agent'),
+      reason,
+    })
     return NextResponse.json(
       { error: 'Неверный e-mail или пароль.' },
       { status: 401, headers: noStore },
@@ -101,6 +123,14 @@ export async function POST(request: Request) {
     accountId: account.id,
     ip: getClientIp(request),
     userAgent: request.headers.get('user-agent') || null,
+  })
+
+  await recordAuthAuditEvent({
+    eventType: 'auth.login.success',
+    accountId: account.id,
+    email,
+    clientIp: getClientIp(request),
+    userAgent: request.headers.get('user-agent'),
   })
 
   const roles = await listAccountRoles(account.id)

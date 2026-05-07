@@ -179,6 +179,23 @@ The handler's own DB writes (`markOrderPaid`, audit, allocation) happen on diffe
 
 5 unit tests pin the OLD-key resolver. 4 integration tests pin the SQL contract: helper returns NULL on both-keys-wrong (no throw), the rotation flow round-trips a row from OLD to NEW with no plaintext touch, the predicate-guarded UPDATE is idempotent (already-PRIMARY rows are skipped), the reader logs warn on invalid OLD without crashing.
 
+## Wave 5 — auth observability (deferred)
+
+### Auth audit log missing — slow brute-force is invisible
+
+**Status:** open. **Found:** 2026-05-07 self-review post-Codex.
+
+`POST /api/auth/login`, `/api/auth/register`, `/api/auth/reset-request`, `/api/auth/reset-confirm`, `/api/auth/verify` write nothing to the audit pipeline. Failed login attempts vanish unless they trip the IP rate limit (10/min) or per-email rate limit (5/min). A patient attacker pacing under both limits — say, 4 attempts/min/email rotating across 50 accounts from a static IP — leaves zero trace beyond the per-request HTTP log.
+
+**Plan when scheduled.**
+
+1. Extend `payment_audit_events` enum (or add `auth_audit_events` if domain separation matters) with: `auth.login.success`, `auth.login.failed`, `auth.register.created`, `auth.reset.requested`, `auth.reset.confirmed`, `auth.verify.success`, `auth.session.revoked`.
+2. Wire recorder into the seven auth routes. Failed attempts get `ip` + `userAgent` + email-hash (NOT raw email — already a `rateLimitScope` pattern) in the payload column.
+3. Alert: if a single IP records >50 `auth.login.failed` in 1 hour or a single email-hash records >20 in 1 hour, page the operator.
+4. Retention: 180 days under the existing janitor.
+
+Until this lands, the practical brute-force ceiling is 5 attempts/min/email × N emails — observable only via aggregate HTTP-status patterns in nginx logs.
+
 ## Wave 4 — security hardening from Codex review 2026-05-07
 
 Codex adversarial pass after the Wave 3 batch landed found six real issues my self-review missed (0/6 catch-rate vs 6/6 Codex). Five of the six were closed in the same-day PR (`.local` mDNS TLS bypass, audit-encryption scripts bypassing the TLS gate, rotate-script wrong-OLD-key false-success, missing-TransactionId webhook replay, `pool.connect()` no acquisition timeout, anonymous slot DTO leak). One stays open here because it needs operator-side coordination, not just a code change:
