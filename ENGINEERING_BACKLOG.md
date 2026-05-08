@@ -379,7 +379,7 @@ Already closed and not in the backlog:
 
 Open high-level queue:
 
-- **Calendar / grid UI for slots** (both operator and learner side). The current list view works but does not scale visually past ~10 slots; a standard week × hour grid (think Google Calendar / email scheduling) would let the operator paint slots with click-and-drag and the learner pick a time visually. Surfaced from manual testing 2026-05-04.
+- ~~**Calendar / grid UI for slots**~~: **Wave A shipped 2026-05-08** (read-only contract). PR1 #106 backend (migration 0031 + `/api/slots/calendar` endpoint + 3 CHECK constraints + role-precedence DTO union), PR2 #107 component skeleton (`<SlotCalendar />` + Grid/Toolbar/MobileFallback/SlotBlock), PR3 #108 operator surface (calendar tab in `/admin/slots` + `<SlotCancelModal>`), PR4 #109 teacher surface (`/teacher` full-week + cabinet 3-slot preview). Plan: `docs/plans/calendar-ui.md`. **Wave A leftovers (open):** PR3b — drag-paint + drag-move on operator calendar (deferred to keep PR3 momentum; ~4-6h). **Wave B (open, future):** learner-side calendar picker against `/api/slots/calendar` with the redacted DTO branches (`booked-other`, `past-redacted`). **Wave C (open, future):** teacher self-create (mutating endpoints + UI; needs design doc first per the existing rule).
 - Phase 7 (when needed): refund / credit on cancellation; sunset `/pay` free-amount → tariff picker once the new flow is proven
 
 Before starting any of these, write a fresh in-repo design doc. Code,
