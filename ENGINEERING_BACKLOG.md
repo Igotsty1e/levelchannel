@@ -335,22 +335,20 @@ Codex adversarial review of the OLDER surface (out of scope for the earlier revi
 
 Codex adversarial pass after the Wave 3 batch landed found six real issues my self-review missed (0/6 catch-rate vs 6/6 Codex). Five of the six were closed in the same-day PR (`.local` mDNS TLS bypass, audit-encryption scripts bypassing the TLS gate, rotate-script wrong-OLD-key false-success, missing-TransactionId webhook replay, `pool.connect()` no acquisition timeout, anonymous slot DTO leak). One stays open here because it needs operator-side coordination, not just a code change:
 
-### #4b — `getClientIp()` trusts raw `x-forwarded-for` first hop (MEDIUM severity, deferred — needs nginx coord)
+### #4b — `getClientIp()` trusts raw `x-forwarded-for` first hop (closed — code + nginx prereq verified 2026-05-09)
 
-**Status:** open. **Found:** 2026-05-07 by Codex.
+**Status:** closed. Code-side fix landed in an earlier commit; today's audit verified the nginx prerequisite is in place.
 
-**Bypass shape.** A client controls the `X-Forwarded-For` header directly and rotates the value on each request. `lib/security/request.ts:33-43` reads the first hop of `x-forwarded-for` as the canonical client IP. The webhook secondary rate limit (`lib/payments/cloudpayments-route.ts` 60 req/min per IP per kind) is keyed by that value — so the per-IP bucket is per-request and never trips. An attacker who has the HMAC secret but not the IP rate limit can drive sustained webhook traffic without the secondary gate firing.
+**What's in code (`lib/security/request.ts:33-63`):** `getClientIp` now reads only `x-real-ip` (or `cf-connecting-ip` as secondary if Cloudflare is ever placed in front; today there isn't one). `x-forwarded-for` parsing dropped entirely. Inline comment documents the rationale: nginx's `proxy_set_header X-Real-IP $remote_addr` always **overwrites** whatever the client sent (because `proxy_set_header` is overwriting, unlike `$proxy_add_x_forwarded_for` which appends).
 
-**Why deferred.** The fix is in two halves: (a) the application code must only honour `X-Forwarded-For` when the request arrived from a trusted edge (the production nginx in front of the Node app), and (b) nginx must overwrite `X-Forwarded-For` with the real socket IP before forwarding (or use `X-Real-IP` exclusively, which is what we already have configured but not yet exclusively trusted on the app side). Without (b) being verified, switching the app to "trust nothing" would break legitimate proxied traffic; without (a), trusting the header is the current vuln. So the change is a coordinated app + nginx config + test pass, not a one-line code edit.
+**What's on nginx (verified 2026-05-09 via `grep proxy_set_header /etc/nginx/sites-available/levelchannel`):**
+```
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+```
+The `X-Real-IP` value the app sees is bound to the actual TCP-connected address, not anything the client controls. The XFF chain still appends but the app no longer consumes it.
 
-**Plan.** When this wave is scheduled:
-
-1. Read `/etc/nginx/sites-available/levelchannel` (operator-side, not in repo) and confirm exact header rewrite behaviour.
-2. Switch `getClientIp()` to read `X-Real-IP` only when `request.headers.get('x-real-ip')` is set AND a `TRUSTED_FORWARDED_FROM` env var allows the upstream. Drop `X-Forwarded-For` parsing entirely.
-3. Add an integration test that asserts: a client-supplied `X-Forwarded-For` does NOT change the bucket; only the upstream-set `X-Real-IP` does.
-4. Roll out app + nginx in lockstep.
-
-Until this lands, the secondary rate limit on `/api/cloudpayments/*` is best-effort — defence-in-depth still has HMAC + IP allowlist at the nginx layer for the provider's source IPs, so the practical exposure requires a HMAC-secret leak (the worst-case scenario the bucket was meant to soft-cap, but the soft cap is the part that's currently bypassable).
+**Net:** per-IP rate-limit buckets (auth, webhooks) are now keyed by the real socket IP. Per-XFF-rotation bypass closed.
 
 ## Cabinet expansion (next phases)
 
