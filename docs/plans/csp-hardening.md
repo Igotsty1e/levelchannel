@@ -128,21 +128,42 @@ Each PR is independently mergeable and reversible.
 
 ### PR 2 — wire the nonce through inline script paths
 
-**Scope:** Next.js App Router auto-applies the nonce when it's set on the response. We just need to make sure the response header is set; the framework does the rest. Verify by inspecting the rendered HTML — every inline `<script>` Next.js emits should have `nonce="..."` matching the response.
+**Status (2026-05-08, post-PR-1 prod verification): BLOCKED upstream.**
 
-**Files:**
-- `app/layout.tsx` — pass nonce into `<head>` if explicit `<Script>` blocks need it (audit the 2 CloudPayments script tags — they're external URL loads, no nonce needed, but check for completeness)
-- `app/pay/page.tsx`, `app/checkout/[tariffSlug]/page.tsx` — verify `<Script>` components inherit the nonce from middleware
+Empirical finding after PR 1 deployed (commit 5fff471): Next.js 16.2.4 with Turbopack production builds does **NOT** auto-stamp `nonce` on framework-emitted RSC hydration payload scripts (the `<script>self.__next_f.push(...)</script>` blocks). The middleware correctly sets:
+- `x-nonce` request header — verified, fresh value per request
+- `Content-Security-Policy` request header — verified
+- `Content-Security-Policy` response header — verified, browser sees it
+- 3 different nonces across 3 sequential `curl -I` calls — middleware IS regenerating
 
-**Tests:**
-- Snapshot test: rendered HTML has `nonce` attribute on every inline `<script>`
-- Manual: load `/`, `/pay`, `/checkout/[slug]` in DevTools and verify no CSP violations in console
+But the rendered HTML of `/` shows 5 inline `<script>` blocks (RSC payloads), all without `nonce` attribute. PR 1 contract holds (`'unsafe-inline'` still in policy, no behavior change), but PR 3 cannot proceed: dropping `'unsafe-inline'` from `script-src` would block hydration on every page.
 
-**Acceptance:** every inline script in rendered HTML carries the nonce; no console errors; CloudPayments widget initialises on `/pay`.
+**Possible paths forward (in order of likely effort):**
+
+1. **Manual nonce threading via `headers().get('x-nonce')` in `app/layout.tsx` + every page that emits a `<Script>`.** The Next.js docs example for App Router. Audit every page; pass `nonce` prop to every `<Script>`. Does NOT solve the RSC-payload case because those scripts are emitted by the framework runtime, not by user code.
+
+2. **Pin `unsafe-hashes` for the small set of RSC payload scripts.** Compute SHA-256 of every framework inline script and add `'sha256-X'` to `script-src`. Content-dependent; would need to be regenerated on every build.
+
+3. **Use `'strict-dynamic'` + nonce.** Once a nonce'd script loads, all its descendants are trusted. Only works if the inline RSC payloads are LOADED by a nonce'd script — they're not, they're directly inline. Likely doesn't help here.
+
+4. **Switch from Turbopack production builds to webpack.** Next 16 still supports webpack via `next build --no-turbo` (or `experimental.turbopack: false`). Webpack codepath may auto-stamp where Turbopack doesn't.
+
+5. **Wait for upstream fix.** File / find a Next.js GitHub issue, monitor.
+
+**Recommended:** option 4 next session — quickest signal on whether this is Turbopack-specific or Next-16-wide. If webpack auto-stamps, we just disable Turbopack for prod builds (with a perf trade-off to evaluate); if webpack also doesn't, this is upstream and we go option 5 (wait) + option 1 (manual threading where it does help, e.g. our own `<Script>` tags for CloudPayments).
+
+**Files (when we resume):**
+- `app/layout.tsx` — `import { headers } from 'next/headers'; const nonce = headers().get('x-nonce') ?? undefined;` — pass to children needing it
+- `app/pay/page.tsx`, `app/checkout/[tariffSlug]/page.tsx` — `<Script nonce={nonce} ... />` for CloudPayments widget
+- Snapshot test of rendered HTML asserting nonce presence
+
+**Tracking:** new issue — see ENGINEERING_BACKLOG.md Wave 11 entry.
 
 ### PR 3 — drop `script-src 'unsafe-inline'`
 
-**Scope:** edit `next.config.js` CSP policy: `script-src 'self' 'nonce-{NONCE}' https://widget.cloudpayments.ru` (no `'unsafe-inline'`). Drop unused `googletagmanager.com` / `google-analytics.com` from the allowlist if GA is not wired (see inventory above).
+**Blocked on PR 2 (auto-stamp finding).** Cannot ship until inline RSC payload scripts carry the nonce. See PR 2 status above.
+
+**Scope (when unblocked):** edit `lib/security/csp.ts` to remove `'unsafe-inline'` from `script-src`. Drop unused `googletagmanager.com` / `google-analytics.com` from the allowlist if GA is not wired (per Open Question #1, currently deferred).
 
 **Files:**
 - `next.config.js`
