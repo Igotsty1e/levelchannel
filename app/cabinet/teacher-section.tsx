@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 import type { LessonSlot } from '@/lib/scheduling/slots'
 
 const TZ_DEFAULT = 'Europe/Moscow'
@@ -7,10 +9,13 @@ type Props = {
   teacherTimezone: string | null
 }
 
-// Phase 7+: read-only teacher schedule stub. Operator manages slots
-// in /admin/slots; the teacher just sees what's been put on their
-// calendar. Self-management (teachers creating their own slots)
-// ships when the workflow demands it.
+// Wave A PR4 — compact teacher summary card on /cabinet.
+//
+// Replaces the previous full-list view (157 lines, two scrolling
+// sections). Now: up to 3 nearest upcoming slots + a single CTA to
+// /teacher (the full-week calendar surface). The empty state still
+// reads like a help line so first-time teachers know operators
+// populate the schedule.
 
 function fmt(iso: string, tz: string): string {
   const candidate = tz
@@ -34,7 +39,7 @@ function fmt(iso: string, tz: string): string {
 function statusLabel(s: string): string {
   switch (s) {
     case 'open':
-      return 'свободен — ждём ученика'
+      return 'свободен'
     case 'booked':
       return 'забронирован'
     case 'cancelled':
@@ -53,18 +58,36 @@ function statusLabel(s: string): string {
 export function TeacherSection({ initialSlots, teacherTimezone }: Props) {
   const tz = teacherTimezone ?? TZ_DEFAULT
   const now = Date.now()
-  const upcoming = initialSlots.filter(
-    (s) => new Date(s.startAt).getTime() > now,
-  )
-  const past = initialSlots.filter(
-    (s) => new Date(s.startAt).getTime() <= now,
-  )
+  const upcomingPreview = initialSlots
+    .filter((s) => new Date(s.startAt).getTime() > now)
+    .slice(0, 3)
 
   return (
     <div className="card" style={{ padding: 24, marginBottom: 24 }}>
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>
-        Мои занятия как учитель
-      </h2>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          gap: 12,
+          marginBottom: 4,
+        }}
+      >
+        <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>
+          Мои занятия как учитель
+        </h2>
+        <Link
+          href="/teacher"
+          style={{
+            color: 'var(--accent, #6ea8fe)',
+            fontSize: 13,
+            textDecoration: 'none',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Полный календарь →
+        </Link>
+      </div>
       <p
         style={{
           color: 'var(--secondary)',
@@ -73,83 +96,46 @@ export function TeacherSection({ initialSlots, teacherTimezone }: Props) {
           marginBottom: 16,
         }}
       >
-        Расписание ведёт оператор в админке. Когда понадобится
-        самостоятельно создавать слоты — добавим интерфейс.
+        Расписание ведёт оператор в админке. Полный недельный обзор —
+        в учительском календаре по ссылке выше.
       </p>
 
-      {initialSlots.length === 0 ? (
+      {upcomingPreview.length === 0 ? (
         <p style={{ color: 'var(--secondary)', fontSize: 14 }}>
-          У вас пока нет назначенных занятий. Когда оператор создаст
-          слоты с вашим аккаунтом как учителем — они появятся здесь.
+          Ближайших занятий нет. Когда оператор создаст или назначит
+          слот — он появится здесь и в полном календаре.
         </p>
       ) : (
         <>
-          {upcoming.length > 0 ? (
-            <>
-              <p
+          <p
+            style={{
+              color: 'var(--secondary)',
+              fontSize: 12,
+              textTransform: 'uppercase',
+              letterSpacing: 0.4,
+              marginBottom: 4,
+            }}
+          >
+            Ближайшие
+          </p>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+            {upcomingPreview.map((s) => (
+              <li
+                key={s.id}
                 style={{
-                  color: 'var(--secondary)',
-                  fontSize: 12,
-                  textTransform: 'uppercase',
-                  letterSpacing: 0.4,
-                  marginBottom: 4,
+                  padding: '10px 0',
+                  borderTop: '1px solid var(--border)',
+                  fontSize: 14,
                 }}
               >
-                Предстоящие
-              </p>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                {upcoming.map((s) => (
-                  <li
-                    key={s.id}
-                    style={{
-                      padding: '10px 0',
-                      borderTop: '1px solid var(--border)',
-                      fontSize: 14,
-                    }}
-                  >
-                    {fmt(s.startAt, tz)} ·{' '}
-                    <span style={{ color: 'var(--secondary)' }}>
-                      {s.durationMinutes} мин · {statusLabel(s.status)}
-                      {s.learnerEmail ? ` · ${s.learnerEmail}` : ''}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : null}
-          {past.length > 0 ? (
-            <>
-              <p
-                style={{
-                  color: 'var(--secondary)',
-                  fontSize: 12,
-                  textTransform: 'uppercase',
-                  letterSpacing: 0.4,
-                  marginTop: upcoming.length > 0 ? 16 : 0,
-                  marginBottom: 4,
-                }}
-              >
-                Прошедшие
-              </p>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                {past.slice(0, 10).map((s) => (
-                  <li
-                    key={s.id}
-                    style={{
-                      padding: '10px 0',
-                      borderTop: '1px solid var(--border)',
-                      fontSize: 14,
-                      color: 'var(--secondary)',
-                    }}
-                  >
-                    {fmt(s.startAt, tz)} · {s.durationMinutes} мин ·{' '}
-                    {statusLabel(s.status)}
-                    {s.learnerEmail ? ` · ${s.learnerEmail}` : ''}
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : null}
+                {fmt(s.startAt, tz)} ·{' '}
+                <span style={{ color: 'var(--secondary)' }}>
+                  {s.durationMinutes} мин · {statusLabel(s.status)}
+                  {s.learnerEmail ? ` · ${s.learnerEmail}` : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
         </>
       )}
     </div>
