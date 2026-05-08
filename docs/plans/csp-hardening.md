@@ -1,10 +1,10 @@
 # Wave 11 — CSP unsafe-inline refactor
 
-**Status:** plan, not started.
+**Status:** **CLOSED 2026-05-09.** Wave fully shipped.
 **Tracking issue:** [#88](https://github.com/Igotsty1e/levelchannel/issues/88).
 **Severity:** LOW (Codex Wave 8 #2).
-**Estimate:** 3–5 PRs across 2–3 working sessions.
-**Owner:** Ivan + Claude.
+**Final shape:** PRs #91 (plan) → #92 (PR 1) → #94 (PR 1.1 rename) → #95 (PR 4 style-src) → #99 (PR 1.2 layout trigger) → #100 (PR 3 drop unsafe-inline).
+**Result:** `script-src` AND `style-src` both fully strict — no `'unsafe-inline'` on either, nonce-based with auto-stamp on framework-emitted inline scripts. `style-src-attr 'unsafe-inline'` keeps inline JSX `style={...}` working without a CSS-Modules refactor.
 
 ## Why this exists
 
@@ -159,11 +159,16 @@ But the rendered HTML of `/` shows 5 inline `<script>` blocks (RSC payloads), al
 
 **Tracking:** new issue — see ENGINEERING_BACKLOG.md Wave 11 entry.
 
-### PR 3 — drop `script-src 'unsafe-inline'`
+### PR 3 — drop `script-src 'unsafe-inline'` (shipped 2026-05-09)
 
-**Blocked on PR 2 (auto-stamp finding).** Cannot ship until inline RSC payload scripts carry the nonce. See PR 2 status above.
+**Unblocked by PR 1.2.** With the layout reading `headers().get('x-nonce')`, every page renders dynamically and Next.js auto-stamps `nonce=` on every framework-emitted inline `<script>`. Verified live on prod post PR #99: 5 inline scripts, all carrying the response nonce.
 
-**Scope (when unblocked):** edit `lib/security/csp.ts` to remove `'unsafe-inline'` from `script-src`. Drop unused `googletagmanager.com` / `google-analytics.com` from the allowlist if GA is not wired (per Open Question #1, currently deferred).
+**What landed in `lib/security/csp.ts`:**
+- `script-src 'self' 'unsafe-inline' 'nonce-X' ...` → `script-src 'self' 'nonce-X' ...`
+
+**Test contract pinned in `tests/security/csp.test.ts`:** "does NOT carry unsafe-inline on script-src" — fails the build if anyone re-introduces `'unsafe-inline'` later.
+
+**Browser behavior:** any inline `<script>` lacking the response nonce is now refused. This is what makes nonce-based CSP a real XSS mitigation rather than security theater.
 
 **Files:**
 - `next.config.js`

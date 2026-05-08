@@ -36,17 +36,19 @@ export function assembleCsp({ nonce }: CspOptions): string {
     `object-src 'none'`,
     `frame-ancestors 'none'`,
     `form-action 'self' https://t.me https://*.t.me`,
-    // PR 3 will drop `'unsafe-inline'` from this directive once the
-    // upstream Next.js 16 auto-stamp gap on RSC payload scripts is
-    // fixed. Until then, both `'unsafe-inline'` AND the nonce are
-    // listed — browsers honour `'unsafe-inline'` so the nonce is a
-    // no-op for now (PR 1 contract). The nonce stays so that the day
-    // upstream fixes auto-stamp, dropping `'unsafe-inline'` is a
-    // one-line change here. See `docs/plans/csp-hardening.md` §PR 2.
+    // PR 3 (2026-05-09) — `'unsafe-inline'` dropped. With PR 1.2 the
+    // layout reads `headers().get('x-nonce')`, which puts every page
+    // into dynamic-render mode and activates Next.js's auto-stamping
+    // of `nonce=` on framework-emitted `<script>` blocks (RSC
+    // hydration payloads + Next bootstrap). Verified live on prod
+    // post PR #99: all 5 inline scripts on `/` carry the response
+    // nonce; CloudPayments + Sentry external scripts also stamped.
+    // The browser now refuses any inline script lacking the nonce.
+    //
     // GA / GTM allowlist entries kept per Open Question #1 (decision
     // deferred 2026-05-08); will be dropped once GA wiring intent is
     // resolved.
-    `script-src 'self' 'unsafe-inline' 'nonce-${nonce}' https://widget.cloudpayments.ru https://www.googletagmanager.com https://www.google-analytics.com`,
+    `script-src 'self' 'nonce-${nonce}' https://widget.cloudpayments.ru https://www.googletagmanager.com https://www.google-analytics.com`,
     // PR 4 — split: `style-src` no longer carries `'unsafe-inline'`;
     // `style-src-attr 'unsafe-inline'` (below) covers JSX `style={...}`
     // attributes which compile to inline DOM `style="..."` attributes.

@@ -8,13 +8,17 @@ describe('assembleCsp', () => {
     expect(csp).toMatch(/script-src [^;]*'nonce-abc123'/)
   })
 
-  it('keeps unsafe-inline in script-src (PR 3 still upstream-blocked)', () => {
-    // PR 1 left 'unsafe-inline' in script-src as a no-op alongside the
-    // nonce; PR 3 was supposed to drop it but is blocked on a Next.js
-    // 16 auto-stamp gap (RSC payload <script> blocks don't carry the
-    // nonce). Until upstream fixes that, 'unsafe-inline' stays.
+  it('does NOT carry unsafe-inline on script-src (PR 3 contract)', () => {
+    // PR 3 (2026-05-09) dropped `'unsafe-inline'`. Trigger: PR 1.2's
+    // `headers().get('x-nonce')` read in `app/layout.tsx` activates
+    // Next.js auto-stamping on framework-emitted inline scripts.
+    // Verified live on prod after PR #99 deploy.
     const csp = assembleCsp({ nonce: 'x' })
-    expect(csp).toMatch(/script-src [^;]*'unsafe-inline'/)
+    const scriptSrc = csp.match(/(?:^|; )script-src [^;]*/)?.[0] ?? ''
+    expect(scriptSrc).not.toMatch(/'unsafe-inline'/)
+    // Nonce is now load-bearing — browsers will only execute scripts
+    // that carry it.
+    expect(scriptSrc).toMatch(/'nonce-x'/)
   })
 
   it('does NOT carry unsafe-inline on style-src (PR 4 contract)', () => {
