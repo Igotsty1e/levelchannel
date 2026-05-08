@@ -131,3 +131,41 @@ export async function requireLearnerArchetypeAndVerified(
   }
   return { ok: true, account: auth.account, session: auth.session }
 }
+
+// Wave A (calendar) — teacher gate. Allowed roles: only `teacher`,
+// not `admin+teacher` (admin precedence redirects them to /admin/slots
+// per `pickActiveCalendarRole` rule + Codex round 3 #2). Verified
+// email required (same as learner).
+export async function requireTeacherAndVerified(
+  request: Request,
+): Promise<GuardResult> {
+  const auth = await requireAuthenticatedAndVerified(request)
+  if (!auth.ok) return auth
+  const roles = await listAccountRoles(auth.account.id)
+  // Admin precedence: hybrid admin+teacher accounts get bounced to
+  // /admin/slots by the route-level redirect; this guard rejects
+  // them at API level so they don't accidentally accept teacher
+  // surface writes (defense-in-depth, Wave 7 #3 lesson).
+  if (roles.includes('admin')) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        {
+          error: 'admin_precedence',
+          message: 'Hybrid admin+teacher accounts use /admin/slots.',
+        },
+        { status: 403, headers: { 'Cache-Control': 'no-store, max-age=0' } },
+      ),
+    }
+  }
+  if (!roles.includes('teacher')) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: 'wrong_role', message: 'Доступно только учителям.' },
+        { status: 403, headers: { 'Cache-Control': 'no-store, max-age=0' } },
+      ),
+    }
+  }
+  return { ok: true, account: auth.account, session: auth.session }
+}
