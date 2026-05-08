@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
-import Script from 'next/script'
 import './globals.css'
 
 const inter = Inter({
@@ -32,15 +31,17 @@ export default function RootLayout({
 }: {
   children: React.ReactNode
 }) {
+  // Codex 2026-05-08 (Wave 10 #5 / MEDIUM legal) — CloudPayments
+  // widget script is loaded ONLY on the payment-stage pages
+  // (`/pay`, `/checkout/[tariffSlug]`) instead of globally. Privacy
+  // text frames CloudPayments as a payment-stage processor; loading
+  // their script on /offer / /privacy / / etc. contradicted that
+  // framing AND added a third-party connection on every page view.
+  // Page-level injection keeps the script next to its only consumers
+  // (PricingSection, CheckoutForm).
   return (
     <html lang="ru" className={inter.variable}>
-      <body>
-        <Script
-          src="https://widget.cloudpayments.ru/bundles/cloudpayments.js"
-          strategy="beforeInteractive"
-        />
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   )
 }

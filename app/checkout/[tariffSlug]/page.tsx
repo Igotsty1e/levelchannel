@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import Script from 'next/script'
 
 import { listAllTariffs } from '@/lib/pricing/tariffs'
 import { getSlotById } from '@/lib/scheduling/slots'
@@ -67,6 +68,12 @@ export default async function CheckoutPage({
 
   return (
     <main style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+      {/* Codex 2026-05-08 (Wave 10 #5) — CloudPayments widget script
+          loads here (and on /pay), not globally from layout. */}
+      <Script
+        src="https://widget.cloudpayments.ru/bundles/cloudpayments.js"
+        strategy="beforeInteractive"
+      />
       <header
         style={{
           padding: '20px 0',

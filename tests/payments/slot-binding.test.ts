@@ -70,8 +70,9 @@ describe('validatePaymentSlotBinding', () => {
       learnerAccountId: LEARNER_ID,
       amountRub: 1000,
     })
-    expect(result.ok).toBe(false)
-    expect(result.reason).toBe('not_owner')
+    expect(result).toEqual(
+      expect.objectContaining({ ok: false, reason: 'not_owner' }),
+    )
   })
 
   it('rejects not_in_payable_state for cancelled slot owned by learner', async () => {
@@ -90,8 +91,9 @@ describe('validatePaymentSlotBinding', () => {
       learnerAccountId: LEARNER_ID,
       amountRub: 1000,
     })
-    expect(result.ok).toBe(false)
-    expect(result.reason).toBe('not_in_payable_state')
+    expect(result).toEqual(
+      expect.objectContaining({ ok: false, reason: 'not_in_payable_state' }),
+    )
   })
 
   it('rejects tariff_mismatch when amount differs from bound tariff', async () => {
@@ -110,8 +112,9 @@ describe('validatePaymentSlotBinding', () => {
       learnerAccountId: LEARNER_ID,
       amountRub: 1, // 1 ₽ → 100 kopecks → drift = 99900
     })
-    expect(result.ok).toBe(false)
-    expect(result.reason).toBe('tariff_mismatch')
+    expect(result).toEqual(
+      expect.objectContaining({ ok: false, reason: 'tariff_mismatch' }),
+    )
   })
 
   it('accepts when amount matches the bound tariff exactly', async () => {

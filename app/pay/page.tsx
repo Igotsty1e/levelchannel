@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import Script from 'next/script'
 
 import { PricingSection } from '@/components/payments/pricing-section'
 
@@ -28,6 +29,15 @@ export const metadata: Metadata = {
 export default function PayPage() {
   return (
     <main style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+      {/* Codex 2026-05-08 (Wave 10 #5) — CloudPayments widget script
+          loads only on this payment page (and on /checkout/[tariffSlug]),
+          not globally from app/layout.tsx. Privacy text frames the
+          provider as a payment-stage processor; page-level injection
+          matches that framing. */}
+      <Script
+        src="https://widget.cloudpayments.ru/bundles/cloudpayments.js"
+        strategy="beforeInteractive"
+      />
       <header
         style={{
           padding: '20px 0',
