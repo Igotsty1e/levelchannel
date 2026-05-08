@@ -4,6 +4,7 @@ import { requireAdminRole } from '@/lib/auth/guards'
 import {
   type BulkCreateInput,
   bulkCreateSlots,
+  SlotTeacherRoleError,
 } from '@/lib/scheduling/slots'
 import {
   enforceRateLimit,
@@ -102,6 +103,15 @@ export async function POST(request: Request) {
       { status: 201, headers: noStore },
     )
   } catch (err) {
+    if (err instanceof SlotTeacherRoleError) {
+      return NextResponse.json(
+        {
+          error:
+            'Этот аккаунт не зарегистрирован как преподаватель. Сначала выдайте роль teacher.',
+        },
+        { status: 400, headers: noStore },
+      )
+    }
     const msg = err instanceof Error ? err.message : 'unknown'
     return NextResponse.json({ error: msg }, { status: 400, headers: noStore })
   }
