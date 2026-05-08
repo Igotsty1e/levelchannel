@@ -34,6 +34,12 @@ LockPersonality=true
 # for compiled code). Verified live on prod 2026-05-08: smoke run with
 # this directive aborted with `code=dumped, status=31/SYS`. Removed; the
 # remaining 13 directives still give meaningful defense-in-depth.
-SystemCallArchitectures=native
-SystemCallFilter=@system-service
-SystemCallFilter=~@privileged @resources @debug @mount @cpu-emulation @obsolete
+# SystemCallFilter / SystemCallArchitectures — also removed for the same
+# class of incompatibility: V8 makes syscalls that fall outside the
+# `@system-service` whitelist (verified live on prod 2026-05-08, second
+# attempt after MDWE removal also aborted with status 31/SYS). Without
+# coredumpctl the exact offending syscall is not pinned, but Node's
+# threadpool + V8's GC are known to stress this filter set.
+# SystemCallArchitectures=native
+# SystemCallFilter=@system-service
+# SystemCallFilter=~@privileged @resources @debug @mount @cpu-emulation @obsolete
