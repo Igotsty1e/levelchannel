@@ -45,6 +45,8 @@ jobs:
     steps:
       - name: Probe /api/health (3 retries, 20s apart)
         id: probe
+        env:
+          HEALTH_DETAIL_SECRET: ${{ secrets.HEALTH_DETAIL_SECRET }}
         run: |
           set -uo pipefail
 
@@ -54,6 +56,17 @@ jobs:
           LAST_CODE=""
           LAST_ERR=""
 
+          # Codex 2026-05-08 (LOW-MEDIUM) — /api/health is now slim by
+          # default. The privileged shape (with `database` etc.)
+          # requires the X-Health-Detail header to match
+          # HEALTH_DETAIL_SECRET in prod env. We pass the secret
+          # below; if it's not set as a repo secret, we fall back to
+          # the slim status-only check (still detects outage).
+          AUTH_HEADER=()
+          if [ -n "${HEALTH_DETAIL_SECRET:-}" ]; then
+            AUTH_HEADER=(-H "X-Health-Detail: ${HEALTH_DETAIL_SECRET}")
+          fi
+
           for i in 1 2 3; do
             echo "::group::Attempt $i"
             # No `--fail-with-body`: we want the body even on HTTP 5xx
@@ -62,6 +75,7 @@ jobs:
             EXIT=0
             BODY=$(curl --silent --show-error \
                         --max-time 15 \
+                        "${AUTH_HEADER[@]}" \
                         --write-out "\n__HTTP_CODE__:%{http_code}" \
                         "$URL" 2>&1) || EXIT=$?
 
@@ -69,15 +83,18 @@ jobs:
             BODY_ONLY=$(printf '%s' "$BODY" | sed 's/\n*__HTTP_CODE__:[0-9]*$//')
 
             echo "exit=$EXIT code=$CODE"
-            echo "body=$BODY_ONLY"
+            # Don't echo $BODY_ONLY — would land in public action log.
 
             LAST_CODE="$CODE"
             LAST_BODY="$BODY_ONLY"
             LAST_ERR="curl exit $EXIT"
 
+            # Slim shape `{status, version}` is enough for "is the app
+            # alive" — `status:ok` already requires every internal
+            # check to pass. The privileged `{database:ok}` check is
+            # nice to have, not load-bearing here.
             if [ "$EXIT" = "0" ] && [ "$CODE" = "200" ] && \
-               printf '%s' "$BODY_ONLY" | grep -q '"status":"ok"' && \
-               printf '%s' "$BODY_ONLY" | grep -q '"database":"ok"'; then
+               printf '%s' "$BODY_ONLY" | grep -q '"status":"ok"'; then
               OK=1
               echo "::endgroup::"
               break
@@ -86,15 +103,22 @@ jobs:
             [ "$i" != "3" ] && sleep 20
           done
 
+          # Codex 2026-05-08 (MEDIUM) — body NEVER goes to outputs
+          # because run logs of a public repo are public-readable.
+          # Hash + length here; raw body stays only in this job's
+          # ephemeral env which the operator can recover from log
+          # context (private workflow log) if a real incident
+          # demands deep diagnosis.
+          BODY_LEN=$(printf '%s' "$LAST_BODY" | wc -c | tr -d ' ')
+          BODY_HASH=$(printf '%s' "$LAST_BODY" | shasum -a 256 | awk '{print $1}' | cut -c1-12)
+
           {
             echo "ok=$OK"
             echo "last_code=$LAST_CODE"
             echo "last_err=$LAST_ERR"
             echo "url=$URL"
-            echo 'last_body<<EOF_BODY'
-            printf '%s' "$LAST_BODY"
-            echo
-            echo 'EOF_BODY'
+            echo "body_len=$BODY_LEN"
+            echo "body_hash=$BODY_HASH"
           } >> "$GITHUB_OUTPUT"
 
           # Always exit 0 — we communicate result via outputs, not exit code.
@@ -102,20 +126,27 @@ jobs:
           exit 0
 
       - name: Manage incident issue (idempotent)
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b  # v7
         env:
           PROBE_OK: ${{ steps.probe.outputs.ok }}
           PROBE_CODE: ${{ steps.probe.outputs.last_code }}
           PROBE_ERR: ${{ steps.probe.outputs.last_err }}
           PROBE_URL: ${{ steps.probe.outputs.url }}
-          PROBE_BODY: ${{ steps.probe.outputs.last_body }}
+          PROBE_BODY_LEN: ${{ steps.probe.outputs.body_len }}
+          PROBE_BODY_HASH: ${{ steps.probe.outputs.body_hash }}
         with:
           script: |
+            // Codex 2026-05-08 (MEDIUM) — only the body's length +
+            // first-12 hex of sha256 cross over into the issue body.
+            // Repo is PUBLIC so anything we write here becomes
+            // searchable / indexable; raw response bodies (5xx HTML,
+            // stack traces, upstream error text) MUST NOT land here.
             const ok      = process.env.PROBE_OK === '1'
             const code    = process.env.PROBE_CODE || '(no response)'
             const err     = process.env.PROBE_ERR || '(no error info)'
             const url     = process.env.PROBE_URL
-            const body    = (process.env.PROBE_BODY || '').slice(0, 1500)
+            const bodyLen = process.env.PROBE_BODY_LEN || '0'
+            const bodyHash = process.env.PROBE_BODY_HASH || '(none)'
             const ts      = new Date().toISOString()
             const runUrl  = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
             const label   = 'uptime-incident'
@@ -136,9 +167,8 @@ jobs:
                 `- detected at: \`${ts}\`\n` +
                 `- last HTTP code: \`${code}\`\n` +
                 `- ${err}\n` +
+                `- response body: ${bodyLen} bytes, sha256 \`${bodyHash}\` (raw body NOT logged — repo is public)\n` +
                 `- probe run: ${runUrl}\n\n` +
-                `<details><summary>last response body (truncated)</summary>\n\n` +
-                '```\n' + (body || '(empty)') + '\n```\n</details>\n\n' +
                 `Diagnose: see \`OPERATIONS.md §14\` runbook.`
 
               if (!openIssue) {

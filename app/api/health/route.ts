@@ -51,6 +51,14 @@ async function probeDatabase(): Promise<'ok' | 'fail'> {
 // payments=cloudpayments, но нет API Secret. В таком состоянии платить
 // нельзя, и мы не должны казаться "здоровыми".
 //
+// Codex 2026-05-08 (LOW-MEDIUM) — anonymous response is slim
+// (`{status, version}` only). Detailed `{provider, storage, checks}`
+// requires a header that matches `HEALTH_DETAIL_SECRET`. Uptime probe
+// and operator scripts include the header. Anonymous probes (bots,
+// scanners) get just enough to detect outage without the
+// fingerprinting surface (provider name, storage backend, per-check
+// granularity).
+//
 // Pool factory parity (lesson learned 2026-05-07, refined 2026-05-07):
 // the database probe goes through `getHealthProbePool()`, a tiny
 // max=2 pool dedicated to health checks, instead of the shared
@@ -62,7 +70,25 @@ async function probeDatabase(): Promise<'ok' | 'fail'> {
 // from making health-probe latency tip over and triggering false
 // uptime alerts. See `lib/db/pool.ts:HEALTH_POOL_MAX` for the
 // rationale.
-export async function GET() {
+function isPrivilegedHealthRequest(request: Request): boolean {
+  const provided = request.headers.get('x-health-detail')?.trim() || ''
+  if (!provided) return false
+  const expected = process.env.HEALTH_DETAIL_SECRET?.trim() || ''
+  if (!expected) return false
+  // Lengths must match before timingSafeEqual (which throws on
+  // mismatched length). Both sides are short strings so a-priori
+  // length comparison doesn't leak useful info.
+  if (provided.length !== expected.length) return false
+  // Constant-time compare. Header secret is operator-side; the
+  // timing-leak threat is theoretical here, but keeps the door
+  // closed.
+  const a = Buffer.from(provided, 'utf8')
+  const b = Buffer.from(expected, 'utf8')
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require('crypto').timingSafeEqual(a, b)
+}
+
+export async function GET(request: Request) {
   const checks: Record<string, 'ok' | 'fail' | 'skip'> = {
     runtime: 'ok',
   }
@@ -84,18 +110,23 @@ export async function GET() {
   }
 
   const ok = Object.values(checks).every((value) => value !== 'fail')
+  const privileged = isPrivilegedHealthRequest(request)
 
-  return NextResponse.json(
-    {
-      status: ok ? 'ok' : 'degraded',
-      provider: paymentConfig.provider,
-      storage: paymentConfig.storageBackend,
-      version: readDeployedVersion(),
-      checks,
-    },
-    {
-      status: ok ? 200 : 503,
-      headers: { 'Cache-Control': 'no-store, max-age=0' },
-    },
-  )
+  const body = privileged
+    ? {
+        status: ok ? 'ok' : 'degraded',
+        provider: paymentConfig.provider,
+        storage: paymentConfig.storageBackend,
+        version: readDeployedVersion(),
+        checks,
+      }
+    : {
+        status: ok ? 'ok' : 'degraded',
+        version: readDeployedVersion(),
+      }
+
+  return NextResponse.json(body, {
+    status: ok ? 200 : 503,
+    headers: { 'Cache-Control': 'no-store, max-age=0' },
+  })
 }

@@ -26,6 +26,11 @@ const nextConfig = {
     unoptimized: true,
   },
 
+  // Codex 2026-05-08 (LOW) — strip the `X-Powered-By: Next.js` header.
+  // Drives down server-fingerprinting surface; bots that match
+  // version-specific Next.js exploits won't see the banner.
+  poweredByHeader: false,
+
   // Security headers — active only when running `next start` (VPS/Node.js mode).
   // For Apache shared hosting these are set in public/.htaccess instead.
   async headers() {
