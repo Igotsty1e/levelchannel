@@ -78,6 +78,19 @@ fi
 SYSCALL_ALLOWLIST="@system-service pkey_alloc pkey_mprotect pkey_free"
 SYSCALL_DENYLIST="~@privileged @resources @debug @mount @cpu-emulation @obsolete"
 
+# Resolve `node` absolute path. Prod uses /usr/bin/node (apt-installed);
+# CI Ubuntu runners use /opt/hostedtoolcache/node/.../bin/node from
+# actions/setup-node. systemd-run requires an absolute path. The check
+# is V8-syscall-compatibility-against-the-filter, not path-binding;
+# either Node binary at the same major version is equivalent for this
+# purpose.
+NODE_BIN="$(command -v node 2>/dev/null || true)"
+if [ -z "$NODE_BIN" ]; then
+  echo "[seccomp-check] FAIL: node not found in PATH"
+  exit 1
+fi
+echo "[seccomp-check] using node at: $NODE_BIN"
+
 FAILS=0
 
 # Working directory needs node_modules access. Resolution:
@@ -141,16 +154,16 @@ echo "        SystemCallFilter=$SYSCALL_DENYLIST"
 echo
 
 # Test 1: node --version. V8 startup, no JIT pressure.
-run_under_filter "node --version" /usr/bin/node --version
+run_under_filter "node --version" "$NODE_BIN" --version
 
 # Test 2: node -e with module import. Triggers V8 JIT, the path
 # that hit pkey_alloc in Issue #86. If our allowlist is incomplete
 # for any future syscall, this is where it surfaces.
-run_under_filter "node -e (load pg)" /usr/bin/node -e 'import("pg").then(() => process.exit(0))'
+run_under_filter "node -e (load pg)" "$NODE_BIN" -e 'import("pg").then(() => process.exit(0))'
 
 # Test 3: node -e with libuv exercise. Catches future libuv-internal
 # syscalls that may need allowlisting.
-run_under_filter "node -e (libuv: net + dns + fs)" /usr/bin/node --input-type=module -e '
+run_under_filter "node -e (libuv: net + dns + fs)" "$NODE_BIN" --input-type=module -e '
 import { stat } from "node:fs/promises"
 import { createServer } from "node:net"
 import { resolve } from "node:dns/promises"
