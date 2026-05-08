@@ -1,0 +1,62 @@
+# CODEOWNERS — review ownership for security-sensitive paths.
+#
+# Codex 2026-05-08 (Wave 9 #2 MEDIUM-LOW) — repo previously had no
+# CODEOWNERS file; workflow files and security-sensitive code paths
+# had no owner-review gate. With this file in place, GitHub UI will
+# request a review from the listed owner whenever a PR touches a
+# matching path. To make it BLOCKING, set
+# `require_code_owner_reviews: true` in the main branch protection
+# (see https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-security/managing-protected-branches/about-protected-branches#require-pull-request-reviews-before-merging).
+#
+# Today this is a single-founder repo, so the owner is always
+# @Igotsty1e. The file's value is not in second-pair-of-eyes review
+# (the founder is both author and reviewer) — it's in:
+#
+#   1. Documenting which paths are security-critical (just reading
+#      this file shows the trust surface map).
+#   2. Future-proofing: when a teammate joins, ownership migrations
+#      are a CODEOWNERS edit, not a "where do I add this?" hunt.
+#   3. Catching accidental cross-cuts: if a refactor PR touches both
+#      lib/payments and lib/scheduling, the GitHub UI surfaces
+#      multiple owner cohorts in one place.
+#
+# Format reference: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-security/customizing-your-repository/about-code-owners
+
+# Default — every path that doesn't match a more specific rule below.
+*                                  @Igotsty1e
+
+# CI / CD configuration. Changes here affect every deploy.
+/.github/                          @Igotsty1e
+/scripts/                          @Igotsty1e
+
+# Security primitives. The trust boundary lives here — every change
+# warrants extra care.
+/lib/security/                     @Igotsty1e
+/lib/auth/                         @Igotsty1e
+/lib/audit/                        @Igotsty1e
+/lib/db/                           @Igotsty1e
+
+# Payment surface. Money-moving code; webhook handlers, slot binding,
+# receipt-token gate. Regulated by 152-ФЗ + 54-ФЗ.
+/lib/payments/                     @Igotsty1e
+/app/api/payments/                 @Igotsty1e
+
+# Schema / migrations. Schema changes are forever — review before
+# applying anywhere.
+/migrations/                       @Igotsty1e
+
+# Legal / consent surface. Any change to public-facing offer, privacy,
+# or consent text touches consumer-protection regulations.
+/app/offer/                        @Igotsty1e
+/app/privacy/                      @Igotsty1e
+/app/consent/                      @Igotsty1e
+/lib/legal/                        @Igotsty1e
+
+# Admin surface. Privileged routes; any new path here needs a fresh
+# look at role guards.
+/app/api/admin/                    @Igotsty1e
+/app/admin/                        @Igotsty1e
+
+# Slot booking — separate trust boundary from payments.
+/lib/scheduling/                   @Igotsty1e
+/app/api/slots/                    @Igotsty1e
