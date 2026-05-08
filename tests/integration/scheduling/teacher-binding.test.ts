@@ -36,9 +36,7 @@ async function reg(
   return { cookie, accountId: created!.id }
 }
 
-function futureMin(n: number): string {
-  return new Date(Date.now() + n * 60_000).toISOString()
-}
+import { futureSlotIso as futureMin } from '../helpers'
 
 describe('Phase 6+ teacher binding filters /api/slots/available', () => {
   it('unassigned learner sees an empty list (cabinet hint takes over)', async () => {

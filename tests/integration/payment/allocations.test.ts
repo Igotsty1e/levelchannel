@@ -12,7 +12,7 @@ import {
   recordAllocation,
 } from '@/lib/payments/allocations'
 
-import { buildRequest, extractSessionCookie } from '../helpers'
+import { buildRequest, extractSessionCookie, futureSlotIso } from '../helpers'
 import './setup'
 
 // Codex 2026-05-08 (HIGH) — POST /api/payments now requires session +
@@ -77,7 +77,7 @@ async function seedLearnerWithBookedSlot(args: {
       args.slotId,
       teacher.id,
       learner.id,
-      new Date(Date.now() + 24 * 3600_000).toISOString(),
+      futureSlotIso(24 * 60),
       tariffId,
     ],
   )

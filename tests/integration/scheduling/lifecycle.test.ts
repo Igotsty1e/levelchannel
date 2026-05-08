@@ -16,7 +16,11 @@ import { getDbPool } from '@/lib/db/pool'
 import { autoCompletePastBookedSlots } from '@/lib/scheduling/slots'
 
 import '../setup'
-import { buildRequest, extractSessionCookie } from '../helpers'
+import {
+  buildRequest,
+  extractSessionCookie,
+  futureSlotIso as futureIsoMinutes,
+} from '../helpers'
 
 async function registerAndCookie(
   email: string,
@@ -42,19 +46,28 @@ async function registerAndCookie(
   return { cookie: cookie!, accountId: created!.id }
 }
 
-function futureIsoMinutes(min: number): string {
-  return new Date(Date.now() + min * 60_000).toISOString()
-}
+// futureIsoMinutes imported from ../helpers as futureSlotIso (Wave A:
+// snapped to 30-min MSK boundary).
 
 // Helper: backdate a slot's start_at directly in the DB so the
 // 24h-rule and auto-complete tests can hit conditions that the route
 // layer would refuse on insert (start_at must be in future at insert).
+//
+// Wave A: snap to 30-min MSK boundary to satisfy migration 0031 CHECK.
+// We compute the target time in JS, snap, then UPDATE with literal
+// timestamp.
 async function backdateSlot(slotId: string, minutesAgo: number) {
+  const target = new Date(Date.now() - minutesAgo * 60_000)
+  target.setUTCSeconds(0, 0)
+  const m = target.getUTCMinutes()
+  if (m !== 0 && m !== 30) {
+    // Snap DOWN (backward in time, ok for backdating).
+    if (m < 30) target.setUTCMinutes(0, 0, 0)
+    else target.setUTCMinutes(30, 0, 0)
+  }
   await getDbPool().query(
-    `update lesson_slots
-        set start_at = now() - make_interval(mins => $2)
-      where id = $1`,
-    [slotId, minutesAgo],
+    `update lesson_slots set start_at = $2 where id = $1`,
+    [slotId, target.toISOString()],
   )
 }
 
@@ -97,7 +110,12 @@ describe('Phase 5 lifecycle + 24h rule', () => {
     // Squeeze start_at to 1h from now (still future, but inside the
     // 24h window).
     await getDbPool().query(
-      `update lesson_slots set start_at = now() + interval '1 hour' where id = $1`,
+      // Wave A: snap to 30-min MSK boundary (minute % 30 = 0). Use
+      // date_trunc + add 30min if past the half-hour mark.
+      `update lesson_slots
+          set start_at = date_trunc('hour', now() + interval '1 hour')
+            + case when extract(minute from now()) >= 30 then interval '30 minutes' else interval '0 minutes' end
+        where id = $1`,
       [slotId],
     )
 
@@ -148,7 +166,12 @@ describe('Phase 5 lifecycle + 24h rule', () => {
 
     // <24h to go.
     await getDbPool().query(
-      `update lesson_slots set start_at = now() + interval '1 hour' where id = $1`,
+      // Wave A: snap to 30-min MSK boundary (minute % 30 = 0). Use
+      // date_trunc + add 30min if past the half-hour mark.
+      `update lesson_slots
+          set start_at = date_trunc('hour', now() + interval '1 hour')
+            + case when extract(minute from now()) >= 30 then interval '30 minutes' else interval '0 minutes' end
+        where id = $1`,
       [slotId],
     )
 

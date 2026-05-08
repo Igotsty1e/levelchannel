@@ -19,7 +19,11 @@ import {
 } from '@/lib/auth/accounts'
 
 import '../setup'
-import { buildRequest, extractSessionCookie } from '../helpers'
+import {
+  buildRequest,
+  extractSessionCookie,
+  futureSlotIso as futureIsoMinutes,
+} from '../helpers'
 
 async function registerAndCookie(
   email: string,
@@ -49,9 +53,8 @@ async function registerAndCookie(
   return { cookie: cookie!, accountId: created!.id }
 }
 
-function futureIsoMinutes(min: number): string {
-  return new Date(Date.now() + min * 60_000).toISOString()
-}
+// futureIsoMinutes imported from ../helpers as futureSlotIso (Wave A:
+// snapped to 30-min MSK boundary to satisfy migration 0031 CHECK).
 
 describe('Phase 4 slot flow', () => {
   it('admin creates an open slot, learner sees it in /available', async () => {
