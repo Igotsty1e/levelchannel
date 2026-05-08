@@ -5,7 +5,7 @@ import {
 import { listActiveTariffs } from '@/lib/pricing/tariffs'
 import { listAllSlotsForAdmin } from '@/lib/scheduling/slots'
 
-import { SlotsManager } from './slots-manager'
+import { SlotsViewSwitcher } from './slots-view-switcher'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -35,8 +35,8 @@ export default async function AdminSlotsPage() {
         если хотите чтобы учащийся мог оплатить через кабинет — без
         тарифа платёж операторский (через DM / прямой <code>/checkout</code>).
       </p>
-      <SlotsManager
-        initialTeachers={teachers}
+      <SlotsViewSwitcher
+        teachers={teachers}
         initialSlots={slots}
         initialTariffs={tariffs.map((t) => ({
           id: t.id,
