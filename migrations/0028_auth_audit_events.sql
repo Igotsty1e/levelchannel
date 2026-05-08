@@ -93,6 +93,16 @@ create index if not exists auth_audit_events_ip_time_idx
   where client_ip is not null;
 
 -- "what failed in the last hour" — sweep query for the alert cron.
+-- Codex review 2026-05-09: this index efficiently filters the
+-- (event_type, time-window) slice. The follow-up `group by client_ip`
+-- and `group by email_hash` in `scripts/auth-flow-alert.mjs` then
+-- runs a hash-aggregate over the filtered set. At LevelChannel
+-- scale (~0-5 failed logins / hour normally, low-thousands at peak
+-- attack) this is fast (milliseconds, KB-MB memory).
+-- If we ever hit scale where the aggregate becomes a bottleneck
+-- (10K+ failed logins / hour sustained), the right move is a
+-- pre-aggregation table with 5-minute buckets — out of scope for
+-- v1, captured as a known follow-up.
 create index if not exists auth_audit_events_type_time_idx
   on auth_audit_events (event_type, created_at desc);
 

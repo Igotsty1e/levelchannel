@@ -3,7 +3,11 @@ import { describe, expect, it } from 'vitest'
 // The script is a Node ESM module that reads env at module evaluation
 // time. We import only the exported decision logic — no Postgres or
 // Resend gets touched by this test.
-import { decideVerdict } from '../../scripts/auth-flow-alert.mjs'
+import {
+  decideVerdict,
+  offenderFingerprint,
+  shouldSuppress,
+} from '../../scripts/auth-flow-alert.mjs'
 
 const noOffenders = {
   totalFailed: 0,
@@ -65,5 +69,121 @@ describe('auth-flow-alert / decideVerdict', () => {
       offendingEmailHashes: [],
     }
     expect(decideVerdict(stats)).toEqual({ kind: 'ok' })
+  })
+})
+
+// Codex review 2026-05-09 — dedup. Without this, sustained brute-force
+// triggers 48 identical emails / day. With it, operator sees 1 email
+// per unique offender-set per ~4 hours.
+describe('auth-flow-alert / offenderFingerprint', () => {
+  it('produces same fingerprint regardless of input ordering', () => {
+    const a = {
+      totalFailed: 80,
+      offendingIps: [
+        { ip: '203.0.113.1', failures: 60 },
+        { ip: '203.0.113.2', failures: 51 },
+      ],
+      offendingEmailHashes: [],
+    }
+    const b = {
+      totalFailed: 80,
+      offendingIps: [
+        { ip: '203.0.113.2', failures: 51 },
+        { ip: '203.0.113.1', failures: 60 },
+      ],
+      offendingEmailHashes: [],
+    }
+    expect(offenderFingerprint(a)).toBe(offenderFingerprint(b))
+  })
+
+  it('different counts on same offender → different fingerprint (escalation = fresh alert)', () => {
+    const a = {
+      totalFailed: 60,
+      offendingIps: [{ ip: '203.0.113.1', failures: 51 }],
+      offendingEmailHashes: [],
+    }
+    const b = {
+      totalFailed: 600,
+      offendingIps: [{ ip: '203.0.113.1', failures: 590 }],
+      offendingEmailHashes: [],
+    }
+    expect(offenderFingerprint(a)).not.toBe(offenderFingerprint(b))
+  })
+
+  it('different offender → different fingerprint', () => {
+    const a = {
+      totalFailed: 60,
+      offendingIps: [{ ip: '203.0.113.1', failures: 60 }],
+      offendingEmailHashes: [],
+    }
+    const b = {
+      totalFailed: 60,
+      offendingIps: [{ ip: '203.0.113.99', failures: 60 }],
+      offendingEmailHashes: [],
+    }
+    expect(offenderFingerprint(a)).not.toBe(offenderFingerprint(b))
+  })
+
+  it('email-hash axis affects the fingerprint', () => {
+    const a = {
+      totalFailed: 30,
+      offendingIps: [],
+      offendingEmailHashes: [{ emailHashShort: 'a1b2c3d4', failures: 25 }],
+    }
+    const b = {
+      totalFailed: 30,
+      offendingIps: [],
+      offendingEmailHashes: [{ emailHashShort: 'ffffffff', failures: 25 }],
+    }
+    expect(offenderFingerprint(a)).not.toBe(offenderFingerprint(b))
+  })
+})
+
+describe('auth-flow-alert / shouldSuppress', () => {
+  const fingerprint = 'abc123def456'
+  const windowMs = 4 * 60 * 60 * 1000
+
+  it('does NOT suppress on first run (no prevState)', () => {
+    expect(
+      shouldSuppress({
+        fingerprint,
+        prevState: null,
+        nowMs: 1_000_000_000_000,
+        windowMs,
+      }),
+    ).toBe(false)
+  })
+
+  it('does NOT suppress when fingerprint differs', () => {
+    expect(
+      shouldSuppress({
+        fingerprint,
+        prevState: { fingerprint: 'different', sentAtMs: 1_000_000_000_000 },
+        nowMs: 1_000_000_000_001,
+        windowMs,
+      }),
+    ).toBe(false)
+  })
+
+  it('SUPPRESSES when fingerprint matches and within window', () => {
+    expect(
+      shouldSuppress({
+        fingerprint,
+        prevState: { fingerprint, sentAtMs: 1_000_000_000_000 },
+        nowMs: 1_000_000_000_000 + windowMs - 1,
+        windowMs,
+      }),
+    ).toBe(true)
+  })
+
+  it('does NOT suppress when fingerprint matches but window expired', () => {
+    expect(
+      shouldSuppress({
+        fingerprint,
+        prevState: { fingerprint, sentAtMs: 1_000_000_000_000 },
+        nowMs: 1_000_000_000_000 + windowMs + 1,
+        windowMs,
+      }),
+    ).toBe(false)
   })
 })

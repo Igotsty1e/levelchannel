@@ -48,6 +48,10 @@
 //   EMAIL_FROM          — sender; reused from main app
 //   ALERT_EMAIL_TO      — destination (operator)
 
+import { createHash } from 'node:crypto'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname, resolve as resolvePath } from 'node:path'
+
 import pg from 'pg'
 import { Resend } from 'resend'
 
@@ -56,6 +60,18 @@ import { resolveSslConfig } from './_pg-ssl.mjs'
 const WINDOW_MINUTES = Number(process.env.AUTH_FLOW_WINDOW_MINUTES || 60)
 const MAX_PER_IP = Number(process.env.AUTH_FLOW_MAX_PER_IP || 50)
 const MAX_PER_EMAIL_HASH = Number(process.env.AUTH_FLOW_MAX_PER_EMAIL_HASH || 20)
+
+// Codex review 2026-05-09 — dedup window. The cron timer fires every
+// 30 min; a sustained brute-force attack would otherwise produce 48
+// identical alert emails per day. With dedup, the operator sees one
+// email per unique offender-set per ~4 hours. Tunable via env if
+// the operator finds the rate too sparse / too loud.
+const DEDUP_WINDOW_MS = Number(
+  process.env.AUTH_FLOW_DEDUP_WINDOW_MS || 4 * 60 * 60 * 1000,
+)
+const STATE_FILE = process.env.AUTH_FLOW_STATE_FILE
+  ? resolvePath(process.env.AUTH_FLOW_STATE_FILE)
+  : resolvePath('./var/auth-flow-alert-state.json')
 
 const ALERT_EMAIL_TO = process.env.ALERT_EMAIL_TO?.trim() || ''
 const EMAIL_FROM =
@@ -138,6 +154,71 @@ export function decideVerdict(stats) {
     return { kind: 'no_failures' }
   }
   return { kind: 'ok' }
+}
+
+// Stable hash of the offender set. Two stats with the same set of
+// (ip, failures) and (email_hash, failures) produce the same
+// fingerprint, regardless of order. Counts ARE part of the
+// fingerprint so an escalation (same offenders but higher counts)
+// fires a fresh alert.
+//
+// Exported for unit tests.
+export function offenderFingerprint(stats) {
+  const ips = [...stats.offendingIps]
+    .map((r) => `${r.ip}:${r.failures}`)
+    .sort()
+    .join(',')
+  const emails = [...stats.offendingEmailHashes]
+    .map((r) => `${r.emailHashShort}:${r.failures}`)
+    .sort()
+    .join(',')
+  return createHash('sha256').update(`ips=${ips}|emails=${emails}`).digest('hex').slice(0, 16)
+}
+
+// Best-effort state read. Missing/corrupt file → no dedup; we fire
+// the alert. Operator wants false-positive ALERTS over false-negative
+// SILENT.
+async function readDedupState(stateFile) {
+  try {
+    const raw = await readFile(stateFile, 'utf8')
+    const parsed = JSON.parse(raw)
+    if (
+      typeof parsed?.fingerprint === 'string' &&
+      typeof parsed?.sentAtMs === 'number'
+    ) {
+      return { fingerprint: parsed.fingerprint, sentAtMs: parsed.sentAtMs }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+async function writeDedupState(stateFile, state) {
+  try {
+    await mkdir(dirname(stateFile), { recursive: true })
+    await writeFile(stateFile, JSON.stringify(state), 'utf8')
+  } catch (err) {
+    logJson('warn', 'failed to persist dedup state', {
+      error: err instanceof Error ? err.message : String(err),
+      stateFile,
+    })
+  }
+}
+
+// Pure decision: should we suppress the email because we already
+// alerted on the same offender set within the dedup window?
+//
+// Exported for unit tests.
+export function shouldSuppress({
+  fingerprint,
+  prevState,
+  nowMs,
+  windowMs,
+}) {
+  if (!prevState) return false
+  if (prevState.fingerprint !== fingerprint) return false
+  return nowMs - prevState.sentAtMs < windowMs
 }
 
 async function sendAlertEmail({ stats, verdict }) {
@@ -244,7 +325,33 @@ async function main() {
     const verdict = decideVerdict(stats)
     logJson('info', 'verdict', { stats, verdict })
     if (verdict.kind === 'alert') {
-      await sendAlertEmail({ stats, verdict })
+      // Dedup: don't re-alert on the same offender set within the
+      // dedup window. Same set + counts = same fingerprint = skip.
+      // First-time fire OR escalation (counts grew on existing
+      // offenders) OR new offender = different fingerprint = fire.
+      const fingerprint = offenderFingerprint(stats)
+      const prevState = await readDedupState(STATE_FILE)
+      const nowMs = Date.now()
+      if (
+        shouldSuppress({
+          fingerprint,
+          prevState,
+          nowMs,
+          windowMs: DEDUP_WINDOW_MS,
+        })
+      ) {
+        logJson('info', 'alert suppressed by dedup', {
+          fingerprint,
+          prevSentAt: new Date(prevState.sentAtMs).toISOString(),
+          dedupWindowMs: DEDUP_WINDOW_MS,
+        })
+      } else {
+        await sendAlertEmail({ stats, verdict })
+        await writeDedupState(STATE_FILE, {
+          fingerprint,
+          sentAtMs: nowMs,
+        })
+      }
     }
   } finally {
     await pool.end()
