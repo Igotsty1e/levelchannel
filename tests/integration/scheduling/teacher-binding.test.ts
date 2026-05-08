@@ -126,7 +126,13 @@ describe('Phase 6+ teacher binding filters /api/slots/available', () => {
     )
     const json = await res.json()
     expect(json.slots.length).toBe(1)
-    expect(json.slots[0].teacherAccountId).toBe(teacherA.accountId)
+    // Codex 2026-05-08 (MEDIUM) — authenticated learner now receives
+    // the public slot DTO, which omits teacherAccountId. Assert on
+    // public-shape fields instead.
+    expect(json.slots[0].id).toBeTruthy()
+    expect(json.slots[0].status).toBe('open')
+    expect(json.slots[0]).not.toHaveProperty('teacherAccountId')
+    expect(json.slots[0]).not.toHaveProperty('teacherEmail')
   })
 
   it('admin can unassign by passing teacherAccountId: null', async () => {
@@ -176,7 +182,7 @@ describe('Phase 6+ teacher binding filters /api/slots/available', () => {
     expect(json.slots.length).toBe(0)
   })
 
-  it('explicit ?teacher= overrides the session-derived filter', async () => {
+  it('Codex 2026-05-08: explicit ?teacher= is IGNORED for authenticated learner (filter override closed)', async () => {
     const teacherA = await reg('tb-teacherA-4@example.com', {
       verifyEmail: true,
       role: 'teacher',
@@ -193,7 +199,11 @@ describe('Phase 6+ teacher binding filters /api/slots/available', () => {
       verifyEmail: true,
     })
 
-    // learner is bound to teacherA, but ?teacher=teacherB overrides.
+    // learner is bound to teacherA. Slot exists for teacherB.
+    // Pre-fix: ?teacher=teacherB would override the session and the
+    // learner would see teacherB's slots. Post-fix: the query param
+    // is IGNORED; learner sees only teacherA's slots (zero, since
+    // we only created one for teacherB).
     await adminTeacherHandler(
       buildRequest(`/api/admin/accounts/${learner.accountId}/teacher`, {
         cookie: admin.cookie,
@@ -218,7 +228,8 @@ describe('Phase 6+ teacher binding filters /api/slots/available', () => {
       ),
     )
     const json = await res.json()
-    expect(json.slots.length).toBe(1)
-    expect(json.slots[0].teacherAccountId).toBe(teacherB.accountId)
+    // Filter is forced to learner's assigned teacher (teacherA), so
+    // the slot belonging to teacherB is invisible. Empty list.
+    expect(json.slots.length).toBe(0)
   })
 })

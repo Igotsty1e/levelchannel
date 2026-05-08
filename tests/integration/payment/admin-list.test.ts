@@ -1,11 +1,75 @@
 import { describe, expect, it } from 'vitest'
 
+import { POST as loginHandler } from '@/app/api/auth/login/route'
+import { POST as registerHandler } from '@/app/api/auth/register/route'
 import { POST as createHandler } from '@/app/api/payments/route'
 import { POST as mockConfirmHandler } from '@/app/api/payments/mock/[invoiceId]/confirm/route'
+import { getAccountByEmail, markAccountVerified } from '@/lib/auth/accounts'
+import { getDbPool } from '@/lib/db/pool'
 import { listPaymentOrdersForAdmin } from '@/lib/payments/admin-list'
 
-import { buildRequest } from '../helpers'
+import { buildRequest, extractSessionCookie } from '../helpers'
 import './setup'
+
+// Codex 2026-05-08 (HIGH) — when a payment carries slotId, the gate
+// requires session + ownership + tariff match. Tests below seed real
+// learner + slot rows so the gate accepts.
+async function seedSlotForLearner(args: {
+  email: string
+  slotId: string
+  amountKopecks: number
+}) {
+  const password = 'StrongPassword123'
+  await registerHandler(
+    buildRequest('/api/auth/register', {
+      body: { email: args.email, password, personalDataConsentAccepted: true },
+    }),
+  )
+  const learner = await getAccountByEmail(args.email)
+  if (!learner) throw new Error('learner registration failed')
+  await markAccountVerified(learner.id)
+  const login = await loginHandler(
+    buildRequest('/api/auth/login', {
+      body: { email: args.email, password },
+    }),
+  )
+  const cookie = extractSessionCookie(login.headers.get('Set-Cookie'))!
+  const teacherEmail = `teacher-${args.slotId.slice(0, 8)}@example.com`
+  await registerHandler(
+    buildRequest('/api/auth/register', {
+      body: {
+        email: teacherEmail,
+        password,
+        personalDataConsentAccepted: true,
+      },
+    }),
+  )
+  const teacher = await getAccountByEmail(teacherEmail)
+  if (!teacher) throw new Error('teacher registration failed')
+  const tariffId = '00000000-0000-0000-0000-' + args.slotId.slice(-12)
+  await getDbPool().query(
+    `insert into pricing_tariffs (id, slug, title_ru, amount_kopecks, active)
+       values ($1, $2, $3, $4, true)
+       on conflict (id) do nothing`,
+    [tariffId, `slug-${args.slotId.slice(0, 8)}`, 'Test', args.amountKopecks],
+  )
+  await getDbPool().query(
+    `insert into lesson_slots (
+       id, teacher_account_id, learner_account_id, start_at,
+       duration_minutes, status, tariff_id, booked_at,
+       created_at, updated_at, events
+     ) values ($1, $2, $3, $4, 60, 'booked', $5, now(), now(), now(), '[]'::jsonb)
+     on conflict (id) do nothing`,
+    [
+      args.slotId,
+      teacher.id,
+      learner.id,
+      new Date(Date.now() + 24 * 3600_000).toISOString(),
+      tariffId,
+    ],
+  )
+  return cookie
+}
 
 // Verifies the admin-side payment listing helper:
 //   - returns the orders DESC by created_at
@@ -15,8 +79,20 @@ import './setup'
 //   - the `slotId` derived from order.metadata is exposed when present
 
 async function createPending(email: string, slotId?: string) {
+  // If slotId is provided, seed a real session + slot bound to that
+  // learner so the slot-binding gate accepts. Without slotId, no
+  // session is needed (anonymous guest checkout still works).
+  let cookie: string | undefined
+  if (slotId) {
+    cookie = await seedSlotForLearner({
+      email,
+      slotId,
+      amountKopecks: 150_000,
+    })
+  }
   const res = await createHandler(
     buildRequest('/api/payments', {
+      cookie,
       body: {
         amountRub: 1500,
         customerEmail: email,

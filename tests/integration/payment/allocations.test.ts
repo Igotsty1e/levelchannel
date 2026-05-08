@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
+import { POST as loginHandler } from '@/app/api/auth/login/route'
+import { POST as registerHandler } from '@/app/api/auth/register/route'
 import { POST as createHandler } from '@/app/api/payments/route'
 import { POST as mockConfirmHandler } from '@/app/api/payments/mock/[invoiceId]/confirm/route'
+import { getAccountByEmail, markAccountVerified } from '@/lib/auth/accounts'
 import { getDbPool } from '@/lib/db/pool'
 import {
   listAllocationsForOrder,
@@ -9,8 +12,77 @@ import {
   recordAllocation,
 } from '@/lib/payments/allocations'
 
-import { buildRequest } from '../helpers'
+import { buildRequest, extractSessionCookie } from '../helpers'
 import './setup'
+
+// Codex 2026-05-08 (HIGH) — POST /api/payments now requires session +
+// owns-the-slot for any slotId. Tests below seed a real learner +
+// real lesson_slots row owned by them so the slot-binding gate
+// accepts the request.
+async function seedLearnerWithBookedSlot(args: {
+  email: string
+  slotId: string
+  amountKopecks: number
+}) {
+  const password = 'StrongPassword123'
+  await registerHandler(
+    buildRequest('/api/auth/register', {
+      body: { email: args.email, password, personalDataConsentAccepted: true },
+    }),
+  )
+  const learner = await getAccountByEmail(args.email)
+  if (!learner) throw new Error('learner registration failed in test setup')
+  await markAccountVerified(learner.id)
+  const login = await loginHandler(
+    buildRequest('/api/auth/login', {
+      body: { email: args.email, password },
+    }),
+  )
+  const cookie = extractSessionCookie(login.headers.get('Set-Cookie'))
+  if (!cookie) throw new Error('no session cookie in test setup')
+
+  // Teacher row (just an account; slot_binding gate doesn't enforce
+  // teacher-role yet — that's a separate Codex finding).
+  const teacherEmail = `teacher-${args.slotId.slice(0, 8)}@example.com`
+  await registerHandler(
+    buildRequest('/api/auth/register', {
+      body: {
+        email: teacherEmail,
+        password,
+        personalDataConsentAccepted: true,
+      },
+    }),
+  )
+  const teacher = await getAccountByEmail(teacherEmail)
+  if (!teacher) throw new Error('teacher registration failed')
+
+  // Direct insert of the slot row (status='booked', owned by learner).
+  // Faster than going through admin + book API for this gate-targeted
+  // setup. Tariff inserted optionally for amount-match validation.
+  const tariffId = '00000000-0000-0000-0000-' + args.slotId.slice(-12)
+  await getDbPool().query(
+    `insert into pricing_tariffs (id, slug, title_ru, amount_kopecks, active)
+       values ($1, $2, $3, $4, true)
+       on conflict (id) do nothing`,
+    [tariffId, `slug-${args.slotId.slice(0, 8)}`, 'Test', args.amountKopecks],
+  )
+  await getDbPool().query(
+    `insert into lesson_slots (
+       id, teacher_account_id, learner_account_id, start_at,
+       duration_minutes, status, tariff_id, booked_at,
+       created_at, updated_at, events
+     ) values ($1, $2, $3, $4, 60, 'booked', $5, now(), now(), now(), '[]'::jsonb)
+     on conflict (id) do nothing`,
+    [
+      args.slotId,
+      teacher.id,
+      learner.id,
+      new Date(Date.now() + 24 * 3600_000).toISOString(),
+      tariffId,
+    ],
+  )
+  return { cookie, learnerId: learner.id }
+}
 
 // Phase 6 — payment_allocations end-to-end.
 // We don't have CloudPayments live in tests; the integration env runs
@@ -103,9 +175,15 @@ describe('payment_allocations', () => {
 
   it('mock-confirm path persists allocation when /api/payments was given a slotId', async () => {
     const slotId = '11111111-2222-3333-4444-555555555555'
+    const { cookie } = await seedLearnerWithBookedSlot({
+      email: 'alloc-flow@example.com',
+      slotId,
+      amountKopecks: 350_000,
+    })
 
     const create = await createHandler(
       buildRequest('/api/payments', {
+        cookie,
         body: {
           amountRub: 3500,
           customerEmail: 'alloc-flow@example.com',
