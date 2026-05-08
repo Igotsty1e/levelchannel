@@ -292,71 +292,30 @@ This was reviewed and the current fail-open behaviour was retained as the right 
 
 Codex adversarial review of the OLDER surface (out of scope for the earlier review which covered only the recent security batch). Six findings; one CRITICAL closed in PR #63, four still open below, one duplicate of Wave 4 #4b (XFF). For each: severity, bypass shape, file:line, fix sketch. Schedule per severity; #3 + #5 are both 1-2h fixes worth picking off next.
 
-### #3 HIGH — learner can cancel a terminal slot or skip the 24h rule on a race boundary
+### #3 HIGH — learner can cancel a terminal slot or skip the 24h rule on a race boundary (closed PR #64)
 
-**Status:** open. **Found:** 2026-05-07 by Codex.
+**Status:** closed 2026-05-07. **What landed:** new `cancelLearnerSlot` in `lib/scheduling/slots.ts:943` folds ownership + `status='booked'` + `start_at - now() >= interval '24 hours'` into a single atomic UPDATE WHERE clause. Route `app/api/slots/[id]/cancel/route.ts:31` delegates and disambiguates verdict (`not_found` / `not_owner` / `already_terminal` / `too_late_to_cancel`) by re-reading the row only when 0 rows updated — the disambiguation is for UX, the authoritative decision lives in the UPDATE. Tests: `tests/scheduling/cancel-route-disambiguation.test.ts` covers all 4 verdicts; `tests/integration/scheduling/lifecycle.test.ts` covers the 24h boundary live against Postgres.
 
-**Bypass shape.** A learner waits until the operator marks a slot `completed` / `no_show_*` (or fires the cancel a few ms before the 24h-before-start cutoff). The route reads the slot row, locally evaluates the rule, then issues a wide `UPDATE`. Between the read and the write the status can have transitioned to terminal or the time window can have slid past the cutoff — the cancel still goes through.
+### #4 HIGH — `invoiceId` is treated as a capability-secret (Phase 2 closed PR #77; Phase 3 time-based follow-up)
 
-**Why it works.** The route blocks the `too_late_to_cancel` reason but does NOT block `already_terminal` (`app/api/slots/[id]/cancel/route.ts:67-76`). `cancelSlot()` itself permits any status except already-cancelled (`lib/scheduling/slots.ts:843-872`). Net: a `completed` row can be retroactively rewritten as `cancelled`, and the 24h rule lives in JS on a stale read instead of in the SQL invariant.
+**Status:** Phase 1 + 1.5 + 2 closed; Phase 3 deferred until Phase 2 has soaked 7+ days.
 
-**Fix.** Move ownership + state + 24h threshold into a single atomic UPDATE:
+**What landed (PR #77, 2026-05-07):**
+- Migration 0030 — `payment_orders.receipt_token_hash` (nullable, partial unique index).
+- `createOrder` mints 32-byte token (`crypto.randomBytes(32).toString('base64url')`), stores sha256 hash, returns plain token in the `POST /api/payments` response.
+- Gate `lib/payments/receipt-token-gate.ts:evaluateReceiptGate` — accepts `?token=<plain>` query param or `X-Receipt-Token` header, hashes presented value, compares with `crypto.timingSafeEqual` against the stored hash. 24h legacy-grace window for pre-wave NULL-token rows.
+- Wired into all 3 capability routes: `app/api/payments/[invoiceId]/route.ts:46`, `app/api/payments/[invoiceId]/cancel/route.ts`, `app/api/payments/[invoiceId]/stream/route.ts`.
+- UI threading: `components/payments/pricing-section.tsx` (redirect carries `?token=<encoded>`, poll/SSE/cancel send `X-Receipt-Token`); `app/thank-you/page.tsx` reads the URL token once, keeps it in component state for subsequent fetches.
+- Tests: `tests/payments/receipt-token-gate.test.ts` covers the four reject reasons + happy path; integration suite asserts the redirect-with-token works AND that curl-without-token on an aged order returns 401.
 
-```sql
-update lesson_slots
-   set status = 'cancelled', cancelled_at = now(), cancelled_by_account_id = $2, cancellation_reason = $3
- where id = $1
-   and learner_account_id = $2
-   and status = 'booked'
-   and start_at - now() >= interval '24 hours'
-returning id
-```
+**Phase 3 — drop legacy grace window (open).** When Phase 2 has been in prod for ≥7 days without a rollback need, drop the 24h `LEGACY_GRACE_MS` branch in `evaluateReceiptGate`. Pre-wave orders become unreachable via these routes (intentional end-state — operators have audit-log access, customers got their receipt email). One-line code change + drop the legacy test case. Calendar trigger: ≈2026-05-15.
 
-Use `rowCount` to distinguish the failure modes: 0 rows + `start_at < now()+24h` → too_late, 0 rows + status≠booked → already_terminal, 0 rows + learner mismatch → not_owner. Drop the local pre-read entirely.
+### #5 MEDIUM — self-booking not enforced at the data layer (closed PRs #65 + #79)
 
-### #4 HIGH — `invoiceId` is treated as a capability-secret
-
-**Status:** Phase 1 schema in flight; runtime + UI threading still open.
-**Confirmed during 2026-05-07 triage:** the `payment_orders` table has no `account_id` column at all. There is no current way to gate by ownership at the data layer; the routes can ONLY validate by `invoiceId` shape. Receipt_token is the right design.
-
-**Phase status (2026-05-07 evening):**
-
-  - ✅ **Phase 1 — schema** — Migration 0030 adds `receipt_token_hash` column (nullable, partial unique index). No runtime change yet. PR in flight.
-  - ⏳ **Phase 1.5 — runtime mint** — `createOrder` mints a 32-byte token via `crypto.randomBytes(32).toString('base64url')`, hashes with sha256, stores hash in the new column, returns the plain token in the response of `POST /api/payments`. Routes accept `?token=<plain>` query param OR `X-Receipt-Token` header but do NOT enforce yet — token presence is a no-op for now. This phase is non-breaking: existing UI continues to work; new orders quietly get a token in the response that the UI ignores.
-  - ⏳ **Phase 2 — enforcement + UI threading** — Routes refuse when the token is missing AND the order is older than the grace window (proposed: 5 min for new orders, 24h for legacy NULL-token rows). UI threads the token through redirects to `/thank-you`, the SSE EventSource URL, the cancel button POST. After this phase the finding is closed.
-  - ⏳ **Phase 3 — drop grace window** — Once Phase 2 has been in prod for 7+ days with no rollback need, drop the legacy NULL-token grace window. Pre-wave orders become unreachable via these routes; that's the intended end state (operators have audit-log access, customers got their receipt email).
-
-**Bypass shape.** Anyone who learns an `invoiceId` (leaked URL, browser history on a shared device, screenshot, GitHub issue comment) can: read order status via `GET /api/payments/[invoiceId]`, open an unlimited-duration SSE stream, and cancel a pending order. None of the three routes require a session.
-
-**Why it works.** All three authorize ONLY by `invoiceId` shape (`app/api/payments/[invoiceId]/route.ts:9-37`, `[invoiceId]/stream/route.ts:48-160`, `[invoiceId]/cancel/route.ts:15-67`). `markOrderCancelled()` flips pending → cancelled (`lib/payments/provider.ts:483-512`). Origin-check returns null when `Origin` is missing (same class as Codex #1, separately closed).
-
-**Why this is genuinely multi-day work, not a one-line fix.**
-
-The naive "require session" breaks guest checkout. The naive "require session AND match customerEmail" doesn't help anonymous attackers (who never log in). The correct fix is a server-issued `receipt_token`:
-
-1. **Migration** — `payment_orders` gets `receipt_token_hash` column (sha256 hex, indexed unique).
-2. **`createOrder`** — mint a 32-byte token via `crypto.randomBytes(32).toString('base64url')`; store the hash; return the plain token in the response.
-3. **Three routes** — accept either `?token=<plain>` query param OR `X-Receipt-Token` header; reject with 401 when neither is present and the order is more than ~5 minutes old (a small grace window keeps the existing post-redirect UX from breaking instantly during the migration). When present, hash and compare to the row's `receipt_token_hash`.
-4. **UI threading** — every redirect to `/thank-you` and every poll/SSE call must carry the token. `app/checkout/[tariffSlug]/`, `app/pay/`, the SSE consumer in the thank-you page, the cancel button.
-5. **Backfill plan** — historical orders have no `receipt_token_hash`; migrate by setting it to `NULL`. The route refuses any request to a NULL-token order older than 5 minutes; pending orders younger than that pass through (the grace window). Old paid orders are unreachable via these endpoints — that's intentional, the customer has already received the receipt email.
-6. **Tests** — unit tests for the route gate; integration test that asserts a legit redirect with token works AND a curl with just invoiceId returns 401.
-
-**Estimate.** 4-6 hours including the UI threading. Schedule as Wave 6.1, dedicated session.
-
-**Interim mitigation.** Until this lands, treat `invoiceId` values as confidential. The widest exposure is via screenshots / browser history; mitigation is operator awareness (do not paste prod invoiceIds into shared docs / chat).
-
-### #5 MEDIUM — self-booking not enforced at the data layer
-
-**Status:** open. **Found:** 2026-05-07 by Codex.
-
-**Bypass shape.** An admin creates a slot whose `teacher_account_id` is also the booking learner's `account_id`, OR designates a non-teacher account as a teacher. If the target account is NOT in the `admin` / `teacher` role list, it passes the learner-archetype guard and books the slot for itself.
-
-**Why it works.** `requireLearnerArchetypeAndVerified` is a deny-list on admin+teacher, not an allow-list on student (`lib/auth/guards.ts:123-132`, used at `app/api/slots/[id]/book/route.ts:33-37`). `bookSlot()` does NOT enforce `teacher_account_id <> learner_account_id` at the data layer (`lib/scheduling/slots.ts:803-841`). Admin teacher-assignment routes don't verify the target has the `teacher` role (`app/api/admin/accounts/[id]/teacher/route.ts:50-64`).
-
-**Fix.** Three coordinated changes:
-1. Admin teacher-assignment routes: refuse if target account doesn't have `teacher` role.
-2. Slot-create / bulk-create: refuse if `teacher_account_id` is not a teacher.
-3. `bookSlot()` SQL: add `where teacher_account_id <> $learner_account_id` to the booking UPDATE; the DB invariant is the only one a future bug can't bypass.
+**Status:** closed. **What landed:**
+- **PR #65** — DB invariant: `bookSlot()` UPDATE adds `and teacher_account_id <> $2` in the WHERE (`lib/scheduling/slots.ts:861`). Post-update sniff distinguishes `self_booking_blocked` so the route returns a clean 400 instead of a generic conflict.
+- **PR #79** — Role enforcement at the admin route layer: `setAssignedTeacher` (`lib/auth/accounts.ts`) throws `AssignedTeacherRoleError` when the target lacks the `teacher` role; `createSlot` / `bulkCreateSlots` (`lib/scheduling/slots.ts`) throw `SlotTeacherRoleError` when the target isn't a teacher; the corresponding admin routes return 400 with translated messages.
+- All 3 layers from the original Codex fix sketch landed; the DB invariant is the last line.
 
 ## Wave 5 — auth observability (deferred)
 
