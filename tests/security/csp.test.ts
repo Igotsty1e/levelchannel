@@ -3,21 +3,39 @@ import { describe, expect, it } from 'vitest'
 import { assembleCsp, generateNonce } from '@/lib/security/csp'
 
 describe('assembleCsp', () => {
-  it('embeds the nonce in script-src AND style-src', () => {
+  it('embeds the nonce in script-src (PR 1 contract)', () => {
     const csp = assembleCsp({ nonce: 'abc123' })
     expect(csp).toMatch(/script-src [^;]*'nonce-abc123'/)
-    expect(csp).toMatch(/style-src [^;]*'nonce-abc123'/)
   })
 
-  it('keeps unsafe-inline in script-src and style-src for PR 1', () => {
-    // PR 1 ships the machinery without removing 'unsafe-inline'. The
-    // nonce is listed alongside it so behavior is identical to today.
-    // Browsers honour 'unsafe-inline' over the nonce when both are
-    // present. PR 3 removes 'unsafe-inline' from script-src; PR 4
-    // splits style-src.
+  it('keeps unsafe-inline in script-src (PR 3 still upstream-blocked)', () => {
+    // PR 1 left 'unsafe-inline' in script-src as a no-op alongside the
+    // nonce; PR 3 was supposed to drop it but is blocked on a Next.js
+    // 16 auto-stamp gap (RSC payload <script> blocks don't carry the
+    // nonce). Until upstream fixes that, 'unsafe-inline' stays.
     const csp = assembleCsp({ nonce: 'x' })
     expect(csp).toMatch(/script-src [^;]*'unsafe-inline'/)
-    expect(csp).toMatch(/style-src [^;]*'unsafe-inline'/)
+  })
+
+  it('does NOT carry unsafe-inline on style-src (PR 4 contract)', () => {
+    // PR 4 split style-src: the directive controlling <style> tags +
+    // <link rel="stylesheet"> is now strict (`'self'` only). The
+    // separate style-src-attr keeps `'unsafe-inline'` for the 198
+    // inline JSX `style={...}` attributes which compile to DOM
+    // `style="..."` HTML attributes.
+    const csp = assembleCsp({ nonce: 'x' })
+    const styleSrc = csp.match(/(?:^|; )style-src [^;]*/)?.[0] ?? ''
+    expect(styleSrc).not.toMatch(/'unsafe-inline'/)
+    expect(csp).toMatch(/style-src-attr 'unsafe-inline'/)
+  })
+
+  it('drops dead Google Fonts allowlist entries (PR 4)', () => {
+    // next/font/google self-hosts since Next 13+. Verified 2026-05-08
+    // on prod: 0 references to fonts.googleapis.com or fonts.gstatic.com
+    // in rendered HTML. CSP entries removed.
+    const csp = assembleCsp({ nonce: 'x' })
+    expect(csp).not.toContain('fonts.googleapis.com')
+    expect(csp).not.toContain('fonts.gstatic.com')
   })
 
   it('preserves the existing CloudPayments + Sentry + GA allowlists', () => {
@@ -27,6 +45,8 @@ describe('assembleCsp', () => {
     expect(csp).toContain('https://*.cloudpayments.ru')
     expect(csp).toContain('https://*.ingest.de.sentry.io')
     expect(csp).toContain('https://*.ingest.sentry.io')
+    // GA / GTM kept until Open Question #1 (defer GA wiring intent) is
+    // resolved. See `docs/plans/csp-hardening.md`.
     expect(csp).toContain('https://www.googletagmanager.com')
     expect(csp).toContain('https://www.google-analytics.com')
   })
