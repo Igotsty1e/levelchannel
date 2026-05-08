@@ -66,7 +66,17 @@ export async function getAccountByEmail(email: string): Promise<Account | null> 
   return result.rows[0] ? rowToAccount(result.rows[0]) : null
 }
 
+// UUID-shape guard. `accounts.id` is a uuid column; passing a non-uuid
+// string makes Postgres throw "invalid input syntax for type uuid",
+// which surfaces as a 500 to the route + a Sentry error. Bot probes
+// of /admin/accounts/:id (literal `:id`) and the four sibling API
+// routes that share the same `[id]` segment all hit this. Treat
+// shape-invalid input as "not found" — same UX as a real lookup miss.
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export async function getAccountById(id: string): Promise<Account | null> {
+  if (!UUID_PATTERN.test(id)) return null
   const pool = getAuthPool()
   const result = await pool.query(
     `select id, email, password_hash, email_verified_at, disabled_at, scheduled_purge_at, purged_at, assigned_teacher_id, created_at, updated_at
