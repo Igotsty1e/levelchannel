@@ -310,22 +310,26 @@ Codex adversarial review of the OLDER surface (out of scope for the earlier revi
 - **PR #79** — Role enforcement at the admin route layer: `setAssignedTeacher` (`lib/auth/accounts.ts`) throws `AssignedTeacherRoleError` when the target lacks the `teacher` role; `createSlot` / `bulkCreateSlots` (`lib/scheduling/slots.ts`) throw `SlotTeacherRoleError` when the target isn't a teacher; the corresponding admin routes return 400 with translated messages.
 - All 3 layers from the original Codex fix sketch landed; the DB invariant is the last line.
 
-## Wave 5 — auth observability (deferred)
+## Wave 5 — auth observability
 
-### Auth audit log missing — slow brute-force is invisible
+### Auth audit log + slow-brute-force alerting (Phase 1 + 2 shipped earlier; Phase 3 shipping now)
 
-**Status:** open. **Found:** 2026-05-07 self-review post-Codex.
+**Status:** Phase 1 (schema) + Phase 2 (recorder + 6 routes wired) shipped before this session — verified by reading the live code. Phase 3 (alerting) shipping now.
 
-`POST /api/auth/login`, `/api/auth/register`, `/api/auth/reset-request`, `/api/auth/reset-confirm`, `/api/auth/verify` write nothing to the audit pipeline. Failed login attempts vanish unless they trip the IP rate limit (10/min) or per-email rate limit (5/min). A patient attacker pacing under both limits — say, 4 attempts/min/email rotating across 50 accounts from a static IP — leaves zero trace beyond the per-request HTTP log.
+**What's already in code (pre-this-session):**
+- Migration `0028_auth_audit_events.sql` — separate table from `payment_audit_events` (domain separation rationale documented in the migration header). Indexes for `(email_hash, time)`, `(client_ip, time)`, `(event_type, time)`, `(account_id, time)`.
+- `lib/audit/auth-events.ts` — recorder, sibling of `lib/audit/payment-events.ts`. Best-effort, swallows failures so auth flow is never blocked by an audit-table outage.
+- 6 routes wired: `login`, `register`, `reset-request`, `reset-confirm`, `verify`, `logout`. Failed login attempts record `ip` + `userAgent` + email-hash (HMAC-SHA256 keyed by `AUTH_RATE_LIMIT_SECRET`) — never raw email, per privacy carve-out in the migration header.
+- Retention: 180 days, folded into the existing daily `scripts/db-retention-cleanup.mjs` cleanup.
+- Unit tests: `tests/audit/auth-events.test.ts`.
 
-**Plan when scheduled.**
+**What ships now (Phase 3):**
+- `scripts/auth-flow-alert.mjs` — sibling of `scripts/webhook-flow-alert.mjs`. Aggregates `auth.login.failed` rows in the last 60 min, alerts when any IP exceeds 50 failures or any email_hash exceeds 20 failures.
+- `scripts/systemd/levelchannel-auth-flow-alert.{service,timer}` — every 30 min, offset 7 min from boot to stagger DB load with the webhook-flow alert (which fires at 5 min).
+- Unit tests for `decideVerdict`: `tests/audit/auth-flow-alert.test.ts` (6/6 pass).
+- Sandboxing: 12-directive set per Wave 11 confirmed-compatible profile.
 
-1. Extend `payment_audit_events` enum (or add `auth_audit_events` if domain separation matters) with: `auth.login.success`, `auth.login.failed`, `auth.register.created`, `auth.reset.requested`, `auth.reset.confirmed`, `auth.verify.success`, `auth.session.revoked`.
-2. Wire recorder into the seven auth routes. Failed attempts get `ip` + `userAgent` + email-hash (NOT raw email — already a `rateLimitScope` pattern) in the payload column.
-3. Alert: if a single IP records >50 `auth.login.failed` in 1 hour or a single email-hash records >20 in 1 hour, page the operator.
-4. Retention: 180 days under the existing janitor.
-
-Until this lands, the practical brute-force ceiling is 5 attempts/min/email × N emails — observable only via aggregate HTTP-status patterns in nginx logs.
+**Operator-side activation (post-merge):** scp the new unit + timer to `/etc/systemd/system/`, `daemon-reload`, `enable --now levelchannel-auth-flow-alert.timer`. Same pattern as the webhook-flow alert.
 
 ## Wave 4 — security hardening from Codex review 2026-05-07
 
