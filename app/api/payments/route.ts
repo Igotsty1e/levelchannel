@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 
 import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
+import { getCurrentSession } from '@/lib/auth/sessions'
 import { buildPersonalDataConsentSnapshot } from '@/lib/legal/personal-data'
+import { validatePaymentSlotBinding } from '@/lib/payments/slot-binding'
 import {
   formatRubles,
   MAX_PAYMENT_AMOUNT_RUB,
@@ -113,18 +115,62 @@ export async function POST(request: Request) {
       }
     }
 
-    // Phase 6: shape-validate the optional slotId. UUIDs only; if
-    // the caller supplied a malformed value we drop it silently
-    // rather than 400 — the field is operator-side metadata, not a
-    // user-facing parameter, and silently dropping is safer than
-    // failing a money-moving call on a metadata typo.
+    // Phase 6: shape-validate the optional slotId. UUIDs only.
+    //
+    // Codex 2026-05-08 (HIGH) — slotId binding is no longer trusted
+    // blindly. When a slotId is supplied, it MUST belong to the
+    // authenticated learner and the payment amount MUST match the
+    // slot's bound tariff. Anonymous callers cannot attach a slotId
+    // at all — guest checkouts pay an arbitrary amount with no slot
+    // allocation. See lib/payments/slot-binding.ts for the gate.
     const UUID_PATTERN_LOCAL =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     const slotIdRaw = body.slotId
-    const slotId =
-      typeof slotIdRaw === 'string' && UUID_PATTERN_LOCAL.test(slotIdRaw)
-        ? slotIdRaw
-        : null
+    let slotId: string | null = null
+    if (typeof slotIdRaw === 'string' && UUID_PATTERN_LOCAL.test(slotIdRaw)) {
+      // A slotId in the body activates the gate. Require session +
+      // ownership + tariff match.
+      const session = await getCurrentSession(request)
+      if (!session) {
+        return {
+          status: 401,
+          body: {
+            error:
+              'Войдите в аккаунт, чтобы оплатить занятие по выбранному слоту.',
+          },
+        }
+      }
+      const verdict = await validatePaymentSlotBinding({
+        slotId: slotIdRaw,
+        learnerAccountId: session.account.id,
+        amountRub,
+      })
+      if (!verdict.ok) {
+        // Single generic 403 for all rejection reasons; the
+        // checkout-telemetry event below carries the precise reason
+        // for forensics without leaking it to the caller.
+        // payment_audit_events has FK on invoice_id so we can't audit
+        // a pre-create rejection there — checkout telemetry is the
+        // right surface.
+        await appendCheckoutTelemetryEvent({
+          type: 'checkout_submit_rejected',
+          amountRub,
+          email: customerEmail,
+          emailValid: true,
+          reason: `slot_binding_${verdict.reason}`,
+          path: '/api/payments',
+          userAgent: request.headers.get('user-agent') || undefined,
+          ip: getClientIp(request),
+        })
+        return {
+          status: 403,
+          body: {
+            error: 'Этот слот недоступен для оплаты с этого аккаунта.',
+          },
+        }
+      }
+      slotId = slotIdRaw
+    }
 
     try {
       const { order, checkoutIntent, receiptToken } = await createPayment(
