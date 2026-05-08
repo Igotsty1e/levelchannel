@@ -12,16 +12,26 @@ import type { CalendarRow } from '@/lib/calendar/view-model'
 export type SlotBlockProps = {
   row: CalendarRow
   onClick?: (row: CalendarRow) => void
+  // PR3b — when present, fires on mousedown to start a drag-move.
+  // Parent decides via threshold whether the mouseup ends as a click
+  // (no drift) or a move commit (drift past origin cell).
+  onMouseDown?: (row: CalendarRow, e: React.MouseEvent<HTMLButtonElement>) => void
 }
 
-export function SlotBlock({ row, onClick }: SlotBlockProps) {
+export function SlotBlock({ row, onClick, onMouseDown }: SlotBlockProps) {
   const kind = row.slot.kind
   const palette = paletteForKind(kind)
+  // Only `open` slots are movable per the data layer (booked /
+  // completed / cancelled are immovable). Wiring layer mirrors this:
+  // we ONLY emit onMouseDown when the slot is `open` AND the parent
+  // is interested. Click handler still fires for every kind.
+  const draggable = kind === 'open' && onMouseDown !== undefined
 
   return (
     <button
       type="button"
       onClick={() => onClick?.(row)}
+      onMouseDown={draggable ? (e) => onMouseDown!(row, e) : undefined}
       className={`calendar-slot-block calendar-slot-${kind}`}
       style={{
         position: 'absolute',
@@ -33,7 +43,7 @@ export function SlotBlock({ row, onClick }: SlotBlockProps) {
         border: `1px solid ${palette.border}`,
         borderRadius: 6,
         padding: '4px 8px',
-        cursor: 'pointer',
+        cursor: draggable ? 'grab' : 'pointer',
         textAlign: 'left',
         color: palette.text,
         fontSize: 12,
@@ -42,6 +52,7 @@ export function SlotBlock({ row, onClick }: SlotBlockProps) {
         flexDirection: 'column',
         gap: 2,
         overflow: 'hidden',
+        zIndex: 2, // above grid background so highlights render under
       }}
       title={`${row.startLabel} – ${row.endLabel}`}
       aria-label={`Слот ${row.startLabel}–${row.endLabel}, ${kindLabel(kind)}`}

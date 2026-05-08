@@ -1,7 +1,15 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 
+import { CALENDAR_GRID_PX_PER_MIN } from '@/lib/calendar/dates'
+import {
+  type DragState,
+  initialDragState,
+  reduceDrag,
+  type PaintSpan,
+  type MoveTarget,
+} from '@/lib/calendar/drag-state'
 import type { CalendarResponse } from '@/lib/calendar/types'
 import type { CalendarRow } from '@/lib/calendar/view-model'
 
@@ -9,22 +17,39 @@ import { Grid } from './Grid'
 import { MobileFallback, useNarrowContainer } from './MobileFallback'
 import { Toolbar } from './Toolbar'
 
-// Wave A composition root. Read-only in PR2 (no paint, no move).
-// PR3 will wire interaction layers; PR4 will route this against the
-// `/teacher` surface.
+// Wave A composition root.
+//
+// PR3b — drag interactions opt-in via `interactions`. Teacher surface
+// (read-only) doesn't pass it. Operator surface passes onPaintSpan +
+// onMoveTarget; SlotCalendar owns the drag-state reducer and emits
+// raw spans/targets to the parent on commit. The parent owns the
+// confirm modal, POST, toast, and refetch (via key bump on the
+// `<SlotCalendar>` element). Codex 2026-05-08 invariant: parents MUST
+// trigger refetch on EVERY drag commit (even on 4xx/5xx) so the UI
+// doesn't sit on stale state — e.g. a `not_open` 409 means another
+// tab booked the slot mid-drag.
+
+export type CalendarInteractions = {
+  onPaintSpan?: (span: PaintSpan) => void
+  onMoveTarget?: (target: MoveTarget) => void
+}
 
 export type SlotCalendarProps = {
   teacherId: string
   initialFromYmd: string
-  // Click handler fires when user taps a slot. Parent can show a modal
-  // with cancel / book buttons depending on the role.
+  // Click handler fires when user taps a slot WITHOUT dragging.
+  // Drag-move drift past origin cell suppresses the click.
   onSlotClick?: (row: CalendarRow) => void
+  interactions?: CalendarInteractions
 }
+
+const CELL_HEIGHT_PX = 30 * CALENDAR_GRID_PX_PER_MIN
 
 export function SlotCalendar({
   teacherId,
   initialFromYmd,
   onSlotClick,
+  interactions,
 }: SlotCalendarProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const isNarrow = useNarrowContainer(containerRef)
@@ -64,10 +89,196 @@ export function SlotCalendar({
     }
   }, [teacherId, fromYmd, reloadCounter])
 
+  // ---- drag wiring ----
+
+  type Action = Parameters<typeof reduceDrag>[1]
+  function dragReducer(s: DragState, a: Action): DragState {
+    return reduceDrag(s, a).state
+  }
+  const [dragState, dispatchRaw] = useReducer(
+    dragReducer,
+    initialDragState as DragState,
+  )
+
+  // Mirror dragState into a ref so document-level handlers can read
+  // live state without re-binding on every render.
+  const dragStateRef = useRef<DragState>(initialDragState)
+  useEffect(() => {
+    dragStateRef.current = dragState
+  }, [dragState])
+
+  // Day-column refs for hit-testing during drag. Slot blocks have
+  // higher zIndex so the day column's onMouseMove doesn't fire while
+  // the cursor is over a slot block — we use document-level events
+  // and find the right column via getBoundingClientRect.
+  const dayRefs = useRef<Map<string, HTMLElement>>(new Map())
+  const setDayEl = useCallback((ymd: string, el: HTMLElement | null) => {
+    if (el === null) dayRefs.current.delete(ymd)
+    else dayRefs.current.set(ymd, el)
+  }, [])
+
+  function findCellAt(
+    clientX: number,
+    clientY: number,
+  ): { ymd: string; halfHour: number } | null {
+    for (const [ymd, el] of dayRefs.current) {
+      const rect = el.getBoundingClientRect()
+      if (
+        clientX >= rect.left &&
+        clientX < rect.right &&
+        clientY >= rect.top &&
+        clientY < rect.bottom
+      ) {
+        const offsetY = clientY - rect.top
+        const halfHour = Math.max(
+          0,
+          Math.min(35, Math.floor(offsetY / CELL_HEIGHT_PX)),
+        )
+        return { ymd, halfHour }
+      }
+    }
+    return null
+  }
+
+  // Wraps the reducer + fires effects via interactions callbacks.
+  // Returns the resulting state for caller-side branching.
+  const dispatch = useCallback(
+    (action: Action): DragState => {
+      const out = reduceDrag(dragStateRef.current, action)
+      dragStateRef.current = out.state
+      dispatchRaw(action)
+      if (out.effect) {
+        if (out.effect.kind === 'paintCommit') {
+          interactions?.onPaintSpan?.(out.effect.span)
+        } else if (out.effect.kind === 'moveCommit') {
+          interactions?.onMoveTarget?.(out.effect.target)
+        }
+      }
+      return out.state
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [interactions?.onPaintSpan, interactions?.onMoveTarget],
+  )
+
+  // Click vs drag disambiguation: stash the row from slot mousedown.
+  // If the mouseup arrives without any drift, fire onSlotClick. If
+  // drift is detected, clear the pending click and let the move
+  // commit fire instead.
+  const pendingClickRef = useRef<CalendarRow | null>(null)
+
+  // Document-level handlers active only while dragging.
+  useEffect(() => {
+    if (dragState.kind === 'idle') return
+
+    function onMouseMove(e: MouseEvent) {
+      const cell = findCellAt(e.clientX, e.clientY)
+      if (!cell) return
+      if (
+        pendingClickRef.current &&
+        dragStateRef.current.kind === 'moving' &&
+        (dragStateRef.current.originYmd !== cell.ymd ||
+          dragStateRef.current.originHalfHour !== cell.halfHour)
+      ) {
+        pendingClickRef.current = null
+      }
+      dispatch({
+        type: 'cellMouseEnter',
+        coords: { ymd: cell.ymd, halfHour: cell.halfHour },
+      })
+    }
+
+    function onMouseUp() {
+      const stateBeforeUp = dragStateRef.current
+      dispatch({ type: 'mouseUp' })
+      if (
+        stateBeforeUp.kind === 'moving' &&
+        pendingClickRef.current &&
+        onSlotClick
+      ) {
+        onSlotClick(pendingClickRef.current)
+      }
+      pendingClickRef.current = null
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        dispatch({ type: 'escape' })
+        pendingClickRef.current = null
+      }
+    }
+
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragState.kind, onSlotClick])
+
   const handlePrev = () => setFromYmd(addDaysYmd(fromYmd, -7))
   const handleNext = () => setFromYmd(addDaysYmd(fromYmd, 7))
   const handleToday = () => setFromYmd(initialFromYmd)
   const handleRefresh = () => setReloadCounter((n) => n + 1)
+
+  // ---- drag handlers passed to Grid ----
+
+  const dragHandlers = interactions
+    ? {
+        onCellMouseDown: interactions.onPaintSpan
+          ? (ymd: string, halfHour: number) => {
+              pendingClickRef.current = null
+              dispatch({
+                type: 'cellMouseDown',
+                coords: { ymd, halfHour },
+              })
+            }
+          : undefined,
+        onSlotMouseDown: interactions.onMoveTarget
+          ? (row: CalendarRow, halfHour: number) => {
+              if (row.slot.kind !== 'open') {
+                pendingClickRef.current = row
+                return
+              }
+              pendingClickRef.current = row
+              dispatch({
+                type: 'slotMouseDown',
+                slotId: row.slot.id ?? '',
+                durationMinutes: row.slot.durationMinutes,
+                coords: { ymd: row.dayYmd, halfHour },
+              })
+            }
+          : undefined,
+        onCellMouseEnter:
+          interactions.onPaintSpan || interactions.onMoveTarget
+            ? (ymd: string, halfHour: number) =>
+                dispatch({
+                  type: 'cellMouseEnter',
+                  coords: { ymd, halfHour },
+                })
+            : undefined,
+        paintHighlight:
+          dragState.kind === 'painting'
+            ? {
+                ymd: dragState.ymd,
+                fromHalfHour: dragState.fromHalfHour,
+                toHalfHour: dragState.toHalfHour,
+              }
+            : null,
+        moveGhost:
+          dragState.kind === 'moving' &&
+          (dragState.currentYmd !== dragState.originYmd ||
+            dragState.currentHalfHour !== dragState.originHalfHour)
+            ? {
+                ymd: dragState.currentYmd,
+                halfHour: dragState.currentHalfHour,
+                durationMinutes: dragState.durationMinutes,
+              }
+            : null,
+      }
+    : undefined
 
   return (
     <div ref={containerRef} className="slot-calendar">
@@ -102,13 +313,57 @@ export function SlotCalendar({
             onSlotClick={onSlotClick}
           />
         ) : (
-          <Grid
+          <GridWithRefs
             fromYmd={fromYmd}
             slots={response.slots}
-            onSlotClick={onSlotClick}
+            // When drag is wired AND a slot mousedown is in flight,
+            // SlotCalendar fires onSlotClick from the document-level
+            // mouseup handler. Suppress Grid's own click path so we
+            // don't double-fire.
+            onSlotClick={dragHandlers ? undefined : onSlotClick}
+            drag={dragHandlers}
+            setDayEl={setDayEl}
           />
         )
       ) : null}
+    </div>
+  )
+}
+
+// Wrapper that propagates day-column refs from Grid up to SlotCalendar.
+// Keeps Grid pure (no ref-API churn) while letting SlotCalendar do
+// document-level hit-testing during drag. Day cells are identified by
+// `aria-label="День YYYY-MM-DD"` (already used by Grid for screen
+// readers), so the wrapper extracts them by querySelector.
+function GridWithRefs(
+  props: React.ComponentProps<typeof Grid> & {
+    setDayEl: (ymd: string, el: HTMLElement | null) => void
+  },
+) {
+  const { setDayEl, ...gridProps } = props
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const root = wrapperRef.current
+    if (!root) return
+    const cells = root.querySelectorAll<HTMLElement>(
+      '[role="gridcell"][aria-label^="День "]',
+    )
+    const ymds: string[] = []
+    cells.forEach((el) => {
+      const ariaLabel = el.getAttribute('aria-label') || ''
+      const ymd = ariaLabel.replace(/^День\s+/, '')
+      if (ymd) {
+        setDayEl(ymd, el)
+        ymds.push(ymd)
+      }
+    })
+    return () => {
+      ymds.forEach((ymd) => setDayEl(ymd, null))
+    }
+  })
+  return (
+    <div ref={wrapperRef}>
+      <Grid {...gridProps} />
     </div>
   )
 }
