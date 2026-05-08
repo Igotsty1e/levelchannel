@@ -115,6 +115,7 @@ export default async function CabinetPage() {
         emailVerified={isVerified}
         initialPaidSlotIds={Array.from(paidMap.keys())}
         hasAssignedTeacher={Boolean(account.assignedTeacherId)}
+        assignedTeacherId={account.assignedTeacherId}
       />
 
       <div className="card" style={{ padding: 24, marginBottom: 24 }}>
