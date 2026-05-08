@@ -29,7 +29,11 @@ RestrictSUIDSGID=true
 RestrictNamespaces=true
 RestrictRealtime=true
 LockPersonality=true
-MemoryDenyWriteExecute=true
+# MemoryDenyWriteExecute=true — incompatible with Node.js V8 JIT (kernel
+# kills the process via SIGSYS / status 31 because V8 needs W+X pages
+# for compiled code). Verified live on prod 2026-05-08: smoke run with
+# this directive aborted with `code=dumped, status=31/SYS`. Removed; the
+# remaining 13 directives still give meaningful defense-in-depth.
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @resources @debug @mount @cpu-emulation @obsolete
