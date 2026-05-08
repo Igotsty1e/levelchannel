@@ -105,6 +105,7 @@ do work.
 - webhook endpoints
 - server logs and technical order data
 - `payment_audit_events` (audit-log-of-record for payments - contains the full e-mail and full IP, see below)
+- `auth_audit_events` (Wave 5, 2026-05-08) — login / register / reset / verify / session-revoke events. Privacy-preserving: stores HMAC-keyed `email_hash` (not raw email) and IP. Used for slow-brute-force detection — `scripts/auth-flow-alert.mjs` runs every 30 min on the VPS and emails the operator when any IP exceeds 50 failed logins or any email_hash exceeds 20 in a 60-min window. Retention 180 days under the existing janitor.
 
 ## Audit log - payment lifecycle
 
@@ -241,7 +242,7 @@ in the same vault, rotate it through the same cadence.
 
 ### 1. Frontend / Browser
 
-- a strict CSP to reduce XSS and injection surface
+- a strict nonce-based CSP — `script-src` and `style-src` carry only `'self'` plus a per-request nonce auto-stamped by Next.js on framework-emitted inline scripts. `'unsafe-inline'` survives only on `style-src-attr` to cover JSX inline `style={...}` attributes. Wave 11 closure 2026-05-09; runbook in `docs/security-csp.md` for change-management when new external sources are added.
 - the user-facing payment form is limited to `amount + email`
 - payment creation and one-click charge are forbidden without an explicit consent checkbox on personal-data processing
 - no `dangerouslySetInnerHTML`

@@ -65,6 +65,8 @@ in two places, agents will almost certainly drag in the stale version.
 | `ARCHITECTURE.md` | file-by-file system map and runtime flow | roadmap, deploy checklist, operator instructions |
 | `PAYMENTS_SETUP.md` | payment contract, env contract, webhook contract, payment modes | production runbook, backlog, product strategy |
 | `SECURITY.md` | security boundaries, threat model, hardening gaps | deploy steps, product roadmap |
+| `docs/security-csp.md` | Content-Security-Policy runbook: directive shape, nonce flow, change-management for adding new external sources | overall threat model (lives in `SECURITY.md`) |
+| `docs/security-regression-checklist.md` | release-time security verification checklist | day-to-day code review |
 | `OPERATIONS.md` | public-safe operations note that points to the private runbook | detailed server inventory, secrets handling, incident runbook |
 | `ROADMAP.md` | high-level product, operations, and compliance priorities | low-level implementation tasks |
 | `ENGINEERING_BACKLOG.md` | implementation task queue | deploy facts, public legal text |
