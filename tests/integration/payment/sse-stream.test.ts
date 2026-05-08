@@ -56,7 +56,12 @@ async function createPendingOrder(invoiceTag: string) {
   )
   expect(res.status).toBe(200)
   const json = await res.json()
-  return json.order.invoiceId as string
+  // Wave 6.1 Phase 2 — return token alongside id; SSE route gates on
+  // it via `?token=` query param (EventSource cannot set headers).
+  return {
+    invoiceId: json.order.invoiceId as string,
+    receiptToken: json.receiptToken as string,
+  }
 }
 
 describe('GET /api/payments/[invoiceId]/stream', () => {
@@ -79,10 +84,12 @@ describe('GET /api/payments/[invoiceId]/stream', () => {
   })
 
   it('streams initial state and a paid update from markOrderPaid', async () => {
-    const invoiceId = await createPendingOrder('paid-flow')
+    const { invoiceId, receiptToken } = await createPendingOrder('paid-flow')
 
     const streamRes = await streamHandler(
-      buildRequest(`/api/payments/${invoiceId}/stream`),
+      buildRequest(`/api/payments/${invoiceId}/stream`, {
+        searchParams: { token: receiptToken },
+      }),
       { params: Promise.resolve({ invoiceId }) },
     )
     expect(streamRes.status).toBe(200)
@@ -112,14 +119,16 @@ describe('GET /api/payments/[invoiceId]/stream', () => {
   })
 
   it('closes immediately when the order is already terminal', async () => {
-    const invoiceId = await createPendingOrder('terminal-fast')
+    const { invoiceId, receiptToken } = await createPendingOrder('terminal-fast')
     await mockConfirmHandler(
       buildRequest(`/api/payments/mock/${invoiceId}/confirm`, { body: {} }),
       { params: Promise.resolve({ invoiceId }) },
     )
 
     const res = await streamHandler(
-      buildRequest(`/api/payments/${invoiceId}/stream`),
+      buildRequest(`/api/payments/${invoiceId}/stream`, {
+        searchParams: { token: receiptToken },
+      }),
       { params: Promise.resolve({ invoiceId }) },
     )
     expect(res.status).toBe(200)
