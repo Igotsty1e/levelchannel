@@ -12,6 +12,7 @@ type HomePageLegalProfile = {
   legalBankName: string
   legalOperatorDisplay: string
   legalOperatorTaxId: string
+  legalOperatorOgrn: string
 }
 
 function trackEvent(name: string) {
@@ -976,6 +977,7 @@ function Footer({ legalProfile }: { legalProfile: HomePageLegalProfile }) {
             <div style={{ fontSize: 13, color: '#71717A', lineHeight: 2 }}>
               <div>ИП {legalProfile.legalOperatorDisplay}</div>
               <div>ИНН: {legalProfile.legalOperatorTaxId}</div>
+              <div>ОГРНИП: {legalProfile.legalOperatorOgrn}</div>
               <div>Р/С: {legalProfile.legalBankAccount}</div>
               <div>Банк: {legalProfile.legalBankName}</div>
               <div>БИК: {legalProfile.legalBankBik}</div>

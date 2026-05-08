@@ -46,6 +46,9 @@ jobs:
           NEXT_PUBLIC_LEGAL_OPERATOR_NAME: ci-placeholder-operator
           NEXT_PUBLIC_LEGAL_OPERATOR_DISPLAY: ci-placeholder-operator
           NEXT_PUBLIC_LEGAL_OPERATOR_TAX_ID: "000000000000"
+          NEXT_PUBLIC_LEGAL_OPERATOR_OGRN: "000000000000000"
+          NEXT_PUBLIC_LEGAL_OPERATOR_REG_AUTHORITY: ci-placeholder-authority
+          NEXT_PUBLIC_LEGAL_OPERATOR_CLAIMS_ADDRESS: ci-placeholder-address
           NEXT_PUBLIC_PUBLIC_CONTACT_EMAIL: ci@example.invalid
           NEXT_PUBLIC_LEGAL_BANK_ACCOUNT: "00000000000000000000"
           NEXT_PUBLIC_LEGAL_BANK_NAME: ci-placeholder-bank
