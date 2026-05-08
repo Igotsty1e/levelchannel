@@ -12,16 +12,26 @@ const noStore = { 'Cache-Control': 'no-store, max-age=0' }
 
 // GET /api/slots/available?teacher=<uuid>&from=<iso>&to=<iso>
 //
-// Default behaviour:
-//   - if the request carries a session, return ONLY the open slots
-//     of that learner's `assigned_teacher_id`. Unassigned → empty
-//     list (cabinet renders the «учитель не назначен» hint).
-//   - if anonymous (no session), no implicit filter — caller may
-//     pass `?teacher=<uuid>` for explicit filter, otherwise gets all
-//     open slots. Anonymous "browse all open slots" is the existing
-//     loose contract; tightening it would break standalone browsing.
-//   - explicit `?teacher=<uuid>` overrides the session-derived
-//     filter (useful for operator browsing in the future).
+// Behaviour:
+//   - Authenticated learner: filter is FORCED to their
+//     `assigned_teacher_id`. Any `?teacher=` query param is ignored.
+//     Codex 2026-05-08 — pre-fix, the query param overrode the
+//     session-derived filter, letting a learner browse arbitrary
+//     teachers' slots (including a different learner's assigned
+//     teacher's roster). Now the session is the trust anchor; the
+//     query param is decorative for this caller class.
+//   - Anonymous (no session): caller may pass `?teacher=<uuid>` for
+//     explicit filter, otherwise gets all open slots. Anonymous
+//     "browse all open slots" is the existing loose contract — used
+//     by the public marketing surface to render "available lessons"
+//     widgets.
+//   - Both paths return the public DTO. Codex 2026-05-08 — pre-fix,
+//     authenticated callers got the full LessonSlot shape including
+//     teacher_email and internal account IDs; the cabinet UI does
+//     not need those, and exposing them on a learner-readable
+//     endpoint is unnecessary leakage.
+//   - Authenticated admin/teacher → 403 (wrong role; this is the
+//     learner-browse endpoint).
 
 export async function GET(request: Request) {
   const rl = await enforceRateLimit(request, 'slots:available:ip', 60, 60_000)
@@ -32,7 +42,6 @@ export async function GET(request: Request) {
   const from = url.searchParams.get('from')
   const to = url.searchParams.get('to')
 
-  let teacherFilter: string | null | undefined = teacherFromQuery
   const session = await getCurrentSession(request)
 
   // Wave 1 (security) — elevated roles are not learners; this is the
@@ -51,20 +60,23 @@ export async function GET(request: Request) {
     }
   }
 
-  if (!teacherFilter) {
-    if (session) {
-      const assigned = session.account.assignedTeacherId
-      if (assigned) {
-        teacherFilter = assigned
-      } else {
-        // Logged-in learner with no assigned teacher → return empty,
-        // surface the hint in the cabinet.
-        return NextResponse.json(
-          { slots: [] },
-          { status: 200, headers: noStore },
-        )
-      }
+  let teacherFilter: string | null | undefined
+  if (session) {
+    // Authenticated learner: ALWAYS use the session-derived filter.
+    // Ignore whatever the client sent in `?teacher=`.
+    const assigned = session.account.assignedTeacherId
+    if (!assigned) {
+      // Logged-in learner with no assigned teacher → empty list,
+      // cabinet surfaces the «учитель не назначен» hint.
+      return NextResponse.json(
+        { slots: [] },
+        { status: 200, headers: noStore },
+      )
     }
+    teacherFilter = assigned
+  } else {
+    // Anonymous: explicit query filter (or null = all teachers).
+    teacherFilter = teacherFromQuery
   }
 
   const slots = await listOpenFutureSlots({
@@ -73,17 +85,11 @@ export async function GET(request: Request) {
     toIso: to ?? undefined,
   })
 
-  // Codex 2026-05-07 — anonymous callers MUST receive the public DTO.
-  // Authenticated learners get the full shape (their cabinet UI uses
-  // teacher email + lifecycle fields). Anonymous browse strips
-  // operator-internal data: teacher email, internal account IDs,
-  // notes, lifecycle audit fields, scheduling timestamps.
-  if (!session) {
-    return NextResponse.json(
-      { slots: slots.map(toPublicSlot) },
-      { status: 200, headers: noStore },
-    )
-  }
-
-  return NextResponse.json({ slots }, { status: 200, headers: noStore })
+  // Both anonymous and authenticated learners receive the public DTO.
+  // Internal fields (teacher email, internal account IDs, notes,
+  // lifecycle audit fields, scheduling timestamps) stay server-side.
+  return NextResponse.json(
+    { slots: slots.map(toPublicSlot) },
+    { status: 200, headers: noStore },
+  )
 }
