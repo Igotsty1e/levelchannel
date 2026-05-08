@@ -19,3 +19,21 @@ EnvironmentFile=__LEVELCHANNEL_ENV_FILE__
 ExecStart=/usr/bin/node scripts/webhook-flow-alert.mjs
 StandardOutput=journal
 StandardError=journal
+
+# Codex 2026-05-08 (Wave 8 #6 LOW) — least-privilege sandboxing.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @debug @mount @cpu-emulation @obsolete
