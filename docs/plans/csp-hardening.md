@@ -175,30 +175,30 @@ But the rendered HTML of `/` shows 5 inline `<script>` blocks (RSC payloads), al
 
 **Acceptance:** zero `Refused to execute inline script because it violates the following Content Security Policy directive` errors in console across all surfaces. If any surface fails — rollback PR 3 and add the missing nonce thread to that surface in a follow-up before re-attempting.
 
-### PR 4 — split `style-src` (keep `style-src-attr 'unsafe-inline'`)
+### PR 4 — split `style-src` (shipped 2026-05-09)
 
-**Scope:** add `style-src-attr 'unsafe-inline'` directive. Update `style-src` to no longer cover attribute styles — it now applies only to `<style>` tags and `<link rel="stylesheet">`. Inline `style={...}` attributes continue to work because `style-src-attr` covers them.
+**Scope (delivered):** `style-src` no longer carries `'unsafe-inline'` (or any nonce — there was nothing to stamp it onto, see surface inventory below). Added `style-src-attr 'unsafe-inline'` covering inline JSX `style={...}` attributes which compile to DOM `style="..."`. Combined with PR 5 surface-scope into the same commit because the two tasks were strictly coupled.
 
-**Files:**
-- `next.config.js`
+**What changed in `lib/security/csp.ts`:**
+- `style-src 'self' 'unsafe-inline' 'nonce-X' https://fonts.googleapis.com` → `style-src 'self'`
+- New directive: `style-src-attr 'unsafe-inline'`
+- `font-src 'self' https://fonts.gstatic.com` → `font-src 'self'`
 
-**Tests:**
-- Visual smoke across surfaces (no layout regressions)
-- Console check: zero CSP violations
+**Why the nonce was dropped from `style-src`:** rendered HTML on prod showed 0 inline `<style>` blocks (Next.js extracts to external `.css`). The nonce in `style-src` would only be relevant if there were `<style>` blocks to stamp; there are none, so it was redundant.
 
-**Acceptance:** site renders identically; `style-src` no longer needs `'unsafe-inline'` for any real `<style>` tag (we have ~0 of those); `style-src-attr` keeps inline attribute styles working.
+**Why fonts hosts dropped:** verified 2026-05-08 / 09 that `next/font/google` (used in `app/layout.tsx`) self-hosts the Inter font binaries since Next 13+. Zero references to `fonts.googleapis.com` / `fonts.gstatic.com` in rendered HTML. Allowlist was dead.
 
-### PR 5 — drop dead CSP entries + post-wave docs
+**Tests:** `tests/security/csp.test.ts` extended to assert: (a) `style-src` does NOT contain `'unsafe-inline'`, (b) `style-src-attr 'unsafe-inline'` is present, (c) Google Fonts entries are gone. 10/10 pass.
 
-**Scope:**
-- Drop `googletagmanager.com` / `google-analytics.com` from CSP if GA is still not wired (verify with stakeholder)
-- Add `docs/security-csp.md` documenting the final CSP, the nonce flow, and what to check when adding a new external dependency
+### PR 5 — drop dead CSP entries + post-wave docs (partial — folded into PR 4)
 
-**Files:**
-- `next.config.js`
-- `docs/security-csp.md` (new)
+**What landed in PR 4:** dead Google Fonts allowlist entries (`fonts.googleapis.com`, `fonts.gstatic.com`) dropped from `style-src` and `font-src`.
 
-**Acceptance:** CSP header contains only directives that are actually load-bearing; `docs/security-csp.md` exists with a runbook entry: "How to add a new external CDN/script source to CSP".
+**What remains for a separate PR (when GA decision lands):** `googletagmanager.com` / `google-analytics.com` allowlist entries. Per Open Question #1, GA wiring decision is **deferred** (option C, 2026-05-08): keep entries in CSP until explicit decision. When the decision lands either:
+- **Wire GA in** — add the loader script via `next/script` strategy, no CSP change needed
+- **Decide GA never** — drop the two allowlist entries from `script-src` and `connect-src`
+
+**Documentation runbook (`docs/security-csp.md`):** deferred to when PR 3 unblocks (see PR 2 § 5 paths). Without PR 3 the runbook would have to document a partially-strict CSP, which is awkward; better to write it once after PR 3 ships.
 
 ## Testing strategy
 

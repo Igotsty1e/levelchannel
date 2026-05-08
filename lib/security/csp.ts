@@ -36,17 +36,29 @@ export function assembleCsp({ nonce }: CspOptions): string {
     `object-src 'none'`,
     `frame-ancestors 'none'`,
     `form-action 'self' https://t.me https://*.t.me`,
-    // PR 3 will drop `'unsafe-inline'` from this directive. Until then,
-    // both `'unsafe-inline'` AND the nonce are listed — when both are
-    // present, browsers honour `'unsafe-inline'` and the nonce is a
-    // no-op. So this is functionally identical to today's policy; the
-    // nonce just isn't load-bearing yet.
+    // PR 3 will drop `'unsafe-inline'` from this directive once the
+    // upstream Next.js 16 auto-stamp gap on RSC payload scripts is
+    // fixed. Until then, both `'unsafe-inline'` AND the nonce are
+    // listed — browsers honour `'unsafe-inline'` so the nonce is a
+    // no-op for now (PR 1 contract). The nonce stays so that the day
+    // upstream fixes auto-stamp, dropping `'unsafe-inline'` is a
+    // one-line change here. See `docs/plans/csp-hardening.md` §PR 2.
+    // GA / GTM allowlist entries kept per Open Question #1 (decision
+    // deferred 2026-05-08); will be dropped once GA wiring intent is
+    // resolved.
     `script-src 'self' 'unsafe-inline' 'nonce-${nonce}' https://widget.cloudpayments.ru https://www.googletagmanager.com https://www.google-analytics.com`,
-    // Same reasoning — nonce listed but not load-bearing yet. PR 4
-    // splits this into `style-src` (no `'unsafe-inline'`) +
-    // `style-src-attr 'unsafe-inline'` for inline `style={...}` attrs.
-    `style-src 'self' 'unsafe-inline' 'nonce-${nonce}' https://fonts.googleapis.com`,
-    `font-src 'self' https://fonts.gstatic.com`,
+    // PR 4 — split: `style-src` no longer carries `'unsafe-inline'`;
+    // `style-src-attr 'unsafe-inline'` (below) covers JSX `style={...}`
+    // attributes which compile to inline DOM `style="..."` attributes.
+    // Empirical: 0 inline `<style>` blocks in rendered HTML (Next.js
+    // CSS extraction emits external `.css` files), so the nonce in
+    // `style-src` is also dropped — there's nothing to stamp it onto.
+    // `fonts.googleapis.com` / `fonts.gstatic.com` removed because
+    // `next/font/google` self-hosts the font files since Next 13+
+    // (verified 2026-05-08: 0 references to those hosts in HTML).
+    `style-src 'self'`,
+    `style-src-attr 'unsafe-inline'`,
+    `font-src 'self'`,
     `img-src 'self' data: https://*.cloudpayments.ru`,
     `connect-src 'self' https://api.cloudpayments.ru https://widget.cloudpayments.ru https://*.cloudpayments.ru https://www.google-analytics.com https://region1.google-analytics.com https://*.ingest.de.sentry.io https://*.ingest.sentry.io`,
     `frame-src 'self' https://widget.cloudpayments.ru https://*.cloudpayments.ru`,
