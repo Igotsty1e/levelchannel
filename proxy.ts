@@ -31,27 +31,54 @@ import { assembleCsp, generateNonce } from '@/lib/security/csp'
 // Cost: ~1 ms per browser request. Path matcher excludes static assets.
 
 export function proxy(request: NextRequest) {
-  const nonce = generateNonce()
-  const csp = assembleCsp({ nonce })
+  // Codex review 2026-05-09 — this file is on the request path for
+  // every browser-facing request. A future regression in
+  // `assembleCsp` or `generateNonce` would otherwise turn into a
+  // site-wide 500. Wrap the CSP setup in try/catch and degrade to a
+  // no-CSP-set response on internal failure — the request still
+  // reaches the app, the static security headers from
+  // `next.config.js` (HSTS, X-Frame-Options, etc.) still apply, and
+  // the operator finds the failure in the journal instead of users
+  // finding it in the form of a white page.
+  //
+  // Failure mode IS visible: console.error tag `[proxy/csp]` so
+  // grep'ing journalctl turns it up; we don't try to retry or
+  // fail-soft beyond logging.
+  try {
+    const nonce = generateNonce()
+    const csp = assembleCsp({ nonce })
 
-  // Mirror the nonce into the *request* headers so Next.js App Router
-  // sees it. The framework reads this for its own auto-stamping path
-  // (which empirically isn't firing for RSC payload scripts on Next 16
-  // even with this in place — see proxy.ts header note).
-  const requestHeaders = new Headers(request.headers)
-  requestHeaders.set('x-nonce', nonce)
-  requestHeaders.set('Content-Security-Policy', csp)
+    // Mirror the nonce into the *request* headers so Next.js App
+    // Router sees it. Reading `headers().get('x-nonce')` in
+    // `app/layout.tsx` is the trigger that activates Next.js's
+    // auto-stamping of `nonce=` on framework-emitted inline scripts.
+    const requestHeaders = new Headers(request.headers)
+    requestHeaders.set('x-nonce', nonce)
+    requestHeaders.set('Content-Security-Policy', csp)
 
-  const response = NextResponse.next({
-    request: {
-      headers: requestHeaders,
-    },
-  })
+    const response = NextResponse.next({
+      request: {
+        headers: requestHeaders,
+      },
+    })
 
-  // Set the response CSP header so the *browser* enforces it.
-  response.headers.set('Content-Security-Policy', csp)
+    // Set the response CSP header so the *browser* enforces it.
+    response.headers.set('Content-Security-Policy', csp)
 
-  return response
+    return response
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(
+      `[proxy/csp] fallback to no-CSP — ${msg}; ` +
+        `request will continue without per-request CSP. ` +
+        `Static security headers from next.config.js still apply.`,
+    )
+    // No CSP header on fallback path. The browser falls back to its
+    // default-permissive behavior; static next.config.js headers
+    // (HSTS, X-Frame-Options, X-Content-Type-Options, etc.) still
+    // apply. Better than a 500 on every request.
+    return NextResponse.next()
+  }
 }
 
 // Matcher excludes:

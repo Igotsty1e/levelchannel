@@ -318,3 +318,68 @@ html, body {
   margin-top: 0;
   cursor: pointer;
 }
+
+/* Codex review 2026-05-09 — own 404 page styles so we don't depend on
+   the framework default _not-found bundle (which inlines a <style>
+   block that conflicts with our strict style-src 'self' CSP). */
+.not-found-page {
+  min-height: 100vh;
+  background: #0B0B0C;
+  color: #fff;
+  font-family: var(--font-inter), Inter, system-ui, sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.not-found-card {
+  max-width: 480px;
+  text-align: center;
+}
+.not-found-card h1 {
+  font-size: 28px;
+  margin-bottom: 12px;
+}
+.not-found-card p {
+  color: #A1A1AA;
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+.not-found-back {
+  color: #fff;
+  text-decoration: underline;
+  font-size: 14px;
+}
+
+/* Codex review 2026-05-09 — global-error class-based styles. The
+   surface renders WITHOUT root layout, so we keep it inline-style-free
+   (covered by style-src 'self' via this stylesheet, no need for
+   style-src-attr). See app/global-error.tsx header note. */
+.global-error-body {
+  background: #0B0B0C;
+  color: #fff;
+  font-family: system-ui, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+}
+.global-error-card {
+  max-width: 480px;
+}
+.global-error-title {
+  font-size: 28px;
+  margin-bottom: 12px;
+}
+.global-error-text {
+  color: #A1A1AA;
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+.global-error-back {
+  color: #fff;
+  text-decoration: underline;
+  font-size: 14px;
+}
