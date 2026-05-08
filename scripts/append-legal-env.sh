@@ -45,6 +45,9 @@ LEGAL_KEYS=(
   NEXT_PUBLIC_LEGAL_OPERATOR_NAME
   NEXT_PUBLIC_LEGAL_OPERATOR_DISPLAY
   NEXT_PUBLIC_LEGAL_OPERATOR_TAX_ID
+  NEXT_PUBLIC_LEGAL_OPERATOR_OGRN
+  NEXT_PUBLIC_LEGAL_OPERATOR_REG_AUTHORITY
+  NEXT_PUBLIC_LEGAL_OPERATOR_CLAIMS_ADDRESS
   NEXT_PUBLIC_PUBLIC_CONTACT_EMAIL
   NEXT_PUBLIC_LEGAL_BANK_ACCOUNT
   NEXT_PUBLIC_LEGAL_BANK_NAME
@@ -66,7 +69,7 @@ if [ "${#missing[@]}" -gt 0 ]; then
   echo "ERROR: the following env values were not supplied to this script:" >&2
   printf '  %s\n' "${missing[@]}" >&2
   echo "" >&2
-  echo "Re-run with all 9 NEXT_PUBLIC_LEGAL_* / NEXT_PUBLIC_PUBLIC_CONTACT_EMAIL values" >&2
+  echo "Re-run with all NEXT_PUBLIC_LEGAL_* / NEXT_PUBLIC_PUBLIC_CONTACT_EMAIL values" >&2
   echo "set in the environment. See script header for the recipe." >&2
   exit 1
 fi

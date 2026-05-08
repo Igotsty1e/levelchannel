@@ -3,7 +3,9 @@ import type { Metadata } from 'next'
 
 import { PERSONAL_DATA_DOCUMENT_VERSION } from '@/lib/legal/personal-data'
 import {
+  LEGAL_OPERATOR_CLAIMS_ADDRESS,
   LEGAL_OPERATOR_DISPLAY,
+  LEGAL_OPERATOR_OGRN,
   LEGAL_OPERATOR_TAX_ID,
   PUBLIC_CONTACT_EMAIL,
 } from '@/lib/legal/public-profile'
@@ -86,14 +88,14 @@ export default function PersonalDataConsentPage() {
           <Section title="1. Оператор">
             Настоящим я, как субъект персональных данных, свободно, своей волей и в
             своём интересе даю согласие Индивидуальному предпринимателю {LEGAL_OPERATOR_DISPLAY},
-            ИНН {LEGAL_OPERATOR_TAX_ID}, далее — «Оператор», на
+            ИНН {LEGAL_OPERATOR_TAX_ID}, ОГРНИП {LEGAL_OPERATOR_OGRN}, далее — «Оператор», на
             обработку моих персональных данных на условиях, указанных в настоящем
             документе. Обращения по вопросам персональных данных и отзыв согласия
             принимаются по адресу{' '}
             <a href={`mailto:${PUBLIC_CONTACT_EMAIL}`} style={{ color: '#E89A90' }}>
               {PUBLIC_CONTACT_EMAIL}
             </a>
-            .
+            , и/или письменно по адресу регистрации Оператора: {LEGAL_OPERATOR_CLAIMS_ADDRESS}.
           </Section>
 
           <Section title="2. Какие данные охватывает согласие">

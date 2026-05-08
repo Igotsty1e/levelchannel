@@ -6,7 +6,10 @@ import {
   PERSONAL_DATA_DOCUMENT_VERSION,
 } from '@/lib/legal/personal-data'
 import {
+  LEGAL_OPERATOR_CLAIMS_ADDRESS,
   LEGAL_OPERATOR_DISPLAY,
+  LEGAL_OPERATOR_OGRN,
+  LEGAL_OPERATOR_REG_AUTHORITY,
   LEGAL_OPERATOR_TAX_ID,
   PUBLIC_CONTACT_EMAIL,
 } from '@/lib/legal/public-profile'
@@ -88,15 +91,16 @@ export default function PrivacyPage() {
         >
           <Section title="1. Общие положения">
             Настоящая Политика определяет порядок обработки персональных данных
-            Индивидуальным предпринимателем {LEGAL_OPERATOR_DISPLAY}, ИНН
-            {LEGAL_OPERATOR_TAX_ID}, далее — «Оператор», при использовании сайта LevelChannel и
+            Индивидуальным предпринимателем {LEGAL_OPERATOR_DISPLAY}, ИНН{' '}
+            {LEGAL_OPERATOR_TAX_ID}, ОГРНИП {LEGAL_OPERATOR_OGRN}, зарегистрирован{' '}
+            {LEGAL_OPERATOR_REG_AUTHORITY}, далее — «Оператор», при использовании сайта LevelChannel и
             при последующем общении с пользователями по вопросам записи, оплаты и
             оказания услуг. Обращения по вопросам персональных данных принимаются по
             адресу электронной почты{' '}
             <a href={`mailto:${PUBLIC_CONTACT_EMAIL}`} style={{ color: '#A78BFA' }}>
               {PUBLIC_CONTACT_EMAIL}
             </a>
-            .
+            . Письменные обращения и претензии направляются по адресу регистрации Оператора: {LEGAL_OPERATOR_CLAIMS_ADDRESS}.
           </Section>
 
           <Section title="2. Какие данные обрабатываются">

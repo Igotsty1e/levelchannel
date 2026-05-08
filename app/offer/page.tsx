@@ -8,7 +8,10 @@ import {
   LEGAL_BANK_CITY,
   LEGAL_BANK_CORR_ACCOUNT,
   LEGAL_BANK_NAME,
+  LEGAL_OPERATOR_CLAIMS_ADDRESS,
   LEGAL_OPERATOR_DISPLAY,
+  LEGAL_OPERATOR_OGRN,
+  LEGAL_OPERATOR_REG_AUTHORITY,
   LEGAL_OPERATOR_TAX_ID,
   PUBLIC_CONTACT_EMAIL,
 } from '@/lib/legal/public-profile'
@@ -189,6 +192,9 @@ export default function OfferPage() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
                 {[
                   { label: 'ИНН', value: LEGAL_OPERATOR_TAX_ID },
+                  { label: 'ОГРНИП', value: LEGAL_OPERATOR_OGRN },
+                  { label: 'Регистрирующий орган', value: LEGAL_OPERATOR_REG_AUTHORITY },
+                  { label: 'Адрес для претензий', value: LEGAL_OPERATOR_CLAIMS_ADDRESS },
                   { label: 'E-mail', value: PUBLIC_CONTACT_EMAIL },
                   { label: 'Расчётный счёт', value: LEGAL_BANK_ACCOUNT },
                   { label: 'Банк', value: LEGAL_BANK_NAME },
