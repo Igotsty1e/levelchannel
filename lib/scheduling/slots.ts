@@ -1,4 +1,28 @@
+import { listAccountRoles } from '@/lib/auth/accounts'
 import { getDbPool } from '@/lib/db/pool'
+
+// Codex 2026-05-08 (MEDIUM-LOW) — slot creation must verify the
+// `teacherAccountId` actually has the `teacher` role. Pre-fix, the
+// admin route only shape-validated the UUID, so an admin could
+// mistakenly create a slot pointing at a non-teacher account. The
+// downstream booking flow (Codex #5, already closed) refuses
+// self-bookings at the data layer, but a non-teacher slot owner is
+// still bad data.
+export class SlotTeacherRoleError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SlotTeacherRoleError'
+  }
+}
+
+async function assertTeacherRole(teacherAccountId: string): Promise<void> {
+  const roles = await listAccountRoles(teacherAccountId)
+  if (!roles.includes('teacher')) {
+    throw new SlotTeacherRoleError(
+      `Account ${teacherAccountId} does not have the 'teacher' role; refusing to create a slot for it.`,
+    )
+  }
+}
 
 export type SlotStatus =
   | 'open'
@@ -672,6 +696,7 @@ export async function createSlot(
       throw new Error('slot/tariffId/invalid')
     }
   }
+  await assertTeacherRole(input.teacherAccountId)
   const pool = getDbPool()
   const result = await pool.query(
     `insert into lesson_slots (
@@ -735,6 +760,7 @@ export async function bulkCreateSlots(
       throw new Error('slot/tariffId/invalid')
     }
   }
+  await assertTeacherRole(input.teacherAccountId)
 
   const pool = getDbPool()
   const created: LessonSlot[] = []

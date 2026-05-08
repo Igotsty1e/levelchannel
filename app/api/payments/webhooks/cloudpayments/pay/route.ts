@@ -1,8 +1,10 @@
 import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
+import { getAccountByEmail } from '@/lib/auth/accounts'
 import { sendOperatorPaymentNotification } from '@/lib/email/dispatch'
 import { recordAllocation } from '@/lib/payments/allocations'
 import { handleCloudPaymentsWebhook } from '@/lib/payments/cloudpayments-route'
 import { getCloudPaymentsInvoiceId } from '@/lib/payments/cloudpayments-webhook'
+import { validatePaymentSlotBinding } from '@/lib/payments/slot-binding'
 import { getOrder } from '@/lib/payments/store'
 import { markOrderPaid } from '@/lib/payments/provider'
 import { maybePersistTokenFromWebhook } from '@/lib/payments/tokens'
@@ -74,16 +76,50 @@ export async function POST(request: Request) {
       // the webhook ack — the order is already paid in DB and audit
       // captured the transition, so the operator can stitch the slot
       // ↔ payment link manually if needed.
+      //
+      // Codex 2026-05-08 (HIGH defence-in-depth) — re-verify ownership
+      // and tariff-match here even though /api/payments already
+      // gated. Webhooks land at a different trust boundary (HMAC, no
+      // session); a future regression that reintroduces an unguarded
+      // path to set order.metadata.slotId must not produce a poisoned
+      // allocation. We look up the customer's account by email and
+      // run the same `validatePaymentSlotBinding` predicate. On
+      // mismatch we skip the insert and audit-log it.
       try {
         const fullOrder = await getOrder(order.invoiceId)
         const metaSlotId = fullOrder?.metadata?.slotId
         if (typeof metaSlotId === 'string' && metaSlotId) {
-          await recordAllocation({
-            paymentOrderId: order.invoiceId,
-            kind: 'lesson_slot',
-            targetId: metaSlotId,
-            amountKopecks: rublesToKopecks(order.amountRub),
-          })
+          const customerAccount = await getAccountByEmail(order.customerEmail)
+          if (!customerAccount) {
+            console.warn('[allocations] webhook skipping allocation — no account for customerEmail', {
+              invoiceId: order.invoiceId,
+              slotId: metaSlotId,
+            })
+          } else {
+            const verdict = await validatePaymentSlotBinding({
+              slotId: metaSlotId,
+              learnerAccountId: customerAccount.id,
+              amountRub: order.amountRub,
+            })
+            if (!verdict.ok) {
+              console.warn(
+                '[allocations] webhook REFUSED allocation — slot binding mismatch (defence-in-depth)',
+                {
+                  invoiceId: order.invoiceId,
+                  slotId: metaSlotId,
+                  reason: verdict.reason,
+                  detail: verdict.detail ?? null,
+                },
+              )
+            } else {
+              await recordAllocation({
+                paymentOrderId: order.invoiceId,
+                kind: 'lesson_slot',
+                targetId: metaSlotId,
+                amountKopecks: rublesToKopecks(order.amountRub),
+              })
+            }
+          }
         }
       } catch (err) {
         console.warn('[allocations] webhook recordAllocation threw:', {

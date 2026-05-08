@@ -348,10 +348,31 @@ export async function reenableAccount(accountId: string): Promise<void> {
 // at this layer — that's a UX guard in the admin UI (the dropdown
 // only lists teacher-role accounts). The DB just stores a uuid FK.
 // Pass null to unassign.
+// Codex 2026-05-08 (MEDIUM-LOW) — verify the target actually has the
+// `teacher` role before assigning. Pre-fix, the admin route only
+// shape-validated the UUID; an admin could mistakenly point a learner
+// at a non-teacher account, breaking downstream authorisation
+// assumptions. Throwing here keeps the admin route's caller-side
+// audit clean and the error message precise.
+export class AssignedTeacherRoleError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AssignedTeacherRoleError'
+  }
+}
+
 export async function setAssignedTeacher(
   learnerId: string,
   teacherId: string | null,
 ): Promise<void> {
+  if (teacherId !== null) {
+    const roles = await listAccountRoles(teacherId)
+    if (!roles.includes('teacher')) {
+      throw new AssignedTeacherRoleError(
+        `Account ${teacherId} does not have the 'teacher' role; refusing to assign as a learner's teacher.`,
+      )
+    }
+  }
   const pool = getAuthPool()
   await pool.query(
     `update accounts

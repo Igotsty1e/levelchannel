@@ -179,6 +179,44 @@ The handler's own DB writes (`markOrderPaid`, audit, allocation) happen on diffe
 
 5 unit tests pin the OLD-key resolver. 4 integration tests pin the SQL contract: helper returns NULL on both-keys-wrong (no throw), the rotation flow round-trips a row from OLD to NEW with no plaintext touch, the predicate-guarded UPDATE is idempotent (already-PRIMARY rows are skipped), the reader logs warn on invalid OLD without crashing.
 
+## Wave 7 — Codex pass on Wave-6.1-Phase-1.5 surface, 2026-05-08
+
+Codex left a fresh handoff in `~/.team/activity.jsonl` on 2026-05-08 04:13Z. Five findings against the post-Phase-1.5 state. Four closed; one remains as a documented design decision rather than a code fix.
+
+### #1 HIGH — slot payment-binding bypass (closed PR #78)
+
+`/api/payments` accepted any UUID as `slotId`. Webhook on `pay` bound the invoice via `payment_allocations` without checking ownership / tariff / amount. Bypass: a learner could pay 1₽ with another learner's slotId and operator UI would show their invoice attached to a slot they didn't own.
+
+**Closed:** `lib/payments/slot-binding.ts` — request-time gate (session + ownership + status='booked' + tariff match within 1-kopeck tolerance). Anonymous callers can't pass slotId.
+
+### #1b HIGH defence-in-depth — webhook-side allocation guard (closing here)
+
+The PR #78 fix gates the request path. The webhook is a different trust boundary (HMAC, no session) — a future regression that re-introduces an unguarded path to set `order.metadata.slotId` would still produce poisoned allocations. So before `recordAllocation`, the webhook handler now looks up the customer's account by email and re-runs `validatePaymentSlotBinding`. On mismatch: skip the insert + log loud warning (does NOT block the webhook ack — order stays paid, allocation just doesn't land).
+
+### #2 MEDIUM — `/api/slots/available` filter override + DTO leak (closed PR #78)
+
+Authenticated learner could pass `?teacher=<uuid>` to override their assigned-teacher filter, AND received the full LessonSlot DTO with `teacher_email` + internal account IDs.
+
+**Closed:** session forces `teacherFilter = session.account.assignedTeacherId`; both anon + authed learner project to public DTO via `toPublicSlot`.
+
+### #3 MEDIUM-LOW — teacher-role enforcement on slot/account assignments (closing here)
+
+`assigned_teacher_id` and `slot.teacher_account_id` were not validated against the actual `teacher` role — admin route shape-checked the UUID and trusted whatever was passed.
+
+**Closed:**
+  - `lib/auth/accounts.ts:setAssignedTeacher` throws `AssignedTeacherRoleError` when target lacks the `teacher` role; `app/api/admin/accounts/[id]/teacher/route.ts` returns 400 with a translated message.
+  - `lib/scheduling/slots.ts:createSlot` and `bulkCreateSlots` throw `SlotTeacherRoleError`; both admin routes return 400.
+  - The data-layer `bookSlot` self-booking invariant (Codex #5 from 2026-05-07) is preserved as a final defence.
+
+### #4 LOW — rate-limit PG-fallback debt (documented, not closed in code)
+
+`lib/security/rate-limit.ts` falls back to in-memory buckets when `takePostgresBucket` fails. Memory buckets don't share state across processes, so:
+
+  - **Single-instance** (today): fail-open on PG outage = app keeps working with per-process rate limiting. Acceptable trade-off — losing rate limits during a PG outage is preferable to 503-ing every request.
+  - **Multi-instance** (future): an attacker who can specifically take down Postgres bypasses the global per-IP cap because each app process has its own counter. Mitigation: nginx `limit_req` (already configured) is the last line. Real fix would require a process-shared cache (Redis) — out of scope until multi-instance becomes the deploy shape.
+
+This was reviewed and the current fail-open behaviour was retained as the right policy for the current deploy topology. No code change in this batch. Re-open the question when the deploy topology changes (multi-instance, Render, k8s, etc.).
+
 ## Wave 6 — Codex pass on older app surface, 2026-05-07
 
 Codex adversarial review of the OLDER surface (out of scope for the earlier review which covered only the recent security batch). Six findings; one CRITICAL closed in PR #63, four still open below, one duplicate of Wave 4 #4b (XFF). For each: severity, bypass shape, file:line, fix sketch. Schedule per severity; #3 + #5 are both 1-2h fixes worth picking off next.

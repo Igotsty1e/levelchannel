@@ -5,6 +5,7 @@ import {
   type CreateSlotInput,
   createSlot,
   listAllSlotsForAdmin,
+  SlotTeacherRoleError,
 } from '@/lib/scheduling/slots'
 import {
   enforceRateLimit,
@@ -91,6 +92,17 @@ export async function POST(request: Request) {
     const slot = await createSlot(input as CreateSlotInput)
     return NextResponse.json({ slot }, { status: 201, headers: noStore })
   } catch (err) {
+    if (err instanceof SlotTeacherRoleError) {
+      // Codex 2026-05-08 (MEDIUM-LOW) — target account does not have
+      // the `teacher` role. Surface as 400 with a translated message.
+      return NextResponse.json(
+        {
+          error:
+            'Этот аккаунт не зарегистрирован как преподаватель. Сначала выдайте роль teacher.',
+        },
+        { status: 400, headers: noStore },
+      )
+    }
     const msg = err instanceof Error ? err.message : 'unknown'
     if (msg.includes('lesson_slots_teacher_start_unique')) {
       return NextResponse.json(

@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 
-import { setAssignedTeacher } from '@/lib/auth/accounts'
+import {
+  AssignedTeacherRoleError,
+  setAssignedTeacher,
+} from '@/lib/auth/accounts'
 import { requireAdminRole } from '@/lib/auth/guards'
 import {
   enforceRateLimit,
@@ -60,6 +63,19 @@ export async function POST(request: Request, { params }: RouteParams) {
     )
   }
 
-  await setAssignedTeacher(id, teacherId)
+  try {
+    await setAssignedTeacher(id, teacherId)
+  } catch (err) {
+    if (err instanceof AssignedTeacherRoleError) {
+      // Codex 2026-05-08 — target account does not have `teacher`
+      // role. Surface as 400 with an actionable message; the admin
+      // UI can render this directly.
+      return NextResponse.json(
+        { error: 'Этот аккаунт не зарегистрирован как преподаватель.' },
+        { status: 400, headers: noStore },
+      )
+    }
+    throw err
+  }
   return NextResponse.json({ ok: true }, { status: 200, headers: noStore })
 }
