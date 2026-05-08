@@ -186,15 +186,8 @@ Six findings against the live infra surface. Four closed (PR #80 + #82); two sta
 ### #1 MEDIUM — uptime-probe.yml leaked raw prod failure body to PUBLIC issues (closed PR #80)
 Probe wrote up to 1500 chars of raw response body into GitHub issues. Repo is public; 5xx HTML / stack traces / upstream errors landed publicly. Fixed: hash body in bash, surface only sha256-prefix + length to issue.
 
-### #2 MEDIUM-LOW — CSP `script-src 'unsafe-inline'` (open, multi-day)
-**Status:** open. **Difficulty:** real. The current CSP allows inline `<script>` tags, which weakens XSS defence — any reflected-injection on a page would execute. Tightening requires:
-
-  1. Audit every inline `<script>` and `<style>` use in the app
-  2. Either move them to external files OR generate a per-request nonce server-side and stamp it into both the CSP header and every legitimate inline element
-  3. Verify Sentry's client SDK injection still works (Sentry generates inline scripts unless configured)
-  4. Verify CloudPayments widget integration still works
-
-Estimate: 1-2 days, plus careful prod soak. Schedule for a dedicated wave when the inline-script surface is mapped.
+### #2 MEDIUM-LOW — CSP `script-src 'unsafe-inline'` (Wave 11 plan in `docs/plans/csp-hardening.md`)
+**Status:** open. **Plan written 2026-05-08:** `docs/plans/csp-hardening.md`. Tracking issue [#88](https://github.com/Igotsty1e/levelchannel/issues/88). Sequenced as 5 PRs (middleware + nonce → Next.js auto-stamping → drop `script-src 'unsafe-inline'` → split `style-src` keeping `style-src-attr 'unsafe-inline'` → docs). Strategy: **Option A — nonce-based CSP via middleware** (~95% of security gain at ~25% of churn vs full CSS-Modules refactor). Acceptance: zero `Refused to execute inline script` console errors across 8 surfaces; CloudPayments widget still loads; Sentry browser SDK still posts events.
 
 ### #3 LOW-MEDIUM — `/api/health` fingerprinting (closed PR #80)
 Anonymous now sees `{status, version}` only. Detailed shape requires `X-Health-Detail` header matching `HEALTH_DETAIL_SECRET` env. Operator must set the secret (repo + prod env) for the uptime probe to get the full shape.
@@ -238,8 +231,8 @@ Branch protection now requires the integration suite + public-surface check, so 
 
 Four findings against public legal surface. One closed in code (#5); three need operator/lawyer involvement.
 
-### #1 HIGH — RKN personal-data operator notification gap (operator action, deferred to 2026-05-09)
-**Status:** open, deferred to 2026-05-09 per Ivan (2026-05-08 evening). **Action:** verify whether РКН personal-data operator notification has been filed for IP Firsova/LevelChannel. If not, file via pd.rkn.gov.ru portal. Site collects email, IP, user-agent, payment data; public pages already claim RF localization. Reference: 152-ФЗ ст. 22 + post-2022 notification regime (любая обработка ПДн от 1 человека = уведомление). Once filed, reflect operator-processing contours in internal compliance docs (no code change needed unless privacy text gets a cite to the registry record).
+### #1 HIGH — RKN personal-data operator notification (filed by IP 2026-05-08, awaiting registry number for citation)
+**Status:** filed by Ivan on 2026-05-08. **Remaining work:** when РКН confirms registration, capture (a) date of registry inclusion, (b) operator's registry number (номер в реестре операторов ПДн). Add a one-line citation to `app/privacy/page.tsx` §1 («Оператор включён в реестр операторов, осуществляющих обработку персональных данных, № {N} от {дата}, под номером {N}»). Single-file ~3-line PR, low risk, no need for a fresh legal-rf cascade — narrow attributive update like Wave 10 #2.
 
 ### #2 HIGH — IP disclosure missing required fields (closed PR #87)
 **Status:** closed 2026-05-08. **What landed:** 3 new env-driven fields (`NEXT_PUBLIC_LEGAL_OPERATOR_OGRN`, `NEXT_PUBLIC_LEGAL_OPERATOR_REG_AUTHORITY`, `NEXT_PUBLIC_LEGAL_OPERATOR_CLAIMS_ADDRESS`) wired into 4 public surfaces: `app/offer/page.tsx` §11 grid, `app/privacy/page.tsx` §1 + claims-mail line, `app/consent/personal-data/page.tsx` §1 + claims-mail line, `components/home/home-page-client.tsx` footer. Routed through `legal-rf-router` (2026-05-08): narrow attributive disclosure addition per ст. 9 ЗоЗПП + 152-ФЗ ст. 5 ч. 4. Verified live on prod after autodeploy. Backlog: Wave 10 #2b — рассмотреть отдельный почтовый адрес для претензий взамен домашнего, если возрастёт нагрузка от B2C-обращений.
