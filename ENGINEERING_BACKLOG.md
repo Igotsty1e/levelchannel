@@ -454,3 +454,38 @@ owner docs, and git history beat old chat outputs.
 - do not bloat the cabinet beyond auth and payment-adjacent scenarios without a direct business need
 - do not collect more personal data at checkout
 - do not complicate the payment form without a direct business need
+
+## P3 — security maturity (revisit when scale or fundraise demands)
+
+Captured 2026-05-09 after the two-day security sprint (Waves 5/8/9/10/11 + Issues #86/#88) closed everything that was technically actionable. The items below are **structural / process** gaps. They don't represent vulnerabilities — they represent missing layers that a bigger company / a regulated audit / a Stripe-grade due-diligence would expect. Investing in them on the current QPS (~10 page views / hour, ~50 payments / month) is overkill; they belong in P3 until scale or a fundraise demands them.
+
+### Staging environment
+**Trigger:** the next time we hit a prod-only failure (we had 2 on 2026-05-08). **Cost:** ~$5/mo for a second small VPS + automation to mirror migrations. **Value:** every "deploy then discover it doesn't work on this kernel/Node/systemd combo" cycle becomes a non-event. Today we mitigate via fast rollback + post-deploy smoke; staging eliminates the rollback window entirely.
+
+### Cloudflare (or equivalent) in front
+**Trigger:** first sustained traffic spike that the single nginx layer can't absorb, OR first DDoS attempt. **Cost:** $0 (free tier) - $20/mo (Pro). **Value:** L4/L7 DDoS protection, edge caching, country-blocking, WAF rules. Trade-off: another vendor in the data path, CSP `connect-src` may need tuning.
+
+### Backup-restore drill
+**Trigger:** quarterly. **Cost:** 2-3 hours each time. **Value:** confirms the backups in the private runbook are actually restorable end-to-end. Today: backups exist, but "can we restore them" is untested. Add a calendared item ("first Friday of each quarter") + checklist in the private operations runbook.
+
+### Formal threat model
+**Trigger:** before next material code-architecture change OR before a regulatory audit / fundraise DD. **Cost:** 1-2 day exercise (STRIDE per surface, attack-tree per asset). **Value:** moves SECURITY.md from "list of controls we have" to "controls we have mapped to specific attacker goals" — exposes blind spots that ad-hoc reviews miss. Output: `docs/security-threat-model.md`.
+
+### External pen-test
+**Trigger:** before a fundraise where due-diligence will demand it, OR after a material expansion of the attack surface (new payment flow, new auth method, public API). **Cost:** $3K-$8K from a Russian-market pen-test vendor. **Value:** independent third party tries to break things; produces a report we can hand to investors / regulators. Codex + self-review are good but not equivalent.
+
+### `security.txt` + responsible-disclosure policy
+**Trigger:** as soon as anyone external (researcher, customer) asks "where do I report a vulnerability." **Cost:** ~30 min of writing + DNS/file. **Value:** formal channel that doesn't end up in support@. Spec: https://securitytxt.org. Place at `/.well-known/security.txt`. Should also document scope, expected response time, what's in/out (e.g. social-engineering excluded).
+
+### SBOM + supply-chain provenance
+**Trigger:** SOC 2 / regulatory audit, OR after a notable npm-supply-chain incident. **Cost:** 1-2 days of tooling integration (`syft` for SBOM, `cosign` for signed builds, npm provenance flag). **Value:** a real answer to "what's in your build, can you prove it." Today: `package-lock.json` + `npm audit`. That's a baseline, not a chain of custody.
+
+### HA / multi-instance / failover
+**Trigger:** sustained traffic that justifies horizontal scaling, OR business-continuity SLA commitment. **Cost:** order-of-magnitude infra cost (load balancer, second app server, PG read replica or failover, shared session store, multi-instance rate-limit), plus rewriting `lib/security/rate-limit.ts` in-memory fallback path (currently OK because there IS no second instance — but multi-instance + memory fallback = bypassable per-IP cap, called out in Wave 7 #4). **Value:** the prod VPS can fail / be reimaged / be redeployed without user-visible downtime.
+
+### Other deferred items (cross-reference)
+
+- **Wave 6 #4 Phase 3** — calendar trigger ≈2026-05-15: drop the 24h legacy grace window in `evaluateReceiptGate`. One-line code change once the soak window passes.
+- **Wave 10 #1 finishing touch** — when РКН confirms registration, paste the registry number + filing date into `app/privacy/page.tsx` §1 (3-line attributive PR).
+- **Wave 10 #2b** — physical PO box / virtual office for the IP claims address (currently the IP's residential address from EGRIP is used). Privacy upside; not a regulatory blocker.
+- **GA wiring decision** — Open Question #1 from Wave 11 plan (deferred 2026-05-08): drop GA/GTM allowlist entries from CSP, OR actually wire GA. Current: dead allowlist entries kept "just in case."
