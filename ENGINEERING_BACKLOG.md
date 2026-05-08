@@ -205,8 +205,18 @@ Anonymous now sees `{status, version}` only. Detailed shape requires `X-Health-D
 ### #5 LOW — GitHub Actions pinning (closed PR #80)
 All 6 workflow files; `actions/checkout@v4` / `setup-node@v4` / `github-script@v7` pinned to commit SHAs. Comments retain the tag for diffing future updates.
 
-### #6 LOW — systemd unit sandboxing (closed PR #82)
-All 4 maintenance units now carry the standard restrict block (NoNewPrivileges, PrivateTmp, ProtectSystem=strict, ProtectHome, RestrictSUIDSGID, MemoryDenyWriteExecute, SystemCallFilter, etc.). Operator must `scp` to /etc/systemd/system + `daemon-reload` + restart timers. If a directive breaks legitimate work, journal carries `Failed at step <DIRECTIVE>` — revert one line.
+### #6 LOW — systemd unit sandboxing (PR #82, partially deployed; PRs #84 + #85 trim incompatible directives)
+
+**Repo state:** all 4 maintenance units carry 12 sandboxing directives — `NoNewPrivileges`, `PrivateTmp`, `ProtectSystem=strict`, `ProtectHome`, `ProtectKernelTunables/Modules/Logs`, `ProtectControlGroups`, `RestrictSUIDSGID`, `RestrictNamespaces`, `RestrictRealtime`, `LockPersonality`, `SystemCallArchitectures=native`. Two directives from PR #82 had to be removed:
+
+- `MemoryDenyWriteExecute=true` — confirmed incompatibility: V8 JIT requires W+X pages; the directive (implemented as a seccomp filter blocking `mprotect(PROT_EXEC)`) terminates Node with SIGSYS / status 31. Documented in `man systemd.exec` for any JIT runtime.
+- `SystemCallFilter=@system-service` (+ exclude line) — pragmatic removal. Live prod 2026-05-08 still aborted with status 31/SYS after MDWE was already gone. Some syscall outside the `@system-service` allowlist is killing Node, but **the exact syscall has not been isolated**. Likely candidates from Node 20 + glibc on Linux 6.x: `clone3`, `close_range`, `rseq`, `futex_waitv`, `epoll_pwait2`. To re-introduce a precise allowlist later, run a `systemd-run` transient probe with `SystemCallErrorNumber=ENOSYS` + `SystemCallLog=all` and grep `journalctl -k` for the seccomp/audit line.
+
+**Live-prod incident summary (2026-05-08):** PR #82 deployed; smoke run aborted. Rollback in 2 min via reinstalling backup units. PR #84 (MDWE removed) deployed; same SIGSYS class. Rollback again. After Codex consult and corrections, PR #85 deployed via `systemd-run` probe + per-unit canary path. No timer fire was lost; total prod-degraded window across the two failed deploys ~3 min combined (each oneshot smoke-test was rolled back within 2 min).
+
+**Operator step (when PR #85 is re-rolled-out):** `scp` rendered units to `/etc/systemd/system/` + `daemon-reload`. Recommended workflow: replace one unit at a time (start with `levelchannel-stale-orders.service`), `systemctl start <unit>` smoke test, observe for one timer cycle, then propagate.
+
+**Open follow-up:** isolate the offending syscall via diagnostic probe + restore `SystemCallFilter` with a precise allowlist. Tracked separately.
 
 ## Wave 9 — Codex governance audit, 2026-05-08
 

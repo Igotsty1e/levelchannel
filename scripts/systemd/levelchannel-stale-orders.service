@@ -29,11 +29,23 @@ RestrictSUIDSGID=true
 RestrictNamespaces=true
 RestrictRealtime=true
 LockPersonality=true
-# MemoryDenyWriteExecute=true — incompatible with Node.js V8 JIT (kernel
-# kills the process via SIGSYS / status 31 because V8 needs W+X pages
-# for compiled code). Verified live on prod 2026-05-08: smoke run with
-# this directive aborted with `code=dumped, status=31/SYS`. Removed; the
-# remaining 13 directives still give meaningful defense-in-depth.
+# MemoryDenyWriteExecute=true — removed. V8 JIT requires W+X pages for
+# compiled code; this directive is implemented as a seccomp filter that
+# blocks `mprotect(PROT_EXEC)` and terminates the process with SIGSYS.
+# Verified live on prod 2026-05-08: smoke run with this directive aborted
+# with `code=dumped, status=31/SYS`. Documented incompatibility for any
+# JIT runtime per `man systemd.exec`.
 SystemCallArchitectures=native
-SystemCallFilter=@system-service
-SystemCallFilter=~@privileged @resources @debug @mount @cpu-emulation @obsolete
+# SystemCallFilter — removed pragmatically. Live prod 2026-05-08 second
+# attempt (with MDWE already removed) still aborted with status 31/SYS,
+# so the kernel-side seccomp filter is killing on a syscall outside the
+# `@system-service` allowlist. The exact offending syscall has NOT been
+# isolated yet — likely candidates from Node 20 + glibc on Linux 6.x are
+# `clone3`, `close_range`, `rseq`, `futex_waitv`, `epoll_pwait2`, but
+# this is hypothesis, not confirmation. To re-introduce a precise
+# allowlist later, run a diagnostic transient probe with
+# `SystemCallErrorNumber=ENOSYS` + `SystemCallLog=all` and inspect
+# `journalctl -u <probe> -k`. Removing the filter loses one layer of
+# kernel-attack-surface reduction but preserves the other 12 directives.
+# SystemCallFilter=@system-service
+# SystemCallFilter=~@privileged @resources @debug @mount @cpu-emulation @obsolete
