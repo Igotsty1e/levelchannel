@@ -22,12 +22,22 @@ import { Toolbar } from './Toolbar'
 // PR3b — drag interactions opt-in via `interactions`. Teacher surface
 // (read-only) doesn't pass it. Operator surface passes onPaintSpan +
 // onMoveTarget; SlotCalendar owns the drag-state reducer and emits
-// raw spans/targets to the parent on commit. The parent owns the
-// confirm modal, POST, toast, and refetch (via key bump on the
-// `<SlotCalendar>` element). Codex 2026-05-08 invariant: parents MUST
-// trigger refetch on EVERY drag commit (even on 4xx/5xx) so the UI
-// doesn't sit on stale state — e.g. a `not_open` 409 means another
-// tab booked the slot mid-drag.
+// raw spans/targets to the parent on commit. Parent owns confirm
+// modal, POST, toast, and refetch (via key bump).
+//
+// Codex 2026-05-08 (post-implementation review) prescribed 4 fixes:
+//   HIGH 1 — listener attach race: useEffect-based attachment can
+//     miss a fast mouseup. Solution: listeners always-on (mounted
+//     once), early-return on idle. Cost is one if-check per mouse
+//     event globally; cheap.
+//   HIGH 2 — non-open slot clickability: dragHandlers must NOT
+//     suppress onSlotClick globally. Solution: always pass
+//     onSlotClick to Grid; suppress click-after-drag-commit via a
+//     ref consulted by SlotBlock's onClick.
+//   MEDIUM 1 — window-blur / visibilitychange cancel for stuck
+//     drag state.
+//   MEDIUM 2 — backdrop-click during in-flight POST (handled at the
+//     PaintConfirmModal layer).
 
 export type CalendarInteractions = {
   onPaintSpan?: (span: PaintSpan) => void
@@ -38,7 +48,9 @@ export type SlotCalendarProps = {
   teacherId: string
   initialFromYmd: string
   // Click handler fires when user taps a slot WITHOUT dragging.
-  // Drag-move drift past origin cell suppresses the click.
+  // Drag-move drift past origin cell suppresses the next click via
+  // `suppressClickRef`, so a drag commit doesn't double-fire as
+  // both move + click.
   onSlotClick?: (row: CalendarRow) => void
   interactions?: CalendarInteractions
 }
@@ -100,17 +112,19 @@ export function SlotCalendar({
     initialDragState as DragState,
   )
 
-  // Mirror dragState into a ref so document-level handlers can read
-  // live state without re-binding on every render.
+  // Mirror dragState into a ref so always-on document handlers can
+  // read live state. React's setState batching means dispatchRaw's
+  // result isn't visible until next commit, but reduceDrag is pure
+  // so the ref tracks the post-action state immediately.
   const dragStateRef = useRef<DragState>(initialDragState)
   useEffect(() => {
     dragStateRef.current = dragState
   }, [dragState])
 
-  // Day-column refs for hit-testing during drag. Slot blocks have
-  // higher zIndex so the day column's onMouseMove doesn't fire while
-  // the cursor is over a slot block — we use document-level events
-  // and find the right column via getBoundingClientRect.
+  // Day-column refs for hit-testing during drag. SlotBlock has higher
+  // zIndex so the day column's onMouseMove doesn't fire while the
+  // cursor is over a slot block — we use document-level events and
+  // find the right column via getBoundingClientRect.
   const dayRefs = useRef<Map<string, HTMLElement>>(new Map())
   const setDayEl = useCallback((ymd: string, el: HTMLElement | null) => {
     if (el === null) dayRefs.current.delete(ymd)
@@ -140,8 +154,13 @@ export function SlotCalendar({
     return null
   }
 
+  // suppressClickRef: set to true on the FIRST cellMouseEnter that
+  // shows drift (origin != current). SlotBlock's onClick reads + clears
+  // this ref before calling onSlotClick. Drift-less mouseup → ref
+  // stays false → click fires normally → modal opens.
+  const suppressClickRef = useRef(false)
+
   // Wraps the reducer + fires effects via interactions callbacks.
-  // Returns the resulting state for caller-side branching.
   const dispatch = useCallback(
     (action: Action): DragState => {
       const out = reduceDrag(dragStateRef.current, action)
@@ -156,30 +175,24 @@ export function SlotCalendar({
       }
       return out.state
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [interactions?.onPaintSpan, interactions?.onMoveTarget],
+    [interactions],
   )
 
-  // Click vs drag disambiguation: stash the row from slot mousedown.
-  // If the mouseup arrives without any drift, fire onSlotClick. If
-  // drift is detected, clear the pending click and let the move
-  // commit fire instead.
-  const pendingClickRef = useRef<CalendarRow | null>(null)
-
-  // Document-level handlers active only while dragging.
+  // Always-on document handlers (Codex HIGH 1 fix). Attach ONCE on
+  // mount; early-return when idle. Avoids the useEffect-attach race
+  // where a fast mousedown→mouseup can fire before the listener is
+  // bound to document.
   useEffect(() => {
-    if (dragState.kind === 'idle') return
-
     function onMouseMove(e: MouseEvent) {
+      if (dragStateRef.current.kind === 'idle') return
       const cell = findCellAt(e.clientX, e.clientY)
       if (!cell) return
+      const live = dragStateRef.current
       if (
-        pendingClickRef.current &&
-        dragStateRef.current.kind === 'moving' &&
-        (dragStateRef.current.originYmd !== cell.ymd ||
-          dragStateRef.current.originHalfHour !== cell.halfHour)
+        live.kind === 'moving' &&
+        (live.originYmd !== cell.ymd || live.originHalfHour !== cell.halfHour)
       ) {
-        pendingClickRef.current = null
+        suppressClickRef.current = true
       }
       dispatch({
         type: 'cellMouseEnter',
@@ -188,40 +201,63 @@ export function SlotCalendar({
     }
 
     function onMouseUp() {
-      const stateBeforeUp = dragStateRef.current
+      if (dragStateRef.current.kind === 'idle') return
       dispatch({ type: 'mouseUp' })
-      if (
-        stateBeforeUp.kind === 'moving' &&
-        pendingClickRef.current &&
-        onSlotClick
-      ) {
-        onSlotClick(pendingClickRef.current)
-      }
-      pendingClickRef.current = null
     }
 
     function onKeyDown(e: KeyboardEvent) {
+      if (dragStateRef.current.kind === 'idle') return
       if (e.key === 'Escape') {
         dispatch({ type: 'escape' })
-        pendingClickRef.current = null
+        suppressClickRef.current = false
       }
+    }
+
+    // Codex MEDIUM 1 fix: stuck drag if the user drags off-window
+    // and releases there, OR switches tabs mid-drag. window blur and
+    // document.visibilitychange catch both. pointercancel covers
+    // touch/pen scenarios when the OS revokes the gesture.
+    function onCancelGesture() {
+      if (dragStateRef.current.kind === 'idle') return
+      dispatch({ type: 'reset' })
+      suppressClickRef.current = false
     }
 
     document.addEventListener('mousemove', onMouseMove)
     document.addEventListener('mouseup', onMouseUp)
     document.addEventListener('keydown', onKeyDown)
+    document.addEventListener('pointercancel', onCancelGesture)
+    document.addEventListener('visibilitychange', onCancelGesture)
+    window.addEventListener('blur', onCancelGesture)
     return () => {
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
       document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('pointercancel', onCancelGesture)
+      document.removeEventListener('visibilitychange', onCancelGesture)
+      window.removeEventListener('blur', onCancelGesture)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dragState.kind, onSlotClick])
+  }, [])
 
   const handlePrev = () => setFromYmd(addDaysYmd(fromYmd, -7))
   const handleNext = () => setFromYmd(addDaysYmd(fromYmd, 7))
   const handleToday = () => setFromYmd(initialFromYmd)
   const handleRefresh = () => setReloadCounter((n) => n + 1)
+
+  // SlotBlock click-suppression wrapper (Codex HIGH 2 fix).
+  // Replaces the previous "drop onSlotClick when dragHandlers active"
+  // hack which broke clicks on non-open kinds.
+  const wrappedSlotClick = useCallback(
+    (row: CalendarRow) => {
+      if (suppressClickRef.current) {
+        suppressClickRef.current = false
+        return
+      }
+      onSlotClick?.(row)
+    },
+    [onSlotClick],
+  )
 
   // ---- drag handlers passed to Grid ----
 
@@ -229,7 +265,7 @@ export function SlotCalendar({
     ? {
         onCellMouseDown: interactions.onPaintSpan
           ? (ymd: string, halfHour: number) => {
-              pendingClickRef.current = null
+              suppressClickRef.current = false
               dispatch({
                 type: 'cellMouseDown',
                 coords: { ymd, halfHour },
@@ -238,14 +274,12 @@ export function SlotCalendar({
           : undefined,
         onSlotMouseDown: interactions.onMoveTarget
           ? (row: CalendarRow, halfHour: number) => {
-              if (row.slot.kind !== 'open') {
-                pendingClickRef.current = row
-                return
-              }
-              pendingClickRef.current = row
+              if (row.slot.kind !== 'open' || !row.slot.id) return
+              // suppressClickRef stays false here; cellMouseEnter
+              // sets it on first drift detection.
               dispatch({
                 type: 'slotMouseDown',
-                slotId: row.slot.id ?? '',
+                slotId: row.slot.id,
                 durationMinutes: row.slot.durationMinutes,
                 coords: { ymd: row.dayYmd, halfHour },
               })
@@ -316,11 +350,7 @@ export function SlotCalendar({
           <GridWithRefs
             fromYmd={fromYmd}
             slots={response.slots}
-            // When drag is wired AND a slot mousedown is in flight,
-            // SlotCalendar fires onSlotClick from the document-level
-            // mouseup handler. Suppress Grid's own click path so we
-            // don't double-fire.
-            onSlotClick={dragHandlers ? undefined : onSlotClick}
+            onSlotClick={dragHandlers ? wrappedSlotClick : onSlotClick}
             drag={dragHandlers}
             setDayEl={setDayEl}
           />

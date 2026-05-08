@@ -84,7 +84,11 @@ export function PaintConfirmModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="paint-confirm-title"
-      onClick={onCancel}
+      // Codex 2026-05-08 MEDIUM 2: backdrop click MUST NOT close the
+      // modal while a POST is in flight — that gave the user a
+      // misleading "cancelled" UX while creation was actually
+      // proceeding. Backdrop click is now a no-op when busy.
+      onClick={busy ? undefined : onCancel}
       style={{
         position: 'fixed',
         inset: 0,

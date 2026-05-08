@@ -96,6 +96,7 @@ export function SlotsViewSwitcher(props: SlotsViewSwitcherProps) {
     durationMinutes: number
     tariffId: string | null
   }) {
+    let succeeded = false
     try {
       const res = await fetch('/api/admin/slots/bulk-create', {
         method: 'POST',
@@ -109,21 +110,29 @@ export function SlotsViewSwitcher(props: SlotsViewSwitcherProps) {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        showToast(`Ошибка: ${data?.error || `HTTP ${res.status}`}`)
-      } else {
-        const skippedNote =
-          data.skippedConflicts?.length > 0
-            ? ` (пропущено как дубль: ${data.skippedConflicts.length})`
-            : ''
-        showToast(`Создано ${data.created.length} слотов${skippedNote}.`)
+        // Codex 2026-05-08 MEDIUM 2 follow-up: rethrow so the
+        // PaintConfirmModal stays mounted and surfaces the error to
+        // the user. They can retry without re-painting the span.
+        throw new Error(data?.error || data?.message || `HTTP ${res.status}`)
       }
-    } catch (err) {
-      showToast(
-        `Сеть недоступна: ${err instanceof Error ? err.message : String(err)}`,
-      )
+      const skippedNote =
+        data.skippedConflicts?.length > 0
+          ? ` (пропущено как дубль: ${data.skippedConflicts.length})`
+          : ''
+      showToast(`Создано ${data.created.length} слотов${skippedNote}.`)
+      succeeded = true
     } finally {
-      setPendingPaint(null)
+      // Always refetch so the operator sees the actual server state
+      // even on error (some slots may have been created before a
+      // mid-batch problem; the calendar reflects the truth).
       bumpReload()
+      // Close the modal only on success. On error, the modal's local
+      // catch surfaces the message inside the dialog and the user
+      // can retry. Throw still propagates from the success branch's
+      // body so PaintConfirmModal's await rethrows correctly.
+      if (succeeded) {
+        setPendingPaint(null)
+      }
     }
   }
 
