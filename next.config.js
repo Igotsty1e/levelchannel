@@ -1,23 +1,13 @@
 /** @type {import('next').NextConfig} */
 const { withSentryConfig } = require('@sentry/nextjs')
 
-// Sentry's browser SDK posts events to the EU ingest endpoint we got
-// from Sentry-side project keys. CSP must allow connect-src to
-// `*.ingest.de.sentry.io` or every event from a real user is blocked.
-const contentSecurityPolicy = [
-  "default-src 'self'",
-  "base-uri 'self'",
-  "object-src 'none'",
-  "frame-ancestors 'none'",
-  "form-action 'self' https://t.me https://*.t.me",
-  "script-src 'self' 'unsafe-inline' https://widget.cloudpayments.ru https://www.googletagmanager.com https://www.google-analytics.com",
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src 'self' https://fonts.gstatic.com",
-  "img-src 'self' data: https://*.cloudpayments.ru",
-  "connect-src 'self' https://api.cloudpayments.ru https://widget.cloudpayments.ru https://*.cloudpayments.ru https://www.google-analytics.com https://region1.google-analytics.com https://*.ingest.de.sentry.io https://*.ingest.sentry.io",
-  "frame-src 'self' https://widget.cloudpayments.ru https://*.cloudpayments.ru",
-  "worker-src 'self' blob:",
-].join('; ')
+// Wave 11 PR 1 — Content-Security-Policy moved out of this file into
+// `middleware.ts` so it can carry a per-request nonce. Source of truth:
+// `lib/security/csp.ts`. Other static security headers (HSTS, X-Frame-
+// Options, X-Content-Type-Options, etc.) stay here — they don't depend
+// on per-request state.
+//
+// See `docs/plans/csp-hardening.md` for the rollout sequence.
 
 const nextConfig = {
   // Server-ready build. Payment webhooks and order creation require a running Node.js app.
@@ -38,7 +28,7 @@ const nextConfig = {
       {
         source: '/(.*)',
         headers: [
-          { key: 'Content-Security-Policy', value: contentSecurityPolicy },
+          // Content-Security-Policy moved to middleware.ts (per-request nonce).
           { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains; preload' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'DENY' },
