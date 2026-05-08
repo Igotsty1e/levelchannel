@@ -439,10 +439,11 @@ function BookSection({
             </p>
           ) : null}
           <SlotCalendar
-            key={`learner-${assignedTeacherId}-${reloadCounter}`}
+            key={`learner-${assignedTeacherId}`}
             teacherId={assignedTeacherId}
             initialFromYmd={currentMondayYmd()}
             onSlotClick={(row) => setActiveRow(row)}
+            refreshTrigger={reloadCounter}
             // Codex Wave B: no interactions for learners; click-only
             // booking surface. Drag features stay operator-only.
           />

@@ -53,6 +53,13 @@ export type SlotCalendarProps = {
   // both move + click.
   onSlotClick?: (row: CalendarRow) => void
   interactions?: CalendarInteractions
+  // Codex 2026-05-08 Wave C review: parent triggers an in-place
+  // refetch by incrementing this number. Avoids the key-bump
+  // pattern that remounted the whole component and reset fromYmd
+  // back to the initial week — broke the workflow when an operator
+  // / teacher was working two weeks ahead and any mutation jumped
+  // them back to the current week.
+  refreshTrigger?: number
 }
 
 const CELL_HEIGHT_PX = 30 * CALENDAR_GRID_PX_PER_MIN
@@ -62,6 +69,7 @@ export function SlotCalendar({
   initialFromYmd,
   onSlotClick,
   interactions,
+  refreshTrigger,
 }: SlotCalendarProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const isNarrow = useNarrowContainer(containerRef)
@@ -99,7 +107,7 @@ export function SlotCalendar({
     return () => {
       cancelled = true
     }
-  }, [teacherId, fromYmd, reloadCounter])
+  }, [teacherId, fromYmd, reloadCounter, refreshTrigger])
 
   // ---- drag wiring ----
 
