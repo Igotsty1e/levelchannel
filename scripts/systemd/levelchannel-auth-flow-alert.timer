@@ -1,0 +1,19 @@
+# Reference systemd timer for scripts/auth-flow-alert.mjs.
+# Copy to /etc/systemd/system/ on the VPS during activation; see
+# OPERATIONS.md §11 "Auth-flow alerting" for the procedure (mirrors
+# the webhook-flow setup in §9).
+
+[Unit]
+Description=Run LevelChannel auth-flow alert probe every 30 minutes
+
+[Timer]
+# 7 minutes after boot (offset from webhook-flow-alert at 5min so they
+# don't both spike DB at the same instant), then every 30 minutes.
+OnBootSec=7min
+OnUnitActiveSec=30min
+# Persistent so we catch missed runs after a downtime.
+Persistent=true
+Unit=levelchannel-auth-flow-alert.service
+
+[Install]
+WantedBy=timers.target
