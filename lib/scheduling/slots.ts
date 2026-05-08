@@ -1155,6 +1155,168 @@ export async function moveOpenSlot(
   return { ok: false, reason: 'not_open' }
 }
 
+// Wave C — teacher-owned move. Same race-safe contract as
+// `moveOpenSlot` but adds an ownership clause to the WHERE so a
+// teacher can ONLY move slots they own (status=open AND
+// teacher_account_id=session). The ownership lives IN the UPDATE,
+// not in a route-level read-then-check, so a teacher cannot
+// time-of-check-vs-time-of-use a stale read against another
+// teacher's slot. Codex 2026-05-08 prescription.
+export type MoveTeacherSlotResult =
+  | { ok: true; slot: LessonSlot }
+  | { ok: false; reason: 'not_found' | 'not_owner' | 'not_open' | 'slot_collision' }
+
+export async function moveOpenSlotByTeacher(
+  slotId: string,
+  newStartAtIso: string,
+  teacherAccountId: string,
+): Promise<MoveTeacherSlotResult> {
+  if (!UUID_PATTERN.test(slotId)) return { ok: false, reason: 'not_found' }
+  if (!UUID_PATTERN.test(teacherAccountId)) {
+    return { ok: false, reason: 'not_found' }
+  }
+  const pool = getDbPool()
+  try {
+    const result = await pool.query(
+      `update lesson_slots
+          set start_at = $2,
+              updated_at = now(),
+              events = $4::jsonb || events
+        where id = $1
+          and status = 'open'
+          and teacher_account_id = $3
+        returning ${SLOT_COLUMNS}`,
+      [
+        slotId,
+        newStartAtIso,
+        teacherAccountId,
+        appendEventSql('slot.moved', 'teacher', {
+          newStartAt: newStartAtIso,
+          actorAccountId: teacherAccountId,
+        }),
+      ],
+    )
+    if (result.rows[0]) {
+      return { ok: true, slot: rowToSlot(result.rows[0]) }
+    }
+  } catch (err) {
+    if (
+      err &&
+      typeof err === 'object' &&
+      'code' in err &&
+      (err as { code: string }).code === '23505'
+    ) {
+      return { ok: false, reason: 'slot_collision' }
+    }
+    throw err
+  }
+  // Disambiguate: read existing row to classify the no-op.
+  const sniff = await pool.query(
+    `select status, teacher_account_id from lesson_slots where id = $1`,
+    [slotId],
+  )
+  if (sniff.rows.length === 0) return { ok: false, reason: 'not_found' }
+  if (sniff.rows[0].teacher_account_id !== teacherAccountId) {
+    return { ok: false, reason: 'not_owner' }
+  }
+  return { ok: false, reason: 'not_open' }
+}
+
+// Wave C — teacher-owned cancel. Allows BOTH `open` AND `booked`
+// teacher-owned slots to be cancelled. `reason` is REQUIRED for
+// booked (a learner is being told their lesson is off — they
+// deserve a reason in the audit trail) and optional for open (no
+// learner involved). Atomic UPDATE WHERE teacher_account_id =
+// session AND status IN ('open','booked') keeps ownership and
+// status invariants in the SQL. Codex 2026-05-08 prescription.
+//
+// Refund / paid-allocation reconciliation is INTENTIONALLY NOT
+// triggered here. Per Codex Wave C design: cancellation and
+// refund are different domains; if the slot has a paid allocation,
+// it leaves an operator follow-up trail (existing payment_allocations
+// row + audit event) and the operator handles the refund manually
+// in CloudPayments dashboard. Same posture as existing learner
+// cancel of paid slots.
+export type CancelTeacherSlotResult =
+  | { ok: true; slot: LessonSlot }
+  | {
+      ok: false
+      reason:
+        | 'not_found'
+        | 'not_owner'
+        | 'already_terminal'
+        | 'reason_required_for_booked'
+    }
+
+export async function cancelSlotByTeacher(
+  slotId: string,
+  teacherAccountId: string,
+  reason: string | null,
+): Promise<CancelTeacherSlotResult> {
+  if (!UUID_PATTERN.test(slotId)) return { ok: false, reason: 'not_found' }
+  if (!UUID_PATTERN.test(teacherAccountId)) {
+    return { ok: false, reason: 'not_found' }
+  }
+  if (reason && reason.length > MAX_REASON_LEN) {
+    throw new Error('slot/cancellationReason/too_long')
+  }
+  const pool = getDbPool()
+  // Codex 2026-05-08 review fix: the reason-required-for-booked
+  // invariant lives INSIDE the UPDATE predicate so the booked-vs-
+  // open race cannot bypass it. Predicate:
+  //   status IN ('open', 'booked') AND
+  //   (status = 'open' OR nullif(btrim($reason), '') IS NOT NULL)
+  // = "row must be cancellable AND if it's booked, reason must be
+  //   non-blank". Evaluated atomically per row by Postgres.
+  // If zero rows updated, sniff the row to disambiguate the failure
+  // (not_found / not_owner / already_terminal / reason_required_for_booked).
+  const result = await pool.query(
+    `update lesson_slots
+        set status = 'cancelled',
+            cancelled_at = coalesce(cancelled_at, now()),
+            cancelled_by_account_id = $2,
+            cancellation_reason = $3,
+            updated_at = now(),
+            events = $4::jsonb || events
+      where id = $1
+        and teacher_account_id = $2
+        and status in ('open', 'booked')
+        and (status = 'open' or nullif(btrim($3), '') is not null)
+      returning ${SLOT_COLUMNS}`,
+    [
+      slotId,
+      teacherAccountId,
+      reason,
+      appendEventSql('slot.cancelled', 'teacher', {
+        cancelledByAccountId: teacherAccountId,
+        reason,
+      }),
+    ],
+  )
+  if (result.rows[0]) {
+    return { ok: true, slot: rowToSlot(result.rows[0]) }
+  }
+  // Sniff to classify the no-op.
+  const sniff = await pool.query(
+    `select status, teacher_account_id from lesson_slots where id = $1`,
+    [slotId],
+  )
+  if (sniff.rows.length === 0) return { ok: false, reason: 'not_found' }
+  if (sniff.rows[0].teacher_account_id !== teacherAccountId) {
+    return { ok: false, reason: 'not_owner' }
+  }
+  // Row exists, owned by teacher, but didn't update → either
+  // already-terminal (cancelled / completed / no_show_*) or status
+  // is `booked` and the reason was blank.
+  if (
+    sniff.rows[0].status === 'booked' &&
+    (!reason || reason.trim() === '')
+  ) {
+    return { ok: false, reason: 'reason_required_for_booked' }
+  }
+  return { ok: false, reason: 'already_terminal' }
+}
+
 // Phase 5: operator stamps a lifecycle status on a booked slot whose
 // start has already passed. Refuses if the row is not booked or if
 // start_at is still in the future.

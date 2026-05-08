@@ -225,7 +225,7 @@ export function SlotsViewSwitcher(props: SlotsViewSwitcherProps) {
                 вертикали — он переместится. Esc отменяет жест.
               </p>
               <SlotCalendar
-                key={`${calendarTeacherId}-${reloadCounter}`}
+                key={calendarTeacherId}
                 teacherId={calendarTeacherId}
                 initialFromYmd={currentMondayYmd()}
                 onSlotClick={(row) => setActiveRow(row)}
@@ -233,6 +233,7 @@ export function SlotsViewSwitcher(props: SlotsViewSwitcherProps) {
                   onPaintSpan: (span) => setPendingPaint(span),
                   onMoveTarget: handleMoveTarget,
                 }}
+                refreshTrigger={reloadCounter}
               />
             </>
           )}

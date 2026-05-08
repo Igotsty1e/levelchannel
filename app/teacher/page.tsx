@@ -2,6 +2,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { listActiveTariffs } from '@/lib/pricing/tariffs'
 
 import TeacherCalendarClient from './client'
 
@@ -24,6 +25,8 @@ export default async function TeacherPage() {
     redirect('/login')
   }
 
+  const tariffs = await listActiveTariffs()
+
   return (
     <>
       <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 8 }}>
@@ -37,13 +40,20 @@ export default async function TeacherPage() {
           lineHeight: 1.6,
         }}
       >
-        Расписание на неделю. Слоты создаёт оператор в админке — здесь
-        вы видите назначенные занятия и можете кликнуть по слоту, чтобы
-        посмотреть детали (e-mail ученика, тариф).
+        Перетащите по пустым ячейкам — откроется диалог создания.
+        Перетащите свободный слот по вертикали — он переместится.
+        Кликните по существующему слоту, чтобы посмотреть детали или
+        отменить (для занятых нужна причина для ученика).
       </p>
       <TeacherCalendarClient
         teacherId={current.account.id}
         initialFromYmd={currentMondayYmd()}
+        tariffs={tariffs.map((t) => ({
+          id: t.id,
+          slug: t.slug,
+          titleRu: t.titleRu,
+          amountKopecks: t.amountKopecks,
+        }))}
       />
     </>
   )
