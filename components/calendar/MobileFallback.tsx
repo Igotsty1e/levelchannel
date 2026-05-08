@@ -13,6 +13,29 @@ import type { CalendarSlot } from '@/lib/calendar/types'
 // to render 7 day columns, we render a compact day-grouped list of the
 // SAME data. NOT the cabinet's existing list view — `/teacher` and
 // `/admin/slots` calendar surfaces own their own mobile rendering.
+//
+// Wave B post-review — Codex flagged that this surface previously
+// rendered `row.slot.kind` raw, exposing internal discriminator
+// strings ("booked-self", "past-redacted") to learners on /cabinet.
+// Same kindLabel mapping as SlotBlock so mobile and desktop agree.
+
+function kindLabel(kind: string): string {
+  switch (kind) {
+    case 'open':
+      return 'Доступен'
+    case 'booked-self':
+      return 'Ваше занятие'
+    case 'booked-other':
+      return 'Занято'
+    case 'booked-full':
+      return 'Забронировано'
+    case 'past-full':
+    case 'past-redacted':
+      return 'Прошедшее'
+    default:
+      return kind
+  }
+}
 
 const MIN_WEEK_VIEW_PX = 720
 
@@ -96,7 +119,7 @@ export function MobileFallback({
                   {row.startLabel} – {row.endLabel}
                 </strong>
                 <span style={{ marginLeft: 8, color: '#9ca3af', fontSize: 12 }}>
-                  {row.slot.kind}
+                  {kindLabel(row.slot.kind)}
                 </span>
               </button>
             ))}
