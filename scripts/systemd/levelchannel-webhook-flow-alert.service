@@ -33,12 +33,10 @@ RestrictSUIDSGID=true
 RestrictNamespaces=true
 RestrictRealtime=true
 LockPersonality=true
-# MemoryDenyWriteExecute=true — removed: incompatible with Node.js V8 JIT
-# (W+X pages are required, the directive triggers SIGSYS). See
-# levelchannel-stale-orders.service for the live-prod incident note.
-# SystemCallFilter / SystemCallArchitectures — removed alongside MDWE for
-# Node.js V8 incompatibility. See levelchannel-stale-orders.service for
-# the live-prod incident detail.
-# SystemCallArchitectures=native
+# MemoryDenyWriteExecute=true — removed (V8 JIT W+X requirement).
+# See levelchannel-stale-orders.service for the live-prod incident note.
+SystemCallArchitectures=native
+# SystemCallFilter — removed pragmatically; offending syscall not yet
+# isolated. See levelchannel-stale-orders.service for the diagnostic plan.
 # SystemCallFilter=@system-service
 # SystemCallFilter=~@privileged @resources @debug @mount @cpu-emulation @obsolete
