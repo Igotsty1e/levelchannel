@@ -1,0 +1,53 @@
+name: seccomp-regression
+
+# Regression test for the SystemCallFilter shipped on the maintenance
+# systemd unit files. Codex review 2026-05-09 (Wave 8 #6 / Issue #86).
+#
+# Why: the explicit `pkey_alloc pkey_mprotect pkey_free` allowlist was
+# discovered the hard way (two prod incidents on 2026-05-08 deploying
+# Wave 8 #6 sandboxing). If a future Node / V8 / glibc / systemd update
+# adds a new required syscall outside our allowlist, we'd find out
+# only when a production timer fires and the unit dies with SIGSYS
+# — possibly hours after the merge.
+#
+# This workflow runs `bash scripts/seccomp-regression-check.sh` on
+# every PR and on push to main. The script:
+#   - skips cleanly on non-Linux / no-systemd hosts (defensive; CI
+#     runners are Ubuntu Linux so this should never skip in CI)
+#   - spawns transient `systemd-run` units with the EXACT same
+#     SystemCallFilter as the production unit files
+#   - asserts each runs cleanly (`node --version`, `node -e (pg
+#     import)`, `node -e (libuv exercise)`)
+#
+# Failure means the filter is incompatible with Node — SAME class of
+# failure that Issue #86 documented. The script prints a diagnostic
+# pointer at the recipe in `scripts/systemd/levelchannel-stale-orders.service`
+# so the developer can find the culprit syscall and update the
+# allowlist in the same PR.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  seccomp:
+    name: bash scripts/seccomp-regression-check.sh
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run seccomp regression harness
+        run: bash scripts/seccomp-regression-check.sh
+        env:
+          SECCOMP_CHECK_APP_DIR: ${{ github.workspace }}
