@@ -3,6 +3,11 @@ import { NextResponse } from 'next/server'
 import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
 import { markOrderCancelled } from '@/lib/payments/provider'
 import {
+  evaluateReceiptGate,
+  extractReceiptToken,
+} from '@/lib/payments/receipt-token-gate'
+import { getOrder } from '@/lib/payments/store'
+import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
   getClientIp,
@@ -11,6 +16,8 @@ import {
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+const noStore = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function POST(
   request: Request,
@@ -29,7 +36,29 @@ export async function POST(
   const { invoiceId } = await context.params
 
   if (!isValidInvoiceId(invoiceId)) {
-    return NextResponse.json({ error: 'Invalid payment id.' }, { status: 400 })
+    return NextResponse.json(
+      { error: 'Invalid payment id.' },
+      { status: 400, headers: noStore },
+    )
+  }
+
+  // Wave 6.1 #4 Phase 2 — gate BEFORE markOrderCancelled. An attacker
+  // with a known invoiceId but no token must not be able to flip a
+  // pending order to cancelled.
+  const existing = await getOrder(invoiceId)
+  if (!existing) {
+    return NextResponse.json(
+      { error: 'Payment not found.' },
+      { status: 404, headers: noStore },
+    )
+  }
+  const presented = extractReceiptToken(request)
+  const verdict = evaluateReceiptGate(existing, presented)
+  if (!verdict.ok) {
+    return NextResponse.json(
+      { error: 'Payment not found.' },
+      { status: 401, headers: noStore },
+    )
   }
 
   const order = await markOrderCancelled(invoiceId, {
@@ -38,7 +67,10 @@ export async function POST(
   })
 
   if (!order) {
-    return NextResponse.json({ error: 'Payment not found.' }, { status: 404 })
+    return NextResponse.json(
+      { error: 'Payment not found.' },
+      { status: 404, headers: noStore },
+    )
   }
 
   await recordPaymentAuditEvent({
