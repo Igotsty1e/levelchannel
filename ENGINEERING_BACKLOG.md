@@ -179,6 +179,67 @@ The handler's own DB writes (`markOrderPaid`, audit, allocation) happen on diffe
 
 5 unit tests pin the OLD-key resolver. 4 integration tests pin the SQL contract: helper returns NULL on both-keys-wrong (no throw), the rotation flow round-trips a row from OLD to NEW with no plaintext touch, the predicate-guarded UPDATE is idempotent (already-PRIMARY rows are skipped), the reader logs warn on invalid OLD without crashing.
 
+## Wave 8 — Codex infra audit, 2026-05-08
+
+Six findings against the live infra surface. Four closed (PR #80 + #82); two stay open as documented design / multi-day refactors.
+
+### #1 MEDIUM — uptime-probe.yml leaked raw prod failure body to PUBLIC issues (closed PR #80)
+Probe wrote up to 1500 chars of raw response body into GitHub issues. Repo is public; 5xx HTML / stack traces / upstream errors landed publicly. Fixed: hash body in bash, surface only sha256-prefix + length to issue.
+
+### #2 MEDIUM-LOW — CSP `script-src 'unsafe-inline'` (open, multi-day)
+**Status:** open. **Difficulty:** real. The current CSP allows inline `<script>` tags, which weakens XSS defence — any reflected-injection on a page would execute. Tightening requires:
+
+  1. Audit every inline `<script>` and `<style>` use in the app
+  2. Either move them to external files OR generate a per-request nonce server-side and stamp it into both the CSP header and every legitimate inline element
+  3. Verify Sentry's client SDK injection still works (Sentry generates inline scripts unless configured)
+  4. Verify CloudPayments widget integration still works
+
+Estimate: 1-2 days, plus careful prod soak. Schedule for a dedicated wave when the inline-script surface is mapped.
+
+### #3 LOW-MEDIUM — `/api/health` fingerprinting (closed PR #80)
+Anonymous now sees `{status, version}` only. Detailed shape requires `X-Health-Detail` header matching `HEALTH_DETAIL_SECRET` env. Operator must set the secret (repo + prod env) for the uptime probe to get the full shape.
+
+### #4 LOW — `X-Powered-By: Next.js` (closed PR #80)
+`poweredByHeader: false` in next.config.js. nginx Server banner (`nginx/1.24.0 Ubuntu`) is operator-side: add `server_tokens off;` in `/etc/nginx/nginx.conf` http block + reload nginx.
+
+### #5 LOW — GitHub Actions pinning (closed PR #80)
+All 6 workflow files; `actions/checkout@v4` / `setup-node@v4` / `github-script@v7` pinned to commit SHAs. Comments retain the tag for diffing future updates.
+
+### #6 LOW — systemd unit sandboxing (closed PR #82)
+All 4 maintenance units now carry the standard restrict block (NoNewPrivileges, PrivateTmp, ProtectSystem=strict, ProtectHome, RestrictSUIDSGID, MemoryDenyWriteExecute, SystemCallFilter, etc.). Operator must `scp` to /etc/systemd/system + `daemon-reload` + restart timers. If a directive breaks legitimate work, journal carries `Failed at step <DIRECTIVE>` — revert one line.
+
+## Wave 9 — Codex governance audit, 2026-05-08
+
+Four findings against repo settings. All closed, but some via repo-admin actions (gh API), not git commits.
+
+### #1 MEDIUM — branch protection too weak (closed via gh API)
+Required checks expanded from `[npm run build, Verify Legal-Pipeline-Verified trailer]` to all 4: also `npm run test:integration` + `public-surface`. `strict: true` (PR must be up-to-date with main). `allow_force_pushes: false`, `allow_deletions: false`, `required_conversation_resolution: true`. Self-approval (require_approving_review_count > 0) NOT enabled — would block every solo-author PR. Reopen when teammate joins.
+
+### #2 MEDIUM-LOW — no CODEOWNERS (closed PR #81)
+`.github/CODEOWNERS` added. All security-sensitive paths owned by @Igotsty1e. Documents the trust surface map. `require_code_owner_reviews` stays false until a teammate joins.
+
+### #3 MEDIUM-LOW — GitHub Advanced Security disabled (closed via gh API)
+Enabled: `secret_scanning`, `secret_scanning_push_protection`, `dependabot_security_updates`. Two paid GHAS features stayed disabled (validity checks, non-provider patterns) — not available on public-repo free tier without an org.
+
+### #4 LOW-MEDIUM — security workflows advisory not enforcing (implicitly closed by #1)
+Branch protection now requires the integration suite + public-surface check, so they're enforcing not advisory. Same fix as #1.
+
+## Wave 10 — Codex legal/compliance audit, 2026-05-08
+
+Four findings against public legal surface. One closed in code (#5); three need operator/lawyer involvement.
+
+### #1 HIGH — RKN personal-data operator notification gap (operator action)
+**Status:** open. **Action:** verify whether РКН personal-data operator notification has been filed for IP Firsova/LevelChannel. If not, file via the РКН portal. Site collects email, IP, user-agent, payment data; public pages already claim RF localization. Reference: РКН guidance + post-2022 notification regime. Once filed, reflect operator-processing contours in internal compliance docs (no code change needed unless privacy text gets a cite).
+
+### #2 HIGH — IP disclosure missing required fields (operator action)
+**Status:** open. **Action:** add the consumer-facing executor details to public docs. Currently `app/offer/page.tsx` and `components/home/home-page-client.tsx` expose name + INN + bank details. Need to ALSO expose: OGRNIP, registering authority, claims-contact address. Once operator provides values, code change is ~10 lines across 2-3 files.
+
+### #3 HIGH — refund/cancellation terms too aggressive (lawyer review)
+**Status:** open. **Action:** rewrite `app/offer/page.tsx` sections 5 and 8. Current clause: "24h late-cancel ⇒ lesson deemed rendered, non-refundable" is too aggressive for B2C under ZoZPP (consumer right to refuse services with payment only of actual expenses). Replace with wording that separates: (a) completed lesson, (b) reserved-but-not-rendered slot, (c) late cancellation consequences, (d) performer-caused cancellation/refund path. Needs a draft from a Russian B2C lawyer; can be sent to legal-rf-router for grounding.
+
+### #5 MEDIUM — CloudPayments script global load (closed PR #80)
+Was loaded from `app/layout.tsx` on every page. Moved to `/pay` and `/checkout/[tariffSlug]` only.
+
 ## Wave 7 — Codex pass on Wave-6.1-Phase-1.5 surface, 2026-05-08
 
 Codex left a fresh handoff in `~/.team/activity.jsonl` on 2026-05-08 04:13Z. Five findings against the post-Phase-1.5 state. Four closed; one remains as a documented design decision rather than a code fix.
