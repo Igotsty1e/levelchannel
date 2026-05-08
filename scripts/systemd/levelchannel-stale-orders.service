@@ -36,16 +36,22 @@ LockPersonality=true
 # with `code=dumped, status=31/SYS`. Documented incompatibility for any
 # JIT runtime per `man systemd.exec`.
 SystemCallArchitectures=native
-# SystemCallFilter — removed pragmatically. Live prod 2026-05-08 second
-# attempt (with MDWE already removed) still aborted with status 31/SYS,
-# so the kernel-side seccomp filter is killing on a syscall outside the
-# `@system-service` allowlist. The exact offending syscall has NOT been
-# isolated yet — likely candidates from Node 20 + glibc on Linux 6.x are
-# `clone3`, `close_range`, `rseq`, `futex_waitv`, `epoll_pwait2`, but
-# this is hypothesis, not confirmation. To re-introduce a precise
-# allowlist later, run a diagnostic transient probe with
-# `SystemCallErrorNumber=ENOSYS` + `SystemCallLog=all` and inspect
-# `journalctl -u <probe> -k`. Removing the filter loses one layer of
-# kernel-attack-surface reduction but preserves the other 12 directives.
-# SystemCallFilter=@system-service
-# SystemCallFilter=~@privileged @resources @debug @mount @cpu-emulation @obsolete
+# SystemCallFilter restored 2026-05-09 with explicit `pkey_*` allowlist.
+# Live diagnostic (Issue #86) pinpointed the offending syscall as
+# pkey_alloc (#330 on x86_64) — V8 in Node 20 calls pkey_alloc/
+# pkey_mprotect/pkey_free as part of Memory Protection Keys (Intel MPK)
+# JIT-cache hardening. Ubuntu systemd 255's `@system-service` group
+# does NOT include the pkey family, so vanilla `@system-service` kills
+# the V8 startup with SIGSYS. Adding the three pkey calls back keeps
+# the rest of the allowlist tight while letting V8 set up its own
+# in-process protection.
+# Diagnostic procedure preserved for future syscall additions:
+# transient `systemd-run` unit as the `levelchannel` user, with
+# WorkingDirectory + EnvironmentFile rendered to the prod paths,
+# SystemCallFilter=@system-service plus the same exclude line below,
+# ExecStart=node scripts/<target>.mjs. Then read kernel audit:
+#   journalctl -k --since '1 minute ago' | grep audit | grep syscall
+# Decode the `syscall=NN` number against the Linux x86_64 syscall table
+# and add the name to the explicit allowlist.
+SystemCallFilter=@system-service pkey_alloc pkey_mprotect pkey_free
+SystemCallFilter=~@privileged @resources @debug @mount @cpu-emulation @obsolete

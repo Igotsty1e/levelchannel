@@ -32,7 +32,9 @@ LockPersonality=true
 # MemoryDenyWriteExecute=true — removed (V8 JIT W+X requirement).
 # See levelchannel-stale-orders.service for the live-prod incident note.
 SystemCallArchitectures=native
-# SystemCallFilter — removed pragmatically; offending syscall not yet
-# isolated. See levelchannel-stale-orders.service for the diagnostic plan.
-# SystemCallFilter=@system-service
-# SystemCallFilter=~@privileged @resources @debug @mount @cpu-emulation @obsolete
+# SystemCallFilter restored 2026-05-09 with explicit `pkey_*` allowlist
+# for V8 JIT-cache hardening (Intel MPK). Offending syscall isolated as
+# pkey_alloc — see levelchannel-stale-orders.service for the diagnostic
+# write-up.
+SystemCallFilter=@system-service pkey_alloc pkey_mprotect pkey_free
+SystemCallFilter=~@privileged @resources @debug @mount @cpu-emulation @obsolete

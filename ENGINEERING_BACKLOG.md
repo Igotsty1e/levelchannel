@@ -198,18 +198,30 @@ Anonymous now sees `{status, version}` only. Detailed shape requires `X-Health-D
 ### #5 LOW — GitHub Actions pinning (closed PR #80)
 All 6 workflow files; `actions/checkout@v4` / `setup-node@v4` / `github-script@v7` pinned to commit SHAs. Comments retain the tag for diffing future updates.
 
-### #6 LOW — systemd unit sandboxing (PR #82, partially deployed; PRs #84 + #85 trim incompatible directives)
+### #6 LOW — systemd unit sandboxing (closed: 14 directives active, MDWE permanently incompatible with V8)
 
-**Repo state:** all 4 maintenance units carry 12 sandboxing directives — `NoNewPrivileges`, `PrivateTmp`, `ProtectSystem=strict`, `ProtectHome`, `ProtectKernelTunables/Modules/Logs`, `ProtectControlGroups`, `RestrictSUIDSGID`, `RestrictNamespaces`, `RestrictRealtime`, `LockPersonality`, `SystemCallArchitectures=native`. Two directives from PR #82 had to be removed:
+**Repo state (2026-05-09):** all 5 maintenance units (4 originals + new auth-flow-alert from Wave 5) carry 13 sandboxing directives:
 
-- `MemoryDenyWriteExecute=true` — confirmed incompatibility: V8 JIT requires W+X pages; the directive (implemented as a seccomp filter blocking `mprotect(PROT_EXEC)`) terminates Node with SIGSYS / status 31. Documented in `man systemd.exec` for any JIT runtime.
-- `SystemCallFilter=@system-service` (+ exclude line) — pragmatic removal. Live prod 2026-05-08 still aborted with status 31/SYS after MDWE was already gone. Some syscall outside the `@system-service` allowlist is killing Node, but **the exact syscall has not been isolated**. Likely candidates from Node 20 + glibc on Linux 6.x: `clone3`, `close_range`, `rseq`, `futex_waitv`, `epoll_pwait2`. To re-introduce a precise allowlist later, run a `systemd-run` transient probe with `SystemCallErrorNumber=ENOSYS` + `SystemCallLog=all` and grep `journalctl -k` for the seccomp/audit line.
+- `NoNewPrivileges`
+- `PrivateTmp`
+- `ProtectSystem=strict`
+- `ProtectHome`
+- `ProtectKernelTunables` / `ProtectKernelModules` / `ProtectKernelLogs`
+- `ProtectControlGroups`
+- `RestrictSUIDSGID`
+- `RestrictNamespaces`
+- `RestrictRealtime`
+- `LockPersonality`
+- `SystemCallArchitectures=native`
+- `SystemCallFilter=@system-service pkey_alloc pkey_mprotect pkey_free` + the `~@privileged @resources @debug @mount @cpu-emulation @obsolete` exclude
 
-**Live-prod incident summary (2026-05-08):** PR #82 deployed; smoke run aborted. Rollback in 2 min via reinstalling backup units. PR #84 (MDWE removed) deployed; same SIGSYS class. Rollback again. After Codex consult and corrections, PR #85 deployed via `systemd-run` probe + per-unit canary path. No timer fire was lost; total prod-degraded window across the two failed deploys ~3 min combined (each oneshot smoke-test was rolled back within 2 min).
+**Only 1 directive from the original PR #82 sandbox set is permanently absent: `MemoryDenyWriteExecute=true`.** V8 JIT requires writable+executable memory pages; MDWE blocks `mprotect(PROT_EXEC)` and kills Node. This is documented in `man systemd.exec` as incompatible with any JIT runtime.
 
-**Operator step (when PR #85 is re-rolled-out):** `scp` rendered units to `/etc/systemd/system/` + `daemon-reload`. Recommended workflow: replace one unit at a time (start with `levelchannel-stale-orders.service`), `systemctl start <unit>` smoke test, observe for one timer cycle, then propagate.
+**SystemCallFilter restored 2026-05-09 (closes Issue #86):** the syscall that ate Node was `pkey_alloc` (#330 on x86_64). V8 in Node 20 calls `pkey_alloc` / `pkey_mprotect` / `pkey_free` to set up Memory Protection Keys (Intel MPK / PKU) — a JIT-cache-hardening feature. Ubuntu's systemd 255 `@system-service` group does NOT include the pkey family, so vanilla `@system-service` killed V8 startup with SIGSYS (status 31). The fix is a single `SystemCallFilter=` line that adds the three pkey calls explicitly to the allowlist.
 
-**Open follow-up:** isolate the offending syscall via diagnostic probe + restore `SystemCallFilter` with a precise allowlist. Tracked separately.
+**Diagnostic procedure documented inline in `levelchannel-stale-orders.service`** so the next agent (or me, in 6 months) can repeat it for any future syscall addition. Briefly: `systemd-run` transient unit with the exact filter set, run the failing target, then `journalctl -k --since '1 minute ago' | grep audit | grep syscall` decodes the syscall number via the Linux x86_64 syscall table.
+
+**Live-prod incident archive (2026-05-08):** PRs #82, #84 — both deployed and reverted in <2 min each due to the same SIGSYS class (later proved to be pkey_alloc). PR #85 shipped a 12-directive set without MDWE / SystemCallFilter as the pragmatic interim. PR #94 renamed the convention. PR #95 tightened style-src in CSP. Auth-flow-alert (#96) shipped on the same 12-directive interim profile; PR for the 13-directive restore (this) updates all 5 units. Total prod-degraded window: ~3 min combined.
 
 ## Wave 9 — Codex governance audit, 2026-05-08
 

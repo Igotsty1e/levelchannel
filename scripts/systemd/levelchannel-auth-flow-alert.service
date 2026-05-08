@@ -35,6 +35,10 @@ RestrictNamespaces=true
 RestrictRealtime=true
 LockPersonality=true
 SystemCallArchitectures=native
-# MemoryDenyWriteExecute / SystemCallFilter intentionally NOT set —
-# incompatible with Node.js V8 JIT / runtime syscalls. Issue #86 tracks
-# resuming SystemCallFilter once the offending syscall is isolated.
+# MemoryDenyWriteExecute intentionally NOT set — V8 JIT requires W+X.
+# SystemCallFilter restored 2026-05-09 with explicit `pkey_*` allowlist
+# for V8 JIT-cache hardening (Intel MPK). Offending syscall isolated as
+# pkey_alloc — see levelchannel-stale-orders.service for the diagnostic
+# write-up. Closes Issue #86.
+SystemCallFilter=@system-service pkey_alloc pkey_mprotect pkey_free
+SystemCallFilter=~@privileged @resources @debug @mount @cpu-emulation @obsolete
