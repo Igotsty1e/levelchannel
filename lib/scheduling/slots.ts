@@ -666,6 +666,52 @@ export async function listAllSlotsForAdmin(params: {
   )
 }
 
+// Wave A — calendar range query. Required teacherId, exact MSK-week
+// range. Caller (route handler) is responsible for auth (which teacher
+// the session can request — see `pickActiveCalendarRole` in
+// lib/calendar/types.ts) and DTO projection per role.
+export async function listSlotsForCalendarRange(params: {
+  teacherId: string
+  fromIso: string
+  toIso: string
+}): Promise<LessonSlot[]> {
+  if (!UUID_PATTERN.test(params.teacherId)) return []
+  const pool = getDbPool()
+  const result = await pool.query(
+    `select s.id, s.teacher_account_id, s.start_at, s.duration_minutes,
+            s.status, s.learner_account_id, s.booked_at, s.cancelled_at,
+            s.cancelled_by_account_id, s.cancellation_reason, s.marked_at,
+            s.tariff_id, s.notes,
+            s.events, s.created_at, s.updated_at,
+            ta.email as teacher_email,
+            la.email as learner_email,
+            t.slug as tariff_slug,
+            t.title_ru as tariff_title_ru,
+            t.amount_kopecks as tariff_amount_kopecks
+       from lesson_slots s
+       join accounts ta on ta.id = s.teacher_account_id
+       left join accounts la on la.id = s.learner_account_id
+       left join pricing_tariffs t on t.id = s.tariff_id
+      where s.teacher_account_id = $1
+        and s.start_at >= $2
+        and s.start_at < $3
+      order by s.start_at asc`,
+    [params.teacherId, params.fromIso, params.toIso],
+  )
+  return result.rows.map((r) =>
+    rowToSlot(r, {
+      teacherEmail: r.teacher_email ? String(r.teacher_email) : null,
+      learnerEmail: r.learner_email ? String(r.learner_email) : null,
+      tariffSlug: r.tariff_slug ? String(r.tariff_slug) : null,
+      tariffTitleRu: r.tariff_title_ru ? String(r.tariff_title_ru) : null,
+      tariffAmountKopecks:
+        r.tariff_amount_kopecks !== null && r.tariff_amount_kopecks !== undefined
+          ? Number(r.tariff_amount_kopecks)
+          : null,
+    }),
+  )
+}
+
 export async function getSlotById(id: string): Promise<LessonSlot | null> {
   if (!UUID_PATTERN.test(id)) return null
   const pool = getDbPool()
@@ -1037,6 +1083,76 @@ export async function editOpenSlot(
     ],
   )
   return result.rows[0] ? rowToSlot(result.rows[0]) : null
+}
+
+// Wave A — calendar drag-to-move. Open-only at the data layer
+// (booked / completed / cancelled slots immovable) per Codex round 1
+// #3 + plan v4. Returns explicit verdict so the calendar UI can:
+//   - on `not_open`: snap the slot back visually + show a toast
+//     ("Слот уже забронирован" / "Перемещать можно только открытые")
+//   - on `slot_collision`: snap back + toast ("В это время уже есть
+//     другой слот этого преподавателя")
+//   - on `not_found`: redirect to error
+//   - on success: re-fetch calendar to refresh
+//
+// Domain validations (cross-midnight / 30-min alignment / business
+// hours) happen BEFORE hitting the DB; the route handler is responsible
+// for those. The CHECK constraints from migration 0031 are the last
+// line of defence.
+export type MoveOpenSlotResult =
+  | { ok: true; slot: LessonSlot }
+  | {
+      ok: false
+      reason: 'not_found' | 'not_open' | 'slot_collision'
+    }
+
+export async function moveOpenSlot(
+  slotId: string,
+  newStartAtIso: string,
+  actorAccountId: string,
+): Promise<MoveOpenSlotResult> {
+  if (!UUID_PATTERN.test(slotId)) return { ok: false, reason: 'not_found' }
+  const pool = getDbPool()
+  // Atomic UPDATE: only succeeds if status='open'. Mirrors
+  // `cancelLearnerSlot` pattern for race-safe single-statement
+  // mutation. Unique-constraint violation → caught and mapped to
+  // `slot_collision`.
+  try {
+    const result = await pool.query(
+      `update lesson_slots
+          set start_at = $2,
+              updated_at = now(),
+              events = $3::jsonb || events
+        where id = $1
+          and status = 'open'
+        returning ${SLOT_COLUMNS}`,
+      [
+        slotId,
+        newStartAtIso,
+        appendEventSql('slot.moved', 'admin', {
+          newStartAt: newStartAtIso,
+          actorAccountId,
+        }),
+      ],
+    )
+    if (result.rows[0]) {
+      return { ok: true, slot: rowToSlot(result.rows[0]) }
+    }
+  } catch (err) {
+    // Postgres unique violation = 23505. The composite unique on
+    // (teacher_account_id, start_at) catches collisions.
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === '23505') {
+      return { ok: false, reason: 'slot_collision' }
+    }
+    throw err
+  }
+  // Sniff to disambiguate not_found vs not_open.
+  const sniff = await pool.query(
+    `select status from lesson_slots where id = $1`,
+    [slotId],
+  )
+  if (sniff.rows.length === 0) return { ok: false, reason: 'not_found' }
+  return { ok: false, reason: 'not_open' }
 }
 
 // Phase 5: operator stamps a lifecycle status on a booked slot whose

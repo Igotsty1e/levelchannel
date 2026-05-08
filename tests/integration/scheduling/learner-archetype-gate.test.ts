@@ -43,9 +43,7 @@ async function reg(
   return { cookie, accountId: created!.id }
 }
 
-function futureMin(n: number): string {
-  return new Date(Date.now() + n * 60_000).toISOString()
-}
+import { futureSlotIso as futureMin } from '../helpers'
 
 describe('Wave 1 — learner-archetype gate on /api/slots/*', () => {
   describe('teacher role is blocked', () => {

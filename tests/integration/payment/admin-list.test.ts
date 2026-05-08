@@ -8,7 +8,7 @@ import { getAccountByEmail, markAccountVerified } from '@/lib/auth/accounts'
 import { getDbPool } from '@/lib/db/pool'
 import { listPaymentOrdersForAdmin } from '@/lib/payments/admin-list'
 
-import { buildRequest, extractSessionCookie } from '../helpers'
+import { buildRequest, extractSessionCookie, futureSlotIso } from '../helpers'
 import './setup'
 
 // Codex 2026-05-08 (HIGH) — when a payment carries slotId, the gate
@@ -64,7 +64,7 @@ async function seedSlotForLearner(args: {
       args.slotId,
       teacher.id,
       learner.id,
-      new Date(Date.now() + 24 * 3600_000).toISOString(),
+      futureSlotIso(24 * 60),
       tariffId,
     ],
   )

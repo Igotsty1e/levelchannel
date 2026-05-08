@@ -43,3 +43,28 @@ export function extractSessionCookie(setCookie: string | null): string | null {
   const match = /lc_session=([^;]+)/.exec(setCookie)
   return match ? `lc_session=${match[1]}` : null
 }
+
+// Wave A (calendar) — snap a future-N-minutes timestamp to the next
+// 30-min boundary in MSK. After migration 0031, lesson_slots.start_at
+// must satisfy `extract(minute) in (0, 30) AND extract(second) = 0`
+// in MSK. Tests that previously used `new Date(Date.now() + N*60_000)`
+// need this helper; the raw form will hit the new CHECK constraint.
+//
+// Note: UTC and MSK share minute-of-the-hour boundaries (MSK = UTC+3,
+// integer-hour offset year-round, no DST since 2014), so snapping
+// minutes in UTC is equivalent to snapping in MSK.
+export function futureSlotIso(minutesFromNow: number): string {
+  const d = new Date(Date.now() + minutesFromNow * 60_000)
+  d.setUTCSeconds(0, 0)
+  const minute = d.getUTCMinutes()
+  if (minute === 0 || minute === 30) {
+    return d.toISOString()
+  }
+  if (minute < 30) {
+    d.setUTCMinutes(30, 0, 0)
+  } else {
+    d.setUTCMinutes(0, 0, 0)
+    d.setUTCHours(d.getUTCHours() + 1)
+  }
+  return d.toISOString()
+}
