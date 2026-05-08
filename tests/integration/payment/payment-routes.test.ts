@@ -205,7 +205,8 @@ describe('POST /api/payments — create + idempotency', () => {
 
 describe('POST /api/payments/[invoiceId]/cancel', () => {
   it('moves a pending order to cancelled and writes audit', async () => {
-    // Create.
+    // Create. Wave 6.1 Phase 2 — capture the receipt token from the
+    // create-order response and thread it into cancel via header.
     const res = await createHandler(
       buildCreateRequest({
         amountRub: 2000,
@@ -213,12 +214,15 @@ describe('POST /api/payments/[invoiceId]/cancel', () => {
         personalDataConsentAccepted: true,
       }),
     )
-    const { order } = await res.json()
+    const { order, receiptToken } = await res.json()
     const invoiceId = order.invoiceId as string
 
     // Cancel.
     const cancelRes = await cancelHandler(
-      buildRequest(`/api/payments/${invoiceId}/cancel`, { body: {} }),
+      buildRequest(`/api/payments/${invoiceId}/cancel`, {
+        body: {},
+        headers: { 'X-Receipt-Token': receiptToken },
+      }),
       { params: Promise.resolve({ invoiceId }) },
     )
     expect(cancelRes.status).toBe(200)

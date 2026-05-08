@@ -76,7 +76,15 @@ describe('createPayment — receipt token (Wave 6.1 Phase 1.5)', () => {
 
   it('returns a receiptToken in the response (32-byte random, base64url)', async () => {
     const result = await createPayment(1000, 'a@b.com', {
-      personalDataConsent: { revisionId: 'r1', acceptedAt: '2026-05-08T00:00:00Z' },
+      personalDataConsent: {
+        accepted: true,
+        acceptedAt: '2026-05-08T00:00:00Z',
+        documentVersion: 'v1',
+        documentPath: '/test',
+        policyPath: '/test',
+        checkboxLabel: 'agree',
+        source: 'checkout',
+      } as never,
     })
 
     expect(result.receiptToken).toBeTruthy()
@@ -89,7 +97,15 @@ describe('createPayment — receipt token (Wave 6.1 Phase 1.5)', () => {
 
   it('persists sha256(receiptToken) as receipt_token_hash on the order row', async () => {
     const result = await createPayment(1000, 'a@b.com', {
-      personalDataConsent: { revisionId: 'r1', acceptedAt: '2026-05-08T00:00:00Z' },
+      personalDataConsent: {
+        accepted: true,
+        acceptedAt: '2026-05-08T00:00:00Z',
+        documentVersion: 'v1',
+        documentPath: '/test',
+        policyPath: '/test',
+        checkboxLabel: 'agree',
+        source: 'checkout',
+      } as never,
     })
 
     expect(createOrderMock).toHaveBeenCalledTimes(1)
@@ -105,10 +121,26 @@ describe('createPayment — receipt token (Wave 6.1 Phase 1.5)', () => {
 
   it('mints a fresh token per call (not reused across orders)', async () => {
     const a = await createPayment(1000, 'a@b.com', {
-      personalDataConsent: { revisionId: 'r1', acceptedAt: '2026-05-08T00:00:00Z' },
+      personalDataConsent: {
+        accepted: true,
+        acceptedAt: '2026-05-08T00:00:00Z',
+        documentVersion: 'v1',
+        documentPath: '/test',
+        policyPath: '/test',
+        checkboxLabel: 'agree',
+        source: 'checkout',
+      } as never,
     })
     const b = await createPayment(1500, 'a@b.com', {
-      personalDataConsent: { revisionId: 'r1', acceptedAt: '2026-05-08T00:00:00Z' },
+      personalDataConsent: {
+        accepted: true,
+        acceptedAt: '2026-05-08T00:00:00Z',
+        documentVersion: 'v1',
+        documentPath: '/test',
+        policyPath: '/test',
+        checkboxLabel: 'agree',
+        source: 'checkout',
+      } as never,
     })
 
     expect(a.receiptToken).not.toBe(b.receiptToken)
@@ -119,7 +151,15 @@ describe('createPayment — receipt token (Wave 6.1 Phase 1.5)', () => {
 
   it('does NOT leak the plain token in the order body returned to the caller', async () => {
     const result = await createPayment(1000, 'a@b.com', {
-      personalDataConsent: { revisionId: 'r1', acceptedAt: '2026-05-08T00:00:00Z' },
+      personalDataConsent: {
+        accepted: true,
+        acceptedAt: '2026-05-08T00:00:00Z',
+        documentVersion: 'v1',
+        documentPath: '/test',
+        policyPath: '/test',
+        checkboxLabel: 'agree',
+        source: 'checkout',
+      } as never,
     })
 
     // The plain token belongs in `result.receiptToken`, not on the

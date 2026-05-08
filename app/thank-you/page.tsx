@@ -7,9 +7,14 @@ import { useEffect, useState } from 'react'
 import { formatRubles } from '@/lib/payments/catalog'
 import type { PublicPaymentOrder } from '@/lib/payments/types'
 
-async function fetchOrder(invoiceId: string) {
+async function fetchOrder(invoiceId: string, receiptToken: string | null) {
+  // Wave 6.1 #4 Phase 2 — pass token via X-Receipt-Token header so it
+  // never lands in access logs. The page received the token via the
+  // ?token= URL param (route boundary); from there on we keep it in
+  // headers.
   const response = await fetch(`/api/payments/${invoiceId}`, {
     cache: 'no-store',
+    headers: receiptToken ? { 'X-Receipt-Token': receiptToken } : undefined,
   })
 
   const payload = (await response.json()) as {
@@ -26,6 +31,7 @@ async function fetchOrder(invoiceId: string) {
 
 export default function ThankYouPage() {
   const [invoiceId, setInvoiceId] = useState<string | null>(null)
+  const [receiptToken, setReceiptToken] = useState<string | null>(null)
   const [order, setOrder] = useState<PublicPaymentOrder | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -36,6 +42,7 @@ export default function ThankYouPage() {
 
     const params = new URLSearchParams(window.location.search)
     setInvoiceId(params.get('invoiceId'))
+    setReceiptToken(params.get('token'))
   }, [])
 
   useEffect(() => {
@@ -48,7 +55,7 @@ export default function ThankYouPage() {
 
     const load = async () => {
       try {
-        const nextOrder = await fetchOrder(invoiceId)
+        const nextOrder = await fetchOrder(invoiceId, receiptToken)
 
         if (!cancelled) {
           setOrder(nextOrder)
@@ -84,7 +91,7 @@ export default function ThankYouPage() {
       cancelled = true
       window.clearInterval(interval)
     }
-  }, [invoiceId, order?.status])
+  }, [invoiceId, receiptToken, order?.status])
 
   const status = order?.status || 'pending'
   const statusContent = getStatusContent(status)

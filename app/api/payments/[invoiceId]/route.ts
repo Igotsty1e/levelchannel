@@ -1,10 +1,16 @@
 import { NextResponse } from 'next/server'
 
-import { getPublicPayment } from '@/lib/payments/provider'
+import {
+  evaluateReceiptGate,
+  extractReceiptToken,
+} from '@/lib/payments/receipt-token-gate'
+import { syncMockOrderState, toPublicOrder } from '@/lib/payments/provider'
 import { enforceRateLimit, isValidInvoiceId } from '@/lib/security/request'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+const noStore = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function GET(
   request: Request,
@@ -18,21 +24,38 @@ export async function GET(
   const { invoiceId } = await context.params
 
   if (!isValidInvoiceId(invoiceId)) {
-    return NextResponse.json({ error: 'Invalid payment id.' }, { status: 400 })
+    return NextResponse.json(
+      { error: 'Invalid payment id.' },
+      { status: 400, headers: noStore },
+    )
   }
 
-  const order = await getPublicPayment(invoiceId)
-
+  // Wave 6.1 #4 Phase 2 — receipt token gate. We fetch the FULL order
+  // (not the public projection) so the gate can read receiptTokenHash
+  // + createdAt. On success we project to PublicPaymentOrder before
+  // returning — the public shape never includes the hash.
+  const order = await syncMockOrderState(invoiceId)
   if (!order) {
-    return NextResponse.json({ error: 'Payment not found.' }, { status: 404 })
+    return NextResponse.json(
+      { error: 'Payment not found.' },
+      { status: 404, headers: noStore },
+    )
+  }
+
+  const presented = extractReceiptToken(request)
+  const verdict = evaluateReceiptGate(order, presented)
+  if (!verdict.ok) {
+    // Same body shape as not-found to avoid revealing whether an
+    // invoiceId exists by the response code alone. 401 because
+    // there IS a known capability to gate, even if we don't reveal it.
+    return NextResponse.json(
+      { error: 'Payment not found.' },
+      { status: 401, headers: noStore },
+    )
   }
 
   return NextResponse.json(
-    { order },
-    {
-      headers: {
-        'Cache-Control': 'no-store, max-age=0',
-      },
-    },
+    { order: toPublicOrder(order) },
+    { headers: noStore },
   )
 }

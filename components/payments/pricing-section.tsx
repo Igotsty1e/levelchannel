@@ -49,6 +49,16 @@ type CheckoutState = {
   phase: 'idle' | 'creating' | 'pending'
   order: PublicPaymentOrder | null
   error: string | null
+  // Wave 6.1 #4 Phase 2 — server-issued receipt token. Returned ONCE
+  // by POST /api/payments and held in component state for this tab
+  // session. Threaded through GET / SSE / cancel calls. NOT persisted
+  // to localStorage — a tab reload loses the token, and the order
+  // falls into the 24h legacy-NULL-token grace window on the server
+  // (so reload doesn't break the in-flight UX, but the token doesn't
+  // outlive the tab either). Optional in the type so existing
+  // setCheckout({...}) call sites that reset / error out don't need
+  // to thread it; treat undefined as null on read.
+  receiptToken?: string | null
 }
 
 function getSavedInvoiceId() {
@@ -145,9 +155,15 @@ function submitThreeDsForm(params: {
   form.submit()
 }
 
-async function fetchOrder(invoiceId: string) {
+async function fetchOrder(invoiceId: string, receiptToken: string | null) {
+  // Wave 6.1 #4 Phase 2 — pass the token via X-Receipt-Token header
+  // so it never lands in access logs. Fall through silently when the
+  // token is absent (legacy in-flight orders ride the 24h server
+  // grace; new orders without a token mean the tab reloaded — the
+  // server will return 401, the UI shows "no longer pending" path).
   const response = await fetch(`/api/payments/${invoiceId}`, {
     cache: 'no-store',
+    headers: receiptToken ? { 'X-Receipt-Token': receiptToken } : undefined,
   })
 
   const payload = (await response.json()) as {
@@ -162,10 +178,11 @@ async function fetchOrder(invoiceId: string) {
   return payload.order
 }
 
-async function cancelOrder(invoiceId: string) {
+async function cancelOrder(invoiceId: string, receiptToken: string | null) {
   const response = await fetch(`/api/payments/${invoiceId}/cancel`, {
     method: 'POST',
     cache: 'no-store',
+    headers: receiptToken ? { 'X-Receipt-Token': receiptToken } : undefined,
   })
 
   const payload = (await response.json()) as {
@@ -287,7 +304,10 @@ export function PricingSection() {
       return
     }
 
-    fetchOrder(invoiceId)
+    // No saved token after a tab reload — order rides the server's
+    // 24h legacy grace window. After that the server returns 401 and
+    // the .catch() branch below treats it as "no longer pending."
+    fetchOrder(invoiceId, null)
       .then((order) => {
         if (order.status === 'cancelled') {
           saveInvoiceId(null)
@@ -398,10 +418,18 @@ export function PricingSection() {
     // EventSource reconnects automatically on transport errors;
     // the slow-poll below is a belt-and-suspenders fallback for
     // ad-blockers / corporate proxies that strip SSE responses.
+    //
+    // Wave 6.1 #4 Phase 2 — receipt token threaded as `?token=...`
+    // because EventSource cannot set custom headers. Token absent
+    // (e.g. after tab reload) → server's 24h legacy grace window
+    // covers the in-flight UX; past that, SSE init returns 401.
     let eventSource: EventSource | null = null
     if (typeof window !== 'undefined' && 'EventSource' in window) {
+      const tokenParam = checkout.receiptToken
+        ? `?token=${encodeURIComponent(checkout.receiptToken)}`
+        : ''
       eventSource = new window.EventSource(
-        `/api/payments/${encodeURIComponent(activeOrder.invoiceId)}/stream`,
+        `/api/payments/${encodeURIComponent(activeOrder.invoiceId)}/stream${tokenParam}`,
       )
       eventSource.addEventListener('status', (rawEvent) => {
         try {
@@ -419,7 +447,7 @@ export function PricingSection() {
     // Slow-poll fallback (10s). Pre-SSE this was 4s; SSE makes the
     // tight cadence unnecessary, but we keep a coarse safety net.
     const interval = window.setInterval(() => {
-      fetchOrder(activeOrder.invoiceId)
+      fetchOrder(activeOrder.invoiceId, checkout.receiptToken ?? null)
         .then(applyOrder)
         .catch((error) => {
           setCheckout((current) => ({
@@ -433,7 +461,14 @@ export function PricingSection() {
       window.clearInterval(interval)
       eventSource?.close()
     }
-  }, [activeOrder])
+    // checkout.receiptToken is read here for the SSE/poll path; we
+    // include it in deps so a token captured AFTER the activeOrder
+    // arrives (sub-microsecond, but still) re-runs the effect with
+    // the right URL/header. eslint-disable on activeOrder to keep the
+    // existing behaviour: the effect re-binds when the order changes,
+    // not when the order's nested fields update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeOrder, checkout.receiptToken])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -516,6 +551,7 @@ export function PricingSection() {
       const payload = (await response.json()) as {
         order?: PublicPaymentOrder
         checkoutIntent?: CloudPaymentsWidgetIntent | null
+        receiptToken?: string
         error?: string
       }
 
@@ -536,6 +572,12 @@ export function PricingSection() {
         phase: payload.order.status === 'pending' ? 'pending' : 'idle',
         order: payload.order,
         error: null,
+        // Wave 6.1 #4 Phase 2 — capture the plain receipt token from
+        // the create-order response. This is the only moment we ever
+        // see it; the server keeps only the sha256 hash. Stored in
+        // checkout state, threaded through SSE / cancel / redirect
+        // below.
+        receiptToken: payload.receiptToken ?? null,
       })
 
       if (payload.order.provider === 'mock' || !payload.checkoutIntent) {
@@ -561,13 +603,23 @@ export function PricingSection() {
           email: emailValidation.email,
           emailValid: true,
         })
-        router.push(`/thank-you?invoiceId=${encodeURIComponent(payload.order.invoiceId)}`)
+        // Wave 6.1 #4 Phase 2 — thread the receipt token into
+        // /thank-you so its `fetchOrder` polls succeed past the
+        // 24h legacy-grace window. Token in URL is acceptable
+        // here — same-origin, post-auth, short-lived; first-comment
+        // / link-share patterns don't apply.
+        const tokenParam = payload.receiptToken
+          ? `&token=${encodeURIComponent(payload.receiptToken)}`
+          : ''
+        router.push(
+          `/thank-you?invoiceId=${encodeURIComponent(payload.order.invoiceId)}${tokenParam}`,
+        )
         return
       }
 
       if (widgetResult.type === 'cancel' || widgetResult.status === 'cancel') {
         try {
-          await cancelOrder(payload.order.invoiceId)
+          await cancelOrder(payload.order.invoiceId, payload.receiptToken ?? null)
           saveInvoiceId(null)
           void logCheckoutEvent({
             type: 'checkout_widget_cancelled',
@@ -829,7 +881,10 @@ export function PricingSection() {
     })
 
     try {
-      const order = await fetchOrder(activeOrder.invoiceId)
+      const order = await fetchOrder(
+        activeOrder.invoiceId,
+        checkout.receiptToken ?? null,
+      )
 
       if (order.status === 'cancelled') {
         saveInvoiceId(null)
@@ -874,7 +929,7 @@ export function PricingSection() {
     }
 
     try {
-      await cancelOrder(activeOrder.invoiceId)
+      await cancelOrder(activeOrder.invoiceId, checkout.receiptToken ?? null)
       saveInvoiceId(null)
       void logCheckoutEvent({
         type: 'checkout_pending_reset_clicked',

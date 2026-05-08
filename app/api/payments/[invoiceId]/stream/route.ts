@@ -1,4 +1,8 @@
-import { getPublicPayment } from '@/lib/payments/provider'
+import { syncMockOrderState, toPublicOrder } from '@/lib/payments/provider'
+import {
+  evaluateReceiptGate,
+  extractReceiptToken,
+} from '@/lib/payments/receipt-token-gate'
 import { subscribeToStatus } from '@/lib/payments/status-bus'
 import {
   enforceRateLimit,
@@ -63,13 +67,25 @@ export async function GET(request: Request, { params }: RouteParams) {
   )
   if (rateLimited) return rateLimited
 
-  const initial = await getPublicPayment(invoiceId)
-  if (!initial) {
+  // Wave 6.1 #4 Phase 2 — receipt token gate. SSE EventSource cannot
+  // set custom headers, so the only viable token transport is the
+  // `?token=<plain>` query param. extractReceiptToken accepts either.
+  const fullOrder = await syncMockOrderState(invoiceId)
+  if (!fullOrder) {
     return new Response(JSON.stringify({ error: 'Payment not found.' }), {
       status: 404,
       headers: { 'Content-Type': 'application/json' },
     })
   }
+  const presented = extractReceiptToken(request)
+  const verdict = evaluateReceiptGate(fullOrder, presented)
+  if (!verdict.ok) {
+    return new Response(JSON.stringify({ error: 'Payment not found.' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  const initial = toPublicOrder(fullOrder)
 
   const encoder = new TextEncoder()
   const stream = new ReadableStream<Uint8Array>({
