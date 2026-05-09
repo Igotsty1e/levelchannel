@@ -32,6 +32,11 @@ afterEach(async () => {
       email_verifications,
       password_resets,
       account_roles,
+      package_consumptions,
+      package_purchases,
+      lesson_packages,
+      payment_allocations,
+      payment_orders,
       lesson_slots,
       accounts,
       pricing_tariffs

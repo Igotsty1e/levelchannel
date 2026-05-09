@@ -877,46 +877,238 @@ function appendEventSql(eventType: string, actor: string | null, payload?: Recor
 //
 // Codex 2026-05-07 #5 — also re-asserts `teacher_account_id <> $learner`
 // so a learner can never book a slot where they are listed as the
-// teacher. Defense-in-depth: an admin route may have allowed the
-// pathological combination upstream (slot created with a non-teacher
-// account_id, learner has no teacher role, learner books). The DB
-// invariant catches it regardless of upstream bugs.
+// teacher.
+//
+// Billing wave PR 1 — when `BILLING_WAVE_ACTIVE=true`, the booking
+// flow ALSO runs through the package/postpaid pipeline:
+//   1. SELECT FOR SHARE on accounts to read postpaid_allowed
+//      consistently inside the txn.
+//   2. Per-account advisory lock for FIFO + serialized consumption.
+//   3. The atomic slot UPDATE (existing pattern).
+//   4. Try package consumption (lib/billing/consumption.ts).
+//   5. Pending-package gate (Codex round 2 HIGH 2): if a package
+//      order matching this slot's duration is in flight, refuse
+//      postpaid fallback.
+//   6. Postpaid eligibility — slot stays booked with no consumption,
+//      enters postpaid debt at completion. Requires postpaid_allowed
+//      AND tariff_id on the slot.
+// On any failure path the slot UPDATE is rolled back via tx.
+//
+// When `BILLING_WAVE_ACTIVE` is not 'true', behaviour is exactly
+// the legacy single-statement atomic booking (no billing checks,
+// no consumption). This lets existing tests continue to exercise
+// the booking path without per-test billing setup.
+export type BookSlotBilling =
+  | { kind: 'prepaid'; packagePurchaseId: string; countRemainingAfter: number; expiresAt: string }
+  | { kind: 'postpaid'; tariffId: string; amountKopecks: number; currency: string }
+  | { kind: 'legacy' }
+
+export type BookSlotResult =
+  | { ok: true; slot: LessonSlot; billing: BookSlotBilling }
+  | {
+      ok: false
+      reason:
+        | 'not_found'
+        | 'not_open'
+        | 'in_past'
+        | 'self_booking_blocked'
+        | 'package_required'
+        | 'tariff_required'
+        | 'pending_package_grant'
+      // For package_required: the matching active packages the
+      // learner can buy (capped at top 3 by display_order). Empty
+      // array = no matching package for this slot's duration.
+      availablePackages?: ReadonlyArray<{
+        slug: string
+        titleRu: string
+        amountKopecks: number
+        durationMinutes: number
+      }>
+    }
+
 export async function bookSlot(
   slotId: string,
   learnerAccountId: string,
   actor: 'learner' | 'admin' = 'learner',
-): Promise<
-  | { ok: true; slot: LessonSlot }
-  | {
-      ok: false
-      reason: 'not_found' | 'not_open' | 'in_past' | 'self_booking_blocked'
-    }
-> {
+): Promise<BookSlotResult> {
   if (!UUID_PATTERN.test(slotId)) return { ok: false, reason: 'not_found' }
-  const pool = getDbPool()
-  const result = await pool.query(
-    `update lesson_slots
-        set status = 'booked',
-            learner_account_id = $2,
-            booked_at = now(),
-            updated_at = now(),
-            events = $3::jsonb || events
-      where id = $1
-        and status = 'open'
-        and start_at > now()
-        and teacher_account_id <> $2
-      returning ${SLOT_COLUMNS}`,
-    [
-      slotId,
-      learnerAccountId,
-      appendEventSql('slot.booked', actor, { learnerAccountId }),
-    ],
-  )
-  if (result.rows[0]) {
-    return { ok: true, slot: rowToSlot(result.rows[0]) }
+  const billingActive = process.env.BILLING_WAVE_ACTIVE === 'true'
+
+  // Legacy fast path — preserved bit-for-bit when the wave is off.
+  if (!billingActive) {
+    const pool = getDbPool()
+    const result = await pool.query(
+      `update lesson_slots
+          set status = 'booked',
+              learner_account_id = $2,
+              booked_at = now(),
+              updated_at = now(),
+              events = $3::jsonb || events
+        where id = $1
+          and status = 'open'
+          and start_at > now()
+          and teacher_account_id <> $2
+        returning ${SLOT_COLUMNS}`,
+      [
+        slotId,
+        learnerAccountId,
+        appendEventSql('slot.booked', actor, { learnerAccountId }),
+      ],
+    )
+    if (result.rows[0]) {
+      return { ok: true, slot: rowToSlot(result.rows[0]), billing: { kind: 'legacy' } }
+    }
+    return classifyBookSlotFailure(slotId, learnerAccountId)
   }
-  // Distinguish not-found vs not-open vs in-past vs self-booking for
-  // nicer errors.
+
+  // New billing path. One transaction, six steps.
+  const { consumePackageUnit } = await import('@/lib/billing/consumption')
+  const {
+    accountHasPendingPackageGrantForDuration,
+    listActivePackagesByDuration,
+  } = await import('@/lib/billing/packages')
+
+  const pool = getDbPool()
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+
+    // Step 1: lock the account row to read postpaid_allowed live.
+    const accountRow = await client.query(
+      `select postpaid_allowed from accounts where id = $1 for share`,
+      [learnerAccountId],
+    )
+    const postpaidAllowed = Boolean(accountRow.rows[0]?.postpaid_allowed)
+
+    // Step 2: per-account advisory lock for strict FIFO + serialized
+    // consumption. Cross-learner concurrency is unaffected.
+    await client.query(
+      `select pg_advisory_xact_lock(hashtext('pkg_consume:' || $1::text))`,
+      [learnerAccountId],
+    )
+
+    // Step 3: atomic slot reservation (existing pattern, sticky client).
+    const slotResult = await client.query(
+      `update lesson_slots
+          set status = 'booked',
+              learner_account_id = $2,
+              booked_at = now(),
+              updated_at = now(),
+              events = $3::jsonb || events
+        where id = $1
+          and status = 'open'
+          and start_at > now()
+          and teacher_account_id <> $2
+        returning ${SLOT_COLUMNS}`,
+      [
+        slotId,
+        learnerAccountId,
+        appendEventSql('slot.booked', actor, { learnerAccountId }),
+      ],
+    )
+    if (slotResult.rows.length === 0) {
+      await client.query('rollback')
+      return classifyBookSlotFailure(slotId, learnerAccountId)
+    }
+    const slot = rowToSlot(slotResult.rows[0])
+
+    // Step 4: try package consumption.
+    const consume = await consumePackageUnit(client, {
+      accountId: learnerAccountId,
+      slotId: slot.id,
+      durationMinutes: slot.durationMinutes,
+      actor,
+    })
+    if (consume.ok) {
+      // Read derived count_remaining inside the txn so the response
+      // reflects the post-consumption state authoritatively.
+      const remaining = await client.query(
+        `select pp.count_initial - (
+                  select count(*) from package_consumptions pc
+                   where pc.package_purchase_id = pp.id
+                     and pc.restored_at is null
+                ) as count_remaining,
+                pp.expires_at
+           from package_purchases pp where pp.id = $1`,
+        [consume.packagePurchaseId],
+      )
+      await client.query('commit')
+      return {
+        ok: true,
+        slot,
+        billing: {
+          kind: 'prepaid',
+          packagePurchaseId: consume.packagePurchaseId,
+          countRemainingAfter: Number(remaining.rows[0]?.count_remaining ?? 0),
+          expiresAt: new Date(String(remaining.rows[0]?.expires_at)).toISOString(),
+        },
+      }
+    }
+
+    // Step 5: pending-package gate. Refuse postpaid fallback if the
+    // learner has a recent pending package order matching this slot's
+    // duration. Avoids the race where they pay for a package, book
+    // a slot before the webhook fires, and the slot enters postpaid
+    // debt while the paid grant materializes moments later.
+    const hasPending = await accountHasPendingPackageGrantForDuration(
+      learnerAccountId,
+      slot.durationMinutes,
+    )
+    if (hasPending) {
+      await client.query('rollback')
+      return { ok: false, reason: 'pending_package_grant' }
+    }
+
+    // Step 6: postpaid eligibility.
+    if (!postpaidAllowed) {
+      const matching = await listActivePackagesByDuration(slot.durationMinutes, 3)
+      await client.query('rollback')
+      return {
+        ok: false,
+        reason: 'package_required',
+        availablePackages: matching.map((p) => ({
+          slug: p.slug,
+          titleRu: p.titleRu,
+          amountKopecks: p.amountKopecks,
+          durationMinutes: p.durationMinutes,
+        })),
+      }
+    }
+    if (!slot.tariffId) {
+      await client.query('rollback')
+      return { ok: false, reason: 'tariff_required' }
+    }
+
+    // Postpaid path — slot stays booked with no consumption, debt
+    // surfaces at completion.
+    const tariff = await client.query(
+      `select amount_kopecks, currency from pricing_tariffs where id = $1`,
+      [slot.tariffId],
+    )
+    await client.query('commit')
+    return {
+      ok: true,
+      slot,
+      billing: {
+        kind: 'postpaid',
+        tariffId: slot.tariffId,
+        amountKopecks: Number(tariff.rows[0]?.amount_kopecks ?? 0),
+        currency: String(tariff.rows[0]?.currency ?? 'RUB'),
+      },
+    }
+  } catch (e) {
+    await client.query('rollback').catch(() => {})
+    throw e
+  } finally {
+    client.release()
+  }
+}
+
+async function classifyBookSlotFailure(
+  slotId: string,
+  learnerAccountId: string,
+): Promise<BookSlotResult> {
+  const pool = getDbPool()
   const sniff = await pool.query(
     `select status, start_at, teacher_account_id from lesson_slots where id = $1`,
     [slotId],
@@ -941,25 +1133,48 @@ export async function cancelSlot(
     throw new Error('slot/cancellationReason/too_long')
   }
   const pool = getDbPool()
-  const result = await pool.query(
-    `update lesson_slots
-        set status = 'cancelled',
-            cancelled_at = coalesce(cancelled_at, now()),
-            cancelled_by_account_id = $2,
-            cancellation_reason = $3,
-            updated_at = now(),
-            events = $4::jsonb || events
-      where id = $1
-        and status <> 'cancelled'
-      returning ${SLOT_COLUMNS}`,
-    [
-      slotId,
-      cancelledByAccountId,
-      reason,
-      appendEventSql('slot.cancelled', actor, { cancelledByAccountId, reason }),
-    ],
-  )
-  return result.rows[0] ? rowToSlot(result.rows[0]) : null
+  // Billing wave PR 1: same tx wrap as cancelLearnerSlot. Restore
+  // package unit on success; restore is idempotent + no-op for
+  // postpaid slots.
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+    const result = await client.query(
+      `update lesson_slots
+          set status = 'cancelled',
+              cancelled_at = coalesce(cancelled_at, now()),
+              cancelled_by_account_id = $2,
+              cancellation_reason = $3,
+              updated_at = now(),
+              events = $4::jsonb || events
+        where id = $1
+          and status <> 'cancelled'
+        returning ${SLOT_COLUMNS}`,
+      [
+        slotId,
+        cancelledByAccountId,
+        reason,
+        appendEventSql('slot.cancelled', actor, { cancelledByAccountId, reason }),
+      ],
+    )
+    if (result.rows[0]) {
+      const { restorePackageConsumption } = await import('@/lib/billing/consumption')
+      await restorePackageConsumption(client, {
+        slotId,
+        actor,
+        reason: 'admin_or_learner_cancel',
+      })
+      await client.query('commit')
+      return rowToSlot(result.rows[0])
+    }
+    await client.query('rollback')
+    return null
+  } catch (e) {
+    await client.query('rollback').catch(() => {})
+    throw e
+  } finally {
+    client.release()
+  }
 }
 
 // Codex 2026-05-07 #3 — race-safe learner cancel.
@@ -996,31 +1211,56 @@ export async function cancelLearnerSlot(
     throw new Error('slot/cancellationReason/too_long')
   }
   const pool = getDbPool()
-  const result = await pool.query(
-    `update lesson_slots
-        set status = 'cancelled',
-            cancelled_at = now(),
-            cancelled_by_account_id = $2,
-            cancellation_reason = $3,
-            updated_at = now(),
-            events = $4::jsonb || events
-      where id = $1
-        and learner_account_id = $2
-        and status = 'booked'
-        and start_at - now() >= interval '24 hours'
-      returning ${SLOT_COLUMNS}`,
-    [
-      slotId,
-      learnerAccountId,
-      reason,
-      appendEventSql('slot.cancelled', 'learner', {
-        cancelledByAccountId: learnerAccountId,
+  // Billing wave PR 1: wrap cancel + restore in a single tx so a
+  // failed restore rolls back the cancellation. Restore is idempotent
+  // and a no-op for postpaid slots; cheap to call unconditionally.
+  const client = await pool.connect()
+  let cancelledRow: Record<string, unknown> | null = null
+  try {
+    await client.query('begin')
+    const result = await client.query(
+      `update lesson_slots
+          set status = 'cancelled',
+              cancelled_at = now(),
+              cancelled_by_account_id = $2,
+              cancellation_reason = $3,
+              updated_at = now(),
+              events = $4::jsonb || events
+        where id = $1
+          and learner_account_id = $2
+          and status = 'booked'
+          and start_at - now() >= interval '24 hours'
+        returning ${SLOT_COLUMNS}`,
+      [
+        slotId,
+        learnerAccountId,
         reason,
-      }),
-    ],
-  )
-  if (result.rows[0]) {
-    return { ok: true, slot: rowToSlot(result.rows[0]) }
+        appendEventSql('slot.cancelled', 'learner', {
+          cancelledByAccountId: learnerAccountId,
+          reason,
+        }),
+      ],
+    )
+    if (result.rows[0]) {
+      const { restorePackageConsumption } = await import('@/lib/billing/consumption')
+      await restorePackageConsumption(client, {
+        slotId,
+        actor: 'learner',
+        reason: 'learner_cancel',
+      })
+      await client.query('commit')
+      cancelledRow = result.rows[0]
+    } else {
+      await client.query('rollback')
+    }
+  } catch (e) {
+    await client.query('rollback').catch(() => {})
+    throw e
+  } finally {
+    client.release()
+  }
+  if (cancelledRow) {
+    return { ok: true, slot: rowToSlot(cancelledRow) }
   }
 
   // The atomic UPDATE matched nothing — classify why for UX. Any
@@ -1263,38 +1503,55 @@ export async function cancelSlotByTeacher(
   const pool = getDbPool()
   // Codex 2026-05-08 review fix: the reason-required-for-booked
   // invariant lives INSIDE the UPDATE predicate so the booked-vs-
-  // open race cannot bypass it. Predicate:
-  //   status IN ('open', 'booked') AND
-  //   (status = 'open' OR nullif(btrim($reason), '') IS NOT NULL)
-  // = "row must be cancellable AND if it's booked, reason must be
-  //   non-blank". Evaluated atomically per row by Postgres.
-  // If zero rows updated, sniff the row to disambiguate the failure
-  // (not_found / not_owner / already_terminal / reason_required_for_booked).
-  const result = await pool.query(
-    `update lesson_slots
-        set status = 'cancelled',
-            cancelled_at = coalesce(cancelled_at, now()),
-            cancelled_by_account_id = $2,
-            cancellation_reason = $3,
-            updated_at = now(),
-            events = $4::jsonb || events
-      where id = $1
-        and teacher_account_id = $2
-        and status in ('open', 'booked')
-        and (status = 'open' or nullif(btrim($3), '') is not null)
-      returning ${SLOT_COLUMNS}`,
-    [
-      slotId,
-      teacherAccountId,
-      reason,
-      appendEventSql('slot.cancelled', 'teacher', {
-        cancelledByAccountId: teacherAccountId,
+  // open race cannot bypass it.
+  // Billing wave PR 1: wrap in tx + restore consumption on success.
+  const client = await pool.connect()
+  let cancelledRow: Record<string, unknown> | null = null
+  try {
+    await client.query('begin')
+    const result = await client.query(
+      `update lesson_slots
+          set status = 'cancelled',
+              cancelled_at = coalesce(cancelled_at, now()),
+              cancelled_by_account_id = $2,
+              cancellation_reason = $3,
+              updated_at = now(),
+              events = $4::jsonb || events
+        where id = $1
+          and teacher_account_id = $2
+          and status in ('open', 'booked')
+          and (status = 'open' or nullif(btrim($3), '') is not null)
+        returning ${SLOT_COLUMNS}`,
+      [
+        slotId,
+        teacherAccountId,
         reason,
-      }),
-    ],
-  )
-  if (result.rows[0]) {
-    return { ok: true, slot: rowToSlot(result.rows[0]) }
+        appendEventSql('slot.cancelled', 'teacher', {
+          cancelledByAccountId: teacherAccountId,
+          reason,
+        }),
+      ],
+    )
+    if (result.rows[0]) {
+      const { restorePackageConsumption } = await import('@/lib/billing/consumption')
+      await restorePackageConsumption(client, {
+        slotId,
+        actor: 'teacher',
+        reason: 'teacher_cancel',
+      })
+      await client.query('commit')
+      cancelledRow = result.rows[0]
+    } else {
+      await client.query('rollback')
+    }
+  } catch (e) {
+    await client.query('rollback').catch(() => {})
+    throw e
+  } finally {
+    client.release()
+  }
+  if (cancelledRow) {
+    return { ok: true, slot: rowToSlot(cancelledRow) }
   }
   // Sniff to classify the no-op.
   const sniff = await pool.query(
