@@ -35,7 +35,10 @@ export async function POST(request: Request, { params }: RouteParams) {
 
   const result = await bookSlot(id, auth.account.id, 'learner')
   if (result.ok) {
-    return NextResponse.json({ slot: result.slot }, { status: 200, headers: noStore })
+    return NextResponse.json(
+      { slot: result.slot, billing: result.billing },
+      { status: 200, headers: noStore },
+    )
   }
   if (result.reason === 'not_found') {
     return NextResponse.json(
@@ -50,14 +53,40 @@ export async function POST(request: Request, { params }: RouteParams) {
     )
   }
   if (result.reason === 'self_booking_blocked') {
-    // Codex 2026-05-07 #5 — DB invariant rejected a self-booking.
-    // Reaches this branch only when an admin route created a slot
-    // pairing a learner's account_id as the teacher. The book route
-    // refuses cleanly; the upstream operator config still needs
-    // fixing (audit log surfaces it via the per-row event payload).
     return NextResponse.json(
       { error: 'Нельзя забронировать слот, где вы числитесь преподавателем.' },
       { status: 403, headers: noStore },
+    )
+  }
+  // Billing wave PR 1 — new failure shapes.
+  if (result.reason === 'package_required') {
+    return NextResponse.json(
+      {
+        error: 'package_required',
+        message: 'Чтобы записаться, купите пакет уроков.',
+        availablePackages: result.availablePackages ?? [],
+      },
+      { status: 402, headers: noStore },
+    )
+  }
+  if (result.reason === 'tariff_required') {
+    return NextResponse.json(
+      {
+        error: 'tariff_required',
+        message:
+          'У этого слота не указана цена. Свяжитесь с оператором.',
+      },
+      { status: 402, headers: noStore },
+    )
+  }
+  if (result.reason === 'pending_package_grant') {
+    return NextResponse.json(
+      {
+        error: 'pending_package_grant',
+        message:
+          'У вас оформляется пакет — подождите минуту и обновите.',
+      },
+      { status: 409, headers: noStore },
     )
   }
   // not_open — race with another booking or operator-side state change.

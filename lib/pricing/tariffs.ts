@@ -171,6 +171,30 @@ export async function updateTariff(
     )
   }
   const pool = getDbPool()
+  // Billing wave PR 1 / Codex round 1: amount_kopecks is immutable
+  // once any lesson_slot references this tariff. App-layer guard
+  // surfaces the friendly UI error before the DB trigger fires
+  // (migration 0033 installs the trigger as the security boundary).
+  if ('amountKopecks' in patch && patch.amountKopecks != null) {
+    const refCheck = await pool.query(
+      `select 1 from lesson_slots where tariff_id = $1 limit 1`,
+      [id],
+    )
+    if (refCheck.rows.length > 0) {
+      const current = await pool.query(
+        `select amount_kopecks from pricing_tariffs where id = $1`,
+        [id],
+      )
+      const currentAmount = current.rows[0]
+        ? Number(current.rows[0].amount_kopecks)
+        : null
+      if (currentAmount !== null && patch.amountKopecks !== currentAmount) {
+        throw new Error(
+          'tariff validation failed: amountKopecks/immutable_after_first_slot_reference',
+        )
+      }
+    }
+  }
   // COALESCE-by-flag pattern matching account_profiles.upsert: we need
   // to distinguish "leave unchanged" (key absent) from "clear to null"
   // (key present with null value).
