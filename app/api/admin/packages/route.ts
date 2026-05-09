@@ -1,0 +1,139 @@
+import { NextResponse } from 'next/server'
+
+import { requireAdminRole } from '@/lib/auth/guards'
+import { createPackage, listActivePackages } from '@/lib/billing/packages'
+import { getDbPool } from '@/lib/db/pool'
+import {
+  enforceRateLimit,
+  enforceTrustedBrowserOrigin,
+} from '@/lib/security/request'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
+
+// Billing wave PR 4 — admin packages CRUD (create + list).
+//
+// Edit (PATCH) is intentionally NOT shipped here for v1. The DB
+// trigger on lesson_packages refuses economic-field UPDATE once
+// any purchase exists, so the safe operator path is "deactivate
+// old + create new". A future PR can add an in-place editor that
+// surfaces the immutability error inline; today the admin uses
+// this CREATE flow + the existing soft-archive path (set
+// is_active=false via direct DB or future PATCH).
+
+export async function GET(request: Request) {
+  const guard = await requireAdminRole(request)
+  if (!guard.ok) return guard.response
+  // listActivePackages returns active only; for admin we want all.
+  const pool = getDbPool()
+  const result = await pool.query(
+    `select id, slug, title_ru, description_ru, duration_minutes, count,
+            amount_kopecks, currency, is_active, display_order,
+            created_at, updated_at
+       from lesson_packages
+      order by is_active desc, display_order asc, id asc`,
+  )
+  return NextResponse.json(
+    {
+      packages: result.rows.map((r) => ({
+        id: String(r.id),
+        slug: String(r.slug),
+        titleRu: String(r.title_ru),
+        descriptionRu: r.description_ru ? String(r.description_ru) : null,
+        durationMinutes: Number(r.duration_minutes),
+        count: Number(r.count),
+        amountKopecks: Number(r.amount_kopecks),
+        currency: String(r.currency),
+        isActive: Boolean(r.is_active),
+        displayOrder: Number(r.display_order),
+        createdAt: new Date(String(r.created_at)).toISOString(),
+        updatedAt: new Date(String(r.updated_at)).toISOString(),
+      })),
+    },
+    { status: 200, headers: NO_STORE },
+  )
+  // listActivePackages is left for the public endpoint.
+  void listActivePackages
+}
+
+export async function POST(request: Request) {
+  const originGate = enforceTrustedBrowserOrigin(request)
+  if (originGate) return originGate
+
+  const rl = await enforceRateLimit(request, 'admin:packages:create', 10, 60_000)
+  if (rl) return rl
+
+  const guard = await requireAdminRole(request)
+  if (!guard.ok) return guard.response
+
+  let body: Record<string, unknown> | null = null
+  try {
+    const parsed = await request.json()
+    if (typeof parsed === 'object' && parsed !== null) {
+      body = parsed as Record<string, unknown>
+    }
+  } catch {
+    return NextResponse.json(
+      { error: 'Invalid JSON body.' },
+      { status: 400, headers: NO_STORE },
+    )
+  }
+  if (!body) {
+    return NextResponse.json(
+      { error: 'Body must be a JSON object.' },
+      { status: 400, headers: NO_STORE },
+    )
+  }
+
+  const slug = typeof body.slug === 'string' ? body.slug : null
+  const titleRu = typeof body.titleRu === 'string' ? body.titleRu : null
+  const durationMinutes =
+    typeof body.durationMinutes === 'number' ? body.durationMinutes : null
+  const count = typeof body.count === 'number' ? body.count : null
+  const amountKopecks =
+    typeof body.amountKopecks === 'number' ? body.amountKopecks : null
+
+  if (!slug || !titleRu || !durationMinutes || !count || !amountKopecks) {
+    return NextResponse.json(
+      {
+        error:
+          'slug, titleRu, durationMinutes, count, amountKopecks are required',
+      },
+      { status: 400, headers: NO_STORE },
+    )
+  }
+
+  try {
+    const pkg = await createPackage({
+      slug,
+      titleRu,
+      descriptionRu:
+        typeof body.descriptionRu === 'string' ? body.descriptionRu : null,
+      durationMinutes,
+      count,
+      amountKopecks,
+      isActive:
+        typeof body.isActive === 'boolean' ? body.isActive : true,
+      displayOrder:
+        typeof body.displayOrder === 'number' ? body.displayOrder : 100,
+    })
+    return NextResponse.json(
+      { package: pkg },
+      { status: 201, headers: NO_STORE },
+    )
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown'
+    if (msg.includes('lesson_packages_slug_key') || msg.includes('unique')) {
+      return NextResponse.json(
+        { error: 'slug_already_exists' },
+        { status: 409, headers: NO_STORE },
+      )
+    }
+    return NextResponse.json(
+      { error: msg },
+      { status: 400, headers: NO_STORE },
+    )
+  }
+}
