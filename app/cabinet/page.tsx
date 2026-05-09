@@ -13,6 +13,7 @@ import {
   listSlotsForLearner,
 } from '@/lib/scheduling/slots'
 
+import { BillingSections } from './billing-sections'
 import { DangerZone } from './danger-zone'
 import { LessonsSection } from './lessons-section'
 import { LogoutButton } from './logout-button'
@@ -117,6 +118,8 @@ export default async function CabinetPage() {
         hasAssignedTeacher={Boolean(account.assignedTeacherId)}
         assignedTeacherId={account.assignedTeacherId}
       />
+
+      <BillingSections learnerTimezone={profile?.timezone ?? null} />
 
       <div className="card" style={{ padding: 24, marginBottom: 24 }}>
         <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
