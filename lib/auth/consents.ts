@@ -22,6 +22,10 @@ export type AccountConsent = {
   // null, the recorded acceptance is currently authoritative; when set,
   // this row is no longer in force as of the timestamp.
   revokedAt: string | null
+  // Legal-versioning sister wave (migration 0032): FK to the
+  // legal_document_versions row that was effective at the moment of
+  // consent. Null on pre-versioning rows; populated on new acceptances.
+  legalDocumentVersionId: string | null
 }
 
 function rowToConsent(row: Record<string, unknown>): AccountConsent {
@@ -38,12 +42,15 @@ function rowToConsent(row: Record<string, unknown>): AccountConsent {
     revokedAt: row.revoked_at
       ? new Date(String(row.revoked_at)).toISOString()
       : null,
+    legalDocumentVersionId: row.legal_document_version_id
+      ? String(row.legal_document_version_id)
+      : null,
   }
 }
 
 const consentColumns =
   'id, account_id, document_kind, document_version, document_path, ' +
-  'accepted_at, ip, user_agent, created_at, revoked_at'
+  'accepted_at, ip, user_agent, created_at, revoked_at, legal_document_version_id'
 
 export async function recordConsent(params: {
   accountId: string
@@ -53,6 +60,12 @@ export async function recordConsent(params: {
   ip?: string | null
   userAgent?: string | null
   acceptedAt?: string
+  // Legal-versioning sister wave: FK to the snapshot row that was
+  // effective at the moment of consent. Optional for backward-compat
+  // — pre-versioning callers continue to work and just leave the FK
+  // null. New callers (register flow, future checkout/package init)
+  // pass the resolved id from `getCurrentLegalVersion(...)`.
+  legalDocumentVersionId?: string | null
 }): Promise<AccountConsent> {
   const pool = getAuthPool()
   const id = randomUUID()
@@ -60,8 +73,8 @@ export async function recordConsent(params: {
 
   const result = await pool.query(
     `insert into account_consents
-       (id, account_id, document_kind, document_version, document_path, accepted_at, ip, user_agent)
-     values ($1, $2, $3, $4, $5, $6, $7, $8)
+       (id, account_id, document_kind, document_version, document_path, accepted_at, ip, user_agent, legal_document_version_id)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      returning ${consentColumns}`,
     [
       id,
@@ -72,6 +85,7 @@ export async function recordConsent(params: {
       acceptedAt,
       params.ip || null,
       params.userAgent || null,
+      params.legalDocumentVersionId || null,
     ],
   )
 

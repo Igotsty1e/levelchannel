@@ -17,6 +17,7 @@ import {
   sendVerifyEmail,
 } from '@/lib/email/dispatch'
 import { PERSONAL_DATA_DOCUMENT_VERSION } from '@/lib/legal/personal-data'
+import { getCurrentLegalVersion } from '@/lib/legal/versions'
 import { validateCustomerEmail } from '@/lib/payments/catalog'
 import {
   enforceRateLimit,
@@ -119,10 +120,20 @@ export async function POST(request: Request) {
       email,
       passwordHash,
     })
+    // Legal-versioning sister wave (migration 0032): capture the
+    // FK to the snapshot row currently in force, alongside the
+    // legacy text version for backward-compat. The lookup is
+    // best-effort — if the seed row is somehow missing (fresh test
+    // DB before migration applied), the consent still records with
+    // the text version and FK = null. Not a hard fail.
+    const currentPdVersion = await getCurrentLegalVersion('personal_data').catch(
+      () => null,
+    )
     await recordConsent({
       accountId: account.id,
       documentKind: 'personal_data',
       documentVersion: PERSONAL_DATA_DOCUMENT_VERSION,
+      legalDocumentVersionId: currentPdVersion?.id ?? null,
       ip: getClientIp(request),
       userAgent: request.headers.get('user-agent') || null,
     })

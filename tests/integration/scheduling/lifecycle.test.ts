@@ -20,6 +20,7 @@ import {
   buildRequest,
   extractSessionCookie,
   futureSlotIso as futureIsoMinutes,
+  nearFutureBusinessBandIso,
 } from '../helpers'
 
 async function registerAndCookie(
@@ -107,16 +108,12 @@ describe('Phase 5 lifecycle + 24h rule', () => {
       { params: Promise.resolve({ id: slotId }) },
     )
 
-    // Squeeze start_at to 1h from now (still future, but inside the
-    // 24h window).
+    // Squeeze start_at to a near-future 30-min-aligned slot that
+    // still fits the business band (Wave A migration 0031). Always
+    // strictly less than 24h from now, so the 24h rule fires.
     await getDbPool().query(
-      // Wave A: snap to 30-min MSK boundary (minute % 30 = 0). Use
-      // date_trunc + add 30min if past the half-hour mark.
-      `update lesson_slots
-          set start_at = date_trunc('hour', now() + interval '1 hour')
-            + case when extract(minute from now()) >= 30 then interval '30 minutes' else interval '0 minutes' end
-        where id = $1`,
-      [slotId],
+      `update lesson_slots set start_at = $2 where id = $1`,
+      [slotId, nearFutureBusinessBandIso()],
     )
 
     const cancel = await cancelHandler(
@@ -164,15 +161,10 @@ describe('Phase 5 lifecycle + 24h rule', () => {
       { params: Promise.resolve({ id: slotId }) },
     )
 
-    // <24h to go.
+    // <24h to go (business-band-safe; same as test 1).
     await getDbPool().query(
-      // Wave A: snap to 30-min MSK boundary (minute % 30 = 0). Use
-      // date_trunc + add 30min if past the half-hour mark.
-      `update lesson_slots
-          set start_at = date_trunc('hour', now() + interval '1 hour')
-            + case when extract(minute from now()) >= 30 then interval '30 minutes' else interval '0 minutes' end
-        where id = $1`,
-      [slotId],
+      `update lesson_slots set start_at = $2 where id = $1`,
+      [slotId, nearFutureBusinessBandIso()],
     )
 
     const cancel = await adminCancelHandler(

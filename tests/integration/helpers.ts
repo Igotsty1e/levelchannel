@@ -104,6 +104,59 @@ export function futureSlotIso(minutesFromNow: number): string {
   return targetUtc.toISOString()
 }
 
+// Pick a near-future MSK 30-min slot that's strictly within the
+// business band 06:00–22:00 MSK and < 24h from now. Used by tests
+// that need to backdate a booked slot into the 24h-rule window
+// (e.g. lifecycle.test.ts) without violating migration 0031's
+// CHECK constraints. Picks the first valid slot after now+30min.
+export function nearFutureBusinessBandIso(): string {
+  const now = new Date()
+  let candidate = new Date(now.getTime() + 30 * 60_000)
+  candidate.setUTCSeconds(0, 0)
+  const minute = candidate.getUTCMinutes()
+  if (minute === 0 || minute === 30) {
+    // already aligned
+  } else if (minute < 30) {
+    candidate.setUTCMinutes(30, 0, 0)
+  } else {
+    candidate.setUTCMinutes(0, 0, 0)
+    candidate.setUTCHours(candidate.getUTCHours() + 1)
+  }
+  // Check MSK band; if out of band, push to the next opening
+  // (next-day 06:00 MSK = 03:00 UTC). We always end up < 24h from
+  // now because the latest possible push is "now is between 22:00
+  // MSK and midnight, so next-day 06:00 is at most ~7h away".
+  const mskParts = mskWallParts(candidate.getTime())
+  const inBand =
+    mskParts.hour >= 6 && (mskParts.hour < 22 || (mskParts.hour === 22 && mskParts.minute === 0))
+  if (inBand) return candidate.toISOString()
+  const day = mskTodayParts()
+  // Tomorrow 06:00 MSK = same date + 1 day, hour=6 MSK = 3 UTC.
+  const tomorrowSixMsk = new Date(
+    Date.UTC(day.year, day.month - 1, day.day + 1, 3, 0, 0, 0),
+  )
+  return tomorrowSixMsk.toISOString()
+}
+
+function mskWallParts(utcMs: number): { hour: number; minute: number } {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Moscow',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+  const parts = dtf.formatToParts(new Date(utcMs))
+  const map: Record<string, number> = {}
+  for (const p of parts) {
+    if (p.type === 'literal') continue
+    map[p.type] = Number(p.value)
+  }
+  return {
+    hour: map.hour === 24 ? 0 : map.hour ?? 0,
+    minute: map.minute ?? 0,
+  }
+}
+
 function mskTodayParts(): { year: number; month: number; day: number } {
   const dtf = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Europe/Moscow',

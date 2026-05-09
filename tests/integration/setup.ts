@@ -37,6 +37,25 @@ afterEach(async () => {
       pricing_tariffs
     restart identity cascade
   `)
+  // legal-versioning sister wave: TRUNCATE CASCADE follows the FK
+  // from legal_document_versions.created_by_account_id → accounts and
+  // wipes the migration-installed v1 seed rows. Re-seed them so the
+  // next test sees the same baseline as a fresh migration.
+  await pool.query(`
+    insert into legal_document_versions (doc_kind, version_label, effective_from, body_md)
+    values
+      ('offer', 'v1', now(),
+       '# Публичная оферта (v1)' || E'\n\n' ||
+       '_Полный текст: см. https://levelchannel.ru/offer на момент эффективной даты._' || E'\n\n' ||
+       '_Эта запись является эвиденс-якорем для согласий, оформленных до запуска UI управления версиями._'),
+      ('privacy', 'v1', now(),
+       '# Политика обработки персональных данных (v1)' || E'\n\n' ||
+       '_Полный текст: см. https://levelchannel.ru/privacy на момент эффективной даты._'),
+      ('personal_data', 'v1', now(),
+       '# Согласие на обработку персональных данных (v1)' || E'\n\n' ||
+       '_Полный текст: см. https://levelchannel.ru/consent/personal-data на момент эффективной даты._')
+    on conflict (doc_kind, version_label) do nothing
+  `)
   // Reset in-memory and Postgres rate-limit buckets so per-IP and
   // per-email-hash counters don't leak across test cases.
   await __resetRateLimitsForTesting()
