@@ -44,6 +44,9 @@ export const PAYMENT_AUDIT_EVENT_TYPES = [
   'threeds.callback.received',
   'threeds.confirmed',
   'threeds.declined',
+  // Billing wave PR 2 — package grant outcomes.
+  'package.grant.failed',
+  'package.grant.succeeded',
 ] as const
 
 export type PaymentAuditEventType = (typeof PAYMENT_AUDIT_EVENT_TYPES)[number]
@@ -54,6 +57,7 @@ export type PaymentAuditActor =
   | 'admin'
   | 'cron'
   | 'system'
+  | 'checkout:package'
 
 // Convert payment_orders.amount_rub (numeric, e.g. 2500.00) to the
 // integer kopecks the audit table stores. Rounding instead of floor()

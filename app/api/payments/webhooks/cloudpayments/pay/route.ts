@@ -1,5 +1,6 @@
 import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
 import { getAccountByEmail } from '@/lib/auth/accounts'
+import { processPackageGrant } from '@/lib/billing/package-grant'
 import { sendOperatorPaymentNotification } from '@/lib/email/dispatch'
 import { recordAllocation } from '@/lib/payments/allocations'
 import { handleCloudPaymentsWebhook } from '@/lib/payments/cloudpayments-route'
@@ -127,6 +128,28 @@ export async function POST(request: Request) {
           error: err instanceof Error ? err.message : String(err),
         })
       }
+
+      // Billing wave PR 2 — package grant branch.
+      //
+      // If the order's metadata names a packageSlug, dispatch to the
+      // shared grant flow (lib/billing/package-grant.ts) which
+      // implements dual-source ownership corroboration with seven
+      // semantic-failure reasons. Operational failures rethrow →
+      // CloudPayments retries naturally.
+      try {
+        const fullOrderForPkg = await getOrder(order.invoiceId)
+        const metaPackageSlug = fullOrderForPkg?.metadata?.packageSlug
+        if (typeof metaPackageSlug === 'string' && metaPackageSlug) {
+          await processPackageGrant(order.invoiceId)
+        }
+      } catch (err) {
+        console.warn('[package.grant] webhook handler threw, will retry:', {
+          invoiceId: order.invoiceId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+        throw err
+      }
     }
   } })
 }
+
