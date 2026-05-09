@@ -9,6 +9,8 @@ import {
   listAccountsByRole,
 } from '@/lib/auth/accounts'
 import { getAccountProfile } from '@/lib/auth/profiles'
+import { listAccountActivePackages, listAccountPostpaidDebt } from '@/lib/billing/packages'
+import { getDbPool } from '@/lib/db/pool'
 
 import { TeacherAssignment } from './teacher-assignment'
 
@@ -24,11 +26,18 @@ export default async function AdminAccountDetailPage({ params }: RouteParams) {
   const account = await getAccountById(id)
   if (!account) notFound()
 
-  const [roles, profile, teachers] = await Promise.all([
+  const [roles, profile, teachers, postpaidRow, packages, debt] = await Promise.all([
     listAccountRoles(account.id),
     getAccountProfile(account.id),
     listAccountsByRole('teacher'),
+    getDbPool().query(
+      'select postpaid_allowed from accounts where id = $1',
+      [account.id],
+    ),
+    listAccountActivePackages(account.id),
+    listAccountPostpaidDebt(account.id),
   ])
+  const postpaidAllowed = Boolean(postpaidRow.rows[0]?.postpaid_allowed)
 
   return (
     <>
@@ -146,6 +155,73 @@ export default async function AdminAccountDetailPage({ params }: RouteParams) {
             currentTeacherId={account.assignedTeacherId}
             teachers={teachers.filter((t) => t.id !== account.id)}
           />
+        </Section>
+      ) : null}
+
+      {!account.purgedAt ? (
+        <Section title="Биллинг">
+          <Field label="Постоплата разрешена">
+            <span style={{ color: postpaidAllowed ? '#9bdf9b' : '#ff8a8a' }}>
+              {postpaidAllowed ? 'да' : 'нет'}
+            </span>{' '}
+            <AdminActionButton
+              endpoint={`/api/admin/accounts/${account.id}/postpaid`}
+              body={{ allowed: !postpaidAllowed }}
+              variant="ghost"
+            >
+              {postpaidAllowed ? 'Запретить' : 'Разрешить'}
+            </AdminActionButton>
+          </Field>
+          <Field label="Активные пакеты">
+            {packages.length === 0 ? (
+              <span style={{ color: 'var(--secondary)' }}>—</span>
+            ) : (
+              <ul
+                style={{
+                  listStyle: 'none',
+                  padding: 0,
+                  margin: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                }}
+              >
+                {packages.map((p) => (
+                  <li key={p.id} style={{ fontSize: 13 }}>
+                    {p.titleSnapshot}: осталось {p.countRemaining}/{p.countInitial} ·
+                    до {new Date(p.expiresAt).toLocaleDateString('ru-RU')}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Field>
+          <Field label="К оплате (postpaid debt)">
+            {debt.length === 0 ? (
+              <span style={{ color: 'var(--secondary)' }}>—</span>
+            ) : (
+              <ul
+                style={{
+                  listStyle: 'none',
+                  padding: 0,
+                  margin: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                }}
+              >
+                {debt.map((d) => (
+                  <li key={d.slotId} style={{ fontSize: 13 }}>
+                    {new Date(d.startAt).toLocaleString('ru-RU')} ·{' '}
+                    {d.durationMinutes} мин · {d.status}
+                    {d.expectedAmountKopecks !== null
+                      ? ` · ${Math.round(d.expectedAmountKopecks / 100)}₽`
+                      : ' · без цены'}
+                    {d.legacyGrandfathered ? ' · унаследованный' : ''}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Field>
         </Section>
       ) : null}
 
