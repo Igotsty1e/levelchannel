@@ -79,18 +79,24 @@ describe('account deletion grace window', () => {
     expect(account?.purgedAt).toBeNull()
   })
 
-  it('requestAccountDeletion is idempotent — re-request advances the timer forward', async () => {
+  it('requestAccountDeletion is idempotent — re-request rewrites scheduled_purge_at to a fresh now()+N', async () => {
     const { accountId } = await register('idempotent-delete@example.com')
     await requestAccountDeletion(accountId, 30)
     const first = await getAccountById(accountId)
     const firstAt = new Date(first!.scheduledPurgeAt!).getTime()
 
-    // Codex Wave 13 Pass 3 #19. The previous version slept 10ms hoping
-    // now() would advance between the two calls. On fast hardware they
-    // both land in the same ms and the test silently passes only thanks
-    // to the >= assertion — which doesn't actually prove "advances
-    // forward". Backdate the first row so the second request must land
-    // strictly later, then assert strictly >.
+    // Codex Wave 13 Pass 3 #19 + Wave 22 review feedback. The previous
+    // version slept 10ms hoping now() would advance, then asserted >=,
+    // which doesn't actually prove the function did anything — a no-op
+    // would pass too.
+    //
+    // We can't make wall-clock advance deterministic without sleeping,
+    // but we CAN prove the contract: "second call writes a fresh
+    // now()+N, not just preserves the existing row". Backdate by 1
+    // minute. If the function recomputes now()+N on every call, the
+    // second value sits roughly +1min above the backdated one
+    // regardless of how tight the two now() ticks are. If it were a
+    // no-op idempotency shortcut, secondAt would equal backdatedAt.
     await getDbPool().query(
       `update accounts
           set scheduled_purge_at = scheduled_purge_at - interval '1 minute'
@@ -104,8 +110,12 @@ describe('account deletion grace window', () => {
     const second = await getAccountById(accountId)
     const secondAt = new Date(second!.scheduledPurgeAt!).getTime()
 
-    expect(secondAt).toBeGreaterThan(backdatedAt)
-    // And the second value is the new now()+30d, not the backdated one.
-    expect(secondAt).toBeGreaterThanOrEqual(firstAt)
+    // Backdated by 60s; the recomputed value must sit >30s above it
+    // (allow margin for clock drift / slow CI). This proves the row
+    // was actually rewritten with a fresh now()+30d.
+    expect(secondAt - backdatedAt).toBeGreaterThan(30_000)
+    // And the recomputed now()+30d is within a few seconds of the
+    // first now()+30d — the two now() readings are taken back-to-back.
+    expect(Math.abs(secondAt - firstAt)).toBeLessThan(5_000)
   })
 })
