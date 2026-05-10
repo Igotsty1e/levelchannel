@@ -363,4 +363,96 @@ describe('Phase 5 lifecycle + 24h rule', () => {
     expect(map.get(pastId)).toBe('completed')
     expect(map.get(futureId)).toBe('booked')
   })
+
+  // Wave 25 — malformed-JSON consistency on cancel routes (Codex
+  // Wave 13 Pass 2 #14). The teacher-cancel route already rejects
+  // malformed bodies with 400; admin and learner now match. Empty
+  // body is acceptable (no reason supplied); a corrupt JSON body
+  // must NOT silently cancel the slot — that would lose the reason
+  // payload from the audit.
+  describe('Wave 25 — malformed JSON body on cancel routes', () => {
+    async function makeBookedSlot(): Promise<{
+      slotId: string
+      learner: { cookie: string; accountId: string }
+      admin: { cookie: string; accountId: string }
+    }> {
+      const teacher = await registerAndCookie(`teacher-w25-${crypto.randomUUID()}@example.com`, {
+        verifyEmail: true,
+        role: 'teacher',
+      })
+      const admin = await registerAndCookie(`admin-w25-${crypto.randomUUID()}@example.com`, {
+        verifyEmail: true,
+        role: 'admin',
+      })
+      const learner = await registerAndCookie(
+        `learner-w25-${crypto.randomUUID()}@example.com`,
+        { verifyEmail: true },
+      )
+      const created = await adminCreateHandler(
+        buildRequest('/api/admin/slots', {
+          cookie: admin.cookie,
+          body: {
+            teacherAccountId: teacher.accountId,
+            startAt: futureIsoMinutes(48 * 60),
+            durationMinutes: 30,
+          },
+        }),
+      )
+      const slotId = (await created.json()).slot.id as string
+      await bookHandler(
+        buildRequest(`/api/slots/${slotId}/book`, {
+          cookie: learner.cookie,
+          body: {},
+        }),
+        { params: Promise.resolve({ id: slotId }) },
+      )
+      return { slotId, learner, admin }
+    }
+
+    function malformedRequest(path: string, cookie: string): Request {
+      return new Request(`http://localhost:3000${path}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Origin': 'http://localhost:3000',
+          'Sec-Fetch-Site': 'same-origin',
+          cookie,
+        },
+        // Truncated JSON — opening brace, no close.
+        body: '{ "reason": "broke',
+      })
+    }
+
+    it('admin cancel rejects malformed JSON with 400, slot stays booked', async () => {
+      const { slotId, admin } = await makeBookedSlot()
+      const res = await adminCancelHandler(
+        malformedRequest(`/api/admin/slots/${slotId}/cancel`, admin.cookie),
+        { params: Promise.resolve({ id: slotId }) },
+      )
+      expect(res.status).toBe(400)
+      const json = await res.json()
+      expect(json.error).toBe('Invalid JSON body.')
+      const { rows } = await getDbPool().query(
+        `select status from lesson_slots where id = $1`,
+        [slotId],
+      )
+      expect(rows[0].status).toBe('booked')
+    })
+
+    it('learner cancel rejects malformed JSON with 400, slot stays booked', async () => {
+      const { slotId, learner } = await makeBookedSlot()
+      const res = await cancelHandler(
+        malformedRequest(`/api/slots/${slotId}/cancel`, learner.cookie),
+        { params: Promise.resolve({ id: slotId }) },
+      )
+      expect(res.status).toBe(400)
+      const json = await res.json()
+      expect(json.error).toBe('Invalid JSON body.')
+      const { rows } = await getDbPool().query(
+        `select status from lesson_slots where id = $1`,
+        [slotId],
+      )
+      expect(rows[0].status).toBe('booked')
+    })
+  })
 })

@@ -40,11 +40,22 @@ export async function POST(request: Request, { params }: RouteParams) {
   const auth = await requireLearnerArchetype(request)
   if (!auth.ok) return auth.response
 
-  let body: unknown = null
-  try {
-    body = await request.json()
-  } catch {
-    body = {}
+  // Codex Wave 13 Pass 2 #14. Match the teacher-cancel rule: empty
+  // body is OK (no reason supplied), but a MALFORMED body indicates a
+  // broken caller and must 400 — otherwise a corrupt body silently
+  // cancels the slot without the learner's reason payload reaching
+  // the audit trail.
+  let body: unknown = {}
+  const raw = await request.text().catch(() => '')
+  if (raw.length > 0) {
+    try {
+      body = JSON.parse(raw)
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid JSON body.' },
+        { status: 400, headers: NO_STORE },
+      )
+    }
   }
   const reason =
     typeof body === 'object' &&
