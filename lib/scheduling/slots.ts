@@ -1299,11 +1299,18 @@ export async function cancelLearnerSlot(
   }
 }
 
+// Codex Wave 13 Pass 2 #11. Discriminated result lets the route map
+// 'not_found' → 404 and 'not_open' → 409 cleanly, instead of
+// collapsing both into a single null return + 404.
+export type EditOpenSlotResult =
+  | { ok: true; slot: LessonSlot }
+  | { ok: false; reason: 'not_found' | 'not_open' }
+
 export async function editOpenSlot(
   slotId: string,
   patch: { startAt?: string; durationMinutes?: number; notes?: string | null },
-): Promise<LessonSlot | null> {
-  if (!UUID_PATTERN.test(slotId)) return null
+): Promise<EditOpenSlotResult> {
+  if (!UUID_PATTERN.test(slotId)) return { ok: false, reason: 'not_found' }
   const validation = validateSlotInput(patch)
   if (validation) {
     throw new Error(`slot/${validation.field}/${validation.reason}`)
@@ -1330,7 +1337,14 @@ export async function editOpenSlot(
       appendEventSql('slot.edited', 'admin', patch as Record<string, unknown>),
     ],
   )
-  return result.rows[0] ? rowToSlot(result.rows[0]) : null
+  if (result.rows[0]) return { ok: true, slot: rowToSlot(result.rows[0]) }
+  // 0 rows updated. Distinguish "row missing" from "row exists but
+  // not-open" so the route can map to the right HTTP status.
+  const probe = await pool.query(
+    `select 1 from lesson_slots where id = $1 limit 1`,
+    [slotId],
+  )
+  return { ok: false, reason: probe.rowCount ? 'not_open' : 'not_found' }
 }
 
 // Wave A — calendar drag-to-move. Open-only at the data layer
@@ -1655,12 +1669,25 @@ export async function autoCompletePastBookedSlots(): Promise<{
   return { completed: result.rowCount ?? 0 }
 }
 
-export async function deleteOpenSlot(slotId: string): Promise<boolean> {
-  if (!UUID_PATTERN.test(slotId)) return false
+// Codex Wave 13 Pass 2 #11. Same shape as editOpenSlot — discriminated
+// result so the route can return 404 vs 409 truthfully.
+export type DeleteOpenSlotResult =
+  | { ok: true }
+  | { ok: false; reason: 'not_found' | 'not_open' }
+
+export async function deleteOpenSlot(
+  slotId: string,
+): Promise<DeleteOpenSlotResult> {
+  if (!UUID_PATTERN.test(slotId)) return { ok: false, reason: 'not_found' }
   const pool = getDbPool()
   const result = await pool.query(
     `delete from lesson_slots where id = $1 and status = 'open'`,
     [slotId],
   )
-  return (result.rowCount ?? 0) > 0
+  if ((result.rowCount ?? 0) > 0) return { ok: true }
+  const probe = await pool.query(
+    `select 1 from lesson_slots where id = $1 limit 1`,
+    [slotId],
+  )
+  return { ok: false, reason: probe.rowCount ? 'not_open' : 'not_found' }
 }
