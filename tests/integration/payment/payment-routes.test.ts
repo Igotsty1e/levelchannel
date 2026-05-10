@@ -253,6 +253,79 @@ describe('POST /api/payments/[invoiceId]/cancel', () => {
     )
     expect(res.status).toBe(400)
   })
+
+  // Wave 21 — receipt-token gate negative cases (Codex Wave 13 Pass 3 #7).
+  // Wave 6.1 #4 Phase 2 introduced the receipt-token capability gate so
+  // that a known invoiceId alone can't flip a pending order to cancelled.
+  // The happy-path test above proves the gate accepts the right token;
+  // these three pin the rejections.
+
+  async function createPendingForToken(tag: string) {
+    const res = await createHandler(
+      buildCreateRequest({
+        amountRub: 1500,
+        customerEmail: `cancel-${tag}@example.com`,
+        personalDataConsentAccepted: true,
+      }),
+    )
+    const json = await res.json()
+    return {
+      invoiceId: json.order.invoiceId as string,
+      receiptToken: json.receiptToken as string,
+    }
+  }
+
+  it('refuses 401 on missing token', async () => {
+    const { invoiceId } = await createPendingForToken('no-token')
+    const res = await cancelHandler(
+      buildRequest(`/api/payments/${invoiceId}/cancel`, { body: {} }),
+      { params: Promise.resolve({ invoiceId }) },
+    )
+    expect(res.status).toBe(401)
+    // Order must still be pending — the missing token must not have
+    // succeeded in the cancel side effect.
+    const row = await readOrderRow(invoiceId)
+    expect(row.status).toBe('pending')
+  })
+
+  it('refuses 401 on wrong token', async () => {
+    const { invoiceId } = await createPendingForToken('bad-token')
+    const res = await cancelHandler(
+      buildRequest(`/api/payments/${invoiceId}/cancel`, {
+        body: {},
+        headers: { 'X-Receipt-Token': 'definitely-not-the-real-token' },
+      }),
+      { params: Promise.resolve({ invoiceId }) },
+    )
+    expect(res.status).toBe(401)
+    const row = await readOrderRow(invoiceId)
+    expect(row.status).toBe('pending')
+  })
+
+  it('refuses 401 when the token belongs to a DIFFERENT invoice', async () => {
+    const a = await createPendingForToken('cross-a')
+    const b = await createPendingForToken('cross-b')
+    const res = await cancelHandler(
+      buildRequest(`/api/payments/${a.invoiceId}/cancel`, {
+        body: {},
+        // B's token against A's invoice — must reject.
+        headers: { 'X-Receipt-Token': b.receiptToken },
+      }),
+      { params: Promise.resolve({ invoiceId: a.invoiceId }) },
+    )
+    expect(res.status).toBe(401)
+    // Codex Wave 21 review feedback. Just checking A.status === pending
+    // misses the case where the gate rejects with 401 yet still mutates
+    // B (whose token was used) or writes an order.cancelled audit.
+    // Pin all four: both rows still pending, no cancelled audit on
+    // either invoice.
+    expect((await readOrderRow(a.invoiceId)).status).toBe('pending')
+    expect((await readOrderRow(b.invoiceId)).status).toBe('pending')
+    const aEvents = await listPaymentAuditEventsByInvoice(a.invoiceId)
+    const bEvents = await listPaymentAuditEventsByInvoice(b.invoiceId)
+    expect(aEvents.some((e) => e.eventType === 'order.cancelled')).toBe(false)
+    expect(bEvents.some((e) => e.eventType === 'order.cancelled')).toBe(false)
+  })
 })
 
 describe('POST /api/payments/mock/[invoiceId]/confirm', () => {
