@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { POST as checkoutPackageHandler } from '@/app/api/checkout/package/[slug]/route'
 import { GET as accountPackagesHandler } from '@/app/api/account/packages/route'
@@ -23,13 +23,18 @@ import { buildRequest, extractSessionCookie } from '../helpers'
 // which exercises the dual-source corroboration contract.
 
 beforeAll(() => {
-  process.env.BILLING_WAVE_ACTIVE = 'true'
-  process.env.PAYMENTS_PROVIDER = 'mock'
-  process.env.PAYMENTS_ALLOW_MOCK_CONFIRM = 'true'
+  // Use vi.stubEnv so leaks into later integration files in the same
+  // worker are auto-cleaned. Codex 2026-05-10 (Pass 3 #1): direct
+  // process.env writes don't get restored if a later afterAll throws,
+  // and PAYMENTS_PROVIDER/PAYMENTS_ALLOW_MOCK_CONFIRM were never
+  // restored at all in the prior version.
+  vi.stubEnv('BILLING_WAVE_ACTIVE', 'true')
+  vi.stubEnv('PAYMENTS_PROVIDER', 'mock')
+  vi.stubEnv('PAYMENTS_ALLOW_MOCK_CONFIRM', 'true')
 })
 
 afterAll(() => {
-  delete process.env.BILLING_WAVE_ACTIVE
+  vi.unstubAllEnvs()
 })
 
 async function reg(email: string) {

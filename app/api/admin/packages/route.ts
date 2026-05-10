@@ -13,6 +13,12 @@ export const dynamic = 'force-dynamic'
 
 const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
+// Default display_order for new packages. Spaced at 100 so the operator
+// can insert "in between" two existing rows by picking 50 / 150 / 250
+// without renumbering the catalog. Mid-range value keeps room for future
+// reordering on either side.
+const DEFAULT_DISPLAY_ORDER = 100
+
 // Billing wave PR 4 — admin packages CRUD (create + list).
 //
 // Edit (PATCH) is intentionally NOT shipped here for v1. The DB
@@ -117,7 +123,9 @@ export async function POST(request: Request) {
       isActive:
         typeof body.isActive === 'boolean' ? body.isActive : true,
       displayOrder:
-        typeof body.displayOrder === 'number' ? body.displayOrder : 100,
+        typeof body.displayOrder === 'number'
+          ? body.displayOrder
+          : DEFAULT_DISPLAY_ORDER,
     })
     return NextResponse.json(
       { package: pkg },
