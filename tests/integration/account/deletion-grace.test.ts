@@ -9,6 +9,7 @@ import {
   getAccountById,
   requestAccountDeletion,
 } from '@/lib/auth/accounts'
+import { getDbPool } from '@/lib/db/pool'
 
 import '../setup'
 import { buildRequest, extractSessionCookie } from '../helpers'
@@ -84,12 +85,27 @@ describe('account deletion grace window', () => {
     const first = await getAccountById(accountId)
     const firstAt = new Date(first!.scheduledPurgeAt!).getTime()
 
-    // tiny wait to ensure now() advances
-    await new Promise((r) => setTimeout(r, 10))
+    // Codex Wave 13 Pass 3 #19. The previous version slept 10ms hoping
+    // now() would advance between the two calls. On fast hardware they
+    // both land in the same ms and the test silently passes only thanks
+    // to the >= assertion — which doesn't actually prove "advances
+    // forward". Backdate the first row so the second request must land
+    // strictly later, then assert strictly >.
+    await getDbPool().query(
+      `update accounts
+          set scheduled_purge_at = scheduled_purge_at - interval '1 minute'
+        where id = $1`,
+      [accountId],
+    )
+    const backdated = await getAccountById(accountId)
+    const backdatedAt = new Date(backdated!.scheduledPurgeAt!).getTime()
+
     await requestAccountDeletion(accountId, 30)
     const second = await getAccountById(accountId)
     const secondAt = new Date(second!.scheduledPurgeAt!).getTime()
 
+    expect(secondAt).toBeGreaterThan(backdatedAt)
+    // And the second value is the new now()+30d, not the backdated one.
     expect(secondAt).toBeGreaterThanOrEqual(firstAt)
   })
 })

@@ -105,8 +105,19 @@ describe('payment_audit_events — integration', () => {
       toStatus: 'pending',
       actor: 'user',
     })
-    // Tiny delay so created_at tick separates the rows even on a fast box.
-    await new Promise((r) => setTimeout(r, 5))
+    // Codex Wave 13 Pass 3 #5. The previous version slept 5ms hoping
+    // created_at clock-tick would separate the rows. On fast hardware
+    // (CI runners, M-series) two now() calls inside the same ms are
+    // routine and the test would flake. Pin the order deterministically
+    // by backdating the first row 1 second.
+    const pool = getAuditPool()
+    if (!pool) throw new Error('audit pool not configured')
+    await pool.query(
+      `update payment_audit_events
+          set created_at = created_at - interval '1 second'
+        where invoice_id = $1`,
+      [TEST_INVOICE_ID],
+    )
     await recordPaymentAuditEvent({
       eventType: 'mock.confirmed',
       invoiceId: TEST_INVOICE_ID,
