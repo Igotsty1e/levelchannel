@@ -5,7 +5,7 @@ import { getAuthPool } from '@/lib/auth/pool'
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 export const SESSION_COOKIE_NAME = 'lc_session'
-export const SESSION_COOKIE_TTL_SECONDS = Math.floor(SESSION_TTL_MS / 1000)
+const SESSION_COOKIE_TTL_SECONDS = Math.floor(SESSION_TTL_MS / 1000)
 
 export type Session = {
   id: string
@@ -142,7 +142,7 @@ export function buildSessionClearCookie(isProduction: boolean): string {
 
 // Pull the lc_session cookie value from a Request's `Cookie` header without
 // pulling next/headers — keeps these helpers framework-agnostic.
-export function readSessionCookieFromRequest(request: Request): string | null {
+function readSessionCookieFromRequest(request: Request): string | null {
   const header = request.headers.get('cookie')
   if (!header) return null
   for (const part of header.split(';')) {

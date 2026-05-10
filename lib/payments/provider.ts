@@ -187,11 +187,6 @@ export async function syncMockOrderState(invoiceId: string) {
   return current
 }
 
-export async function getPublicPayment(invoiceId: string) {
-  const order = await syncMockOrderState(invoiceId)
-  return order ? toPublicOrder(order) : null
-}
-
 export async function markOrderPaid(
   invoiceId: string,
   payload?: Record<string, unknown>,

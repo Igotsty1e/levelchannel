@@ -143,10 +143,6 @@ export function validateCustomerEmail(value: string) {
   return { ok: true as const, email }
 }
 
-export function isValidCustomerEmail(value: string) {
-  return validateCustomerEmail(value).ok
-}
-
 export function formatRubles(amount: number) {
   return new Intl.NumberFormat('ru-RU', {
     minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
