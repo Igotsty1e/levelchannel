@@ -199,6 +199,101 @@ export function pastBusinessBandIso(minutesAgo: number): string {
   return yesterdayUtc18_30.toISOString()
 }
 
+// Wave 20 — fixture extraction (Codex Wave 13 Pass 3 #11-#13).
+// Three helpers consolidated from 8+ test files that hand-rolled the
+// same payment_orders + audit-row seed pattern + DATABASE_URL guard.
+//
+// Why integration helpers (not unit): all three operate on the
+// real Docker Postgres brought up by scripts/test-integration.sh,
+// and the audit dispatch goes through the production pgcrypto-
+// encrypted path. Pure-JS unit fixtures wouldn't exercise the same
+// surface.
+
+import { getDbPool } from '@/lib/db/pool'
+
+// Bail loudly when DATABASE_URL is not pointing at the test
+// container. Wave 13 Pass 3 #13: 4+ test files duplicated this
+// pattern, each one written slightly differently. Single helper
+// with the exact same message everywhere.
+export function assertIntegrationDbEnv(): void {
+  const url = process.env.DATABASE_URL ?? ''
+  if (!url) {
+    throw new Error(
+      'DATABASE_URL must be set for integration tests. Run via npm run test:integration.',
+    )
+  }
+}
+
+export type SeedPaymentOrderInput = {
+  invoiceId?: string
+  amountRub?: number
+  customerEmail?: string
+  status?: 'pending' | 'paid' | 'failed' | 'cancelled' | '3ds_required'
+  provider?: 'cloudpayments' | 'mock'
+  description?: string
+  ageMinutes?: number
+}
+
+export type SeededPaymentOrder = {
+  invoiceId: string
+  amountRub: number
+  customerEmail: string
+  status: string
+  provider: string
+}
+
+// Wave 13 Pass 3 #11. Direct INSERT into payment_orders with
+// sensible defaults. The webhook validation path refuses non-
+// cloudpayments orders, so the default provider is 'cloudpayments'.
+// `ageMinutes` shifts created_at into the past for stale-cancel
+// scenarios.
+export async function seedPaymentOrder(
+  input: SeedPaymentOrderInput = {},
+): Promise<SeededPaymentOrder> {
+  const invoiceId =
+    input.invoiceId ??
+    `lc_test_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+  const amountRub = input.amountRub ?? 1500
+  const customerEmail = input.customerEmail ?? 'fixture@example.com'
+  const status = input.status ?? 'pending'
+  const provider = input.provider ?? 'cloudpayments'
+  const description = input.description ?? 'Integration test fixture'
+  const ageMinutes = input.ageMinutes ?? 0
+
+  await getDbPool().query(
+    `insert into payment_orders (
+       invoice_id, amount_rub, currency, description, provider, status,
+       created_at, updated_at, customer_email, receipt_email, receipt
+     ) values (
+       $1, $2, 'RUB', $3, $4, $5,
+       now() - make_interval(mins => $6), now(), $7, $7, '{}'::jsonb
+     )`,
+    [invoiceId, amountRub, description, provider, status, ageMinutes, customerEmail],
+  )
+  return { invoiceId, amountRub, customerEmail, status, provider }
+}
+
+// Wave 13 Pass 3 #11. Companion: emit the canonical 'order.created'
+// audit event for the seeded order so downstream "what happened
+// to this invoice" assertions match production shape.
+export async function seedOrderCreatedAudit(
+  order: SeededPaymentOrder,
+  extraPayload: Record<string, unknown> = {},
+): Promise<void> {
+  const { recordPaymentAuditEvent, rublesToKopecks } = await import(
+    '@/lib/audit/payment-events'
+  )
+  await recordPaymentAuditEvent({
+    eventType: 'order.created',
+    invoiceId: order.invoiceId,
+    customerEmail: order.customerEmail,
+    amountKopecks: rublesToKopecks(order.amountRub),
+    toStatus: 'pending',
+    actor: 'user',
+    payload: { provider: order.provider, testFixture: true, ...extraPayload },
+  })
+}
+
 function mskTodayParts(): { year: number; month: number; day: number } {
   const dtf = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Europe/Moscow',
