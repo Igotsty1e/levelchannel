@@ -57,7 +57,7 @@ module.exports = withSentryConfig(nextConfig, {
   silent: !process.env.CI,
   // No tunnelRoute — middleware/edge route would need its own setup.
   // Direct ingest via CSP allowance is fine for our audience.
-  disableLogger: true,
+  webpack: { treeshake: { removeDebugLogging: true } },
   // Source maps upload only when SENTRY_AUTH_TOKEN is set in env.
   // Local builds and the autodeploy script (currently without the
   // token) just ship the SDK with bundled stack traces; readable
