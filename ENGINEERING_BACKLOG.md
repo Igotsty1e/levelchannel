@@ -239,6 +239,56 @@ Enabled: `secret_scanning`, `secret_scanning_push_protection`, `dependabot_secur
 ### #4 LOW-MEDIUM — security workflows advisory not enforcing (implicitly closed by #1)
 Branch protection now requires the integration suite + public-surface check, so they're enforcing not advisory. Same fix as #1.
 
+## Wave 13 — Code revision (Codex 4-front sweep), 2026-05-10
+
+Multi-front Codex adversarial pass against the whole repo. 73 findings across 4 passes (dead code / quality / tests / config). Quick wins shipped on `chore/code-revision-2026-05-10`; this section captures the deferred items.
+
+**Shipped this wave** (PR pending): tsc clean (4 readonly-NODE_ENV errors fixed via `vi.stubEnv`), Sentry deprecation gone, 7 dead exports removed, 4 internal helpers un-exported, email-normalize consolidated to `lib/email/normalize.ts` (5 dupe sites), `rublesToKopecks` moved to `lib/payments/money.ts`, deploy-freshness workflow body-leak fixed (Pass 4 #1, same class as Wave 8 #1), 8 admin/api routes' catch-all returns `{error:'internal_error'}` 500 + log instead of leaking raw exception messages as 400, package POST uses SQLSTATE 23505 instead of brittle `msg.includes('unique')`, coverage CI gate added (was enforced in vitest config but not run), `npm test` flipped to `vitest run`, removed broken `next lint`, added `engines.node: ">=20.0.0"`, build-check matrix `[20, 22]`, removed deprecated `X-XSS-Protection` header, `DEFAULT_DISPLAY_ORDER` constant, env-var leak in `checkout-package.test.ts` (`vi.stubEnv`), SQLSTATE assertion replacing brittle text-regex on the immutability trigger, deterministic rate-limit keys.
+
+### Deferred — refactor / split (medium-effort)
+
+- **Wave 12 deletion-guard contract gap.** `accountHasInFlightPackageGrant` was deleted as dead in this wave; the function existed for the two-branch deletion guard in design v9 but was never wired into `requestAccountDeletion` or `scripts/db-retention-cleanup.mjs`. Today the 30-day grace period mitigates: any in-flight grant either succeeds or hits one of the 7 fail-closed reasons within minutes, well before the 30-day purge fires. Action: either re-introduce the helper and wire into the schedule-step + execute-step (matching the design), OR explicitly close the design contract gap in `docs/plans/prepay-postpay-billing.md` v9.
+
+- **Split god-modules** (Pass 1 #9-#13). Five files with mixed responsibilities:
+  - `lib/scheduling/slots.ts` (1658 lines, mixes types/validation/queries/mutations/calendar/billing-bridge) — split into a folder with thin facade.
+  - `lib/payments/provider.ts` (invoiceId gen + state machine + saved-cards + 3DS + side effects).
+  - `lib/payments/cloudpayments-route.ts` (NextResponse formatting + rate-limit + dedup + audit + parse/verify).
+  - `lib/billing/packages.ts` (catalog + purchases + guards).
+  - `lib/telemetry/store.ts` (normalization + HMAC + file backend + postgres fallback).
+  Each is a multi-PR refactor on its own; not chained because each touches distinct callers and the risk profile is "no-op for behavior, big for review burden". Pick by next-touched-area heuristic.
+
+### Deferred — API contract consistency
+
+- **Status code semantics** (Pass 2 #11). `app/api/admin/slots/[id]/route.ts:58` returns 404 for "not found OR already not open" while `move/route.ts` uses 409 `not_open` for the same wrong-state case. Decide one rule and apply: 404 = missing resource, 409 = wrong state.
+- **Malformed JSON consistency** (Pass 2 #12-#14). 3 cancel routes silently treat malformed body as `{}`. Either reject 400 `Invalid JSON body.` (match `app/api/teacher/slots/[id]/cancel`) or document "no body expected" and remove parsing. Today the worst case is a swallowed reason payload — operator/learner sends a reason that doesn't land.
+- **charge-token contract polish** (Pass 2 #15-#16). Decline returns `{status:'declined', message}` (no `error` field), unlike the `{error,...}` pattern elsewhere. Early errors use `Response.json` instead of `NextResponse.json`. Pick one non-200 contract and use it consistently.
+- **Error code vs message** (Pass 2 #17-#20). Several routes return human English sentences in `error` (`'Slot not found.'`, `'Перемещать можно только...'`) instead of code-like values. Standard: `error` is a stable code (`'not_found'`), `message` carries the localized human text. Touches ~20 sites — separate cleanup wave.
+- **MSK constants** (Pass 2 #22). `6, 22, 30` magic numbers inline in `admin/slots/[id]/move/route.ts` (and possibly mirrored in teacher route). Pull into named constants shared across admin/teacher.
+- **`readJsonObjectOr400` helper** (Pass 2 #23). JSON-body parse + "must be object" validation is duplicated across many routes. Helper would centralize behavior + error message.
+- **`NO_STORE` casing convention** (Pass 2 #24). Mixed `noStore` vs `NO_STORE` for the same constant pattern across routes. Pick one and normalize.
+- **`/api/health` swallow** (Pass 2 #25). `probeDatabase` swallows the exception with no log, hiding why health degraded. Add a privileged-mode log (or once-per-window) so deeper diagnosis is possible.
+
+### Deferred — test improvements
+
+- **SSE stream determinism** (Pass 3 #2). `tests/integration/payment/sse-stream.test.ts:105` uses raw `setTimeout(50)` "subscribe wait" — racey on slow CI. Replace with deterministic handshake: read until initial `pending` event arrives, then trigger confirm.
+- **Wall-clock parity tests** (Pass 3 #3-#4). `auth/register.test.ts:121` and `auth/login.test.ts:61` assert on `performance.now()` deltas to verify constant-time/dummy-hash equivalence. Inherently flaky under variable IO/load. Replace with structural assertion (spy/mock the dummy-hash + no-op email path) instead of elapsed time. Or gate behind `PERF_STABLE_MODE=1`.
+- **Audit ordering by sleep** (Pass 3 #5). `tests/integration/audit/payment-events.test.ts:109` uses sleep to force `created_at` ordering. Replace with explicit `created_at` SQL update or assert ordering via stable secondary key `(created_at, id)`.
+- **Missing security test cases** (Pass 3 #6-#7). SSE stream and `payment cancel` route are receipt-token gated by design but no tests for missing/wrong/cross-invoice token. Add negative cases that must return 401 and not leak order state.
+- **Deterministic invoice IDs** (Pass 3 #8-#10). `webhooks.test.ts`, `booking.test.ts`, `admin.test.ts` use `Date.now()`/`Math.random()` for IDs/emails despite truncate-cascade between tests. Replace with deterministic constants per file.
+- **Test fixture extraction** (Pass 3 #11-#13). Repeated SQL boilerplate (`seed payment_orders + audit row`, `assert integration db env`, etc.) duplicated across 3+ test files. Extract `seedPaymentOrder()` / `seedOrderCreatedAudit()` / `assertIntegrationDbEnv()` into `tests/integration/helpers.ts`.
+- **Log-string brittleness** (Pass 3 #14-#17). 4 tests assert on internal log content (`"fingerprint mismatch"`, `"[audit] ..."`) and exact SQL bind position arrays. Either export a constant log tag and match that, OR loosen to "console.warn was called with object shape X".
+- **deletion-grace fake timer** (Pass 3 #19). `tests/integration/account/deletion-grace.test.ts:55` uses `Date.now() + tolerance` for scheduling assertion — noisy. Replace with `vi.useFakeTimers()` + `setSystemTime` and exact-timestamp assertion.
+
+### Deferred — flake (pre-existing, not caused by Wave 13)
+
+- **Test isolation bug**: `tests/integration/payment/allocations.test.ts` "mock-confirm path persists allocation when /api/payments was given a slotId" fails when run after `tests/integration/payment/admin-list.test.ts` (3/3 passes alone). Both files use the same fixed slotId UUID `11111111-2222-3333-4444-555555555555`. Despite the `afterEach` truncate covering `lesson_slots, accounts, pricing_tariffs`, something carries between files (most likely vitest's setup hook ordering OR a residual FK row). Failure: `expect 403 to be 200` — slot binding gate sees a `learner_account_id` that doesn't match the new test's session learner. Fix: give each test file a unique slotId UUID prefix; or replace the fixed UUID with a per-test `randomUUID()` and pass it through `seedLearnerWithBookedSlot`. ~30 min.
+
+### Deferred — config / build minor
+
+- **postbuild.js always runs** (Pass 4 #6). `npm run build` always invokes `node postbuild.js` which patches static-export artifacts under `out/`. If `out/` is left over from a previous static-export build it can be mid-flight stale-patched. Move to a separate `export` script or gate by env flag.
+- **Workflow direct-bash vs npm-alias** (Pass 4 #8-#9). `.github/workflows/public-surface-check.yml` calls bash directly even though `npm run check:public-surface` exists. Same for seccomp-regression. Pick one source of truth — either always go through npm or remove the alias.
+- **postcss override redundancy** (Pass 4 #10). `overrides.postcss` + `devDependencies.postcss` both pin `8.5.10`. Belt-and-suspenders OR genuine redundancy — add a comment explaining "transitive lock for X" or drop the override.
+
 ## Wave 12 — Billing wave (prepay + postpay), 2026-05-10
 
 7 PRs merged on main on 2026-05-10 after 9-round Codex paranoia loop. Migrations 0032 (legal-versioning sister wave), 0033 (billing schema), 0034 (audit enum widening). Feature flag `BILLING_WAVE_ACTIVE=false` on prod by default — flip after the operator runs the legal-rf cascade on PR 5's oferta draft (done; QA verdict GO 2026-05-10). Implementation log: `docs/plans/prepay-postpay-billing.md` v9 (915 lines, Codex SIGN-OFF). Cross-project retro: `~/Obsidian/Brain/wiki/synthesis/billing-wave-execution-2026-05-10.md`.
