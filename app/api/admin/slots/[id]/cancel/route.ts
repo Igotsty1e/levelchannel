@@ -50,6 +50,20 @@ export async function POST(request: Request, { params }: RouteParams) {
     return NextResponse.json({ slot: cancelled }, { status: 200, headers: noStore })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown'
-    return NextResponse.json({ error: msg }, { status: 400, headers: noStore })
+    // cancelSlot throws `slot/cancellationReason/too_long` on bad input.
+    if (msg.startsWith('slot/')) {
+      return NextResponse.json(
+        { error: msg },
+        { status: 400, headers: noStore },
+      )
+    }
+    console.warn('[admin.slots.cancel] unexpected error', {
+      slotId: id,
+      error: msg,
+    })
+    return NextResponse.json(
+      { error: 'internal_error' },
+      { status: 500, headers: noStore },
+    )
   }
 }

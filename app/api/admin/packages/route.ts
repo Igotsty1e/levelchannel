@@ -13,6 +13,12 @@ export const dynamic = 'force-dynamic'
 
 const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
+// Default display_order for new packages. Spaced at 100 so the operator
+// can insert "in between" two existing rows by picking 50 / 150 / 250
+// without renumbering the catalog. Mid-range value keeps room for future
+// reordering on either side.
+const DEFAULT_DISPLAY_ORDER = 100
+
 // Billing wave PR 4 — admin packages CRUD (create + list).
 //
 // Edit (PATCH) is intentionally NOT shipped here for v1. The DB
@@ -117,7 +123,9 @@ export async function POST(request: Request) {
       isActive:
         typeof body.isActive === 'boolean' ? body.isActive : true,
       displayOrder:
-        typeof body.displayOrder === 'number' ? body.displayOrder : 100,
+        typeof body.displayOrder === 'number'
+          ? body.displayOrder
+          : DEFAULT_DISPLAY_ORDER,
     })
     return NextResponse.json(
       { package: pkg },
@@ -125,15 +133,31 @@ export async function POST(request: Request) {
     )
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown'
-    if (msg.includes('lesson_packages_slug_key') || msg.includes('unique')) {
+    // PG error code 23505 = unique_violation. Match by code, not by
+    // message substring — Codex round (Pass 2 #6): `msg.includes("unique")`
+    // is too broad and would misclassify any error containing the
+    // substring (e.g. a translated message like "must be unique").
+    const code = (err as { code?: string } | null)?.code ?? ''
+    if (code === '23505' || msg.includes('lesson_packages_slug_key')) {
       return NextResponse.json(
         { error: 'slug_already_exists' },
         { status: 409, headers: NO_STORE },
       )
     }
+    // 23514 = check_violation. Migration 0033 has positive-value CHECKs
+    // on amount_kopecks / count / duration_minutes; the route doesn't
+    // pre-validate ranges, so a hostile/negative input lands here.
+    // Treat as 400 with a stable code (don't leak constraint name).
+    if (code === '23514') {
+      return NextResponse.json(
+        { error: 'invalid_input' },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    console.warn('[admin.packages.create] unexpected error', { error: msg })
     return NextResponse.json(
-      { error: msg },
-      { status: 400, headers: NO_STORE },
+      { error: 'internal_error' },
+      { status: 500, headers: NO_STORE },
     )
   }
 }

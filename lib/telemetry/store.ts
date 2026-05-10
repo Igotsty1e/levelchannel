@@ -2,6 +2,7 @@ import { createHmac } from 'crypto'
 import { promises as fs } from 'fs'
 import path from 'path'
 
+import { normalizeEmail } from '@/lib/email/normalize'
 import { paymentConfig } from '@/lib/payments/config'
 import {
   ensureTelemetrySchemaPostgres,
@@ -122,7 +123,7 @@ export function buildCheckoutTelemetryEvent(
     email?: string
   },
 ): CheckoutTelemetryEvent {
-  const email = event.email?.trim().toLowerCase()
+  const email = event.email ? normalizeEmail(event.email) : undefined
 
   return {
     at: new Date().toISOString(),

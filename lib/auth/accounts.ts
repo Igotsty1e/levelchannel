@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 
+import { normalizeEmail } from '@/lib/email/normalize'
 import { getAuthPool } from '@/lib/auth/pool'
 
 export type Account = {
@@ -21,14 +22,12 @@ export type Account = {
 
 export type AccountRole = 'admin' | 'teacher' | 'student'
 
-// Single source of truth for the canonical email shape stored in accounts.
-// trim() catches the trailing-space class of duplicates (`user@example.com `
-// vs `user@example.com`). lower-case handles the standard variant. Every
-// read and every write goes through this helper. The DB enforces the same
-// invariant via a CHECK constraint (migrations/0010) so a bypass surfaces
-// as a constraint violation, not a shadow account.
+// Account-flavoured alias of the project-wide normalizeEmail helper.
+// The DB enforces the same invariant via a CHECK constraint (migrations/0010)
+// so a bypass surfaces as a constraint violation, not a shadow account.
+// See lib/email/normalize.ts for the canonical implementation.
 export function normalizeAccountEmail(email: string): string {
-  return email.trim().toLowerCase()
+  return normalizeEmail(email)
 }
 
 function rowToAccount(row: Record<string, unknown>): Account {

@@ -220,10 +220,23 @@ export async function POST(request: Request) {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unable to create payment.'
-      const status =
-        message === 'CloudPayments credentials are not configured.' ? 503 : 500
-
-      return { status, body: { error: message } }
+      // 503 specifically when the provider is mis-configured — the
+      // operator-facing diagnostic is worth surfacing. For everything
+      // else, return a stable {error:'internal_error'} and log so we
+      // don't leak provider/DB chatter to the client.
+      if (message === 'CloudPayments credentials are not configured.') {
+        return { status: 503, body: { error: message } }
+      }
+      console.warn('[payments.create] unexpected error', {
+        error: message,
+      })
+      return {
+        status: 500,
+        body: {
+          error: 'internal_error',
+          message: 'Не удалось создать платёж. Попробуйте позже.',
+        },
+      }
     }
   })
 }

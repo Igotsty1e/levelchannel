@@ -70,7 +70,13 @@ export async function POST(request: Request) {
         },
       },
     )
-  } catch {
-    return NextResponse.json({ error: 'Unable to store telemetry event.' }, { status: 500 })
+  } catch (err) {
+    console.warn('[payments.events] telemetry insert failed', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return NextResponse.json(
+      { error: 'internal_error' },
+      { status: 500 },
+    )
   }
 }

@@ -1,20 +1,16 @@
 import { createHmac } from 'node:crypto'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { hashEmailForRateLimit, rateLimitScope } from '@/lib/auth/email-hash'
 
 describe('lib/auth/email-hash', () => {
-  const originalSecret = process.env.AUTH_RATE_LIMIT_SECRET
-  const originalNodeEnv = process.env.NODE_ENV
-
   beforeEach(() => {
-    process.env.AUTH_RATE_LIMIT_SECRET = 'test-auth-rate-limit-secret-32-chars'
-    process.env.NODE_ENV = 'test'
+    vi.stubEnv('AUTH_RATE_LIMIT_SECRET', 'test-auth-rate-limit-secret-32-chars')
+    vi.stubEnv('NODE_ENV', 'test')
   })
 
   afterEach(() => {
-    process.env.AUTH_RATE_LIMIT_SECRET = originalSecret
-    process.env.NODE_ENV = originalNodeEnv
+    vi.unstubAllEnvs()
   })
 
   it('hash matches manual HMAC of normalized email', () => {
@@ -51,15 +47,14 @@ describe('lib/auth/email-hash', () => {
   })
 
   it('falls back to dev secret when AUTH_RATE_LIMIT_SECRET unset (NODE_ENV != production)', () => {
-    delete process.env.AUTH_RATE_LIMIT_SECRET
-    process.env.NODE_ENV = 'development'
-    // Should not throw
+    vi.stubEnv('AUTH_RATE_LIMIT_SECRET', '')
+    vi.stubEnv('NODE_ENV', 'development')
     expect(() => hashEmailForRateLimit('user@example.com')).not.toThrow()
   })
 
   it('throws when AUTH_RATE_LIMIT_SECRET unset under NODE_ENV=production', () => {
-    delete process.env.AUTH_RATE_LIMIT_SECRET
-    process.env.NODE_ENV = 'production'
+    vi.stubEnv('AUTH_RATE_LIMIT_SECRET', '')
+    vi.stubEnv('NODE_ENV', 'production')
     expect(() => hashEmailForRateLimit('user@example.com')).toThrow(/AUTH_RATE_LIMIT_SECRET/)
   })
 })

@@ -30,6 +30,11 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
+          # engines.node declares ">=20.0.0" but CI runs on a single
+          # version to keep this job a single required-check context
+          # in branch protection. Matrix [20, 22] coverage tracked in
+          # ENGINEERING_BACKLOG.md Wave 13 as a follow-up that needs
+          # paired branch-protection update.
           node-version: 22
           cache: npm
 

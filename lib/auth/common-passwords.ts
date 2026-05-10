@@ -132,9 +132,3 @@ export function isCommonPassword(password: string): boolean {
   if (!normalized) return false
   return LEAKED_PASSWORDS_LOWER.has(normalized)
 }
-
-// Exposed for tests / future tuning. Don't import in production code —
-// the boolean check is the API.
-export function _denylistSize(): number {
-  return LEAKED_PASSWORDS_LOWER.size
-}

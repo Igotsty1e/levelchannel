@@ -131,19 +131,3 @@ export async function upsertAccountProfile(
   )
   return rowToProfile(result.rows[0])
 }
-
-// Used by the deletion-purge job (scripts/db-retention-cleanup.mjs)
-// to clear PD on the profile row at the same time as anonymizing the
-// account row. Idempotent: if no row exists we're done.
-export async function clearAccountProfile(accountId: string): Promise<void> {
-  const pool = getAuthPool()
-  await pool.query(
-    `update account_profiles
-        set display_name = null,
-            timezone = null,
-            locale = null,
-            updated_at = now()
-      where account_id = $1`,
-    [accountId],
-  )
-}

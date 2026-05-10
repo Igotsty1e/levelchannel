@@ -1,0 +1,37 @@
+name: unit-tests
+
+# Runs the unit test suite + coverage thresholds on every PR and push
+# to main. Codex 2026-05-10 (Pass 4 #2) caught that vitest.config.ts
+# enforces 70% coverage thresholds on the load-bearing modules
+# (lib/payments/*, lib/auth/*, lib/security/*, lib/email/escape) but
+# nothing in CI actually ran them — coverage regressions could ship
+# silently. This workflow makes that gate blocking.
+#
+# Distinct from integration-tests.yml: unit suite is fast (no Docker),
+# runs against pure-JS code (HMAC verifiers, validators, normalizers),
+# and is what `npm run test:coverage` exercises.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  unit:
+    name: npm run test:coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests with coverage
+        run: npm run test:coverage

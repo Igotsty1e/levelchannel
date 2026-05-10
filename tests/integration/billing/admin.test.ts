@@ -238,7 +238,10 @@ describe('lesson_packages immutability trigger', () => {
       [learner.accountId, pkgId, orderId],
     )
 
-    // Now try to UPDATE the price.
+    // Now try to UPDATE the price. The trigger raises with SQLSTATE
+    // 23514 (check_violation) — match on the SQLSTATE, not on the
+    // human-readable text, which can drift with translations or
+    // future trigger refactors. Codex 2026-05-10 (Pass 3 #18).
     let threw = false
     try {
       await pool.query(
@@ -247,7 +250,7 @@ describe('lesson_packages immutability trigger', () => {
       )
     } catch (e) {
       threw = true
-      expect(String(e)).toMatch(/economic fields immutable/)
+      expect((e as { code?: string }).code).toBe('23514')
     }
     expect(threw).toBe(true)
     void admin

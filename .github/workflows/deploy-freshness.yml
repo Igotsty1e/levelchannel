@@ -75,15 +75,22 @@ jobs:
           # Best-effort jq: missing field → "null", missing jq → empty.
           PROD_VERSION=$(printf '%s' "$BODY_ONLY" | jq -r '.version // "null"' 2>/dev/null || echo "")
 
-          echo "exit=$EXIT code=$CODE prod_version=$PROD_VERSION"
+          # Codex 2026-05-10 — never write raw response body into
+          # $GITHUB_OUTPUT. On a non-200, the body can be HTML, a
+          # stack trace, or upstream provider chatter; this repo is
+          # public, so anything in outputs is visible in Action logs.
+          # Surface only metadata (length + sha256 prefix), same
+          # pattern as .github/workflows/uptime-probe.yml.
+          BODY_LEN=$(printf '%s' "$BODY_ONLY" | wc -c | tr -d ' ')
+          BODY_HASH=$(printf '%s' "$BODY_ONLY" | shasum -a 256 | awk '{print $1}' | cut -c1-12)
+
+          echo "exit=$EXIT code=$CODE prod_version=$PROD_VERSION body_len=$BODY_LEN body_hash=$BODY_HASH"
           {
             echo "exit=$EXIT"
             echo "code=$CODE"
             echo "version=$PROD_VERSION"
-            echo 'body<<EOF_BODY'
-            printf '%s' "$BODY_ONLY"
-            echo
-            echo 'EOF_BODY'
+            echo "body_len=$BODY_LEN"
+            echo "body_hash=$BODY_HASH"
           } >> "$GITHUB_OUTPUT"
 
       - name: Decide and manage incident issue
@@ -94,7 +101,8 @@ jobs:
           PROD_VERSION: ${{ steps.prod.outputs.version }}
           PROD_EXIT: ${{ steps.prod.outputs.exit }}
           PROD_CODE: ${{ steps.prod.outputs.code }}
-          PROD_BODY: ${{ steps.prod.outputs.body }}
+          PROD_BODY_LEN: ${{ steps.prod.outputs.body_len }}
+          PROD_BODY_HASH: ${{ steps.prod.outputs.body_hash }}
         with:
           script: |
             const mainSha   = (process.env.MAIN_SHA  || '').trim()
@@ -102,7 +110,8 @@ jobs:
             const prodVer   = (process.env.PROD_VERSION || 'null').trim()
             const prodCode  = process.env.PROD_CODE || '(no response)'
             const prodExit  = process.env.PROD_EXIT || ''
-            const prodBody  = (process.env.PROD_BODY || '').slice(0, 1500)
+            const prodBodyLen  = process.env.PROD_BODY_LEN || ''
+            const prodBodyHash = process.env.PROD_BODY_HASH || ''
             const ts        = new Date().toISOString()
             const runUrl    = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
             const label     = 'deploy-stale'

@@ -32,7 +32,10 @@ const nextConfig = {
           { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains; preload' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'DENY' },
-          { key: 'X-XSS-Protection', value: '1; mode=block' },
+          // X-XSS-Protection removed 2026-05-10 — modern browsers
+          // ignore it (Chrome dropped it in M78, Firefox never had it,
+          // Safari followed). The CSP header (set in middleware) is
+          // the actual defense; X-XSS-Protection just adds noise.
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
           { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
@@ -57,7 +60,7 @@ module.exports = withSentryConfig(nextConfig, {
   silent: !process.env.CI,
   // No tunnelRoute — middleware/edge route would need its own setup.
   // Direct ingest via CSP allowance is fine for our audience.
-  disableLogger: true,
+  webpack: { treeshake: { removeDebugLogging: true } },
   // Source maps upload only when SENTRY_AUTH_TOKEN is set in env.
   // Local builds and the autodeploy script (currently without the
   // token) just ship the SDK with bundled stack traces; readable

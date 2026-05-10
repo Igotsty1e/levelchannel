@@ -113,6 +113,19 @@ export async function POST(request: Request) {
       )
     }
     const msg = err instanceof Error ? err.message : 'unknown'
-    return NextResponse.json({ error: msg }, { status: 400, headers: noStore })
+    // lib/scheduling/slots.ts throws `slot/<field>/<reason>` for known
+    // input-validation failures (slots/empty, slots/too_many,
+    // tariffId/invalid, etc.) — keep these as 400.
+    if (msg.startsWith('slot/')) {
+      return NextResponse.json(
+        { error: msg },
+        { status: 400, headers: noStore },
+      )
+    }
+    console.warn('[admin.slots.bulk-create] unexpected error', { error: msg })
+    return NextResponse.json(
+      { error: 'internal_error' },
+      { status: 500, headers: noStore },
+    )
   }
 }

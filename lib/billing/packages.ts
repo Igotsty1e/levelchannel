@@ -85,15 +85,6 @@ export async function getPackageBySlug(slug: string): Promise<LessonPackage | nu
   return result.rows[0] ? rowToPackage(result.rows[0]) : null
 }
 
-export async function getPackageById(id: string): Promise<LessonPackage | null> {
-  const pool = getDbPool()
-  const result = await pool.query(
-    `select ${PACKAGE_COLS} from lesson_packages where id = $1`,
-    [id],
-  )
-  return result.rows[0] ? rowToPackage(result.rows[0]) : null
-}
-
 // Admin-side create. Used by the future /admin/packages catalog UI
 // (PR 4). Validation lives at the call site; this just inserts.
 export async function createPackage(input: {
@@ -325,34 +316,3 @@ export async function accountHasPendingPackageGrantForDuration(
   return result.rows.length > 0
 }
 
-// Helper used by the deletion guard (Codex round 8 MEDIUM):
-// Branch A (pending<15min) OR Branch B (paid-but-not-granted indefinite).
-// Either matching → block account anonymize/delete.
-export async function accountHasInFlightPackageGrant(
-  accountId: string,
-): Promise<boolean> {
-  const pool = getDbPool()
-  const result = await pool.query(
-    `select 1
-       where exists (
-         -- Branch A: pending order within 15 min
-         select 1 from payment_orders
-          where metadata->>'accountId' = $1::text
-            and metadata->>'packageSlug' is not null
-            and status in ('pending', '3ds_required')
-            and created_at > now() - interval '15 minutes'
-       ) or exists (
-         -- Branch B: paid order without a materialized purchase
-         select 1 from payment_orders po
-          where po.metadata->>'accountId' = $1::text
-            and po.metadata->>'packageSlug' is not null
-            and po.status = 'paid'
-            and not exists (
-              select 1 from package_purchases pp
-               where pp.payment_order_id = po.invoice_id
-            )
-       )`,
-    [accountId],
-  )
-  return result.rows.length > 0
-}

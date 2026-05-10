@@ -27,7 +27,7 @@ describe('takeRateLimit (in-memory fallback)', () => {
   })
 
   it('allows up to limit and blocks the rest', async () => {
-    const key = `t1:${Math.random()}`
+    const key = 't1'
     expect((await takeRateLimit(key, 3, 60_000)).allowed).toBe(true)
     expect((await takeRateLimit(key, 3, 60_000)).allowed).toBe(true)
     expect((await takeRateLimit(key, 3, 60_000)).allowed).toBe(true)
@@ -37,7 +37,7 @@ describe('takeRateLimit (in-memory fallback)', () => {
   })
 
   it('resets after window passes', async () => {
-    const key = `t2:${Math.random()}`
+    const key = 't2'
     expect((await takeRateLimit(key, 1, 1000)).allowed).toBe(true)
     expect((await takeRateLimit(key, 1, 1000)).allowed).toBe(false)
     vi.advanceTimersByTime(1500)
@@ -45,8 +45,8 @@ describe('takeRateLimit (in-memory fallback)', () => {
   })
 
   it('isolates separate keys', async () => {
-    const a = `t3a:${Math.random()}`
-    const b = `t3b:${Math.random()}`
+    const a = 't3a'
+    const b = 't3b'
     expect((await takeRateLimit(a, 1, 60_000)).allowed).toBe(true)
     expect((await takeRateLimit(b, 1, 60_000)).allowed).toBe(true)
     expect((await takeRateLimit(a, 1, 60_000)).allowed).toBe(false)
@@ -54,7 +54,7 @@ describe('takeRateLimit (in-memory fallback)', () => {
   })
 
   it('reports remaining quota correctly', async () => {
-    const key = `t4:${Math.random()}`
+    const key = 't4'
     const first = await takeRateLimit(key, 5, 60_000)
     expect(first.remaining).toBe(4)
     const second = await takeRateLimit(key, 5, 60_000)
