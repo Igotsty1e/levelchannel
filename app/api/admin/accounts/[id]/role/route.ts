@@ -94,9 +94,15 @@ export async function POST(request: Request, { params }: RouteParams) {
         { status: 400, headers: noStore },
       )
     }
+    console.warn('[admin.accounts.role] unexpected error', {
+      accountId: id,
+      role,
+      op,
+      error: msg,
+    })
     return NextResponse.json(
-      { error: msg },
-      { status: 400, headers: noStore },
+      { error: 'internal_error' },
+      { status: 500, headers: noStore },
     )
   }
 

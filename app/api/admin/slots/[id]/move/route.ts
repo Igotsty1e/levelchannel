@@ -158,9 +158,16 @@ export async function PATCH(request: Request, { params }: RouteParams) {
         { status: 400, headers: NO_STORE },
       )
     }
+    // Unknown failure mode — treat as a server fault, not a client
+    // error. Returning 400 with the raw message would leak internals
+    // (provider/DB chatter, stack-trace fragments) to the operator
+    // UI and obscure real 500s in observability.
+    console.warn('[admin.slots.move] unexpected error', {
+      error: msg,
+    })
     return NextResponse.json(
-      { error: msg },
-      { status: 400, headers: NO_STORE },
+      { error: 'internal_error' },
+      { status: 500, headers: NO_STORE },
     )
   }
 }

@@ -125,15 +125,21 @@ export async function POST(request: Request) {
     )
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown'
-    if (msg.includes('lesson_packages_slug_key') || msg.includes('unique')) {
+    // PG error code 23505 = unique_violation. Match by code, not by
+    // message substring — Codex round (Pass 2 #6): `msg.includes("unique")`
+    // is too broad and would misclassify any error containing the
+    // substring (e.g. a translated message like "must be unique").
+    const code = (err as { code?: string } | null)?.code ?? ''
+    if (code === '23505' || msg.includes('lesson_packages_slug_key')) {
       return NextResponse.json(
         { error: 'slug_already_exists' },
         { status: 409, headers: NO_STORE },
       )
     }
+    console.warn('[admin.packages.create] unexpected error', { error: msg })
     return NextResponse.json(
-      { error: msg },
-      { status: 400, headers: NO_STORE },
+      { error: 'internal_error' },
+      { status: 500, headers: NO_STORE },
     )
   }
 }

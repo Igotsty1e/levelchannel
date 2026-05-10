@@ -110,9 +110,10 @@ export async function POST(request: Request) {
         { status: 409, headers: noStore },
       )
     }
+    console.warn('[admin.slots.create] unexpected error', { error: msg })
     return NextResponse.json(
-      { error: msg },
-      { status: 400, headers: noStore },
+      { error: 'internal_error' },
+      { status: 500, headers: noStore },
     )
   }
 }

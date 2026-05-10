@@ -90,6 +90,10 @@ export async function POST(request: Request, { params }: RouteParams) {
     )
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown'
-    return NextResponse.json({ error: msg }, { status: 400, headers: noStore })
+    console.warn('[slots.cancel] unexpected error', { error: msg })
+    return NextResponse.json(
+      { error: 'internal_error' },
+      { status: 500, headers: noStore },
+    )
   }
 }

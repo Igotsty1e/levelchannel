@@ -64,7 +64,14 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     return NextResponse.json({ slot }, { status: 200, headers: noStore })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown'
-    return NextResponse.json({ error: msg }, { status: 400, headers: noStore })
+    console.warn('[admin.slots.edit] unexpected error', {
+      slotId: id,
+      error: msg,
+    })
+    return NextResponse.json(
+      { error: 'internal_error' },
+      { status: 500, headers: noStore },
+    )
   }
 }
 
