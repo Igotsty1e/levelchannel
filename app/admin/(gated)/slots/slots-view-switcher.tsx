@@ -243,6 +243,8 @@ export function SlotsViewSwitcher(props: SlotsViewSwitcherProps) {
       {activeRow ? (
         <SlotCancelModal
           row={activeRow}
+          learnerCandidates={props.initialLearners}
+          currentTeacherId={calendarTeacherId}
           onClose={() => setActiveRow(null)}
           onCancelled={() => {
             setActiveRow(null)
@@ -250,6 +252,11 @@ export function SlotsViewSwitcher(props: SlotsViewSwitcherProps) {
             // stale-state UX: increment key forces SlotCalendar to
             // remount + refetch.
             bumpReload()
+          }}
+          onAssigned={() => {
+            setActiveRow(null)
+            bumpReload()
+            showToast('Ученик назначен на слот.')
           }}
         />
       ) : null}

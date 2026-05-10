@@ -10,23 +10,66 @@ import type { CalendarRow } from '@/lib/calendar/view-model'
 
 export type SlotCancelModalProps = {
   row: CalendarRow
+  // Wave 14.1 — operator can also assign a learner to an open slot
+  // straight from the calendar (without switching to the list tab).
+  // The candidate list is pre-filtered (verified, not disabled, not
+  // admin) by the parent; this component additionally filters out
+  // the current calendar's teacher to prevent self-booking offers.
+  learnerCandidates?: Array<{ id: string; email: string }>
+  currentTeacherId?: string
   onClose: () => void
   onCancelled: () => void
+  onAssigned?: () => void
 }
 
 export function SlotCancelModal({
   row,
+  learnerCandidates,
+  currentTeacherId,
   onClose,
   onCancelled,
+  onAssigned,
 }: SlotCancelModalProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [reason, setReason] = useState('')
+  const [pickedLearnerEmail, setPickedLearnerEmail] = useState('')
 
   const slot = row.slot
   const canCancel =
     slot.kind === 'open' || slot.kind === 'booked-full' || slot.kind === 'booked-self'
+  const canAssign = slot.kind === 'open'
   const slotId = 'id' in slot ? slot.id : null
+
+  // Pre-filter candidates for the open-slot assign action: never
+  // offer the slot's own teacher as a learner (lib/scheduling/slots.ts
+  // bookSlot rejects self-booking; UI matches that contract). When
+  // currentTeacherId isn't passed, fall back to the unfiltered list.
+  const eligibleLearners = (learnerCandidates ?? []).filter(
+    (l) => !currentTeacherId || l.id !== currentTeacherId,
+  )
+
+  async function handleAssign() {
+    if (!slotId || !pickedLearnerEmail.trim() || !onAssigned) return
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await fetch(`/api/admin/slots/${slotId}/book-as-operator`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ learnerEmail: pickedLearnerEmail.trim() }),
+      })
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}))
+        throw new Error(body.error || `HTTP ${r.status}`)
+      }
+      onAssigned()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   async function handleCancel() {
     if (!slotId) return
@@ -98,6 +141,64 @@ export function SlotCancelModal({
           ) : null}
         </dl>
 
+        {canAssign && eligibleLearners.length > 0 && onAssigned ? (
+          <div style={{ marginTop: 20 }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: 12,
+                color: '#9ca3af',
+                marginBottom: 6,
+              }}
+            >
+              Привязать ученика:
+            </label>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <select
+                value={pickedLearnerEmail}
+                onChange={(e) => setPickedLearnerEmail(e.target.value)}
+                style={{
+                  flex: 1,
+                  minWidth: 220,
+                  padding: '8px 12px',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: 6,
+                  color: '#e4e4e7',
+                  fontSize: 13,
+                  boxSizing: 'border-box',
+                }}
+              >
+                <option value="">— выберите ученика —</option>
+                {eligibleLearners.map((l) => (
+                  <option key={l.id} value={l.email}>
+                    {l.email}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={handleAssign}
+                disabled={busy || !pickedLearnerEmail.trim()}
+                style={{
+                  padding: '8px 16px',
+                  background: 'rgba(34, 197, 94, 0.18)',
+                  border: '1px solid rgba(34, 197, 94, 0.55)',
+                  borderRadius: 6,
+                  color: '#bbf7d0',
+                  cursor:
+                    busy || !pickedLearnerEmail.trim() ? 'not-allowed' : 'pointer',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  opacity: busy || !pickedLearnerEmail.trim() ? 0.6 : 1,
+                }}
+              >
+                {busy ? 'Назначаем…' : 'Назначить'}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {canCancel ? (
           <div style={{ marginTop: 20 }}>
             <label
@@ -123,6 +224,7 @@ export function SlotCancelModal({
                 borderRadius: 6,
                 color: '#e4e4e7',
                 fontSize: 13,
+                boxSizing: 'border-box',
               }}
               placeholder="Например: учитель заболел"
             />

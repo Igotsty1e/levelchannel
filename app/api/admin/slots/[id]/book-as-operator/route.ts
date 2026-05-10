@@ -95,6 +95,15 @@ export async function POST(request: Request, { params }: RouteParams) {
       { status: 410, headers: noStore },
     )
   }
+  if (result.reason === 'self_booking_blocked') {
+    return NextResponse.json(
+      {
+        error:
+          'Учитель не может быть учеником в собственном слоте. Выберите другой аккаунт.',
+      },
+      { status: 400, headers: noStore },
+    )
+  }
   return NextResponse.json(
     { error: 'Слот уже не open.' },
     { status: 409, headers: noStore },

@@ -778,11 +778,22 @@ function SlotList({
                               minWidth: 200,
                             }}
                           >
-                            {learners.map((l) => (
-                              <option key={l.id} value={l.email}>
-                                {l.email}
-                              </option>
-                            ))}
+                            {learners
+                              // Wave 14.1 — never offer the slot's
+                              // own teacher as a learner option. The
+                              // data layer rejects self-booking
+                              // (lib/scheduling/slots.ts:bookSlot
+                              // adds `teacher_account_id <> $learner`
+                              // to the UPDATE) but the dropdown was
+                              // still inviting the choice. Filter at
+                              // the UI too so the operator never sees
+                              // the wrong option.
+                              .filter((l) => l.id !== s.teacherAccountId)
+                              .map((l) => (
+                                <option key={l.id} value={l.email}>
+                                  {l.email}
+                                </option>
+                              ))}
                           </select>
                         )}
                         <button
