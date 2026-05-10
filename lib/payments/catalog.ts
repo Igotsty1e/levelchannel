@@ -1,3 +1,5 @@
+import { normalizeEmail } from '@/lib/email/normalize'
+
 export const MIN_PAYMENT_AMOUNT_RUB = 10
 export const MAX_PAYMENT_AMOUNT_RUB = 50000
 
@@ -75,7 +77,7 @@ export function isValidPaymentAmount(amount: number) {
 }
 
 export function normalizeCustomerEmail(value: string) {
-  return value.trim().toLowerCase()
+  return normalizeEmail(value)
 }
 
 export function validateCustomerEmail(value: string) {

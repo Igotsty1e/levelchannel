@@ -1,4 +1,5 @@
 import { getDbPool } from '@/lib/db/pool'
+import { normalizeEmail } from '@/lib/email/normalize'
 import type { PaymentStatus } from '@/lib/payments/types'
 
 // Operator-side payment listing for /admin/payments. Mirrors the
@@ -69,7 +70,7 @@ export async function listPaymentOrdersForAdmin(params: {
     clauses.push(`status = $${args.length}`)
   }
   if (params.email && params.email.trim()) {
-    args.push(`%${params.email.trim().toLowerCase()}%`)
+    args.push(`%${normalizeEmail(params.email)}%`)
     clauses.push(`lower(customer_email) like $${args.length}`)
   }
   if (params.fromIso) {

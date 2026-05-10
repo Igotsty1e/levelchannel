@@ -59,13 +59,11 @@ export type PaymentAuditActor =
   | 'system'
   | 'checkout:package'
 
-// Convert payment_orders.amount_rub (numeric, e.g. 2500.00) to the
-// integer kopecks the audit table stores. Rounding instead of floor()
-// because the order amount comes from the API as a Number — IEEE 754
-// drift on values like 2500.0000000001 should not turn into 249999.
-export function rublesToKopecks(amountRub: number): number {
-  return Math.round(amountRub * 100)
-}
+// Money helper moved to lib/payments/money.ts (Codex 2026-05-10
+// CONSOLIDATE — money helpers belong with payments, not audit).
+// Re-exported here for backwards compatibility with the 13+ call
+// sites that imported it from this module.
+export { rublesToKopecks } from '@/lib/payments/money'
 
 export type RecordPaymentAuditEvent = {
   eventType: PaymentAuditEventType

@@ -19,6 +19,7 @@
 import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
 import { createPackagePurchase, getPackageBySlug } from '@/lib/billing/packages'
 import { getDbPool } from '@/lib/db/pool'
+import { normalizeEmail } from '@/lib/email/normalize'
 import { getOrder } from '@/lib/payments/store'
 
 export type GrantSemanticFailure =
@@ -77,7 +78,7 @@ export async function processPackageGrant(
     await audit(invoiceId, fullOrder, 'no_ciphertext')
     return { kind: 'semantic_failure', reason: 'no_ciphertext' }
   }
-  const normalized = customerEmail.trim().toLowerCase()
+  const normalized = normalizeEmail(customerEmail)
   const emailRow = await pool.query(
     `select id from accounts where email = $1`,
     [normalized],
