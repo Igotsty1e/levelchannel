@@ -7,12 +7,15 @@ import {
   getAccountById,
   listAccountRoles,
   listAccountsByRole,
+  listLearnerCandidates,
 } from '@/lib/auth/accounts'
 import { getAccountProfile } from '@/lib/auth/profiles'
 import { listAccountActivePackages, listAccountPostpaidDebt } from '@/lib/billing/packages'
 import { getDbPool } from '@/lib/db/pool'
+import { listLearnersForTeacher } from '@/lib/scheduling/teacher-learners'
 
 import { TeacherAssignment } from './teacher-assignment'
+import { TeacherLearnersAdmin } from './teacher-learners-admin'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -38,6 +41,35 @@ export default async function AdminAccountDetailPage({ params }: RouteParams) {
     listAccountPostpaidDebt(account.id),
   ])
   const postpaidAllowed = Boolean(postpaidRow.rows[0]?.postpaid_allowed)
+
+  // Wave 14.1 — admin viewing a teacher account should NOT see the
+  // learner-flow blocks (Учитель / Биллинг). Those are about
+  // assigning a teacher TO this account and tracking THEIR billing —
+  // useless for a teacher. Show learners-list + assign control
+  // instead. Hybrid student+teacher accounts still get both.
+  const isTeacher = roles.includes('teacher')
+  const isStudent = roles.includes('student')
+  const isAdmin = roles.includes('admin')
+  const isLearnerView = isStudent || (!isTeacher && !isAdmin)
+
+  // Pull teacher-side data only when needed — keep the admin page
+  // fast for plain learner profiles.
+  const [teacherLearners, learnerCandidatesRaw] = isTeacher
+    ? await Promise.all([
+        listLearnersForTeacher(account.id),
+        listLearnerCandidates(),
+      ])
+    : [[], []]
+  // Eligible candidates to assign = verified non-admin accounts that
+  // are NOT already assigned to this teacher AND are not the teacher
+  // themselves (the data layer rejects self-assignment via the
+  // teacher-role guard, but skip the option in the UI too).
+  const alreadyAssigned = new Set(
+    teacherLearners.filter((l) => l.isAssigned).map((l) => l.learnerId),
+  )
+  const learnerCandidates = learnerCandidatesRaw.filter(
+    (c) => c.id !== account.id && !alreadyAssigned.has(c.id),
+  )
 
   return (
     <>
@@ -148,7 +180,17 @@ export default async function AdminAccountDetailPage({ params }: RouteParams) {
         </div>
       </Section>
 
-      {!account.purgedAt ? (
+      {!account.purgedAt && isTeacher ? (
+        <Section title="Назначенные ученики">
+          <TeacherLearnersAdmin
+            teacherAccountId={account.id}
+            currentLearners={teacherLearners}
+            candidates={learnerCandidates}
+          />
+        </Section>
+      ) : null}
+
+      {!account.purgedAt && isLearnerView ? (
         <Section title="Учитель">
           <TeacherAssignment
             accountId={account.id}
@@ -158,7 +200,7 @@ export default async function AdminAccountDetailPage({ params }: RouteParams) {
         </Section>
       ) : null}
 
-      {!account.purgedAt ? (
+      {!account.purgedAt && isLearnerView ? (
         <Section title="Биллинг">
           <Field label="Постоплата разрешена">
             <span style={{ color: postpaidAllowed ? '#9bdf9b' : '#ff8a8a' }}>
