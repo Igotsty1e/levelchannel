@@ -155,16 +155,29 @@ describe('GET /api/payments/[invoiceId]/stream', () => {
   // reading payment status; without these tests a future regression
   // could open the stream to anyone who guesses an invoice id.
 
+  // Codex Wave 21 review feedback. Asserting only `status === 401` is
+  // too weak for "and not stream order state": a regression could
+  // return 401 with order JSON in the body. Pin three things on every
+  // negative case: status, content-type is NOT event-stream, and the
+  // body does NOT contain status/invoiceId fields from the order row.
+  async function assertRejectedStream(res: Response): Promise<void> {
+    expect(res.status).toBe(401)
+    expect(res.headers.get('content-type') ?? '').not.toContain(
+      'text/event-stream',
+    )
+    const body = await res.text()
+    expect(body).not.toContain('"status":"pending"')
+    expect(body).not.toContain('"status":"paid"')
+    expect(body).not.toContain('lc_')
+  }
+
   it('refuses 401 on missing token', async () => {
     const { invoiceId } = await createPendingOrder('no-token')
     const res = await streamHandler(
       buildRequest(`/api/payments/${invoiceId}/stream`),
       { params: Promise.resolve({ invoiceId }) },
     )
-    expect(res.status).toBe(401)
-    expect(res.headers.get('content-type') ?? '').not.toContain(
-      'text/event-stream',
-    )
+    await assertRejectedStream(res)
   })
 
   it('refuses 401 on wrong token', async () => {
@@ -175,7 +188,7 @@ describe('GET /api/payments/[invoiceId]/stream', () => {
       }),
       { params: Promise.resolve({ invoiceId }) },
     )
-    expect(res.status).toBe(401)
+    await assertRejectedStream(res)
   })
 
   it('refuses 401 when the token belongs to a DIFFERENT invoice', async () => {
@@ -188,6 +201,6 @@ describe('GET /api/payments/[invoiceId]/stream', () => {
       }),
       { params: Promise.resolve({ invoiceId: a.invoiceId }) },
     )
-    expect(res.status).toBe(401)
+    await assertRejectedStream(res)
   })
 })

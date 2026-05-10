@@ -314,7 +314,17 @@ describe('POST /api/payments/[invoiceId]/cancel', () => {
       { params: Promise.resolve({ invoiceId: a.invoiceId }) },
     )
     expect(res.status).toBe(401)
+    // Codex Wave 21 review feedback. Just checking A.status === pending
+    // misses the case where the gate rejects with 401 yet still mutates
+    // B (whose token was used) or writes an order.cancelled audit.
+    // Pin all four: both rows still pending, no cancelled audit on
+    // either invoice.
     expect((await readOrderRow(a.invoiceId)).status).toBe('pending')
+    expect((await readOrderRow(b.invoiceId)).status).toBe('pending')
+    const aEvents = await listPaymentAuditEventsByInvoice(a.invoiceId)
+    const bEvents = await listPaymentAuditEventsByInvoice(b.invoiceId)
+    expect(aEvents.some((e) => e.eventType === 'order.cancelled')).toBe(false)
+    expect(bEvents.some((e) => e.eventType === 'order.cancelled')).toBe(false)
   })
 })
 
