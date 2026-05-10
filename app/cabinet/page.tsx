@@ -12,6 +12,7 @@ import {
   listSlotsAsTeacher,
   listSlotsForLearner,
 } from '@/lib/scheduling/slots'
+import { listLearnersForTeacher } from '@/lib/scheduling/teacher-learners'
 
 import { BillingSections } from './billing-sections'
 import { DangerZone } from './danger-zone'
@@ -19,6 +20,7 @@ import { LessonsSection } from './lessons-section'
 import { LogoutButton } from './logout-button'
 import { ProfileEditor } from './profile-editor'
 import { ResendVerifyButton } from './resend-verify-button'
+import { TeacherLearnersSection } from './teacher-learners-section'
 import { TeacherSection } from './teacher-section'
 
 // Server-side cabinet gate. Reads the session cookie directly (no HTTP
@@ -60,6 +62,13 @@ export default async function CabinetPage() {
   const roles = await listAccountRoles(account.id)
   const isAdmin = roles.includes('admin')
   const isTeacher = roles.includes('teacher')
+  const isStudent = roles.includes('student')
+  // A user is rendered as a learner if they hold the explicit student
+  // role OR they have no role at all (the default-learner contract).
+  // Wave 14 #2 — a teacher-only account no longer sees learner-flow
+  // blocks (Мои уроки / Записаться / Мои пакеты / К оплате) which
+  // had nothing to do with their workflow.
+  const isLearner = isStudent || roles.length === 0
 
   // Admin lands on /admin instead of /cabinet — operator workflow,
   // separate UI surface. Mutually exclusive with teacher/student so
@@ -68,19 +77,23 @@ export default async function CabinetPage() {
     redirect('/admin')
   }
 
-  const [profile, mySlots, openSlots, teacherSlots] = await Promise.all([
-    getAccountProfile(account.id),
-    listSlotsForLearner(account.id, 20),
-    account.assignedTeacherId
-      ? listOpenFutureSlots({
-          teacherAccountId: account.assignedTeacherId,
-          limit: 50,
-        })
-      : Promise.resolve([]),
-    isTeacher ? listSlotsAsTeacher(account.id, 50) : Promise.resolve([]),
-  ])
+  const [profile, mySlots, openSlots, teacherSlots, teacherLearners] =
+    await Promise.all([
+      getAccountProfile(account.id),
+      isLearner ? listSlotsForLearner(account.id, 20) : Promise.resolve([]),
+      isLearner && account.assignedTeacherId
+        ? listOpenFutureSlots({
+            teacherAccountId: account.assignedTeacherId,
+            limit: 50,
+          })
+        : Promise.resolve([]),
+      isTeacher ? listSlotsAsTeacher(account.id, 50) : Promise.resolve([]),
+      isTeacher ? listLearnersForTeacher(account.id) : Promise.resolve([]),
+    ])
   const greetingName = profile?.displayName?.trim() || account.email
-  const paidMap = await listSlotPaidStatus(mySlots.map((s) => s.id))
+  const paidMap = isLearner
+    ? await listSlotPaidStatus(mySlots.map((s) => s.id))
+    : new Map()
 
   return (
     <AuthShell>
@@ -103,44 +116,57 @@ export default async function CabinetPage() {
       <ProfileEditor initialProfile={profile} fallbackEmail={account.email} />
 
       {isTeacher ? (
-        <TeacherSection
-          initialSlots={teacherSlots}
-          teacherTimezone={profile?.timezone ?? null}
-        />
+        <>
+          <TeacherSection
+            initialSlots={teacherSlots}
+            teacherTimezone={profile?.timezone ?? null}
+          />
+          <TeacherLearnersSection learners={teacherLearners} />
+        </>
       ) : null}
 
-      <LessonsSection
-        initialMine={mySlots}
-        initialAvailable={openSlots}
-        learnerTimezone={profile?.timezone ?? null}
-        emailVerified={isVerified}
-        initialPaidSlotIds={Array.from(paidMap.keys())}
-        hasAssignedTeacher={Boolean(account.assignedTeacherId)}
-        assignedTeacherId={account.assignedTeacherId}
-      />
+      {isLearner ? (
+        <>
+          <LessonsSection
+            initialMine={mySlots}
+            initialAvailable={openSlots}
+            learnerTimezone={profile?.timezone ?? null}
+            emailVerified={isVerified}
+            initialPaidSlotIds={Array.from(paidMap.keys())}
+            hasAssignedTeacher={Boolean(account.assignedTeacherId)}
+            assignedTeacherId={account.assignedTeacherId}
+          />
 
-      <BillingSections learnerTimezone={profile?.timezone ?? null} />
+          <BillingSections learnerTimezone={profile?.timezone ?? null} />
 
-      <div className="card" style={{ padding: 24, marginBottom: 24 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
-          Кабинет в разработке
-        </h2>
-        <p style={{ color: 'var(--secondary)', fontSize: 14, lineHeight: 1.6 }}>
-          Здесь скоро появится:
-        </p>
-        <ul
-          style={{
-            color: 'var(--secondary)',
-            fontSize: 14,
-            lineHeight: 1.8,
-            paddingLeft: 20,
-            marginTop: 8,
-          }}
-        >
-          <li>оплата уроков и история платежей</li>
-          <li>история занятий и материалы</li>
-        </ul>
-      </div>
+          <div className="card" style={{ padding: 24, marginBottom: 24 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
+              Кабинет в разработке
+            </h2>
+            <p
+              style={{
+                color: 'var(--secondary)',
+                fontSize: 14,
+                lineHeight: 1.6,
+              }}
+            >
+              Здесь скоро появится:
+            </p>
+            <ul
+              style={{
+                color: 'var(--secondary)',
+                fontSize: 14,
+                lineHeight: 1.8,
+                paddingLeft: 20,
+                marginTop: 8,
+              }}
+            >
+              <li>оплата уроков и история платежей</li>
+              <li>история занятий и материалы</li>
+            </ul>
+          </div>
+        </>
+      ) : null}
 
       <DangerZone />
 

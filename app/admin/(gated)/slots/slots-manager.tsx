@@ -407,13 +407,19 @@ function BulkCreate({
                   borderRadius: 6,
                   fontSize: 13,
                   fontWeight: selected ? 600 : 500,
+                  // Wave 14 #3 — hardcode the same green used for
+                  // primary buttons (rgba(34,197,94,…)) instead of
+                  // var(--accent), which is not defined in globals.css
+                  // and was rendering selected days as transparent.
                   border: selected
-                    ? '1px solid var(--accent)'
+                    ? '1px solid rgba(34, 197, 94, 0.55)'
                     : '1px solid var(--border)',
-                  background: selected ? 'var(--accent)' : 'transparent',
-                  color: selected ? 'var(--accent-contrast)' : 'var(--text)',
+                  background: selected
+                    ? 'rgba(34, 197, 94, 0.18)'
+                    : 'transparent',
+                  color: selected ? '#bbf7d0' : 'var(--text)',
                   boxShadow: selected
-                    ? '0 0 0 2px rgba(255,255,255,0.06) inset'
+                    ? '0 0 0 1px rgba(34, 197, 94, 0.25) inset'
                     : 'none',
                   cursor: 'pointer',
                   transition: 'background 80ms ease, border-color 80ms ease',

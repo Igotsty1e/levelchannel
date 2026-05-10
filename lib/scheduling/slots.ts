@@ -826,10 +826,18 @@ export async function bulkCreateSlots(
     for (const s of input.slots) {
       try {
         const result = await client.query(
+          // Migration 0035 turned lesson_slots_teacher_start_unique
+          // into a PARTIAL unique index (where status <> 'cancelled').
+          // ON CONFLICT with a target column-list against a partial
+          // index needs the index predicate too; the simpler shape is
+          // `on conflict do nothing`, which catches a violation on
+          // any unique index and skips. The legacy semantics are
+          // preserved: a (teacher,start_at) collision with a
+          // non-cancelled row is idempotent-skipped.
           `insert into lesson_slots (
              teacher_account_id, start_at, duration_minutes, notes, tariff_id, events
            ) values ($1, $2, $3, $4, $5, $6::jsonb)
-           on conflict (teacher_account_id, start_at) do nothing
+           on conflict do nothing
            returning ${SLOT_COLUMNS}`,
           [
             input.teacherAccountId,
