@@ -283,7 +283,7 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
        values ($1, '3500.00', 'RUB', 'Pending package', 'mock', 'pending',
                now(), now(), 'test@example.com', 'test@example.com', '{}'::jsonb, $2::jsonb)`,
       [
-        `lc_pending_${Date.now()}`,
+        freshInvoiceId('lc_pending'),
         JSON.stringify({
           accountId: learner.accountId,
           packageSlug: 'pr1-pending-pkg',
@@ -322,7 +322,7 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
        values ($1, '5250.00', 'RUB', 'Pending package', 'mock', 'pending',
                now(), now(), 'test@example.com', 'test@example.com', '{}'::jsonb, $2::jsonb)`,
       [
-        `lc_pending_mis_${Date.now()}`,
+        freshInvoiceId('lc_pending_mis'),
         JSON.stringify({
           accountId: learner.accountId,
           packageSlug: 'pr1-pending-90',
@@ -439,7 +439,7 @@ describe('PR 1 — slotIsPaidByAllocations (CASE-filtered SUM)', () => {
       tariffId,
     )
     // Insert a PENDING order + allocation for the slot.
-    const orderId = `lc_pending_pst_${Date.now()}`
+    const orderId = freshInvoiceId('lc_pending_pst')
     await getDbPool().query(
       `insert into payment_orders
          (invoice_id, amount_rub, currency, description, provider, status,
