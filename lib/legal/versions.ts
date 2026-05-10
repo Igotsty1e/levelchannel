@@ -93,3 +93,80 @@ export async function listLegalVersions(
   )
   return result.rows.map((r) => rowToVersion(r as Record<string, unknown>))
 }
+
+// Wave 19 — operator publishes a new version. The previous-version
+// chain MUST stay strictly linear, including under (a) concurrent
+// admin sessions and (b) future-dated `effective_from`.
+//
+// Codex round 1 BLOCK (CRITICAL): SELECT ... FOR UPDATE LIMIT 1 does
+// NOT serialize correctly in PostgreSQL READ COMMITTED. Two txns can
+// wait on the same "current" row, both proceed after the lock
+// releases, both insert with the SAME `previous_version_id` — fork
+// the chain into a DAG. Fix: pg_advisory_xact_lock(hashtext('legal:'+kind))
+// at the start of the txn serializes ALL publishes per docKind.
+//
+// Codex round 1 HIGH: previous = "latest live (effective_from <= now())"
+// forks even without concurrency if the operator publishes v2
+// (effective_from = tomorrow) followed by v3 (day-after); both would
+// point at v1. Fix: previous = the row with the greatest
+// (effective_from, created_at) regardless of whether it has gone live
+// yet. Combined with the advisory lock, the chain is strictly linear
+// by publish order.
+//
+// `effective_from` defaults to now(); operators rarely need a future
+// date but the surface accepts it for cases like "оферта v3 действует
+// с понедельника 9:00 МСК".
+export async function createLegalVersion(input: {
+  docKind: LegalDocKind
+  versionLabel: string
+  bodyMd: string
+  effectiveFrom?: Date
+  createdByAccountId: string
+}): Promise<LegalDocumentVersion> {
+  const pool = getDbPool()
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+    // Per-kind advisory lock. Held for the duration of the txn,
+    // released automatically on commit/rollback. hashtext gives a
+    // stable int4 key from the kind string. Other publishes for the
+    // same kind wait here; different kinds run in parallel.
+    await client.query(
+      `select pg_advisory_xact_lock(hashtext($1))`,
+      [`legal:${input.docKind}`],
+    )
+    // Previous pointer: greatest (effective_from, created_at) across
+    // ALL rows for the kind, regardless of live state. Future-dated
+    // publishes chain correctly.
+    const cur = await client.query(
+      `select id from legal_document_versions
+        where doc_kind = $1
+        order by effective_from desc, created_at desc
+        limit 1`,
+      [input.docKind],
+    )
+    const previousVersionId = cur.rows[0] ? String(cur.rows[0].id) : null
+    const inserted = await client.query(
+      `insert into legal_document_versions
+         (doc_kind, version_label, effective_from, body_md,
+          previous_version_id, created_by_account_id)
+       values ($1, $2, $3, $4, $5, $6)
+       returning ${COLS}`,
+      [
+        input.docKind,
+        input.versionLabel,
+        input.effectiveFrom ?? new Date(),
+        input.bodyMd,
+        previousVersionId,
+        input.createdByAccountId,
+      ],
+    )
+    await client.query('commit')
+    return rowToVersion(inserted.rows[0])
+  } catch (err) {
+    await client.query('rollback').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
+}
