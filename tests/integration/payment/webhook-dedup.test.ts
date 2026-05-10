@@ -9,6 +9,7 @@ import {
   recordWebhookDelivery,
 } from '@/lib/payments/webhook-dedup'
 
+import { freshInvoiceId } from '../helpers'
 import './setup'
 
 // Wave 1.2 (security) — webhook delivery dedup, real Postgres.
@@ -325,7 +326,7 @@ describe('webhook_deliveries (integration)', () => {
 describe('Wave 3.2 — concurrent retry serialization (advisory_xact_lock)', () => {
   it('two parallel handleCloudPaymentsWebhook calls run the handler exactly once', async () => {
     // Seed an order that the Pay webhook will mark paid.
-    const invoiceId = `lc_concurrent_${Date.now().toString(36)}`
+    const invoiceId = freshInvoiceId('lc_concurrent')
     const amountRub = 199
     const email = `concurrent-${Date.now()}@example.com`
 

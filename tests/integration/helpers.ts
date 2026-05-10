@@ -2,7 +2,21 @@
 // up a Next dev server. Side effects hit DATABASE_URL (Docker Postgres
 // brought up by scripts/test-integration.sh).
 
+import { randomUUID } from 'node:crypto'
+
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+
+// Wave 13 Pass 3 #8-#10. Collision-free invoice id for fixtures.
+// `Date.now()` + `Math.random().slice(0,8)` (the prior pattern) carries
+// only ~38 bits of entropy and routinely collides on parallel test
+// files in fast CI; `crypto.randomUUID()` carries 122 bits (effectively
+// infinite for our test scale). The hex-only adapter is required by
+// `INVOICE_ID_PATTERN = /^lc_[a-z0-9_]{8,48}$/i` in
+// `lib/security/request.ts`.
+export function freshInvoiceId(prefix = 'lc_test'): string {
+  const hex = randomUUID().replace(/-/g, '').slice(0, 16)
+  return `${prefix}_${hex}`
+}
 
 export type RequestOptions = {
   method?: string
@@ -250,9 +264,7 @@ export type SeededPaymentOrder = {
 export async function seedPaymentOrder(
   input: SeedPaymentOrderInput = {},
 ): Promise<SeededPaymentOrder> {
-  const invoiceId =
-    input.invoiceId ??
-    `lc_test_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+  const invoiceId = input.invoiceId ?? freshInvoiceId()
   const amountRub = input.amountRub ?? 1500
   const customerEmail = input.customerEmail ?? 'fixture@example.com'
   const status = input.status ?? 'pending'

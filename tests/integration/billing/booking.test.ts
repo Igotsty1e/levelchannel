@@ -25,7 +25,12 @@ import {
 import { slotIsPaidByAllocations } from '@/lib/billing/paid-state'
 
 import '../setup'
-import { buildRequest, extractSessionCookie, futureSlotIso } from '../helpers'
+import {
+  buildRequest,
+  extractSessionCookie,
+  freshInvoiceId,
+  futureSlotIso,
+} from '../helpers'
 
 // Billing wave PR 1 — booking flow with package consumption.
 //
@@ -110,7 +115,7 @@ async function seedPaidOrder(
   // Create a fake paid order so package_purchases.payment_order_id FK
   // resolves. Production path is /checkout/package + webhook, which
   // PR 2 ships; for PR 1 we just need a paid_orders row to anchor.
-  const invoiceId = `lc_test_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  const invoiceId = freshInvoiceId()
   const amountRub = (amountKopecks / 100).toFixed(2)
   await getDbPool().query(
     `insert into payment_orders
