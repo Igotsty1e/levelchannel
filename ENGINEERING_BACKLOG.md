@@ -287,6 +287,8 @@ Multi-front Codex adversarial pass against the whole repo. 73 findings across 4 
 
 - **postbuild.js always runs** (Pass 4 #6). `npm run build` always invokes `node postbuild.js` which patches static-export artifacts under `out/`. If `out/` is left over from a previous static-export build it can be mid-flight stale-patched. Move to a separate `export` script or gate by env flag.
 - **Workflow direct-bash vs npm-alias** (Pass 4 #8-#9). `.github/workflows/public-surface-check.yml` calls bash directly even though `npm run check:public-surface` exists. Same for seccomp-regression. Pick one source of truth — either always go through npm or remove the alias.
+- **build-check Node matrix [20, 22]** (Pass 4 #5, partially deferred). `engines.node: ">=20.0.0"` is declared in `package.json` but CI runs only Node 22. Adding the matrix back requires updating branch protection's required-check contexts at the same time (`npm run build (node 20)` + `npm run build (node 22)` instead of `npm run build`). Two-PR sequence: (1) update protection contexts, (2) restore matrix in build-check.yml. Today the `engines` declaration is documentation; it's not enforced.
+
 - **postcss override redundancy** (Pass 4 #10). `overrides.postcss` + `devDependencies.postcss` both pin `8.5.10`. Belt-and-suspenders OR genuine redundancy — add a comment explaining "transitive lock for X" or drop the override.
 
 ## Wave 12 — Billing wave (prepay + postpay), 2026-05-10
