@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { listPaymentAuditEventsByInvoice } from '@/lib/audit/payment-events'
 import { getDbPool } from '@/lib/db/pool'
 
+import { seedPaymentOrder } from '../helpers'
 import './setup'
 
 // Verifies scripts/cancel-stale-orders.mjs end-to-end:
@@ -18,28 +19,23 @@ import './setup'
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..')
 const SCRIPT_PATH = path.join(REPO_ROOT, 'scripts', 'cancel-stale-orders.mjs')
 
+// Wave 20 — switched to shared seedPaymentOrder helper from
+// tests/integration/helpers.ts. Behaviour preserved bit-for-bit:
+// same column list, same defaults, same provider='cloudpayments'.
 async function seedOrder(params: {
   invoiceId: string
   status: 'pending' | 'paid' | 'failed' | 'cancelled'
   ageMinutes: number
   amountRub?: number
 }) {
-  await getDbPool().query(
-    `insert into payment_orders (
-       invoice_id, amount_rub, currency, description, provider, status,
-       created_at, updated_at, customer_email, receipt_email, receipt
-     ) values (
-       $1, $2, 'RUB', 'test order', 'cloudpayments', $3,
-       now() - make_interval(mins => $4), now(), 'stale@example.com',
-       'stale@example.com', '{}'::jsonb
-     )`,
-    [
-      params.invoiceId,
-      params.amountRub ?? 1500,
-      params.status,
-      params.ageMinutes,
-    ],
-  )
+  await seedPaymentOrder({
+    invoiceId: params.invoiceId,
+    status: params.status,
+    ageMinutes: params.ageMinutes,
+    amountRub: params.amountRub,
+    customerEmail: 'stale@example.com',
+    description: 'test order',
+  })
 }
 
 function runScript(thresholdMinutes = 60) {
