@@ -1,3 +1,14 @@
+// Static-export post-processor.
+//
+// Codex Wave 13 Pass 4 #6 — formerly chained off `npm run build` even
+// in server-mode builds (where `out/` doesn't exist), executing a
+// no-op every time. Worse: a stale `out/` from a prior export run
+// would get re-patched against the current build. Now invoked
+// explicitly via `npm run build:export`; default `build` is
+// server-only and does NOT call this file.
+//
+// Only run when `out/` was actually emitted by the export step.
+
 const fs = require('fs')
 const path = require('path')
 
