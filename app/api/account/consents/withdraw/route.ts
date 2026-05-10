@@ -30,7 +30,7 @@ export const dynamic = 'force-dynamic'
 // On success the cabinet client should redirect to /login (cookie was
 // cleared in the response).
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 const isProd = process.env.NODE_ENV === 'production'
 
 const ALLOWED_KINDS = new Set(['personal_data'])
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json(
       { error: 'Invalid JSON body.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
   if (typeof documentKind !== 'string' || !ALLOWED_KINDS.has(documentKind)) {
     return NextResponse.json(
       { error: 'documentKind must be one of: personal_data.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
   if (!withdrawn) {
     return NextResponse.json(
       { error: 'No active consent of that kind to withdraw.' },
-      { status: 404, headers: noStore },
+      { status: 404, headers: NO_STORE },
     )
   }
 
@@ -96,7 +96,7 @@ export async function POST(request: Request) {
     {
       status: 200,
       headers: {
-        ...noStore,
+        ...NO_STORE,
         'Set-Cookie': buildSessionClearCookie(isProd),
       },
     },

@@ -10,7 +10,7 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -37,25 +37,25 @@ export async function POST(request: Request, { params }: RouteParams) {
   if (result.ok) {
     return NextResponse.json(
       { slot: result.slot, billing: result.billing },
-      { status: 200, headers: noStore },
+      { status: 200, headers: NO_STORE },
     )
   }
   if (result.reason === 'not_found') {
     return NextResponse.json(
       { error: 'Slot not found.' },
-      { status: 404, headers: noStore },
+      { status: 404, headers: NO_STORE },
     )
   }
   if (result.reason === 'in_past') {
     return NextResponse.json(
       { error: 'Этот слот уже прошёл.' },
-      { status: 410, headers: noStore },
+      { status: 410, headers: NO_STORE },
     )
   }
   if (result.reason === 'self_booking_blocked') {
     return NextResponse.json(
       { error: 'Нельзя забронировать слот, где вы числитесь преподавателем.' },
-      { status: 403, headers: noStore },
+      { status: 403, headers: NO_STORE },
     )
   }
   // Billing wave PR 1 — new failure shapes.
@@ -66,7 +66,7 @@ export async function POST(request: Request, { params }: RouteParams) {
         message: 'Чтобы записаться, купите пакет уроков.',
         availablePackages: result.availablePackages ?? [],
       },
-      { status: 402, headers: noStore },
+      { status: 402, headers: NO_STORE },
     )
   }
   if (result.reason === 'tariff_required') {
@@ -76,7 +76,7 @@ export async function POST(request: Request, { params }: RouteParams) {
         message:
           'У этого слота не указана цена. Свяжитесь с оператором.',
       },
-      { status: 402, headers: noStore },
+      { status: 402, headers: NO_STORE },
     )
   }
   if (result.reason === 'pending_package_grant') {
@@ -86,12 +86,12 @@ export async function POST(request: Request, { params }: RouteParams) {
         message:
           'У вас оформляется пакет — подождите минуту и обновите.',
       },
-      { status: 409, headers: noStore },
+      { status: 409, headers: NO_STORE },
     )
   }
   // not_open — race with another booking or operator-side state change.
   return NextResponse.json(
     { error: 'Этот слот только что забронировал кто-то другой. Обновите список.' },
-    { status: 409, headers: noStore },
+    { status: 409, headers: NO_STORE },
   )
 }

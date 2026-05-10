@@ -28,7 +28,7 @@ export const dynamic = 'force-dynamic'
 // limiting (5/min/IP + 3/hour/email-hash) caps how much an attacker can
 // extract before tripping a bucket.
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function POST(request: Request) {
   const rl = await enforceRateLimit(request, 'auth:reset-request:ip', 5, 60_000)
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json(
       { ok: true },
-      { status: 200, headers: noStore },
+      { status: 200, headers: NO_STORE },
     )
   }
 
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
   if (!emailValidation.ok) {
     return NextResponse.json(
       { ok: true },
-      { status: 200, headers: noStore },
+      { status: 200, headers: NO_STORE },
     )
   }
 
@@ -85,5 +85,5 @@ export async function POST(request: Request) {
     userAgent: request.headers.get('user-agent'),
   })
 
-  return NextResponse.json({ ok: true }, { status: 200, headers: noStore })
+  return NextResponse.json({ ok: true }, { status: 200, headers: NO_STORE })
 }

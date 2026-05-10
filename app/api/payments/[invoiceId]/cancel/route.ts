@@ -17,7 +17,7 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function POST(
   request: Request,
@@ -38,7 +38,7 @@ export async function POST(
   if (!isValidInvoiceId(invoiceId)) {
     return NextResponse.json(
       { error: 'Invalid payment id.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
@@ -49,7 +49,7 @@ export async function POST(
   if (!existing) {
     return NextResponse.json(
       { error: 'Payment not found.' },
-      { status: 404, headers: noStore },
+      { status: 404, headers: NO_STORE },
     )
   }
   const presented = extractReceiptToken(request)
@@ -57,7 +57,7 @@ export async function POST(
   if (!verdict.ok) {
     return NextResponse.json(
       { error: 'Payment not found.' },
-      { status: 401, headers: noStore },
+      { status: 401, headers: NO_STORE },
     )
   }
 
@@ -69,7 +69,7 @@ export async function POST(
   if (!order) {
     return NextResponse.json(
       { error: 'Payment not found.' },
-      { status: 404, headers: noStore },
+      { status: 404, headers: NO_STORE },
     )
   }
 

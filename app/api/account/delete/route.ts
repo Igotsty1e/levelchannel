@@ -28,7 +28,7 @@ export const dynamic = 'force-dynamic'
 // cabinet client redirects to a /thank-you-style page or back to the
 // landing — that's a UI concern, not this route's.
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 const isProd = process.env.NODE_ENV === 'production'
 
 export async function POST(request: Request) {
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
   ) {
     return NextResponse.json(
       { error: 'Body must include { confirm: true }.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
     {
       status: 200,
       headers: {
-        ...noStore,
+        ...NO_STORE,
         'Set-Cookie': buildSessionClearCookie(isProd),
       },
     },

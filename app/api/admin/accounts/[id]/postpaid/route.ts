@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireAdminRole } from '@/lib/auth/guards'
 import { getDbPool } from '@/lib/db/pool'
 import {
@@ -40,21 +41,10 @@ export async function POST(request: Request, { params }: RouteParams) {
     )
   }
 
-  let body: unknown = null
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json(
-      { error: 'Invalid JSON body.' },
-      { status: 400, headers: NO_STORE },
-    )
-  }
+  const parsed = await readJsonObjectOr400(request)
+  if (!parsed.ok) return parsed.response
   const allowed =
-    typeof body === 'object' &&
-    body !== null &&
-    typeof (body as Record<string, unknown>).allowed === 'boolean'
-      ? (body as Record<string, unknown>).allowed
-      : null
+    typeof parsed.body.allowed === 'boolean' ? parsed.body.allowed : null
   if (allowed === null) {
     return NextResponse.json(
       { error: 'allowed (boolean) is required' },

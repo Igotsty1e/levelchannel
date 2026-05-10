@@ -8,7 +8,7 @@ import { enforceRateLimit } from '@/lib/security/request'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 // GET /api/slots/available?teacher=<uuid>&from=<iso>&to=<iso>
 //
@@ -55,7 +55,7 @@ export async function GET(request: Request) {
           error: 'wrong_role',
           message: 'Эта операция доступна только ученикам.',
         },
-        { status: 403, headers: noStore },
+        { status: 403, headers: NO_STORE },
       )
     }
   }
@@ -70,7 +70,7 @@ export async function GET(request: Request) {
       // cabinet surfaces the «учитель не назначен» hint.
       return NextResponse.json(
         { slots: [] },
-        { status: 200, headers: noStore },
+        { status: 200, headers: NO_STORE },
       )
     }
     teacherFilter = assigned
@@ -90,6 +90,6 @@ export async function GET(request: Request) {
   // lifecycle audit fields, scheduling timestamps) stay server-side.
   return NextResponse.json(
     { slots: slots.map(toPublicSlot) },
-    { status: 200, headers: noStore },
+    { status: 200, headers: NO_STORE },
   )
 }

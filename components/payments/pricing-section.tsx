@@ -738,9 +738,13 @@ export function PricingSection() {
         cache: 'no-store',
       })
 
+      // Wave 16 — charge-token contract polish: success/202 use
+      // `status` (paid / requires_3ds); 4xx use `error`. Decline used
+      // to be `status: 'declined'` and is now `error: 'declined'`
+      // for symmetry with the rest of /api/payments/* (Codex Pass 2 #16).
       const payload = (await response.json()) as {
         order?: PublicPaymentOrder
-        status?: 'paid' | 'requires_3ds' | 'declined'
+        status?: 'paid' | 'requires_3ds'
         message?: string
         error?: string
         threeDs?: {
@@ -762,7 +766,7 @@ export function PricingSection() {
         return
       }
 
-      if (!response.ok && payload.status !== 'declined') {
+      if (!response.ok && payload.error !== 'declined') {
         throw new Error(payload.error || 'Не удалось списать с сохранённой карты.')
       }
 
@@ -797,7 +801,7 @@ export function PricingSection() {
         return
       }
 
-      if (payload.status === 'declined' && payload.order) {
+      if (payload.error === 'declined' && payload.order) {
         void logCheckoutEvent({
           type: 'checkout_one_click_declined',
           invoiceId: payload.order.invoiceId,

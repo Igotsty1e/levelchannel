@@ -29,7 +29,7 @@ export const dynamic = 'force-dynamic'
 // Allow login on unverified email (D4) — payment/booking routes gate
 // on email_verified_at separately. UI surfaces the prompt.
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 const isProd = process.env.NODE_ENV === 'production'
 
 export async function POST(request: Request) {
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json(
       { error: 'Invalid request body.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
@@ -97,7 +97,7 @@ export async function POST(request: Request) {
     })
     return NextResponse.json(
       { error: 'Неверный e-mail или пароль.' },
-      { status: 401, headers: noStore },
+      { status: 401, headers: NO_STORE },
     )
   }
 
@@ -148,7 +148,7 @@ export async function POST(request: Request) {
     {
       status: 200,
       headers: {
-        ...noStore,
+        ...NO_STORE,
         'Set-Cookie': buildSessionCookie(cookieValue, isProd),
       },
     },

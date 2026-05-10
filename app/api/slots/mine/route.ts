@@ -7,7 +7,7 @@ import { enforceRateLimit } from '@/lib/security/request'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function GET(request: Request) {
   const rl = await enforceRateLimit(request, 'slots:mine:ip', 60, 60_000)
@@ -17,5 +17,5 @@ export async function GET(request: Request) {
   if (!auth.ok) return auth.response
 
   const slots = await listSlotsForLearner(auth.account.id, 50)
-  return NextResponse.json({ slots }, { status: 200, headers: noStore })
+  return NextResponse.json({ slots }, { status: 200, headers: NO_STORE })
 }

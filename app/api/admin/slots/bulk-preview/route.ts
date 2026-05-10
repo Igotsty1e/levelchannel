@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireAdminRole } from '@/lib/auth/guards'
 import {
   type BulkPreviewInput,
@@ -13,7 +14,7 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 // POST /api/admin/slots/bulk-preview — pure (no DB write); returns
 // the array of `{ startAt, date, time }` the bulk-create would emit
@@ -30,23 +31,10 @@ export async function POST(request: Request) {
   const guard = await requireAdminRole(request)
   if (!guard.ok) return guard.response
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json(
-      { error: 'Invalid JSON body.' },
-      { status: 400, headers: noStore },
-    )
-  }
-  if (typeof body !== 'object' || body === null) {
-    return NextResponse.json(
-      { error: 'Body must be a JSON object.' },
-      { status: 400, headers: noStore },
-    )
-  }
+  const parsed = await readJsonObjectOr400(request)
+  if (!parsed.ok) return parsed.response
+  const raw = parsed.body
 
-  const raw = body as Record<string, unknown>
   const input: Partial<BulkPreviewInput> = {}
   if (Array.isArray(raw.weekdays)) {
     input.weekdays = raw.weekdays.filter((n): n is number =>
@@ -68,11 +56,11 @@ export async function POST(request: Request) {
   if (!result.ok) {
     return NextResponse.json(
       { error: `${result.error.field}/${result.error.reason}` },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
   return NextResponse.json(
     { slots: result.slots },
-    { status: 200, headers: noStore },
+    { status: 200, headers: NO_STORE },
   )
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireAdminRole } from '@/lib/auth/guards'
 import { updatePackageMetadata } from '@/lib/billing/packages'
 import {
@@ -54,22 +55,9 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   const guard = await requireAdminRole(request)
   if (!guard.ok) return guard.response
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json(
-      { error: 'Invalid JSON body.' },
-      { status: 400, headers: NO_STORE },
-    )
-  }
-  if (typeof body !== 'object' || body === null) {
-    return NextResponse.json(
-      { error: 'Body must be a JSON object.' },
-      { status: 400, headers: NO_STORE },
-    )
-  }
-  const b = body as Record<string, unknown>
+  const parsed = await readJsonObjectOr400(request)
+  if (!parsed.ok) return parsed.response
+  const b = parsed.body
 
   const patch: Parameters<typeof updatePackageMetadata>[1] = {}
   if (typeof b.titleRu === 'string') {

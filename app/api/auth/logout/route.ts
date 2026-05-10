@@ -21,7 +21,7 @@ export const dynamic = 'force-dynamic'
 // revoked session is a no-op. Always returns 200 so the client can blindly
 // "log out" without distinguishing "had session" from "didn't".
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 const isProd = process.env.NODE_ENV === 'production'
 
 export async function POST(request: Request) {
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     {
       status: 200,
       headers: {
-        ...noStore,
+        ...NO_STORE,
         'Set-Cookie': buildSessionClearCookie(isProd),
       },
     },

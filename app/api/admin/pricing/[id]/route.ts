@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireAdminRole } from '@/lib/auth/guards'
 import {
   type TariffPatch,
@@ -15,7 +16,7 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -30,10 +31,10 @@ export async function GET(request: Request, { params }: RouteParams) {
   if (!tariff) {
     return NextResponse.json(
       { error: 'Not found.' },
-      { status: 404, headers: noStore },
+      { status: 404, headers: NO_STORE },
     )
   }
-  return NextResponse.json({ tariff }, { status: 200, headers: noStore })
+  return NextResponse.json({ tariff }, { status: 200, headers: NO_STORE })
 }
 
 export async function PATCH(request: Request, { params }: RouteParams) {
@@ -47,22 +48,9 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   const guard = await requireAdminRole(request)
   if (!guard.ok) return guard.response
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json(
-      { error: 'Invalid JSON body.' },
-      { status: 400, headers: noStore },
-    )
-  }
-  if (typeof body !== 'object' || body === null) {
-    return NextResponse.json(
-      { error: 'Body must be a JSON object.' },
-      { status: 400, headers: noStore },
-    )
-  }
-  const raw = body as Record<string, unknown>
+  const parsed = await readJsonObjectOr400(request)
+  if (!parsed.ok) return parsed.response
+  const raw = parsed.body
   const patch: TariffPatch = {}
   if ('slug' in raw && typeof raw.slug === 'string') patch.slug = raw.slug
   if ('titleRu' in raw && typeof raw.titleRu === 'string') {
@@ -88,7 +76,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   if (validation) {
     return NextResponse.json(
       { error: `${validation.field}/${validation.reason}` },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
@@ -97,16 +85,16 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     if (!tariff) {
       return NextResponse.json(
         { error: 'Not found.' },
-        { status: 404, headers: noStore },
+        { status: 404, headers: NO_STORE },
       )
     }
-    return NextResponse.json({ tariff }, { status: 200, headers: noStore })
+    return NextResponse.json({ tariff }, { status: 200, headers: NO_STORE })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'unknown'
     if (message.includes('pricing_tariffs_slug_unique')) {
       return NextResponse.json(
         { error: 'slug/already_taken' },
-        { status: 409, headers: noStore },
+        { status: 409, headers: NO_STORE },
       )
     }
     throw err

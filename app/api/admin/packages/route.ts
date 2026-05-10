@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireAdminRole } from '@/lib/auth/guards'
 import { createPackage, listActivePackages } from '@/lib/billing/packages'
 import { getDbPool } from '@/lib/db/pool'
@@ -74,24 +75,9 @@ export async function POST(request: Request) {
   const guard = await requireAdminRole(request)
   if (!guard.ok) return guard.response
 
-  let body: Record<string, unknown> | null = null
-  try {
-    const parsed = await request.json()
-    if (typeof parsed === 'object' && parsed !== null) {
-      body = parsed as Record<string, unknown>
-    }
-  } catch {
-    return NextResponse.json(
-      { error: 'Invalid JSON body.' },
-      { status: 400, headers: NO_STORE },
-    )
-  }
-  if (!body) {
-    return NextResponse.json(
-      { error: 'Body must be a JSON object.' },
-      { status: 400, headers: NO_STORE },
-    )
-  }
+  const parsed = await readJsonObjectOr400(request)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.body
 
   const slug = typeof body.slug === 'string' ? body.slug : null
   const titleRu = typeof body.titleRu === 'string' ? body.titleRu : null

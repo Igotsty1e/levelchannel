@@ -10,7 +10,7 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -58,26 +58,26 @@ export async function POST(request: Request, { params }: RouteParams) {
     if (result.ok) {
       return NextResponse.json(
         { slot: result.slot },
-        { status: 200, headers: noStore },
+        { status: 200, headers: NO_STORE },
       )
     }
 
     if (result.reason === 'not_found') {
       return NextResponse.json(
         { error: 'Slot not found.' },
-        { status: 404, headers: noStore },
+        { status: 404, headers: NO_STORE },
       )
     }
     if (result.reason === 'not_owner') {
       return NextResponse.json(
         { error: 'Можно отменить только своё бронирование.' },
-        { status: 403, headers: noStore },
+        { status: 403, headers: NO_STORE },
       )
     }
     if (result.reason === 'already_terminal') {
       return NextResponse.json(
         { error: 'already_terminal' },
-        { status: 409, headers: noStore },
+        { status: 409, headers: NO_STORE },
       )
     }
     // too_late_to_cancel
@@ -86,7 +86,7 @@ export async function POST(request: Request, { params }: RouteParams) {
         error: 'too_late_to_cancel',
         minutesUntilStart: result.minutesUntilStart,
       },
-      { status: 403, headers: noStore },
+      { status: 403, headers: NO_STORE },
     )
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown'
@@ -94,13 +94,13 @@ export async function POST(request: Request, { params }: RouteParams) {
     if (msg.startsWith('slot/')) {
       return NextResponse.json(
         { error: msg },
-        { status: 400, headers: noStore },
+        { status: 400, headers: NO_STORE },
       )
     }
     console.warn('[slots.cancel] unexpected error', { error: msg })
     return NextResponse.json(
       { error: 'internal_error' },
-      { status: 500, headers: noStore },
+      { status: 500, headers: NO_STORE },
     )
   }
 }
