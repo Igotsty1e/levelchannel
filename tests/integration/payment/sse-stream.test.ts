@@ -148,4 +148,46 @@ describe('GET /api/payments/[invoiceId]/stream', () => {
       expect(next.done).toBe(true)
     }
   })
+
+  // Wave 21 — receipt-token gate negative cases (Codex Wave 13 Pass 3 #6).
+  // The stream MUST refuse missing/wrong/cross-invoice tokens with 401
+  // and not stream order state. Receipt token is the capability for
+  // reading payment status; without these tests a future regression
+  // could open the stream to anyone who guesses an invoice id.
+
+  it('refuses 401 on missing token', async () => {
+    const { invoiceId } = await createPendingOrder('no-token')
+    const res = await streamHandler(
+      buildRequest(`/api/payments/${invoiceId}/stream`),
+      { params: Promise.resolve({ invoiceId }) },
+    )
+    expect(res.status).toBe(401)
+    expect(res.headers.get('content-type') ?? '').not.toContain(
+      'text/event-stream',
+    )
+  })
+
+  it('refuses 401 on wrong token', async () => {
+    const { invoiceId } = await createPendingOrder('bad-token')
+    const res = await streamHandler(
+      buildRequest(`/api/payments/${invoiceId}/stream`, {
+        searchParams: { token: 'definitely-not-the-real-token' },
+      }),
+      { params: Promise.resolve({ invoiceId }) },
+    )
+    expect(res.status).toBe(401)
+  })
+
+  it('refuses 401 when the token belongs to a DIFFERENT invoice', async () => {
+    const a = await createPendingOrder('cross-a')
+    const b = await createPendingOrder('cross-b')
+    const res = await streamHandler(
+      buildRequest(`/api/payments/${a.invoiceId}/stream`, {
+        // Use B's token against A's invoice — must reject.
+        searchParams: { token: b.receiptToken },
+      }),
+      { params: Promise.resolve({ invoiceId: a.invoiceId }) },
+    )
+    expect(res.status).toBe(401)
+  })
 })
