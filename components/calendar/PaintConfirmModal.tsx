@@ -252,7 +252,17 @@ function Field({
   children: React.ReactNode
 }) {
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
+    <label
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 4,
+        flex: 1,
+        // Wave 14 #4 — collapse the column's intrinsic min-content
+        // contribution so a wide <select> doesn't blow the row out.
+        minWidth: 0,
+      }}
+    >
       <span style={{ fontSize: 12, color: '#9ca3af' }}>{label}</span>
       {children}
     </label>
@@ -266,6 +276,14 @@ const selectStyle: React.CSSProperties = {
   borderRadius: 6,
   color: '#e4e4e7',
   fontSize: 13,
+  // Wave 14 #4 — keep <select> inside its flex column. Without these
+  // the select grew to fit its longest <option> content (e.g. a long
+  // tariff title), pushing the modal wider than its maxWidth.
+  width: '100%',
+  boxSizing: 'border-box',
+  // Long option labels truncate visually instead of stretching the
+  // select horizontally (Chrome respects this for the closed control).
+  textOverflow: 'ellipsis',
 }
 
 const btnSecondary: React.CSSProperties = {

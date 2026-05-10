@@ -118,10 +118,17 @@ export async function GET(request: Request) {
   // 5. Fetch slots
   const slots = await listSlotsForCalendarRange({ teacherId, fromIso, toIso })
 
-  // 6. Project to discriminated DTO per role
-  const calendarSlots: CalendarSlot[] = slots.map((s) =>
-    projectSlot(s, activeRole, auth.account.id),
-  )
+  // 6. Project to discriminated DTO per role.
+  // Wave 14 #1 — cancelled slots are excluded from the calendar
+  // surface entirely. Operator workflow: create slot → cancel → put
+  // a slot back at the same time. Without this filter the cancelled
+  // row kept rendering as "Прошедшее" forever, even after migration
+  // 0035 freed the (teacher,start_at) UNIQUE cell. The cancelled
+  // row stays in the DB for audit and is reachable via /admin/slots
+  // list view; calendar = clean "what's happening" view.
+  const calendarSlots: CalendarSlot[] = slots
+    .filter((s) => s.status !== 'cancelled')
+    .map((s) => projectSlot(s, activeRole, auth.account.id))
 
   const response: CalendarResponse = {
     slots: calendarSlots,
