@@ -32,9 +32,9 @@ The project combines public marketing pages, direct checkout, payment reconcilia
 - infrastructure-specific environment values
 - incident and retention procedures that belong to operations rather than the public product surface
 
-Tracked files are guarded by `npm run check:public-surface`, which blocks
+Tracked files are guarded by `bash scripts/public-surface-check.sh`, which blocks
 private runbooks, `.env` files, and known concrete production paths from
-landing in git.
+landing in git. The pre-commit hook runs the same script with `--staged`.
 
 ## High-level architecture
 
