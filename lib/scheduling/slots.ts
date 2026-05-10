@@ -24,6 +24,58 @@ async function assertTeacherRole(teacherAccountId: string): Promise<void> {
   }
 }
 
+// Codex Wave 13 Pass 2 #22. Named MSK business-band constants so the
+// admin/teacher move routes don't carry inline 6/22/30 magic numbers
+// each side has to keep in sync. Mirrors the DB CHECK invariants from
+// migration 0031 (lesson_slots_domain_invariants.sql).
+export const MSK_BUSINESS_HOUR_MIN = 6 // 06:00 MSK inclusive
+export const MSK_BUSINESS_HOUR_MAX = 22 // 22:00 MSK exclusive (i.e. last slot starts ≤ 22:00)
+export const SLOT_GRID_MINUTES = 30 // half-hour grid
+
+export type SlotStartValidationError =
+  | { code: 'slot/start_out_of_band'; message: string }
+  | { code: 'slot/start_not_30min_aligned'; message: string }
+
+// Return null when the new MSK wall-clock instant satisfies both
+// the business-band and 30-minute-grid invariants. Otherwise return
+// a structured error the route maps to a 400 response.
+export function validateSlotStartMsk(
+  startMs: number,
+): SlotStartValidationError | null {
+  const mskWall = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Moscow',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date(startMs))
+  const mskParts: Record<string, number> = {}
+  for (const p of mskWall) {
+    if (p.type === 'literal') continue
+    mskParts[p.type] = Number(p.value)
+  }
+  const hour = mskParts.hour === 24 ? 0 : mskParts.hour
+  const minute = mskParts.minute
+  const second = mskParts.second
+  if (
+    hour < MSK_BUSINESS_HOUR_MIN ||
+    hour > MSK_BUSINESS_HOUR_MAX ||
+    (hour === MSK_BUSINESS_HOUR_MAX && minute > 0)
+  ) {
+    return {
+      code: 'slot/start_out_of_band',
+      message: `Slot start must be ${String(MSK_BUSINESS_HOUR_MIN).padStart(2, '0')}:00–${String(MSK_BUSINESS_HOUR_MAX).padStart(2, '0')}:00 MSK.`,
+    }
+  }
+  if ((minute !== 0 && minute !== SLOT_GRID_MINUTES) || second !== 0) {
+    return {
+      code: 'slot/start_not_30min_aligned',
+      message: `Slot start must be on a ${SLOT_GRID_MINUTES}-min boundary in MSK.`,
+    }
+  }
+  return null
+}
+
 export type SlotStatus =
   | 'open'
   | 'booked'

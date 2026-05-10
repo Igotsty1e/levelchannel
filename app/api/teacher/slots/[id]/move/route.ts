@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server'
 
 import { requireTeacherAndVerified } from '@/lib/auth/guards'
-import { moveOpenSlotByTeacher } from '@/lib/scheduling/slots'
+import {
+  moveOpenSlotByTeacher,
+  validateSlotStartMsk,
+} from '@/lib/scheduling/slots'
 import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
@@ -71,37 +74,10 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       { status: 400, headers: NO_STORE },
     )
   }
-  const mskWall = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Europe/Moscow',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).formatToParts(new Date(startMs))
-  const mskParts: Record<string, number> = {}
-  for (const p of mskWall) {
-    if (p.type === 'literal') continue
-    mskParts[p.type] = Number(p.value)
-  }
-  const mskHour = mskParts.hour === 24 ? 0 : mskParts.hour
-  const mskMinute = mskParts.minute
-  const mskSecond = mskParts.second
-
-  if (mskHour < 6 || mskHour > 22 || (mskHour === 22 && mskMinute > 0)) {
+  const startError = validateSlotStartMsk(startMs)
+  if (startError) {
     return NextResponse.json(
-      {
-        error: 'slot/start_out_of_band',
-        message: 'Slot start must be 06:00–22:00 MSK.',
-      },
-      { status: 400, headers: NO_STORE },
-    )
-  }
-  if ((mskMinute !== 0 && mskMinute !== 30) || mskSecond !== 0) {
-    return NextResponse.json(
-      {
-        error: 'slot/start_not_30min_aligned',
-        message: 'Slot start must be on a 30-min boundary in MSK.',
-      },
+      { error: startError.code, message: startError.message },
       { status: 400, headers: NO_STORE },
     )
   }
