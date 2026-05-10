@@ -1,6 +1,10 @@
 import { sendEmail } from '@/lib/email/client'
 import { renderAlreadyRegisteredEmail } from '@/lib/email/templates/already-registered'
 import {
+  renderOperatorPackageGrantFailureEmail,
+  type OperatorPackageGrantFailureParams,
+} from '@/lib/email/templates/operator-package-grant-failure'
+import {
   renderOperatorPaymentFailureEmail,
   type OperatorPaymentFailureParams,
 } from '@/lib/email/templates/operator-payment-failure'
@@ -92,6 +96,30 @@ export async function sendOperatorPaymentFailureNotification(
     return { ok: false as const, reason: 'no_recipient' as const }
   }
   const tpl = renderOperatorPaymentFailureEmail({
+    ...params,
+    siteUrl: paymentConfig.siteUrl,
+  })
+  const result = await sendEmail({
+    to,
+    subject: tpl.subject,
+    html: tpl.html,
+    text: tpl.text,
+  })
+  return { ...result, recipient: to } as const
+}
+
+// Wave 15 — package-grant failure dispatch. Fires from
+// processPackageGrant on six of the seven enumerated semantic
+// reasons (NOT idempotent_replay). Best-effort; silent skip when
+// OPERATOR_NOTIFY_EMAIL is empty; never blocks the webhook ack.
+export async function sendOperatorPackageGrantFailureNotification(
+  params: Omit<OperatorPackageGrantFailureParams, 'siteUrl'>,
+) {
+  const to = process.env.OPERATOR_NOTIFY_EMAIL?.trim() || ''
+  if (!to) {
+    return { ok: false as const, reason: 'no_recipient' as const }
+  }
+  const tpl = renderOperatorPackageGrantFailureEmail({
     ...params,
     siteUrl: paymentConfig.siteUrl,
   })

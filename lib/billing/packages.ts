@@ -118,6 +118,61 @@ export async function createPackage(input: {
   return rowToPackage(result.rows[0])
 }
 
+// Wave 15 — admin metadata edit. The DB trigger
+// `lesson_packages_economic_fields_immutable` refuses any UPDATE
+// touching amount_kopecks / duration_minutes / count / currency
+// once a purchase exists, so this helper deliberately ONLY accepts
+// the metadata fields (title_ru, description_ru, is_active,
+// display_order). Monetary edits remain "deactivate old + create
+// new" by design.
+export async function updatePackageMetadata(
+  id: string,
+  patch: {
+    titleRu?: string
+    descriptionRu?: string | null
+    isActive?: boolean
+    displayOrder?: number
+  },
+): Promise<LessonPackage | null> {
+  const pool = getDbPool()
+  const sets: string[] = []
+  const args: (string | number | boolean | null)[] = [id]
+  if (patch.titleRu !== undefined) {
+    args.push(patch.titleRu)
+    sets.push(`title_ru = $${args.length}`)
+  }
+  if (patch.descriptionRu !== undefined) {
+    args.push(patch.descriptionRu)
+    sets.push(`description_ru = $${args.length}`)
+  }
+  if (patch.isActive !== undefined) {
+    args.push(patch.isActive)
+    sets.push(`is_active = $${args.length}`)
+  }
+  if (patch.displayOrder !== undefined) {
+    args.push(patch.displayOrder)
+    sets.push(`display_order = $${args.length}`)
+  }
+  if (sets.length === 0) {
+    // Nothing to do — return the row as-is so the caller can render
+    // the current state without writing a no-op UPDATE.
+    const cur = await pool.query(
+      `select ${PACKAGE_COLS} from lesson_packages where id = $1`,
+      [id],
+    )
+    return cur.rows[0] ? rowToPackage(cur.rows[0]) : null
+  }
+  sets.push(`updated_at = now()`)
+  const result = await pool.query(
+    `update lesson_packages
+        set ${sets.join(', ')}
+      where id = $1
+      returning ${PACKAGE_COLS}`,
+    args,
+  )
+  return result.rows[0] ? rowToPackage(result.rows[0]) : null
+}
+
 // ---------------------------------------------------------------------
 // PURCHASES
 // ---------------------------------------------------------------------

@@ -19,6 +19,7 @@
 import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
 import { createPackagePurchase, getPackageBySlug } from '@/lib/billing/packages'
 import { getDbPool } from '@/lib/db/pool'
+import { sendOperatorPackageGrantFailureNotification } from '@/lib/email/dispatch'
 import { normalizeEmail } from '@/lib/email/normalize'
 import { getOrder } from '@/lib/payments/store'
 
@@ -201,4 +202,33 @@ async function audit(
     actor: 'webhook:cloudpayments:pay',
     payload: { reason, ...(extra ?? {}) },
   })
+
+  // Wave 15 — operator email on every semantic-failure path.
+  // Best-effort: a Resend outage (or missing OPERATOR_NOTIFY_EMAIL)
+  // must not turn a 200-no-retry semantic into a 5xx-retry. The audit
+  // row above is the load-bearing record; this email is the human
+  // signal on top.
+  try {
+    await sendOperatorPackageGrantFailureNotification({
+      invoiceId,
+      packageSlug:
+        typeof fullOrder?.metadata?.packageSlug === 'string'
+          ? fullOrder.metadata.packageSlug
+          : null,
+      customerEmail: fullOrder?.customerEmail ?? null,
+      amountRub: fullOrder?.amountRub ?? null,
+      reason,
+      reasonHint:
+        extra && Object.keys(extra).length > 0
+          ? JSON.stringify(extra)
+          : undefined,
+    })
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[package.grant.email] dispatch failed:', {
+      invoiceId,
+      reason,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
 }

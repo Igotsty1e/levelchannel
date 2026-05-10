@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+
 import { describe, expect, it } from 'vitest'
 
 import { POST as loginHandler } from '@/app/api/auth/login/route'
@@ -174,7 +176,15 @@ describe('payment_allocations', () => {
   })
 
   it('mock-confirm path persists allocation when /api/payments was given a slotId', async () => {
-    const slotId = '11111111-2222-3333-4444-555555555555'
+    // Wave 15 — randomUUID() per test invocation. A hardcoded UUID
+    // (and even a "unique-looking" hardcoded UUID) collided with
+    // admin-list.test.ts's tariffId tail (00000000-0000-0000-0000-
+    // <last 12>), surviving truncate-cascade in some pathway we
+    // couldn't reproduce alone. randomUUID removes the shared-cell
+    // hazard entirely. Slug + tariffId are also derived from the
+    // fresh UUID inside seedLearnerWithBookedSlot, so they're unique
+    // per call.
+    const slotId = randomUUID()
     const { cookie } = await seedLearnerWithBookedSlot({
       email: 'alloc-flow@example.com',
       slotId,
