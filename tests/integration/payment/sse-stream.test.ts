@@ -20,30 +20,6 @@ import './setup'
 //   - heartbeat cadence (we do not exercise the 25-second timer in
 //     unit time)
 
-async function readSseUntilTerminal(
-  body: ReadableStream<Uint8Array>,
-  maxMs = 5_000,
-): Promise<string> {
-  const reader = body.getReader()
-  const decoder = new TextDecoder()
-  let buf = ''
-  const deadline = Date.now() + maxMs
-  while (Date.now() < deadline) {
-    const { value, done } = await reader.read()
-    if (done) break
-    buf += decoder.decode(value, { stream: true })
-    if (buf.includes('"status":"paid"')) {
-      try {
-        await reader.cancel()
-      } catch {
-        // already closed
-      }
-      break
-    }
-  }
-  return buf
-}
-
 async function createPendingOrder(invoiceTag: string) {
   const res = await createHandler(
     buildRequest('/api/payments', {
@@ -95,14 +71,20 @@ describe('GET /api/payments/[invoiceId]/stream', () => {
     expect(streamRes.status).toBe(200)
     expect(streamRes.headers.get('content-type')).toContain('text/event-stream')
 
-    // Kick off the consumer; it'll wait until "status":"paid" appears
-    // in the framed body OR the deadline elapses.
-    const collected = readSseUntilTerminal(streamRes.body!, 5_000)
-
-    // Brief delay to ensure the SSE handler has subscribed before we
-    // mutate the row (the bus emit only reaches subscribers attached
-    // at emit time).
-    await new Promise((r) => setTimeout(r, 50))
+    // Codex Wave 13 Pass 3 #2. The previous version slept 50ms hoping
+    // the SSE handler had subscribed by the time we called mockConfirm.
+    // The route's start() is synchronous: enqueue initial state THEN
+    // subscribe. So once the first chunk lands in the body, the
+    // subscription is also live. Read the first chunk explicitly to
+    // pin the handshake, then proceed — no clock hack needed.
+    const reader = streamRes.body!.getReader()
+    const decoder = new TextDecoder()
+    let buf = ''
+    const initial = await reader.read()
+    expect(initial.done).toBe(false)
+    if (initial.value) buf += decoder.decode(initial.value, { stream: true })
+    expect(buf).toContain('event: status')
+    expect(buf).toContain('"status":"pending"')
 
     const confirmRes = await mockConfirmHandler(
       buildRequest(`/api/payments/mock/${invoiceId}/confirm`, {
@@ -112,9 +94,20 @@ describe('GET /api/payments/[invoiceId]/stream', () => {
     )
     expect(confirmRes.status).toBe(200)
 
-    const buf = await collected
-    expect(buf).toContain('event: status')
-    // Initial state pending, then paid push:
+    // Now drain the rest of the stream until we see paid (or the
+    // 5s deadline trips, which would fail the test).
+    const deadline = Date.now() + 5_000
+    while (Date.now() < deadline && !buf.includes('"status":"paid"')) {
+      const { value, done } = await reader.read()
+      if (done) break
+      if (value) buf += decoder.decode(value, { stream: true })
+    }
+    try {
+      await reader.cancel()
+    } catch {
+      // already closed
+    }
+
     expect(buf).toMatch(/"status":"pending"[\s\S]*"status":"paid"/)
   })
 
