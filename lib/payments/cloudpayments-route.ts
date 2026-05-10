@@ -28,6 +28,14 @@ import {
 } from '@/lib/payments/webhook-dedup'
 import { enforceRateLimit } from '@/lib/security/request'
 
+// Codex Wave 13 Pass 3 #14. Stable log-tag exports so tests don't
+// have to substring-match against internal log wording. The tag is
+// what an operator greps journalctl for — keep it stable, evolve the
+// rest of the message freely.
+export const LOG_TAG_WEBHOOK_DEDUP = '[webhook-dedup]'
+export const LOG_TAG_WEBHOOK_DEDUP_FINGERPRINT_MISMATCH =
+  `${LOG_TAG_WEBHOOK_DEDUP} fingerprint mismatch`
+
 type WebhookHandler = (payload: CloudPaymentsWebhookPayload) => Promise<void>
 
 type WebhookKind = 'check' | 'pay' | 'fail'
@@ -275,7 +283,7 @@ async function processSerialized(
       }
       if (cached.kind === 'fingerprint_mismatch') {
         console.warn(
-          '[webhook-dedup] fingerprint mismatch on cache hit; running handler:',
+          `${LOG_TAG_WEBHOOK_DEDUP_FINGERPRINT_MISMATCH} on cache hit; running handler:`,
           {
             kind: options.kind,
             transactionId,

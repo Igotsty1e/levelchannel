@@ -131,7 +131,10 @@ vi.mock('@/lib/payments/store', () => ({
   touchCardTokenUsedAt: vi.fn(),
 }))
 
-import { handleCloudPaymentsWebhook } from '@/lib/payments/cloudpayments-route'
+import {
+  LOG_TAG_WEBHOOK_DEDUP_FINGERPRINT_MISMATCH,
+  handleCloudPaymentsWebhook,
+} from '@/lib/payments/cloudpayments-route'
 import {
   parseCloudPaymentsPayload,
   verifyCloudPaymentsSignature,
@@ -254,13 +257,14 @@ describe('handleCloudPaymentsWebhook — delivery dedup', () => {
 
     // The cache was NOT trusted — handler ran.
     expect(handler).toHaveBeenCalledOnce()
-    // The mismatch surfaced via console.warn so the operator can grep
-    // for `[webhook-dedup] fingerprint mismatch`.
+    // Codex Wave 13 Pass 3 #14. Match against the exported log-tag
+    // constant so a future reword of the trailing message text doesn't
+    // break this assertion. Operator-facing grep target stays stable.
     expect(warn).toHaveBeenCalled()
     const matched = warn.mock.calls.some(
       (args) =>
         typeof args[0] === 'string' &&
-        args[0].includes('fingerprint mismatch'),
+        args[0].startsWith(LOG_TAG_WEBHOOK_DEDUP_FINGERPRINT_MISMATCH),
     )
     expect(matched).toBe(true)
   })
