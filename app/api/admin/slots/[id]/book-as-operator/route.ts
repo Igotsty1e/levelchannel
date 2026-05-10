@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { getAccountByEmail } from '@/lib/auth/accounts'
 import { requireAdminRole } from '@/lib/auth/guards'
 import { bookSlot } from '@/lib/scheduling/slots'
@@ -11,7 +12,7 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -35,32 +36,21 @@ export async function POST(request: Request, { params }: RouteParams) {
   const guard = await requireAdminRole(request)
   if (!guard.ok) return guard.response
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json(
-      { error: 'Invalid JSON body.' },
-      { status: 400, headers: noStore },
-    )
-  }
-  if (
-    typeof body !== 'object' ||
-    body === null ||
-    typeof (body as Record<string, unknown>).learnerEmail !== 'string'
-  ) {
+  const parsed = await readJsonObjectOr400(request)
+  if (!parsed.ok) return parsed.response
+  if (typeof parsed.body.learnerEmail !== 'string') {
     return NextResponse.json(
       { error: 'Body must include { learnerEmail: string }.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
-  const learnerEmail = (body as { learnerEmail: string }).learnerEmail
+  const learnerEmail = parsed.body.learnerEmail
 
   const learner = await getAccountByEmail(learnerEmail)
   if (!learner) {
     return NextResponse.json(
       { error: 'Учащийся с таким e-mail не найден.' },
-      { status: 404, headers: noStore },
+      { status: 404, headers: NO_STORE },
     )
   }
   if (!learner.emailVerifiedAt) {
@@ -69,30 +59,30 @@ export async function POST(request: Request, { params }: RouteParams) {
         error:
           'У этого учащегося не подтверждён e-mail. Попросите его подтвердить адрес перед бронированием.',
       },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
   if (learner.disabledAt) {
     return NextResponse.json(
       { error: 'Аккаунт учащегося отключён.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
   const result = await bookSlot(id, learner.id, 'admin')
   if (result.ok) {
-    return NextResponse.json({ slot: result.slot }, { status: 200, headers: noStore })
+    return NextResponse.json({ slot: result.slot }, { status: 200, headers: NO_STORE })
   }
   if (result.reason === 'not_found') {
     return NextResponse.json(
       { error: 'Слот не найден.' },
-      { status: 404, headers: noStore },
+      { status: 404, headers: NO_STORE },
     )
   }
   if (result.reason === 'in_past') {
     return NextResponse.json(
       { error: 'Слот уже прошёл.' },
-      { status: 410, headers: noStore },
+      { status: 410, headers: NO_STORE },
     )
   }
   if (result.reason === 'self_booking_blocked') {
@@ -101,11 +91,11 @@ export async function POST(request: Request, { params }: RouteParams) {
         error:
           'Учитель не может быть учеником в собственном слоте. Выберите другой аккаунт.',
       },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
   return NextResponse.json(
     { error: 'Слот уже не open.' },
-    { status: 409, headers: noStore },
+    { status: 409, headers: NO_STORE },
   )
 }

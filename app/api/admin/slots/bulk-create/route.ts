@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireAdminRole } from '@/lib/auth/guards'
 import {
   type BulkCreateInput,
@@ -14,7 +15,7 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 // POST /api/admin/slots/bulk-create
 // Body:
@@ -38,22 +39,9 @@ export async function POST(request: Request) {
   const guard = await requireAdminRole(request)
   if (!guard.ok) return guard.response
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json(
-      { error: 'Invalid JSON body.' },
-      { status: 400, headers: noStore },
-    )
-  }
-  if (typeof body !== 'object' || body === null) {
-    return NextResponse.json(
-      { error: 'Body must be a JSON object.' },
-      { status: 400, headers: noStore },
-    )
-  }
-  const raw = body as Record<string, unknown>
+  const parsed = await readJsonObjectOr400(request)
+  if (!parsed.ok) return parsed.response
+  const raw = parsed.body
 
   const input: Partial<BulkCreateInput> = {}
   if (typeof raw.teacherAccountId === 'string') {
@@ -89,7 +77,7 @@ export async function POST(request: Request) {
         error:
           'teacherAccountId, durationMinutes, slots[] are required.',
       },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
@@ -100,7 +88,7 @@ export async function POST(request: Request) {
         created: result.created,
         skippedConflicts: result.skippedConflicts,
       },
-      { status: 201, headers: noStore },
+      { status: 201, headers: NO_STORE },
     )
   } catch (err) {
     if (err instanceof SlotTeacherRoleError) {
@@ -109,7 +97,7 @@ export async function POST(request: Request) {
           error:
             'Этот аккаунт не зарегистрирован как преподаватель. Сначала выдайте роль teacher.',
         },
-        { status: 400, headers: noStore },
+        { status: 400, headers: NO_STORE },
       )
     }
     const msg = err instanceof Error ? err.message : 'unknown'
@@ -119,13 +107,13 @@ export async function POST(request: Request) {
     if (msg.startsWith('slot/')) {
       return NextResponse.json(
         { error: msg },
-        { status: 400, headers: noStore },
+        { status: 400, headers: NO_STORE },
       )
     }
     console.warn('[admin.slots.bulk-create] unexpected error', { error: msg })
     return NextResponse.json(
       { error: 'internal_error' },
-      { status: 500, headers: noStore },
+      { status: 500, headers: NO_STORE },
     )
   }
 }

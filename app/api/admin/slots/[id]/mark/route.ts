@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireAdminRole } from '@/lib/auth/guards'
 import {
   type SlotLifecycleStatus,
@@ -14,7 +15,7 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 const ALLOWED = new Set<SlotLifecycleStatus>(LIFECYCLE_STATUSES)
 
 type RouteParams = { params: Promise<{ id: string }> }
@@ -41,28 +42,17 @@ export async function POST(request: Request, { params }: RouteParams) {
   const guard = await requireAdminRole(request)
   if (!guard.ok) return guard.response
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json(
-      { error: 'Invalid JSON body.' },
-      { status: 400, headers: noStore },
-    )
-  }
+  const parsed = await readJsonObjectOr400(request)
+  if (!parsed.ok) return parsed.response
   const status =
-    typeof body === 'object' &&
-    body !== null &&
-    typeof (body as Record<string, unknown>).status === 'string'
-      ? ((body as Record<string, unknown>).status as string)
-      : ''
+    typeof parsed.body.status === 'string' ? parsed.body.status : ''
   if (!ALLOWED.has(status as SlotLifecycleStatus)) {
     return NextResponse.json(
       {
         error:
           'status must be one of: completed, no_show_learner, no_show_teacher',
       },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
@@ -72,23 +62,23 @@ export async function POST(request: Request, { params }: RouteParams) {
     guard.account.id,
   )
   if (result.ok) {
-    return NextResponse.json({ slot: result.slot }, { status: 200, headers: noStore })
+    return NextResponse.json({ slot: result.slot }, { status: 200, headers: NO_STORE })
   }
   if (result.reason === 'not_found') {
     return NextResponse.json(
       { error: 'Слот не найден.' },
-      { status: 404, headers: noStore },
+      { status: 404, headers: NO_STORE },
     )
   }
   if (result.reason === 'not_booked') {
     return NextResponse.json(
       { error: 'Можно отметить только booked-слот.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
   // not_yet_started
   return NextResponse.json(
     { error: 'Слот ещё не начался — отметить можно после start_at.' },
-    { status: 400, headers: noStore },
+    { status: 400, headers: NO_STORE },
   )
 }

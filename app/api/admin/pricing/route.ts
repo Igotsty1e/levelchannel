@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireAdminRole } from '@/lib/auth/guards'
 import {
   type TariffInput,
@@ -15,7 +16,7 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function GET(request: Request) {
   const rl = await enforceRateLimit(request, 'admin:pricing:ip', 60, 60_000)
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
   if (!guard.ok) return guard.response
 
   const tariffs = await listAllTariffs()
-  return NextResponse.json({ tariffs }, { status: 200, headers: noStore })
+  return NextResponse.json({ tariffs }, { status: 200, headers: NO_STORE })
 }
 
 export async function POST(request: Request) {
@@ -38,22 +39,9 @@ export async function POST(request: Request) {
   const guard = await requireAdminRole(request)
   if (!guard.ok) return guard.response
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json(
-      { error: 'Invalid JSON body.' },
-      { status: 400, headers: noStore },
-    )
-  }
-  if (typeof body !== 'object' || body === null) {
-    return NextResponse.json(
-      { error: 'Body must be a JSON object.' },
-      { status: 400, headers: noStore },
-    )
-  }
-  const raw = body as Record<string, unknown>
+  const parsed = await readJsonObjectOr400(request)
+  if (!parsed.ok) return parsed.response
+  const raw = parsed.body
   const input: Partial<TariffInput> = {}
   if (typeof raw.slug === 'string') input.slug = raw.slug
   if (typeof raw.titleRu === 'string') input.titleRu = raw.titleRu
@@ -75,7 +63,7 @@ export async function POST(request: Request) {
   ) {
     return NextResponse.json(
       { error: 'slug, titleRu, amountKopecks are required.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
@@ -83,19 +71,19 @@ export async function POST(request: Request) {
   if (validation) {
     return NextResponse.json(
       { error: `${validation.field}/${validation.reason}` },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
   try {
     const tariff = await createTariff(input as TariffInput)
-    return NextResponse.json({ tariff }, { status: 201, headers: noStore })
+    return NextResponse.json({ tariff }, { status: 201, headers: NO_STORE })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'unknown'
     if (message.includes('pricing_tariffs_slug_unique')) {
       return NextResponse.json(
         { error: 'slug/already_taken' },
-        { status: 409, headers: noStore },
+        { status: 409, headers: NO_STORE },
       )
     }
     throw err

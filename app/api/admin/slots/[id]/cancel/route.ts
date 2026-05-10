@@ -10,7 +10,7 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -44,17 +44,17 @@ export async function POST(request: Request, { params }: RouteParams) {
     if (!cancelled) {
       return NextResponse.json(
         { error: 'Слот уже отменён или не найден.' },
-        { status: 404, headers: noStore },
+        { status: 404, headers: NO_STORE },
       )
     }
-    return NextResponse.json({ slot: cancelled }, { status: 200, headers: noStore })
+    return NextResponse.json({ slot: cancelled }, { status: 200, headers: NO_STORE })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown'
     // cancelSlot throws `slot/cancellationReason/too_long` on bad input.
     if (msg.startsWith('slot/')) {
       return NextResponse.json(
         { error: msg },
-        { status: 400, headers: noStore },
+        { status: 400, headers: NO_STORE },
       )
     }
     console.warn('[admin.slots.cancel] unexpected error', {
@@ -63,7 +63,7 @@ export async function POST(request: Request, { params }: RouteParams) {
     })
     return NextResponse.json(
       { error: 'internal_error' },
-      { status: 500, headers: noStore },
+      { status: 500, headers: NO_STORE },
     )
   }
 }

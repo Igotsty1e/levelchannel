@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic'
 // gate (cabinet client JS calls this on mount). Returns the resolved
 // account + session, or 401 with cookie cleared.
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 const isProd = process.env.NODE_ENV === 'production'
 
 export async function GET(request: Request) {
@@ -31,7 +31,7 @@ export async function GET(request: Request) {
       {
         status: 401,
         headers: {
-          ...noStore,
+          ...NO_STORE,
           'Set-Cookie': buildSessionClearCookie(isProd),
         },
       },
@@ -54,6 +54,6 @@ export async function GET(request: Request) {
         expiresAt: current.session.expiresAt,
       },
     },
-    { status: 200, headers: noStore },
+    { status: 200, headers: NO_STORE },
   )
 }

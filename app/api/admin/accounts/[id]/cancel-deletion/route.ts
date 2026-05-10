@@ -10,7 +10,7 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -42,5 +42,5 @@ export async function POST(request: Request, { params }: RouteParams) {
   if (!guard.ok) return guard.response
 
   await cancelAccountDeletion(id)
-  return NextResponse.json({ ok: true }, { status: 200, headers: noStore })
+  return NextResponse.json({ ok: true }, { status: 200, headers: NO_STORE })
 }

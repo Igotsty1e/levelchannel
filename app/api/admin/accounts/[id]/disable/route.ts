@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { disableAccount, reenableAccount } from '@/lib/auth/accounts'
 import { requireAdminRole } from '@/lib/auth/guards'
 import { revokeAllSessionsForAccount } from '@/lib/auth/sessions'
@@ -11,7 +12,7 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -35,31 +36,19 @@ export async function POST(request: Request, { params }: RouteParams) {
   const guard = await requireAdminRole(request)
   if (!guard.ok) return guard.response
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json(
-      { error: 'Invalid JSON body.' },
-      { status: 400, headers: noStore },
-    )
-  }
-  if (
-    typeof body !== 'object' ||
-    body === null ||
-    typeof (body as Record<string, unknown>).disabled !== 'boolean'
-  ) {
+  const parsed = await readJsonObjectOr400(request)
+  if (!parsed.ok) return parsed.response
+  if (typeof parsed.body.disabled !== 'boolean') {
     return NextResponse.json(
       { error: 'Body must be { disabled: boolean }.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
-
-  const disabled = (body as { disabled: boolean }).disabled
+  const disabled = parsed.body.disabled
   if (disabled && id === guard.account.id) {
     return NextResponse.json(
       { error: 'Cannot disable yourself.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
@@ -70,5 +59,5 @@ export async function POST(request: Request, { params }: RouteParams) {
     await reenableAccount(id)
   }
 
-  return NextResponse.json({ ok: true }, { status: 200, headers: noStore })
+  return NextResponse.json({ ok: true }, { status: 200, headers: NO_STORE })
 }

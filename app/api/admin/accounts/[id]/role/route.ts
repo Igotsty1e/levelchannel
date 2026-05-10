@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import {
   type AccountRole,
   grantAccountRole,
@@ -14,7 +15,7 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 const ALLOWED_ROLES = new Set<AccountRole>(['admin', 'teacher', 'student'])
 
@@ -39,41 +40,28 @@ export async function POST(request: Request, { params }: RouteParams) {
   const guard = await requireAdminRole(request)
   if (!guard.ok) return guard.response
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json(
-      { error: 'Invalid JSON body.' },
-      { status: 400, headers: noStore },
-    )
-  }
-  if (typeof body !== 'object' || body === null) {
-    return NextResponse.json(
-      { error: 'Body must be a JSON object.' },
-      { status: 400, headers: noStore },
-    )
-  }
-  const raw = body as Record<string, unknown>
+  const parsed = await readJsonObjectOr400(request)
+  if (!parsed.ok) return parsed.response
+  const raw = parsed.body
   const role = typeof raw.role === 'string' ? raw.role : ''
   const op = typeof raw.op === 'string' ? raw.op : ''
   if (!ALLOWED_ROLES.has(role as AccountRole)) {
     return NextResponse.json(
       { error: 'role must be one of: admin, teacher, student.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
   if (op !== 'grant' && op !== 'revoke') {
     return NextResponse.json(
       { error: 'op must be "grant" or "revoke".' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
   if (op === 'revoke' && role === 'admin' && id === guard.account.id) {
     return NextResponse.json(
       { error: 'Cannot revoke admin from yourself.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
@@ -91,7 +79,7 @@ export async function POST(request: Request, { params }: RouteParams) {
           error:
             'Аккаунт с ролью admin не может быть одновременно teacher или student. Сначала отзовите admin.',
         },
-        { status: 400, headers: noStore },
+        { status: 400, headers: NO_STORE },
       )
     }
     console.warn('[admin.accounts.role] unexpected error', {
@@ -102,9 +90,9 @@ export async function POST(request: Request, { params }: RouteParams) {
     })
     return NextResponse.json(
       { error: 'internal_error' },
-      { status: 500, headers: noStore },
+      { status: 500, headers: NO_STORE },
     )
   }
 
-  return NextResponse.json({ ok: true }, { status: 200, headers: noStore })
+  return NextResponse.json({ ok: true }, { status: 200, headers: NO_STORE })
 }

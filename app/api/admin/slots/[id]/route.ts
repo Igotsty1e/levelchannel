@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireAdminRole } from '@/lib/auth/guards'
 import { deleteOpenSlot, editOpenSlot } from '@/lib/scheduling/slots'
 import {
@@ -10,7 +11,7 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -26,22 +27,9 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   const guard = await requireAdminRole(request)
   if (!guard.ok) return guard.response
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json(
-      { error: 'Invalid JSON body.' },
-      { status: 400, headers: noStore },
-    )
-  }
-  if (typeof body !== 'object' || body === null) {
-    return NextResponse.json(
-      { error: 'Body must be a JSON object.' },
-      { status: 400, headers: noStore },
-    )
-  }
-  const raw = body as Record<string, unknown>
+  const parsed = await readJsonObjectOr400(request)
+  if (!parsed.ok) return parsed.response
+  const raw = parsed.body
   const patch: { startAt?: string; durationMinutes?: number; notes?: string | null } = {}
   if ('startAt' in raw && typeof raw.startAt === 'string') {
     patch.startAt = raw.startAt
@@ -58,10 +46,10 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     if (!slot) {
       return NextResponse.json(
         { error: 'Слот не найден или уже не open.' },
-        { status: 404, headers: noStore },
+        { status: 404, headers: NO_STORE },
       )
     }
-    return NextResponse.json({ slot }, { status: 200, headers: noStore })
+    return NextResponse.json({ slot }, { status: 200, headers: NO_STORE })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown'
     // lib/scheduling/slots.ts throws `slot/<field>/<reason>` for known
@@ -69,7 +57,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     if (msg.startsWith('slot/')) {
       return NextResponse.json(
         { error: msg },
-        { status: 400, headers: noStore },
+        { status: 400, headers: NO_STORE },
       )
     }
     console.warn('[admin.slots.edit] unexpected error', {
@@ -78,7 +66,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     })
     return NextResponse.json(
       { error: 'internal_error' },
-      { status: 500, headers: noStore },
+      { status: 500, headers: NO_STORE },
     )
   }
 }
@@ -102,8 +90,8 @@ export async function DELETE(request: Request, { params }: RouteParams) {
         error:
           'Удалить можно только open-слот; для booked используйте /cancel.',
       },
-      { status: 404, headers: noStore },
+      { status: 404, headers: NO_STORE },
     )
   }
-  return NextResponse.json({ ok: true }, { status: 200, headers: noStore })
+  return NextResponse.json({ ok: true }, { status: 200, headers: NO_STORE })
 }

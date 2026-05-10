@@ -1,3 +1,5 @@
+import { NextResponse } from 'next/server'
+
 import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
 import { getCurrentSession } from '@/lib/auth/sessions'
 import {
@@ -39,7 +41,12 @@ export async function POST(request: Request) {
   }
 
   if (paymentConfig.provider !== 'cloudpayments') {
-    return Response.json(
+    // Wave 16 — Response.json → NextResponse.json for consistency
+    // with the rest of /api/payments/*. Codex Wave 13 Pass 2 #15:
+    // mixing Response.json (no Next-side cache headers, no edge
+    // niceties) with NextResponse.json across the same route surface
+    // makes the contract harder to grep against.
+    return NextResponse.json(
       { error: 'One-click payments are unavailable in mock mode.' },
       { status: 503 },
     )
@@ -57,14 +64,14 @@ export async function POST(request: Request) {
   // body.customerEmail is ignored to avoid confused-deputy patterns.
   const session = await getCurrentSession(request)
   if (!session) {
-    return Response.json(
+    return NextResponse.json(
       { error: 'Войдите в аккаунт, чтобы оплатить сохранённой картой.' },
       { status: 401 },
     )
   }
   const sessionEmailValidation = validateCustomerEmail(session.account.email)
   if (!sessionEmailValidation.ok) {
-    return Response.json(
+    return NextResponse.json(
       { error: sessionEmailValidation.message },
       { status: 400 },
     )
@@ -247,11 +254,19 @@ export async function POST(request: Request) {
       payload: { reason: result.reason },
     })
 
+    // Wave 16 — Codex Pass 2 #16: align decline shape with the rest
+    // of /api/payments/* which uses {error, message?} for non-200.
+    // Old shape was {status:'declined', message}; clients had to
+    // special-case this branch. Now {error:'declined', message}
+    // matches all other 4xx/5xx and the {error: code, message?}
+    // contract documented for the rest of the API surface. The
+    // `order` payload is preserved because the UI uses it to render
+    // the decline screen.
     return {
       status: 402,
       body: {
         order: result.order,
-        status: 'declined',
+        error: 'declined',
         message: result.reason,
       },
     }

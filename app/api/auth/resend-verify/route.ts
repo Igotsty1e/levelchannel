@@ -30,7 +30,7 @@ export const dynamic = 'force-dynamic'
 // use enforcement at consume time covers that), but the table doesn't
 // get bloat.
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function POST(request: Request) {
   const ipRl = await enforceRateLimit(request, 'auth:resend-verify:ip', 10, 60_000)
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
   if (!current) {
     return NextResponse.json(
       { error: 'Not authenticated.' },
-      { status: 401, headers: noStore },
+      { status: 401, headers: NO_STORE },
     )
   }
 
@@ -64,11 +64,11 @@ export async function POST(request: Request) {
   // when emailVerifiedAt is non-null anyway, so this is a defense-in-
   // depth no-op (mid-flight verification, stale UI cache, etc).
   if (account.emailVerifiedAt) {
-    return NextResponse.json({ ok: true }, { status: 200, headers: noStore })
+    return NextResponse.json({ ok: true }, { status: 200, headers: NO_STORE })
   }
 
   const { token } = await createEmailVerification(account.id)
   await sendVerifyEmail(account.email, token)
 
-  return NextResponse.json({ ok: true }, { status: 200, headers: noStore })
+  return NextResponse.json({ ok: true }, { status: 200, headers: NO_STORE })
 }

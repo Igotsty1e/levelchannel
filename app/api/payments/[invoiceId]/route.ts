@@ -10,7 +10,7 @@ import { enforceRateLimit, isValidInvoiceId } from '@/lib/security/request'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function GET(
   request: Request,
@@ -26,7 +26,7 @@ export async function GET(
   if (!isValidInvoiceId(invoiceId)) {
     return NextResponse.json(
       { error: 'Invalid payment id.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
@@ -38,7 +38,7 @@ export async function GET(
   if (!order) {
     return NextResponse.json(
       { error: 'Payment not found.' },
-      { status: 404, headers: noStore },
+      { status: 404, headers: NO_STORE },
     )
   }
 
@@ -50,12 +50,12 @@ export async function GET(
     // there IS a known capability to gate, even if we don't reveal it.
     return NextResponse.json(
       { error: 'Payment not found.' },
-      { status: 401, headers: noStore },
+      { status: 401, headers: NO_STORE },
     )
   }
 
   return NextResponse.json(
     { order: toPublicOrder(order) },
-    { headers: noStore },
+    { headers: NO_STORE },
   )
 }

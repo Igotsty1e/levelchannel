@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireAdminRole } from '@/lib/auth/guards'
 import {
   type CreateSlotInput,
@@ -15,7 +16,7 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function GET(request: Request) {
   const rl = await enforceRateLimit(request, 'admin:slots:ip', 60, 60_000)
@@ -33,7 +34,7 @@ export async function GET(request: Request) {
     fromIso: url.searchParams.get('from') ?? undefined,
     toIso: url.searchParams.get('to') ?? undefined,
   })
-  return NextResponse.json({ slots }, { status: 200, headers: noStore })
+  return NextResponse.json({ slots }, { status: 200, headers: NO_STORE })
 }
 
 export async function POST(request: Request) {
@@ -46,22 +47,9 @@ export async function POST(request: Request) {
   const guard = await requireAdminRole(request)
   if (!guard.ok) return guard.response
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json(
-      { error: 'Invalid JSON body.' },
-      { status: 400, headers: noStore },
-    )
-  }
-  if (typeof body !== 'object' || body === null) {
-    return NextResponse.json(
-      { error: 'Body must be a JSON object.' },
-      { status: 400, headers: noStore },
-    )
-  }
-  const raw = body as Record<string, unknown>
+  const parsed = await readJsonObjectOr400(request)
+  if (!parsed.ok) return parsed.response
+  const raw = parsed.body
   const input: Partial<CreateSlotInput> = {}
   if (typeof raw.teacherAccountId === 'string') {
     input.teacherAccountId = raw.teacherAccountId
@@ -84,13 +72,13 @@ export async function POST(request: Request) {
   ) {
     return NextResponse.json(
       { error: 'teacherAccountId, startAt, durationMinutes are required.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
   try {
     const slot = await createSlot(input as CreateSlotInput)
-    return NextResponse.json({ slot }, { status: 201, headers: noStore })
+    return NextResponse.json({ slot }, { status: 201, headers: NO_STORE })
   } catch (err) {
     if (err instanceof SlotTeacherRoleError) {
       // Codex 2026-05-08 (MEDIUM-LOW) — target account does not have
@@ -100,14 +88,14 @@ export async function POST(request: Request) {
           error:
             'Этот аккаунт не зарегистрирован как преподаватель. Сначала выдайте роль teacher.',
         },
-        { status: 400, headers: noStore },
+        { status: 400, headers: NO_STORE },
       )
     }
     const msg = err instanceof Error ? err.message : 'unknown'
     if (msg.includes('lesson_slots_teacher_start_unique')) {
       return NextResponse.json(
         { error: 'У этого учителя уже есть слот в это время.' },
-        { status: 409, headers: noStore },
+        { status: 409, headers: NO_STORE },
       )
     }
     // lib/scheduling/slots.ts intentionally throws `slot/<field>/<reason>`
@@ -117,13 +105,13 @@ export async function POST(request: Request) {
     if (msg.startsWith('slot/')) {
       return NextResponse.json(
         { error: msg },
-        { status: 400, headers: noStore },
+        { status: 400, headers: NO_STORE },
       )
     }
     console.warn('[admin.slots.create] unexpected error', { error: msg })
     return NextResponse.json(
       { error: 'internal_error' },
-      { status: 500, headers: noStore },
+      { status: 500, headers: NO_STORE },
     )
   }
 }

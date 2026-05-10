@@ -25,7 +25,7 @@ export const dynamic = 'force-dynamic'
 // createSession. Old sessions die first; the new session for the actor
 // who just reset is on a clean slate.
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 const isProd = process.env.NODE_ENV === 'production'
 
 export async function POST(request: Request) {
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json(
       { error: 'Invalid request body.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
   if (!policy.ok) {
     return NextResponse.json(
       { error: policy.message },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
   if (!consumed) {
     return NextResponse.json(
       { error: 'Ссылка недействительна или уже использована.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
@@ -91,7 +91,7 @@ export async function POST(request: Request) {
     {
       status: 200,
       headers: {
-        ...noStore,
+        ...NO_STORE,
         'Set-Cookie': buildSessionCookie(cookieValue, isProd),
       },
     },

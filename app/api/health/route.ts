@@ -40,7 +40,27 @@ async function probeDatabase(): Promise<'ok' | 'fail'> {
       ),
     ])
     return 'ok'
-  } catch {
+  } catch (err) {
+    // Codex Wave 13 (Pass 2 #25) — surface the actual reason in
+    // journalctl. The /api/health response stays a clean
+    // `database: 'fail'` (no leak to anonymous probes), but the
+    // operator can grep for `[health.probe]` to see why. Without
+    // this log, a degraded prod returns `{database:'fail'}` with no
+    // way to tell pool-init vs SSL vs query timeout apart.
+    //
+    // Codex Wave 16 LOW — pg drivers occasionally include the
+    // connection target (host:port, sometimes user) in `err.message`.
+    // Prefer `err.code` (PG SQLSTATE) and `err.name`; truncate the
+    // message at 200 chars so a pathological driver string can't
+    // dump credentials into journald.
+    const e = err as { name?: string; code?: string; message?: string }
+    const msg =
+      typeof e.message === 'string' ? e.message.slice(0, 200) : String(err)
+    console.warn('[health.probe] db probe failed:', {
+      name: e.name,
+      code: e.code,
+      message: msg,
+    })
     return 'fail'
   }
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import {
   AssignedTeacherRoleError,
   setAssignedTeacher,
@@ -13,7 +14,7 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -37,20 +38,9 @@ export async function POST(request: Request, { params }: RouteParams) {
   const guard = await requireAdminRole(request)
   if (!guard.ok) return guard.response
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json(
-      { error: 'Invalid JSON body.' },
-      { status: 400, headers: noStore },
-    )
-  }
-  const raw =
-    typeof body === 'object' && body !== null
-      ? (body as Record<string, unknown>)
-      : {}
-  const teacherIdRaw = raw.teacherAccountId
+  const parsed = await readJsonObjectOr400(request)
+  if (!parsed.ok) return parsed.response
+  const teacherIdRaw = parsed.body.teacherAccountId
   let teacherId: string | null
   if (teacherIdRaw === null) {
     teacherId = null
@@ -59,7 +49,7 @@ export async function POST(request: Request, { params }: RouteParams) {
   } else {
     return NextResponse.json(
       { error: 'teacherAccountId must be a uuid or null.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
@@ -72,10 +62,10 @@ export async function POST(request: Request, { params }: RouteParams) {
       // UI can render this directly.
       return NextResponse.json(
         { error: 'Этот аккаунт не зарегистрирован как преподаватель.' },
-        { status: 400, headers: noStore },
+        { status: 400, headers: NO_STORE },
       )
     }
     throw err
   }
-  return NextResponse.json({ ok: true }, { status: 200, headers: noStore })
+  return NextResponse.json({ ok: true }, { status: 200, headers: NO_STORE })
 }

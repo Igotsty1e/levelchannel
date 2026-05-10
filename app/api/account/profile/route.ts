@@ -22,7 +22,7 @@ export const dynamic = 'force-dynamic'
 // Origin gate on PATCH only — GET is a same-origin cabinet bootstrap
 // like /api/auth/me. The PATCH side mutates state.
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function GET(request: Request) {
   const rl = await enforceRateLimit(request, 'account:profile:ip', 60, 60_000)
@@ -43,7 +43,7 @@ export async function GET(request: Request) {
         updatedAt: null,
       },
     },
-    { status: 200, headers: noStore },
+    { status: 200, headers: NO_STORE },
   )
 }
 
@@ -63,13 +63,13 @@ export async function PATCH(request: Request) {
   } catch {
     return NextResponse.json(
       { error: 'Invalid JSON body.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
   if (typeof body !== 'object' || body === null) {
     return NextResponse.json(
       { error: 'Body must be a JSON object.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
@@ -79,7 +79,7 @@ export async function PATCH(request: Request) {
     if (raw.displayName !== null && typeof raw.displayName !== 'string') {
       return NextResponse.json(
         { error: 'displayName must be string or null.' },
-        { status: 400, headers: noStore },
+        { status: 400, headers: NO_STORE },
       )
     }
     update.displayName = raw.displayName as string | null
@@ -88,7 +88,7 @@ export async function PATCH(request: Request) {
     if (raw.timezone !== null && typeof raw.timezone !== 'string') {
       return NextResponse.json(
         { error: 'timezone must be string or null.' },
-        { status: 400, headers: noStore },
+        { status: 400, headers: NO_STORE },
       )
     }
     update.timezone = raw.timezone as string | null
@@ -97,7 +97,7 @@ export async function PATCH(request: Request) {
     if (raw.locale !== null && typeof raw.locale !== 'string') {
       return NextResponse.json(
         { error: 'locale must be string or null.' },
-        { status: 400, headers: noStore },
+        { status: 400, headers: NO_STORE },
       )
     }
     update.locale = raw.locale as string | null
@@ -107,10 +107,10 @@ export async function PATCH(request: Request) {
   if (validation) {
     return NextResponse.json(
       { error: `${validation.field}/${validation.reason}` },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
   const profile = await upsertAccountProfile(auth.account.id, update)
-  return NextResponse.json({ profile }, { status: 200, headers: noStore })
+  return NextResponse.json({ profile }, { status: 200, headers: NO_STORE })
 }

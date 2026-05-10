@@ -34,7 +34,7 @@ export const dynamic = 'force-dynamic'
 // the only trust anchor; what the body says is irrelevant. This avoids
 // a class of bug where a stale form value silently routes a logged-in
 // user's request to someone else's email.
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function POST(request: Request) {
   const rateLimitResponse = await enforceRateLimit(
@@ -53,27 +53,27 @@ export async function POST(request: Request) {
   }
 
   if (paymentConfig.provider !== 'cloudpayments') {
-    return NextResponse.json({ savedCard: null }, { headers: noStore })
+    return NextResponse.json({ savedCard: null }, { headers: NO_STORE })
   }
 
   const session = await getCurrentSession(request)
   if (!session) {
     return NextResponse.json(
       { error: 'Войдите в аккаунт, чтобы использовать сохранённую карту.' },
-      { status: 401, headers: noStore },
+      { status: 401, headers: NO_STORE },
     )
   }
 
   const emailValidation = validateCustomerEmail(session.account.email)
   if (!emailValidation.ok) {
-    return NextResponse.json({ savedCard: null }, { headers: noStore })
+    return NextResponse.json({ savedCard: null }, { headers: NO_STORE })
   }
 
   const saved = await getCardTokenByEmail(emailValidation.email)
 
   return NextResponse.json(
     { savedCard: saved ? toPublicSavedCard(saved) : null },
-    { headers: noStore },
+    { headers: NO_STORE },
   )
 }
 
@@ -97,7 +97,7 @@ export async function DELETE(request: Request) {
   if (!session) {
     return NextResponse.json(
       { error: 'Войдите в аккаунт, чтобы удалить сохранённую карту.' },
-      { status: 401, headers: noStore },
+      { status: 401, headers: NO_STORE },
     )
   }
 
@@ -105,11 +105,11 @@ export async function DELETE(request: Request) {
   if (!emailValidation.ok) {
     return NextResponse.json(
       { error: emailValidation.message },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
   await deleteCardToken(emailValidation.email)
 
-  return NextResponse.json({ ok: true }, { headers: noStore })
+  return NextResponse.json({ ok: true }, { headers: NO_STORE })
 }

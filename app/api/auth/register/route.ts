@@ -1,11 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { recordAuthAuditEvent } from '@/lib/audit/auth-events'
-import {
-  createAccount,
-  getAccountByEmail,
-  normalizeAccountEmail,
-} from '@/lib/auth/accounts'
+import { createAccount, getAccountByEmail } from '@/lib/auth/accounts'
 import { recordConsent } from '@/lib/auth/consents'
 import { getDummyHash } from '@/lib/auth/dummy-hash'
 import { rateLimitScope } from '@/lib/auth/email-hash'
@@ -38,7 +34,7 @@ export const dynamic = 'force-dynamic'
 // Both paths consume one bcrypt cycle and one Resend dispatch. Response
 // body is byte-equal: { ok: true }.
 
-const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function POST(request: Request) {
   const rl = await enforceRateLimit(request, 'auth:register:ip', 5, 60_000)
@@ -57,7 +53,7 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json(
       { error: 'Invalid request body.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
@@ -65,7 +61,7 @@ export async function POST(request: Request) {
   if (!emailValidation.ok) {
     return NextResponse.json(
       { error: emailValidation.message },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
@@ -73,14 +69,14 @@ export async function POST(request: Request) {
   if (!passwordPolicy.ok) {
     return NextResponse.json(
       { error: passwordPolicy.message },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
   if (body.personalDataConsentAccepted !== true) {
     return NextResponse.json(
       { error: 'Подтвердите согласие на обработку персональных данных.' },
-      { status: 400, headers: noStore },
+      { status: 400, headers: NO_STORE },
     )
   }
 
@@ -149,7 +145,5 @@ export async function POST(request: Request) {
     })
   }
 
-  return NextResponse.json({ ok: true }, { status: 200, headers: noStore })
+  return NextResponse.json({ ok: true }, { status: 200, headers: NO_STORE })
 }
-
-export { normalizeAccountEmail }
