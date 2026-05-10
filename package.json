@@ -6,10 +6,10 @@
     "dev": "next dev",
     "build": "next build && node postbuild.js",
     "start": "next start",
-    "lint": "next lint",
     "check:public-surface": "bash scripts/public-surface-check.sh",
-    "test": "vitest",
+    "test": "vitest run",
     "test:run": "vitest run",
+    "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:integration": "bash scripts/test-integration.sh",
     "test:seccomp": "bash scripts/seccomp-regression-check.sh",
@@ -17,6 +17,9 @@
     "migrate:status": "node scripts/migrate.mjs status",
     "migrate:payments:postgres": "node scripts/migrate-payment-orders-to-postgres.mjs",
     "postinstall": "git config core.hooksPath .githooks 2>/dev/null || true"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.50.0",
