@@ -42,14 +42,28 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   }
 
   try {
-    const slot = await editOpenSlot(id, patch)
-    if (!slot) {
+    const result = await editOpenSlot(id, patch)
+    if (result.ok) {
       return NextResponse.json(
-        { error: 'Слот не найден или уже не open.' },
+        { slot: result.slot },
+        { status: 200, headers: NO_STORE },
+      )
+    }
+    // Codex Wave 13 Pass 2 #11. Match the move route contract:
+    // 404 = missing resource, 409 = wrong state.
+    if (result.reason === 'not_found') {
+      return NextResponse.json(
+        { error: 'not_found', message: 'Слот не найден.' },
         { status: 404, headers: NO_STORE },
       )
     }
-    return NextResponse.json({ slot }, { status: 200, headers: NO_STORE })
+    return NextResponse.json(
+      {
+        error: 'not_open',
+        message: 'Редактировать можно только открытые слоты.',
+      },
+      { status: 409, headers: NO_STORE },
+    )
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown'
     // lib/scheduling/slots.ts throws `slot/<field>/<reason>` for known
@@ -83,15 +97,22 @@ export async function DELETE(request: Request, { params }: RouteParams) {
   const guard = await requireAdminRole(request)
   if (!guard.ok) return guard.response
 
-  const ok = await deleteOpenSlot(id)
-  if (!ok) {
+  const result = await deleteOpenSlot(id)
+  if (result.ok) {
+    return NextResponse.json({ ok: true }, { status: 200, headers: NO_STORE })
+  }
+  // Codex Wave 13 Pass 2 #11. 404 = missing resource, 409 = wrong state.
+  if (result.reason === 'not_found') {
     return NextResponse.json(
-      {
-        error:
-          'Удалить можно только open-слот; для booked используйте /cancel.',
-      },
+      { error: 'not_found', message: 'Слот не найден.' },
       { status: 404, headers: NO_STORE },
     )
   }
-  return NextResponse.json({ ok: true }, { status: 200, headers: NO_STORE })
+  return NextResponse.json(
+    {
+      error: 'not_open',
+      message: 'Удалить можно только open-слот; для booked используйте /cancel.',
+    },
+    { status: 409, headers: NO_STORE },
+  )
 }

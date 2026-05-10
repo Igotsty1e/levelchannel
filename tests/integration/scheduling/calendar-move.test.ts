@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import { PATCH as moveHandler } from '@/app/api/admin/slots/[id]/move/route'
+import {
+  PATCH as adminEditHandler,
+  DELETE as adminDeleteHandler,
+} from '@/app/api/admin/slots/[id]/route'
 import { POST as adminCancelHandler } from '@/app/api/admin/slots/[id]/cancel/route'
 import { POST as adminCreateHandler } from '@/app/api/admin/slots/route'
 import { POST as bookHandler } from '@/app/api/slots/[id]/book/route'
@@ -217,5 +221,101 @@ describe('PATCH /api/admin/slots/[id]/move', () => {
       { params: Promise.resolve({ id: '00000000-0000-0000-0000-000000000000' }) },
     )
     expect(r.status).toBe(403)
+  })
+})
+
+// Wave 26 — match move route's 404/409 contract on PATCH/DELETE
+// (Codex Wave 13 Pass 2 #11). Before: both routes collapsed
+// "missing" and "not open" into 404. After: 404 = missing, 409 =
+// wrong state.
+describe('Wave 26 — PATCH/DELETE /api/admin/slots/[id] status semantics', () => {
+  const NIL_UUID = '99999999-9999-9999-9999-999999999999'
+
+  it('PATCH returns 404 not_found for an unknown slot', async () => {
+    const admin = await registerAndCookie('w26-admin-pn@example.com', { role: 'admin' })
+    const r = await adminEditHandler(
+      buildRequest(`/api/admin/slots/${NIL_UUID}`, {
+        method: 'PATCH',
+        cookie: admin.cookie,
+        body: { notes: 'noop' },
+      }),
+      { params: Promise.resolve({ id: NIL_UUID }) },
+    )
+    expect(r.status).toBe(404)
+    expect((await r.json()).error).toBe('not_found')
+  })
+
+  it('PATCH returns 409 not_open for a booked slot (was 404 before Wave 26)', async () => {
+    const admin = await registerAndCookie('w26-admin-pb@example.com', { role: 'admin' })
+    const teacher = await registerAndCookie('w26-t-pb@example.com', { role: 'teacher' })
+    const learner = await registerAndCookie('w26-l-pb@example.com')
+    await setAssignedTeacher(learner.accountId, teacher.accountId)
+
+    const slotId = await createOpenSlot(
+      admin.cookie,
+      teacher.accountId,
+      futureSlotIso(7 * 24 * 60 + 60),
+    )
+    await bookHandler(
+      buildRequest(`/api/slots/${slotId}/book`, {
+        cookie: learner.cookie,
+        body: {},
+      }),
+      { params: Promise.resolve({ id: slotId }) },
+    )
+
+    const r = await adminEditHandler(
+      buildRequest(`/api/admin/slots/${slotId}`, {
+        method: 'PATCH',
+        cookie: admin.cookie,
+        body: { notes: 'edit-after-booking' },
+      }),
+      { params: Promise.resolve({ id: slotId }) },
+    )
+    expect(r.status).toBe(409)
+    expect((await r.json()).error).toBe('not_open')
+  })
+
+  it('DELETE returns 404 not_found for an unknown slot', async () => {
+    const admin = await registerAndCookie('w26-admin-dn@example.com', { role: 'admin' })
+    const r = await adminDeleteHandler(
+      buildRequest(`/api/admin/slots/${NIL_UUID}`, {
+        method: 'DELETE',
+        cookie: admin.cookie,
+      }),
+      { params: Promise.resolve({ id: NIL_UUID }) },
+    )
+    expect(r.status).toBe(404)
+    expect((await r.json()).error).toBe('not_found')
+  })
+
+  it('DELETE returns 409 not_open for a booked slot (was 404 before Wave 26)', async () => {
+    const admin = await registerAndCookie('w26-admin-db@example.com', { role: 'admin' })
+    const teacher = await registerAndCookie('w26-t-db@example.com', { role: 'teacher' })
+    const learner = await registerAndCookie('w26-l-db@example.com')
+    await setAssignedTeacher(learner.accountId, teacher.accountId)
+
+    const slotId = await createOpenSlot(
+      admin.cookie,
+      teacher.accountId,
+      futureSlotIso(7 * 24 * 60 + 60),
+    )
+    await bookHandler(
+      buildRequest(`/api/slots/${slotId}/book`, {
+        cookie: learner.cookie,
+        body: {},
+      }),
+      { params: Promise.resolve({ id: slotId }) },
+    )
+
+    const r = await adminDeleteHandler(
+      buildRequest(`/api/admin/slots/${slotId}`, {
+        method: 'DELETE',
+        cookie: admin.cookie,
+      }),
+      { params: Promise.resolve({ id: slotId }) },
+    )
+    expect(r.status).toBe(409)
+    expect((await r.json()).error).toBe('not_open')
   })
 })
