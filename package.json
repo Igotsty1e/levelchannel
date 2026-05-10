@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && node postbuild.js",
+    "build": "next build",
+    "build:export": "next build && node postbuild.js",
     "start": "next start",
     "check:public-surface": "bash scripts/public-surface-check.sh",
     "test": "vitest run",
