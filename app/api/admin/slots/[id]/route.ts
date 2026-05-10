@@ -64,6 +64,14 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     return NextResponse.json({ slot }, { status: 200, headers: noStore })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown'
+    // lib/scheduling/slots.ts throws `slot/<field>/<reason>` for known
+    // editOpenSlot validation failures — pass as 400.
+    if (msg.startsWith('slot/')) {
+      return NextResponse.json(
+        { error: msg },
+        { status: 400, headers: noStore },
+      )
+    }
     console.warn('[admin.slots.edit] unexpected error', {
       slotId: id,
       error: msg,

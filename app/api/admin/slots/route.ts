@@ -110,6 +110,16 @@ export async function POST(request: Request) {
         { status: 409, headers: noStore },
       )
     }
+    // lib/scheduling/slots.ts intentionally throws `slot/<field>/<reason>`
+    // for known input-validation failures (Codex 2026-05-10 round 2 —
+    // BLOCK on 4xx-as-500 regression). Pass these through as 400 with
+    // the stable code in `error`.
+    if (msg.startsWith('slot/')) {
+      return NextResponse.json(
+        { error: msg },
+        { status: 400, headers: noStore },
+      )
+    }
     console.warn('[admin.slots.create] unexpected error', { error: msg })
     return NextResponse.json(
       { error: 'internal_error' },

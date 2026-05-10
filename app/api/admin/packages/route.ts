@@ -144,6 +144,16 @@ export async function POST(request: Request) {
         { status: 409, headers: NO_STORE },
       )
     }
+    // 23514 = check_violation. Migration 0033 has positive-value CHECKs
+    // on amount_kopecks / count / duration_minutes; the route doesn't
+    // pre-validate ranges, so a hostile/negative input lands here.
+    // Treat as 400 with a stable code (don't leak constraint name).
+    if (code === '23514') {
+      return NextResponse.json(
+        { error: 'invalid_input' },
+        { status: 400, headers: NO_STORE },
+      )
+    }
     console.warn('[admin.packages.create] unexpected error', { error: msg })
     return NextResponse.json(
       { error: 'internal_error' },

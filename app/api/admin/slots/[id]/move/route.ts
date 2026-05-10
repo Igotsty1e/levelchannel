@@ -158,6 +158,14 @@ export async function PATCH(request: Request, { params }: RouteParams) {
         { status: 400, headers: NO_STORE },
       )
     }
+    // moveSlot throws `slot/<field>/<reason>` for known bad-input
+    // (e.g. slot/newStartAt/invalid). Pass through as 400.
+    if (msg.startsWith('slot/')) {
+      return NextResponse.json(
+        { error: msg },
+        { status: 400, headers: NO_STORE },
+      )
+    }
     // Unknown failure mode — treat as a server fault, not a client
     // error. Returning 400 with the raw message would leak internals
     // (provider/DB chatter, stack-trace fragments) to the operator

@@ -230,7 +230,13 @@ export async function POST(request: Request) {
       console.warn('[payments.create] unexpected error', {
         error: message,
       })
-      return { status: 500, body: { error: 'internal_error' } }
+      return {
+        status: 500,
+        body: {
+          error: 'internal_error',
+          message: 'Не удалось создать платёж. Попробуйте позже.',
+        },
+      }
     }
   })
 }
