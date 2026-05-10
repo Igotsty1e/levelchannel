@@ -6,6 +6,8 @@ import { AuthInfoBox } from '@/components/auth-form-bits'
 import { listAccountRoles } from '@/lib/auth/accounts'
 import { getAccountProfile } from '@/lib/auth/profiles'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { listAccountActivePackages } from '@/lib/billing/packages'
+import { getDbPool } from '@/lib/db/pool'
 import { listSlotPaidStatus } from '@/lib/payments/allocations'
 import {
   listOpenFutureSlots,
@@ -77,23 +79,40 @@ export default async function CabinetPage() {
     redirect('/admin')
   }
 
-  const [profile, mySlots, openSlots, teacherSlots, teacherLearners] =
-    await Promise.all([
-      getAccountProfile(account.id),
-      isLearner ? listSlotsForLearner(account.id, 20) : Promise.resolve([]),
-      isLearner && account.assignedTeacherId
-        ? listOpenFutureSlots({
-            teacherAccountId: account.assignedTeacherId,
-            limit: 50,
-          })
-        : Promise.resolve([]),
-      isTeacher ? listSlotsAsTeacher(account.id, 50) : Promise.resolve([]),
-      isTeacher ? listLearnersForTeacher(account.id) : Promise.resolve([]),
-    ])
+  const [
+    profile,
+    mySlots,
+    openSlots,
+    teacherSlots,
+    teacherLearners,
+    activePackages,
+    postpaidRow,
+  ] = await Promise.all([
+    getAccountProfile(account.id),
+    isLearner ? listSlotsForLearner(account.id, 20) : Promise.resolve([]),
+    isLearner && account.assignedTeacherId
+      ? listOpenFutureSlots({
+          teacherAccountId: account.assignedTeacherId,
+          limit: 50,
+        })
+      : Promise.resolve([]),
+    isTeacher ? listSlotsAsTeacher(account.id, 50) : Promise.resolve([]),
+    isTeacher ? listLearnersForTeacher(account.id) : Promise.resolve([]),
+    // Wave 18 — billing context for the BookConfirmModal preview.
+    // Only loaded for learners; pure read, no mutation.
+    isLearner ? listAccountActivePackages(account.id) : Promise.resolve([]),
+    isLearner
+      ? getDbPool().query(
+          'select postpaid_allowed from accounts where id = $1',
+          [account.id],
+        )
+      : Promise.resolve({ rows: [] as Array<{ postpaid_allowed: boolean }> }),
+  ])
   const greetingName = profile?.displayName?.trim() || account.email
   const paidMap = isLearner
     ? await listSlotPaidStatus(mySlots.map((s) => s.id))
     : new Map()
+  const postpaidAllowed = Boolean(postpaidRow.rows[0]?.postpaid_allowed)
 
   return (
     <AuthShell>
@@ -135,6 +154,18 @@ export default async function CabinetPage() {
             initialPaidSlotIds={Array.from(paidMap.keys())}
             hasAssignedTeacher={Boolean(account.assignedTeacherId)}
             assignedTeacherId={account.assignedTeacherId}
+            activePackages={activePackages.map((p) => ({
+              id: p.id,
+              titleSnapshot: p.titleSnapshot,
+              durationMinutes: p.durationMinutes,
+              countRemaining: p.countRemaining,
+              countInitial: p.countInitial,
+              expiresAt: p.expiresAt,
+            }))}
+            postpaidAllowed={postpaidAllowed}
+            billingWaveActive={
+              process.env.BILLING_WAVE_ACTIVE === 'true'
+            }
           />
 
           <BillingSections learnerTimezone={profile?.timezone ?? null} />

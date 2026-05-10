@@ -7,6 +7,21 @@ import { SlotCalendar } from '@/components/calendar/SlotCalendar'
 import type { CalendarRow } from '@/lib/calendar/view-model'
 import type { LessonSlot } from '@/lib/scheduling/slots'
 
+// Wave 18 — billing-preview banner inside BookConfirmModal needs to
+// know which packages this learner has and whether they're allowed
+// postpaid. Server hands those down through here verbatim. expiresAt
+// is included so the modal can pick the SAME package the server will
+// actually consume (FIFO by expires_at asc, matching consumePackageUnit
+// in lib/billing/consumption.ts).
+export type LearnerActivePackage = {
+  id: string
+  titleSnapshot: string
+  durationMinutes: number
+  countRemaining: number
+  countInitial: number
+  expiresAt: string
+}
+
 type Props = {
   initialMine: LessonSlot[]
   initialAvailable: LessonSlot[]
@@ -22,6 +37,13 @@ type Props = {
   // Pass null for unbound learners; calendar tab is disabled in that
   // case (the existing «учитель не назначен» hint already covers).
   assignedTeacherId: string | null
+  activePackages: LearnerActivePackage[]
+  postpaidAllowed: boolean
+  // Wave 18 — server-side BILLING_WAVE_ACTIVE flag. When false,
+  // the booking endpoint goes through the legacy single-statement
+  // path with no package/postpaid logic. The preview banner then
+  // would lie, so we hide it.
+  billingWaveActive: boolean
 }
 
 const TZ_DEFAULT = 'Europe/Moscow'
@@ -70,6 +92,9 @@ export function LessonsSection({
   initialPaidSlotIds,
   hasAssignedTeacher,
   assignedTeacherId,
+  activePackages,
+  postpaidAllowed,
+  billingWaveActive,
 }: Props) {
   // Defensive: if a pre-whitelist profile carries a bad value, fall
   // back to Europe/Moscow rather than crash the cabinet on the first
@@ -337,6 +362,9 @@ export function LessonsSection({
         err={err}
         onBook={book}
         onRefresh={refresh}
+        activePackages={activePackages}
+        postpaidAllowed={postpaidAllowed}
+        billingWaveActive={billingWaveActive}
       />
     </>
   )
@@ -359,6 +387,9 @@ function BookSection({
   err,
   onBook,
   onRefresh,
+  activePackages,
+  postpaidAllowed,
+  billingWaveActive,
 }: {
   available: LessonSlot[]
   emailVerified: boolean
@@ -371,6 +402,9 @@ function BookSection({
   err: string | null
   onBook: (slotId: string) => Promise<void>
   onRefresh: () => Promise<void>
+  activePackages: LearnerActivePackage[]
+  postpaidAllowed: boolean
+  billingWaveActive: boolean
 }) {
   const [tab, setTab] = useState<'calendar' | 'list'>('calendar')
   const [activeRow, setActiveRow] = useState<CalendarRow | null>(null)
@@ -500,6 +534,9 @@ function BookSection({
           row={activeRow}
           emailVerified={emailVerified}
           learnerTimezone={learnerTimezone}
+          activePackages={activePackages}
+          postpaidAllowed={postpaidAllowed}
+          billingWaveActive={billingWaveActive}
           onClose={() => setActiveRow(null)}
           onBooked={() => {
             setActiveRow(null)
