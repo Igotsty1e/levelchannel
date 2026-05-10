@@ -21,6 +21,7 @@ import {
   extractSessionCookie,
   futureSlotIso as futureIsoMinutes,
   nearFutureBusinessBandIso,
+  pastBusinessBandIso,
 } from '../helpers'
 
 async function registerAndCookie(
@@ -54,21 +55,15 @@ async function registerAndCookie(
 // 24h-rule and auto-complete tests can hit conditions that the route
 // layer would refuse on insert (start_at must be in future at insert).
 //
-// Wave A: snap to 30-min MSK boundary to satisfy migration 0031 CHECK.
-// We compute the target time in JS, snap, then UPDATE with literal
-// timestamp.
+// Wave A: snap to 30-min MSK boundary AND keep within the 06:00–22:00
+// MSK business band to satisfy migration 0031 CHECK. Raw `now -
+// minutesAgo` lands in 03:00 MSK on early-morning CI runs and breaks
+// the constraint; pastBusinessBandIso walks backward to the most
+// recent in-band 30-min slot.
 async function backdateSlot(slotId: string, minutesAgo: number) {
-  const target = new Date(Date.now() - minutesAgo * 60_000)
-  target.setUTCSeconds(0, 0)
-  const m = target.getUTCMinutes()
-  if (m !== 0 && m !== 30) {
-    // Snap DOWN (backward in time, ok for backdating).
-    if (m < 30) target.setUTCMinutes(0, 0, 0)
-    else target.setUTCMinutes(30, 0, 0)
-  }
   await getDbPool().query(
     `update lesson_slots set start_at = $2 where id = $1`,
-    [slotId, target.toISOString()],
+    [slotId, pastBusinessBandIso(minutesAgo)],
   )
 }
 

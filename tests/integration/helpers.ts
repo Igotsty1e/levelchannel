@@ -157,6 +157,48 @@ function mskWallParts(utcMs: number): { hour: number; minute: number } {
   }
 }
 
+// Pick a recent-PAST MSK 30-min slot that's strictly in the business
+// band 06:00–22:00 MSK. Used by tests that backdate booked slots into
+// the past for lifecycle/auto-complete scenarios. Migration 0031's
+// CHECK constraint refuses out-of-band start_at even on UPDATE, so
+// raw `now() - 90min` lands in 03:00 MSK on early-morning CI runs and
+// fails the constraint. This helper picks the most-recent valid 30-min
+// slot at-or-before (now - minutesAgo).
+export function pastBusinessBandIso(minutesAgo: number): string {
+  const now = new Date()
+  let candidate = new Date(now.getTime() - minutesAgo * 60_000)
+  candidate.setUTCSeconds(0, 0)
+  // Snap DOWN to 30-min boundary (rounding toward the past).
+  const minute = candidate.getUTCMinutes()
+  if (minute === 0 || minute === 30) {
+    // already aligned
+  } else if (minute < 30) {
+    candidate.setUTCMinutes(0, 0, 0)
+  } else {
+    candidate.setUTCMinutes(30, 0, 0)
+  }
+  // Check MSK band; if out of band, walk backward to last 21:30 MSK
+  // of the most recent business day.
+  let parts = mskWallParts(candidate.getTime())
+  if (parts.hour >= 6 && (parts.hour < 22 || (parts.hour === 22 && parts.minute === 0))) {
+    return candidate.toISOString()
+  }
+  // Out of band — pick yesterday's 21:30 MSK = 18:30 UTC. If today's
+  // MSK time has already passed 22:00, today's 21:30 MSK is fine.
+  const today = mskTodayParts()
+  // If candidate's MSK hour < 6 → go to yesterday's 21:30 MSK.
+  // If candidate's MSK hour > 22 → today's 21:30 MSK (still past).
+  const yesterdayUtc18_30 = new Date(
+    Date.UTC(today.year, today.month - 1, today.day, 18, 30, 0, 0),
+  )
+  // If yesterdayUtc18_30 is still in the future (very early UTC morning),
+  // step back one more day.
+  if (yesterdayUtc18_30.getTime() > now.getTime()) {
+    yesterdayUtc18_30.setUTCDate(yesterdayUtc18_30.getUTCDate() - 1)
+  }
+  return yesterdayUtc18_30.toISOString()
+}
+
 function mskTodayParts(): { year: number; month: number; day: number } {
   const dtf = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Europe/Moscow',
