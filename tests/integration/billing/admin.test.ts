@@ -15,7 +15,7 @@ import {
 import { getDbPool } from '@/lib/db/pool'
 
 import '../setup'
-import { buildRequest, extractSessionCookie } from '../helpers'
+import { buildRequest, extractSessionCookie, freshInvoiceId } from '../helpers'
 
 beforeAll(() => {
   process.env.BILLING_WAVE_ACTIVE = 'true'
@@ -219,7 +219,7 @@ describe('lesson_packages immutability trigger', () => {
     )
     const pkgId = String(pkgRow.rows[0].id)
 
-    const orderId = `lc_pr4_trigger_${Date.now()}`
+    const orderId = freshInvoiceId('lc_pr4_trigger')
     await pool.query(
       `insert into payment_orders
          (invoice_id, amount_rub, currency, description, provider, status,

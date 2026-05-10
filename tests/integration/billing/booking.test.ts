@@ -25,7 +25,12 @@ import {
 import { slotIsPaidByAllocations } from '@/lib/billing/paid-state'
 
 import '../setup'
-import { buildRequest, extractSessionCookie, futureSlotIso } from '../helpers'
+import {
+  buildRequest,
+  extractSessionCookie,
+  freshInvoiceId,
+  futureSlotIso,
+} from '../helpers'
 
 // Billing wave PR 1 — booking flow with package consumption.
 //
@@ -110,7 +115,7 @@ async function seedPaidOrder(
   // Create a fake paid order so package_purchases.payment_order_id FK
   // resolves. Production path is /checkout/package + webhook, which
   // PR 2 ships; for PR 1 we just need a paid_orders row to anchor.
-  const invoiceId = `lc_test_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  const invoiceId = freshInvoiceId()
   const amountRub = (amountKopecks / 100).toFixed(2)
   await getDbPool().query(
     `insert into payment_orders
@@ -278,7 +283,7 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
        values ($1, '3500.00', 'RUB', 'Pending package', 'mock', 'pending',
                now(), now(), 'test@example.com', 'test@example.com', '{}'::jsonb, $2::jsonb)`,
       [
-        `lc_pending_${Date.now()}`,
+        freshInvoiceId('lc_pending'),
         JSON.stringify({
           accountId: learner.accountId,
           packageSlug: 'pr1-pending-pkg',
@@ -317,7 +322,7 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
        values ($1, '5250.00', 'RUB', 'Pending package', 'mock', 'pending',
                now(), now(), 'test@example.com', 'test@example.com', '{}'::jsonb, $2::jsonb)`,
       [
-        `lc_pending_mis_${Date.now()}`,
+        freshInvoiceId('lc_pending_mis'),
         JSON.stringify({
           accountId: learner.accountId,
           packageSlug: 'pr1-pending-90',
@@ -434,7 +439,7 @@ describe('PR 1 — slotIsPaidByAllocations (CASE-filtered SUM)', () => {
       tariffId,
     )
     // Insert a PENDING order + allocation for the slot.
-    const orderId = `lc_pending_pst_${Date.now()}`
+    const orderId = freshInvoiceId('lc_pending_pst')
     await getDbPool().query(
       `insert into payment_orders
          (invoice_id, amount_rub, currency, description, provider, status,

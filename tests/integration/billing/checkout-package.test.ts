@@ -13,7 +13,7 @@ import { processPackageGrant } from '@/lib/billing/package-grant'
 import { getDbPool } from '@/lib/db/pool'
 
 import '../setup'
-import { buildRequest, extractSessionCookie } from '../helpers'
+import { buildRequest, extractSessionCookie, freshInvoiceId } from '../helpers'
 
 // Billing wave PR 2 — public surface + webhook ownership tests.
 //
@@ -246,7 +246,7 @@ describe('processPackageGrant — webhook ownership contract', () => {
     // metadata: accountId points to otherLearner but customer_email
     // is learner.email. Webhook ownership corroboration must
     // refuse the grant.
-    const invoiceId = `lc_pr2_tamper_${Date.now()}`
+    const invoiceId = freshInvoiceId('lc_pr2_tamper')
     await getDbPool().query(
       `insert into payment_orders
          (invoice_id, amount_rub, currency, description, provider, status,
@@ -285,7 +285,7 @@ describe('processPackageGrant — webhook ownership contract', () => {
       count: 5,
       amountKopecks: 100_00,
     })
-    const invoiceId = `lc_pr2_no_acc_${Date.now()}`
+    const invoiceId = freshInvoiceId('lc_pr2_no_acc')
     await getDbPool().query(
       `insert into payment_orders
          (invoice_id, amount_rub, currency, description, provider, status,
@@ -311,7 +311,7 @@ describe('processPackageGrant — webhook ownership contract', () => {
       count: 5,
       amountKopecks: 100_00,
     })
-    const invoiceId = `lc_pr2_unknown_${Date.now()}`
+    const invoiceId = freshInvoiceId('lc_pr2_unknown')
     await getDbPool().query(
       `insert into payment_orders
          (invoice_id, amount_rub, currency, description, provider, status,

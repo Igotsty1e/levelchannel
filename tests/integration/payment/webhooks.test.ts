@@ -5,6 +5,7 @@ import { POST as payHandler } from '@/app/api/payments/webhooks/cloudpayments/pa
 import { listPaymentAuditEventsByInvoice } from '@/lib/audit/payment-events'
 import { getDbPool } from '@/lib/db/pool'
 
+import { freshInvoiceId } from '../helpers'
 import './setup'
 import { buildCloudPaymentsBody, signCloudPaymentsBody } from './sign'
 
@@ -49,7 +50,7 @@ function buildFailWebhookRequest(rawBody: string) {
 // so the order looks like one CloudPayments would have created in
 // production.
 async function createOrder(amountRub: number, email: string) {
-  const invoiceId = `lc_test_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+  const invoiceId = freshInvoiceId()
   await getDbPool().query(
     `insert into payment_orders (
        invoice_id, amount_rub, currency, description, provider, status,
