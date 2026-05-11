@@ -34,7 +34,7 @@ export function TeacherAssignment({
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setErr(data?.error || `HTTP ${res.status}`)
+        setErr(data?.message || data?.error || `HTTP `)
         return
       }
       setInfo(selected ? 'Учитель назначен.' : 'Учитель отвязан.')
