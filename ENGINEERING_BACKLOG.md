@@ -249,13 +249,12 @@ Multi-front Codex adversarial pass against the whole repo. 73 findings across 4 
 
 - **Wave 12 deletion-guard contract gap.** `accountHasInFlightPackageGrant` was deleted as dead in this wave; the function existed for the two-branch deletion guard in design v9 but was never wired into `requestAccountDeletion` or `scripts/db-retention-cleanup.mjs`. Today the 30-day grace period mitigates: any in-flight grant either succeeds or hits one of the 7 fail-closed reasons within minutes, well before the 30-day purge fires. Action: either re-introduce the helper and wire into the schedule-step + execute-step (matching the design), OR explicitly close the design contract gap in `docs/plans/prepay-postpay-billing.md` v9.
 
-- **Split god-modules** (Pass 1 #9-#13). Five files with mixed responsibilities:
-  - `lib/scheduling/slots.ts` (1658 lines, mixes types/validation/queries/mutations/calendar/billing-bridge) — split into a folder with thin facade.
-  - `lib/payments/provider.ts` (invoiceId gen + state machine + saved-cards + 3DS + side effects).
-  - `lib/payments/cloudpayments-route.ts` (NextResponse formatting + rate-limit + dedup + audit + parse/verify).
-  - `lib/billing/packages.ts` (catalog + purchases + guards).
-  - `lib/telemetry/store.ts` (normalization + HMAC + file backend + postgres fallback).
-  Each is a multi-PR refactor on its own; not chained because each touches distinct callers and the risk profile is "no-op for behavior, big for review burden". Pick by next-touched-area heuristic.
+- ~~**Split god-modules** (Pass 1 #9-#13).~~ **Closed 2026-05-11 across Waves 39-42.**
+  - Pass 1 #9 `lib/scheduling/slots.ts` (1746 → 9-file folder). Wave 39 (PR #150) v3 design accepted by Codex round 3 GOOD-AS-IS; Wave 40 (PR #151) implementation, Codex post-merge CLEAN. Every file ≤358 lines, facade keeps `@/lib/scheduling/slots`.
+  - Pass 1 #10 `lib/payments/provider.ts` (525 → lifecycle 212 + checkout 343 + facade 24). Wave 41 (PR #152), Codex CLEAN.
+  - Pass 1 #11 `lib/payments/cloudpayments-route.ts` (498 lines). **Investigated, NOT split.** The file is ~one function (`handleCloudPaymentsWebhook`) with private helpers (`runWebhookPipeline`, `processSerialized`, `acquireClientWithTimeout`, `readTransactionId`, `computeRequestFingerprint`, `jsonResponse`) plus two log-tag constants. Sequential webhook workflow; splitting would fragment a coherent ordered pipeline (HMAC verify → parse → dedup-lock → handler → record → commit) into modules that would call each other in a fixed order anyway. Net review-burden gain: low. Decision: leave as-is.
+  - Pass 1 #12 `lib/billing/packages.ts` (373 → catalog 166 + purchases 148 + debt 58 + facade 25). Wave 42 (PR #153), Codex CLEAN.
+  - Pass 1 #13 `lib/telemetry/store.ts` (168 lines). **Investigated, NOT split.** Under any reasonable cap; 3 public exports (`CheckoutTelemetryEvent` type, `buildCheckoutTelemetryEvent`, `appendCheckoutTelemetryEvent`). The Codex "4 responsibilities" framing (normalization + HMAC + file backend + postgres fallback) overstates the scope: HMAC is 5 lines, file backend is 30 lines, postgres path is already delegated to `lib/telemetry/store-postgres.ts`. Decision: leave as-is.
 
 ### Deferred — API contract consistency
 
