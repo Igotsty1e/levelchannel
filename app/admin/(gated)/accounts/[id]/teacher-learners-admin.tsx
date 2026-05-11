@@ -60,8 +60,11 @@ export function TeacherLearnersAdmin({
         },
       )
       if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string }
-        setErr(data.error || `HTTP ${res.status}`)
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string
+          message?: string
+        }
+        setErr(data.message || data.error || `HTTP ${res.status}`)
         return
       }
       setInfo(nextTeacherId ? 'Привязано.' : 'Отвязано.')
