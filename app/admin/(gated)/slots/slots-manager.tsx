@@ -172,7 +172,7 @@ function SingleCreate({
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        onError(data?.error || `HTTP ${res.status}`)
+        onError(data?.message || data?.error || `HTTP `)
         return
       }
       onCreated('Слот создан.')
@@ -318,7 +318,7 @@ function BulkCreate({
       })
       const data = await res.json()
       if (!res.ok) {
-        onError(data?.error || `HTTP ${res.status}`)
+        onError(data?.message || data?.error || `HTTP `)
         setPreview([])
         return
       }
@@ -356,7 +356,7 @@ function BulkCreate({
       })
       const data = await res.json()
       if (!res.ok) {
-        onError(data?.error || `HTTP ${res.status}`)
+        onError(data?.message || data?.error || `HTTP `)
         return
       }
       const skippedNote =
@@ -605,7 +605,7 @@ function SlotList({
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        onError(data?.error || `HTTP ${res.status}`)
+        onError(data?.message || data?.error || `HTTP `)
         return false
       }
       return true

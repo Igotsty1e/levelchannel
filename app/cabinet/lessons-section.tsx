@@ -146,7 +146,7 @@ export function LessonsSection({
         if (data?.error === 'email_not_verified') {
           setErr('Подтвердите e-mail, чтобы записаться на занятие.')
         } else {
-          setErr(data?.error || `HTTP ${res.status}`)
+          setErr(data?.message || data?.error || `HTTP `)
         }
         return
       }
@@ -175,7 +175,7 @@ export function LessonsSection({
             'До начала менее 24 часов — отменить через систему уже нельзя. Напишите оператору.',
           )
         } else {
-          setErr(data?.error || `HTTP ${res.status}`)
+          setErr(data?.message || data?.error || `HTTP `)
         }
         return
       }
