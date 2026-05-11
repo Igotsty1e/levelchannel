@@ -22,20 +22,24 @@ on:
 
 jobs:
   build:
-    name: npm run build
+    name: npm run build (node ${{ matrix.node }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
-          # engines.node declares ">=20.0.0" but CI runs on a single
-          # version to keep this job a single required-check context
-          # in branch protection. Matrix [20, 22] coverage tracked in
-          # ENGINEERING_BACKLOG.md Wave 13 as a follow-up that needs
-          # paired branch-protection update.
-          node-version: 22
+          # Wave 44: matrix over [20, 22] enforces the engines.node
+          # ">=20.0.0" floor declared in package.json. Branch
+          # protection requires BOTH check contexts now ("npm run
+          # build (node 20)" + "(node 22)") so a regression that
+          # breaks the older floor fails CI instead of rotting prod.
+          node-version: ${{ matrix.node }}
           cache: npm
 
       - name: Install dependencies
