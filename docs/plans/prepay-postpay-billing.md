@@ -862,6 +862,8 @@ This contract is verified in five integration tests in PR 2:
 
 **Test/integration behavior** (Codex round 3 MEDIUM): integration tests in `tests/integration/` boot the app with `BILLING_WAVE_ACTIVE=true` so the route-level matrix exercises the new path. `scripts/test-integration.sh` exports the flag as part of the env it passes to vitest. Pure data-layer unit tests in `tests/billing/` test functions directly (`consumePackageUnit`, `restorePackageConsumption`, `slotIsPaidByAllocations`) and are flag-independent. PR 1 wires the env-export.
 
+**Legacy fast-path response shape** (Codex Wave 12 sweep MEDIUM 1, 2026-05-11): when `BILLING_WAVE_ACTIVE !== 'true'`, the SQL path in `bookSlot` is preserved bit-for-bit, but the route response gained an additive `billing: { kind: 'legacy' }` field. This is intentional and **NOT** a contract regression — callers that ignore the field (all current legacy clients) behave identically, and the flag-on branch now has a typed surface to distinguish prepaid / postpaid / legacy. The Wave 12 post-merge sweep documented this so audit reads aren't confused by the new field appearing in flag-off rows.
+
 ### Phase 2 — flip the flag (T-0)
 
 1. Operator sets `BILLING_WAVE_ACTIVE=true` in `/etc/levelchannel/env` and runs `systemctl restart levelchannel`. Booking flow re-routes through the new path.
