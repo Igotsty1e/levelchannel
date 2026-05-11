@@ -61,7 +61,10 @@ export async function POST(request: Request, { params }: RouteParams) {
       // role. Surface as 400 with an actionable message; the admin
       // UI can render this directly.
       return NextResponse.json(
-        { error: 'Этот аккаунт не зарегистрирован как преподаватель.' },
+        {
+          error: 'not_a_teacher',
+          message: 'Этот аккаунт не зарегистрирован как преподаватель.',
+        },
         { status: 400, headers: NO_STORE },
       )
     }

@@ -40,14 +40,20 @@ export async function POST(request: Request, { params }: RouteParams) {
   if (!parsed.ok) return parsed.response
   if (typeof parsed.body.disabled !== 'boolean') {
     return NextResponse.json(
-      { error: 'Body must be { disabled: boolean }.' },
+      {
+        error: 'invalid_body',
+        message: 'Body must be { disabled: boolean }.',
+      },
       { status: 400, headers: NO_STORE },
     )
   }
   const disabled = parsed.body.disabled
   if (disabled && id === guard.account.id) {
     return NextResponse.json(
-      { error: 'Cannot disable yourself.' },
+      {
+        error: 'cannot_disable_self',
+        message: 'Cannot disable yourself.',
+      },
       { status: 400, headers: NO_STORE },
     )
   }
