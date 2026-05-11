@@ -151,7 +151,7 @@ describe('POST /api/admin/refunds', () => {
     expect(json.reversalId).toBe(firstReversalId)
   })
 
-  it('rejects refundedKopecks > allocation amount with 400', async () => {
+  it('rejects refundedKopecks > allocation amount with 400 refund_exceeds_allocation', async () => {
     const admin = await regAdmin()
     const slotId = '33333333-3333-3333-3333-' + Date.now().toString(16).padStart(12, '0').slice(-12)
     const { paymentOrderId } = await seedPaidAllocation({
@@ -173,6 +173,34 @@ describe('POST /api/admin/refunds', () => {
     expect(res.status).toBe(400)
     const json = await res.json()
     expect(json.error).toBe('refund_exceeds_allocation')
+  })
+
+  it('rejects refundedKopecks < allocation amount with 400 partial_refund_not_supported', async () => {
+    // Codex Wave 51 review HIGH. Stage A/B model is full-refund-only:
+    // the read paths drop the allocation on reversal row existence,
+    // not on amount match, so accepting a partial would mark the slot
+    // fully unpaid for a 1-kopeck refund.
+    const admin = await regAdmin()
+    const slotId = '44444444-4444-4444-4444-' + Date.now().toString(16).padStart(12, '0').slice(-12)
+    const { paymentOrderId } = await seedPaidAllocation({
+      amountKopecks: 100000,
+      slotId,
+    })
+
+    const res = await refundsHandler(
+      buildRequest('/api/admin/refunds', {
+        cookie: admin.cookie,
+        body: {
+          paymentOrderId,
+          kind: 'lesson_slot',
+          targetId: slotId,
+          refundedKopecks: 50000,
+        },
+      }),
+    )
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(json.error).toBe('partial_refund_not_supported')
   })
 
   it('returns 404 when the allocation does not exist', async () => {

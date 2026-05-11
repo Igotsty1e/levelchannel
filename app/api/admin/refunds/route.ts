@@ -131,13 +131,28 @@ export async function POST(request: Request) {
         { status: 404, headers: NO_STORE },
       )
     }
+    // Stage B is full-refund-only by design. Migration 0036 documents
+    // "Partial / amount-only reversals are out of scope for Stage A —
+    // they require the SUM-over-reversals refactor" and the read paths
+    // (slotIsPaidByAllocations / listSlotPaidStatus / debt query) drop
+    // the allocation on REVERSAL ROW EXISTENCE, not on amount match.
+    // Accepting refundedKopecks < amount would flip a slot to "unpaid"
+    // even though only 1 kopeck was refunded — a real data bug.
+    // Codex Wave 51 review HIGH. Reject anything that isn't the full
+    // amount; the operator hits this branch when CloudPayments only
+    // partially refunded (rare; today operator can fall back to manual
+    // CloudPayments-dashboard status flip on payment_orders).
     const allocAmount = Number(allocRow.rows[0].amount_kopecks)
-    if (refundedKopecks > allocAmount) {
+    if (refundedKopecks !== allocAmount) {
       await client.query('rollback')
+      const code =
+        refundedKopecks > allocAmount
+          ? 'refund_exceeds_allocation'
+          : 'partial_refund_not_supported'
       return NextResponse.json(
         {
-          error: 'refund_exceeds_allocation',
-          message: `refundedKopecks=${refundedKopecks} exceeds allocation amount=${allocAmount}.`,
+          error: code,
+          message: `refundedKopecks=${refundedKopecks} must equal allocation amount=${allocAmount} (Stage B is full-refund-only).`,
         },
         { status: 400, headers: NO_STORE },
       )
