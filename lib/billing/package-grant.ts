@@ -23,14 +23,24 @@ import { sendOperatorPackageGrantFailureNotification } from '@/lib/email/dispatc
 import { normalizeEmail } from '@/lib/email/normalize'
 import { getOrder } from '@/lib/payments/store'
 
+// Wave 46 — taxonomy cleanup (Codex Wave 12 sweep HIGH 2).
+//
+// `decrypt_failed` and `no_ciphertext` were declared in v9 design but
+// the implementation has always read plaintext `customer_email` from
+// the order row — never decrypts. Removing the dead values; keeping
+// the seven reasons that the code actually emits.
+//
+// `package_unknown_or_inactive` is also surfaced as a result kind for
+// route-layer differentiation, but it now ALSO produces an audit row
+// + operator notification via the same fail-closed path.
 export type GrantSemanticFailure =
   | 'no_metadata_accountid'
   | 'metadata_accountid_unknown'
-  | 'no_ciphertext'
-  | 'decrypt_failed'
+  | 'no_customer_email'
   | 'no_account_match'
   | 'multi_account_match'
   | 'metadata_email_mismatch'
+  | 'package_unknown_or_inactive'
 
 export type GrantResult =
   | { kind: 'granted'; packagePurchaseId: string }
@@ -76,8 +86,8 @@ export async function processPackageGrant(
   // Path B: customer_email → accounts.email_normalized.
   const customerEmail = fullOrder.customerEmail
   if (typeof customerEmail !== 'string' || customerEmail.trim().length === 0) {
-    await audit(invoiceId, fullOrder, 'no_ciphertext')
-    return { kind: 'semantic_failure', reason: 'no_ciphertext' }
+    await audit(invoiceId, fullOrder, 'no_customer_email')
+    return { kind: 'semantic_failure', reason: 'no_customer_email' }
   }
   const normalized = normalizeEmail(customerEmail)
   const emailRow = await pool.query(
@@ -118,6 +128,13 @@ export async function processPackageGrant(
   }
   const pkg = await getPackageBySlug(metaPackageSlug)
   if (!pkg || !pkg.isActive) {
+    // Wave 46 — was a silent 200-path failure (no audit, no email).
+    // The operator now sees both an audit row AND a Resend dispatch
+    // so they can react to a paid-but-not-granted incident.
+    await audit(invoiceId, fullOrder, 'package_unknown_or_inactive', {
+      slug: metaPackageSlug,
+      reason: !pkg ? 'not_found' : 'inactive',
+    })
     return { kind: 'package_unknown_or_inactive', slug: metaPackageSlug }
   }
 
@@ -149,6 +166,11 @@ export async function processPackageGrant(
     if (!purchase) {
       // UNIQUE on payment_order_id rejected — already granted, no-op.
       await client.query('commit')
+      // Wave 46 — audit the replay. Webhook retries / mock-confirm
+      // re-runs are routine; the operator needs the breadcrumb so
+      // "паchet выдан дважды" investigations can spot the second
+      // hit and confirm it's an idempotent no-op, not a real grant.
+      await auditSucceeded(invoiceId, fullOrder, null, { replay: true })
       return { kind: 'already_granted' }
     }
     await client.query(
@@ -159,6 +181,11 @@ export async function processPackageGrant(
       [invoiceId, purchase.id, pkg.amountKopecks],
     )
     await client.query('commit')
+    // Wave 46 — emit the success event. The enum (migration 0034 +
+    // lib/audit/payment-events.ts) reserved 'package.grant.succeeded'
+    // but no callsite emitted it. Now the operator gets a positive
+    // audit signal mirroring 'package.grant.failed' on every grant.
+    await auditSucceeded(invoiceId, fullOrder, purchase.id, { replay: false })
     return { kind: 'granted', packagePurchaseId: purchase.id }
   } catch (e) {
     await client.query('rollback').catch(() => {})
@@ -182,6 +209,40 @@ export async function processPackageGrantInline(
     // eslint-disable-next-line no-console
     console.warn('[package.grant.inline] failed:', {
       invoiceId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
+// Wave 46 — emits the 'package.grant.succeeded' audit row reserved in
+// migration 0034 + lib/audit/payment-events.ts but never written until
+// now. Called on both the fresh-grant and idempotent-replay branches
+// so the operator gets matching breadcrumbs for every webhook fire.
+async function auditSucceeded(
+  invoiceId: string,
+  fullOrder: Awaited<ReturnType<typeof getOrder>> | null,
+  packagePurchaseId: string | null,
+  extra?: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await recordPaymentAuditEvent({
+      eventType: 'package.grant.succeeded',
+      invoiceId,
+      customerEmail: fullOrder?.customerEmail ?? null,
+      amountKopecks: fullOrder?.amountRub ? rublesToKopecks(fullOrder.amountRub) : 0,
+      toStatus: 'paid',
+      actor: 'webhook:cloudpayments:pay',
+      payload: { packagePurchaseId, ...(extra ?? {}) },
+    })
+  } catch (err) {
+    // Audit is best-effort. A failure here MUST NOT roll back a
+    // successful grant — the operator can recover from a missing
+    // audit row, but a rolled-back grant means the learner paid and
+    // got nothing.
+    // eslint-disable-next-line no-console
+    console.warn('[package.grant.audit.success] failed:', {
+      invoiceId,
+      packagePurchaseId,
       error: err instanceof Error ? err.message : String(err),
     })
   }
