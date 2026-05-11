@@ -1,8 +1,9 @@
 import bcrypt from 'bcryptjs'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { POST as loginHandler } from '@/app/api/auth/login/route'
 import { POST as registerHandler } from '@/app/api/auth/register/route'
+import * as dummyHash from '@/lib/auth/dummy-hash'
 import { getAuthPool } from '@/lib/auth/pool'
 
 import '../setup'
@@ -58,35 +59,47 @@ describe('POST /api/auth/login', () => {
     expect(json.error).toBeTruthy()
   })
 
-  it('login with unknown email and known-but-wrong-password take similar time (constant-time D3)', async () => {
-    await registerOne('time-known@example.com', 'real password value')
+  // Codex Wave 13 Pass 3 #4. Constant-time D3 parity via structural
+  // assertion instead of wall-clock measurement. See register.test.ts
+  // for the same reasoning — wall-clock bcrypt timings are inherently
+  // flaky under variable IO/load. The contract is "both rejection
+  // paths invoke exactly one bcrypt cycle through
+  // constantTimeVerifyPassword", which we can verify directly with a
+  // spy.
+  it('login rejection paths both call constantTimeVerifyPassword exactly once (anti-enumeration)', async () => {
+    await registerOne('parity-known@example.com', 'real password value')
 
-    async function timeOne(email: string, password: string) {
-      const start = performance.now()
-      const res = await loginHandler(
-        buildRequest('/api/auth/login', { body: { email, password } }),
+    const spy = vi.spyOn(dummyHash, 'constantTimeVerifyPassword')
+    try {
+      // Unknown email path — getAccountByEmail returns null, route
+      // falls through with accountUsableHash=null, the helper hashes
+      // against the dummy.
+      await loginHandler(
+        buildRequest('/api/auth/login', {
+          body: { email: 'parity-unknown@example.com', password: 'whatever' },
+        }),
       )
-      await res.json()
-      return performance.now() - start
-    }
+      expect(spy).toHaveBeenCalledOnce()
+      const unknownArgs = spy.mock.calls[0]
+      expect(unknownArgs[1]).toBeNull()
 
-    // Warm up dummy hash module-load
-    await timeOne('warmup@example.com', 'whatever')
+      spy.mockClear()
 
-    const unknownDurations: number[] = []
-    const knownWrongDurations: number[] = []
-    for (let i = 0; i < 3; i++) {
-      unknownDurations.push(await timeOne(`unknown-${i}@example.com`, 'whatever'))
-      knownWrongDurations.push(
-        await timeOne('time-known@example.com', `bad-pwd-${i}`),
+      // Known email + wrong password — getAccountByEmail returns the
+      // row, route passes the real hash, the helper verifies against
+      // it. Same single-call signature, just with a non-null hash arg.
+      await loginHandler(
+        buildRequest('/api/auth/login', {
+          body: { email: 'parity-known@example.com', password: 'wrong-pwd' },
+        }),
       )
+      expect(spy).toHaveBeenCalledOnce()
+      const knownArgs = spy.mock.calls[0]
+      expect(knownArgs[1]).toBeTruthy()
+      expect(typeof knownArgs[1]).toBe('string')
+    } finally {
+      spy.mockRestore()
     }
-
-    const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length
-    const delta = Math.abs(avg(unknownDurations) - avg(knownWrongDurations))
-
-    // ±100ms per /plan-eng-review mech-6, with retry headroom.
-    expect(delta).toBeLessThan(150)
   })
 
   it('allows login when email is not yet verified (Phase 1B D4)', async () => {
