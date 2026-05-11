@@ -28,19 +28,28 @@ export async function POST(
   }
 
   if (!paymentConfig.allowMockConfirm) {
-    return NextResponse.json({ error: 'Mock confirmation is disabled.' }, { status: 403 })
+    return NextResponse.json(
+      { error: 'mock_confirm_disabled', message: 'Mock confirmation is disabled.' },
+      { status: 403 },
+    )
   }
 
   const { invoiceId } = await context.params
 
   if (!isValidInvoiceId(invoiceId)) {
-    return NextResponse.json({ error: 'Invalid payment id.' }, { status: 400 })
+    return NextResponse.json(
+      { error: 'invalid_invoice_id', message: 'Invalid payment id.' },
+      { status: 400 },
+    )
   }
 
   const order = await markOrderPaid(invoiceId, { source: 'mock.manual_confirm' })
 
   if (!order) {
-    return NextResponse.json({ error: 'Payment not found.' }, { status: 404 })
+    return NextResponse.json(
+      { error: 'not_found', message: 'Payment not found.' },
+      { status: 404 },
+    )
   }
 
   await recordPaymentAuditEvent({

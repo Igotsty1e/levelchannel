@@ -59,7 +59,10 @@ export async function POST(request: Request) {
   const session = await getCurrentSession(request)
   if (!session) {
     return NextResponse.json(
-      { error: 'Войдите в аккаунт, чтобы использовать сохранённую карту.' },
+      {
+        error: 'session_required',
+        message: 'Войдите в аккаунт, чтобы использовать сохранённую карту.',
+      },
       { status: 401, headers: NO_STORE },
     )
   }
@@ -96,7 +99,10 @@ export async function DELETE(request: Request) {
   const session = await getCurrentSession(request)
   if (!session) {
     return NextResponse.json(
-      { error: 'Войдите в аккаунт, чтобы удалить сохранённую карту.' },
+      {
+        error: 'session_required',
+        message: 'Войдите в аккаунт, чтобы удалить сохранённую карту.',
+      },
       { status: 401, headers: NO_STORE },
     )
   }
@@ -104,7 +110,7 @@ export async function DELETE(request: Request) {
   const emailValidation = validateCustomerEmail(session.account.email)
   if (!emailValidation.ok) {
     return NextResponse.json(
-      { error: emailValidation.message },
+      { error: 'invalid_email', message: emailValidation.message },
       { status: 400, headers: NO_STORE },
     )
   }

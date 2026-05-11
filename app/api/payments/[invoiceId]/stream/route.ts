@@ -53,7 +53,7 @@ export async function GET(request: Request, { params }: RouteParams) {
   const { invoiceId } = await params
 
   if (!isValidInvoiceId(invoiceId)) {
-    return new Response(JSON.stringify({ error: 'Invalid payment id.' }), {
+    return new Response(JSON.stringify({ error: 'invalid_invoice_id', message: 'Invalid payment id.' }), {
       status: 400,
       headers: { 'Content-Type': 'application/json' },
     })
@@ -72,7 +72,7 @@ export async function GET(request: Request, { params }: RouteParams) {
   // `?token=<plain>` query param. extractReceiptToken accepts either.
   const fullOrder = await syncMockOrderState(invoiceId)
   if (!fullOrder) {
-    return new Response(JSON.stringify({ error: 'Payment not found.' }), {
+    return new Response(JSON.stringify({ error: 'not_found', message: 'Payment not found.' }), {
       status: 404,
       headers: { 'Content-Type': 'application/json' },
     })
@@ -80,7 +80,7 @@ export async function GET(request: Request, { params }: RouteParams) {
   const presented = extractReceiptToken(request)
   const verdict = evaluateReceiptGate(fullOrder, presented)
   if (!verdict.ok) {
-    return new Response(JSON.stringify({ error: 'Payment not found.' }), {
+    return new Response(JSON.stringify({ error: 'not_found', message: 'Payment not found.' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' },
     })

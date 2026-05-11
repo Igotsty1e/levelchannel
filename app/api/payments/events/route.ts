@@ -38,12 +38,18 @@ export async function POST(request: Request) {
 
     const type = String(body.type || '')
     if (!EVENT_TYPE_PATTERN.test(type)) {
-      return NextResponse.json({ error: 'Invalid event type.' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'invalid_event_type', message: 'Invalid event type.' },
+        { status: 400 },
+      )
     }
 
     const invoiceId = body.invoiceId ? String(body.invoiceId) : undefined
     if (invoiceId && !isValidInvoiceId(invoiceId)) {
-      return NextResponse.json({ error: 'Invalid payment id.' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'invalid_invoice_id', message: 'Invalid payment id.' },
+        { status: 400 },
+      )
     }
 
     await appendCheckoutTelemetryEvent({

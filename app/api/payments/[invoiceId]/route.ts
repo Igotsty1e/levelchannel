@@ -25,7 +25,7 @@ export async function GET(
 
   if (!isValidInvoiceId(invoiceId)) {
     return NextResponse.json(
-      { error: 'Invalid payment id.' },
+      { error: 'invalid_invoice_id', message: 'Invalid payment id.' },
       { status: 400, headers: NO_STORE },
     )
   }
@@ -37,7 +37,7 @@ export async function GET(
   const order = await syncMockOrderState(invoiceId)
   if (!order) {
     return NextResponse.json(
-      { error: 'Payment not found.' },
+      { error: 'not_found', message: 'Payment not found.' },
       { status: 404, headers: NO_STORE },
     )
   }
@@ -49,7 +49,7 @@ export async function GET(
     // invoiceId exists by the response code alone. 401 because
     // there IS a known capability to gate, even if we don't reveal it.
     return NextResponse.json(
-      { error: 'Payment not found.' },
+      { error: 'not_found', message: 'Payment not found.' },
       { status: 401, headers: NO_STORE },
     )
   }
