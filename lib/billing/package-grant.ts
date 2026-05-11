@@ -48,9 +48,20 @@ export type GrantResult =
   | { kind: 'semantic_failure'; reason: GrantSemanticFailure }
   | { kind: 'package_unknown_or_inactive'; slug: string }
 
+// Wave 46 review LOW. Actor lives on every audit row this flow
+// produces. The default 'webhook:cloudpayments:pay' covers the real
+// webhook path; the mock-auto-confirm inline path passes
+// 'mock:auto_confirm' so audit reads don't misattribute test/mock
+// grants to the webhook surface.
+export type PackageGrantActor =
+  | 'webhook:cloudpayments:pay'
+  | 'mock:auto_confirm'
+
 export async function processPackageGrant(
   invoiceId: string,
+  options: { actor?: PackageGrantActor } = {},
 ): Promise<GrantResult> {
+  const actor: PackageGrantActor = options.actor ?? 'webhook:cloudpayments:pay'
   const pool = getDbPool()
   const fullOrder = await getOrder(invoiceId)
   if (!fullOrder) {
@@ -58,7 +69,7 @@ export async function processPackageGrant(
     // never happen for an idempotent path, but treat as semantic fail
     // (no_metadata_accountid is the closest enum; "we can't read the
     // order" is permanent for this invoice).
-    await audit(invoiceId, null, 'no_metadata_accountid', { hint: 'order_missing' })
+    await audit(invoiceId, null, 'no_metadata_accountid', actor, { hint: 'order_missing' })
     return { kind: 'semantic_failure', reason: 'no_metadata_accountid' }
   }
 
@@ -66,7 +77,7 @@ export async function processPackageGrant(
   const metaPackageSlug = fullOrder.metadata?.packageSlug
 
   if (typeof metaAccountId !== 'string' || metaAccountId.length === 0) {
-    await audit(invoiceId, fullOrder, 'no_metadata_accountid')
+    await audit(invoiceId, fullOrder, 'no_metadata_accountid', actor)
     return { kind: 'semantic_failure', reason: 'no_metadata_accountid' }
   }
 
@@ -76,7 +87,7 @@ export async function processPackageGrant(
     [metaAccountId],
   )
   if (metaRow.rows.length === 0) {
-    await audit(invoiceId, fullOrder, 'metadata_accountid_unknown', {
+    await audit(invoiceId, fullOrder, 'metadata_accountid_unknown', actor, {
       metaAccountId,
     })
     return { kind: 'semantic_failure', reason: 'metadata_accountid_unknown' }
@@ -86,7 +97,7 @@ export async function processPackageGrant(
   // Path B: customer_email → accounts.email_normalized.
   const customerEmail = fullOrder.customerEmail
   if (typeof customerEmail !== 'string' || customerEmail.trim().length === 0) {
-    await audit(invoiceId, fullOrder, 'no_customer_email')
+    await audit(invoiceId, fullOrder, 'no_customer_email', actor)
     return { kind: 'semantic_failure', reason: 'no_customer_email' }
   }
   const normalized = normalizeEmail(customerEmail)
@@ -95,13 +106,13 @@ export async function processPackageGrant(
     [normalized],
   )
   if (emailRow.rows.length === 0) {
-    await audit(invoiceId, fullOrder, 'no_account_match', {
+    await audit(invoiceId, fullOrder, 'no_account_match', actor, {
       normalizedEmail: normalized,
     })
     return { kind: 'semantic_failure', reason: 'no_account_match' }
   }
   if (emailRow.rows.length > 1) {
-    await audit(invoiceId, fullOrder, 'multi_account_match', {
+    await audit(invoiceId, fullOrder, 'multi_account_match', actor, {
       normalizedEmail: normalized,
     })
     return { kind: 'semantic_failure', reason: 'multi_account_match' }
@@ -110,7 +121,7 @@ export async function processPackageGrant(
 
   // Corroborate.
   if (metaResolvedId !== emailResolvedId) {
-    await audit(invoiceId, fullOrder, 'metadata_email_mismatch', {
+    await audit(invoiceId, fullOrder, 'metadata_email_mismatch', actor, {
       metaAccountId: metaResolvedId,
       emailAccountId: emailResolvedId,
     })
@@ -121,7 +132,7 @@ export async function processPackageGrant(
   if (typeof metaPackageSlug !== 'string') {
     // Should be filtered by caller (only call this fn on package
     // orders), but defensive.
-    await audit(invoiceId, fullOrder, 'no_metadata_accountid', {
+    await audit(invoiceId, fullOrder, 'no_metadata_accountid', actor, {
       hint: 'missing_package_slug',
     })
     return { kind: 'semantic_failure', reason: 'no_metadata_accountid' }
@@ -131,7 +142,7 @@ export async function processPackageGrant(
     // Wave 46 — was a silent 200-path failure (no audit, no email).
     // The operator now sees both an audit row AND a Resend dispatch
     // so they can react to a paid-but-not-granted incident.
-    await audit(invoiceId, fullOrder, 'package_unknown_or_inactive', {
+    await audit(invoiceId, fullOrder, 'package_unknown_or_inactive', actor, {
       slug: metaPackageSlug,
       reason: !pkg ? 'not_found' : 'inactive',
     })
@@ -170,7 +181,7 @@ export async function processPackageGrant(
       // re-runs are routine; the operator needs the breadcrumb so
       // "паchet выдан дважды" investigations can spot the second
       // hit and confirm it's an idempotent no-op, not a real grant.
-      await auditSucceeded(invoiceId, fullOrder, null, { replay: true })
+      await auditSucceeded(invoiceId, fullOrder, actor, null, { replay: true })
       return { kind: 'already_granted' }
     }
     await client.query(
@@ -185,7 +196,7 @@ export async function processPackageGrant(
     // lib/audit/payment-events.ts) reserved 'package.grant.succeeded'
     // but no callsite emitted it. Now the operator gets a positive
     // audit signal mirroring 'package.grant.failed' on every grant.
-    await auditSucceeded(invoiceId, fullOrder, purchase.id, { replay: false })
+    await auditSucceeded(invoiceId, fullOrder, actor, purchase.id, { replay: false })
     return { kind: 'granted', packagePurchaseId: purchase.id }
   } catch (e) {
     await client.query('rollback').catch(() => {})
@@ -204,7 +215,9 @@ export async function processPackageGrantInline(
   invoiceId: string,
 ): Promise<void> {
   try {
-    await processPackageGrant(invoiceId)
+    // mock-auto-confirm path. Actor labels distinguish inline test/
+    // mock grants from real webhook deliveries in audit reads.
+    await processPackageGrant(invoiceId, { actor: 'mock:auto_confirm' })
   } catch (err) {
     // eslint-disable-next-line no-console
     console.warn('[package.grant.inline] failed:', {
@@ -221,6 +234,7 @@ export async function processPackageGrantInline(
 async function auditSucceeded(
   invoiceId: string,
   fullOrder: Awaited<ReturnType<typeof getOrder>> | null,
+  actor: PackageGrantActor,
   packagePurchaseId: string | null,
   extra?: Record<string, unknown>,
 ): Promise<void> {
@@ -231,7 +245,7 @@ async function auditSucceeded(
       customerEmail: fullOrder?.customerEmail ?? null,
       amountKopecks: fullOrder?.amountRub ? rublesToKopecks(fullOrder.amountRub) : 0,
       toStatus: 'paid',
-      actor: 'webhook:cloudpayments:pay',
+      actor,
       payload: { packagePurchaseId, ...(extra ?? {}) },
     })
   } catch (err) {
@@ -252,6 +266,7 @@ async function audit(
   invoiceId: string,
   fullOrder: Awaited<ReturnType<typeof getOrder>> | null,
   reason: GrantSemanticFailure,
+  actor: PackageGrantActor,
   extra?: Record<string, unknown>,
 ): Promise<void> {
   await recordPaymentAuditEvent({
@@ -260,7 +275,7 @@ async function audit(
     customerEmail: fullOrder?.customerEmail ?? null,
     amountKopecks: fullOrder?.amountRub ? rublesToKopecks(fullOrder.amountRub) : 0,
     toStatus: 'paid',
-    actor: 'webhook:cloudpayments:pay',
+    actor,
     payload: { reason, ...(extra ?? {}) },
   })
 

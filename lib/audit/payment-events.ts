@@ -58,6 +58,10 @@ export type PaymentAuditActor =
   | 'cron'
   | 'system'
   | 'checkout:package'
+  // Wave 46 — mock-auto-confirm path runs processPackageGrant inline
+  // at /checkout/package init. The actor label distinguishes those
+  // grants from real webhook deliveries in audit reads.
+  | 'mock:auto_confirm'
 
 // Money helper moved to lib/payments/money.ts (Codex 2026-05-10
 // CONSOLIDATE — money helpers belong with payments, not audit).
