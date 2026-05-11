@@ -28,6 +28,10 @@ type Props = {
   learnerTimezone: string | null
   emailVerified: boolean
   initialPaidSlotIds: string[]
+  // Wave 52 — refund Phase 7. A slot in this list HAD a paid
+  // allocation that got reversed. Renders a neutral "возврат
+  // оформлен" pill instead of the yellow "оплатить X₽" CTA.
+  initialRefundedSlotIds?: string[]
   // When false, the cabinet renders a "ваш учитель ещё не назначен"
   // hint instead of an empty available-list. The page passes this
   // from `account.assignedTeacherId ? true : false`.
@@ -90,6 +94,7 @@ export function LessonsSection({
   learnerTimezone,
   emailVerified,
   initialPaidSlotIds,
+  initialRefundedSlotIds,
   hasAssignedTeacher,
   assignedTeacherId,
   activePackages,
@@ -111,6 +116,7 @@ export function LessonsSection({
   const [mine, setMine] = useState<LessonSlot[]>(initialMine)
   const [available, setAvailable] = useState<LessonSlot[]>(initialAvailable)
   const paidSet = new Set(initialPaidSlotIds)
+  const refundedSet = new Set(initialRefundedSlotIds ?? [])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
@@ -254,6 +260,25 @@ export function LessonsSection({
                                       }}
                                     >
                                       оплачено
+                                    </span>
+                                  ) : refundedSet.has(s.id) ? (
+                                    // Wave 52 — refund Phase 7 Stage C.
+                                    // Slot had a paid allocation that was
+                                    // reversed; show a neutral pill so the
+                                    // operator doesn't push the learner
+                                    // through "оплатить" again.
+                                    <span
+                                      style={{
+                                        marginLeft: 8,
+                                        fontSize: 11,
+                                        padding: '1px 8px',
+                                        borderRadius: 4,
+                                        background: 'rgba(180,180,180,0.15)',
+                                        color: '#cfcfcf',
+                                      }}
+                                      title="Оплата за это занятие была возвращена. Если требуется снова оплатить, свяжитесь с оператором."
+                                    >
+                                      возврат оформлен
                                     </span>
                                   ) : (
                                     <a

@@ -8,7 +8,7 @@ import { getAccountProfile } from '@/lib/auth/profiles'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { listAccountActivePackages } from '@/lib/billing/packages'
 import { getDbPool } from '@/lib/db/pool'
-import { listSlotPaidStatus } from '@/lib/payments/allocations'
+import { listSlotPaymentState } from '@/lib/payments/allocations'
 import {
   listOpenFutureSlots,
   listSlotsAsTeacher,
@@ -109,9 +109,18 @@ export default async function CabinetPage() {
       : Promise.resolve({ rows: [] as Array<{ postpaid_allowed: boolean }> }),
   ])
   const greetingName = profile?.displayName?.trim() || account.email
-  const paidMap = isLearner
-    ? await listSlotPaidStatus(mySlots.map((s) => s.id))
-    : new Map()
+  // Wave 52 — pass two sets to <LessonsSection>: "paid" + "refunded".
+  // A refunded slot needs a distinct neutral pill, not the yellow
+  // "оплатить" CTA which would suggest the learner needs to pay again.
+  const paymentStateMap = isLearner
+    ? await listSlotPaymentState(mySlots.map((s) => s.id))
+    : new Map<string, { state: 'paid' | 'refunded'; orderInvoiceId: string }>()
+  const paidSlotIds: string[] = []
+  const refundedSlotIds: string[] = []
+  for (const [slotId, info] of paymentStateMap) {
+    if (info.state === 'paid') paidSlotIds.push(slotId)
+    else refundedSlotIds.push(slotId)
+  }
   const postpaidAllowed = Boolean(postpaidRow.rows[0]?.postpaid_allowed)
 
   return (
@@ -151,7 +160,8 @@ export default async function CabinetPage() {
             initialAvailable={openSlots}
             learnerTimezone={profile?.timezone ?? null}
             emailVerified={isVerified}
-            initialPaidSlotIds={Array.from(paidMap.keys())}
+            initialPaidSlotIds={paidSlotIds}
+            initialRefundedSlotIds={refundedSlotIds}
             hasAssignedTeacher={Boolean(account.assignedTeacherId)}
             assignedTeacherId={account.assignedTeacherId}
             activePackages={activePackages.map((p) => ({
