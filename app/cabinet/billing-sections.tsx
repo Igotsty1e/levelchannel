@@ -30,6 +30,9 @@ type PostpaidDebt = {
   durationMinutes: number
   status: string
   tariffId: string | null
+  // Wave 45 — server now passes the slug too so the "Оплатить" link
+  // can hit /checkout/[tariffSlug] which resolves by slug, not UUID.
+  tariffSlug: string | null
   expectedAmountKopecks: number | null
   legacyGrandfathered: boolean
 }
@@ -241,9 +244,9 @@ export function BillingSections({
                   ) : rub !== null ? (
                     <a
                       href={
-                        s.tariffId
+                        s.tariffSlug
                           ? `/checkout/${encodeURIComponent(
-                              s.tariffId,
+                              s.tariffSlug,
                             )}?slot=${encodeURIComponent(s.slotId)}`
                           : '#'
                       }

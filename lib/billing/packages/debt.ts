@@ -9,6 +9,9 @@ export type PostpaidDebtSlot = {
   durationMinutes: number
   status: string
   tariffId: string | null
+  // Wave 45 — also surface the slug so the cabinet "Оплатить" link can
+  // hit /checkout/[tariffSlug] which resolves by slug, not UUID.
+  tariffSlug: string | null
   expectedAmountKopecks: number | null
   legacyGrandfathered: boolean
 }
@@ -23,6 +26,7 @@ export async function listAccountPostpaidDebt(
   const pool = getDbPool()
   const result = await pool.query(
     `select s.id, s.start_at, s.duration_minutes, s.status, s.tariff_id,
+            t.slug as tariff_slug,
             t.amount_kopecks as expected_amount_kopecks,
             s.legacy_grandfathered
        from lesson_slots s
@@ -49,6 +53,7 @@ export async function listAccountPostpaidDebt(
     durationMinutes: Number(r.duration_minutes),
     status: String(r.status),
     tariffId: r.tariff_id ? String(r.tariff_id) : null,
+    tariffSlug: r.tariff_slug ? String(r.tariff_slug) : null,
     expectedAmountKopecks:
       r.expected_amount_kopecks !== null && r.expected_amount_kopecks !== undefined
         ? Number(r.expected_amount_kopecks)
