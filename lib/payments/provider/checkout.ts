@@ -1,6 +1,15 @@
+// Wave 41 — checkout-flow half of the former lib/payments/provider.ts
+// (Codex Wave 13 Pass 1 #10).
+//
+// Owns the surfaces that mint new orders or drive saved-card / 3DS
+// flows: createPayment, chargeWithSavedCard, confirmThreeDsAndFinalize.
+// All terminal state writes delegate to the markOrderPaid /
+// markOrderFailed helpers in ./lifecycle.ts.
+
 import { randomUUID } from 'crypto'
 
 import { mintToken } from '@/lib/auth/tokens'
+import type { PersonalDataConsentSnapshot } from '@/lib/legal/personal-data'
 import {
   chargeWithSavedToken,
   confirmThreeDs,
@@ -9,10 +18,8 @@ import {
   buildCloudPaymentsWidgetIntent,
   createCloudPaymentsOrder,
 } from '@/lib/payments/cloudpayments'
-import type { PersonalDataConsentSnapshot } from '@/lib/legal/personal-data'
 import { paymentConfig } from '@/lib/payments/config'
 import { createMockOrder } from '@/lib/payments/mock'
-import { emitStatusChange } from '@/lib/payments/status-bus'
 import {
   createOrder,
   deleteCardToken,
@@ -28,85 +35,13 @@ import type {
   PublicPaymentOrder,
 } from '@/lib/payments/types'
 
-function nowIso() {
-  return new Date().toISOString()
-}
-
-function getPayloadString(
-  payload: Record<string, unknown> | undefined,
-  key: string,
-) {
-  const value = payload?.[key]
-
-  if (typeof value === 'string' && value) {
-    return value
-  }
-
-  if (typeof value === 'number') {
-    return String(value)
-  }
-
-  return undefined
-}
-
-function appendEvent(
-  order: PaymentOrder,
-  type: string,
-  payload?: Record<string, unknown>,
-): PaymentOrder {
-  const timestamp = nowIso()
-
-  return {
-    ...order,
-    updatedAt: timestamp,
-    events: [
-      {
-        type,
-        at: timestamp,
-        payload,
-      },
-      ...order.events,
-    ].slice(0, 50),
-  }
-}
-
-export function toPublicOrder(order: PaymentOrder): PublicPaymentOrder {
-  return {
-    invoiceId: order.invoiceId,
-    amountRub: order.amountRub,
-    currency: order.currency,
-    description: order.description,
-    provider: order.provider,
-    status: order.status,
-    createdAt: order.createdAt,
-    updatedAt: order.updatedAt,
-    paidAt: order.paidAt,
-    failedAt: order.failedAt,
-    providerMessage: order.providerMessage,
-  }
-}
-
-// Real-transition event names produced by markOrderPaid /
-// markOrderFailed / markOrderCancelled. Duplicates (paid_duplicate,
-// fail_duplicate, etc.) are appended with different names; if we see
-// only those, no SSE emit happens — the listener already saw the
-// terminal status on the prior call.
-const TRANSITION_EVENT_TYPES = new Set([
-  'payment.paid',
-  'payment.failed',
-  'payment.cancelled',
-])
-
-function maybeEmitStatusChange(order: PaymentOrder | null) {
-  if (!order) return
-  const latest = order.events[0]
-  if (!latest || !TRANSITION_EVENT_TYPES.has(latest.type)) return
-  emitStatusChange({
-    invoiceId: order.invoiceId,
-    status: order.status,
-    order: toPublicOrder(order),
-  })
-}
+import {
+  appendEvent,
+  markOrderFailed,
+  markOrderPaid,
+  nowIso,
+  toPublicOrder,
+} from './lifecycle'
 
 export async function createPayment(
   amountRub: number,
@@ -157,92 +92,6 @@ export async function createPayment(
     checkoutIntent,
     receiptToken: receiptTokenPair.plain,
   }
-}
-
-export async function syncMockOrderState(invoiceId: string) {
-  const current = await getOrder(invoiceId)
-
-  if (!current || current.provider !== 'mock') {
-    return current
-  }
-
-  if (
-    current.status === 'pending' &&
-    current.mockAutoConfirmAt &&
-    new Date(current.mockAutoConfirmAt).getTime() <= Date.now()
-  ) {
-    return updateOrder(invoiceId, (order) =>
-      appendEvent(
-        {
-          ...order,
-          status: 'paid',
-          paidAt: nowIso(),
-          providerMessage: 'Mock-режим: платёж автоматически подтверждён.',
-        },
-        'mock.auto_paid',
-      ),
-    )
-  }
-
-  return current
-}
-
-export async function markOrderPaid(
-  invoiceId: string,
-  payload?: Record<string, unknown>,
-) {
-  const order = await updateOrder(invoiceId, (order) => {
-    if (order.status === 'paid') {
-      return appendEvent(order, 'payment.paid_duplicate', payload)
-    }
-
-    return appendEvent(
-      {
-        ...order,
-        status: 'paid',
-        paidAt: order.paidAt || nowIso(),
-        providerTransactionId:
-          getPayloadString(payload, 'transactionId') || order.providerTransactionId,
-        providerMessage: 'Платёж подтверждён.',
-      },
-      'payment.paid',
-      payload,
-    )
-  })
-  maybeEmitStatusChange(order)
-  return order
-}
-
-export async function markOrderFailed(
-  invoiceId: string,
-  payload?: Record<string, unknown>,
-) {
-  const order = await updateOrder(invoiceId, (order) => {
-    const reason = getPayloadString(payload, 'reason')
-
-    if (order.status === 'paid') {
-      return appendEvent(order, 'payment.fail_ignored_after_paid', payload)
-    }
-
-    if (order.status === 'failed') {
-      return appendEvent(order, 'payment.fail_duplicate', payload)
-    }
-
-    return appendEvent(
-      {
-        ...order,
-        status: 'failed',
-        failedAt: order.failedAt || nowIso(),
-        providerTransactionId:
-          getPayloadString(payload, 'transactionId') || order.providerTransactionId,
-        providerMessage: reason || 'Платёж отклонён или отменён.',
-      },
-      'payment.failed',
-      payload,
-    )
-  })
-  maybeEmitStatusChange(order)
-  return order
 }
 
 export type ChargeWithSavedCardOutcome =
@@ -491,35 +340,4 @@ export async function confirmThreeDsAndFinalize(params: {
     order: toPublicOrder(order),
     reason: result.message,
   }
-}
-
-export async function markOrderCancelled(
-  invoiceId: string,
-  payload?: Record<string, unknown>,
-) {
-  const order = await updateOrder(invoiceId, (order) => {
-    if (order.status === 'paid') {
-      return appendEvent(order, 'payment.cancel_ignored_after_paid', payload)
-    }
-
-    if (order.status === 'cancelled') {
-      return appendEvent(order, 'payment.cancel_duplicate', payload)
-    }
-
-    if (order.status === 'failed') {
-      return appendEvent(order, 'payment.cancel_ignored_after_failed', payload)
-    }
-
-    return appendEvent(
-      {
-        ...order,
-        status: 'cancelled',
-        providerMessage: 'Платёжная форма была закрыта без завершения оплаты.',
-      },
-      'payment.cancelled',
-      payload,
-    )
-  })
-  maybeEmitStatusChange(order)
-  return order
 }
