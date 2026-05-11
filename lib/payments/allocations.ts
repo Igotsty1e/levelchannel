@@ -139,23 +139,26 @@ export async function listSlotPaidStatus(
 // every cabinet render; it has a narrow contract (only paid slots
 // surface) and several tests pin it. Adding the refund branch as a
 // second function avoids breaking that contract or its tests.
+//
+// Codex Wave 52 review HIGH. A single slot can have MULTIPLE
+// allocations across history (e.g. paid → refunded → paid again from
+// a fresh allocation). Aggregating per-slot is mandatory; a naive
+// last-row-wins would silently disagree with `slotIsPaidByAllocations`
+// and the debt query, which both treat "any non-reversed paid
+// allocation" as paid. Use bool_or so the slot's state is `paid` if
+// even one non-reversed paid allocation exists; only if EVERY paid
+// allocation is reversed does the slot collapse to `refunded`.
 export type SlotPaymentState = 'paid' | 'refunded'
 
 export async function listSlotPaymentState(
   slotIds: string[],
-): Promise<
-  Map<string, { state: SlotPaymentState; orderInvoiceId: string }>
-> {
-  const out = new Map<
-    string,
-    { state: SlotPaymentState; orderInvoiceId: string }
-  >()
+): Promise<Map<string, SlotPaymentState>> {
+  const out = new Map<string, SlotPaymentState>()
   if (slotIds.length === 0) return out
   const pool = getDbPool()
   const result = await pool.query(
     `select a.target_id,
-            a.payment_order_id,
-            r.id as reversal_id
+            bool_or(r.id is null) as has_non_reversed
        from payment_allocations a
        join payment_orders o on o.invoice_id = a.payment_order_id
        left join payment_allocation_reversals r
@@ -164,14 +167,15 @@ export async function listSlotPaymentState(
              and r.target_id = a.target_id
       where a.kind = 'lesson_slot'
         and o.status = 'paid'
-        and a.target_id = any($1)`,
+        and a.target_id = any($1)
+      group by a.target_id`,
     [slotIds],
   )
   for (const row of result.rows) {
-    out.set(String(row.target_id), {
-      state: row.reversal_id ? 'refunded' : 'paid',
-      orderInvoiceId: String(row.payment_order_id),
-    })
+    out.set(
+      String(row.target_id),
+      Boolean(row.has_non_reversed) ? 'paid' : 'refunded',
+    )
   }
   return out
 }

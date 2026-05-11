@@ -114,11 +114,11 @@ export default async function CabinetPage() {
   // "оплатить" CTA which would suggest the learner needs to pay again.
   const paymentStateMap = isLearner
     ? await listSlotPaymentState(mySlots.map((s) => s.id))
-    : new Map<string, { state: 'paid' | 'refunded'; orderInvoiceId: string }>()
+    : new Map<string, 'paid' | 'refunded'>()
   const paidSlotIds: string[] = []
   const refundedSlotIds: string[] = []
-  for (const [slotId, info] of paymentStateMap) {
-    if (info.state === 'paid') paidSlotIds.push(slotId)
+  for (const [slotId, state] of paymentStateMap) {
+    if (state === 'paid') paidSlotIds.push(slotId)
     else refundedSlotIds.push(slotId)
   }
   const postpaidAllowed = Boolean(postpaidRow.rows[0]?.postpaid_allowed)
