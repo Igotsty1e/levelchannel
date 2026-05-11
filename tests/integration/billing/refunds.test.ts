@@ -9,6 +9,7 @@ import {
   markAccountVerified,
 } from '@/lib/auth/accounts'
 import { getDbPool } from '@/lib/db/pool'
+import { listSlotPaymentState } from '@/lib/payments/allocations'
 
 import '../setup'
 import { buildRequest, extractSessionCookie, freshInvoiceId } from '../helpers'
@@ -235,5 +236,47 @@ describe('POST /api/admin/refunds', () => {
     )
     expect(res.status).toBe(400)
     expect((await res.json()).error).toBe('unsupported_kind')
+  })
+
+  it('listSlotPaymentState aggregates: slot with refunded-then-paid history shows paid', async () => {
+    // Codex Wave 52 review HIGH regression: a slot can have multiple
+    // allocations across history (e.g. operator refunded one, learner
+    // paid again from a fresh order). Without per-slot aggregation,
+    // last-row-wins flipped the cabinet to "refunded" while the slot
+    // is actually paid — diverging from slotIsPaidByAllocations and
+    // the debt query. listSlotPaymentState must aggregate via bool_or
+    // so any non-reversed paid allocation pins the slot to "paid".
+    const admin = await regAdmin()
+    const slotId = '55555555-5555-5555-5555-' + Date.now().toString(16).padStart(12, '0').slice(-12)
+    const { paymentOrderId: firstOrderId } = await seedPaidAllocation({
+      amountKopecks: 200000,
+      slotId,
+    })
+    // Refund the first allocation.
+    const refund = await refundsHandler(
+      buildRequest('/api/admin/refunds', {
+        cookie: admin.cookie,
+        body: {
+          paymentOrderId: firstOrderId,
+          kind: 'lesson_slot',
+          targetId: slotId,
+          refundedKopecks: 200000,
+        },
+      }),
+    )
+    expect(refund.status).toBe(201)
+
+    // The slot now has 1 reversed allocation; state must be 'refunded'.
+    const stateAfterRefund = await listSlotPaymentState([slotId])
+    expect(stateAfterRefund.get(slotId)).toBe('refunded')
+
+    // Learner pays again from a fresh order. Now there are 2
+    // allocations: one reversed, one non-reversed paid.
+    await seedPaidAllocation({ amountKopecks: 200000, slotId })
+
+    // The slot must now show 'paid' (bool_or aggregation), not stay
+    // at 'refunded' from last-row-wins on the older reversed row.
+    const stateAfterRepay = await listSlotPaymentState([slotId])
+    expect(stateAfterRepay.get(slotId)).toBe('paid')
   })
 })

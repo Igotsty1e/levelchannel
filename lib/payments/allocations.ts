@@ -95,6 +95,12 @@ export async function listAllocationsForOrder(
 // against the composite allocation key (payment_order_id, kind,
 // target_id) — migration 0022 uses that composite as the allocation
 // primary key; there is no surrogate uuid.
+//
+// Note: this function returns ONLY currently-paid slots. After Stage C
+// of refund Phase 7, the cabinet uses `listSlotPaymentState` instead
+// to distinguish "paid" / "refunded" / "never paid" so a refunded slot
+// can render a neutral "возврат оформлен" pill rather than the yellow
+// "оплатить" CTA (which would suggest the learner needs to pay again).
 export async function listSlotPaidStatus(
   slotIds: string[],
 ): Promise<Map<string, { paid: boolean; orderInvoiceId: string }>> {
@@ -120,6 +126,56 @@ export async function listSlotPaidStatus(
       paid: true,
       orderInvoiceId: String(row.payment_order_id),
     })
+  }
+  return out
+}
+
+// Refund Phase 7 Stage C. Richer per-slot payment state for the
+// cabinet UI: distinguishes "paid" (allocation, no reversal) from
+// "refunded" (allocation + reversal). Slots with no allocation are
+// absent from the result map (caller treats absence as "never paid").
+//
+// Why two separate functions: `listSlotPaidStatus` is a hot path on
+// every cabinet render; it has a narrow contract (only paid slots
+// surface) and several tests pin it. Adding the refund branch as a
+// second function avoids breaking that contract or its tests.
+//
+// Codex Wave 52 review HIGH. A single slot can have MULTIPLE
+// allocations across history (e.g. paid → refunded → paid again from
+// a fresh allocation). Aggregating per-slot is mandatory; a naive
+// last-row-wins would silently disagree with `slotIsPaidByAllocations`
+// and the debt query, which both treat "any non-reversed paid
+// allocation" as paid. Use bool_or so the slot's state is `paid` if
+// even one non-reversed paid allocation exists; only if EVERY paid
+// allocation is reversed does the slot collapse to `refunded`.
+export type SlotPaymentState = 'paid' | 'refunded'
+
+export async function listSlotPaymentState(
+  slotIds: string[],
+): Promise<Map<string, SlotPaymentState>> {
+  const out = new Map<string, SlotPaymentState>()
+  if (slotIds.length === 0) return out
+  const pool = getDbPool()
+  const result = await pool.query(
+    `select a.target_id,
+            bool_or(r.id is null) as has_non_reversed
+       from payment_allocations a
+       join payment_orders o on o.invoice_id = a.payment_order_id
+       left join payment_allocation_reversals r
+              on r.payment_order_id = a.payment_order_id
+             and r.kind = a.kind
+             and r.target_id = a.target_id
+      where a.kind = 'lesson_slot'
+        and o.status = 'paid'
+        and a.target_id = any($1)
+      group by a.target_id`,
+    [slotIds],
+  )
+  for (const row of result.rows) {
+    out.set(
+      String(row.target_id),
+      Boolean(row.has_non_reversed) ? 'paid' : 'refunded',
+    )
   }
   return out
 }
