@@ -38,7 +38,7 @@ export async function POST(request: Request, { params }: RouteParams) {
       body = JSON.parse(raw)
     } catch {
       return NextResponse.json(
-        { error: 'Invalid JSON body.' },
+        { error: 'invalid_json_body', message: 'Invalid JSON body.' },
         { status: 400, headers: NO_STORE },
       )
     }
@@ -54,7 +54,10 @@ export async function POST(request: Request, { params }: RouteParams) {
     const cancelled = await cancelSlot(id, guard.account.id, reason, 'admin')
     if (!cancelled) {
       return NextResponse.json(
-        { error: 'Слот уже отменён или не найден.' },
+        {
+          error: 'slot_not_cancellable',
+          message: 'Слот уже отменён или не найден.',
+        },
         { status: 404, headers: NO_STORE },
       )
     }

@@ -61,7 +61,7 @@ export function SlotCancelModal({
       })
       if (!r.ok) {
         const body = await r.json().catch(() => ({}))
-        throw new Error(body.error || `HTTP ${r.status}`)
+        throw new Error(body.message || body.error || `HTTP ${r.status}`)
       }
       onAssigned()
     } catch (err) {
@@ -83,7 +83,7 @@ export function SlotCancelModal({
       })
       if (!r.ok) {
         const body = await r.json().catch(() => ({}))
-        throw new Error(body.error || `HTTP ${r.status}`)
+        throw new Error(body.message || body.error || `HTTP ${r.status}`)
       }
       onCancelled()
     } catch (err) {

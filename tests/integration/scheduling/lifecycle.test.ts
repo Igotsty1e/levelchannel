@@ -431,7 +431,8 @@ describe('Phase 5 lifecycle + 24h rule', () => {
       )
       expect(res.status).toBe(400)
       const json = await res.json()
-      expect(json.error).toBe('Invalid JSON body.')
+      expect(json.error).toBe('invalid_json_body')
+      expect(json.message).toBe('Invalid JSON body.')
       const { rows } = await getDbPool().query(
         `select status from lesson_slots where id = $1`,
         [slotId],
@@ -447,7 +448,8 @@ describe('Phase 5 lifecycle + 24h rule', () => {
       )
       expect(res.status).toBe(400)
       const json = await res.json()
-      expect(json.error).toBe('Invalid JSON body.')
+      expect(json.error).toBe('invalid_json_body')
+      expect(json.message).toBe('Invalid JSON body.')
       const { rows } = await getDbPool().query(
         `select status from lesson_slots where id = $1`,
         [slotId],

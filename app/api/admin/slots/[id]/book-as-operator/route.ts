@@ -40,7 +40,10 @@ export async function POST(request: Request, { params }: RouteParams) {
   if (!parsed.ok) return parsed.response
   if (typeof parsed.body.learnerEmail !== 'string') {
     return NextResponse.json(
-      { error: 'Body must include { learnerEmail: string }.' },
+      {
+        error: 'invalid_learner_email',
+        message: 'Body must include { learnerEmail: string }.',
+      },
       { status: 400, headers: NO_STORE },
     )
   }
@@ -49,14 +52,18 @@ export async function POST(request: Request, { params }: RouteParams) {
   const learner = await getAccountByEmail(learnerEmail)
   if (!learner) {
     return NextResponse.json(
-      { error: 'Учащийся с таким e-mail не найден.' },
+      {
+        error: 'learner_not_found',
+        message: 'Учащийся с таким e-mail не найден.',
+      },
       { status: 404, headers: NO_STORE },
     )
   }
   if (!learner.emailVerifiedAt) {
     return NextResponse.json(
       {
-        error:
+        error: 'learner_email_unverified',
+        message:
           'У этого учащегося не подтверждён e-mail. Попросите его подтвердить адрес перед бронированием.',
       },
       { status: 400, headers: NO_STORE },
@@ -64,7 +71,10 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
   if (learner.disabledAt) {
     return NextResponse.json(
-      { error: 'Аккаунт учащегося отключён.' },
+      {
+        error: 'learner_disabled',
+        message: 'Аккаунт учащегося отключён.',
+      },
       { status: 400, headers: NO_STORE },
     )
   }
@@ -75,27 +85,28 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
   if (result.reason === 'not_found') {
     return NextResponse.json(
-      { error: 'Слот не найден.' },
+      { error: 'not_found', message: 'Слот не найден.' },
       { status: 404, headers: NO_STORE },
     )
   }
   if (result.reason === 'in_past') {
     return NextResponse.json(
-      { error: 'Слот уже прошёл.' },
+      { error: 'in_past', message: 'Слот уже прошёл.' },
       { status: 410, headers: NO_STORE },
     )
   }
   if (result.reason === 'self_booking_blocked') {
     return NextResponse.json(
       {
-        error:
+        error: 'self_booking_blocked',
+        message:
           'Учитель не может быть учеником в собственном слоте. Выберите другой аккаунт.',
       },
       { status: 400, headers: NO_STORE },
     )
   }
   return NextResponse.json(
-    { error: 'Слот уже не open.' },
+    { error: 'not_open', message: 'Слот уже не open.' },
     { status: 409, headers: NO_STORE },
   )
 }

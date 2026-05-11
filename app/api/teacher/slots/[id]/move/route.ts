@@ -47,7 +47,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       body = JSON.parse(raw)
     } catch {
       return NextResponse.json(
-        { error: 'Invalid JSON body.' },
+        { error: 'invalid_json_body', message: 'Invalid JSON body.' },
         { status: 400, headers: NO_STORE },
       )
     }

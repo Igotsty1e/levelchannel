@@ -66,19 +66,22 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
   if (result.reason === 'not_found') {
     return NextResponse.json(
-      { error: 'Слот не найден.' },
+      { error: 'not_found', message: 'Слот не найден.' },
       { status: 404, headers: NO_STORE },
     )
   }
   if (result.reason === 'not_booked') {
     return NextResponse.json(
-      { error: 'Можно отметить только booked-слот.' },
+      { error: 'not_booked', message: 'Можно отметить только booked-слот.' },
       { status: 400, headers: NO_STORE },
     )
   }
   // not_yet_started
   return NextResponse.json(
-    { error: 'Слот ещё не начался — отметить можно после start_at.' },
+    {
+      error: 'not_yet_started',
+      message: 'Слот ещё не начался — отметить можно после start_at.',
+    },
     { status: 400, headers: NO_STORE },
   )
 }
