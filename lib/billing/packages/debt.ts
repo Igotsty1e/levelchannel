@@ -24,13 +24,21 @@ export async function listAccountPostpaidDebt(
   accountId: string,
 ): Promise<PostpaidDebtSlot[]> {
   const pool = getDbPool()
+  // Wave 45 post-review MEDIUM. Filter the tariff join on
+  // is_active=true so an archived tariff doesn't surface as a paid
+  // CTA in the cabinet. /checkout/[tariffSlug] refuses inactive
+  // slugs (it 404s), so showing an "Оплатить" button against an
+  // archived tariff would dead-end the user. With this filter, the
+  // archived case falls through to "обратитесь к оператору" via the
+  // null-slug branch in the UI.
   const result = await pool.query(
     `select s.id, s.start_at, s.duration_minutes, s.status, s.tariff_id,
             t.slug as tariff_slug,
             t.amount_kopecks as expected_amount_kopecks,
             s.legacy_grandfathered
        from lesson_slots s
-       left join pricing_tariffs t on t.id = s.tariff_id
+       left join pricing_tariffs t
+              on t.id = s.tariff_id and t.is_active = true
       where s.learner_account_id = $1
         and s.status in ('completed', 'no_show_learner')
         and not exists (

@@ -77,13 +77,22 @@ export async function POST(request: Request, { params }: RouteParams) {
   // Wave 45 — wrap money-moving init in withIdempotency. A duplicate
   // submit (network retry, double-click, etc.) would otherwise mint a
   // second pending order under the same idempotency-key, both pointing
-  // at the same package. Mirrors the gate on /api/payments. Empty body
-  // is fine — Idempotency-Key header alone scopes the cache.
+  // at the same package. Mirrors the gate on /api/payments.
+  //
+  // Codex post-review HIGH. Scope MUST include the slug AND the
+  // account id — withIdempotency hashes scope + body, body is empty
+  // here, and a constant 'checkout:package' scope would let one
+  // Idempotency-Key replay across DIFFERENT packages AND different
+  // accounts. The cache row then leaks another buyer's invoiceId and
+  // receiptToken. The scope strings below namespace the cache by
+  // (slug, accountId) so a same-key submit on /package/b with the
+  // /package/a cache entry is a miss, not a leak.
   const rawBody = await request.text()
+  const accountId = session.account.id
+  const customerEmail = session.account.email
+  const idempotencyScope = `checkout:package:${pkg.slug}:${accountId}`
 
-  return withIdempotency(request, 'checkout:package', rawBody, async () => {
-    const accountId = session.account.id
-    const customerEmail = session.account.email
+  return withIdempotency(request, idempotencyScope, rawBody, async () => {
     const amountRub = (pkg.amountKopecks / 100).toFixed(2)
     const description = `Пакет: ${pkg.titleRu}`
     const provider = process.env.PAYMENTS_PROVIDER === 'cloudpayments'
