@@ -1,208 +1,268 @@
 # Wave 17: split `lib/scheduling/slots.ts`
 
-**Status:** design v2, paused 2026-05-10 after Codex paranoia round 2 verdict **NEEDS-FURTHER-REVISION**. Code is NOT yet written. v3 required before any implementation. see "Round 2 follow-ups required for v3" at the bottom of this doc.
+**Status:** design v3, 2026-05-11. v2 paused after Codex round 2 NEEDS-FURTHER-REVISION; v3 absorbs all 6 findings (2 CRITICAL + 2 HIGH + 2 MEDIUM). Ready for Codex round 3.
 
 ## Why
 
-`lib/scheduling/slots.ts` is 1666 lines, 44 public exports across multiple distinct domains. Codex Wave 13 Pass 1 #9 flagged it as a god-module. Splitting now (before more weight lands) bounds future per-module review burden.
+`lib/scheduling/slots.ts` is ~1700 lines (grew from 1666 since v2 due to Wave 26's `EditOpenSlotResult`/`DeleteOpenSlotResult` additions and Wave 27's `validateSlotStartMsk`). 44+ public exports across multiple distinct domains. Codex Wave 13 Pass 1 #9 flagged it as a god-module. Splitting now (before more weight lands) bounds future per-module review burden.
 
 ## Constraints
 
-- **Behavior must stay bit-for-bit identical**. No-op refactor; tests stay 229/229 without any test edits.
+- **Behavior must stay bit-for-bit identical**. No-op refactor; tests stay 241+/241+ without any test edits.
 - **Public import path must remain `@/lib/scheduling/slots`**. ~40 callers across `app/`, `lib/`, `tests/` import from there. A facade `index.ts` keeps the path stable.
 - **No `as any` / `// @ts-ignore` introduced**.
 - **No new circular imports**. Layering rule below.
-- **All 44 public exports** continue to be exported from `@/lib/scheduling/slots`. List derived mechanically from `grep '^export ' lib/scheduling/slots.ts`.
+- **All public exports** continue to be exported from `@/lib/scheduling/slots`. List derived mechanically from `grep '^export ' lib/scheduling/slots.ts`.
+- **Dynamic billing imports preserved verbatim**. `bookSlot` and the cancel ops `await import(...)` billing modules at call time. This is load-bearing for the legacy fast path: when `BILLING_WAVE_ACTIVE !== 'true'`, billing modules must NOT be loaded at all. Static imports would be a behavior change disguised as cleanup. v3 makes this an explicit contract.
 
-## Honest naming reset (Codex round 1 CRITICAL)
+## Honest naming reset (carried from v2)
 
-Codex caught two false claims in v1:
-- `cancelSlot` / `cancelLearnerSlot` / `cancelSlotByTeacher` DO touch billing (dynamic import of `restorePackageConsumption`). They cannot live in a "non-billing" module.
-- `SlotTeacherRoleError` + `assertTeacherRole` are public/used; `assertTeacherRole` does a DB read (calls `listAccountRoles`). They are not pure types.
+- `cancelSlot` / `cancelLearnerSlot` / `cancelSlotByTeacher` DO touch billing (dynamic import of `restorePackageConsumption`). They live in `mutations-cancel.ts`.
+- `SlotTeacherRoleError` + `assertTeacherRole` are public/used; `assertTeacherRole` does a DB read. They live in `mutations-write.ts`.
 
-v2 fixes both. The "mutations.ts" line is now: any single-slot writer that's NOT `bookSlot`. It's allowed to touch `billing/*` for restore-on-cancel.
-
-## Target structure (v2. 8 files)
+## Target structure (v3, 9 files)
 
 ```
 lib/scheduling/slots/
-  internal.ts      . shared private utilities + DB row plumbing.
-                      Contains: SLOT_COLUMNS, rowToSlot, appendEventSql,
-                      UUID_PATTERN, MAX_NOTES_LEN, MAX_REASON_LEN.
-                      No public exports. Imported by every other
-                      module that touches the DB.
+  internal.ts            shared private utilities + DB row plumbing.
+                         Contains: SLOT_COLUMNS, rowToSlot, appendEventSql,
+                         UUID_PATTERN, MAX_NOTES_LEN, MAX_REASON_LEN.
+                         Exports are for sibling modules; NOT re-exported
+                         from index.ts. Type-imports LessonSlot/SlotEvent/
+                         SlotStatus from types.ts.
 
-  types.ts         . pure types + lifecycle constants. No DB calls.
-                      Contains the public type surface: SlotStatus,
-                      SlotLifecycleStatus, LIFECYCLE_STATUSES,
-                      TERMINAL_STATUSES, LEARNER_CANCEL_THRESHOLD_MS,
-                      LearnerCancelDecision, canLearnerCancel,
-                      LessonSlot, SlotEvent, PublicSlot, toPublicSlot,
-                      and ALL Result/Input types
-                      (BookSlotResult, BookSlotBilling, CreateSlotInput,
-                       BulkCreateInput, BulkCreateResult,
-                       CancelLearnerSlotResult, MoveOpenSlotResult,
-                       MoveTeacherSlotResult, CancelTeacherSlotResult,
-                       BulkPreviewInput, BulkPreviewError,
-                       SlotValidationError).
+  types.ts               pure types + lifecycle constants. No DB calls.
+                         Contains the public type surface: SlotStatus,
+                         SlotLifecycleStatus, LIFECYCLE_STATUSES,
+                         TERMINAL_STATUSES, LEARNER_CANCEL_THRESHOLD_MS,
+                         LearnerCancelDecision, canLearnerCancel,
+                         LessonSlot, SlotEvent, PublicSlot, toPublicSlot,
+                         and all Result/Input types
+                         (BookSlotResult, BookSlotBilling, CreateSlotInput,
+                          BulkCreateInput, BulkCreateResult,
+                          CancelLearnerSlotResult, MoveOpenSlotResult,
+                          MoveTeacherSlotResult, CancelTeacherSlotResult,
+                          EditOpenSlotResult, DeleteOpenSlotResult,
+                          BulkPreviewInput, BulkPreviewError,
+                          SlotValidationError, SlotStartValidationError).
+                         Also MSK_BUSINESS_HOUR_MIN/MAX, SLOT_GRID_MINUTES.
 
-  validation.ts    . pure functions: validateSlotInput,
-                      bulkGeneratePreview. Imports types only.
+  validation.ts          pure functions: validateSlotInput,
+                         bulkGeneratePreview, validateSlotStartMsk.
+                         Imports: types (LessonSlot input shapes),
+                         internal (MAX_NOTES_LEN / MAX_REASON_LEN
+                         constants used by validateSlotInput).
 
-  queries.ts       . read-only DB queries: listOpenFutureSlots,
-                      listSlotsAsTeacher, listSlotsForLearner,
-                      listAllSlotsForAdmin, listSlotsForCalendarRange,
-                      getSlotById.
-                      Imports: types, internal.
+  queries.ts             read-only DB queries: listOpenFutureSlots,
+                         listSlotsAsTeacher, listSlotsForLearner,
+                         listAllSlotsForAdmin, listSlotsForCalendarRange,
+                         getSlotById.
+                         Imports: types, internal.
 
-  mutations.ts     . single-slot writers that are NOT bookSlot.
-                      Contains: SlotTeacherRoleError class +
-                      assertTeacherRole helper, createSlot,
-                      bulkCreateSlots, editOpenSlot, moveOpenSlot,
-                      moveOpenSlotByTeacher, cancelSlot,
-                      cancelLearnerSlot, cancelSlotByTeacher,
-                      deleteOpenSlot.
-                      Cancel-paths dynamically import
-                      `@/lib/billing/consumption` for
-                      restorePackageConsumption. this is intentional
-                      and matches today's behaviour.
-                      Imports: types, internal, validation, queries
-                      (for the post-write classify branch in cancel),
-                      lib/auth/accounts (for assertTeacherRole), and
-                      lib/billing/consumption (dynamically).
+  mutations-write.ts     NO billing. Writers that do not cancel.
+                         Contains: SlotTeacherRoleError class +
+                         assertTeacherRole helper, createSlot,
+                         bulkCreateSlots, editOpenSlot, moveOpenSlot,
+                         moveOpenSlotByTeacher, deleteOpenSlot.
+                         ~300 lines target.
+                         Imports: types, internal, validation,
+                         lib/auth/accounts.
 
-  booking.ts       . bookSlot only (the heaviest billing-aware path,
-                      ~200 lines). Imports: types, internal, queries,
-                      lib/billing/* (consumption, packages, paid-state,
-                      package-grant) statically. Already does this in
-                      slots.ts today.
+  mutations-cancel.ts    Cancel writers. Dynamically imports
+                         @/lib/billing/consumption for
+                         restorePackageConsumption.
+                         Contains: cancelSlot, cancelLearnerSlot,
+                         cancelSlotByTeacher.
+                         ~300 lines target.
+                         Imports: types, internal; dynamic:
+                         lib/billing/consumption.
 
-  lifecycle.ts     . markSlotLifecycle, autoCompletePastBookedSlots.
-                      Imports: types, internal, queries.
+  booking.ts             bookSlot only (the heaviest billing-aware path).
+                         Dynamic imports preserved verbatim. ~250 lines.
+                         Imports: types, internal; dynamic:
+                         lib/billing/consumption (consumePackageUnit) and
+                         lib/billing/packages (package lookup). Verified
+                         against lib/scheduling/slots.ts:1025-1029.
 
-  index.ts         . facade. Re-exports the public surface 1:1.
-                      All 44 public names listed mechanically from
-                      the original grep '^export '.
+  lifecycle.ts           markSlotLifecycle, autoCompletePastBookedSlots.
+                         Imports: types, internal.
+
+  index.ts               facade. Re-exports the public surface 1:1,
+                         split into two sections (see below).
 ```
 
 ### Layering (DAG)
 
 ```
-internal.ts    ← (none)
-types.ts       ← (none)
-validation.ts  ← types
-queries.ts     ← types, internal
-lifecycle.ts   ← types, internal, queries
-mutations.ts   ← types, internal, validation, queries, errors-side: lib/auth/accounts; billing-side (dynamic): lib/billing/consumption
-booking.ts     ← types, internal, queries, lib/billing/* (static)
-index.ts       ← all of the above (re-export only)
+types.ts             ← (none)
+internal.ts          ← types (type-only)
+validation.ts        ← types, internal
+queries.ts           ← types, internal
+lifecycle.ts         ← types, internal
+mutations-write.ts   ← types, internal, validation, lib/auth/accounts
+mutations-cancel.ts  ← types, internal; dynamic: lib/billing/consumption
+booking.ts           ← types, internal; dynamic: lib/billing/consumption, lib/billing/packages
+index.ts             ← all (two sections: export type, export)
 ```
 
-No backward edges. `mutations.ts` and `booking.ts` are siblings. neither depends on the other.
+No backward edges. `mutations-write.ts`, `mutations-cancel.ts`, and `booking.ts` are siblings. None depends on the other. Cancel ops and `bookSlot` do NOT call exported queries from `queries.ts` (Codex round 2 #5: the DAG no longer claims this edge).
+
+### index.ts facade — two-section pattern
+
+Under `isolatedModules: true` (enforced by tsconfig), type re-exports MUST be separated from value re-exports. Mechanical derivation:
+
+```bash
+grep -nE '^export ' lib/scheduling/slots.ts | \
+  awk -F: '{print $2}' | \
+  awk '/^export (type|interface)/ {print "TYPE:" $0} \
+       /^export (const|function|class|async)/ {print "VAL:" $0}'
+```
+
+Then assemble:
+
+```ts
+// Types (erasable at runtime)
+export type {
+  SlotStatus,
+  SlotLifecycleStatus,
+  LearnerCancelDecision,
+  LessonSlot,
+  SlotEvent,
+  PublicSlot,
+  BookSlotResult,
+  BookSlotBilling,
+  CreateSlotInput,
+  BulkCreateInput,
+  BulkCreateResult,
+  CancelLearnerSlotResult,
+  MoveOpenSlotResult,
+  MoveTeacherSlotResult,
+  CancelTeacherSlotResult,
+  EditOpenSlotResult,
+  DeleteOpenSlotResult,
+  BulkPreviewInput,
+  BulkPreviewError,
+  SlotValidationError,
+  SlotStartValidationError,
+} from './types'
+
+// Values (runtime exports)
+export {
+  LIFECYCLE_STATUSES,
+  TERMINAL_STATUSES,
+  LEARNER_CANCEL_THRESHOLD_MS,
+  MSK_BUSINESS_HOUR_MIN,
+  MSK_BUSINESS_HOUR_MAX,
+  SLOT_GRID_MINUTES,
+  canLearnerCancel,
+  toPublicSlot,
+} from './types'
+
+export {
+  validateSlotInput,
+  bulkGeneratePreview,
+  validateSlotStartMsk,
+} from './validation'
+
+export {
+  listOpenFutureSlots,
+  listSlotsAsTeacher,
+  listSlotsForLearner,
+  listAllSlotsForAdmin,
+  listSlotsForCalendarRange,
+  getSlotById,
+} from './queries'
+
+export {
+  markSlotLifecycle,
+  autoCompletePastBookedSlots,
+} from './lifecycle'
+
+export {
+  SlotTeacherRoleError,
+  createSlot,
+  bulkCreateSlots,
+  editOpenSlot,
+  moveOpenSlot,
+  moveOpenSlotByTeacher,
+  deleteOpenSlot,
+} from './mutations-write'
+
+export {
+  cancelSlot,
+  cancelLearnerSlot,
+  cancelSlotByTeacher,
+} from './mutations-cancel'
+
+export { bookSlot } from './booking'
+```
+
+The exact name lists are populated mechanically from the grep output during step 1 of migration mechanics.
 
 ## Migration mechanics
 
-1. Generate the canonical export list once: `grep -nE '^export ' lib/scheduling/slots.ts > /tmp/slots-exports.txt` (44 lines). Use this to populate `index.ts` mechanically.
-2. Create `lib/scheduling/slots/internal.ts` and move shared private utilities verbatim. No public exports.
-3. Create `lib/scheduling/slots/types.ts` and move type/const declarations verbatim.
-4. Create `lib/scheduling/slots/validation.ts` and move pure functions.
+1. Generate the canonical export list: `grep -nE '^export ' lib/scheduling/slots.ts > /tmp/slots-exports.txt`. Use to populate `index.ts`.
+2. Create `lib/scheduling/slots/types.ts` and move type/const declarations verbatim.
+3. Create `lib/scheduling/slots/internal.ts` and move shared private utilities verbatim (type-imports from `./types`).
+4. Create `lib/scheduling/slots/validation.ts` and move pure functions (`validateSlotInput`, `bulkGeneratePreview`, `validateSlotStartMsk`).
 5. Create `lib/scheduling/slots/queries.ts` and move read-only DB queries.
 6. Create `lib/scheduling/slots/lifecycle.ts` and move `markSlotLifecycle` + `autoCompletePastBookedSlots`.
-7. Create `lib/scheduling/slots/mutations.ts` and move all non-booking writers + `SlotTeacherRoleError` + `assertTeacherRole`.
-8. Create `lib/scheduling/slots/booking.ts` and move `bookSlot`.
-9. Create `lib/scheduling/slots/index.ts` re-exporting every name in `/tmp/slots-exports.txt`.
-10. Delete `lib/scheduling/slots.ts` original. Module resolution falls back to `lib/scheduling/slots/index.ts` per tsconfig `moduleResolution: "bundler"`.
-11. Run `npx tsc --noEmit` after each step. Fix any cycle/missing-import on the spot.
-12. Run `npm run test:integration` and `npm run test:run`. 229/229 + 408/408.
+7. Create `lib/scheduling/slots/mutations-write.ts` and move non-billing writers + `SlotTeacherRoleError` + `assertTeacherRole`.
+8. Create `lib/scheduling/slots/mutations-cancel.ts` and move cancel writers. Preserve the dynamic `await import('@/lib/billing/consumption')` verbatim.
+9. Create `lib/scheduling/slots/booking.ts` and move `bookSlot`. Preserve all dynamic billing imports verbatim.
+10. Create `lib/scheduling/slots/index.ts` with the two-section facade.
+11. Delete `lib/scheduling/slots.ts`. Module resolution falls back to `lib/scheduling/slots/index.ts` per tsconfig `moduleResolution: "bundler"`.
+12. `npx tsc --noEmit` after each step. Fix any cycle/missing-import on the spot.
+13. `npm run test:integration` + `npm run test:run`. 241+/241+ + 408+/408+.
 
 ## What does NOT change
 
-- Public API names. same function signatures, same types.
-- Argument types. same.
-- Behavior under any input. same SQL, same error classifications.
-- Test files. no edits.
-- Caller import paths. all 40+ callers use `@/lib/scheduling/slots`.
+- Public API names. Same function signatures, same types.
+- Argument types. Same.
+- Behavior under any input. Same SQL, same error classifications.
+- **Dynamic billing imports.** `bookSlot` and `cancelSlot`/`cancelLearnerSlot`/`cancelSlotByTeacher` continue to `await import('@/lib/billing/...')` at call time. The legacy fast path (when `BILLING_WAVE_ACTIVE !== 'true'`) must not load billing modules.
+- Test files. No edits.
+- Caller import paths. All 40+ callers use `@/lib/scheduling/slots`.
 
 ## What DOES change
 
-- `lib/scheduling/slots.ts` (single file) → `lib/scheduling/slots/` (folder with 8 files).
-- Per-file size: ~150-300 lines (vs 1666 today).
+- `lib/scheduling/slots.ts` (single file) → `lib/scheduling/slots/` (folder with 9 files).
+- Per-file size: 150-300 lines (vs 1700 today). 400-line cap holds.
 - Future modifications land in narrow modules.
 
-## Risks (post-Codex round 1)
+## Risks (post-Codex rounds 1 + 2)
 
-1. **Drawing the billing-aware boundary wrong.** v1 falsely claimed cancel ops were billing-free. Fixed in v2: mutations.ts owns cancel + the dynamic billing import.
-2. **Missing a public export in index.ts.** 44 names; one missed = build break at any of 40+ callers. Mitigation: derive the index list mechanically from grep, line-by-line.
-3. **Implicit circular imports**. If `mutations.ts` accidentally imports from `booking.ts` (or vice versa), tsc reports nothing immediately but runtime can break. Mitigation: layering rule above + tsc check after each step.
-4. **Path-alias resolution edge case**. `@/lib/scheduling/slots` must resolve to `slots/index.ts`. Verify with tsc + `npm run build` (CI catches this if local build is sandbox-blocked).
-5. **`scripts/auto-complete-slots.mjs` is NOT affected.** It does direct SQL, not module imports. Codex round 1 caught this misstatement; corrected.
+1. **Drawing the billing-aware boundary wrong.** v1 falsely claimed cancel ops were billing-free. v2 fixed cancel placement; v3 also splits non-billing writes from cancel writes to keep each module under the cap.
+2. **Static-vs-dynamic billing imports.** v2's "static imports" line would have broken the legacy fast path. v3 makes "preserve dynamic imports verbatim" an explicit contract; PR diff review is the load-bearing check.
+3. **Missing a public export in index.ts.** 44+ names; one missed = build break at any of 40+ callers. Mitigation: derive the index list mechanically from grep, line-by-line; tsc check after each step.
+4. **`isolatedModules: true` and type re-exports.** Re-exporting a type from a non-direct module via `export {...}` fails under isolatedModules. Mitigation: two-section facade (type-only re-exports use `export type`).
+5. **Implicit circular imports.** If `mutations-cancel.ts` accidentally imports from `booking.ts` (or vice versa), tsc reports nothing immediately but runtime can break. Mitigation: layering rule + tsc check after each step.
+6. **Path-alias resolution.** `@/lib/scheduling/slots` must resolve to `slots/index.ts`. Verify with tsc + `npm run build`.
+7. **`scripts/auto-complete-slots.mjs` is NOT affected.** It does direct SQL, not module imports.
 
 ## Acceptance criteria
 
 - [ ] `npx tsc --noEmit` clean.
-- [ ] `npm run test:integration` 229/229.
-- [ ] `npm run test:run` 408/408.
+- [ ] `npm run test:integration` passes (241+ tests).
+- [ ] `npm run test:run` passes (408+ tests).
 - [ ] CI `npm run build` passes.
 - [ ] No file in `lib/scheduling/slots/` exceeds 400 lines.
 - [ ] Every name in the original `grep '^export '` is re-exported from `index.ts`.
-- [ ] Codex round 2 review on the diff: no behavior-change findings.
+- [ ] `mutations-cancel.ts` and `booking.ts` use `await import('@/lib/billing/...')` (no static `import ... from '@/lib/billing/...'`).
+- [ ] Codex round 3 review on the doc: GOOD-AS-IS.
+- [ ] Codex post-merge review on the diff: no behavior-change findings.
 
 ## Doc-drift sweep (post-merge)
 
-`ARCHITECTURE.md:183` and any other doc referencing `lib/scheduling/slots.ts` (single file path) must be updated to point at `lib/scheduling/slots/` (folder). Single-file references will dangle after the migration.
+`ARCHITECTURE.md` and any other doc referencing `lib/scheduling/slots.ts` (single file path) must be updated to point at `lib/scheduling/slots/` (folder). Single-file references will dangle after the migration.
 
-## Round 2 follow-ups required for v3
+## Round 3 review checklist (what Codex should verify)
 
-Codex paranoia round 2 (2026-05-10) verdict: **NEEDS-FURTHER-REVISION**. Two CRITICAL findings + several HIGH/MEDIUM. v3 must address ALL of these before implementation:
+- [ ] Acceptance criteria match v3 file count (9 files).
+- [ ] DAG matches the actual import edges per the file descriptions (no cancel→queries, no booking→queries).
+- [ ] internal.ts export semantics are clear ("sibling-only, not re-exported").
+- [ ] `index.ts` facade is split into `export type {...}` and `export {...}` sections.
+- [ ] Dynamic billing imports are explicitly preserved.
+- [ ] Risk #2 (static-vs-dynamic) is called out.
 
-### CRITICAL
-
-1. **`mutations.ts` ~622 lines exceeds the 400-line cap** in the acceptance criteria. The cap is real. without it the split brings minimal review-burden value. Fix: split mutations into two siblings:
-   - `mutations-write.ts`: `SlotTeacherRoleError`, `assertTeacherRole`, `createSlot`, `bulkCreateSlots`, `editOpenSlot`, `moveOpenSlot`, `moveOpenSlotByTeacher`, `deleteOpenSlot`. ~300 lines, NO billing.
-   - `mutations-cancel.ts`: `cancelSlot`, `cancelLearnerSlot`, `cancelSlotByTeacher`. ~300 lines, dynamically imports `@/lib/billing/consumption`.
-   Final file count: 9 files (`internal`, `types`, `validation`, `queries`, `lifecycle`, `mutations-write`, `mutations-cancel`, `booking`, `index`).
-
-2. **`booking.ts` MUST preserve dynamic billing imports**. current `bookSlot` does `await import('@/lib/billing/consumption')` etc. Static imports would break the legacy fast path (when `BILLING_WAVE_ACTIVE !== 'true'`, billing modules must NOT be loaded). The doc claimed static imports. that would be a behaviour change, not a no-op refactor. v3 must explicitly say "preserve dynamic imports verbatim".
-
-### HIGH
-
-3. **`index.ts` generation under `isolatedModules: true`** must split type re-exports from value re-exports:
-   ```
-   export type { SlotStatus, SlotLifecycleStatus, ... } from './types'
-   export { LIFECYCLE_STATUSES, canLearnerCancel, ... } from './types'
-   export { listOpenFutureSlots, ... } from './queries'
-   ...
-   ```
-   Saying "44 lines from grep" is incomplete. the grep needs to be filtered into TWO sections (type-exports and value-exports) before being assembled into the facade.
-
-4. **`internal.ts` "no public exports" is contradictory** with "imported by every other module". Reword: "exports for sibling modules; NOT re-exported from `index.ts`". This is a doc-clarity fix, not a behaviour fix.
-
-### MEDIUM
-
-5. **DAG inaccuracies**: cancel ops do NOT call exported queries; `bookSlot` does NOT call exported queries. Drop those edges from the DAG, or move the local helpers (`classifyBookSlotFailure` etc) into `queries.ts` as private-to-folder exports if you want to consolidate.
-
-6. **`internal.ts` will type-import from `types.ts`** (rowToSlot needs `LessonSlot`/`SlotEvent`/`SlotStatus`). DAG should show `internal.ts ← types.ts (type-only)`.
-
-### Minimum v3 deltas
-
-- Split `mutations.ts` → `mutations-write.ts` + `mutations-cancel.ts`.
-- Update Layering / DAG section to:
-  ```
-  types.ts             ← (none)
-  internal.ts          ← types (type-only)
-  validation.ts        ← types, internal
-  queries.ts           ← types, internal
-  lifecycle.ts         ← types, internal
-  mutations-write.ts   ← types, internal, validation, lib/auth/accounts
-  mutations-cancel.ts  ← types, internal; dynamic: lib/billing/consumption
-  booking.ts           ← types, internal; dynamic: lib/billing/{consumption,packages,paid-state,package-grant}
-  index.ts             ← all (two sections: export type, export)
-  ```
-- Add explicit "Preserve dynamic imports" callout for `booking.ts` and `mutations-cancel.ts`.
-- Remove the cancel→queries and booking→queries dependency claims.
-- Reword internal.ts export semantics.
-- After v3 doc lands, send to Codex round 3. Implement only on GOOD-AS-IS verdict.
-
-### Why paused
-
-This wave is a no-op refactor in spirit but the design-level work is non-trivial: two paranoia rounds caught real issues (false billing-aware claim in v1, exceeded line-cap + static-vs-dynamic billing import bug in v2). Implementation without v3 + round-3 sign-off would risk a behaviour-change disguised as cleanup. Better to pause and pick up in a session with bandwidth for round 3 + the actual mechanical move + post-merge Codex review on the diff.
+If GOOD-AS-IS verdict — proceed to implementation.
