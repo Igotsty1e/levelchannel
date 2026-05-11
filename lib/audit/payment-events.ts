@@ -47,6 +47,10 @@ export const PAYMENT_AUDIT_EVENT_TYPES = [
   // Billing wave PR 2 — package grant outcomes.
   'package.grant.failed',
   'package.grant.succeeded',
+  // Refund Phase 7 — operator-booked reversal of a payment_allocation.
+  // Payload carries the composite allocation key + refunded_kopecks +
+  // optional reason. Audit row anchors the operator who acted.
+  'payment.refund.recorded',
 ] as const
 
 export type PaymentAuditEventType = (typeof PAYMENT_AUDIT_EVENT_TYPES)[number]
