@@ -118,9 +118,17 @@ async function main() {
     process.exit(2)
   }
 
+  // Codex Wave 48 review MEDIUM. All-or-nothing semantics. Three
+  // independent UPDATEs would let one missing v1 row slip through as
+  // a warning while the other two land — partial snapshot, operator
+  // sees "success" exit code. Wrap in a single transaction; abort
+  // and rollback on the first missing row (migration 0032 not
+  // applied) so the operator sees a hard failure.
   const client = new pg.Client({ connectionString: url })
   await client.connect()
   try {
+    await client.query('begin')
+    const updated = []
     for (const { docKind, body } of materialized) {
       const result = await client.query(
         `update legal_document_versions
@@ -131,16 +139,28 @@ async function main() {
         [docKind, body],
       )
       if (result.rowCount === 0) {
-        console.warn(
-          `[${docKind}] no v1 row found — migration 0032 not applied? skipping.`,
+        await client.query('rollback')
+        console.error(
+          `[${docKind}] no v1 row found — migration 0032 may not be applied. ` +
+            'Aborting: rolled back; no v1 rows were touched.',
         )
-        continue
+        process.exit(3)
       }
-      const row = result.rows[0]
+      updated.push(result.rows[0])
+    }
+    await client.query('commit')
+    for (const row of updated) {
       console.log(
-        `[${docKind}] v1 body updated: id=${row.id}, ${row.body_len} chars`,
+        `[${row.doc_kind}] v1 body updated: id=${row.id}, ${row.body_len} chars`,
       )
     }
+  } catch (err) {
+    try {
+      await client.query('rollback')
+    } catch {
+      // best-effort
+    }
+    throw err
   } finally {
     await client.end()
   }
