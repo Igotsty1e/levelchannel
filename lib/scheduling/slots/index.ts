@@ -1,0 +1,84 @@
+// Wave 39: facade for the former lib/scheduling/slots.ts.
+//
+// Public surface re-exported 1:1. Two sections — `export type {...}`
+// for types (erasable at runtime, required by isolatedModules: true)
+// and `export {...}` for runtime values.
+//
+// All ~40 existing callers import via `@/lib/scheduling/slots`; this
+// barrel resolves to this folder by tsconfig moduleResolution:
+// "bundler" and keeps the public path stable.
+
+// Types (erasable at runtime)
+export type {
+  BookSlotBilling,
+  BookSlotResult,
+  BulkCreateInput,
+  BulkCreateResult,
+  BulkPreviewError,
+  BulkPreviewInput,
+  CancelLearnerSlotResult,
+  CancelTeacherSlotResult,
+  CreateSlotInput,
+  DeleteOpenSlotResult,
+  EditOpenSlotResult,
+  LearnerCancelDecision,
+  LessonSlot,
+  MoveOpenSlotResult,
+  MoveTeacherSlotResult,
+  PublicSlot,
+  SlotEvent,
+  SlotLifecycleStatus,
+  SlotStartValidationError,
+  SlotStatus,
+  SlotValidationError,
+} from './types'
+
+// Values (runtime exports)
+export {
+  LEARNER_CANCEL_THRESHOLD_MS,
+  LIFECYCLE_STATUSES,
+  MSK_BUSINESS_HOUR_MAX,
+  MSK_BUSINESS_HOUR_MIN,
+  SLOT_GRID_MINUTES,
+  TERMINAL_STATUSES,
+  canLearnerCancel,
+  toPublicSlot,
+} from './types'
+
+export {
+  bulkGeneratePreview,
+  validateSlotInput,
+  validateSlotStartMsk,
+} from './validation'
+
+export {
+  getSlotById,
+  listAllSlotsForAdmin,
+  listOpenFutureSlots,
+  listSlotsAsTeacher,
+  listSlotsForCalendarRange,
+  listSlotsForLearner,
+} from './queries'
+
+export {
+  autoCompletePastBookedSlots,
+  markSlotLifecycle,
+} from './lifecycle'
+
+export {
+  SlotTeacherRoleError,
+  bulkCreateSlots,
+  createSlot,
+  deleteOpenSlot,
+  editOpenSlot,
+  moveOpenSlot,
+  moveOpenSlotByTeacher,
+} from './mutations-write'
+
+export {
+  cancelLearnerSlot,
+  cancelSlot,
+  cancelSlotByTeacher,
+} from './mutations-cancel'
+
+export { bookSlot } from './booking'
