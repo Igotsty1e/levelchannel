@@ -43,7 +43,7 @@ export function ProfileEditor({
       })
       if (!res.ok) {
         const data = await res.json().catch(() => null)
-        setErr(data?.error || `HTTP ${res.status}`)
+        setErr(data?.message || data?.error || `HTTP `)
       } else {
         setSavedAt(new Date().toLocaleTimeString('ru-RU'))
       }

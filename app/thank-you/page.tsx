@@ -20,10 +20,13 @@ async function fetchOrder(invoiceId: string, receiptToken: string | null) {
   const payload = (await response.json()) as {
     order?: PublicPaymentOrder
     error?: string
+    message?: string
   }
 
   if (!response.ok || !payload.order) {
-    throw new Error(payload.error || 'Не удалось получить статус оплаты.')
+    throw new Error(
+      payload.message || payload.error || 'Не удалось получить статус оплаты.',
+    )
   }
 
   return payload.order

@@ -169,10 +169,11 @@ async function fetchOrder(invoiceId: string, receiptToken: string | null) {
   const payload = (await response.json()) as {
     order?: PublicPaymentOrder
     error?: string
+    message?: string
   }
 
   if (!response.ok || !payload.order) {
-    throw new Error(payload.error || 'Не удалось получить статус оплаты.')
+    throw new Error(payload.message || payload.error || 'Не удалось получить статус оплаты.')
   }
 
   return payload.order
@@ -188,10 +189,11 @@ async function cancelOrder(invoiceId: string, receiptToken: string | null) {
   const payload = (await response.json()) as {
     ok?: boolean
     error?: string
+    message?: string
   }
 
   if (!response.ok || !payload.ok) {
-    throw new Error(payload.error || 'Не удалось сбросить платёж.')
+    throw new Error(payload.message || payload.error || 'Не удалось сбросить платёж.')
   }
 }
 
@@ -553,10 +555,11 @@ export function PricingSection() {
         checkoutIntent?: CloudPaymentsWidgetIntent | null
         receiptToken?: string
         error?: string
+        message?: string
       }
 
       if (!response.ok || !payload.order) {
-        throw new Error(payload.error || 'Не удалось создать платёж.')
+        throw new Error(payload.message || payload.error || 'Не удалось создать платёж.')
       }
 
       saveInvoiceId(payload.order.invoiceId)
@@ -760,6 +763,7 @@ export function PricingSection() {
         setCheckout((current) => ({
           ...current,
           error:
+            payload.message ||
             payload.error ||
             'Сохранённая карта не найдена. Оплатите обычным способом.',
         }))
@@ -767,7 +771,7 @@ export function PricingSection() {
       }
 
       if (!response.ok && payload.error !== 'declined') {
-        throw new Error(payload.error || 'Не удалось списать с сохранённой карты.')
+        throw new Error(payload.message || payload.error || 'Не удалось списать с сохранённой карты.')
       }
 
       if (payload.status === 'paid' && payload.order) {
@@ -818,7 +822,7 @@ export function PricingSection() {
         return
       }
 
-      throw new Error(payload.error || payload.message || 'Не удалось обработать платёж.')
+      throw new Error(payload.message || payload.error || 'Не удалось обработать платёж.')
     } catch (error) {
       void logCheckoutEvent({
         type: 'checkout_one_click_failed',

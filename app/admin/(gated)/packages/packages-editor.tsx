@@ -71,7 +71,7 @@ export function PackagesEditor({
       })
       const body = await r.json()
       if (!r.ok) {
-        setError(body?.error || `HTTP ${r.status}`)
+        setError(body?.message || body?.error || `HTTP `)
         return
       }
       setInfo(`Создано: ${body.package.slug}`)

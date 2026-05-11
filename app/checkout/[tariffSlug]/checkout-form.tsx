@@ -80,7 +80,7 @@ export function CheckoutForm({
       })
       const data = await res.json()
       if (!res.ok) {
-        setErr(data?.error || `HTTP ${res.status}`)
+        setErr(data?.message || data?.error || `HTTP `)
         setBusy(false)
         return
       }
