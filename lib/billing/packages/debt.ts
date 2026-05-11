@@ -51,6 +51,12 @@ export async function listAccountPostpaidDebt(
           where pa.kind = 'lesson_slot'
             and pa.target_id = s.id::text
             and po.status = 'paid'
+            -- Refund Phase 7. A reversed allocation no longer
+            -- counts as paid; the slot returns to the debt list.
+            and not exists (
+              select 1 from payment_allocation_reversals par
+               where par.allocation_id = pa.id
+            )
         )
       order by s.start_at desc`,
     [accountId],

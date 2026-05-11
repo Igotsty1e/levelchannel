@@ -89,6 +89,12 @@ export async function listAllocationsForOrder(
 // Bulk lookup the cabinet uses to render «оплачено» / «оплатить»
 // next to each booked slot. Returns a map keyed by slot id; missing
 // keys mean "no paid allocation found" (i.e. unpaid).
+//
+// Refund Phase 7. A reversed allocation drops from the result so the
+// cabinet returns the slot to the "оплатить" bucket. Anti-join is
+// against the composite allocation key (payment_order_id, kind,
+// target_id) — migration 0022 uses that composite as the allocation
+// primary key; there is no surrogate uuid.
 export async function listSlotPaidStatus(
   slotIds: string[],
 ): Promise<Map<string, { paid: boolean; orderInvoiceId: string }>> {
@@ -99,8 +105,13 @@ export async function listSlotPaidStatus(
     `select a.target_id, a.payment_order_id
        from payment_allocations a
        join payment_orders o on o.invoice_id = a.payment_order_id
+       left join payment_allocation_reversals r
+              on r.payment_order_id = a.payment_order_id
+             and r.kind = a.kind
+             and r.target_id = a.target_id
       where a.kind = 'lesson_slot'
         and o.status = 'paid'
+        and r.id is null
         and a.target_id = any($1)`,
     [slotIds],
   )

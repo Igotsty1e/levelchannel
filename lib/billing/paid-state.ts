@@ -6,10 +6,11 @@
 // the filter, a stale pending allocation would inflate the paid total
 // and falsely flip the slot to "paid".
 //
-// The future refund wave will plug in a `payment_allocation_reversals`
-// LEFT JOIN with `r.id IS NULL` to subtract reversed allocations. This
-// helper is the single point of truth — when refunds land, this is
-// where the change goes.
+// Refund Phase 7 Stage A: the `payment_allocation_reversals` LEFT JOIN
+// with `r.id IS NULL` is now wired. Reversed allocations contribute 0,
+// so a refunded postpaid slot flips back to is_paid=false and surfaces
+// in the cabinet "К оплате" bucket. This is the single point of truth
+// for the derived "is this slot paid?" answer.
 
 import { getDbPool } from '@/lib/db/pool'
 
@@ -32,7 +33,7 @@ export async function slotIsPaidByAllocations(
     `select s.id as slot_id,
             t.amount_kopecks as expected_amount_kopecks,
             coalesce(sum(
-              case when o.invoice_id is not null
+              case when o.invoice_id is not null and r.id is null
                    then a.amount_kopecks
                    else 0
               end
@@ -43,9 +44,13 @@ export async function slotIsPaidByAllocations(
               on a.kind = 'lesson_slot' and a.target_id = s.id::text
        left join payment_orders o
               on o.invoice_id = a.payment_order_id and o.status = 'paid'
+       left join payment_allocation_reversals r
+              on r.payment_order_id = a.payment_order_id
+             and r.kind = a.kind
+             and r.target_id = a.target_id
       where s.id = $1
       group by s.id, t.amount_kopecks`,
-  [slotId],
+    [slotId],
   )
   if (result.rows.length === 0) return null
   const row = result.rows[0]
