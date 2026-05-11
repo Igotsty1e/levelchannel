@@ -47,7 +47,10 @@ export async function POST(request: Request) {
     // niceties) with NextResponse.json across the same route surface
     // makes the contract harder to grep against.
     return NextResponse.json(
-      { error: 'One-click payments are unavailable in mock mode.' },
+      {
+        error: 'one_click_unavailable',
+        message: 'One-click payments are unavailable in mock mode.',
+      },
       { status: 503 },
     )
   }
@@ -65,14 +68,17 @@ export async function POST(request: Request) {
   const session = await getCurrentSession(request)
   if (!session) {
     return NextResponse.json(
-      { error: 'Войдите в аккаунт, чтобы оплатить сохранённой картой.' },
+      {
+        error: 'session_required',
+        message: 'Войдите в аккаунт, чтобы оплатить сохранённой картой.',
+      },
       { status: 401 },
     )
   }
   const sessionEmailValidation = validateCustomerEmail(session.account.email)
   if (!sessionEmailValidation.ok) {
     return NextResponse.json(
-      { error: sessionEmailValidation.message },
+      { error: 'invalid_email', message: sessionEmailValidation.message },
       { status: 400 },
     )
   }
@@ -90,7 +96,10 @@ export async function POST(request: Request) {
     try {
       body = rawBody ? JSON.parse(rawBody) : {}
     } catch {
-      return { status: 400, body: { error: 'Invalid request body.' } }
+      return {
+        status: 400,
+        body: { error: 'invalid_request_body', message: 'Invalid request body.' },
+      }
     }
 
     const amountRub = normalizePaymentAmount(Number(body.amountRub))
@@ -110,7 +119,8 @@ export async function POST(request: Request) {
       return {
         status: 400,
         body: {
-          error: `Введите сумму от ${formatRubles(MIN_PAYMENT_AMOUNT_RUB)} до ${formatRubles(MAX_PAYMENT_AMOUNT_RUB)} ₽.`,
+          error: 'invalid_amount',
+          message: `Введите сумму от ${formatRubles(MIN_PAYMENT_AMOUNT_RUB)} до ${formatRubles(MAX_PAYMENT_AMOUNT_RUB)} ₽.`,
         },
       }
     }
@@ -118,7 +128,10 @@ export async function POST(request: Request) {
     if (body.personalDataConsentAccepted !== true) {
       return {
         status: 400,
-        body: { error: 'Подтвердите согласие на обработку персональных данных.' },
+        body: {
+          error: 'consent_required',
+          message: 'Подтвердите согласие на обработку персональных данных.',
+        },
       }
     }
 
@@ -153,7 +166,10 @@ export async function POST(request: Request) {
     if (result.kind === 'no_saved_card') {
       return {
         status: 404,
-        body: { error: 'Сохранённая карта не найдена. Оплатите обычным способом.' },
+        body: {
+          error: 'no_saved_card',
+          message: 'Сохранённая карта не найдена. Оплатите обычным способом.',
+        },
       }
     }
 

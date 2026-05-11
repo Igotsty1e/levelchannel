@@ -37,7 +37,7 @@ export async function POST(
 
   if (!isValidInvoiceId(invoiceId)) {
     return NextResponse.json(
-      { error: 'Invalid payment id.' },
+      { error: 'invalid_invoice_id', message: 'Invalid payment id.' },
       { status: 400, headers: NO_STORE },
     )
   }
@@ -48,7 +48,7 @@ export async function POST(
   const existing = await getOrder(invoiceId)
   if (!existing) {
     return NextResponse.json(
-      { error: 'Payment not found.' },
+      { error: 'not_found', message: 'Payment not found.' },
       { status: 404, headers: NO_STORE },
     )
   }
@@ -56,7 +56,7 @@ export async function POST(
   const verdict = evaluateReceiptGate(existing, presented)
   if (!verdict.ok) {
     return NextResponse.json(
-      { error: 'Payment not found.' },
+      { error: 'not_found', message: 'Payment not found.' },
       { status: 401, headers: NO_STORE },
     )
   }
@@ -68,7 +68,7 @@ export async function POST(
 
   if (!order) {
     return NextResponse.json(
-      { error: 'Payment not found.' },
+      { error: 'not_found', message: 'Payment not found.' },
       { status: 404, headers: NO_STORE },
     )
   }
