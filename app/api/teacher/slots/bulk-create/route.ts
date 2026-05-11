@@ -39,13 +39,13 @@ export async function POST(request: Request) {
     body = await request.json()
   } catch {
     return NextResponse.json(
-      { error: 'Invalid JSON body.' },
+      { error: 'invalid_json_body', message: 'Invalid JSON body.' },
       { status: 400, headers: NO_STORE },
     )
   }
   if (typeof body !== 'object' || body === null) {
     return NextResponse.json(
-      { error: 'Body must be a JSON object.' },
+      { error: 'body_must_be_object', message: 'Body must be a JSON object.' },
       { status: 400, headers: NO_STORE },
     )
   }
@@ -96,7 +96,10 @@ export async function POST(request: Request) {
   } catch (err) {
     if (err instanceof SlotTeacherRoleError) {
       return NextResponse.json(
-        { error: 'Внутренняя ошибка проверки роли.' },
+        {
+          error: 'internal_role_check',
+          message: 'Внутренняя ошибка проверки роли.',
+        },
         { status: 500, headers: NO_STORE },
       )
     }
