@@ -203,6 +203,17 @@ describe('POST /api/auth/register', () => {
       expect(existingEmailCalls).toBe(1)
       expect(verifySpy).toHaveBeenCalledOnce()
       expect(sendAlreadySpy).toHaveBeenCalledOnce()
+
+      // Codex Wave 38 review HIGH. Also pin the SECOND arg passed to
+      // verifyPassword. `verifyPassword('', '')` returns immediately on
+      // falsy hash (see lib/auth/password.ts) — a regression that drops
+      // the dummy hash and calls verifyPassword(password, '') / undefined
+      // would still register one call on the spy but skip the bcrypt
+      // cycle entirely. Asserting a bcrypt-shaped hash here closes that
+      // escape route.
+      const verifyArgs = verifySpy.mock.calls[0]
+      expect(typeof verifyArgs[1]).toBe('string')
+      expect(verifyArgs[1]).toMatch(/^\$2[aby]\$/)
     } finally {
       hashSpy.mockRestore()
       verifySpy.mockRestore()
