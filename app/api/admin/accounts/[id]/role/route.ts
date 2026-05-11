@@ -47,20 +47,29 @@ export async function POST(request: Request, { params }: RouteParams) {
   const op = typeof raw.op === 'string' ? raw.op : ''
   if (!ALLOWED_ROLES.has(role as AccountRole)) {
     return NextResponse.json(
-      { error: 'role must be one of: admin, teacher, student.' },
+      {
+        error: 'invalid_role',
+        message: 'role must be one of: admin, teacher, student.',
+      },
       { status: 400, headers: NO_STORE },
     )
   }
   if (op !== 'grant' && op !== 'revoke') {
     return NextResponse.json(
-      { error: 'op must be "grant" or "revoke".' },
+      {
+        error: 'invalid_op',
+        message: 'op must be "grant" or "revoke".',
+      },
       { status: 400, headers: NO_STORE },
     )
   }
 
   if (op === 'revoke' && role === 'admin' && id === guard.account.id) {
     return NextResponse.json(
-      { error: 'Cannot revoke admin from yourself.' },
+      {
+        error: 'cannot_revoke_admin_self',
+        message: 'Cannot revoke admin from yourself.',
+      },
       { status: 400, headers: NO_STORE },
     )
   }

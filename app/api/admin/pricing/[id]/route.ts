@@ -30,7 +30,7 @@ export async function GET(request: Request, { params }: RouteParams) {
   const tariff = await getTariffById(id)
   if (!tariff) {
     return NextResponse.json(
-      { error: 'Not found.' },
+      { error: 'not_found', message: 'Not found.' },
       { status: 404, headers: NO_STORE },
     )
   }
@@ -84,7 +84,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     const tariff = await updateTariff(id, patch)
     if (!tariff) {
       return NextResponse.json(
-        { error: 'Not found.' },
+        { error: 'not_found', message: 'Not found.' },
         { status: 404, headers: NO_STORE },
       )
     }
