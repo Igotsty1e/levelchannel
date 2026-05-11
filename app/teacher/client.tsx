@@ -95,7 +95,7 @@ export default function TeacherCalendarClient({
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        throw new Error(data?.error || data?.message || `HTTP ${res.status}`)
+        throw new Error(data?.message || data?.error || `HTTP ${res.status}`)
       }
       const skippedNote =
         data.skippedConflicts?.length > 0
