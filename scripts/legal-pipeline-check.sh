@@ -42,6 +42,10 @@ LEGAL_PREFIXES=(
   "app/offer/"
   "app/privacy/"
   "app/consent/"
+  # Wave 48 — markdown templates that become the v1 snapshot body in
+  # legal_document_versions. Mirror the JSX content that already went
+  # through legal-rf cascade; future edits must too.
+  "scripts/legal-v1-templates/"
 )
 
 TRAILER_KEY="Legal-Pipeline-Verified"
