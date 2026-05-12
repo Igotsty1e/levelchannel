@@ -1,0 +1,17 @@
+# Reference systemd timer for scripts/refund-reconcile.mjs.
+# Copy to /etc/systemd/system/ on the VPS; activation lives in the
+# private operations runbook.
+
+[Unit]
+Description=Run LevelChannel refund-reconcile worker every 5 minutes
+
+[Timer]
+# Every 5 minutes, offset 2 minutes from the wall-clock so it doesn't
+# tangle with the half-hourly webhook-flow-alert or the hourly
+# stale-order cleanup.
+OnCalendar=*-*-* *:02/5:00
+Persistent=true
+Unit=levelchannel-refund-reconcile.service
+
+[Install]
+WantedBy=timers.target

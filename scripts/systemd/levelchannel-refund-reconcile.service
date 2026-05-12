@@ -1,0 +1,37 @@
+# Reference systemd unit for scripts/refund-reconcile.mjs.
+# `scripts/activate-prod-ops.sh` renders the placeholders below during
+# installation from the private runbook.
+
+[Unit]
+Description=LevelChannel refund-attempt reconcile worker
+After=network.target
+
+[Service]
+Type=oneshot
+User=levelchannel
+Group=levelchannel
+WorkingDirectory=__LEVELCHANNEL_APP_DIR__
+EnvironmentFile=__LEVELCHANNEL_ENV_FILE__
+ExecStart=/usr/bin/node scripts/refund-reconcile.mjs
+StandardOutput=journal
+StandardError=journal
+
+# Codex 2026-05-08 (Wave 8 #6 LOW) — least-privilege sandboxing.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+# pkey_* allowlist required by V8's Memory Protection Keys hardening
+# in Node 20. Diagnostic procedure in
+# scripts/systemd/levelchannel-stale-orders.service.
+SystemCallFilter=@system-service pkey_alloc pkey_mprotect pkey_free
+SystemCallFilter=~@privileged @resources @debug @mount @cpu-emulation @obsolete
