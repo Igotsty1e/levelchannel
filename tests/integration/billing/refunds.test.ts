@@ -221,14 +221,14 @@ describe('POST /api/admin/refunds', () => {
     expect((await res.json()).error).toBe('allocation_not_found')
   })
 
-  it('rejects kind=package as unsupported_kind (Stage B scope: lesson_slot only)', async () => {
+  it('rejects unknown kind as unsupported_kind (kinds are lesson_slot | package)', async () => {
     const admin = await regAdmin()
     const res = await refundsHandler(
       buildRequest('/api/admin/refunds', {
         cookie: admin.cookie,
         body: {
-          paymentOrderId: 'lc_test_pkg_0000',
-          kind: 'package',
+          paymentOrderId: 'lc_test_bogus_0000',
+          kind: 'subscription',
           targetId: '00000000-0000-0000-0000-000000000000',
           refundedKopecks: 1000,
         },
@@ -236,6 +236,132 @@ describe('POST /api/admin/refunds', () => {
     )
     expect(res.status).toBe(400)
     expect((await res.json()).error).toBe('unsupported_kind')
+  })
+
+  it('refunds a kind=package allocation: voids the purchase + restores all active consumptions', async () => {
+    // Wave 53 — kind='package' refund covers the package-purchase
+    // case. Pre-seed: package, a purchase with N=2 active
+    // consumptions on slots S1, S2. Then refund the package
+    // allocation. Expect: voided_at non-null on purchase, both
+    // consumptions show restored_at non-null, response carries
+    // packageRestored.restoredConsumptions == 2.
+    const admin = await regAdmin()
+    const pool = getDbPool()
+
+    // Seed package + 2 slots + 2 consumptions + allocation + paid order.
+    const learnerEmail = `refund-pkg-${Date.now()}@example.com`
+    const learner = await pool.query(
+      `insert into accounts (email, password_hash, email_verified_at)
+       values ($1, 'dummy', now()) returning id`,
+      [learnerEmail],
+    )
+    const learnerId = String(learner.rows[0].id)
+
+    const pkg = await pool.query(
+      `insert into lesson_packages
+         (slug, title_ru, duration_minutes, count, amount_kopecks, is_active)
+       values ($1, '10x60 refund test', 60, 10, 350000, true)
+       returning id`,
+      [`refund-pkg-${Date.now()}`],
+    )
+    const pkgId = String(pkg.rows[0].id)
+
+    const orderId = freshInvoiceId('lc_pkg_refund')
+    await pool.query(
+      `insert into payment_orders
+         (invoice_id, amount_rub, currency, description, provider, status,
+          created_at, updated_at, paid_at, customer_email, receipt_email,
+          receipt, metadata)
+       values ($1, '3500.00', 'RUB', 'pkg refund', 'mock', 'paid',
+               now(), now(), now(), $2, $2, '{}'::jsonb,
+               jsonb_build_object('accountId', $3::text, 'packageSlug', 'x',
+                                   'packageDurationMinutes', 60, 'packageId', $4::text))`,
+      [orderId, learnerEmail, learnerId, pkgId],
+    )
+    const purchase = await pool.query(
+      `insert into package_purchases
+         (account_id, package_id, payment_order_id, amount_kopecks, currency,
+          title_snapshot, duration_minutes, count_initial, expires_at)
+       values ($1, $2, $3, 350000, 'RUB', '10x60', 60, 10, now() + interval '180 days')
+       returning id`,
+      [learnerId, pkgId, orderId],
+    )
+    const purchaseId = String(purchase.rows[0].id)
+    await pool.query(
+      `insert into payment_allocations
+         (payment_order_id, kind, target_id, amount_kopecks)
+       values ($1, 'package', $2, 350000)`,
+      [orderId, purchaseId],
+    )
+
+    // package_consumptions.slot_id FKs lesson_slots(id), so seed a
+    // teacher + 2 booked slots first. Granting 'teacher' role is the
+    // gate slotTeacherRole assert checks.
+    const teacher = await pool.query(
+      `insert into accounts (email, password_hash, email_verified_at)
+       values ($1, 'dummy', now()) returning id`,
+      [`refund-pkg-teacher-${Date.now()}@example.com`],
+    )
+    const teacherId = String(teacher.rows[0].id)
+    await pool.query(
+      `insert into account_roles (account_id, role)
+       values ($1, 'teacher')`,
+      [teacherId],
+    )
+    // start_at must be 30-min aligned in MSK + in business band 06-22.
+    // Use date_trunc('hour') to land on HH:00:00 MSK (always valid).
+    const slotInserts = await pool.query(
+      `insert into lesson_slots
+         (teacher_account_id, start_at, duration_minutes, status, learner_account_id, booked_at)
+       values
+         ($1, date_trunc('hour', (now() + interval '7 days') at time zone 'Europe/Moscow') at time zone 'Europe/Moscow', 60, 'booked', $2, now()),
+         ($1, date_trunc('hour', (now() + interval '8 days') at time zone 'Europe/Moscow') at time zone 'Europe/Moscow', 60, 'booked', $2, now())
+       returning id`,
+      [teacherId, learnerId],
+    )
+    const slot1 = String(slotInserts.rows[0].id)
+    const slot2 = String(slotInserts.rows[1].id)
+    await pool.query(
+      `insert into package_consumptions (slot_id, package_purchase_id, consumed_by_actor)
+       values ($1, $3, 'learner'), ($2, $3, 'learner')`,
+      [slot1, slot2, purchaseId],
+    )
+
+    const res = await refundsHandler(
+      buildRequest('/api/admin/refunds', {
+        cookie: admin.cookie,
+        body: {
+          paymentOrderId: orderId,
+          kind: 'package',
+          targetId: purchaseId,
+          refundedKopecks: 350000,
+          reason: 'package refund test',
+        },
+      }),
+    )
+    expect(res.status).toBe(201)
+    const json = await res.json()
+    expect(json.reversal).toBeDefined()
+    expect(json.packageRestored).toEqual({
+      restoredConsumptions: 2,
+      alreadyVoided: false,
+    })
+
+    // Purchase row marked voided.
+    const purchaseAfter = await pool.query(
+      `select voided_at from package_purchases where id = $1`,
+      [purchaseId],
+    )
+    expect(purchaseAfter.rows[0].voided_at).not.toBeNull()
+
+    // Both consumptions restored.
+    const consumptionsAfter = await pool.query(
+      `select count(*)::int as n
+         from package_consumptions
+        where package_purchase_id = $1 and restored_at is not null`,
+      [purchaseId],
+    )
+    expect(consumptionsAfter.rows[0].n).toBe(2)
   })
 
   it('listSlotPaymentState aggregates: slot with refunded-then-paid history shows paid', async () => {

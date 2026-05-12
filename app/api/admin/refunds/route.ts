@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { recordPaymentAuditEvent } from '@/lib/audit/payment-events'
 import { requireAdminRole } from '@/lib/auth/guards'
+import { restoreAllConsumptionsForPurchase } from '@/lib/billing/consumption'
 import { createAllocationReversal } from '@/lib/billing/reversals'
 import { getDbPool } from '@/lib/db/pool'
 import {
@@ -87,11 +88,11 @@ export async function POST(request: Request) {
       { status: 400, headers: NO_STORE },
     )
   }
-  if (kind !== 'lesson_slot') {
+  if (kind !== 'lesson_slot' && kind !== 'package') {
     return NextResponse.json(
       {
         error: 'unsupported_kind',
-        message: `Refund for kind='${kind}' is not implemented yet — only 'lesson_slot' is supported in Stage B.`,
+        message: `Refund for kind='${kind}' is not supported — only 'lesson_slot' and 'package' are.`,
       },
       { status: 400, headers: NO_STORE },
     )
@@ -159,6 +160,7 @@ export async function POST(request: Request) {
     }
 
     let reversal
+    let packageRestore: { restoredCount: number; alreadyVoided: boolean } | null = null
     try {
       reversal = await createAllocationReversal(client, {
         paymentOrderId,
@@ -169,6 +171,18 @@ export async function POST(request: Request) {
         reason,
         refundedAt,
       })
+      // Wave 53 — kind='package' refund must also void the
+      // package_purchase + restore every active consumption on it
+      // (slots booked from this package lose their "paid via
+      // package" backing; operator handles downstream slot
+      // disposition). Same tx as the reversal insert.
+      if (kind === 'package') {
+        packageRestore = await restoreAllConsumptionsForPurchase(client, {
+          packagePurchaseId: targetId,
+          actor: 'admin',
+          reason: reason ?? 'admin_package_refund',
+        })
+      }
     } catch (err) {
       const code = (err as { code?: string } | null)?.code ?? ''
       if (code === '23505') {
@@ -219,7 +233,20 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(
-      { reversal },
+      {
+        reversal,
+        // Wave 53 — kind='package' refund also surfaces how many
+        // consumptions were restored (operator may need to follow up
+        // with slot cancellations for those bookings).
+        ...(packageRestore
+          ? {
+              packageRestored: {
+                restoredConsumptions: packageRestore.restoredCount,
+                alreadyVoided: packageRestore.alreadyVoided,
+              },
+            }
+          : {}),
+      },
       { status: 201, headers: NO_STORE },
     )
   } catch (err) {

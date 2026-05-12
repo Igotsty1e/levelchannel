@@ -54,6 +54,10 @@ export async function consumePackageUnit(
       where pp.account_id = $1
         and pp.duration_minutes = $2
         and pp.expires_at > now()
+        -- Refund Phase 7 follow-up. A voided purchase (refunded) MUST
+        -- NOT be re-consumed. Migration 0038 adds the column; nullable
+        -- so unrefunded purchases stay live.
+        and pp.voided_at is null
         and pp.count_initial - (
               select count(*) from package_consumptions pc
                where pc.package_purchase_id = pp.id
@@ -84,6 +88,51 @@ export async function consumePackageUnit(
     return { ok: false, reason: 'already_consumed' }
   }
   return { ok: true, packagePurchaseId: String(consumed.rows[0].package_purchase_id) }
+}
+
+// Refund Phase 7 follow-up. Bulk restore every active consumption on
+// a purchase + mark the purchase voided. Called from the admin refund
+// endpoint when refunding a kind='package' allocation. All in one tx
+// (caller's): mass UPDATE of consumptions + UPDATE of purchase row.
+// Idempotent on re-run (subsequent calls just set restored_at on
+// nothing + re-stamp voided_at, which we make a no-op when already
+// non-null).
+export async function restoreAllConsumptionsForPurchase(
+  client: PoolClient,
+  args: {
+    packagePurchaseId: string
+    actor: ConsumePackageActor
+    reason?: string | null
+  },
+): Promise<{ restoredCount: number; alreadyVoided: boolean }> {
+  // Void the purchase row first so concurrent consumePackageUnit
+  // attempts see the voided_at IS NULL filter fail. FOR UPDATE
+  // briefly waits if another tx is mid-consume against this purchase.
+  const voidRes = await client.query(
+    `update package_purchases
+        set voided_at = coalesce(voided_at, now())
+      where id = $1
+      returning (voided_at = now() and voided_at is not null) as just_voided`,
+    [args.packagePurchaseId],
+  )
+  const alreadyVoided =
+    voidRes.rows.length === 0
+      ? false
+      : !Boolean(voidRes.rows[0].just_voided)
+
+  const restored = await client.query(
+    `update package_consumptions
+        set restored_at = now(),
+            restored_by_actor = $2,
+            restored_reason = $3
+      where package_purchase_id = $1
+        and restored_at is null`,
+    [args.packagePurchaseId, args.actor, args.reason ?? null],
+  )
+  return {
+    restoredCount: restored.rowCount ?? 0,
+    alreadyVoided,
+  }
 }
 
 // Restore a consumption (cancel path). Idempotent: stamps `restored_at`

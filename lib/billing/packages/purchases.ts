@@ -108,6 +108,10 @@ export async function listAccountActivePackages(
        from package_purchases pp
       where pp.account_id = $1
         and pp.expires_at > now()
+        -- Refund Phase 7 follow-up. Voided purchases hide from cabinet
+        -- "Мои пакеты" — the learner shouldn't see a refunded package
+        -- with restored units as if it were still available.
+        and pp.voided_at is null
       order by pp.expires_at asc, pp.id`,
     [accountId],
   )
