@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { NO_STORE } from './http-headers'
 
 // Wave 16 — DRY helper for the JSON-parse + "must be an object"
 // gate that ~20 routes hand-roll. Every caller used to write:
@@ -25,7 +26,6 @@ import { NextResponse } from 'next/server'
 // stays on the legacy `{ error: '<human string>' }` shape so existing
 // callers don't move.
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 export type JsonBodyOk = { ok: true; body: Record<string, unknown> }
 export type JsonBodyFail = { ok: false; response: NextResponse }

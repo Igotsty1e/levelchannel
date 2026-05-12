@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { recordAuthAuditEvent } from '@/lib/audit/auth-events'
 import { getAccountById, setAccountPassword } from '@/lib/auth/accounts'
 import { hashPassword } from '@/lib/auth/password'
@@ -25,7 +26,6 @@ export const dynamic = 'force-dynamic'
 // createSession. Old sessions die first; the new session for the actor
 // who just reset is on a clean slate.
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 const isProd = process.env.NODE_ENV === 'production'
 
 export async function POST(request: Request) {

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireAdminRole } from '@/lib/auth/guards'
 import { createPackage, listActivePackages } from '@/lib/billing/packages'
@@ -12,7 +13,6 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 // Default display_order for new packages. Spaced at 100 so the operator
 // can insert "in between" two existing rows by picking 50 / 150 / 250

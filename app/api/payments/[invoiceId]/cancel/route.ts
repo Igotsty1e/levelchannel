@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
 import { markOrderCancelled } from '@/lib/payments/provider'
 import {
@@ -17,7 +18,6 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function POST(
   request: Request,

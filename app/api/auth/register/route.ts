@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { recordAuthAuditEvent } from '@/lib/audit/auth-events'
 import { createAccount, getAccountByEmail } from '@/lib/auth/accounts'
 import { recordConsent } from '@/lib/auth/consents'
@@ -34,7 +35,6 @@ export const dynamic = 'force-dynamic'
 // Both paths consume one bcrypt cycle and one Resend dispatch. Response
 // body is byte-equal: { ok: true }.
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function POST(request: Request) {
   const rl = await enforceRateLimit(request, 'auth:register:ip', 5, 60_000)

@@ -4,13 +4,13 @@ import {
   evaluateReceiptGate,
   extractReceiptToken,
 } from '@/lib/payments/receipt-token-gate'
+import { NO_STORE } from '@/lib/api/http-headers'
 import { syncMockOrderState, toPublicOrder } from '@/lib/payments/provider'
 import { enforceRateLimit, isValidInvoiceId } from '@/lib/security/request'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function GET(
   request: Request,

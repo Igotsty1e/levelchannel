@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireTeacherAndVerified } from '@/lib/auth/guards'
 import {
@@ -15,7 +16,6 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 // Wave C — teacher single-create. Mirrors POST /api/admin/slots but
 // gates with `requireTeacherAndVerified` and binds `teacherAccountId`

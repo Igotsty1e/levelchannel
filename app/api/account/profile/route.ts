@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireAuthenticated } from '@/lib/auth/guards'
 import {
@@ -23,7 +24,6 @@ export const dynamic = 'force-dynamic'
 // Origin gate on PATCH only — GET is a same-origin cabinet bootstrap
 // like /api/auth/me. The PATCH side mutates state.
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function GET(request: Request) {
   const rl = await enforceRateLimit(request, 'account:profile:ip', 60, 60_000)

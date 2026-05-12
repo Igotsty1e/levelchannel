@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { listAccountActivePackages } from '@/lib/billing/packages'
 import { getCurrentSession } from '@/lib/auth/sessions'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 // Billing wave PR 2 — own packages list. Read-only own data.
 // Used by the cabinet "Мои пакеты" section (PR 3) and the

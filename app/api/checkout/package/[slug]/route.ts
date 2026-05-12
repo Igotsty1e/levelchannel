@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
 import {
   getCurrentSession,
@@ -18,7 +19,6 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 type RouteParams = { params: Promise<{ slug: string }> }
 

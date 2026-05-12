@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { recordAuthAuditEvent } from '@/lib/audit/auth-events'
 import { getAccountByEmail } from '@/lib/auth/accounts'
 import { rateLimitScope } from '@/lib/auth/email-hash'
@@ -28,7 +29,6 @@ export const dynamic = 'force-dynamic'
 // limiting (5/min/IP + 3/hour/email-hash) caps how much an attacker can
 // extract before tripping a bucket.
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function POST(request: Request) {
   const rl = await enforceRateLimit(request, 'auth:reset-request:ip', 5, 60_000)

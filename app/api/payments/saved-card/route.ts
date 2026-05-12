@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { getCurrentSession } from '@/lib/auth/sessions'
 import { validateCustomerEmail } from '@/lib/payments/catalog'
 import { paymentConfig } from '@/lib/payments/config'
@@ -34,7 +35,6 @@ export const dynamic = 'force-dynamic'
 // the only trust anchor; what the body says is irrelevant. This avoids
 // a class of bug where a stale form value silently routes a logged-in
 // user's request to someone else's email.
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function POST(request: Request) {
   const rateLimitResponse = await enforceRateLimit(
