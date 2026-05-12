@@ -533,7 +533,7 @@ GROUP BY s.id, t.amount_kopecks;
 -- AND there is no allocation reversal row (when refund flow lands).
 ```
 
-This derivation is implemented in a `lib/billing/paid-state.ts` helper. The cabinet "К оплате" pill calls this helper. When the future refund wave ships allocation reversals, the helper is the single point to update — the SUM expression gains an additional `AND r.id IS NULL` against a future `payment_allocation_reversals` table.
+This derivation is implemented in a `lib/billing/paid-state.ts` helper. The cabinet "К оплате" pill calls this helper. Refund wave shipped 2026-05-11 (Waves 50-54): the helper now does a LATERAL `SUM(refunded_kopecks)` against `payment_allocation_reversals` and treats an allocation as fully contributing while `SUM < amount_kopecks` (binary all-or-nothing — partial refunds keep the slot in the paid bucket).
 
 ### Re-opening a cancelled prepaid slot
 
@@ -914,6 +914,6 @@ After the first real `package_purchases` row exists, full rollback requires back
 - **Consumption PK on `slot_id`** prevents a slot ever being prepaid-consumed twice. If a future flow needs restore-and-rebind on the SAME slot, the design is to cancel-and-create-new-slot. Documented above.
 - **`available_packages` in 402 body** capped at top-3 by `display_order`; cabinet has the full `/packages` link.
 - **Advisory lock contention** on `pkg_consume:account_id` is a per-account serialization. If a learner double-clicks the book button, the second click waits on the first. Acceptable; ms-scale.
-- **Refund flow inheritance** — when refund wave lands, the consumption ledger is the natural place to restore-package-on-refund (already supported via `restored_at`). The `paid-state` SUM expression already isolates non-reversed allocations via the `IS NOT NULL` predicate — adding a `LEFT JOIN payment_allocation_reversals r ... AND r.id IS NULL` is the next step. Single point of update.
+- **Refund flow inheritance** — refund wave shipped 2026-05-11 (Waves 50-54). The consumption ledger is the natural place to restore-package-on-refund via `restored_at`, and `restoreAllConsumptionsForPurchase` (Wave 53, `lib/billing/consumption.ts`) drops every active consumption when a `kind='package'` allocation is reversed. The `paid-state` SUM expression now does a LATERAL `SUM(refunded_kopecks)` against `payment_allocation_reversals` and treats an allocation as fully paying while `SUM < amount_kopecks` (Wave 54 partial-reversal contract). The four read paths (`slotIsPaidByAllocations`, `listSlotPaidStatus`, `listSlotPaymentState`, `listAccountPostpaidDebt`) all agree on this binary all-or-nothing semantic.
 - **Pending-package gate window** — 15 minutes is a generous upper bound on CloudPayments webhook delivery (typically 5–30 s). If the webhook is delayed beyond 15 minutes (extreme outage), the gate stops blocking and a postpaid debt could form for a paid-but-not-yet-granted package. Mitigation: the operator's debt review surface (admin debit view) lets them reconcile manually. Acceptable trade vs blocking the learner forever on a stuck webhook.
 - **Two-device concurrency display** — covered explicitly in the BookConfirmModal advisory copy; server is authoritative on commit. The modal's preview is a hint, not a contract.

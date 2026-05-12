@@ -84,15 +84,22 @@ running.
 
 ## What is NOT in scope (parked)
 
-- Refund / credit on cancellation. If a learner with a paid booking
-  cancels (>24h), Phase 6 just stamps the slot cancelled and leaves
-  the payment_orders + payment_allocations rows alone. Operator-side
-  refund stays manual via CloudPayments dashboard for now. A clean
-  refund flow ships in Phase 7 if/when refund volume justifies it.
-- Package purchases (one payment → N slots). The
-  `payment_allocations` table is forward-compatible (kind enum), but
-  Phase 6 only ships `kind='lesson_slot'`. Adding `kind='package'`
-  later is a one-row CHECK constraint update.
+- Refund / credit on cancellation. Phase 6 itself just stamps the
+  slot cancelled and leaves payment_orders + payment_allocations
+  alone. **Phase 7 shipped 2026-05-11 across Waves 50–54**: admin
+  endpoint `POST /api/admin/refunds` books reversals in
+  `payment_allocation_reversals`; supports `kind='lesson_slot'`
+  (partial + full) and `kind='package'` (full-amount only, voids the
+  package_purchase + restores active consumptions). Money still moves
+  via the CloudPayments dashboard; the DB just records what happened
+  after. See `ENGINEERING_BACKLOG.md` "Refund-flow Phase 7" entry for
+  the per-wave breakdown.
+- Package purchases (one payment → N slots). **Shipped 2026-05-10**
+  as the billing wave (`docs/plans/prepay-postpay-billing.md`). The
+  `kind='package'` allocations flow through `package_purchases` +
+  `package_consumptions` (immutable ledger); booking checks
+  consumption first and only falls through to postpay/single-payment
+  when no active package matches.
 - Sunsetting `/pay`. Both flows run side-by-side in this wave. After
   the new flow has a few weeks in production with no incidents, we
   can decide whether to make `/pay` redirect to a tariff picker or
