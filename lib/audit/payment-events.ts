@@ -51,6 +51,19 @@ export const PAYMENT_AUDIT_EVENT_TYPES = [
   // Payload carries the composite allocation key + refunded_kopecks +
   // optional reason. Audit row anchors the operator who acted.
   'payment.refund.recorded',
+  // Refund Phase 7 follow-up #3 (Wave 60) — operator initiated a
+  // gateway-side refund via CloudPayments `payments/refund`. Fires on
+  // BOTH success (reversal booked in same tx) and failure (CP
+  // declined / network error). The payload `outcome` field
+  // discriminates. Payload also carries the original transactionId
+  // and, on success, the gateway's refund transactionId for
+  // dashboard correlation.
+  'payment.refund.initiated.gateway',
+  // Reserved for the CP `Refund` webhook handler that confirms
+  // settlement on the bank side. Not wired in Wave 60 — present in
+  // the enum + CHECK so the future webhook branch doesn't need a
+  // second taxonomy migration.
+  'payment.refund.gateway.webhook',
 ] as const
 
 export type PaymentAuditEventType = (typeof PAYMENT_AUDIT_EVENT_TYPES)[number]
