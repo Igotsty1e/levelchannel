@@ -18,6 +18,12 @@ import { NextResponse } from 'next/server'
 // happy-path linear and lets the caller branch with one early return
 // — no try/catch noise, no NextResponse import in routes that don't
 // otherwise need it.
+//
+// Wave 56 — optional `coded` mode for routes that follow the Wave
+// 33-36 error-code contract: `{ error: 'invalid_json_body', message: '…' }`
+// + `{ error: 'body_must_be_object', message: '…' }`. The default
+// stays on the legacy `{ error: '<human string>' }` shape so existing
+// callers don't move.
 
 const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
@@ -25,9 +31,18 @@ export type JsonBodyOk = { ok: true; body: Record<string, unknown> }
 export type JsonBodyFail = { ok: false; response: NextResponse }
 export type JsonBodyResult = JsonBodyOk | JsonBodyFail
 
+export type ReadJsonOptions = {
+  // When true, emit the Wave 33-36 contract: a stable `error` code
+  // string plus a human `message`. When false/omitted, emit the
+  // legacy `{ error: '<human string>' }` shape.
+  coded?: boolean
+}
+
 export async function readJsonObjectOr400(
   request: Request,
+  opts?: ReadJsonOptions,
 ): Promise<JsonBodyResult> {
+  const coded = opts?.coded === true
   let raw: unknown
   try {
     raw = await request.json()
@@ -35,7 +50,9 @@ export async function readJsonObjectOr400(
     return {
       ok: false,
       response: NextResponse.json(
-        { error: 'Invalid JSON body.' },
+        coded
+          ? { error: 'invalid_json_body', message: 'Invalid JSON body.' }
+          : { error: 'Invalid JSON body.' },
         { status: 400, headers: NO_STORE },
       ),
     }
@@ -44,7 +61,9 @@ export async function readJsonObjectOr400(
     return {
       ok: false,
       response: NextResponse.json(
-        { error: 'Body must be a JSON object.' },
+        coded
+          ? { error: 'body_must_be_object', message: 'Body must be a JSON object.' }
+          : { error: 'Body must be a JSON object.' },
         { status: 400, headers: NO_STORE },
       ),
     }
