@@ -116,10 +116,21 @@ export async function POST(request: Request) {
 
     // Look up the allocation in the same tx — abort if missing AND
     // assert refundedKopecks ≤ allocation amount.
+    //
+    // Wave 54 Codex review HIGH — concurrency. Two operators submitting
+    // partial refunds against the same allocation could each read the
+    // running sum as 0 under READ COMMITTED, both pass the bounds check,
+    // and together push SUM(refunded_kopecks) past amount_kopecks now
+    // that the UNIQUE(payment_order_id, kind, target_id) constraint is
+    // gone (migration 0039). `FOR UPDATE` on the allocation row
+    // serializes refunds against the same composite key for the lifetime
+    // of the tx — the SUM read, the bounds check, and the reversal
+    // INSERT all sit behind the lock.
     const allocRow = await client.query(
       `select amount_kopecks
          from payment_allocations
-        where payment_order_id = $1 and kind = $2 and target_id = $3`,
+        where payment_order_id = $1 and kind = $2 and target_id = $3
+        for update`,
       [paymentOrderId, kind, targetId],
     )
     if (allocRow.rows.length === 0) {

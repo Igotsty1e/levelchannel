@@ -12,11 +12,15 @@
 // answer.
 //
 // Wave 54 — partial reversals. Multiple reversal rows per allocation
-// are now valid; pre-aggregate refunded_sum per allocation (LATERAL)
-// and subtract it from a.amount_kopecks. The CASE keeps "no paid
-// order" rows at 0; GREATEST against 0 guards a SUM that exceeds the
-// allocation (shouldn't happen — admin endpoint asserts — but defense
-// in depth never hurts here).
+// are now valid. The predicate matches `listSlotPaymentState` and
+// `listAccountPostpaidDebt`: an allocation contributes its full
+// `amount_kopecks` while `SUM(refunded_kopecks) < amount_kopecks`,
+// and 0 once the SUM hits full coverage. This binary all-or-nothing
+// is the contract documented in `lib/payments/allocations.ts` —
+// the four read paths must agree on "is this slot paid?" so a partial
+// refund keeps the slot in the paid bucket across the entire stack.
+// Codex Wave 54 review HIGH 1 flagged that a `net-covered-kopecks`
+// scheme would silently disagree with the other three paths.
 
 import { getDbPool } from '@/lib/db/pool'
 
@@ -40,7 +44,8 @@ export async function slotIsPaidByAllocations(
             t.amount_kopecks as expected_amount_kopecks,
             coalesce(sum(
               case when o.invoice_id is not null
-                   then greatest(a.amount_kopecks - coalesce(rev.refunded_sum, 0), 0)
+                       and coalesce(rev.refunded_sum, 0) < a.amount_kopecks
+                   then a.amount_kopecks
                    else 0
               end
             ), 0)::bigint as paid_amount_kopecks
