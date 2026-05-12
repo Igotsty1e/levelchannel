@@ -46,6 +46,21 @@ create table if not exists payment_refund_attempts (
     'declined',
     'error'
   )),
+  -- Wave 60 Codex round 2 — invariant: a row in terminal status
+  -- 'succeeded' MUST carry both the gateway refund txn id and the
+  -- reversal id. 'gateway_succeeded_db_failed' carries the gateway
+  -- id but no reversal_id by definition (DB write failed). Schema
+  -- defence in depth against an app-layer regression that flips
+  -- status without populating the matching breadcrumbs.
+  constraint payment_refund_attempts_terminal_invariants check (
+    case
+      when status = 'succeeded' then
+        gateway_refund_transaction_id is not null and reversal_id is not null
+      when status = 'gateway_succeeded_db_failed' then
+        gateway_refund_transaction_id is not null and reversal_id is null
+      else true
+    end
+  ),
   -- CP's TransactionId of the original captured payment (the one we
   -- send in to refund). Captured pre-call so the row carries enough
   -- info to reconcile even if the call itself crashed before
