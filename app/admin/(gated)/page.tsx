@@ -1,12 +1,20 @@
 import Link from 'next/link'
 
 import { listAccounts } from '@/lib/auth/accounts'
+import { listAccountsWithPostpaidDebtAggregate } from '@/lib/billing/packages/debt'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export default async function AdminDashboardPage() {
-  const { total } = await listAccounts({ limit: 1, offset: 0 })
+  const [{ total }, debtRows] = await Promise.all([
+    listAccounts({ limit: 1, offset: 0 }),
+    listAccountsWithPostpaidDebtAggregate(),
+  ])
+  const totalDebtKopecks = debtRows.reduce((s, r) => s + r.totalDebtKopecks, 0)
+  const debtRubFormatted = (totalDebtKopecks / 100).toLocaleString('ru-RU', {
+    maximumFractionDigits: 0,
+  })
 
   return (
     <>
@@ -23,6 +31,11 @@ export default async function AdminDashboardPage() {
       >
         <Card title="Всего аккаунтов" value={String(total)} href="/admin/accounts" />
         <Card title="Тарифы" value="управление" href="/admin/pricing" />
+        <Card
+          title="Постоплатный долг"
+          value={debtRows.length === 0 ? '—' : `${debtRubFormatted} ₽`}
+          href="/admin/debt-summary"
+        />
       </div>
       <p style={{ color: 'var(--secondary)', fontSize: 13, lineHeight: 1.6 }}>
         Расширенные дашборды (платежи, регистрации за неделю, отказы)
