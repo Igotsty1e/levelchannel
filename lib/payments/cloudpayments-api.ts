@@ -79,6 +79,52 @@ function basicAuthHeader() {
   return `Basic ${token}`
 }
 
+// Wave 62 — bounded fetch helper for CloudPayments calls.
+// Codex Wave 60 round 2 RESIDUAL pre-existing concern: every CP call
+// (tokens/charge, post3ds, refund) used a plain `fetch()` with no
+// timeout, so a stuck/hung gateway could leave a request thread
+// blocked indefinitely. Wrap fetch in an AbortController-based
+// timeout; default 10 s mirrors the 8–10 s upper bound CP themselves
+// quote on synchronous endpoints.
+//
+// Override per call site (or globally via CLOUDPAYMENTS_FETCH_TIMEOUT_MS
+// env var) for tests or future endpoints that need different bounds.
+function defaultTimeoutMs(): number {
+  const envVal = process.env.CLOUDPAYMENTS_FETCH_TIMEOUT_MS
+  if (envVal) {
+    const n = Number(envVal)
+    if (Number.isFinite(n) && n > 0) return Math.floor(n)
+  }
+  return 10_000
+}
+
+export async function fetchWithTimeout(
+  url: string,
+  init: RequestInit & { timeoutMs?: number },
+): Promise<Response> {
+  const { timeoutMs, ...rest } = init
+  const ms = timeoutMs ?? defaultTimeoutMs()
+  // Compose with any signal the caller already passed in — when both
+  // exist, AbortSignal.any aborts on whichever fires first.
+  const controller = new AbortController()
+  const timer = setTimeout(
+    () =>
+      controller.abort(
+        new Error(`CloudPayments call timed out after ${ms}ms`),
+      ),
+    ms,
+  )
+  const signal =
+    typeof (AbortSignal as unknown as { any?: (s: AbortSignal[]) => AbortSignal }).any === 'function' && rest.signal
+      ? (AbortSignal as unknown as { any: (s: AbortSignal[]) => AbortSignal }).any([rest.signal, controller.signal])
+      : controller.signal
+  try {
+    return await fetch(url, { ...rest, signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 function pickString(value: unknown) {
   if (typeof value === 'string') {
     return value
@@ -116,7 +162,7 @@ export async function chargeWithSavedToken(
   let response: Response
 
   try {
-    response = await fetch(TOKENS_CHARGE_URL, {
+    response = await fetchWithTimeout(TOKENS_CHARGE_URL, {
       method: 'POST',
       headers: {
         Authorization: basicAuthHeader(),
@@ -215,7 +261,7 @@ export async function confirmThreeDs(
   let response: Response
 
   try {
-    response = await fetch(POST3DS_URL, {
+    response = await fetchWithTimeout(POST3DS_URL, {
       method: 'POST',
       headers: {
         Authorization: basicAuthHeader(),
@@ -359,7 +405,7 @@ export async function refundTransaction(
 
   let response: Response
   try {
-    response = await fetch(REFUND_URL, {
+    response = await fetchWithTimeout(REFUND_URL, {
       method: 'POST',
       headers: {
         Authorization: basicAuthHeader(),
