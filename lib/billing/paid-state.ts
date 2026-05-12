@@ -7,10 +7,16 @@
 // and falsely flip the slot to "paid".
 //
 // Refund Phase 7 Stage A: the `payment_allocation_reversals` LEFT JOIN
-// with `r.id IS NULL` is now wired. Reversed allocations contribute 0,
-// so a refunded postpaid slot flips back to is_paid=false and surfaces
-// in the cabinet "К оплате" bucket. This is the single point of truth
-// for the derived "is this slot paid?" answer.
+// is wired so reversed allocations subtract from the paid total. This
+// is the single point of truth for the derived "is this slot paid?"
+// answer.
+//
+// Wave 54 — partial reversals. Multiple reversal rows per allocation
+// are now valid; pre-aggregate refunded_sum per allocation (LATERAL)
+// and subtract it from a.amount_kopecks. The CASE keeps "no paid
+// order" rows at 0; GREATEST against 0 guards a SUM that exceeds the
+// allocation (shouldn't happen — admin endpoint asserts — but defense
+// in depth never hurts here).
 
 import { getDbPool } from '@/lib/db/pool'
 
@@ -33,8 +39,8 @@ export async function slotIsPaidByAllocations(
     `select s.id as slot_id,
             t.amount_kopecks as expected_amount_kopecks,
             coalesce(sum(
-              case when o.invoice_id is not null and r.id is null
-                   then a.amount_kopecks
+              case when o.invoice_id is not null
+                   then greatest(a.amount_kopecks - coalesce(rev.refunded_sum, 0), 0)
                    else 0
               end
             ), 0)::bigint as paid_amount_kopecks
@@ -44,10 +50,13 @@ export async function slotIsPaidByAllocations(
               on a.kind = 'lesson_slot' and a.target_id = s.id::text
        left join payment_orders o
               on o.invoice_id = a.payment_order_id and o.status = 'paid'
-       left join payment_allocation_reversals r
-              on r.payment_order_id = a.payment_order_id
-             and r.kind = a.kind
-             and r.target_id = a.target_id
+       left join lateral (
+         select coalesce(sum(refunded_kopecks), 0)::bigint as refunded_sum
+           from payment_allocation_reversals r
+          where r.payment_order_id = a.payment_order_id
+            and r.kind = a.kind
+            and r.target_id = a.target_id
+       ) rev on true
       where s.id = $1
       group by s.id, t.amount_kopecks`,
     [slotId],

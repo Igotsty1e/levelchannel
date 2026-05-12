@@ -112,7 +112,10 @@ describe('POST /api/admin/refunds', () => {
     expect(dbRows.rows.length).toBe(1)
   })
 
-  it('rejects a duplicate refund with 409 and surfaces the existing reversal id', async () => {
+  it('rejects a second full refund with 400 refund_exceeds_allocation (sum >> amount)', async () => {
+    // Wave 54 — UNIQUE constraint dropped to support partials. A
+    // second full-amount refund now fails by sum-exceeds-allocation,
+    // not by unique-violation.
     const admin = await regAdmin()
     const slotId = '22222222-2222-2222-2222-' + Date.now().toString(16).padStart(12, '0').slice(-12)
     const { paymentOrderId } = await seedPaidAllocation({
@@ -132,8 +135,6 @@ describe('POST /api/admin/refunds', () => {
       }),
     )
     expect(first.status).toBe(201)
-    const firstJson = await first.json()
-    const firstReversalId = firstJson.reversal.id
 
     const second = await refundsHandler(
       buildRequest('/api/admin/refunds', {
@@ -146,10 +147,8 @@ describe('POST /api/admin/refunds', () => {
         },
       }),
     )
-    expect(second.status).toBe(409)
-    const json = await second.json()
-    expect(json.error).toBe('already_refunded')
-    expect(json.reversalId).toBe(firstReversalId)
+    expect(second.status).toBe(400)
+    expect((await second.json()).error).toBe('refund_exceeds_allocation')
   })
 
   it('rejects refundedKopecks > allocation amount with 400 refund_exceeds_allocation', async () => {
@@ -176,11 +175,10 @@ describe('POST /api/admin/refunds', () => {
     expect(json.error).toBe('refund_exceeds_allocation')
   })
 
-  it('rejects refundedKopecks < allocation amount with 400 partial_refund_not_supported', async () => {
-    // Codex Wave 51 review HIGH. Stage A/B model is full-refund-only:
-    // the read paths drop the allocation on reversal row existence,
-    // not on amount match, so accepting a partial would mark the slot
-    // fully unpaid for a 1-kopeck refund.
+  it('accepts a partial refund: slot stays paid, second partial that hits sum>=amount flips to refunded', async () => {
+    // Wave 54 — partial reversals supported. A partial keeps the slot
+    // in the paid bucket (most of it was paid); a second partial whose
+    // SUM reaches the allocation amount flips the slot to refunded.
     const admin = await regAdmin()
     const slotId = '44444444-4444-4444-4444-' + Date.now().toString(16).padStart(12, '0').slice(-12)
     const { paymentOrderId } = await seedPaidAllocation({
@@ -188,20 +186,37 @@ describe('POST /api/admin/refunds', () => {
       slotId,
     })
 
-    const res = await refundsHandler(
+    // First partial: 30 of 100. Slot stays paid (state still 'paid').
+    const first = await refundsHandler(
       buildRequest('/api/admin/refunds', {
         cookie: admin.cookie,
         body: {
           paymentOrderId,
           kind: 'lesson_slot',
           targetId: slotId,
-          refundedKopecks: 50000,
+          refundedKopecks: 30000,
         },
       }),
     )
-    expect(res.status).toBe(400)
-    const json = await res.json()
-    expect(json.error).toBe('partial_refund_not_supported')
+    expect(first.status).toBe(201)
+    const stateAfterFirst = await listSlotPaymentState([slotId])
+    expect(stateAfterFirst.get(slotId)).toBe('paid')
+
+    // Second partial: 70 of 100 → SUM = 100 = amount. Slot flips.
+    const second = await refundsHandler(
+      buildRequest('/api/admin/refunds', {
+        cookie: admin.cookie,
+        body: {
+          paymentOrderId,
+          kind: 'lesson_slot',
+          targetId: slotId,
+          refundedKopecks: 70000,
+        },
+      }),
+    )
+    expect(second.status).toBe(201)
+    const stateAfterSecond = await listSlotPaymentState([slotId])
+    expect(stateAfterSecond.get(slotId)).toBe('refunded')
   })
 
   it('returns 404 when the allocation does not exist', async () => {

@@ -90,17 +90,15 @@ export async function listAllocationsForOrder(
 // next to each booked slot. Returns a map keyed by slot id; missing
 // keys mean "no paid allocation found" (i.e. unpaid).
 //
-// Refund Phase 7. A reversed allocation drops from the result so the
-// cabinet returns the slot to the "оплатить" bucket. Anti-join is
-// against the composite allocation key (payment_order_id, kind,
-// target_id) — migration 0022 uses that composite as the allocation
-// primary key; there is no surrogate uuid.
+// Refund Phase 7. A fully-reversed allocation drops from the result
+// so the cabinet returns the slot to the "оплатить" bucket. Wave 54
+// partial reversals: only drop the allocation when
+// SUM(refunded_kopecks) >= amount_kopecks; a partial reversal keeps
+// the slot in the paid bucket (most of it was still paid).
 //
-// Note: this function returns ONLY currently-paid slots. After Stage C
-// of refund Phase 7, the cabinet uses `listSlotPaymentState` instead
-// to distinguish "paid" / "refunded" / "never paid" so a refunded slot
-// can render a neutral "возврат оформлен" pill rather than the yellow
-// "оплатить" CTA (which would suggest the learner needs to pay again).
+// Note: this function returns ONLY currently-paid slots. The cabinet
+// uses `listSlotPaymentState` instead to distinguish "paid" /
+// "refunded" / "never paid" for the 3-way pill (Wave 52 + Wave 54).
 export async function listSlotPaidStatus(
   slotIds: string[],
 ): Promise<Map<string, { paid: boolean; orderInvoiceId: string }>> {
@@ -111,13 +109,16 @@ export async function listSlotPaidStatus(
     `select a.target_id, a.payment_order_id
        from payment_allocations a
        join payment_orders o on o.invoice_id = a.payment_order_id
-       left join payment_allocation_reversals r
-              on r.payment_order_id = a.payment_order_id
-             and r.kind = a.kind
-             and r.target_id = a.target_id
+       left join lateral (
+         select coalesce(sum(refunded_kopecks), 0)::bigint as refunded_sum
+           from payment_allocation_reversals r
+          where r.payment_order_id = a.payment_order_id
+            and r.kind = a.kind
+            and r.target_id = a.target_id
+       ) rev on true
       where a.kind = 'lesson_slot'
         and o.status = 'paid'
-        and r.id is null
+        and coalesce(rev.refunded_sum, 0) < a.amount_kopecks
         and a.target_id = any($1)`,
     [slotIds],
   )
@@ -156,15 +157,23 @@ export async function listSlotPaymentState(
   const out = new Map<string, SlotPaymentState>()
   if (slotIds.length === 0) return out
   const pool = getDbPool()
+  // Wave 54 — partial reversals. An allocation is "not fully refunded"
+  // when SUM(refunded_kopecks) < amount_kopecks. The slot is "paid" if
+  // ANY allocation is not fully refunded; collapses to "refunded" only
+  // when every allocation hit full SUM coverage.
   const result = await pool.query(
     `select a.target_id,
-            bool_or(r.id is null) as has_non_reversed
+            bool_or(coalesce(rev.refunded_sum, 0) < a.amount_kopecks)
+              as has_non_fully_refunded
        from payment_allocations a
        join payment_orders o on o.invoice_id = a.payment_order_id
-       left join payment_allocation_reversals r
-              on r.payment_order_id = a.payment_order_id
-             and r.kind = a.kind
-             and r.target_id = a.target_id
+       left join lateral (
+         select coalesce(sum(refunded_kopecks), 0)::bigint as refunded_sum
+           from payment_allocation_reversals r
+          where r.payment_order_id = a.payment_order_id
+            and r.kind = a.kind
+            and r.target_id = a.target_id
+       ) rev on true
       where a.kind = 'lesson_slot'
         and o.status = 'paid'
         and a.target_id = any($1)
@@ -174,7 +183,7 @@ export async function listSlotPaymentState(
   for (const row of result.rows) {
     out.set(
       String(row.target_id),
-      Boolean(row.has_non_reversed) ? 'paid' : 'refunded',
+      Boolean(row.has_non_fully_refunded) ? 'paid' : 'refunded',
     )
   }
   return out

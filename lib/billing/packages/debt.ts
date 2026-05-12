@@ -51,16 +51,18 @@ export async function listAccountPostpaidDebt(
           where pa.kind = 'lesson_slot'
             and pa.target_id = s.id::text
             and po.status = 'paid'
-            -- Refund Phase 7. A reversed allocation no longer counts
-            -- as paid; the slot returns to the debt list. Anti-join
-            -- uses the composite allocation key — payment_allocations
-            -- has no surrogate uuid (see migration 0022).
-            and not exists (
-              select 1 from payment_allocation_reversals par
+            -- Refund Phase 7 + Wave 54 partial reversals. Slot stays
+            -- OUT of the debt list while at least one allocation has
+            -- SUM(refunded) < amount (still partly paid). A series of
+            -- partials that sum to >= amount, or a single full
+            -- reversal, flips the slot back to the debt bucket.
+            and (
+              select coalesce(sum(par.refunded_kopecks), 0)::bigint
+                from payment_allocation_reversals par
                where par.payment_order_id = pa.payment_order_id
                  and par.kind = pa.kind
                  and par.target_id = pa.target_id
-            )
+            ) < pa.amount_kopecks
         )
       order by s.start_at desc`,
     [accountId],

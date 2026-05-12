@@ -132,28 +132,41 @@ export async function POST(request: Request) {
         { status: 404, headers: NO_STORE },
       )
     }
-    // Stage B is full-refund-only by design. Migration 0036 documents
-    // "Partial / amount-only reversals are out of scope for Stage A —
-    // they require the SUM-over-reversals refactor" and the read paths
-    // (slotIsPaidByAllocations / listSlotPaidStatus / debt query) drop
-    // the allocation on REVERSAL ROW EXISTENCE, not on amount match.
-    // Accepting refundedKopecks < amount would flip a slot to "unpaid"
-    // even though only 1 kopeck was refunded — a real data bug.
-    // Codex Wave 51 review HIGH. Reject anything that isn't the full
-    // amount; the operator hits this branch when CloudPayments only
-    // partially refunded (rare; today operator can fall back to manual
-    // CloudPayments-dashboard status flip on payment_orders).
+    // Wave 54 — partial reversals supported. The read paths SUM all
+    // reversal rows for an allocation and compare to its amount;
+    // partial refund keeps the slot in the paid bucket, a sequence
+    // whose SUM hits the amount flips it to refunded. Read existing
+    // sum to assert this refund doesn't push the running total past
+    // the allocation amount.
     const allocAmount = Number(allocRow.rows[0].amount_kopecks)
-    if (refundedKopecks !== allocAmount) {
+    const priorRefundedRes = await client.query(
+      `select coalesce(sum(refunded_kopecks), 0)::bigint as sum
+         from payment_allocation_reversals
+        where payment_order_id = $1 and kind = $2 and target_id = $3`,
+      [paymentOrderId, kind, targetId],
+    )
+    const priorRefunded = Number(priorRefundedRes.rows[0]?.sum ?? 0)
+    if (priorRefunded + refundedKopecks > allocAmount) {
       await client.query('rollback')
-      const code =
-        refundedKopecks > allocAmount
-          ? 'refund_exceeds_allocation'
-          : 'partial_refund_not_supported'
       return NextResponse.json(
         {
-          error: code,
-          message: `refundedKopecks=${refundedKopecks} must equal allocation amount=${allocAmount} (Stage B is full-refund-only).`,
+          error: 'refund_exceeds_allocation',
+          message: `Sum of refunds would exceed allocation: prior=${priorRefunded}, this=${refundedKopecks}, allocation=${allocAmount}.`,
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    // Package refunds remain full-amount-only for now: voiding the
+    // package_purchase only makes sense when the full purchase price
+    // is being returned. A partial package refund needs a different
+    // model (e.g., proportional consumption restore) that isn't in
+    // scope here.
+    if (kind === 'package' && refundedKopecks !== allocAmount) {
+      await client.query('rollback')
+      return NextResponse.json(
+        {
+          error: 'partial_package_refund_not_supported',
+          message: `Package refunds must be full-amount; got ${refundedKopecks} of ${allocAmount}.`,
         },
         { status: 400, headers: NO_STORE },
       )
@@ -186,7 +199,11 @@ export async function POST(request: Request) {
     } catch (err) {
       const code = (err as { code?: string } | null)?.code ?? ''
       if (code === '23505') {
-        // Already reversed. Fetch existing to surface the id.
+        // Wave 54 removed the UNIQUE(payment_order_id, kind, target_id)
+        // index, so this branch should no longer fire. If it does,
+        // something else hit a unique constraint — surface as 409 with
+        // the row count for diagnostics, but don't claim "already
+        // refunded" because the new model permits N reversals.
         await client.query('rollback')
         const existing = await pool.query(
           `select id from payment_allocation_reversals
@@ -195,8 +212,8 @@ export async function POST(request: Request) {
         )
         return NextResponse.json(
           {
-            error: 'already_refunded',
-            message: 'A reversal for this allocation already exists.',
+            error: 'unique_violation',
+            message: 'Unexpected unique-violation on reversal insert.',
             reversalId: existing.rows[0]?.id ?? null,
           },
           { status: 409, headers: NO_STORE },
