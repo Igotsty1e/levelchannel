@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireAuthenticated } from '@/lib/auth/guards'
 import {
   type AccountProfileUpdate,
@@ -57,24 +58,11 @@ export async function PATCH(request: Request) {
   const auth = await requireAuthenticated(request)
   if (!auth.ok) return auth.response
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json(
-      { error: 'Invalid JSON body.' },
-      { status: 400, headers: NO_STORE },
-    )
-  }
-  if (typeof body !== 'object' || body === null) {
-    return NextResponse.json(
-      { error: 'Body must be a JSON object.' },
-      { status: 400, headers: NO_STORE },
-    )
-  }
+  const parsed = await readJsonObjectOr400(request)
+  if (!parsed.ok) return parsed.response
 
   const update: AccountProfileUpdate = {}
-  const raw = body as Record<string, unknown>
+  const raw = parsed.body
   if ('displayName' in raw) {
     if (raw.displayName !== null && typeof raw.displayName !== 'string') {
       return NextResponse.json(

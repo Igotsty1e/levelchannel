@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { disableAccount } from '@/lib/auth/accounts'
 import { withdrawConsent } from '@/lib/auth/consents'
 import { requireAuthenticated } from '@/lib/auth/guards'
@@ -50,20 +51,10 @@ export async function POST(request: Request) {
   const auth = await requireAuthenticated(request)
   if (!auth.ok) return auth.response
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json(
-      { error: 'Invalid JSON body.' },
-      { status: 400, headers: NO_STORE },
-    )
-  }
+  const parsed = await readJsonObjectOr400(request)
+  if (!parsed.ok) return parsed.response
 
-  const documentKind =
-    typeof body === 'object' && body !== null
-      ? (body as Record<string, unknown>).documentKind
-      : undefined
+  const documentKind = parsed.body.documentKind
   if (typeof documentKind !== 'string' || !ALLOWED_KINDS.has(documentKind)) {
     return NextResponse.json(
       { error: 'documentKind must be one of: personal_data.' },

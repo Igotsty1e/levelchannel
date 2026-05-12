@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireTeacherAndVerified } from '@/lib/auth/guards'
 import {
   type BulkCreateInput,
@@ -34,22 +35,9 @@ export async function POST(request: Request) {
   const guard = await requireTeacherAndVerified(request)
   if (!guard.ok) return guard.response
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json(
-      { error: 'invalid_json_body', message: 'Invalid JSON body.' },
-      { status: 400, headers: NO_STORE },
-    )
-  }
-  if (typeof body !== 'object' || body === null) {
-    return NextResponse.json(
-      { error: 'body_must_be_object', message: 'Body must be a JSON object.' },
-      { status: 400, headers: NO_STORE },
-    )
-  }
-  const raw = body as Record<string, unknown>
+  const parsed = await readJsonObjectOr400(request, { coded: true })
+  if (!parsed.ok) return parsed.response
+  const raw = parsed.body
 
   const input: Partial<BulkCreateInput> = {
     teacherAccountId: guard.account.id, // bound to session
