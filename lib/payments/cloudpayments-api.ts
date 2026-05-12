@@ -407,6 +407,20 @@ export async function refundTransaction(
       raw: payload,
     }
   }
+  // Codex Wave 60 MEDIUM #3 — defensive parse. `Success=true` with a
+  // missing TransactionId is a malformed-gateway response, not a
+  // decline; the caller must treat it as 'error' so the refund-attempt
+  // row lands in the 'error' (or reconcile) bucket, not 'declined'.
+  // Operator looks at gateway dashboard to confirm whether money
+  // actually moved.
+  if (success && !transactionId) {
+    return {
+      kind: 'error',
+      message:
+        'CloudPayments returned Success=true without a Model.TransactionId on the refund response.',
+      raw: payload,
+    }
+  }
   return {
     kind: 'declined',
     message: pickString(model.CardHolderMessage) || message || 'Возврат отклонён.',
