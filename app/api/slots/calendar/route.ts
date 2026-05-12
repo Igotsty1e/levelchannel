@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { listAccountRoles } from '@/lib/auth/accounts'
 import { requireAuthenticated } from '@/lib/auth/guards'
 import { isValidYmd, mskMidnightUtc, ymdDaysDiff } from '@/lib/calendar/dates'
@@ -13,7 +14,6 @@ import { listSlotsForCalendarRange } from '@/lib/scheduling/slots'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 // Wave A — calendar range query for the operator + read-only teacher
 // surfaces (Wave B will add learner-side projection branches).

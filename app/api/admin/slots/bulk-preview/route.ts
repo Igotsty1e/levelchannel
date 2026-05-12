@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireAdminRole } from '@/lib/auth/guards'
 import {
@@ -14,7 +15,6 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 // POST /api/admin/slots/bulk-preview — pure (no DB write); returns
 // the array of `{ startAt, date, time }` the bulk-create would emit

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import {
   AssignedTeacherRoleError,
@@ -14,7 +15,6 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

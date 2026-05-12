@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { listAccountPostpaidDebt } from '@/lib/billing/packages'
 import { getCurrentSession } from '@/lib/auth/sessions'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 // Billing wave PR 3 — own postpaid-debt list. Read-only own data.
 // Used by the cabinet "К оплате" section.

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { disableAccount, reenableAccount } from '@/lib/auth/accounts'
 import { requireAdminRole } from '@/lib/auth/guards'
@@ -12,7 +13,6 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 type RouteParams = { params: Promise<{ id: string }> }
 

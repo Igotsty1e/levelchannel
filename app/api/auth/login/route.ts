@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { recordAuthAuditEvent } from '@/lib/audit/auth-events'
 import { getAccountByEmail, listAccountRoles, setAccountPassword } from '@/lib/auth/accounts'
 import { constantTimeVerifyPassword } from '@/lib/auth/dummy-hash'
@@ -29,7 +30,6 @@ export const dynamic = 'force-dynamic'
 // Allow login on unverified email (D4) — payment/booking routes gate
 // on email_verified_at separately. UI surfaces the prompt.
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 const isProd = process.env.NODE_ENV === 'production'
 
 export async function POST(request: Request) {

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { rateLimitScope } from '@/lib/auth/email-hash'
 import { getCurrentSession } from '@/lib/auth/sessions'
 import { createEmailVerification } from '@/lib/auth/verifications'
@@ -30,7 +31,6 @@ export const dynamic = 'force-dynamic'
 // use enforcement at consume time covers that), but the table doesn't
 // get bloat.
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function POST(request: Request) {
   const ipRl = await enforceRateLimit(request, 'auth:resend-verify:ip', 10, 60_000)

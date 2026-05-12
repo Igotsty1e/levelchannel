@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { disableAccount } from '@/lib/auth/accounts'
 import { withdrawConsent } from '@/lib/auth/consents'
@@ -31,7 +32,6 @@ export const dynamic = 'force-dynamic'
 // On success the cabinet client should redirect to /login (cookie was
 // cleared in the response).
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 const isProd = process.env.NODE_ENV === 'production'
 
 const ALLOWED_KINDS = new Set(['personal_data'])

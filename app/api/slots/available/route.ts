@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { listAccountRoles } from '@/lib/auth/accounts'
 import { getCurrentSession } from '@/lib/auth/sessions'
 import { listOpenFutureSlots, toPublicSlot } from '@/lib/scheduling/slots'
@@ -8,7 +9,6 @@ import { enforceRateLimit } from '@/lib/security/request'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 // GET /api/slots/available?teacher=<uuid>&from=<iso>&to=<iso>
 //

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { listAccountRoles } from '@/lib/auth/accounts'
 import {
   buildSessionClearCookie,
@@ -16,7 +17,6 @@ export const dynamic = 'force-dynamic'
 // gate (cabinet client JS calls this on mount). Returns the resolved
 // account + session, or 401 with cookie cleared.
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 const isProd = process.env.NODE_ENV === 'production'
 
 export async function GET(request: Request) {

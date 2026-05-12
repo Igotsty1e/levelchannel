@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { NO_STORE } from '@/lib/api/http-headers'
 import { requireLearnerArchetype } from '@/lib/auth/guards'
 import { listSlotsForLearner } from '@/lib/scheduling/slots'
 import { enforceRateLimit } from '@/lib/security/request'
@@ -7,7 +8,6 @@ import { enforceRateLimit } from '@/lib/security/request'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const NO_STORE = { 'Cache-Control': 'no-store, max-age=0' }
 
 export async function GET(request: Request) {
   const rl = await enforceRateLimit(request, 'slots:mine:ip', 60, 60_000)
