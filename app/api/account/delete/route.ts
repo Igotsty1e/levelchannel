@@ -7,6 +7,7 @@ import {
   buildSessionClearCookie,
   revokeAllSessionsForAccount,
 } from '@/lib/auth/sessions'
+import { accountHasInFlightPackageGrant } from '@/lib/billing/deletion-guard'
 import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
@@ -57,6 +58,27 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: 'Body must include { confirm: true }.' },
       { status: 400, headers: NO_STORE },
+    )
+  }
+
+  // Wave 59 — deletion-guard re-check. Refuse the schedule if there
+  // is an in-flight package grant (Branch A: pending order < 15 min,
+  // OR Branch B: paid order with no package_purchases row yet). The
+  // cron-side anonymizer re-evaluates the same predicate at the
+  // anonymize step, so any grant that lands AFTER scheduling but
+  // BEFORE the grace timer fires is still caught.
+  const guard = await accountHasInFlightPackageGrant(auth.account.id)
+  if (guard.inFlight) {
+    return NextResponse.json(
+      {
+        error: 'in_flight_package_grant',
+        reason: guard.reason,
+        message:
+          guard.reason === 'paid_not_granted'
+            ? 'Есть оплаченный, но ещё не выданный пакет. Обратитесь к оператору для сверки.'
+            : 'Идёт оплата пакета. Попробуйте через 15 минут.',
+      },
+      { status: 409, headers: NO_STORE },
     )
   }
 

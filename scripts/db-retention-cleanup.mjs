@@ -114,11 +114,56 @@ async function purgeAccounts(pool) {
         order by scheduled_purge_at asc
         limit 500`,
     )
+    let skippedInFlight = 0
     for (const row of candidates.rows) {
       const id = String(row.id)
       const client = await pool.connect()
       try {
         await client.query('begin')
+        // Wave 59 — deletion-guard execute-step re-check. A pending or
+        // paid-not-granted package order that arrived between the
+        // schedule step and now must defer the anonymize. The
+        // canonical helper is `lib/billing/deletion-guard.ts`; this
+        // predicate is the inlined SQL twin (mjs script can't import
+        // the TS helper). Keep both branches in sync if either side
+        // changes. The skip is non-fatal: tomorrow's run re-evaluates.
+        const guardRes = await client.query(
+          `select
+             (
+               select po.invoice_id
+                 from payment_orders po
+                where po.metadata->>'accountId' = $1
+                  and po.metadata->>'packageSlug' is not null
+                  and po.status in ('pending', '3ds_required')
+                  and po.created_at > now() - interval '15 minutes'
+                limit 1
+             ) as branch_a_invoice,
+             (
+               select po.invoice_id
+                 from payment_orders po
+                where po.metadata->>'accountId' = $1
+                  and po.metadata->>'packageSlug' is not null
+                  and po.status = 'paid'
+                  and not exists (
+                    select 1 from package_purchases pp
+                     where pp.payment_order_id = po.invoice_id
+                  )
+                limit 1
+             ) as branch_b_invoice`,
+          [id],
+        )
+        const branchA = guardRes.rows[0]?.branch_a_invoice ?? null
+        const branchB = guardRes.rows[0]?.branch_b_invoice ?? null
+        if (branchA !== null || branchB !== null) {
+          await client.query('rollback')
+          skippedInFlight += 1
+          logJson('info', 'account purge deferred — in-flight package grant', {
+            accountId: id,
+            reason: branchB !== null ? 'paid_not_granted' : 'pending_within_15min',
+            sampleInvoiceId: String(branchB ?? branchA),
+          })
+          continue
+        }
         await client.query(
           `update accounts
               set email = 'deleted-' || id::text || '@example.invalid',
@@ -150,7 +195,11 @@ async function purgeAccounts(pool) {
         client.release()
       }
     }
-    logJson('info', 'cleaned', { table: label, rows: purged })
+    logJson('info', 'cleaned', {
+      table: label,
+      rows: purged,
+      skippedInFlight,
+    })
     return { table: label, rows: purged, ok: true }
   } catch (err) {
     logJson('error', 'cleanup failed', {
