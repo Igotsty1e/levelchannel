@@ -54,9 +54,9 @@ function rowToReversal(row: Record<string, unknown>): AllocationReversal {
 // can sit inside a larger transaction (e.g. with
 // restorePackageConsumption for package-kind allocations).
 //
-// UNIQUE(payment_order_id, kind, target_id) means a second call against
-// the same allocation throws SQLSTATE 23505. Stage B's admin endpoint
-// catches that and returns 409 'already_refunded'.
+// Wave 54 — partial reversals supported. Multiple rows per allocation
+// are now valid; the route caller is responsible for asserting
+// SUM(refunded_kopecks) does not exceed the allocation amount.
 export async function createAllocationReversal(
   client: PoolClient,
   input: AllocationKey & {
@@ -85,19 +85,42 @@ export async function createAllocationReversal(
   return rowToReversal(result.rows[0])
 }
 
-export async function getReversalForAllocation(
+// Wave 54 — partial reversals. An allocation can carry 0..N reversal
+// rows. Sum them up so callers can decide whether the allocation is
+// fully refunded (SUM >= amount) or still partly paid.
+export async function listReversalsForAllocation(
   key: AllocationKey,
-): Promise<AllocationReversal | null> {
+): Promise<AllocationReversal[]> {
   const pool = getDbPool()
   const result = await pool.query(
     `select ${REVERSAL_COLS}
        from payment_allocation_reversals
       where payment_order_id = $1
         and kind = $2
+        and target_id = $3
+      order by created_at asc`,
+    [key.paymentOrderId, key.kind, key.targetId],
+  )
+  return result.rows.map((r) => rowToReversal(r as Record<string, unknown>))
+}
+
+// Sum already-recorded reversals for an allocation, inside the caller
+// tx so a concurrent refund cannot slip in between the SUM and the
+// follow-up INSERT. Caller chooses whether to take a row lock on the
+// allocation row before calling.
+export async function sumReversalsForAllocation(
+  client: PoolClient,
+  key: AllocationKey,
+): Promise<number> {
+  const result = await client.query(
+    `select coalesce(sum(refunded_kopecks), 0)::bigint as sum
+       from payment_allocation_reversals
+      where payment_order_id = $1
+        and kind = $2
         and target_id = $3`,
     [key.paymentOrderId, key.kind, key.targetId],
   )
-  return result.rows[0] ? rowToReversal(result.rows[0]) : null
+  return Number(result.rows[0]?.sum ?? 0)
 }
 
 export async function listReversalsForOrder(

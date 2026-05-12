@@ -9,7 +9,11 @@ import {
   markAccountVerified,
 } from '@/lib/auth/accounts'
 import { getDbPool } from '@/lib/db/pool'
-import { listSlotPaymentState } from '@/lib/payments/allocations'
+import { slotIsPaidByAllocations } from '@/lib/billing/paid-state'
+import {
+  listSlotPaidStatus,
+  listSlotPaymentState,
+} from '@/lib/payments/allocations'
 
 import '../setup'
 import { buildRequest, extractSessionCookie, freshInvoiceId } from '../helpers'
@@ -112,7 +116,10 @@ describe('POST /api/admin/refunds', () => {
     expect(dbRows.rows.length).toBe(1)
   })
 
-  it('rejects a duplicate refund with 409 and surfaces the existing reversal id', async () => {
+  it('rejects a second full refund with 400 refund_exceeds_allocation (sum >> amount)', async () => {
+    // Wave 54 — UNIQUE constraint dropped to support partials. A
+    // second full-amount refund now fails by sum-exceeds-allocation,
+    // not by unique-violation.
     const admin = await regAdmin()
     const slotId = '22222222-2222-2222-2222-' + Date.now().toString(16).padStart(12, '0').slice(-12)
     const { paymentOrderId } = await seedPaidAllocation({
@@ -132,8 +139,6 @@ describe('POST /api/admin/refunds', () => {
       }),
     )
     expect(first.status).toBe(201)
-    const firstJson = await first.json()
-    const firstReversalId = firstJson.reversal.id
 
     const second = await refundsHandler(
       buildRequest('/api/admin/refunds', {
@@ -146,10 +151,8 @@ describe('POST /api/admin/refunds', () => {
         },
       }),
     )
-    expect(second.status).toBe(409)
-    const json = await second.json()
-    expect(json.error).toBe('already_refunded')
-    expect(json.reversalId).toBe(firstReversalId)
+    expect(second.status).toBe(400)
+    expect((await second.json()).error).toBe('refund_exceeds_allocation')
   })
 
   it('rejects refundedKopecks > allocation amount with 400 refund_exceeds_allocation', async () => {
@@ -176,11 +179,10 @@ describe('POST /api/admin/refunds', () => {
     expect(json.error).toBe('refund_exceeds_allocation')
   })
 
-  it('rejects refundedKopecks < allocation amount with 400 partial_refund_not_supported', async () => {
-    // Codex Wave 51 review HIGH. Stage A/B model is full-refund-only:
-    // the read paths drop the allocation on reversal row existence,
-    // not on amount match, so accepting a partial would mark the slot
-    // fully unpaid for a 1-kopeck refund.
+  it('accepts a partial refund: slot stays paid, second partial that hits sum>=amount flips to refunded', async () => {
+    // Wave 54 — partial reversals supported. A partial keeps the slot
+    // in the paid bucket (most of it was paid); a second partial whose
+    // SUM reaches the allocation amount flips the slot to refunded.
     const admin = await regAdmin()
     const slotId = '44444444-4444-4444-4444-' + Date.now().toString(16).padStart(12, '0').slice(-12)
     const { paymentOrderId } = await seedPaidAllocation({
@@ -188,20 +190,129 @@ describe('POST /api/admin/refunds', () => {
       slotId,
     })
 
-    const res = await refundsHandler(
+    // First partial: 30 of 100. Slot stays paid (state still 'paid').
+    const first = await refundsHandler(
       buildRequest('/api/admin/refunds', {
         cookie: admin.cookie,
         body: {
           paymentOrderId,
           kind: 'lesson_slot',
           targetId: slotId,
-          refundedKopecks: 50000,
+          refundedKopecks: 30000,
         },
       }),
     )
-    expect(res.status).toBe(400)
-    const json = await res.json()
-    expect(json.error).toBe('partial_refund_not_supported')
+    expect(first.status).toBe(201)
+    // Wave 54 Codex MEDIUM: pin BOTH listSlotPaymentState and
+    // listSlotPaidStatus under partial. The binary "any allocation
+    // with SUM(refunded) < amount" predicate must agree across paths.
+    const stateAfterFirst = await listSlotPaymentState([slotId])
+    expect(stateAfterFirst.get(slotId)).toBe('paid')
+    const paidAfterFirst = await listSlotPaidStatus([slotId])
+    expect(paidAfterFirst.get(slotId)?.paid).toBe(true)
+
+    // Second partial: 70 of 100 → SUM = 100 = amount. Slot flips.
+    const second = await refundsHandler(
+      buildRequest('/api/admin/refunds', {
+        cookie: admin.cookie,
+        body: {
+          paymentOrderId,
+          kind: 'lesson_slot',
+          targetId: slotId,
+          refundedKopecks: 70000,
+        },
+      }),
+    )
+    expect(second.status).toBe(201)
+    const stateAfterSecond = await listSlotPaymentState([slotId])
+    expect(stateAfterSecond.get(slotId)).toBe('refunded')
+    // After SUM hits the amount, the slot drops out of listSlotPaidStatus.
+    const paidAfterSecond = await listSlotPaidStatus([slotId])
+    expect(paidAfterSecond.has(slotId)).toBe(false)
+  })
+
+  it('slotIsPaidByAllocations binary semantic: partial keeps full coverage, sum>=amount drops to 0', async () => {
+    // Wave 54 Codex HIGH 2: the four read paths must agree on "is
+    // this slot paid?". A naive net-covered-kopecks scheme would
+    // silently disagree under partial refund. Binary all-or-nothing
+    // contract: allocation contributes its full amount while
+    // SUM(refunded) < amount, contributes 0 once the SUM hits the
+    // amount. This test pins that contract end-to-end against a real
+    // lesson_slot + tariff so expected_amount_kopecks is non-null.
+    const admin = await regAdmin()
+    const pool = getDbPool()
+
+    const tariff = await pool.query(
+      `insert into pricing_tariffs (slug, title_ru, amount_kopecks)
+       values ($1, '60 мин', 100000)
+       returning id`,
+      [`refund-paidstate-${Date.now()}`],
+    )
+    const tariffId = String(tariff.rows[0].id)
+
+    const teacher = await pool.query(
+      `insert into accounts (email, password_hash, email_verified_at)
+       values ($1, 'dummy', now()) returning id`,
+      [`refund-paidstate-teacher-${Date.now()}@example.com`],
+    )
+    const teacherId = String(teacher.rows[0].id)
+    await pool.query(
+      `insert into account_roles (account_id, role) values ($1, 'teacher')`,
+      [teacherId],
+    )
+    const slotRes = await pool.query(
+      `insert into lesson_slots
+         (teacher_account_id, start_at, duration_minutes, status, tariff_id)
+       values ($1,
+               date_trunc('hour', (now() + interval '5 days') at time zone 'Europe/Moscow') at time zone 'Europe/Moscow',
+               60, 'open', $2)
+       returning id`,
+      [teacherId, tariffId],
+    )
+    const slotId = String(slotRes.rows[0].id)
+    const { paymentOrderId } = await seedPaidAllocation({
+      amountKopecks: 100000,
+      slotId,
+    })
+
+    // Baseline: paid + paid full coverage.
+    const baseline = await slotIsPaidByAllocations(slotId)
+    expect(baseline?.isPaid).toBe(true)
+    expect(baseline?.paidAmountKopecks).toBe(100000)
+
+    // Partial: 25 of 100. Binary semantic — alloc still fully contributes.
+    const first = await refundsHandler(
+      buildRequest('/api/admin/refunds', {
+        cookie: admin.cookie,
+        body: {
+          paymentOrderId,
+          kind: 'lesson_slot',
+          targetId: slotId,
+          refundedKopecks: 25000,
+        },
+      }),
+    )
+    expect(first.status).toBe(201)
+    const afterPartial = await slotIsPaidByAllocations(slotId)
+    expect(afterPartial?.isPaid).toBe(true)
+    expect(afterPartial?.paidAmountKopecks).toBe(100000)
+
+    // Second partial: 75 of 100, SUM = 100. Alloc drops to 0 contribution.
+    const second = await refundsHandler(
+      buildRequest('/api/admin/refunds', {
+        cookie: admin.cookie,
+        body: {
+          paymentOrderId,
+          kind: 'lesson_slot',
+          targetId: slotId,
+          refundedKopecks: 75000,
+        },
+      }),
+    )
+    expect(second.status).toBe(201)
+    const afterFull = await slotIsPaidByAllocations(slotId)
+    expect(afterFull?.isPaid).toBe(false)
+    expect(afterFull?.paidAmountKopecks).toBe(0)
   })
 
   it('returns 404 when the allocation does not exist', async () => {

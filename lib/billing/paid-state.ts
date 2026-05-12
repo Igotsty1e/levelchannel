@@ -7,10 +7,20 @@
 // and falsely flip the slot to "paid".
 //
 // Refund Phase 7 Stage A: the `payment_allocation_reversals` LEFT JOIN
-// with `r.id IS NULL` is now wired. Reversed allocations contribute 0,
-// so a refunded postpaid slot flips back to is_paid=false and surfaces
-// in the cabinet "К оплате" bucket. This is the single point of truth
-// for the derived "is this slot paid?" answer.
+// is wired so reversed allocations subtract from the paid total. This
+// is the single point of truth for the derived "is this slot paid?"
+// answer.
+//
+// Wave 54 — partial reversals. Multiple reversal rows per allocation
+// are now valid. The predicate matches `listSlotPaymentState` and
+// `listAccountPostpaidDebt`: an allocation contributes its full
+// `amount_kopecks` while `SUM(refunded_kopecks) < amount_kopecks`,
+// and 0 once the SUM hits full coverage. This binary all-or-nothing
+// is the contract documented in `lib/payments/allocations.ts` —
+// the four read paths must agree on "is this slot paid?" so a partial
+// refund keeps the slot in the paid bucket across the entire stack.
+// Codex Wave 54 review HIGH 1 flagged that a `net-covered-kopecks`
+// scheme would silently disagree with the other three paths.
 
 import { getDbPool } from '@/lib/db/pool'
 
@@ -33,7 +43,8 @@ export async function slotIsPaidByAllocations(
     `select s.id as slot_id,
             t.amount_kopecks as expected_amount_kopecks,
             coalesce(sum(
-              case when o.invoice_id is not null and r.id is null
+              case when o.invoice_id is not null
+                       and coalesce(rev.refunded_sum, 0) < a.amount_kopecks
                    then a.amount_kopecks
                    else 0
               end
@@ -44,10 +55,13 @@ export async function slotIsPaidByAllocations(
               on a.kind = 'lesson_slot' and a.target_id = s.id::text
        left join payment_orders o
               on o.invoice_id = a.payment_order_id and o.status = 'paid'
-       left join payment_allocation_reversals r
-              on r.payment_order_id = a.payment_order_id
-             and r.kind = a.kind
-             and r.target_id = a.target_id
+       left join lateral (
+         select coalesce(sum(refunded_kopecks), 0)::bigint as refunded_sum
+           from payment_allocation_reversals r
+          where r.payment_order_id = a.payment_order_id
+            and r.kind = a.kind
+            and r.target_id = a.target_id
+       ) rev on true
       where s.id = $1
       group by s.id, t.amount_kopecks`,
     [slotId],
