@@ -237,6 +237,9 @@ Library surface (`lib/calendar/`):
 - [`lib/calendar/google/oauth.ts`](lib/calendar/google/oauth.ts) — `buildAuthorizationUrl`, `exchangeCodeForTokens`, `refreshAccessToken`. Discriminated error union; no in-lib retries.
 - [`lib/calendar/google/pull.ts`](lib/calendar/google/pull.ts) — `pullBusyIntervalsForCalendar` (events.list, bounded `[now-1d, now+30d]`, paginated, MSK-pinned all-day) and `listCalendars` (calendarList.list paginated, derives `isWritable` from accessRole). `shapeEvent` is a total function — bad date input returns null.
 - [`lib/calendar/integrations.ts`](lib/calendar/integrations.ts) — DB store ops for `teacher_calendar_integrations`. pgcrypto in SQL for token at-rest. `upsertGoogleIntegration({ reason: 'initial_connect' | 'token_refresh' })`. `initial_connect` rotates epoch + bumps last_reconnected_at + clears last_pulled/push_at + channel triple.
+- [`lib/calendar/pull-runner.ts`](lib/calendar/pull-runner.ts) — D.2a `runPullForCalendar`. Per (teacher, calendar): pull busy intervals via lib/calendar/google/pull, compute is_own_event / is_orphan_self per F8 epoch rule (foreign slot ids rejected for security), full-rewrite teacher_external_busy_intervals in one tx, bump last_pulled_at + flip sync_state to active. summary_encrypted via pgp_sym_encrypt in SQL, 64-char truncate.
+- [`lib/calendar/google/token-refresh.ts`](lib/calendar/google/token-refresh.ts) — D.complete `ensureFreshAccessToken`. 60s skew, refresh via oauth.ts when expired, upsert via integrations.ts (token_refresh mode preserves epoch). Permanent failure (400/401/403) flips integration to disconnected. Transient (5xx/network) bubbles up so caller can retry.
+- [`lib/calendar/pull-worker.ts`](lib/calendar/pull-worker.ts) — D.complete `drainPullJobs` + `enqueuePullJob`. FOR UPDATE SKIP LOCKED claim, ensureFreshAccessToken + runPullForCalendar per job, retry-with-backoff (1/2/5/15/30 min, MAX_ATTEMPTS=5) on transient failure, terminal_failure on permanent. ON CONFLICT DO NOTHING enqueue dedup.
 - [`lib/calendar/dates.ts`](lib/calendar/dates.ts) / [`lib/calendar/drag-state.ts`](lib/calendar/drag-state.ts) / [`lib/calendar/paint-synth.ts`](lib/calendar/paint-synth.ts) / [`lib/calendar/types.ts`](lib/calendar/types.ts) / [`lib/calendar/view-model.ts`](lib/calendar/view-model.ts) — Wave-A/B/C operator calendar grid helpers (pre-dates BCS).
 
 API routes (BCS):
@@ -246,6 +249,7 @@ API routes (BCS):
 - [`app/api/teacher/calendar/google/start/route.ts`](app/api/teacher/calendar/google/start/route.ts) — POST, teacher+verified, returns `{ authorizationUrl }`.
 - [`app/api/teacher/calendar/google/callback/route.ts`](app/api/teacher/calendar/google/callback/route.ts) — GET (Google 302 destination). State nonce CSRF defense, all failures redirect to /teacher/settings/calendar.
 - [`app/api/teacher/calendar/google/disconnect/route.ts`](app/api/teacher/calendar/google/disconnect/route.ts) — POST, teacher+verified, clears tokens + sync_state=disconnected (no Google cascade-delete).
+- [`app/api/calendar/google/webhook/route.ts`](app/api/calendar/google/webhook/route.ts) — D.complete Google channels.watch push-notification receiver. Plan §4.9 security: constant-time channel_token, channel_id + resource_id match, monotonic X-Goog-Message-Number guard. All failures return silent 200 (Google retries; replay defense in headers). On valid message: bump last_seen_message_number AND enqueue per-calendar pull jobs in the SAME transaction.
 
 UI (BCS):
 
