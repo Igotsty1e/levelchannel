@@ -1,0 +1,176 @@
+name: post-deploy-smoke
+
+# Wave 63 — post-deploy smoke probe. Runs the local `scripts/post-
+# deploy-smoke.sh` against prod every 15 minutes (between the 30-min
+# deploy-freshness check and the 5-min uptime probe). Same alert
+# pattern as `uptime-probe.yml`: opens / comments / closes a single
+# `smoke-incident` GitHub Issue.
+#
+# Catches the regression class that `/api/health` alone misses:
+#   - route handlers that 500 on first hit after deploy
+#   - auth gate / role-ladder regressions on /cabinet, /admin/slots
+#   - middleware misconfiguration (origin, sec-fetch-site)
+#   - Next.js routing-table drift (moved/renamed routes)
+#   - CSP nonce auto-stamp trigger broken (5 surface checks in the
+#     script's check_csp_nonce block)
+#
+# Defense in depth — the script is also expected to run from the
+# VPS autodeploy itself, *before* swap, per the comment in
+# `scripts/post-deploy-smoke.sh`. This workflow is the safety net for
+# cases where the autodeploy wiring drifts or the operator skipped it.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: post-deploy-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout (need scripts/post-deploy-smoke.sh)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 1
+          ref: main
+
+      - name: Run smoke against prod
+        id: smoke
+        run: |
+          set +e
+          OUTPUT=$(bash scripts/post-deploy-smoke.sh https://levelchannel.ru 2>&1)
+          EXIT=$?
+          set -e
+
+          # Codex-style metadata-only output to $GITHUB_OUTPUT. The
+          # smoke script's body lines may include URLs / response
+          # fragments — never write them raw into outputs, even
+          # though this repo is private as of writing.
+          BODY_LEN=$(printf '%s' "$OUTPUT" | wc -c | tr -d ' ')
+          BODY_HASH=$(printf '%s' "$OUTPUT" | shasum -a 256 | awk '{print $1}' | cut -c1-12)
+
+          # Surface FAIL lines (their text is benign — paths + status
+          # codes — but cap at 20 lines so a flood doesn't blow up
+          # outputs).
+          FAIL_LINES=$(printf '%s' "$OUTPUT" | grep -E '^[[:space:]]+FAIL[[:space:]]' | head -20 || true)
+
+          # Body to $GITHUB_OUTPUT requires the multiline EOF marker.
+          {
+            echo "exit=$EXIT"
+            echo "body_len=$BODY_LEN"
+            echo "body_hash=$BODY_HASH"
+            echo "fail_lines<<EOF_FAIL_LINES_MARKER_a8f3"
+            echo "$FAIL_LINES"
+            echo "EOF_FAIL_LINES_MARKER_a8f3"
+          } >> "$GITHUB_OUTPUT"
+
+          # Log to step output regardless.
+          echo "exit=$EXIT body_len=$BODY_LEN body_hash=$BODY_HASH"
+          if [ "$EXIT" -ne 0 ]; then
+            echo "--- smoke FAIL lines (first 20) ---"
+            echo "$FAIL_LINES"
+          fi
+
+      - name: Manage incident issue
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b  # v7
+        env:
+          SMOKE_EXIT: ${{ steps.smoke.outputs.exit }}
+          SMOKE_BODY_LEN: ${{ steps.smoke.outputs.body_len }}
+          SMOKE_BODY_HASH: ${{ steps.smoke.outputs.body_hash }}
+          SMOKE_FAIL_LINES: ${{ steps.smoke.outputs.fail_lines }}
+        with:
+          script: |
+            const exit       = process.env.SMOKE_EXIT || '0'
+            const bodyLen    = process.env.SMOKE_BODY_LEN || ''
+            const bodyHash   = process.env.SMOKE_BODY_HASH || ''
+            const failLines  = (process.env.SMOKE_FAIL_LINES || '').trim()
+            const ts         = new Date().toISOString()
+            const runUrl     = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            const label      = 'smoke-incident'
+
+            const findOpenIssue = async () => {
+              const { data } = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                labels: label,
+                per_page: 5,
+              })
+              return data[0] || null
+            }
+
+            const failed = exit !== '0'
+            const open   = await findOpenIssue()
+
+            if (failed) {
+              const failBlock = failLines
+                ? '```\n' + failLines + '\n```'
+                : '_(no FAIL-prefixed lines parsed; check the workflow run)_'
+              const body =
+                `Post-deploy smoke FAILED at \`${ts}\` (exit ${exit}).\n\n` +
+                `- run: ${runUrl}\n` +
+                `- body length: ${bodyLen}, sha256[0:12]: ${bodyHash}\n\n` +
+                `Failing checks:\n\n${failBlock}\n\n` +
+                `Local repro:\n\n` +
+                '```bash\n' +
+                'bash scripts/post-deploy-smoke.sh https://levelchannel.ru\n' +
+                '```\n\n' +
+                `Likely causes (in order of typical incidence):\n` +
+                `1. route handler 500 on first hit (lazy module init failed)\n` +
+                `2. auth gate regression on /cabinet or /admin/slots\n` +
+                `3. CSP nonce auto-stamp trigger removed (check \`app/layout.tsx\`)\n` +
+                `4. Next.js routing-table drift (moved/renamed routes)\n\n` +
+                `Runbook: \`OPERATIONS.md §6\` (deploy rollback).`
+
+              if (!open) {
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: `[smoke-incident] post-deploy smoke failing on prod`,
+                  body,
+                  labels: [label],
+                })
+                core.notice(`Opened smoke-incident issue.`)
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: open.number,
+                  body:
+                    `Still failing at \`${ts}\` (exit ${exit}). Run: ${runUrl}\n\n` +
+                    (failLines ? '```\n' + failLines + '\n```' : ''),
+                })
+                core.notice(`Commented on existing smoke-incident issue #${open.number}.`)
+              }
+              core.setFailed('smoke failed')
+              return
+            }
+
+            // OK path — close any open incident issue.
+            if (open) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: open.number,
+                body: `Recovered at \`${ts}\` — smoke passing again. Run: ${runUrl}. Closing.`,
+              })
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: open.number,
+                state: 'closed',
+                state_reason: 'completed',
+              })
+              core.notice(`Closed smoke-incident issue #${open.number}.`)
+            } else {
+              core.info(`smoke ok, no open incident.`)
+            }
