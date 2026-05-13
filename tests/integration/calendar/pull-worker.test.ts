@@ -155,6 +155,53 @@ describe('drainPullJobs', () => {
     expect(outcomes[0].kind).toBe('retried')
   })
 
+  it('retries on Google 403 rateLimitExceeded (quota-as-403, Codex D.complete v2 fix)', async () => {
+    const teacherId = await makeTeacher('worker-403q@example.com')
+    await connect(teacherId)
+    await enqueuePullJob({
+      teacherAccountId: teacherId,
+      externalCalendarId: 'primary',
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          ({
+            ok: false,
+            status: 403,
+            text: async () =>
+              '{"error":{"code":403,"errors":[{"reason":"rateLimitExceeded"}]}}',
+            json: async () => ({}),
+          }) as unknown as Response,
+      ),
+    )
+    const { outcomes } = await drainPullJobs({})
+    expect(outcomes[0].kind).toBe('retried')
+  })
+
+  it('terminal_failure on Google 403 non-quota (true authz)', async () => {
+    const teacherId = await makeTeacher('worker-403authz@example.com')
+    await connect(teacherId)
+    await enqueuePullJob({
+      teacherAccountId: teacherId,
+      externalCalendarId: 'primary',
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          ({
+            ok: false,
+            status: 403,
+            text: async () => '{"error":{"errors":[{"reason":"forbidden"}]}}',
+            json: async () => ({}),
+          }) as unknown as Response,
+      ),
+    )
+    const { outcomes } = await drainPullJobs({})
+    expect(outcomes[0].kind).toBe('terminal_failure')
+  })
+
   it('retries on Google 429 quota throttle', async () => {
     const teacherId = await makeTeacher('worker-429@example.com')
     await connect(teacherId)

@@ -205,16 +205,36 @@ function isTransientReason(reason: string): boolean {
 }
 
 function isTransientPullError(error: PullError): boolean {
-  // Plan §4.7 retry contract: 5xx (Google outage) and 429 (quota
-  // throttle) are transient. 4xx other than 429 is permanent
-  // (bad request, wrong scope, revoked credential). network + shape
-  // are transient (genuine retry-worthy). Codex D.complete review
-  // closed: the previous "all HTTP = permanent" classification
-  // dead-lettered every transient Google outage on the first miss.
+  // Plan §4.7 retry contract + Google Calendar errors guide
+  // (developers.google.com/workspace/calendar/api/guides/errors):
+  //
+  //   - 5xx: Google outage → transient.
+  //   - 429: rateLimitExceeded → transient (exponential backoff).
+  //   - 403 with `rateLimitExceeded` / `userRateLimitExceeded` /
+  //     `quotaExceeded` in the response body: Google can return
+  //     quota throttling as 403. Treat as transient when the body
+  //     hints at rate-limit; permanent otherwise (true authz fail).
+  //   - 4xx other than 429 / quota-403: permanent.
+  //   - network + shape: transient.
+  //
+  // Codex D.complete v2 review closed: 403-as-quota was previously
+  // dead-lettered.
   if (error.kind === 'http') {
-    return error.status >= 500 || error.status === 429
+    if (error.status >= 500 || error.status === 429) return true
+    if (error.status === 403 && isQuotaBody(error.body)) return true
+    return false
   }
   return error.kind === 'network' || error.kind === 'shape'
+}
+
+function isQuotaBody(body: string): boolean {
+  if (!body) return false
+  const lower = body.toLowerCase()
+  return (
+    lower.includes('ratelimitexceeded')
+    || lower.includes('userratelimitexceeded')
+    || lower.includes('quotaexceeded')
+  )
 }
 
 // Enqueue helper used by the OAuth-callback success path + the
