@@ -128,8 +128,27 @@ export async function DELETE(request: Request, { params }: RouteParams) {
     )
   }
 
+  // BUG-2 audit: snapshot the tariff BEFORE the helper deletes it so a
+  // forensic question ("which row did admin X delete on date Y?") can
+  // be answered from the structured log stream (systemd journal in
+  // prod). When/if ops asks for a formal DB audit table, this snapshot
+  // is exactly the payload we'd want to persist; see
+  // lib/audit/payment-events.ts for the existing pattern + the
+  // migration sequence used to widen the event_type enum.
+  const snapshot = await getTariffById(id)
+
   const result = await deleteTariffIfUnreferenced(id)
   if (result.ok) {
+    if (snapshot) {
+      console.info(
+        '[admin-audit] tariff.deleted',
+        JSON.stringify({
+          actor: guard.account.id,
+          tariff: snapshot,
+          at: new Date().toISOString(),
+        }),
+      )
+    }
     return NextResponse.json(
       { ok: true, deleted: id },
       { status: 200, headers: NO_STORE },

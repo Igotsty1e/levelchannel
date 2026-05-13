@@ -17,11 +17,17 @@ export function TariffEditor({
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
+  // postJson returns:
+  //   - { ok: true } — caller reloads
+  //   - { ok: false, message } — caller renders message inline; the
+  //     top-of-editor `err` banner is ALSO populated as a fallback for
+  //     contexts (e.g. PATCH on a long list) where the user might miss
+  //     a row-local error.
   async function postJson(
     method: 'POST' | 'PATCH' | 'DELETE',
     url: string,
     body?: unknown,
-  ) {
+  ): Promise<{ ok: true } | { ok: false; message: string }> {
     setBusy(true)
     setErr(null)
     try {
@@ -32,16 +38,19 @@ export function TariffEditor({
       })
       if (!res.ok) {
         const data = await res.json().catch(() => null)
-        setErr(data?.message || data?.error || `HTTP `)
+        const message: string =
+          data?.message || data?.error || `HTTP ${res.status}`
+        setErr(message)
         setBusy(false)
-        return false
+        return { ok: false, message }
       }
       window.location.reload()
-      return true
+      return { ok: true }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'unknown')
+      const message = e instanceof Error ? e.message : 'unknown'
+      setErr(message)
       setBusy(false)
-      return false
+      return { ok: false, message }
     }
   }
 
@@ -66,9 +75,14 @@ export function TariffEditor({
         <TariffRow
           key={t.id}
           tariff={t}
-          onPatch={(patch) =>
-            postJson('PATCH', `/api/admin/pricing/${t.id}`, patch)
-          }
+          onPatch={async (patch) => {
+            const r = await postJson(
+              'PATCH',
+              `/api/admin/pricing/${t.id}`,
+              patch,
+            )
+            return r.ok
+          }}
           onDelete={() =>
             postJson('DELETE', `/api/admin/pricing/${t.id}`)
           }
@@ -77,7 +91,10 @@ export function TariffEditor({
       ))}
 
       <NewTariffForm
-        onCreate={(input) => postJson('POST', '/api/admin/pricing', input)}
+        onCreate={async (input) => {
+          const r = await postJson('POST', '/api/admin/pricing', input)
+          return r.ok
+        }}
         busy={busy}
       />
     </div>
@@ -92,7 +109,7 @@ function TariffRow({
 }: {
   tariff: PricingTariff
   onPatch: (patch: Record<string, unknown>) => Promise<boolean>
-  onDelete: () => Promise<boolean>
+  onDelete: () => Promise<{ ok: true } | { ok: false; message: string }>
   busy: boolean
 }) {
   const [titleRu, setTitleRu] = useState(tariff.titleRu)
@@ -102,6 +119,7 @@ function TariffRow({
   const [isActive, setIsActive] = useState(tariff.isActive)
   const [order, setOrder] = useState(String(tariff.displayOrder))
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   return (
     <div
@@ -233,12 +251,21 @@ function TariffRow({
       {confirmDelete ? (
         <DeleteConfirm
           tariffTitle={tariff.titleRu || tariff.slug}
-          onCancel={() => setConfirmDelete(false)}
+          errorMessage={deleteError}
+          onCancel={() => {
+            setConfirmDelete(false)
+            setDeleteError(null)
+          }}
           onConfirm={async () => {
-            const ok = await onDelete()
-            // postJson reloads on success; on failure the modal stays open
-            // so the operator sees the err banner above it.
-            if (!ok) setConfirmDelete(false)
+            setDeleteError(null)
+            const r = await onDelete()
+            if (!r.ok) {
+              // Modal stays open so the operator sees WHY right there,
+              // next to the offending row. Top-of-editor banner is
+              // still populated by postJson as a fallback.
+              setDeleteError(r.message)
+            }
+            // On success postJson reloads; nothing more to do here.
           }}
           busy={busy}
         />
@@ -249,11 +276,13 @@ function TariffRow({
 
 function DeleteConfirm({
   tariffTitle,
+  errorMessage,
   onConfirm,
   onCancel,
   busy,
 }: {
   tariffTitle: string
+  errorMessage: string | null
   onConfirm: () => void | Promise<void>
   onCancel: () => void
   busy: boolean
@@ -293,6 +322,23 @@ function DeleteConfirm({
           сервер вернёт ошибку, а вместо удаления используйте
           снятие галочки «активен» — тариф пропадёт из новых форм.
         </p>
+        {errorMessage ? (
+          <div
+            role="alert"
+            style={{
+              marginTop: 16,
+              padding: 12,
+              background: 'rgba(239, 68, 68, 0.12)',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              borderRadius: 6,
+              color: '#fecaca',
+              fontSize: 13,
+              lineHeight: 1.4,
+            }}
+          >
+            {errorMessage}
+          </div>
+        ) : null}
         <div
           style={{
             marginTop: 20,
