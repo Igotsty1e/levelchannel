@@ -197,9 +197,16 @@ export type RenewSweepOutcome = {
 
 // Cron entry. For every active integration with channel_expires_at
 // inside the next 24h (or null channel — never watched), rotate.
+//
+// Codex D.4 review: SQL filters `cardinality(read_calendar_ids) > 0`
+// so the sweep budget isn't burnt on rows that would just be skipped.
+//
 // One integration may have many read_calendar_ids; we currently
-// watch the FIRST one only (we receive a unified notification
-// stream from that calendar). A future wave can fan out to all.
+// watch the FIRST one only. Google's `events.watch` is bound to a
+// single `calendarId`, so other read calendars receive no realtime
+// push — they're only refreshed by the periodic pull cron (5-min
+// cadence). Multi-calendar fan-out (one channel per calendar) is a
+// future wave when the operator opts more than one calendar in.
 export async function renewExpiringChannels(opts?: {
   nowMs?: number
   fetchImpl?: typeof fetch
@@ -212,6 +219,7 @@ export async function renewExpiringChannels(opts?: {
        from teacher_calendar_integrations
       where sync_state in ('active', 'degraded')
         and (channel_expires_at is null or channel_expires_at < now() + interval '24 hours')
+        and cardinality(read_calendar_ids) > 0
       order by coalesce(channel_expires_at, '-infinity') asc
       limit $1`,
     [limit],
