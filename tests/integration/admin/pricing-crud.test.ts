@@ -5,14 +5,16 @@ import {
   GET as listTariffsHandler,
 } from '@/app/api/admin/pricing/route'
 import {
+  DELETE as deleteTariffHandler,
   PATCH as patchTariffHandler,
 } from '@/app/api/admin/pricing/[id]/route'
+import { getDbPool } from '@/lib/db/pool'
 import { POST as loginHandler } from '@/app/api/auth/login/route'
 import { POST as registerHandler } from '@/app/api/auth/register/route'
 import { getAccountByEmail, grantAccountRole } from '@/lib/auth/accounts'
 
 import '../setup'
-import { buildRequest, extractSessionCookie } from '../helpers'
+import { buildRequest, extractSessionCookie, futureSlotIso } from '../helpers'
 
 async function adminCookie(email = 'pricing-admin@example.com') {
   const password = 'StrongPassword123'
@@ -99,5 +101,111 @@ describe('admin pricing CRUD', () => {
       }),
     )
     expect(res.status).toBe(400)
+  })
+
+  it('BUG-2: hard-deletes an unreferenced tariff', async () => {
+    const cookie = await adminCookie('pricing-del-ok@example.com')
+    const created = await createTariffHandler(
+      buildRequest('/api/admin/pricing', {
+        cookie,
+        body: {
+          slug: 'lesson-to-be-deleted',
+          titleRu: 'Удаляемый',
+          amountKopecks: 250_000,
+        },
+      }),
+    )
+    expect(created.status).toBe(201)
+    const id = (await created.json()).tariff.id as string
+
+    const deleted = await deleteTariffHandler(
+      buildRequest(`/api/admin/pricing/${id}`, {
+        method: 'DELETE',
+        cookie,
+      }),
+      { params: Promise.resolve({ id }) },
+    )
+    expect(deleted.status).toBe(200)
+
+    // Verify it's actually gone.
+    const check = await getDbPool().query(
+      `select 1 from pricing_tariffs where id = $1`,
+      [id],
+    )
+    expect(check.rows.length).toBe(0)
+  })
+
+  it('BUG-2: refuses to hard-delete a tariff bound to any slot', async () => {
+    const cookie = await adminCookie('pricing-del-blocked@example.com')
+    const teacherEmail = 'pricing-del-teacher@example.com'
+    await registerHandler(
+      buildRequest('/api/auth/register', {
+        body: {
+          email: teacherEmail,
+          password: 'StrongPassword123',
+          personalDataConsentAccepted: true,
+        },
+      }),
+    )
+    const teacher = (await getAccountByEmail(teacherEmail))!
+    await grantAccountRole(teacher.id, 'teacher', null)
+
+    const tariffRes = await createTariffHandler(
+      buildRequest('/api/admin/pricing', {
+        cookie,
+        body: {
+          slug: 'lesson-attached',
+          titleRu: 'Уже привязан',
+          amountKopecks: 300_000,
+        },
+      }),
+    )
+    const tariffId = (await tariffRes.json()).tariff.id as string
+
+    // Bind to a slot directly via SQL — same DB-level state as the
+    // production wire, no admin-create-slot preconditions to satisfy
+    // here (the slot bind is what we're testing, not the full flow).
+    // 30-min-aligned future timestamp inside MSK business hours
+    // (constraints `lesson_slots_start_30min_aligned` +
+    // `lesson_slots_start_in_business_hours`). futureSlotIso handles
+    // both.
+    await getDbPool().query(
+      `insert into lesson_slots
+         (id, teacher_account_id, start_at, duration_minutes, status, tariff_id)
+       values (gen_random_uuid(), $1, $2::timestamptz, 60, 'open', $3)`,
+      [teacher.id, futureSlotIso(14 * 24 * 60 + 120), tariffId],
+    )
+
+    const refused = await deleteTariffHandler(
+      buildRequest(`/api/admin/pricing/${tariffId}`, {
+        method: 'DELETE',
+        cookie,
+      }),
+      { params: Promise.resolve({ id: tariffId }) },
+    )
+    expect(refused.status).toBe(409)
+    const body = await refused.json()
+    expect(body.error).toBe('has_slot_references')
+    expect(body.slotCount).toBeGreaterThanOrEqual(1)
+    expect(typeof body.message).toBe('string')
+
+    // Row must still exist.
+    const stillThere = await getDbPool().query(
+      `select 1 from pricing_tariffs where id = $1`,
+      [tariffId],
+    )
+    expect(stillThere.rows.length).toBe(1)
+  })
+
+  it('BUG-2: returns 404 on hostile non-uuid id', async () => {
+    const cookie = await adminCookie('pricing-del-baduuid@example.com')
+    const res = await deleteTariffHandler(
+      buildRequest('/api/admin/pricing/not-a-uuid', {
+        method: 'DELETE',
+        cookie,
+      }),
+      { params: Promise.resolve({ id: 'not-a-uuid' }) },
+    )
+    expect(res.status).toBe(404)
   })
 })

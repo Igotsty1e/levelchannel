@@ -17,31 +17,40 @@ export function TariffEditor({
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
+  // postJson returns:
+  //   - { ok: true } — caller reloads
+  //   - { ok: false, message } — caller renders message inline; the
+  //     top-of-editor `err` banner is ALSO populated as a fallback for
+  //     contexts (e.g. PATCH on a long list) where the user might miss
+  //     a row-local error.
   async function postJson(
-    method: 'POST' | 'PATCH',
+    method: 'POST' | 'PATCH' | 'DELETE',
     url: string,
-    body: unknown,
-  ) {
+    body?: unknown,
+  ): Promise<{ ok: true } | { ok: false; message: string }> {
     setBusy(true)
     setErr(null)
     try {
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: body === undefined ? undefined : JSON.stringify(body),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => null)
-        setErr(data?.message || data?.error || `HTTP `)
+        const message: string =
+          data?.message || data?.error || `HTTP ${res.status}`
+        setErr(message)
         setBusy(false)
-        return false
+        return { ok: false, message }
       }
       window.location.reload()
-      return true
+      return { ok: true }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'unknown')
+      const message = e instanceof Error ? e.message : 'unknown'
+      setErr(message)
       setBusy(false)
-      return false
+      return { ok: false, message }
     }
   }
 
@@ -66,15 +75,26 @@ export function TariffEditor({
         <TariffRow
           key={t.id}
           tariff={t}
-          onPatch={(patch) =>
-            postJson('PATCH', `/api/admin/pricing/${t.id}`, patch)
+          onPatch={async (patch) => {
+            const r = await postJson(
+              'PATCH',
+              `/api/admin/pricing/${t.id}`,
+              patch,
+            )
+            return r.ok
+          }}
+          onDelete={() =>
+            postJson('DELETE', `/api/admin/pricing/${t.id}`)
           }
           busy={busy}
         />
       ))}
 
       <NewTariffForm
-        onCreate={(input) => postJson('POST', '/api/admin/pricing', input)}
+        onCreate={async (input) => {
+          const r = await postJson('POST', '/api/admin/pricing', input)
+          return r.ok
+        }}
         busy={busy}
       />
     </div>
@@ -84,10 +104,12 @@ export function TariffEditor({
 function TariffRow({
   tariff,
   onPatch,
+  onDelete,
   busy,
 }: {
   tariff: PricingTariff
   onPatch: (patch: Record<string, unknown>) => Promise<boolean>
+  onDelete: () => Promise<{ ok: true } | { ok: false; message: string }>
   busy: boolean
 }) {
   const [titleRu, setTitleRu] = useState(tariff.titleRu)
@@ -96,6 +118,8 @@ function TariffRow({
   )
   const [isActive, setIsActive] = useState(tariff.isActive)
   const [order, setOrder] = useState(String(tariff.displayOrder))
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   return (
     <div
@@ -203,6 +227,160 @@ function TariffRow({
         >
           Сохранить
         </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => setConfirmDelete(true)}
+          title="Удалить тариф (только если он никогда не был привязан к слоту)"
+          aria-label="Удалить тариф"
+          style={{
+            marginLeft: 'auto',
+            padding: '6px 10px',
+            background: 'transparent',
+            color: '#ff8a8a',
+            border: '1px solid #ff8a8a55',
+            borderRadius: 6,
+            fontSize: 13,
+            cursor: busy ? 'wait' : 'pointer',
+            opacity: busy ? 0.6 : 1,
+          }}
+        >
+          🗑 Удалить
+        </button>
+      </div>
+      {confirmDelete ? (
+        <DeleteConfirm
+          tariffTitle={tariff.titleRu || tariff.slug}
+          errorMessage={deleteError}
+          onCancel={() => {
+            setConfirmDelete(false)
+            setDeleteError(null)
+          }}
+          onConfirm={async () => {
+            setDeleteError(null)
+            const r = await onDelete()
+            if (!r.ok) {
+              // Modal stays open so the operator sees WHY right there,
+              // next to the offending row. Top-of-editor banner is
+              // still populated by postJson as a fallback.
+              setDeleteError(r.message)
+            }
+            // On success postJson reloads; nothing more to do here.
+          }}
+          busy={busy}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function DeleteConfirm({
+  tariffTitle,
+  errorMessage,
+  onConfirm,
+  onCancel,
+  busy,
+}: {
+  tariffTitle: string
+  errorMessage: string | null
+  onConfirm: () => void | Promise<void>
+  onCancel: () => void
+  busy: boolean
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={busy ? undefined : onCancel}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: '#1f1f23',
+          border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: 12,
+          padding: 24,
+          maxWidth: 460,
+          color: '#e4e4e7',
+        }}
+      >
+        <h3 style={{ fontSize: 16, marginBottom: 12 }}>
+          Удалить тариф «{tariffTitle}»?
+        </h3>
+        <p style={{ fontSize: 13, lineHeight: 1.5, color: '#a1a1aa' }}>
+          Удаление невозможно, если тариф уже был привязан хотя бы к
+          одному слоту (это сломает аудит-связь). В таком случае
+          сервер вернёт ошибку, а вместо удаления используйте
+          снятие галочки «активен» — тариф пропадёт из новых форм.
+        </p>
+        {errorMessage ? (
+          <div
+            role="alert"
+            style={{
+              marginTop: 16,
+              padding: 12,
+              background: 'rgba(239, 68, 68, 0.12)',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              borderRadius: 6,
+              color: '#fecaca',
+              fontSize: 13,
+              lineHeight: 1.4,
+            }}
+          >
+            {errorMessage}
+          </div>
+        ) : null}
+        <div
+          style={{
+            marginTop: 20,
+            display: 'flex',
+            gap: 8,
+            justifyContent: 'flex-end',
+          }}
+        >
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onCancel}
+            style={{
+              padding: '6px 14px',
+              background: 'transparent',
+              color: '#e4e4e7',
+              border: '1px solid rgba(255,255,255,0.15)',
+              borderRadius: 6,
+              fontSize: 13,
+              cursor: busy ? 'wait' : 'pointer',
+            }}
+          >
+            Отмена
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onConfirm}
+            style={{
+              padding: '6px 14px',
+              background: '#ef4444',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 6,
+              fontSize: 13,
+              cursor: busy ? 'wait' : 'pointer',
+              opacity: busy ? 0.6 : 1,
+            }}
+          >
+            {busy ? 'Удаляем…' : 'Удалить'}
+          </button>
+        </div>
       </div>
     </div>
   )

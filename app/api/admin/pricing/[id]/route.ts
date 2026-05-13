@@ -5,6 +5,7 @@ import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireAdminRole } from '@/lib/auth/guards'
 import {
   type TariffPatch,
+  deleteTariffIfUnreferenced,
   getTariffById,
   updateTariff,
   validateTariffInput,
@@ -17,6 +18,8 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 type RouteParams = { params: Promise<{ id: string }> }
 
@@ -99,4 +102,67 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     }
     throw err
   }
+}
+
+// BUG-2 (2026-05-13 intake): hard-delete a tariff row. Only allowed
+// when zero lesson_slot rows reference it (current or past). The FK is
+// `on delete set null`, so cascading is technically possible — but
+// that silently wipes the audit/billing trail of which tariff a slot
+// was bound to. Refuse with 409 instead and tell the operator to
+// deactivate.
+export async function DELETE(request: Request, { params }: RouteParams) {
+  const { id } = await params
+  const originGate = enforceTrustedBrowserOrigin(request)
+  if (originGate) return originGate
+
+  const rl = await enforceRateLimit(request, 'admin:pricing:ip', 30, 60_000)
+  if (rl) return rl
+
+  const guard = await requireAdminRole(request)
+  if (!guard.ok) return guard.response
+
+  if (!UUID_PATTERN.test(id)) {
+    return NextResponse.json(
+      { error: 'not_found' },
+      { status: 404, headers: NO_STORE },
+    )
+  }
+
+  // BUG-2 audit: the helper returns the EXACT row version DELETE saw
+  // (via `DELETE … RETURNING *` inside the same TX as the FOR UPDATE
+  // lock). That guarantees the journal entry can't drift even if a
+  // concurrent PATCH lands between two of our queries. A formal DB
+  // audit table can come later; see lib/audit/payment-events.ts for
+  // the existing pattern + how event_type enum migrations are written.
+  const result = await deleteTariffIfUnreferenced(id)
+  if (result.ok) {
+    console.info(
+      '[admin-audit] tariff.deleted',
+      JSON.stringify({
+        actor: guard.account.id,
+        tariff: result.snapshot,
+        at: new Date().toISOString(),
+      }),
+    )
+    return NextResponse.json(
+      { ok: true, deleted: id },
+      { status: 200, headers: NO_STORE },
+    )
+  }
+  if (result.reason === 'not_found') {
+    return NextResponse.json(
+      { error: 'not_found' },
+      { status: 404, headers: NO_STORE },
+    )
+  }
+  // has_slot_references — operator must deactivate instead.
+  return NextResponse.json(
+    {
+      error: 'has_slot_references',
+      message:
+        'Тариф уже привязан к слотам и не может быть удалён без потери истории. Снимите галочку «активен», чтобы скрыть тариф из новых форм.',
+      slotCount: result.slotCount,
+    },
+    { status: 409, headers: NO_STORE },
+  )
 }
