@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { AuthShell } from '@/components/auth-shell'
+import { listAccountRoles } from '@/lib/auth/accounts'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getDbPool } from '@/lib/db/pool'
 
@@ -24,6 +25,16 @@ export default async function LearnerCalendarSettingsPage() {
   if (!cookieValue) redirect('/login')
   const session = await lookupSession(cookieValue)
   if (!session) redirect('/login')
+
+  // Codex C.ui review: mirror the cabinet/page.tsx auth matrix. Admin →
+  // /admin (no learner workflow there). Teacher-only → /teacher. Learner
+  // (incl. legacy "no role" archetype) sees this page. Hybrid
+  // teacher+learner keeps learner access.
+  const roles = await listAccountRoles(session.account.id)
+  if (roles.includes('admin')) redirect('/admin')
+  if (roles.includes('teacher') && !roles.includes('student')) {
+    redirect('/teacher')
+  }
 
   const teacherId = session.account.assignedTeacherId
   let teacherSyncState: string | null = null
@@ -87,7 +98,7 @@ export default async function LearnerCalendarSettingsPage() {
                 fontSize: 14,
               }}
             >
-              ✓ Ваш учитель ведёт расписание через Google Calendar.
+              ✓ Ваш учитель подключил Google Calendar к LevelChannel.
             </p>
             <h2
               style={{
@@ -96,7 +107,7 @@ export default async function LearnerCalendarSettingsPage() {
                 margin: '24px 0 8px 0',
               }}
             >
-              Что это даёт вам
+              Что это значит (по мере включения)
             </h2>
             <ul
               style={{
@@ -108,17 +119,23 @@ export default async function LearnerCalendarSettingsPage() {
               }}
             >
               <li>
-                Когда учитель занят чем-то другим в своём календаре, эти
-                слоты автоматически исчезают из расписания — вы не
-                сможете записаться на занятое время.
+                Когда учитель занят в Google Calendar другим делом, эти
+                слоты будут автоматически исчезать из расписания — вы
+                не сможете записаться на занятое время. Эта часть
+                включится в ближайших обновлениях.
               </li>
               <li>
-                Когда вы записываетесь на урок, учитель сразу видит его в
-                своём календаре — вероятность «забыли про урок» снижается
-                почти до нуля.
+                Когда вы записываетесь на урок, учитель будет сразу
+                видеть его в своём календаре — вероятность «забыли про
+                урок» снизится почти до нуля. Эта часть тоже шипится
+                отдельно.
               </li>
               <li>
-                Никаких ваших календарей мы не подключаем. Эта интеграция
+                Сейчас подключение учителя только зафиксировано — фоновая
+                синхронизация включается в следующих обновлениях.
+              </li>
+              <li>
+                Никаких ваших календарей мы не подключаем. Это интеграция
                 со стороны учителя.
               </li>
             </ul>
