@@ -256,74 +256,98 @@ export async function pullBusyIntervalsForCalendar(opts: {
 //     read from and which one to write events into;
 //   - the worker to compute `is_writable_in_source` per row when
 //     storing busy intervals.
+// Codex D.1 v2 review: calendarList.list paginates via nextPageToken
+// (default page size 100, max 250). Long calendar lists would
+// silently truncate. Mirror the pull pagination loop with a similar
+// maxPages cap.
 export async function listCalendars(opts: {
   accessToken: string
   fetchImpl?: typeof fetch
+  maxPages?: number
 }): Promise<
   | { ok: true; calendars: GoogleCalendarListEntry[] }
   | { ok: false; error: PullError }
 > {
   const fetchImpl = opts.fetchImpl ?? fetch
-  let res: Response
-  try {
-    res = await fetchImpl(`${GOOGLE_API_BASE}/users/me/calendarList`, {
-      headers: {
-        Authorization: `Bearer ${opts.accessToken}`,
-        Accept: 'application/json',
-      },
-    })
-  } catch (e) {
-    return {
-      ok: false,
-      error: {
-        kind: 'network',
-        message: e instanceof Error ? e.message : String(e),
-      },
-    }
-  }
-  if (!res.ok) {
-    let body = ''
-    try {
-      body = await res.text()
-    } catch {
-      // ignore
-    }
-    return { ok: false, error: { kind: 'http', status: res.status, body } }
-  }
-  let parsed: unknown
-  try {
-    parsed = await res.json()
-  } catch (e) {
-    return {
-      ok: false,
-      error: {
-        kind: 'shape',
-        message: `calendarList.list JSON parse failed: ${
-          e instanceof Error ? e.message : String(e)
-        }`,
-      },
-    }
-  }
-  const data = parsed as { items?: unknown[] }
-  if (!Array.isArray(data.items)) {
-    return {
-      ok: false,
-      error: { kind: 'shape', message: 'calendarList.list response missing items' },
-    }
-  }
+  const maxPages = opts.maxPages ?? 10
   const calendars: GoogleCalendarListEntry[] = []
-  for (const item of data.items) {
-    if (typeof item !== 'object' || item === null) continue
-    const r = item as Record<string, unknown>
-    if (typeof r.id !== 'string' || !r.id) continue
-    const accessRole = typeof r.accessRole === 'string' ? r.accessRole : ''
-    calendars.push({
-      id: r.id,
-      summary: typeof r.summary === 'string' ? r.summary : '',
-      accessRole,
-      primary: r.primary === true,
-      isWritable: accessRole === 'owner' || accessRole === 'writer',
-    })
+  let pageToken: string | undefined = undefined
+
+  for (let page = 0; page < maxPages; page++) {
+    const url = new URL(`${GOOGLE_API_BASE}/users/me/calendarList`)
+    url.searchParams.set('maxResults', '250')
+    if (pageToken) url.searchParams.set('pageToken', pageToken)
+
+    let res: Response
+    try {
+      res = await fetchImpl(url.toString(), {
+        headers: {
+          Authorization: `Bearer ${opts.accessToken}`,
+          Accept: 'application/json',
+        },
+      })
+    } catch (e) {
+      return {
+        ok: false,
+        error: {
+          kind: 'network',
+          message: e instanceof Error ? e.message : String(e),
+        },
+      }
+    }
+    if (!res.ok) {
+      let body = ''
+      try {
+        body = await res.text()
+      } catch {
+        // ignore
+      }
+      return { ok: false, error: { kind: 'http', status: res.status, body } }
+    }
+    let parsed: unknown
+    try {
+      parsed = await res.json()
+    } catch (e) {
+      return {
+        ok: false,
+        error: {
+          kind: 'shape',
+          message: `calendarList.list JSON parse failed: ${
+            e instanceof Error ? e.message : String(e)
+          }`,
+        },
+      }
+    }
+    const data = parsed as { items?: unknown[]; nextPageToken?: string }
+    if (!Array.isArray(data.items)) {
+      return {
+        ok: false,
+        error: { kind: 'shape', message: 'calendarList.list response missing items' },
+      }
+    }
+    for (const item of data.items) {
+      if (typeof item !== 'object' || item === null) continue
+      const r = item as Record<string, unknown>
+      if (typeof r.id !== 'string' || !r.id) continue
+      const accessRole = typeof r.accessRole === 'string' ? r.accessRole : ''
+      calendars.push({
+        id: r.id,
+        summary: typeof r.summary === 'string' ? r.summary : '',
+        accessRole,
+        primary: r.primary === true,
+        isWritable: accessRole === 'owner' || accessRole === 'writer',
+      })
+    }
+    if (!data.nextPageToken) {
+      return { ok: true, calendars }
+    }
+    pageToken = data.nextPageToken
   }
-  return { ok: true, calendars }
+  return {
+    ok: false,
+    error: {
+      kind: 'shape',
+      message: `calendarList.list paginated past ${maxPages} pages; possible loop`,
+    },
+  }
 }
