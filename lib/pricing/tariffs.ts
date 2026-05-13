@@ -235,20 +235,24 @@ export async function updateTariff(
 // audit/billing trail. Operator is asked to deactivate instead.
 //
 // Returns:
-//   - { ok: true } — row deleted
+//   - { ok: true, snapshot }
+//     — row deleted; snapshot is the EXACT row that DELETE saw
+//       (`DELETE … RETURNING *` under FOR UPDATE), so the audit log
+//       caller can never record drifted state from a concurrent PATCH.
 //   - { ok: false, reason: 'not_found' }
 //   - { ok: false, reason: 'has_slot_references', slotCount }
 //     — at least one slot points (or pointed) at this tariff
 export async function deleteTariffIfUnreferenced(
   id: string,
 ): Promise<
-  | { ok: true }
+  | { ok: true; snapshot: PricingTariff }
   | { ok: false, reason: 'not_found' }
   | { ok: false, reason: 'has_slot_references', slotCount: number }
 > {
   const pool = getDbPool()
   // Single TX so a concurrent slot creation can't slip past the
-  // reference check between SELECT and DELETE.
+  // reference check between SELECT and DELETE, and a concurrent PATCH
+  // can't drift the snapshot we return for audit logging.
   const client = await pool.connect()
   try {
     await client.query('begin')
@@ -269,9 +273,12 @@ export async function deleteTariffIfUnreferenced(
       await client.query('rollback')
       return { ok: false, reason: 'has_slot_references', slotCount: n }
     }
-    await client.query(`delete from pricing_tariffs where id = $1`, [id])
+    const deleted = await client.query(
+      `delete from pricing_tariffs where id = $1 returning *`,
+      [id],
+    )
     await client.query('commit')
-    return { ok: true }
+    return { ok: true, snapshot: rowToTariff(deleted.rows[0]) }
   } catch (err) {
     await client.query('rollback')
     throw err
