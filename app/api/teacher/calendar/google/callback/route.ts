@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 
 import { listAccountRoles } from '@/lib/auth/accounts'
 import { getCurrentSession } from '@/lib/auth/sessions'
+import { setupChannelForIntegration } from '@/lib/calendar/channel-renewer'
 import { getGoogleCalendarOauthConfig } from '@/lib/calendar/google/config'
 import { exchangeCodeForTokens } from '@/lib/calendar/google/oauth'
 import { verifyOauthState } from '@/lib/calendar/google/state'
@@ -157,6 +158,27 @@ export async function GET(request: Request) {
       error: 'persist_failed',
       kind: upsert.error.code,
     })
+  }
+
+  // BCS-D.4 — set up the Google push-notification channel for the
+  // primary read calendar. Failure here is non-fatal: the periodic
+  // cron sweep + the 5-min pull cron will still keep busy-cache
+  // fresh. We log + carry on so the user doesn't dead-end in the
+  // OAuth flow over a renewal hiccup.
+  try {
+    const channelRes = await setupChannelForIntegration({
+      accountId: session.account.id,
+      externalCalendarId: 'primary',
+    })
+    if (!channelRes.ok) {
+      console.warn(
+        '[calendar/oauth] channel setup failed after connect:',
+        channelRes.reason,
+        channelRes.detail,
+      )
+    }
+  } catch (e) {
+    console.error('[calendar/oauth] channel setup threw:', e)
   }
 
   return redirectToSettings(origin, { connected: '1' })
