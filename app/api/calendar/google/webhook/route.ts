@@ -147,12 +147,18 @@ export async function POST(request: Request) {
           ? (row.read_calendar_ids as string[])
           : []
         for (const calendarId of calendars) {
+          // Codex D.complete review: webhook is realtime priority=2.
+          // DO NOTHING was too weak — a pending job with backoff-
+          // pushed next_run_at would silently swallow the upgrade.
+          // DO UPDATE: pull next_run_at forward, raise priority.
           await client.query(
             `insert into calendar_pull_jobs
                 (teacher_account_id, external_calendar_id, priority, status, next_run_at)
              values ($1, $2, 2, 'pending', now())
              on conflict (teacher_account_id, external_calendar_id) where status='pending'
-               do nothing`,
+               do update set
+                 next_run_at = least(calendar_pull_jobs.next_run_at, excluded.next_run_at),
+                 priority    = greatest(calendar_pull_jobs.priority, excluded.priority)`,
             [String(row.account_id), calendarId],
           )
         }

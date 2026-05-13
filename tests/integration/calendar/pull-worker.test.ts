@@ -131,7 +131,7 @@ describe('drainPullJobs', () => {
     expect(outcomes).toEqual([])
   })
 
-  it('retries on transient pull failure (HTTP 5xx is permanent in our policy → terminal_failure on first attempt)', async () => {
+  it('retries on Google 5xx (transient per plan §4.7) — Codex D.complete fix', async () => {
     const teacherId = await makeTeacher('worker-5xx@example.com')
     await connect(teacherId)
     await enqueuePullJob({
@@ -152,8 +152,52 @@ describe('drainPullJobs', () => {
     )
     const { outcomes } = await drainPullJobs({})
     expect(outcomes).toHaveLength(1)
-    // HTTP errors are non-transient in our isTransientPullError
-    // contract — they go terminal so we don't burn quota retrying.
+    expect(outcomes[0].kind).toBe('retried')
+  })
+
+  it('retries on Google 429 quota throttle', async () => {
+    const teacherId = await makeTeacher('worker-429@example.com')
+    await connect(teacherId)
+    await enqueuePullJob({
+      teacherAccountId: teacherId,
+      externalCalendarId: 'primary',
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          ({
+            ok: false,
+            status: 429,
+            text: async () => 'rate limit',
+            json: async () => ({}),
+          }) as unknown as Response,
+      ),
+    )
+    const { outcomes } = await drainPullJobs({})
+    expect(outcomes[0].kind).toBe('retried')
+  })
+
+  it('terminal_failure on permanent HTTP 4xx (e.g. 404 calendar gone)', async () => {
+    const teacherId = await makeTeacher('worker-404@example.com')
+    await connect(teacherId)
+    await enqueuePullJob({
+      teacherAccountId: teacherId,
+      externalCalendarId: 'gone',
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          ({
+            ok: false,
+            status: 404,
+            text: async () => 'not found',
+            json: async () => ({}),
+          }) as unknown as Response,
+      ),
+    )
+    const { outcomes } = await drainPullJobs({})
     expect(outcomes[0].kind).toBe('terminal_failure')
   })
 
@@ -257,20 +301,42 @@ describe('enqueuePullJob', () => {
       teacherAccountId: teacherId,
       externalCalendarId: 'primary',
     })
-    expect(r.inserted).toBe(true)
+    expect(r.upserted).toBe(true)
   })
 
-  it('is idempotent — duplicate pending insert is a no-op', async () => {
+  it('upgrades priority + pulls next_run_at forward on conflict (Codex D.complete fix)', async () => {
     const teacherId = await makeTeacher('enq-2@example.com')
     await connect(teacherId)
+    const pool = getDbPool()
+
+    // First enqueue: priority=0, push next_run_at far into the future
+    // to simulate a job in backoff.
     await enqueuePullJob({
       teacherAccountId: teacherId,
       externalCalendarId: 'primary',
+      priority: 0,
     })
+    await pool.query(
+      `update calendar_pull_jobs set next_run_at = now() + interval '20 minutes' where teacher_account_id = $1`,
+      [teacherId],
+    )
+
+    // Webhook-style realtime enqueue: priority=2. Must upgrade priority
+    // AND pull next_run_at forward.
     const r2 = await enqueuePullJob({
       teacherAccountId: teacherId,
       externalCalendarId: 'primary',
+      priority: 2,
     })
-    expect(r2.inserted).toBe(false)
+    expect(r2.upserted).toBe(true)
+
+    const after = await pool.query(
+      'select priority, next_run_at from calendar_pull_jobs where teacher_account_id = $1',
+      [teacherId],
+    )
+    expect(Number(after.rows[0].priority)).toBe(2)
+    expect(new Date(String(after.rows[0].next_run_at)).getTime()).toBeLessThan(
+      Date.now() + 60_000,
+    )
   })
 })

@@ -16,6 +16,7 @@
 // is already disconnected by the helper, and we terminal-fail the
 // job. `transient` → schedule retry.
 
+import type { PullError } from '@/lib/calendar/google/pull'
 import { ensureFreshAccessToken } from '@/lib/calendar/google/token-refresh'
 import { runPullForCalendar } from '@/lib/calendar/pull-runner'
 import { getDbPool } from '@/lib/db/pool'
@@ -142,7 +143,7 @@ async function processOneJob(args: {
       pool,
       args,
       `pull: ${pull.error.kind}${'status' in pull.error ? ` ${pull.error.status}` : ''}`,
-      isTransientPullError(pull.error.kind),
+      isTransientPullError(pull.error),
     )
   }
 
@@ -203,30 +204,47 @@ function isTransientReason(reason: string): boolean {
   return reason === 'transient' || reason === 'config_missing'
 }
 
-function isTransientPullError(kind: string): boolean {
-  // network + shape are transient. HTTP 4xx (except 5xx) is usually
-  // permanent — leave it terminal so we don't burn quota retrying.
-  return kind === 'network' || kind === 'shape'
+function isTransientPullError(error: PullError): boolean {
+  // Plan §4.7 retry contract: 5xx (Google outage) and 429 (quota
+  // throttle) are transient. 4xx other than 429 is permanent
+  // (bad request, wrong scope, revoked credential). network + shape
+  // are transient (genuine retry-worthy). Codex D.complete review
+  // closed: the previous "all HTTP = permanent" classification
+  // dead-lettered every transient Google outage on the first miss.
+  if (error.kind === 'http') {
+    return error.status >= 500 || error.status === 429
+  }
+  return error.kind === 'network' || error.kind === 'shape'
 }
 
 // Enqueue helper used by the OAuth-callback success path + the
-// webhook handler. ON CONFLICT do nothing keeps the pending-uniqueness
-// invariant (plan §3.5).
+// webhook handler. Plan §3.5: at most one pending row per
+// (teacher, calendar).
+//
+// Codex D.complete review: DO NOTHING was too weak. If a row was
+// already pending with backoff-pushed next_run_at, a fresh webhook
+// (priority=2 realtime) was silently dropped — realtime upgrades
+// blocked for up to 30 min. Fix: DO UPDATE — pull next_run_at
+// forward via LEAST, raise priority via GREATEST. The pending-
+// uniqueness invariant is preserved (still one row at a time per
+// pair), but a higher-priority arrival always wins.
 export async function enqueuePullJob(opts: {
   teacherAccountId: string
   externalCalendarId: string
   priority?: number
   nowMs?: number
-}): Promise<{ inserted: boolean }> {
+}): Promise<{ upserted: boolean }> {
   const pool = getDbPool()
   const r = await pool.query(
     `insert into calendar_pull_jobs
         (teacher_account_id, external_calendar_id, priority, status, next_run_at)
      values ($1, $2, $3, 'pending', now())
      on conflict (teacher_account_id, external_calendar_id) where status='pending'
-       do nothing
+       do update set
+         next_run_at = least(calendar_pull_jobs.next_run_at, excluded.next_run_at),
+         priority    = greatest(calendar_pull_jobs.priority, excluded.priority)
      returning id`,
     [opts.teacherAccountId, opts.externalCalendarId, opts.priority ?? 0],
   )
-  return { inserted: r.rows.length > 0 }
+  return { upserted: r.rows.length > 0 }
 }
