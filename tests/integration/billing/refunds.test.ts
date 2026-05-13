@@ -264,7 +264,7 @@ describe('POST /api/admin/refunds', () => {
       `insert into lesson_slots
          (teacher_account_id, start_at, duration_minutes, status, tariff_id)
        values ($1,
-               date_trunc('hour', (now() + interval '5 days') at time zone 'Europe/Moscow') at time zone 'Europe/Moscow',
+               (date_trunc('day', (now() + interval '5 days') at time zone 'Europe/Moscow') + interval '10 hours') at time zone 'Europe/Moscow',
                60, 'open', $2)
        returning id`,
       [teacherId, tariffId],
@@ -425,8 +425,8 @@ describe('POST /api/admin/refunds', () => {
       `insert into lesson_slots
          (teacher_account_id, start_at, duration_minutes, status, learner_account_id, booked_at)
        values
-         ($1, date_trunc('hour', (now() + interval '7 days') at time zone 'Europe/Moscow') at time zone 'Europe/Moscow', 60, 'booked', $2, now()),
-         ($1, date_trunc('hour', (now() + interval '8 days') at time zone 'Europe/Moscow') at time zone 'Europe/Moscow', 60, 'booked', $2, now())
+         ($1, (date_trunc('day', (now() + interval '7 days') at time zone 'Europe/Moscow') + interval '10 hours') at time zone 'Europe/Moscow', 60, 'booked', $2, now()),
+         ($1, (date_trunc('day', (now() + interval '8 days') at time zone 'Europe/Moscow') + interval '10 hours') at time zone 'Europe/Moscow', 60, 'booked', $2, now())
        returning id`,
       [teacherId, learnerId],
     )
