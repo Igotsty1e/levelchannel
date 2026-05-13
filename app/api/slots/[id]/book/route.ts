@@ -82,6 +82,20 @@ export async function POST(request: Request, { params }: RouteParams) {
     expectedTeacherId,
   })
   if (result.ok) {
+    // BCS-E.worker — fire-and-forget enqueue of the create push job
+    // if the teacher has an active/degraded integration. F9″
+    // reconcile sweep catches the rare gap if this fails.
+    try {
+      const { enqueueCreatePushIfIntegrationActive } = await import(
+        '@/lib/calendar/push-worker'
+      )
+      await enqueueCreatePushIfIntegrationActive({
+        slotId: result.slot.id,
+        teacherAccountId: result.slot.teacherAccountId,
+      })
+    } catch (e) {
+      console.warn('[calendar/book] enqueue push failed:', e)
+    }
     return NextResponse.json(
       { slot: result.slot, billing: result.billing },
       { status: 200, headers: NO_STORE },

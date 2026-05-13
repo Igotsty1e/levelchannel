@@ -67,6 +67,25 @@ export async function POST(request: Request, { params }: RouteParams) {
   try {
     const result = await cancelLearnerSlot(id, auth.account.id, reason)
     if (result.ok) {
+      // BCS-E.worker — record durable post-cancel intent. The
+      // intent worker (drainIntents) picks it up and enqueues the
+      // delete push job. Plan §4.6 F6″ splits the slot UPDATE and
+      // the push enqueue into two TX to keep lock-order clean; we
+      // do that here at the route boundary. F9″ reconcile sweep
+      // catches the rare orphan if this insert fails between TX1
+      // and TX2.
+      try {
+        const { insertPostCancelIntent } = await import(
+          '@/lib/calendar/intent-worker'
+        )
+        const { getDbPool } = await import('@/lib/db/pool')
+        await insertPostCancelIntent(getDbPool(), id)
+      } catch (e) {
+        console.warn(
+          '[calendar/cancel] post-cancel intent insert failed:',
+          e,
+        )
+      }
       return NextResponse.json(
         { slot: result.slot },
         { status: 200, headers: NO_STORE },
