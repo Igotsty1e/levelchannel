@@ -24,10 +24,10 @@ function mockResp(body: unknown, status = 200): Response {
 }
 
 describe('deterministicEventId', () => {
-  it('produces lowercase base32-prefixed string starting with a letter', () => {
+  it('produces base32hex string with letter-start prefix (Google accepts 0-9a-v, must start with letter)', () => {
     const id = deterministicEventId(SLOT_UUID)
     expect(id.startsWith('lc')).toBe(true)
-    expect(id).toMatch(/^lc[a-z2-7]+$/)
+    expect(id).toMatch(/^lc[0-9a-v]+$/) // base32hex per Google docs
     expect(id.length).toBeGreaterThanOrEqual(5)
     expect(id.length).toBeLessThanOrEqual(1024)
   })
@@ -119,6 +119,38 @@ describe('insertEventIdempotent', () => {
     })
     expect(r.ok).toBe(true)
     if (r.ok) expect(r.reused).toBe(true)
+  })
+
+  it('409 with private-only ownership (shared stripped) → ownership_mismatch (shared is authority per Codex E.1 review)', async () => {
+    const expectedId = deterministicEventId(SLOT_UUID)
+    let call = 0
+    const fetchMock = vi.fn(async () => {
+      call++
+      if (call === 1) return mockResp({ error: 'conflict' }, 409)
+      return mockResp({
+        id: expectedId,
+        etag: '"e"',
+        extendedProperties: {
+          // shared deliberately missing — only private has lc_slot_id.
+          // Per F8 contract, shared is the authority; we MUST refuse.
+          private: { lc_slot_id: SLOT_UUID },
+        },
+      })
+    }) as unknown as typeof fetch
+    const r = await insertEventIdempotent({
+      accessToken: 'AT',
+      externalCalendarId: 'primary',
+      slotId: SLOT_UUID,
+      input: {
+        startAt: '2026-07-01T09:00:00Z',
+        endAt: '2026-07-01T10:00:00Z',
+        summary: 'S',
+        ownership: OWNERSHIP,
+      },
+      fetchImpl: fetchMock,
+    })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.kind).toBe('ownership_mismatch')
   })
 
   it('409 + foreign ownership: returns ownership_mismatch error', async () => {

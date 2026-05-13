@@ -22,13 +22,14 @@
 const GOOGLE_API_BASE = 'https://www.googleapis.com/calendar/v3'
 
 // Google requires event id to be 5-1024 chars, base32hex alphabet
-// (0-9a-v), and must START WITH A LETTER. We use base32 of the
-// slot UUID + `lc-` prefix → fits cleanly.
+// (0-9a-v), and must START WITH A LETTER. We use base32hex of the
+// slot UUID bytes + `lc` prefix → fits cleanly.
 //
-// Codex r2 reference:
-//   https://developers.google.com/workspace/calendar/api/v3/reference/events
+// Codex E.1 review BLOCKER: previously used RFC 4648 base32 alphabet
+// (a-z2-7) — invalid per Google docs. base32hex per
+// https://developers.google.com/workspace/calendar/api/v3/reference/events/insert
 const EVENT_ID_PREFIX = 'lc'
-const BASE32 = 'abcdefghijklmnopqrstuvwxyz234567'
+const BASE32HEX = '0123456789abcdefghijklmnopqrstuv'
 
 function uuidToBase32(uuid: string): string {
   const hex = uuid.replace(/-/g, '').toLowerCase()
@@ -54,11 +55,11 @@ function uuidToBase32(uuid: string): string {
     bits += 8
     while (bits >= 5) {
       bits -= 5
-      out += BASE32[(value >>> bits) & 0x1f]
+      out += BASE32HEX[(value >>> bits) & 0x1f]
     }
   }
   if (bits > 0) {
-    out += BASE32[(value << (5 - bits)) & 0x1f]
+    out += BASE32HEX[(value << (5 - bits)) & 0x1f]
   }
   return out
 }
@@ -235,8 +236,12 @@ async function getAndConfirmOwnership(opts: {
   if ('error' in event) {
     return { ok: false, error: { kind: 'shape', message: event.error } }
   }
+  // Codex E.1 review BLOCKER #2: ownership IS shared-only. private is
+  // a defense-in-depth fallback for reconciliation reads, NOT for
+  // insert-confirm authority. If the existing event has no
+  // shared.lc_slot_id, we treat it as foreign — we'd rather refuse
+  // to bind than risk overwriting a non-LC event.
   const claimedSlot = event.extendedProperties?.shared?.lc_slot_id
-    ?? event.extendedProperties?.private?.lc_slot_id
   if (claimedSlot !== opts.expectedSlotId) {
     return {
       ok: false,
