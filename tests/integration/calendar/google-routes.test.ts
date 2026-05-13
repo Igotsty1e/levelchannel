@@ -231,6 +231,40 @@ describe('GET /api/teacher/calendar/google/callback', () => {
     expect(res.headers.get('Location') ?? '').toContain('/login')
   })
 
+  it('rate-limited callback redirects (not JSON 429) — Codex C.3b review fix', async () => {
+    const t = await makeTeacher({ email: 't-cb-rate@example.com' })
+    const state = generateOauthState({
+      accountId: t.accountId,
+      secret: TEST_OAUTH_STATE_SECRET,
+    })
+    googleTokenFetchMock({
+      access_token: 'AT',
+      refresh_token: 'RT',
+      expires_in: 3600,
+      token_type: 'Bearer',
+    })
+
+    // Burn through the rate-limit bucket. enforceRateLimit returns the
+    // 429 JSON response after 30 requests within the window. Anything
+    // past that should redirect, not JSON-dead-end the browser.
+    const url = `/api/teacher/calendar/google/callback?code=AUTH&state=${encodeURIComponent(state)}`
+    let lastRes: Response | null = null
+    for (let i = 0; i < 35; i++) {
+      lastRes = await callbackHandler(
+        buildRequest(url, { cookie: t.cookie }),
+      )
+    }
+    // The final response — well past the limit — must be a redirect,
+    // not a JSON 429.
+    expect(lastRes).not.toBeNull()
+    expect([302, 303]).toContain(lastRes!.status)
+    const loc = lastRes!.headers.get('Location') ?? ''
+    // Either the rate_limited redirect or the natural happy-path redirect
+    // (if the bucket happened to reset between calls — TTL-dependent).
+    // Both are acceptable; what we forbid is a 429 JSON body.
+    expect(loc).toContain('/teacher/settings/calendar')
+  })
+
   it('redirects to settings?error=no_refresh_token when Google omits it (shouldn\'t happen on initial consent)', async () => {
     const t = await makeTeacher({ email: 't-cb-noRT@example.com' })
     const state = generateOauthState({

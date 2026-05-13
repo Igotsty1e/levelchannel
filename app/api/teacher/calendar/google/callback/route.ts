@@ -48,13 +48,18 @@ function redirectToLogin(origin: string): NextResponse {
 export async function GET(request: Request) {
   const origin = new URL(request.url).origin
 
+  // Codex C.3b review: enforceRateLimit emits JSON 429 by default,
+  // which would dead-end the browser mid-OAuth flow with a raw JSON
+  // body. The callback contract requires every failure to redirect
+  // to /teacher/settings/calendar. Translate the throttle response
+  // into a redirect.
   const rl = await enforceRateLimit(
     request,
     'teacher:calendar:google:callback:ip',
     30,
     60_000,
   )
-  if (rl) return rl
+  if (rl) return redirectToSettings(origin, { error: 'rate_limited' })
 
   const url = new URL(request.url)
   const code = url.searchParams.get('code')
