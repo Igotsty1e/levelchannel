@@ -25,14 +25,18 @@ Concrete follow-ups (open queue):
   future regression in `resolveSslConfig` / env handling fires on
   the health probe and stops the deploy. The 2 s race preserves the
   bounded latency the old ad-hoc Pool got from `connectionTimeoutMillis`.
-- **Deploy-time smoke runner.** Add a `scripts/post-deploy-smoke.sh`
-  (or a workflow step) that hits 5–8 routes the operator cares about:
-  `/api/health`, `/api/auth/me` (anon → expect 401), `/login`,
-  `/cabinet` (anon → expect 307), `/admin/login`, `/admin/slots`
-  (anon → expect 307), `/checkout/<some-tariff-slug>` (200), and
-  asserts each returns the expected status. Fail loudly, don't just
-  log. Wired into the autodeploy script so a 500-ing prod doesn't
-  ship silently.
+- ~~**Deploy-time smoke runner.**~~ **Closed Wave 63 (2026-05-13).**
+  `scripts/post-deploy-smoke.sh` hits 12 routes (health, anon auth
+  surface, admin surface, public payment surface) + a `check_csp_nonce`
+  block on 5 surfaces (`/`, `/pay`, `/offer`, `/admin/login`, a 404
+  path) — verifies Content-Security-Policy header is present, has no
+  `'unsafe-inline'`, carries a nonce token, and at least one inline
+  `<script>` carries `nonce=` so the CSP auto-stamp regression class
+  is caught. Defense in depth: `.github/workflows/post-deploy-smoke.yml`
+  runs the same script every 15 min against prod as a safety net for
+  cases where the VPS autodeploy wiring drifts; same idempotent
+  issue-management pattern as `uptime-probe.yml` (open / comment /
+  close on `smoke-incident` label).
 - ~~**CI integration tests.**~~
   **Closed 2026-05-07.** `.github/workflows/integration-tests.yml`
   runs `npm run test:integration` on every PR and every push to main.

@@ -216,6 +216,10 @@ declare -a units=(
   "levelchannel-stale-orders.timer"
   "levelchannel-auto-complete-slots.service"
   "levelchannel-auto-complete-slots.timer"
+  # Wave 61 — refund reconcile worker (closes refund-attempts in
+  # non-terminal states).
+  "levelchannel-refund-reconcile.service"
+  "levelchannel-refund-reconcile.timer"
 )
 
 UNITS_CHANGED=0
@@ -254,6 +258,7 @@ declare -a timers=(
   "levelchannel-db-retention.timer"
   "levelchannel-stale-orders.timer"
   "levelchannel-auto-complete-slots.timer"
+  "levelchannel-refund-reconcile.timer"
 )
 
 for t in "${timers[@]}"; do

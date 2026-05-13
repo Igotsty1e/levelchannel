@@ -83,26 +83,38 @@ async function seedLearnerWithDebt(
   const tariffId = String(tariff.rows[0].id)
 
   // Debt slots: completed, learner_account_id set, no allocation.
+  // Anchor at YYYY-MM-DD 12:00 MSK (yesterday) + 30-min increments —
+  // stays inside the [06:00..22:00] MSK business band regardless of
+  // when CI runs (the previous `now() - N hours` shape was flaky when
+  // CI ran in early MSK morning — Codex Wave 63 catch).
   for (let i = 0; i < opts.debtSlotCount; i++) {
     await pool.query(
       `insert into lesson_slots
          (teacher_account_id, start_at, duration_minutes, status, learner_account_id, booked_at, tariff_id)
        values ($1,
-               date_trunc('hour', (now() - interval '1 day' - $4::interval) at time zone 'Europe/Moscow') at time zone 'Europe/Moscow',
+               (date_trunc('day', (now() - interval '1 day') at time zone 'Europe/Moscow')
+                 + interval '12 hours'
+                 + ($4::int * interval '30 minutes')
+               ) at time zone 'Europe/Moscow',
                60, 'completed', $2, now() - interval '2 days', $3)`,
-      [teacherId, learnerId, tariffId, `${i + 1} hours`],
+      [teacherId, learnerId, tariffId, i],
     )
   }
   // Paid slots: same shape but with paid allocation, must NOT appear in debt.
+  // Anchored 2-days-ago 12:00 MSK + 30-min increments — different day
+  // than the debt slots so no unique-(teacher, start_at) collision.
   for (let i = 0; i < (opts.paidSlotCount ?? 0); i++) {
     const slot = await pool.query(
       `insert into lesson_slots
          (teacher_account_id, start_at, duration_minutes, status, learner_account_id, booked_at, tariff_id)
        values ($1,
-               date_trunc('hour', (now() - interval '2 days' - $4::interval) at time zone 'Europe/Moscow') at time zone 'Europe/Moscow',
+               (date_trunc('day', (now() - interval '2 days') at time zone 'Europe/Moscow')
+                 + interval '12 hours'
+                 + ($4::int * interval '30 minutes')
+               ) at time zone 'Europe/Moscow',
                60, 'completed', $2, now() - interval '3 days', $3)
        returning id`,
-      [teacherId, learnerId, tariffId, `${i + 1} hours`],
+      [teacherId, learnerId, tariffId, i],
     )
     const slotId = String(slot.rows[0].id)
     const invoiceId = freshInvoiceId('lc_debt_paid')
