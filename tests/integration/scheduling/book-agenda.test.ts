@@ -12,6 +12,16 @@ import {
 } from '@/lib/auth/accounts'
 import { getDbPool } from '@/lib/db/pool'
 
+async function assignTeacher(
+  learnerAccountId: string,
+  teacherAccountId: string,
+): Promise<void> {
+  await getDbPool().query(
+    `update accounts set assigned_teacher_id = $2 where id = $1`,
+    [learnerAccountId, teacherAccountId],
+  )
+}
+
 import '../setup'
 import {
   buildRequest,
@@ -74,6 +84,9 @@ async function setupSlot(suffix: string): Promise<{
   const learner = await registerAndCookie(`learner-agenda-${suffix}@example.com`, {
     verifyEmail: true,
   })
+  // BCS-B.frontend Codex #1: learner must have assignedTeacherId set
+  // or the book route refuses with 404 (cross-teacher security gate).
+  await assignTeacher(learner.accountId, teacher.accountId)
 
   const created = await adminCreateHandler(
     buildRequest('/api/admin/slots', {
@@ -186,6 +199,62 @@ describe('BCS-B.1 — agenda capture on /api/slots/[id]/book', () => {
     )
     expect(book.status).toBe(200)
     expect(await readAgendaFromDb(slotId)).toBe(null)
+  })
+
+  it('cross-teacher booking is blocked (Codex BF #1 — gate enforced)', async () => {
+    // Teacher A's slot must NOT be bookable by a learner whose
+    // assignedTeacherId points at teacher B. Even if the learner
+    // somehow learns the foreign slot id, the route+lib gate
+    // collapses to 404 — no information leak.
+    const teacherA = await registerAndCookie('teacher-cross-a@example.com', {
+      verifyEmail: true,
+      role: 'teacher',
+    })
+    const teacherB = await registerAndCookie('teacher-cross-b@example.com', {
+      verifyEmail: true,
+      role: 'teacher',
+    })
+    const admin = await registerAndCookie('admin-cross@example.com', {
+      verifyEmail: true,
+      role: 'admin',
+    })
+    const learner = await registerAndCookie('learner-cross@example.com', {
+      verifyEmail: true,
+    })
+    // Learner is bound to teacherB.
+    await assignTeacher(learner.accountId, teacherB.accountId)
+
+    // Admin creates a slot for teacherA.
+    const created = await adminCreateHandler(
+      buildRequest('/api/admin/slots', {
+        cookie: admin.cookie,
+        body: {
+          teacherAccountId: teacherA.accountId,
+          startAt: futureIsoMinutes(60),
+          durationMinutes: 60,
+        },
+      }),
+    )
+    const slotId = (await created.json()).slot.id as string
+
+    // Learner tries to book teacherA's slot. Should be blocked.
+    const book = await bookHandler(
+      buildRequest(`/api/slots/${slotId}/book`, {
+        cookie: learner.cookie,
+        body: {},
+      }),
+      { params: Promise.resolve({ id: slotId }) },
+    )
+    expect(book.status).toBe(404)
+
+    // Slot remains open (was not actually booked).
+    const pool = getDbPool()
+    const r = await pool.query(
+      'select status, learner_account_id from lesson_slots where id = $1',
+      [slotId],
+    )
+    expect(r.rows[0].status).toBe('open')
+    expect(r.rows[0].learner_account_id).toBeNull()
   })
 
   it('admin book-as-operator path does NOT set agenda even if body included one', async () => {

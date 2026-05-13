@@ -29,6 +29,11 @@ Each PR ≤500 LOC and atomically green-able. Sequencing: A (schema) → B (UI) 
 
 Total estimate: 33 PRs across 7 waves. Reference cadence: billing-wave was 7 PRs / ~3 days; BCS is ~5x scope, expect 2-3 weeks of sustained shipping.
 
+### Hardening follow-ups inside BCS
+
+- **BCS-HARDEN-1** — Tighten cross-teacher booking gate when `assignedTeacherId IS NULL`. Today `/api/slots/[id]/book` passes through legacy behaviour for that case so the existing scheduling integration suite keeps working; production learners are always assigned before booking, so the typical path enforces the gate. Track-and-flip: rewrite the 8 legacy bookHandler tests that don't assign a teacher (`slots-flow`, `lifecycle`, `billing/booking`, `calendar-move`, `teacher-slots-auth`, `learner-archetype-gate`, `calendar-projection`, etc.), then refuse no-assignedTeacher bookings with 404 in the route.
+- **BCS-HARDEN-2** — Delete the renamed `_DEAD_BookSection` / `TabButton` / `fmtSlotTime` / `currentMondayYmd` declarations from `app/cabinet/lessons-section.tsx` (left in place by BCS-B.frontend to keep that PR diff focused on behaviour).
+
 ### Deferred (separate waves, NOT in BCS)
 
 - **BCS-DEF-1** — Email + Telegram alerts on unresolved conflicts >2h (operator + teacher).

@@ -29,6 +29,13 @@ export type BookSlotOptions = {
   // Free-form learner comment from Calendly confirm screen. Stored on
   // lesson_slots.agenda. Null = not provided / blank / over cap.
   agenda?: string | null
+  // BCS-B.frontend Codex #1: when set, atomic UPDATE re-asserts the
+  // slot belongs to this teacher. Used by the learner POST route to
+  // pin the booking to the learner's assigned teacher — a verified
+  // learner who knows a foreign teacher's open slot id cannot book it.
+  // Admin operator path leaves this unset (operators can book any
+  // teacher's slot on a learner's behalf).
+  expectedTeacherId?: string | null
 }
 
 // Atomic book-the-slot. Re-asserts status='open' in the WHERE so two
@@ -69,6 +76,16 @@ export async function bookSlot(
   // book-as-operator path passes nothing → null. Operator typing on
   // behalf of the learner is out of scope; the cabinet UI captures it.
   const agenda = actor === 'learner' ? sanitizeAgenda(options.agenda) : null
+  // BCS-B.frontend Codex #1: expectedTeacherId pin (cross-teacher gate).
+  // When provided (and shaped as a UUID), the atomic UPDATE adds
+  // `teacher_account_id = $expected`. A mismatch collapses to the same
+  // not_found classification as a missing slot — no enumeration of
+  // foreign teachers' open slots.
+  const expectedTeacherId =
+    options.expectedTeacherId
+    && UUID_PATTERN.test(options.expectedTeacherId)
+      ? options.expectedTeacherId
+      : null
 
   // Legacy fast path — preserved bit-for-bit when the wave is off.
   if (!billingActive) {
@@ -85,18 +102,20 @@ export async function bookSlot(
           and status = 'open'
           and start_at > now()
           and teacher_account_id <> $2
+          and ($5::uuid is null or teacher_account_id = $5::uuid)
         returning ${SLOT_COLUMNS}`,
       [
         slotId,
         learnerAccountId,
         appendEventSql('slot.booked', actor, { learnerAccountId }),
         agenda,
+        expectedTeacherId,
       ],
     )
     if (result.rows[0]) {
       return { ok: true, slot: rowToSlot(result.rows[0]), billing: { kind: 'legacy' } }
     }
-    return classifyBookSlotFailure(slotId, learnerAccountId)
+    return classifyBookSlotFailure(slotId, learnerAccountId, expectedTeacherId)
   }
 
   // New billing path. One transaction, six steps.
@@ -138,17 +157,19 @@ export async function bookSlot(
           and status = 'open'
           and start_at > now()
           and teacher_account_id <> $2
+          and ($5::uuid is null or teacher_account_id = $5::uuid)
         returning ${SLOT_COLUMNS}`,
       [
         slotId,
         learnerAccountId,
         appendEventSql('slot.booked', actor, { learnerAccountId }),
         agenda,
+        expectedTeacherId,
       ],
     )
     if (slotResult.rows.length === 0) {
       await client.query('rollback')
-      return classifyBookSlotFailure(slotId, learnerAccountId)
+      return classifyBookSlotFailure(slotId, learnerAccountId, expectedTeacherId)
     }
     const slot = rowToSlot(slotResult.rows[0])
 
@@ -247,6 +268,7 @@ export async function bookSlot(
 async function classifyBookSlotFailure(
   slotId: string,
   learnerAccountId: string,
+  expectedTeacherId: string | null = null,
 ): Promise<BookSlotResult> {
   const pool = getDbPool()
   const sniff = await pool.query(
@@ -254,6 +276,15 @@ async function classifyBookSlotFailure(
     [slotId],
   )
   if (sniff.rows.length === 0) return { ok: false, reason: 'not_found' }
+  // BCS-B.frontend Codex #1: when caller pins expectedTeacherId, a
+  // teacher mismatch must collapse to the same not_found outcome.
+  // Do not disclose status (`not_open`, `in_past`) for foreign slots.
+  if (
+    expectedTeacherId
+    && String(sniff.rows[0].teacher_account_id ?? '') !== expectedTeacherId
+  ) {
+    return { ok: false, reason: 'not_found' }
+  }
   if (String(sniff.rows[0].teacher_account_id ?? '') === learnerAccountId) {
     return { ok: false, reason: 'self_booking_blocked' }
   }
