@@ -1,5 +1,7 @@
 'use client'
 
+import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 import { BookConfirmModal } from '@/components/calendar/BookConfirmModal'
@@ -375,32 +377,134 @@ export function LessonsSection({
         )}
       </div>
 
-      <BookSection
-        available={available}
+      <BookingCta
         emailVerified={emailVerified}
         hasAssignedTeacher={hasAssignedTeacher}
-        assignedTeacherId={assignedTeacherId}
-        learnerTimezone={tz}
-        tz={tz}
-        busy={busy}
-        info={info}
-        err={err}
-        onBook={book}
-        onRefresh={refresh}
-        activePackages={activePackages}
-        postpaidAllowed={postpaidAllowed}
-        billingWaveActive={billingWaveActive}
       />
     </>
   )
 }
 
-// Wave B — book section: calendar tab (default) + list tab fallback.
-// Calendar gives a visual scan past 10+ slots; list keeps power-user
-// inline density. Codex 2026-05-08 design: NO cancel surface inside
-// the calendar — booked-self click shows a read-only modal with a
-// hint pointing to «Мои уроки». Cancel ownership stays in one place.
-function BookSection({
+// BCS-B.frontend — replaces the legacy inline BookSection. The dense
+// in-cabinet grid moved to a dedicated 3-screen Calendly flow at
+// /cabinet/book. Fast-path tiles ("Ближайший свободный" / "Как в
+// прошлый раз") will land in a follow-up PR (BCS-B.frontend-fastpath).
+//
+// Success banner: reads `?booked=1` from the URL (set by the confirm
+// form on successful POST) and renders a green tick. The query is left
+// in the URL on first paint and cleared client-side after first render
+// so a refresh doesn't show the banner forever.
+function BookingCta({
+  emailVerified,
+  hasAssignedTeacher,
+}: {
+  emailVerified: boolean
+  hasAssignedTeacher: boolean
+}) {
+  const params = useSearchParams()
+  const justBooked = params.get('booked') === '1'
+  const [showBanner, setShowBanner] = useState(justBooked)
+
+  useEffect(() => {
+    if (!justBooked) return
+    // Strip the query so a refresh doesn't keep the banner.
+    const next = new URL(window.location.href)
+    next.searchParams.delete('booked')
+    window.history.replaceState({}, '', next.toString())
+  }, [justBooked])
+
+  return (
+    <div
+      className="card"
+      style={{ padding: 24, marginBottom: 24 }}
+    >
+      {showBanner ? (
+        <p
+          role="status"
+          style={{
+            background: 'rgba(155,223,155,0.15)',
+            color: '#9bdf9b',
+            padding: '10px 14px',
+            borderRadius: 6,
+            margin: '0 0 16px 0',
+            fontSize: 13,
+          }}
+        >
+          ✓ Записано. Урок появился в разделе «Мои уроки» выше.
+          <button
+            type="button"
+            onClick={() => setShowBanner(false)}
+            aria-label="Скрыть уведомление"
+            style={{
+              float: 'right',
+              background: 'transparent',
+              border: 'none',
+              color: 'inherit',
+              cursor: 'pointer',
+              fontSize: 14,
+              lineHeight: 1,
+              padding: 0,
+            }}
+          >
+            ✕
+          </button>
+        </p>
+      ) : null}
+
+      <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0, marginBottom: 8 }}>
+        Записаться на урок
+      </h2>
+
+      {!hasAssignedTeacher ? (
+        <p style={{ color: 'var(--secondary)', fontSize: 14, margin: 0 }}>
+          Учитель пока не назначен — напишите оператору, чтобы добавил.
+          Кнопка записи появится здесь после привязки.
+        </p>
+      ) : !emailVerified ? (
+        <p style={{ color: '#ffcfcf', fontSize: 13, margin: 0 }}>
+          Чтобы записаться, сначала подтвердите e-mail (см. баннер выше).
+        </p>
+      ) : (
+        <>
+          <p
+            style={{
+              color: 'var(--secondary)',
+              fontSize: 13,
+              marginTop: 0,
+              marginBottom: 16,
+            }}
+          >
+            Выберите удобный день и время в календаре.
+          </p>
+          <Link
+            href="/cabinet/book"
+            style={{
+              display: 'inline-block',
+              padding: '12px 20px',
+              background: 'var(--accent)',
+              color: 'var(--accent-contrast)',
+              borderRadius: 999,
+              textDecoration: 'none',
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            Открыть календарь
+          </Link>
+        </>
+      )}
+    </div>
+  )
+}
+
+// BCS-B.frontend: the legacy in-cabinet booking surface (calendar
+// tab + list tab + inline BookConfirmModal) is replaced by the
+// dedicated 3-screen Calendly flow at /cabinet/book. The legacy
+// function below is unused and kept ONLY to satisfy a clean delete
+// in a follow-up cleanup PR (avoids a 269-line diff in a frontend
+// behaviour PR). It is unreachable; eslint reports it as unused but
+// the build does not break.
+function _DEAD_BookSection({
   available,
   emailVerified,
   hasAssignedTeacher,
