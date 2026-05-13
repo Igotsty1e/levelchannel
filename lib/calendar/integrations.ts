@@ -196,6 +196,16 @@ export async function upsertGoogleIntegration(
          sync_state = 'active',
          epoch = gen_random_uuid()::text,
          last_reconnected_at = now(),
+         -- Codex C.3a review: reset last_pulled_at on reconnect. Old
+         -- timestamp would otherwise satisfy the F3 freshness
+         -- contract (bookSlot trusts busy-cache while
+         -- last_pulled_at >= now() - 10min) using a snapshot from a
+         -- previous integration epoch with potentially different
+         -- read_calendar_ids. NULL forces the first pull under the
+         -- new epoch to repopulate before busy intervals are
+         -- consulted for booking decisions.
+         last_pulled_at = null,
+         last_push_at = null,
          channel_id = null,
          channel_resource_id = null,
          channel_expires_at = null,

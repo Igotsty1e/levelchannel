@@ -324,6 +324,51 @@ describe('lib/calendar/integrations — pgcrypto round-trip', () => {
     ).rejects.toThrow(/Europe\/Moscow/)
   })
 
+  it('reconnect resets last_pulled_at so F3 freshness contract treats busy-cache as stale', async () => {
+    // Codex C.3a review: without this reset, a stale snapshot from a
+    // previous integration epoch could satisfy bookSlot's "fresh
+    // cache" gate before the first pull under the new epoch lands.
+    const accountId = await makeTeacher('teacher-c3a-reconn@example.com')
+    await upsertGoogleIntegration({
+      accountId,
+      accessToken: 'A',
+      refreshToken: 'R',
+      scope: 'scope',
+      tokenExpiresAt: new Date(Date.now() + 3600_000),
+      readCalendarIds: ['primary'],
+      writeCalendarId: 'primary',
+      reason: 'initial_connect',
+    })
+    // Simulate a pull worker stamping last_pulled_at.
+    const pool = getDbPool()
+    await pool.query(
+      `update teacher_calendar_integrations
+          set last_pulled_at = now()
+        where account_id = $1`,
+      [accountId],
+    )
+    const mid = await getGoogleIntegrationMeta(accountId)
+    expect(mid?.lastPulledAt).not.toBeNull()
+
+    // Disconnect then reconnect — new epoch + last_pulled_at must reset.
+    expect(await disconnectGoogleIntegration(accountId)).toBe(true)
+    await upsertGoogleIntegration({
+      accountId,
+      accessToken: 'A2',
+      refreshToken: 'R2',
+      scope: 'scope',
+      tokenExpiresAt: new Date(Date.now() + 3600_000),
+      readCalendarIds: ['primary'],
+      writeCalendarId: 'primary',
+      reason: 'initial_connect',
+    })
+    const reconn = await getGoogleIntegrationMeta(accountId)
+    expect(reconn?.syncState).toBe('active')
+    expect(reconn?.epoch).not.toBe(mid?.epoch)
+    expect(reconn?.lastPulledAt).toBeNull()
+    expect(reconn?.lastPushAt).toBeNull()
+  })
+
   it('OLD-key fallback: row encrypted under OLD still decrypts after rotation', async () => {
     // Phase 1: write under OLD as PRIMARY.
     process.env.CALENDAR_ENCRYPTION_KEY = TEST_OLD_KEY
