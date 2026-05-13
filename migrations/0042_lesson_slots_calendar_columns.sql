@@ -49,9 +49,28 @@ alter table lesson_slots
 -- Partial unique: at most one slot can bind to a given (calendar, event)
 -- pair. NULLs (no binding) are not constrained. The pair is the lookup
 -- key for delete/update push and for self-echo suppression.
+--
+-- Codex BCS-A review: predicate-only `is not null` is insufficient,
+-- because Postgres treats NULL as distinct in unique indexes — a row
+-- `(external_calendar_id=NULL, external_event_id='evt_123')` would
+-- slip through and break the lookup-key contract. Tighten by
+-- predicating on BOTH columns non-null AND requiring them to be
+-- paired (either both set or both clear) via a companion CHECK.
 create unique index if not exists lesson_slots_external_event_unique
   on lesson_slots (external_calendar_id, external_event_id)
-  where external_event_id is not null;
+  where external_event_id is not null and external_calendar_id is not null;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'lesson_slots_external_binding_paired_check'
+  ) then
+    alter table lesson_slots
+      add constraint lesson_slots_external_binding_paired_check
+      check ((external_event_id is null) = (external_calendar_id is null));
+  end if;
+end $$;
 
 -- ---------------------------------------------------------------------
 -- 3. Post-book conflict surface

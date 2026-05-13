@@ -97,23 +97,44 @@ create unique index if not exists teacher_calendar_integrations_channel_id_uniqu
 -- integration for a non-MSK teacher until DST/floating-time defense
 -- is shipped (deferred to post-MVP).
 --
--- Implemented as trigger because CHECK can't reference another table.
--- Fires only on state transition into active/degraded.
+-- Two trigger surfaces — both halves are needed:
+--   (a) teacher_calendar_integrations: rejects transitions into
+--       active/degraded when the teacher's profile timezone is not
+--       Europe/Moscow at that moment. Fires on INSERT and on UPDATEs
+--       that actually change sync_state (WHEN clause keeps unrelated
+--       updates from re-running the lookup).
+--   (b) account_profiles: rejects setting timezone away from
+--       Europe/Moscow while an active/degraded integration exists.
+--
+-- Codex BCS-A review #2: without (b) the invariant is bypassable by
+-- flipping timezone after the integration is already active. The pair
+-- closes the bypass.
+
 create or replace function teacher_calendar_integrations_msk_only_check()
 returns trigger language plpgsql as $$
 declare
   acc_tz text;
+  state_changing boolean;
 begin
-  if new.sync_state in ('active', 'degraded') then
-    select timezone into acc_tz
-      from account_profiles
-     where account_id = new.account_id;
-    if acc_tz is null or acc_tz <> 'Europe/Moscow' then
-      raise exception
-        'teacher_calendar_integrations: MVP supports only Europe/Moscow teachers (account_id=%, timezone=%)',
-        new.account_id, coalesce(acc_tz, '<null>')
-        using errcode = 'check_violation';
-    end if;
+  -- Fast path: only check when entering / staying in active|degraded
+  -- AND only on state transitions (or every INSERT). Avoids running
+  -- the lookup on every unrelated UPDATE of an active row.
+  if new.sync_state not in ('active', 'degraded') then
+    return new;
+  end if;
+  state_changing := tg_op = 'INSERT'
+                    or new.sync_state is distinct from old.sync_state;
+  if not state_changing then
+    return new;
+  end if;
+  select timezone into acc_tz
+    from account_profiles
+   where account_id = new.account_id;
+  if acc_tz is null or acc_tz <> 'Europe/Moscow' then
+    raise exception
+      'teacher_calendar_integrations: MVP supports only Europe/Moscow teachers (account_id=%, timezone=%)',
+      new.account_id, coalesce(acc_tz, '<null>')
+      using errcode = 'check_violation';
   end if;
   return new;
 end $$;
@@ -122,7 +143,41 @@ drop trigger if exists teacher_calendar_integrations_msk_only_guard
   on teacher_calendar_integrations;
 create trigger teacher_calendar_integrations_msk_only_guard
   before insert or update on teacher_calendar_integrations
-  for each row execute function teacher_calendar_integrations_msk_only_check();
+  for each row
+  execute function teacher_calendar_integrations_msk_only_check();
+
+-- Companion guard: refuse to change the teacher's timezone away from
+-- Europe/Moscow while an active/degraded integration row exists.
+-- Without this, an operator could ALTER account_profiles.timezone after
+-- integration is active, silently breaking the MSK-only invariant.
+create or replace function account_profiles_timezone_msk_guard()
+returns trigger language plpgsql as $$
+declare
+  has_active boolean;
+begin
+  if new.timezone is distinct from 'Europe/Moscow'
+     and (old.timezone is null or old.timezone <> new.timezone) then
+    select exists (
+      select 1 from teacher_calendar_integrations
+       where account_id = new.account_id
+         and sync_state in ('active', 'degraded')
+    ) into has_active;
+    if has_active then
+      raise exception
+        'account_profiles: cannot change timezone away from Europe/Moscow while teacher_calendar_integrations is active (account_id=%, new_tz=%)',
+        new.account_id, new.timezone
+        using errcode = 'check_violation';
+    end if;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists account_profiles_timezone_msk_guard_trg on account_profiles;
+create trigger account_profiles_timezone_msk_guard_trg
+  before update on account_profiles
+  for each row
+  when (new.timezone is distinct from old.timezone)
+  execute function account_profiles_timezone_msk_guard();
 
 -- updated_at touch trigger — standard pattern.
 create or replace function teacher_calendar_integrations_touch_updated_at()

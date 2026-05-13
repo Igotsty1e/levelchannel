@@ -60,8 +60,9 @@ refresh_token_enc       bytea
 scope                   text    -- stored literal for defense vs Google narrowing
 token_expires_at        timestamptz
 read_calendar_ids       text[]  not null default '{}'
-write_calendar_id       text    not null -- enforce: write IN read at integration-setup time
-sync_state              text check in ('active','degraded','disconnected') not null default 'active'
+write_calendar_id       text             -- NULL until teacher picks one in settings; enforce: write IN read at app layer
+sync_state              text check in ('active','degraded','disconnected') not null default 'disconnected'
+                                         -- starts disconnected; flips to active after OAuth+calendarList round-trip
 epoch                   text    not null default gen_random_uuid()::text   -- rotated on connect/reconnect
 last_pulled_at          timestamptz
 last_push_at            timestamptz
