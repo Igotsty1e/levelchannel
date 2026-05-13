@@ -136,3 +136,39 @@ export async function listReversalsForOrder(
   )
   return result.rows.map((r) => rowToReversal(r as Record<string, unknown>))
 }
+
+// Wave 64 — admin listing surface. Lists recent reversals newest-first
+// with the operator email joined for display. Used by /admin/refunds
+// and the corresponding API endpoint to give the operator visibility
+// into reversal history without grepping audit logs.
+export type AllocationReversalWithOperator = AllocationReversal & {
+  refundedByEmail: string | null
+}
+
+export async function listRecentReversals(opts: {
+  limit?: number
+  offset?: number
+}): Promise<AllocationReversalWithOperator[]> {
+  const pool = getDbPool()
+  // Cap the limit to a sane upper bound — admin grids stay responsive
+  // and a misbehaving caller can't ask for the whole table.
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 500)
+  const offset = Math.max(opts.offset ?? 0, 0)
+  const result = await pool.query(
+    `select r.id, r.payment_order_id, r.kind, r.target_id,
+            r.refunded_at, r.refunded_kopecks, r.refunded_by_account_id,
+            r.reason, r.created_at,
+            a.email as refunded_by_email
+       from payment_allocation_reversals r
+       left join accounts a on a.id = r.refunded_by_account_id
+      order by r.created_at desc
+      limit $1 offset $2`,
+    [limit, offset],
+  )
+  return result.rows.map((row) => ({
+    ...rowToReversal(row as Record<string, unknown>),
+    refundedByEmail: row.refunded_by_email
+      ? String(row.refunded_by_email)
+      : null,
+  }))
+}

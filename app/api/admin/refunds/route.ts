@@ -5,7 +5,10 @@ import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { recordPaymentAuditEvent } from '@/lib/audit/payment-events'
 import { requireAdminRole } from '@/lib/auth/guards'
 import { restoreAllConsumptionsForPurchase } from '@/lib/billing/consumption'
-import { createAllocationReversal } from '@/lib/billing/reversals'
+import {
+  createAllocationReversal,
+  listRecentReversals,
+} from '@/lib/billing/reversals'
 import { getDbPool } from '@/lib/db/pool'
 import {
   enforceRateLimit,
@@ -289,4 +292,39 @@ export async function POST(request: Request) {
   } finally {
     client.release()
   }
+}
+
+// Wave 64 — admin listing of recent reversals. Lists the
+// payment_allocation_reversals table newest-first with the operator
+// email joined for display. Mirrors the read-only pattern used by
+// /api/admin/debt-summary; admin role + rate-limit gate; no mutation.
+//
+// Query params:
+//   limit (default 50, max 500)
+//   offset (default 0)
+export async function GET(request: Request) {
+  const rl = await enforceRateLimit(request, 'admin:refunds:list:ip', 30, 60_000)
+  if (rl) return rl
+
+  const guard = await requireAdminRole(request)
+  if (!guard.ok) return guard.response
+
+  const url = new URL(request.url)
+  const limitRaw = Number(url.searchParams.get('limit') ?? '50')
+  const offsetRaw = Number(url.searchParams.get('offset') ?? '0')
+  const limit =
+    Number.isFinite(limitRaw) && limitRaw > 0
+      ? Math.min(Math.floor(limitRaw), 500)
+      : 50
+  const offset =
+    Number.isFinite(offsetRaw) && offsetRaw >= 0 ? Math.floor(offsetRaw) : 0
+
+  const rows = await listRecentReversals({ limit, offset })
+  return NextResponse.json(
+    {
+      rows,
+      page: { limit, offset, count: rows.length },
+    },
+    { status: 200, headers: NO_STORE },
+  )
 }
