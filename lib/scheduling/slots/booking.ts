@@ -38,6 +38,47 @@ export type BookSlotOptions = {
   expectedTeacherId?: string | null
 }
 
+// BCS-D.5 — atomic overlap-vs-busy-cache check inside the booking
+// UPDATE. Inlined SQL fragment used in both the legacy and the
+// billing-path queries so the gate is evaluated as part of the
+// re-asserted WHERE, not as a separate read.
+//
+// F3 freshness contract (plan §4.2 + §4.4): busy-cache blocks a
+// booking ONLY when the teacher's integration is currently
+// 'active' AND `last_pulled_at` is within the TTL (10 minutes).
+// On `degraded` or stale `last_pulled_at`, the cache is IGNORED —
+// we'd rather risk a 10-min overbook window than block real
+// bookings on stale data. The teacher sees the degraded banner
+// (plan §4.4) and the pull worker repairs the freshness.
+//
+// `is_own_event = false` excludes the busy rows that represent OUR
+// own pushed events. Otherwise a slot's mirror-back from Google
+// would block a re-book of the same slot (and itself isn't a
+// foreign conflict).
+//
+// The gate is silent on slots whose teacher has no integration row
+// at all — `EXISTS` returns false → no busy rows considered → the
+// atomic UPDATE behaves identically to the pre-BCS-D path.
+const BUSY_OVERLAP_GATE_SQL = `
+  and not exists (
+    select 1
+      from teacher_external_busy_intervals b
+      join teacher_calendar_integrations tci
+        on tci.account_id = b.teacher_account_id
+       and tci.sync_state = 'active'
+       and tci.last_pulled_at >= now() - interval '10 minutes'
+     where b.teacher_account_id = lesson_slots.teacher_account_id
+       and b.is_own_event = false
+       and tstzrange(b.start_at, b.end_at, '[)')
+           && tstzrange(
+             lesson_slots.start_at,
+             lesson_slots.start_at
+               + (lesson_slots.duration_minutes || ' minutes')::interval,
+             '[)'
+           )
+  )
+`
+
 // Atomic book-the-slot. Re-asserts status='open' in the WHERE so two
 // concurrent POSTs don't both win.
 //
@@ -103,6 +144,7 @@ export async function bookSlot(
           and start_at > now()
           and teacher_account_id <> $2
           and ($5::uuid is null or teacher_account_id = $5::uuid)
+          ${BUSY_OVERLAP_GATE_SQL}
         returning ${SLOT_COLUMNS}`,
       [
         slotId,
@@ -158,6 +200,7 @@ export async function bookSlot(
           and start_at > now()
           and teacher_account_id <> $2
           and ($5::uuid is null or teacher_account_id = $5::uuid)
+          ${BUSY_OVERLAP_GATE_SQL}
         returning ${SLOT_COLUMNS}`,
       [
         slotId,
@@ -272,23 +315,58 @@ async function classifyBookSlotFailure(
 ): Promise<BookSlotResult> {
   const pool = getDbPool()
   const sniff = await pool.query(
-    `select status, start_at, teacher_account_id from lesson_slots where id = $1`,
+    `select status, start_at, teacher_account_id, duration_minutes
+       from lesson_slots where id = $1`,
     [slotId],
   )
   if (sniff.rows.length === 0) return { ok: false, reason: 'not_found' }
+  const row = sniff.rows[0]
   // BCS-B.frontend Codex #1: when caller pins expectedTeacherId, a
   // teacher mismatch must collapse to the same not_found outcome.
   // Do not disclose status (`not_open`, `in_past`) for foreign slots.
   if (
     expectedTeacherId
-    && String(sniff.rows[0].teacher_account_id ?? '') !== expectedTeacherId
+    && String(row.teacher_account_id ?? '') !== expectedTeacherId
   ) {
     return { ok: false, reason: 'not_found' }
   }
-  if (String(sniff.rows[0].teacher_account_id ?? '') === learnerAccountId) {
+  if (String(row.teacher_account_id ?? '') === learnerAccountId) {
     return { ok: false, reason: 'self_booking_blocked' }
   }
-  const startAt = new Date(String(sniff.rows[0].start_at)).getTime()
+  const startAt = new Date(String(row.start_at)).getTime()
   if (startAt <= Date.now()) return { ok: false, reason: 'in_past' }
+
+  // BCS-D.5 — disambiguate "open + future" failures: either another
+  // booker won the race (not_open), or the F3 busy-cache gate
+  // rejected because a foreign busy interval covers this slot's time
+  // window. The latter surfaces as `external_conflict` so the learner
+  // UI can show a specific message instead of the generic 409.
+  if (String(row.status) === 'open') {
+    const overlap = await pool.query(
+      `select 1
+         from teacher_external_busy_intervals b
+         join teacher_calendar_integrations tci
+           on tci.account_id = b.teacher_account_id
+          and tci.sync_state = 'active'
+          and tci.last_pulled_at >= now() - interval '10 minutes'
+        where b.teacher_account_id = $1
+          and b.is_own_event = false
+          and tstzrange(b.start_at, b.end_at, '[)')
+              && tstzrange(
+                $2::timestamptz,
+                $2::timestamptz + ($3 || ' minutes')::interval,
+                '[)'
+              )
+        limit 1`,
+      [
+        String(row.teacher_account_id),
+        new Date(String(row.start_at)).toISOString(),
+        Number(row.duration_minutes),
+      ],
+    )
+    if (overlap.rows.length > 0) {
+      return { ok: false, reason: 'external_conflict' }
+    }
+  }
   return { ok: false, reason: 'not_open' }
 }

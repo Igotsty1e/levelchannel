@@ -136,6 +136,16 @@ export async function POST(request: Request, { params }: RouteParams) {
       { status: 409, headers: NO_STORE },
     )
   }
+  if (result.reason === 'external_conflict') {
+    return NextResponse.json(
+      {
+        error: 'external_conflict',
+        message:
+          'Этот слот занят у учителя в его внешнем календаре. Выберите другое время.',
+      },
+      { status: 409, headers: NO_STORE },
+    )
+  }
   // not_open — race with another booking or operator-side state change.
   return NextResponse.json(
     { error: 'Этот слот только что забронировал кто-то другой. Обновите список.' },
