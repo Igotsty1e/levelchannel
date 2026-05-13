@@ -74,22 +74,35 @@ const ALL_DAY_TZ_NOTE =
 // Europe/Moscow midnight — that's the MSK-only-teachers contract from
 // plan §8 #9. For dateTime values, Google sends them with a
 // fully-qualified offset; we just round-trip through Date.
-function timePartToUtcIso(part: GoogleEventTimePart): { iso: string; isAllDay: boolean } {
-  if ('dateTime' in part) {
-    return { iso: new Date(part.dateTime).toISOString(), isAllDay: false }
-  }
-  // All-day: `date` is YYYY-MM-DD in the calendar's timezone. We
-  // pin to MSK per the MVP guard.
-  const ymd = part.date
-  // Compose `<ymd>T00:00:00+03:00` (MSK is UTC+3 year-round, no DST).
-  // Defensive: if `ymd` isn't shape we expect, fall back to naive ISO.
-  if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
-    return {
-      iso: new Date(`${ymd}T00:00:00+03:00`).toISOString(),
-      isAllDay: true,
+//
+// Codex D.1 review: this must be a TOTAL function. A single bad event
+// in a Google response (rare but possible — bad data in a third-party
+// import, scenario testing) would otherwise raise RangeError from
+// Date.toISOString and abort the entire pull cycle. Returns null on
+// anything we can't parse cleanly; shapeEvent then drops the event.
+function timePartToUtcIso(
+  part: GoogleEventTimePart,
+): { iso: string; isAllDay: boolean } | null {
+  try {
+    if ('dateTime' in part) {
+      const ms = new Date(part.dateTime).getTime()
+      if (!Number.isFinite(ms)) return null
+      return { iso: new Date(ms).toISOString(), isAllDay: false }
     }
+    // All-day: `date` is YYYY-MM-DD in the calendar's timezone. We
+    // pin to MSK per the MVP guard.
+    const ymd = part.date
+    if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+      const ms = new Date(`${ymd}T00:00:00+03:00`).getTime()
+      if (!Number.isFinite(ms)) return null
+      return { iso: new Date(ms).toISOString(), isAllDay: true }
+    }
+    const ms = new Date(ymd).getTime()
+    if (!Number.isFinite(ms)) return null
+    return { iso: new Date(ms).toISOString(), isAllDay: true }
+  } catch {
+    return null
   }
-  return { iso: new Date(ymd).toISOString(), isAllDay: true }
 }
 
 export function shapeEvent(
@@ -106,6 +119,7 @@ export function shapeEvent(
   if (typeof r.end !== 'object' || r.end === null) return null
   const start = timePartToUtcIso(r.start)
   const end = timePartToUtcIso(r.end)
+  if (!start || !end) return null
   // Zero-length and inverted intervals are rejected — DB CHECK
   // (`teacher_external_busy_intervals_range_check`) would refuse
   // them anyway. Best-effort drop at parse time so we don't blow up

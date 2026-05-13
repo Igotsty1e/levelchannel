@@ -118,6 +118,78 @@ describe('shapeEvent', () => {
       shapeEvent({ id: '', start: { dateTime: 'x' }, end: { dateTime: 'y' } }, 'primary'),
     ).toBeNull()
   })
+
+  it('returns null (not throws) on unparseable dateTime — Codex D.1 review fix', () => {
+    // Pre-fix this threw RangeError from Date.toISOString and broke
+    // the entire pull cycle. shapeEvent must be a total function.
+    expect(() =>
+      shapeEvent(
+        {
+          id: 'bad_dt',
+          start: { dateTime: 'totally-not-a-date' },
+          end: { dateTime: 'totally-not-a-date' },
+        },
+        'primary',
+      ),
+    ).not.toThrow()
+    expect(
+      shapeEvent(
+        {
+          id: 'bad_dt',
+          start: { dateTime: 'totally-not-a-date' },
+          end: { dateTime: 'totally-not-a-date' },
+        },
+        'primary',
+      ),
+    ).toBeNull()
+  })
+
+  it('returns null on unparseable all-day date string', () => {
+    expect(
+      shapeEvent(
+        {
+          id: 'bad_date',
+          start: { date: 'NOPE-MM-DD' },
+          end: { date: 'NOPE-MM-DD' },
+        },
+        'primary',
+      ),
+    ).toBeNull()
+  })
+
+  it('a single bad event in a pull batch does not abort the whole batch', async () => {
+    const fetchMock = vi.fn(async () =>
+      mockJsonResponse({
+        items: [
+          {
+            id: 'GOOD_1',
+            start: { dateTime: '2026-05-20T09:00:00Z' },
+            end: { dateTime: '2026-05-20T10:00:00Z' },
+          },
+          {
+            id: 'BAD',
+            start: { dateTime: 'garbage' },
+            end: { dateTime: 'garbage' },
+          },
+          {
+            id: 'GOOD_2',
+            start: { dateTime: '2026-05-20T12:00:00Z' },
+            end: { dateTime: '2026-05-20T13:00:00Z' },
+          },
+        ],
+      }),
+    ) as unknown as typeof fetch
+    const r = await pullBusyIntervalsForCalendar({
+      accessToken: 'AT',
+      externalCalendarId: 'primary',
+      fetchImpl: fetchMock,
+    })
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      // BAD dropped; the two GOOD events survived.
+      expect(r.intervals.map((i) => i.externalEventId)).toEqual(['GOOD_1', 'GOOD_2'])
+    }
+  })
 })
 
 describe('pullBusyIntervalsForCalendar', () => {
