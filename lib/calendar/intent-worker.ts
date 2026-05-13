@@ -149,15 +149,27 @@ async function processPostCancelPush(intent: ClaimedIntent): Promise<IntentOutco
     ? String(row.write_calendar_id)
     : (row.external_calendar_id ? String(row.external_calendar_id) : null)
 
-  // No integration AND no external_event_id → nothing to push. Treat
-  // as no_op success (the cancel itself already landed in TX_cancel_1).
-  if (!syncState && !row.external_event_id) {
+  // Codex E.worker review #2: no integration row → no way to push to
+  // Google, regardless of binding state. Mark intent succeeded as no_op.
+  //
+  // Previously this only no_op'd when external_event_id was ALSO null.
+  // The other branch (no integration, binding still set — e.g. teacher
+  // hard-deleted the row after a push had landed) fell through to
+  // enqueuePushJob → push worker → ensureFreshAccessToken returns
+  // integration_missing → terminal_failure. But the intent had ALREADY
+  // marked itself succeeded → false success.
+  //
+  // Orphaned external_event_id is harmless here; the reconcile sweep
+  // (BCS-G) handles future cleanup if the integration is re-connected.
+  if (!syncState) {
     await markSucceeded(intent.id, intent.slotId)
     return {
       kind: 'no_op',
       intentId: intent.id,
       slotId: intent.slotId,
-      reason: 'no_integration_no_binding',
+      reason: row.external_event_id
+        ? 'no_integration_orphan_binding'
+        : 'no_integration_no_binding',
     }
   }
 

@@ -265,24 +265,44 @@ async function processCreate(job: ClaimedJob): Promise<PushJobOutcome> {
       isTransientPushError(inserted.error),
     )
   }
-  // Persist event binding on the slot.
-  await pool.query(
-    `update lesson_slots
-        set external_event_id = $2,
-            external_calendar_id = $3,
-            external_event_etag = $4,
-            integration_epoch = $5,
-            updated_at = now()
-      where id = $1`,
-    [
-      slot.id,
-      inserted.event.id,
-      writeCalendar,
-      inserted.event.etag,
-      String(job.payload.lc_epoch ?? fresh.integration.epoch),
-    ],
-  )
-  return markSucceeded(job.id, slot.id)
+  // Codex E.worker review #1: post-API DB writes — slot binding +
+  // job mark-succeeded — must land atomically. The initial claim TX
+  // already committed (status='in_progress' is just a claim marker,
+  // not a held lock), so two autocommit queries here would leave
+  // either (a) slot bound but job still in_progress on crash, or
+  // (b) job succeeded but slot unbound. Plan §8 #1: layer 4 +
+  // layer 3 inside one TX.
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+    await client.query(
+      `update lesson_slots
+          set external_event_id = $2,
+              external_calendar_id = $3,
+              external_event_etag = $4,
+              integration_epoch = $5,
+              updated_at = now()
+        where id = $1`,
+      [
+        slot.id,
+        inserted.event.id,
+        writeCalendar,
+        inserted.event.etag,
+        String(job.payload.lc_epoch ?? fresh.integration.epoch),
+      ],
+    )
+    await client.query(
+      `update calendar_push_jobs set status = 'succeeded', last_error = null where id = $1`,
+      [job.id],
+    )
+    await client.query('commit')
+  } catch (e) {
+    await client.query('rollback').catch(() => {})
+    throw e
+  } finally {
+    client.release()
+  }
+  return { kind: 'succeeded', jobId: job.id, slotId: slot.id }
 }
 
 async function processUpdate(job: ClaimedJob): Promise<PushJobOutcome> {
@@ -363,19 +383,38 @@ async function processDelete(job: ClaimedJob): Promise<PushJobOutcome> {
   if (!deleted.ok) {
     return markFailure(job, describeError(deleted.error), isTransientPushError(deleted.error))
   }
-  // Clear binding so reconciliation knows it's gone.
+  // Codex E.worker review #1 (symmetric with processCreate): clear
+  // binding + mark job succeeded in one TX. Without the wrapper,
+  // crash between the two autocommit UPDATEs would leave the binding
+  // cleared but the delete job still in_progress (drain restart
+  // would re-claim and re-call Google → 404 on the second pass; harmless
+  // but noisy) or vice versa.
   const pool = getDbPool()
-  await pool.query(
-    `update lesson_slots
-        set external_event_id = null,
-            external_calendar_id = null,
-            external_event_etag = null,
-            updated_at = now()
-      where id = $1
-        and external_event_id = $2`,
-    [slot.id, slot.externalEventId],
-  )
-  return markSucceeded(job.id, slot.id)
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+    await client.query(
+      `update lesson_slots
+          set external_event_id = null,
+              external_calendar_id = null,
+              external_event_etag = null,
+              updated_at = now()
+        where id = $1
+          and external_event_id = $2`,
+      [slot.id, slot.externalEventId],
+    )
+    await client.query(
+      `update calendar_push_jobs set status = 'succeeded', last_error = null where id = $1`,
+      [job.id],
+    )
+    await client.query('commit')
+  } catch (e) {
+    await client.query('rollback').catch(() => {})
+    throw e
+  } finally {
+    client.release()
+  }
+  return { kind: 'succeeded', jobId: job.id, slotId: slot.id }
 }
 
 export async function drainPushJobs(opts: {
