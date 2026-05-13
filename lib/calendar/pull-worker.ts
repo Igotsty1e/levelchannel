@@ -18,7 +18,7 @@
 
 import type { PullError } from '@/lib/calendar/google/pull'
 import { ensureFreshAccessToken } from '@/lib/calendar/google/token-refresh'
-import { runPullForCalendar } from '@/lib/calendar/pull-runner'
+import { runPullForCalendar, type RunPullError } from '@/lib/calendar/pull-runner'
 import { getDbPool } from '@/lib/db/pool'
 
 const MAX_ATTEMPTS = 5
@@ -204,7 +204,27 @@ function isTransientReason(reason: string): boolean {
   return reason === 'transient' || reason === 'config_missing'
 }
 
-function isTransientPullError(error: PullError): boolean {
+function isTransientPullError(error: RunPullError): boolean {
+  // RunPullError adds runner-level refusal kinds (integration_missing,
+  // access_token_expired, etc.) on top of PullError. Those should
+  // never reach this classifier in practice — pull-worker.processOneJob
+  // calls ensureFreshAccessToken first and short-circuits on refusal —
+  // but for type-completeness treat them as permanent (operator
+  // intervention required, retrying won't help).
+  if (
+    error.kind === 'integration_missing'
+    || error.kind === 'integration_disconnected'
+    || error.kind === 'access_token_missing'
+    || error.kind === 'access_token_expired'
+    || error.kind === 'encryption_key_missing'
+    || error.kind === 'invalid_account'
+  ) {
+    return false
+  }
+  return isTransientHttpError(error)
+}
+
+function isTransientHttpError(error: PullError): boolean {
   // Plan §4.7 retry contract + Google Calendar errors guide
   // (developers.google.com/workspace/calendar/api/guides/errors):
   //
