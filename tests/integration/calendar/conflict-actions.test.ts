@@ -322,4 +322,106 @@ describe('POST /api/teacher/slots/[id]/delete-external-conflict', () => {
     )
     expect(res.status).toBe(404)
   })
+
+  it('returns 404 on hostile non-uuid slot id (no 500)', async () => {
+    const t = await teacherCookieAndId('cf-del-baduuid@example.com')
+    const res = await deleteExternalHandler(
+      buildRequest(`/api/teacher/slots/not-a-uuid/delete-external-conflict`, {
+        cookie: t.cookie,
+        body: {},
+      }),
+      { params: Promise.resolve({ id: 'not-a-uuid' }) },
+    )
+    expect(res.status).toBe(404)
+  })
+
+  it('clears ALL slots bound to the same (cal_id, event_id) — plan §4.7', async () => {
+    const t = await teacherCookieAndId('cf-del-multi@example.com')
+    await connect(t.accountId)
+    // Two booked slots that both got stamped with the same foreign
+    // event (e.g. an all-day or long meeting covering both).
+    const slotA = await makeConflictedSlot({
+      teacherId: t.accountId,
+      startIso: '2026-12-10T10:00:00Z',
+      calId: 'primary',
+      eventId: 'evt-shared',
+      isWritable: true,
+    })
+    // Make a second slot stamped with the same conflict source. We
+    // reuse the same calendar + event id deliberately.
+    const slotBR = await getDbPool().query(
+      `insert into lesson_slots (id, teacher_account_id, start_at, duration_minutes,
+                                  status, learner_account_id, booked_at,
+                                  external_conflict_at, external_conflict_kind,
+                                  conflict_source_calendar_id, conflict_source_event_id)
+       values (gen_random_uuid(), $1, $2::timestamptz, 60, 'booked', $1, now(),
+               now(), 'post_book_overlap', 'primary', 'evt-shared')
+       returning id`,
+      [t.accountId, '2026-12-10T11:00:00Z'],
+    )
+    const slotB = String(slotBR.rows[0].id)
+
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResp('', 204)))
+    const res = await deleteExternalHandler(
+      buildRequest(`/api/teacher/slots/${slotA}/delete-external-conflict`, {
+        cookie: t.cookie,
+        body: {},
+      }),
+      { params: Promise.resolve({ id: slotA }) },
+    )
+    expect(res.status).toBe(200)
+    const j = await res.json()
+    expect(j.deletedInGoogle).toBe(true)
+    expect(j.clearedSlots).toBe(2)
+
+    const both = await getDbPool().query(
+      'select id, external_conflict_at from lesson_slots where id = any($1::uuid[]) order by id',
+      [[slotA, slotB]],
+    )
+    expect(both.rows).toHaveLength(2)
+    for (const row of both.rows) {
+      expect(row.external_conflict_at).toBeNull()
+    }
+  })
+
+  it('enqueues priority-2 pull job after successful Google delete — plan §4.7', async () => {
+    const t = await teacherCookieAndId('cf-del-pull-enq@example.com')
+    await connect(t.accountId)
+    const slot = await makeConflictedSlot({
+      teacherId: t.accountId,
+      startIso: '2026-12-11T10:00:00Z',
+      isWritable: true,
+    })
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResp('', 204)))
+    const res = await deleteExternalHandler(
+      buildRequest(`/api/teacher/slots/${slot}/delete-external-conflict`, {
+        cookie: t.cookie,
+        body: {},
+      }),
+      { params: Promise.resolve({ id: slot }) },
+    )
+    expect(res.status).toBe(200)
+    const pullJob = await getDbPool().query(
+      `select priority, status from calendar_pull_jobs
+        where teacher_account_id = $1 and external_calendar_id = 'primary'`,
+      [t.accountId],
+    )
+    expect(pullJob.rows).toHaveLength(1)
+    expect(Number(pullJob.rows[0].priority)).toBe(2)
+    expect(pullJob.rows[0].status).toBe('pending')
+  })
+})
+
+describe('POST /api/teacher/slots/[id]/dismiss-conflict — UUID guard', () => {
+  it('returns 404 on hostile non-uuid id (no 500)', async () => {
+    const t = await teacherCookieAndId('cf-dis-baduuid@example.com')
+    const res = await dismissHandler(
+      buildRequest(`/api/teacher/slots/not-a-uuid/dismiss-conflict`, {
+        cookie: t.cookie,
+        body: {},
+      }),
+      { params: Promise.resolve({ id: 'not-a-uuid' }) },
+    )
+    expect(res.status).toBe(404)
+  })
 })

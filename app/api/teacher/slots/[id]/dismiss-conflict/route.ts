@@ -13,14 +13,25 @@ export const dynamic = 'force-dynamic'
 
 // POST /api/teacher/slots/[id]/dismiss-conflict
 //
-// Action a) "Я разрулю сам" — clears the conflict stamp on the slot.
-// Optimistic: if the busy interval still overlaps on the next pull,
-// the conflict detector will re-stamp it. This is the "let me handle
-// it manually outside the system" path.
+// Action a) "Я разрулю сам" — clears the external_conflict_at stamp
+// on the slot. INTENTIONALLY OPTIMISTIC: if the same foreign event
+// still overlaps on the next pull, the conflict detector will re-stamp
+// it (lib/calendar/conflict-detector.ts). This is "let me handle it
+// manually outside the system right now" — not "suppress this overlap
+// permanently".
+//
+// If we ever want persistent dismissal (banner stays clean until the
+// underlying event in Google goes away), we'd need a separate
+// `conflict_dismissed_until` field. Tracked as backlog BCS-DEF-DISMISS-PERSIST;
+// defer until teachers ask for it — most likely they'll reschedule via
+// (c)/(d) instead.
 //
 // Plan §4.7.
 
 type RouteParams = { params: Promise<{ id: string }> }
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export async function POST(request: Request, { params }: RouteParams) {
   const originGate = enforceTrustedBrowserOrigin(request)
@@ -38,6 +49,13 @@ export async function POST(request: Request, { params }: RouteParams) {
   if (!auth.ok) return auth.response
 
   const { id } = await params
+  if (!UUID_PATTERN.test(id)) {
+    // Hostile / bad client. Don't 500 on a pg uuid-cast error.
+    return NextResponse.json(
+      { error: 'not_found_or_no_conflict' },
+      { status: 404, headers: NO_STORE },
+    )
+  }
   const pool = getDbPool()
   const result = await pool.query(
     `update lesson_slots

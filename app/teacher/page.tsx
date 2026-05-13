@@ -8,6 +8,12 @@ import { listActiveTariffs } from '@/lib/pricing/tariffs'
 
 import TeacherCalendarClient from './client'
 
+// SSR snapshot of future-booked, conflict-stamped slots. The count
+// only refreshes on full navigation — after the teacher cancels a
+// conflicting slot inline the banner can briefly show a stale count
+// until they navigate away and back. Acceptable for the F.UI heads-up
+// banner; F.3 will wire a client-side conflict-aware view that
+// recomputes on every mutation.
 async function countTeacherConflicts(teacherAccountId: string): Promise<number> {
   const r = await getDbPool().query(
     `select count(*)::int as n
@@ -63,15 +69,18 @@ export default async function TeacherPage() {
           {conflictCount === 1
             ? '1 урок пересекается'
             : `${conflictCount} уроков пересекаются`}{' '}
-          с событиями в вашем Google Calendar. Нажмите на красный слот в
-          расписании ниже — выберите, как разрулить.{' '}
+          с событиями в вашем Google Calendar. Найдите соответствующий
+          урок в расписании ниже и при необходимости отмените или
+          перенесите его — событие в Google останется. Подробная
+          картинка по конкретному конфликту появится здесь в ближайшем
+          обновлении (можно следить через{' '}
           <Link
             href="/teacher/settings/calendar"
             style={{ color: 'inherit', textDecoration: 'underline' }}
           >
-            Настройки интеграции
+            настройки интеграции
           </Link>
-          .
+          ).
         </div>
       ) : null}
       <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 8 }}>
