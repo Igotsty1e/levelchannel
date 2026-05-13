@@ -222,6 +222,11 @@ export type BookSlotResult =
         | 'package_required'
         | 'tariff_required'
         | 'pending_package_grant'
+        // BCS-D.5 — busy-cache overlap blocked the booking. Plan
+        // §4.2: a fresh external busy interval covers the slot's
+        // time window AND the teacher's integration is active and
+        // recently pulled. Learner UI surfaces "слот занят у учителя".
+        | 'external_conflict'
       // For package_required: the matching active packages the
       // learner can buy (capped at top 3 by display_order). Empty
       // array = no matching package for this slot's duration.
