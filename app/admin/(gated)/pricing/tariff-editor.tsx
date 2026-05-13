@@ -18,9 +18,9 @@ export function TariffEditor({
   const [err, setErr] = useState<string | null>(null)
 
   async function postJson(
-    method: 'POST' | 'PATCH',
+    method: 'POST' | 'PATCH' | 'DELETE',
     url: string,
-    body: unknown,
+    body?: unknown,
   ) {
     setBusy(true)
     setErr(null)
@@ -28,7 +28,7 @@ export function TariffEditor({
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: body === undefined ? undefined : JSON.stringify(body),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => null)
@@ -69,6 +69,9 @@ export function TariffEditor({
           onPatch={(patch) =>
             postJson('PATCH', `/api/admin/pricing/${t.id}`, patch)
           }
+          onDelete={() =>
+            postJson('DELETE', `/api/admin/pricing/${t.id}`)
+          }
           busy={busy}
         />
       ))}
@@ -84,10 +87,12 @@ export function TariffEditor({
 function TariffRow({
   tariff,
   onPatch,
+  onDelete,
   busy,
 }: {
   tariff: PricingTariff
   onPatch: (patch: Record<string, unknown>) => Promise<boolean>
+  onDelete: () => Promise<boolean>
   busy: boolean
 }) {
   const [titleRu, setTitleRu] = useState(tariff.titleRu)
@@ -96,6 +101,7 @@ function TariffRow({
   )
   const [isActive, setIsActive] = useState(tariff.isActive)
   const [order, setOrder] = useState(String(tariff.displayOrder))
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   return (
     <div
@@ -203,6 +209,132 @@ function TariffRow({
         >
           Сохранить
         </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => setConfirmDelete(true)}
+          title="Удалить тариф (только если он никогда не был привязан к слоту)"
+          aria-label="Удалить тариф"
+          style={{
+            marginLeft: 'auto',
+            padding: '6px 10px',
+            background: 'transparent',
+            color: '#ff8a8a',
+            border: '1px solid #ff8a8a55',
+            borderRadius: 6,
+            fontSize: 13,
+            cursor: busy ? 'wait' : 'pointer',
+            opacity: busy ? 0.6 : 1,
+          }}
+        >
+          🗑 Удалить
+        </button>
+      </div>
+      {confirmDelete ? (
+        <DeleteConfirm
+          tariffTitle={tariff.titleRu || tariff.slug}
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={async () => {
+            const ok = await onDelete()
+            // postJson reloads on success; on failure the modal stays open
+            // so the operator sees the err banner above it.
+            if (!ok) setConfirmDelete(false)
+          }}
+          busy={busy}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function DeleteConfirm({
+  tariffTitle,
+  onConfirm,
+  onCancel,
+  busy,
+}: {
+  tariffTitle: string
+  onConfirm: () => void | Promise<void>
+  onCancel: () => void
+  busy: boolean
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={busy ? undefined : onCancel}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: '#1f1f23',
+          border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: 12,
+          padding: 24,
+          maxWidth: 460,
+          color: '#e4e4e7',
+        }}
+      >
+        <h3 style={{ fontSize: 16, marginBottom: 12 }}>
+          Удалить тариф «{tariffTitle}»?
+        </h3>
+        <p style={{ fontSize: 13, lineHeight: 1.5, color: '#a1a1aa' }}>
+          Удаление невозможно, если тариф уже был привязан хотя бы к
+          одному слоту (это сломает аудит-связь). В таком случае
+          сервер вернёт ошибку, а вместо удаления используйте
+          снятие галочки «активен» — тариф пропадёт из новых форм.
+        </p>
+        <div
+          style={{
+            marginTop: 20,
+            display: 'flex',
+            gap: 8,
+            justifyContent: 'flex-end',
+          }}
+        >
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onCancel}
+            style={{
+              padding: '6px 14px',
+              background: 'transparent',
+              color: '#e4e4e7',
+              border: '1px solid rgba(255,255,255,0.15)',
+              borderRadius: 6,
+              fontSize: 13,
+              cursor: busy ? 'wait' : 'pointer',
+            }}
+          >
+            Отмена
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onConfirm}
+            style={{
+              padding: '6px 14px',
+              background: '#ef4444',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 6,
+              fontSize: 13,
+              cursor: busy ? 'wait' : 'pointer',
+              opacity: busy ? 0.6 : 1,
+            }}
+          >
+            {busy ? 'Удаляем…' : 'Удалить'}
+          </button>
+        </div>
       </div>
     </div>
   )

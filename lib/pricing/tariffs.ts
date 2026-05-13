@@ -228,3 +228,54 @@ export async function updateTariff(
   )
   return result.rows[0] ? rowToTariff(result.rows[0]) : null
 }
+
+// BUG-2 (2026-05-13 intake): hard-delete a tariff row. Refuses if ANY
+// lesson_slot ever referenced it — even cancelled past slots, because
+// the FK is `on delete set null`, and we'd silently wipe the
+// audit/billing trail. Operator is asked to deactivate instead.
+//
+// Returns:
+//   - { ok: true } — row deleted
+//   - { ok: false, reason: 'not_found' }
+//   - { ok: false, reason: 'has_slot_references', slotCount }
+//     — at least one slot points (or pointed) at this tariff
+export async function deleteTariffIfUnreferenced(
+  id: string,
+): Promise<
+  | { ok: true }
+  | { ok: false, reason: 'not_found' }
+  | { ok: false, reason: 'has_slot_references', slotCount: number }
+> {
+  const pool = getDbPool()
+  // Single TX so a concurrent slot creation can't slip past the
+  // reference check between SELECT and DELETE.
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+    const exists = await client.query(
+      `select 1 from pricing_tariffs where id = $1 for update`,
+      [id],
+    )
+    if (exists.rows.length === 0) {
+      await client.query('rollback')
+      return { ok: false, reason: 'not_found' }
+    }
+    const refCount = await client.query(
+      `select count(*)::int as n from lesson_slots where tariff_id = $1`,
+      [id],
+    )
+    const n = Number(refCount.rows[0]?.n ?? 0)
+    if (n > 0) {
+      await client.query('rollback')
+      return { ok: false, reason: 'has_slot_references', slotCount: n }
+    }
+    await client.query(`delete from pricing_tariffs where id = $1`, [id])
+    await client.query('commit')
+    return { ok: true }
+  } catch (err) {
+    await client.query('rollback')
+    throw err
+  } finally {
+    client.release()
+  }
+}
