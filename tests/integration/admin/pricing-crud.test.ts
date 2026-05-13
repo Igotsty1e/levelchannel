@@ -8,6 +8,7 @@ import {
   DELETE as deleteTariffHandler,
   PATCH as patchTariffHandler,
 } from '@/app/api/admin/pricing/[id]/route'
+import { POST as adminCreateSlotHandler } from '@/app/api/admin/slots/route'
 import { getDbPool } from '@/lib/db/pool'
 import { POST as loginHandler } from '@/app/api/auth/login/route'
 import { POST as registerHandler } from '@/app/api/auth/register/route'
@@ -257,6 +258,57 @@ describe('admin pricing CRUD', () => {
       }),
     )
     expect(res.status).toBe(400)
+  })
+
+  it('BUG-3: admin slot create refuses tariff with mismatched duration', async () => {
+    const cookie = await adminCookie('pricing-slot-gate@example.com')
+    const teacherEmail = 'pricing-slot-gate-teacher@example.com'
+    await registerHandler(
+      buildRequest('/api/auth/register', {
+        body: {
+          email: teacherEmail,
+          password: 'StrongPassword123',
+          personalDataConsentAccepted: true,
+        },
+      }),
+    )
+    const teacher = (await getAccountByEmail(teacherEmail))!
+    await grantAccountRole(teacher.id, 'teacher', null)
+
+    // Create a 90-min tariff and try to attach to a 60-min slot.
+    const created = await createTariffHandler(
+      buildRequest('/api/admin/pricing', {
+        cookie,
+        body: {
+          slug: 'gate-90',
+          titleRu: 'Урок 90 минут',
+          amountKopecks: 500_000,
+          durationMinutes: 90,
+        },
+      }),
+    )
+    expect(created.status).toBe(201)
+    const tariffId = (await created.json()).tariff.id as string
+
+    const slotRes = await adminCreateSlotHandler(
+      buildRequest('/api/admin/slots', {
+        cookie,
+        body: {
+          teacherAccountId: teacher.id,
+          startAt: futureSlotIso(14 * 24 * 60 + 180),
+          durationMinutes: 60,
+          tariffId,
+        },
+      }),
+    )
+    expect(slotRes.status).toBeGreaterThanOrEqual(400)
+    // The error path bubbles through admin/slots/route.ts; just verify
+    // no slot was created (gate fired before insert).
+    const slotsForTeacher = await getDbPool().query(
+      `select count(*)::int as n from lesson_slots where teacher_account_id = $1`,
+      [teacher.id],
+    )
+    expect(Number(slotsForTeacher.rows[0].n)).toBe(0)
   })
 
   it('BUG-3: PATCH duration_minutes is immutable after first slot reference (409 via app guard)', async () => {
