@@ -8,12 +8,10 @@ import { listActiveTariffs } from '@/lib/pricing/tariffs'
 
 import TeacherCalendarClient from './client'
 
-// SSR snapshot of future-booked, conflict-stamped slots. The count
-// only refreshes on full navigation — after the teacher cancels a
-// conflicting slot inline the banner can briefly show a stale count
-// until they navigate away and back. Acceptable for the F.UI heads-up
-// banner; F.3 will wire a client-side conflict-aware view that
-// recomputes on every mutation.
+// SSR snapshot of future-booked, conflict-stamped slots. BCS-F.3
+// added a `router.refresh()` call to the slot modal success path,
+// so this count rebuilds on every conflict mutation (cancel /
+// dismiss / delete-external).
 async function countTeacherConflicts(teacherAccountId: string): Promise<number> {
   const r = await getDbPool().query(
     `select count(*)::int as n
@@ -69,17 +67,17 @@ export default async function TeacherPage() {
           {conflictCount === 1
             ? '1 урок пересекается'
             : `${conflictCount} уроков пересекаются`}{' '}
-          с событиями в вашем Google Calendar. Сейчас единственное
-          доступное действие — отменить занятие через диалог слота в
-          расписании ниже (событие в Google останется). Подробная
-          картинка по конкретному конфликту и кнопки «удалить событие в
-          Google» / «я разрулю сам» / «перенести» появятся здесь в
-          ближайшем обновлении — статус интеграции можно посмотреть в{' '}
+          с событиями в вашем Google Calendar. Конфликтные уроки
+          отмечены красной рамкой и значком ⚠ в расписании ниже —
+          кликните по уроку, чтобы выбрать действие: «я разрулю сам»,
+          «удалить событие в Google» (если у LevelChannel есть write-
+          доступ к источнику) или «отменить занятие». Статус интеграции
+          —{' '}
           <Link
             href="/teacher/settings/calendar"
             style={{ color: 'inherit', textDecoration: 'underline' }}
           >
-            настройках
+            в настройках
           </Link>
           .
         </div>

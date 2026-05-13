@@ -1,5 +1,6 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
 import { PaintConfirmModal } from '@/components/calendar/PaintConfirmModal'
@@ -29,6 +30,7 @@ export default function TeacherCalendarClient({
   initialFromYmd: string
   tariffs: ReadonlyArray<TariffOption>
 }) {
+  const router = useRouter()
   const [activeRow, setActiveRow] = useState<CalendarRow | null>(null)
   const [pendingPaint, setPendingPaint] = useState<PaintSpan | null>(null)
   const [reloadCounter, setReloadCounter] = useState(0)
@@ -142,10 +144,14 @@ export default function TeacherCalendarClient({
         <TeacherSlotDetailModal
           row={activeRow}
           onClose={() => setActiveRow(null)}
-          onCancelled={() => {
+          onSuccess={(message) => {
             setActiveRow(null)
-            showToast('Слот отменён.')
+            showToast(message)
             bumpReload()
+            // BCS-F.3 fix: also refresh the server component above the
+            // calendar island so the SSR conflict banner picks up the
+            // new state.
+            router.refresh()
           }}
           onError={(msg) => showToast(`Ошибка: ${msg}`)}
         />
@@ -166,12 +172,15 @@ export default function TeacherCalendarClient({
 function TeacherSlotDetailModal({
   row,
   onClose,
-  onCancelled,
+  onSuccess,
   onError,
 }: {
   row: CalendarRow
   onClose: () => void
-  onCancelled: () => void
+  // BCS-F.3: split-by-kind success path. Caller passes the resolved
+  // user-facing message so we don't display "Слот отменён" after a
+  // dismiss/delete-external action that left the slot booked.
+  onSuccess: (message: string) => void
   onError: (msg: string) => void
 }) {
   const [busy, setBusy] = useState(false)
@@ -221,7 +230,7 @@ function TeacherSlotDetailModal({
         }
         throw new Error(body.message || body.error || `HTTP ${res.status}`)
       }
-      onCancelled()
+      onSuccess('Слот отменён.')
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -246,10 +255,9 @@ function TeacherSlotDetailModal({
       if (!res.ok) {
         throw new Error(body.message || body.error || `HTTP ${res.status}`)
       }
-      // F.UI banner + slot palette won't refresh until a navigation;
-      // hand off to the parent which already does a reloadCounter bump
-      // — same affordance as cancel.
-      onCancelled()
+      onSuccess(
+        'Конфликт снят. Если событие в Google остаётся — оно вернётся на следующей синхронизации.',
+      )
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -272,8 +280,7 @@ function TeacherSlotDetailModal({
       )
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        // 403 = read-only source. 502/503 = transient — let user retry.
-        // 409 = no conflict recorded (already resolved by a fresh pull).
+        // Map known server-side errors to user-safe Russian copy.
         if (body.error === 'source_not_writable') {
           setLocalError(body.message || 'Этот календарь только для чтения.')
           return
@@ -284,9 +291,25 @@ function TeacherSlotDetailModal({
           )
           return
         }
+        if (body.error === 'token_unavailable') {
+          setLocalError(
+            'Не удалось обратиться к Google Calendar. Переподключите календарь в Настройках интеграции или попробуйте позже.',
+          )
+          return
+        }
+        if (body.error === 'google_delete_failed') {
+          setLocalError(
+            'Google Calendar временно не подтвердил удаление. Попробуйте ещё раз через минуту.',
+          )
+          return
+        }
         throw new Error(body.message || body.error || `HTTP ${res.status}`)
       }
-      onCancelled()
+      onSuccess(
+        body.deletedInGoogle === false
+          ? 'Конфликт снят (событие уже было удалено в Google).'
+          : 'Событие удалено в Google Calendar. Конфликт снят.',
+      )
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err))
     } finally {
