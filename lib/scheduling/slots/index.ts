@@ -82,3 +82,11 @@ export {
 } from './mutations-cancel'
 
 export { bookSlot } from './booking'
+
+export {
+  isValidIanaTz,
+  listOpenBookingDays,
+  listOpenBookingTimes,
+  validateBookingRange,
+} from './booking-queries'
+export type { BookingRangeError } from './booking-queries'
