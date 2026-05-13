@@ -202,6 +202,11 @@ function projectSlot(
       learnerEmail: s.learnerEmail ?? '',
       tariffId: s.tariffId ?? null,
       tariffAmountKopecks: s.tariffAmountKopecks ?? null,
+      // BCS-F.3 — surface the conflict stamp so the teacher calendar
+      // can render a red outline + ⚠ marker. Admin view sees the same
+      // surface for visibility.
+      externalConflictAt: s.externalConflictAt ?? null,
+      externalConflictKind: s.externalConflictKind ?? null,
     }
   }
   // learner

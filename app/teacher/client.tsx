@@ -1,5 +1,6 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
 import { PaintConfirmModal } from '@/components/calendar/PaintConfirmModal'
@@ -29,6 +30,7 @@ export default function TeacherCalendarClient({
   initialFromYmd: string
   tariffs: ReadonlyArray<TariffOption>
 }) {
+  const router = useRouter()
   const [activeRow, setActiveRow] = useState<CalendarRow | null>(null)
   const [pendingPaint, setPendingPaint] = useState<PaintSpan | null>(null)
   const [reloadCounter, setReloadCounter] = useState(0)
@@ -142,10 +144,14 @@ export default function TeacherCalendarClient({
         <TeacherSlotDetailModal
           row={activeRow}
           onClose={() => setActiveRow(null)}
-          onCancelled={() => {
+          onSuccess={(message) => {
             setActiveRow(null)
-            showToast('Слот отменён.')
+            showToast(message)
             bumpReload()
+            // BCS-F.3 fix: also refresh the server component above the
+            // calendar island so the SSR conflict banner picks up the
+            // new state.
+            router.refresh()
           }}
           onError={(msg) => showToast(`Ошибка: ${msg}`)}
         />
@@ -166,12 +172,15 @@ export default function TeacherCalendarClient({
 function TeacherSlotDetailModal({
   row,
   onClose,
-  onCancelled,
+  onSuccess,
   onError,
 }: {
   row: CalendarRow
   onClose: () => void
-  onCancelled: () => void
+  // BCS-F.3: split-by-kind success path. Caller passes the resolved
+  // user-facing message so we don't display "Слот отменён" after a
+  // dismiss/delete-external action that left the slot booked.
+  onSuccess: (message: string) => void
   onError: (msg: string) => void
 }) {
   const [busy, setBusy] = useState(false)
@@ -185,6 +194,15 @@ function TeacherSlotDetailModal({
   const canCancel = slot.kind === 'open' || slot.kind === 'booked-full'
   const reasonRequired = slot.kind === 'booked-full'
   const slotId = 'id' in slot ? slot.id : null
+  // BCS-F.3 — surface conflict resolution actions when this booked
+  // slot has an external_conflict_at stamp. Plan §4.7 actions
+  // (a) dismiss, (b) delete-external. Cancel = action (c) reuses the
+  // existing flow above; move = (d) is intentionally not surfaced here
+  // (booked slots aren't draggable in the calendar grid).
+  const hasConflict =
+    slot.kind === 'booked-full' &&
+    'externalConflictAt' in slot &&
+    slot.externalConflictAt !== null
 
   async function handleCancel() {
     if (!slotId) return
@@ -212,7 +230,86 @@ function TeacherSlotDetailModal({
         }
         throw new Error(body.message || body.error || `HTTP ${res.status}`)
       }
-      onCancelled()
+      onSuccess('Слот отменён.')
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDismissConflict() {
+    if (!slotId) return
+    setBusy(true)
+    setLocalError(null)
+    try {
+      const res = await fetch(
+        `/api/teacher/slots/${slotId}/dismiss-conflict`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        },
+      )
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(body.message || body.error || `HTTP ${res.status}`)
+      }
+      onSuccess(
+        'Конфликт снят. Если событие в Google остаётся — оно вернётся на следующей синхронизации.',
+      )
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDeleteExternal() {
+    if (!slotId) return
+    setBusy(true)
+    setLocalError(null)
+    try {
+      const res = await fetch(
+        `/api/teacher/slots/${slotId}/delete-external-conflict`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        },
+      )
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        // Map known server-side errors to user-safe Russian copy.
+        if (body.error === 'source_not_writable') {
+          setLocalError(body.message || 'Этот календарь только для чтения.')
+          return
+        }
+        if (body.error === 'no_conflict_recorded') {
+          setLocalError(
+            'Конфликт уже был снят синхронизацией. Обновите страницу.',
+          )
+          return
+        }
+        if (body.error === 'token_unavailable') {
+          setLocalError(
+            'Не удалось обратиться к Google Calendar. Переподключите календарь в Настройках интеграции или попробуйте позже.',
+          )
+          return
+        }
+        if (body.error === 'google_delete_failed') {
+          setLocalError(
+            'Google Calendar временно не подтвердил удаление. Попробуйте ещё раз через минуту.',
+          )
+          return
+        }
+        throw new Error(body.message || body.error || `HTTP ${res.status}`)
+      }
+      onSuccess(
+        body.deletedInGoogle === false
+          ? 'Конфликт снят (событие уже было удалено в Google).'
+          : 'Событие удалено в Google Calendar. Конфликт снят.',
+      )
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -270,6 +367,47 @@ function TeacherSlotDetailModal({
             />
           ) : null}
         </dl>
+
+        {hasConflict ? (
+          <div
+            role="alert"
+            style={{
+              marginTop: 16,
+              padding: 12,
+              background: 'rgba(239, 68, 68, 0.12)',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              borderRadius: 6,
+              color: '#fecaca',
+              fontSize: 13,
+              lineHeight: 1.5,
+            }}
+          >
+            <strong>⚠ Конфликт с Google Calendar.</strong> Этот урок
+            пересекается с событием из вашего внешнего календаря. Можно:
+            <ul
+              style={{
+                margin: '8px 0 0 18px',
+                padding: 0,
+                listStyle: 'disc',
+              }}
+            >
+              <li>
+                <strong>«Я разрулю сам»</strong> — снять отметку конфликта.
+                Если событие в Google остаётся — на следующей синхронизации
+                отметка вернётся.
+              </li>
+              <li>
+                <strong>«Удалить в Google»</strong> — удалить событие из
+                Google Calendar (только если ваш OAuth даёт право записи в
+                этот календарь).
+              </li>
+              <li>
+                <strong>«Отменить занятие»</strong> — стандартная отмена урока
+                (форма ниже). Событие в Google остаётся.
+              </li>
+            </ul>
+          </div>
+        ) : null}
 
         {canCancel ? (
           <div style={{ marginTop: 20 }}>
@@ -345,6 +483,28 @@ function TeacherSlotDetailModal({
           >
             Закрыть
           </button>
+          {hasConflict ? (
+            <>
+              <button
+                type="button"
+                onClick={handleDismissConflict}
+                disabled={busy}
+                style={btnSecondary}
+                title="Снять отметку конфликта (re-stamp на следующей синхронизации, если событие в Google остаётся)"
+              >
+                {busy ? '…' : 'Я разрулю сам'}
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteExternal}
+                disabled={busy}
+                style={btnSecondary}
+                title="Удалить событие в Google Calendar (требует write-доступа)"
+              >
+                {busy ? '…' : 'Удалить в Google'}
+              </button>
+            </>
+          ) : null}
           {canCancel ? (
             <button
               type="button"

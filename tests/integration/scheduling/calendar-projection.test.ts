@@ -11,6 +11,7 @@ import {
   markAccountVerified,
   setAssignedTeacher,
 } from '@/lib/auth/accounts'
+import { getDbPool } from '@/lib/db/pool'
 
 import '../setup'
 import {
@@ -124,6 +125,72 @@ describe('GET /api/slots/calendar — DTO projection per role', () => {
     expect(booked.learnerEmail).toBe('proj-learner2@example.com')
     expect(booked).toHaveProperty('learnerAccountId')
     expect(booked).toHaveProperty('id')
+    // BCS-F.3 — booked-full carries the conflict surface (null when no
+    // pull has stamped one).
+    expect(booked).toHaveProperty('externalConflictAt')
+    expect(booked.externalConflictAt).toBeNull()
+    expect(booked).toHaveProperty('externalConflictKind')
+    expect(booked.externalConflictKind).toBeNull()
+  })
+
+  it('BCS-F.3 — booked-full surfaces externalConflictAt when the post-pull detector stamped the slot', async () => {
+    const teacher = await registerAndCookie('proj-conflict-t@example.com', { role: 'teacher' })
+    const admin = await registerAndCookie('proj-conflict-admin@example.com', { role: 'admin' })
+    const learner = await registerAndCookie('proj-conflict-learner@example.com')
+    await setAssignedTeacher(learner.accountId, teacher.accountId)
+
+    const startAt = futureSlotIso(7 * 24 * 60 + 180)
+    const created = await adminCreateHandler(
+      buildRequest('/api/admin/slots', {
+        cookie: admin.cookie,
+        body: {
+          teacherAccountId: teacher.accountId,
+          startAt,
+          durationMinutes: 60,
+        },
+      }),
+    )
+    const slotId = (await created.json()).slot.id
+
+    await bookHandler(
+      buildRequest(`/api/slots/${slotId}/book`, {
+        cookie: learner.cookie,
+        body: {},
+      }),
+      { params: Promise.resolve({ id: slotId }) },
+    )
+
+    // Simulate the post-pull conflict detector having stamped this slot.
+    const pool = getDbPool()
+    await pool.query(
+      `update lesson_slots
+          set external_conflict_at = now(),
+              external_conflict_kind = 'post_book_overlap',
+              conflict_source_calendar_id = 'primary',
+              conflict_source_event_id = 'evt-c3'
+        where id = $1`,
+      [slotId],
+    )
+
+    const r = await calendarHandler(
+      buildRequest(
+        `/api/slots/calendar?from=${nextWeekFrom()}&to=${nextWeekTo()}&teacherId=${teacher.accountId}`,
+        { method: 'GET', cookie: admin.cookie },
+      ),
+    )
+    const body = await r.json()
+    const booked = body.slots.find(
+      (s: { id?: string; kind: string }) => s.id === slotId,
+    )
+    expect(booked).toBeDefined()
+    expect(booked.kind).toBe('booked-full')
+    expect(typeof booked.externalConflictAt).toBe('string')
+    expect(booked.externalConflictKind).toBe('post_book_overlap')
+    // Source identifiers are operational, intentionally NOT shipped in
+    // the calendar DTO — the resolution endpoints look them up server-
+    // side from the slot row.
+    expect(booked).not.toHaveProperty('conflictSourceCalendarId')
+    expect(booked).not.toHaveProperty('conflictSourceEventId')
   })
 
   it('learner response of own booking: kind=booked-self with id and tariff but NO learnerAccountId/learnerEmail visible', async () => {

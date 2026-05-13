@@ -38,6 +38,13 @@ export type CalendarSlot =
       learnerEmail: string
       tariffId: string | null
       tariffAmountKopecks: number | null
+      // BCS-F.3 — external calendar conflict surface. Set by the
+      // post-pull conflict detector; nulls elsewhere. The teacher UI
+      // turns the slot red and offers the F.4 actions when this is set.
+      // Leaked into admin view too — admins should see what teachers
+      // see; the conflict surface is operational, not PII.
+      externalConflictAt: string | null
+      externalConflictKind: string | null
     }
   | {
       kind: 'past-full' // admin / teacher — past slot with full identity
