@@ -29,6 +29,27 @@ const YMD_RE = /^\d{4}-\d{2}-\d{2}$/
 const MAX_DAYS_RANGE_DAYS = 92 // ~3 months guard against runaway queries
 const DEFAULT_TIMES_PER_DAY = 96 // worst-case 30-min slots over 24h
 
+// Codex B.2 review: bare regex accepts `2026-02-31` / `2026-13-01` and
+// lets them reach Postgres `::date` cast, which raises and surfaces as
+// a 500. Real calendar-date validation: parse + round-trip and check
+// the parts match. We deliberately use UTC components because the
+// query passes the YMD string into a `$X::date AT TIME ZONE $tz`
+// expression — Postgres `::date` is calendar-naïve, so we just need
+// to confirm the date *exists* before binding.
+export function isValidYmd(value: string): boolean {
+  if (!YMD_RE.test(value)) return false
+  const y = Number(value.slice(0, 4))
+  const m = Number(value.slice(5, 7))
+  const d = Number(value.slice(8, 10))
+  if (m < 1 || m > 12 || d < 1 || d > 31) return false
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  return (
+    dt.getUTCFullYear() === y
+    && dt.getUTCMonth() === m - 1
+    && dt.getUTCDate() === d
+  )
+}
+
 export type BookingRangeError =
   | { code: 'invalid_from'; message: string }
   | { code: 'invalid_to'; message: string }
@@ -41,11 +62,11 @@ export function validateBookingRange(input: {
   toYmd: string | null
   tz: string | null
 }): BookingRangeError | null {
-  if (!input.fromYmd || !YMD_RE.test(input.fromYmd)) {
-    return { code: 'invalid_from', message: '`from` must be YYYY-MM-DD' }
+  if (!input.fromYmd || !isValidYmd(input.fromYmd)) {
+    return { code: 'invalid_from', message: '`from` must be a real YYYY-MM-DD date' }
   }
-  if (!input.toYmd || !YMD_RE.test(input.toYmd)) {
-    return { code: 'invalid_to', message: '`to` must be YYYY-MM-DD' }
+  if (!input.toYmd || !isValidYmd(input.toYmd)) {
+    return { code: 'invalid_to', message: '`to` must be a real YYYY-MM-DD date' }
   }
   if (!input.tz || !isValidIanaTz(input.tz)) {
     return { code: 'invalid_tz', message: '`tz` must be a valid IANA timezone' }
@@ -95,6 +116,11 @@ export async function listOpenBookingDays(params: {
   tz: string
 }): Promise<string[]> {
   if (!UUID_PATTERN.test(params.teacherAccountId)) return []
+  // Belt-and-suspenders: route already validated, but a direct caller
+  // (future BCS-D pull-side reuse) might forget — refuse to bind a
+  // string we couldn't ourselves cast to `::date` cleanly.
+  if (!isValidYmd(params.fromYmd) || !isValidYmd(params.toYmd)) return []
+  if (!isValidIanaTz(params.tz)) return []
   const pool = getDbPool()
   const result = await pool.query(
     `select distinct to_char(s.start_at at time zone $4, 'YYYY-MM-DD') as ymd
@@ -120,7 +146,7 @@ export async function listOpenBookingTimes(params: {
   limit?: number
 }): Promise<LessonSlot[]> {
   if (!UUID_PATTERN.test(params.teacherAccountId)) return []
-  if (!YMD_RE.test(params.ymd)) return []
+  if (!isValidYmd(params.ymd)) return []
   if (!isValidIanaTz(params.tz)) return []
   const pool = getDbPool()
   const limit = Math.min(

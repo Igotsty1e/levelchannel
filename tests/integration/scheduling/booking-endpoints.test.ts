@@ -145,6 +145,36 @@ describe('BCS-B.2 — GET /api/slots/booking-days', () => {
     expect(json.error).toBe('invalid_from')
   })
 
+  it('400 on impossible calendar date (2026-02-31)', async () => {
+    // Codex B.2 review: shape-only regex pre-fix accepted this and
+    // it crashed Postgres ::date cast as 500. Real validation now.
+    const learner = await registerAndCookie('l-days-3b@example.com', {
+      verifyEmail: true,
+    })
+    const res = await bookingDaysHandler(
+      buildRequest(
+        `/api/slots/booking-days?from=2026-02-31&to=2026-03-15&tz=Europe/Moscow`,
+        { cookie: learner.cookie },
+      ),
+    )
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('invalid_from')
+  })
+
+  it('400 on impossible month (2026-13-01)', async () => {
+    const learner = await registerAndCookie('l-days-3c@example.com', {
+      verifyEmail: true,
+    })
+    const res = await bookingDaysHandler(
+      buildRequest(
+        `/api/slots/booking-days?from=2026-05-13&to=2026-13-01&tz=Europe/Moscow`,
+        { cookie: learner.cookie },
+      ),
+    )
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('invalid_to')
+  })
+
   it('400 on range > 92 days', async () => {
     const learner = await registerAndCookie('l-days-4@example.com', {
       verifyEmail: true,
@@ -285,6 +315,20 @@ describe('BCS-B.2 — GET /api/slots/booking-times', () => {
     expect(res.status).toBe(400)
     const json = await res.json()
     expect(json.error).toBe('invalid_ymd')
+  })
+
+  it('400 on impossible ymd date (2026-02-31)', async () => {
+    const learner = await registerAndCookie('l-times-3b@example.com', {
+      verifyEmail: true,
+    })
+    const res = await bookingTimesHandler(
+      buildRequest(
+        `/api/slots/booking-times?ymd=2026-02-31&tz=Europe/Moscow`,
+        { cookie: learner.cookie },
+      ),
+    )
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('invalid_ymd')
   })
 
   it('400 on invalid tz', async () => {

@@ -5,6 +5,7 @@ import { requireLearnerArchetypeAndVerified } from '@/lib/auth/guards'
 import { getAccountProfile } from '@/lib/auth/profiles'
 import {
   isValidIanaTz,
+  isValidYmd,
   listOpenBookingTimes,
   toPublicSlot,
 } from '@/lib/scheduling/slots'
@@ -12,8 +13,6 @@ import { enforceRateLimit } from '@/lib/security/request'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-
-const YMD_RE = /^\d{4}-\d{2}-\d{2}$/
 
 // GET /api/slots/booking-times?ymd=YYYY-MM-DD&tz=Europe/Moscow
 //
@@ -44,9 +43,9 @@ export async function GET(request: Request) {
   const ymd = url.searchParams.get('ymd')
   const tzParam = url.searchParams.get('tz')
 
-  if (!ymd || !YMD_RE.test(ymd)) {
+  if (!ymd || !isValidYmd(ymd)) {
     return NextResponse.json(
-      { error: 'invalid_ymd', message: '`ymd` must be YYYY-MM-DD' },
+      { error: 'invalid_ymd', message: '`ymd` must be a real YYYY-MM-DD date' },
       { status: 400, headers: NO_STORE },
     )
   }

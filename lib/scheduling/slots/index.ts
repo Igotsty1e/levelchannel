@@ -85,6 +85,7 @@ export { bookSlot } from './booking'
 
 export {
   isValidIanaTz,
+  isValidYmd,
   listOpenBookingDays,
   listOpenBookingTimes,
   validateBookingRange,
