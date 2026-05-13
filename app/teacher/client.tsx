@@ -185,6 +185,15 @@ function TeacherSlotDetailModal({
   const canCancel = slot.kind === 'open' || slot.kind === 'booked-full'
   const reasonRequired = slot.kind === 'booked-full'
   const slotId = 'id' in slot ? slot.id : null
+  // BCS-F.3 — surface conflict resolution actions when this booked
+  // slot has an external_conflict_at stamp. Plan §4.7 actions
+  // (a) dismiss, (b) delete-external. Cancel = action (c) reuses the
+  // existing flow above; move = (d) is intentionally not surfaced here
+  // (booked slots aren't draggable in the calendar grid).
+  const hasConflict =
+    slot.kind === 'booked-full' &&
+    'externalConflictAt' in slot &&
+    slot.externalConflictAt !== null
 
   async function handleCancel() {
     if (!slotId) return
@@ -207,6 +216,71 @@ function TeacherSlotDetailModal({
         if (body.error === 'reason_required_for_booked') {
           setLocalError(
             'Чтобы отменить занятие ученика, укажите причину для аудита.',
+          )
+          return
+        }
+        throw new Error(body.message || body.error || `HTTP ${res.status}`)
+      }
+      onCancelled()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDismissConflict() {
+    if (!slotId) return
+    setBusy(true)
+    setLocalError(null)
+    try {
+      const res = await fetch(
+        `/api/teacher/slots/${slotId}/dismiss-conflict`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        },
+      )
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(body.message || body.error || `HTTP ${res.status}`)
+      }
+      // F.UI banner + slot palette won't refresh until a navigation;
+      // hand off to the parent which already does a reloadCounter bump
+      // — same affordance as cancel.
+      onCancelled()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDeleteExternal() {
+    if (!slotId) return
+    setBusy(true)
+    setLocalError(null)
+    try {
+      const res = await fetch(
+        `/api/teacher/slots/${slotId}/delete-external-conflict`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        },
+      )
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        // 403 = read-only source. 502/503 = transient — let user retry.
+        // 409 = no conflict recorded (already resolved by a fresh pull).
+        if (body.error === 'source_not_writable') {
+          setLocalError(body.message || 'Этот календарь только для чтения.')
+          return
+        }
+        if (body.error === 'no_conflict_recorded') {
+          setLocalError(
+            'Конфликт уже был снят синхронизацией. Обновите страницу.',
           )
           return
         }
@@ -270,6 +344,47 @@ function TeacherSlotDetailModal({
             />
           ) : null}
         </dl>
+
+        {hasConflict ? (
+          <div
+            role="alert"
+            style={{
+              marginTop: 16,
+              padding: 12,
+              background: 'rgba(239, 68, 68, 0.12)',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              borderRadius: 6,
+              color: '#fecaca',
+              fontSize: 13,
+              lineHeight: 1.5,
+            }}
+          >
+            <strong>⚠ Конфликт с Google Calendar.</strong> Этот урок
+            пересекается с событием из вашего внешнего календаря. Можно:
+            <ul
+              style={{
+                margin: '8px 0 0 18px',
+                padding: 0,
+                listStyle: 'disc',
+              }}
+            >
+              <li>
+                <strong>«Я разрулю сам»</strong> — снять отметку конфликта.
+                Если событие в Google остаётся — на следующей синхронизации
+                отметка вернётся.
+              </li>
+              <li>
+                <strong>«Удалить в Google»</strong> — удалить событие из
+                Google Calendar (только если ваш OAuth даёт право записи в
+                этот календарь).
+              </li>
+              <li>
+                <strong>«Отменить занятие»</strong> — стандартная отмена урока
+                (форма ниже). Событие в Google остаётся.
+              </li>
+            </ul>
+          </div>
+        ) : null}
 
         {canCancel ? (
           <div style={{ marginTop: 20 }}>
@@ -345,6 +460,28 @@ function TeacherSlotDetailModal({
           >
             Закрыть
           </button>
+          {hasConflict ? (
+            <>
+              <button
+                type="button"
+                onClick={handleDismissConflict}
+                disabled={busy}
+                style={btnSecondary}
+                title="Снять отметку конфликта (re-stamp на следующей синхронизации, если событие в Google остаётся)"
+              >
+                {busy ? '…' : 'Я разрулю сам'}
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteExternal}
+                disabled={busy}
+                style={btnSecondary}
+                title="Удалить событие в Google Calendar (требует write-доступа)"
+              >
+                {busy ? '…' : 'Удалить в Google'}
+              </button>
+            </>
+          ) : null}
           {canCancel ? (
             <button
               type="button"

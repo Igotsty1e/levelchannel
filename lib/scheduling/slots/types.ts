@@ -107,6 +107,16 @@ export type LessonSlot = {
   // teacher in their slot view (frontend in BCS-B.frontend). NOT shown
   // to the operator-facing admin UI (those reads pre-date this field).
   agenda: string | null
+  // BCS-F.3 — set by the post-pull conflict detector when an external
+  // calendar event overlaps this booked slot. The teacher-facing
+  // calendar surfaces this as a red outline + ⚠ marker; nullable in
+  // every other context. The conflict_source_* pair carries the
+  // specific (calendar_id, event_id) needed by the F.4 resolution
+  // endpoints.
+  externalConflictAt: string | null
+  externalConflictKind: string | null
+  conflictSourceCalendarId: string | null
+  conflictSourceEventId: string | null
   events: SlotEvent[]
   createdAt: string
   updatedAt: string

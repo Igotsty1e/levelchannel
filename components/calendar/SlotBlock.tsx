@@ -8,6 +8,10 @@ import type { CalendarRow } from '@/lib/calendar/view-model'
 // half-hour grid alignment.
 //
 // Click → onClick(slot) — modal in the parent decides what to show.
+//
+// BCS-F.3: a `booked-full` slot with `externalConflictAt` set renders
+// with a red outline + ⚠ glyph. The conflict palette overrides the
+// grey "booked" palette so the teacher can spot conflicts at a glance.
 
 export type SlotBlockProps = {
   row: CalendarRow
@@ -20,19 +24,23 @@ export type SlotBlockProps = {
 
 export function SlotBlock({ row, onClick, onMouseDown }: SlotBlockProps) {
   const kind = row.slot.kind
-  const palette = paletteForKind(kind)
+  const hasConflict = slotHasConflict(row)
+  const palette = hasConflict ? CONFLICT_PALETTE : paletteForKind(kind)
   // Only `open` slots are movable per the data layer (booked /
   // completed / cancelled are immovable). Wiring layer mirrors this:
   // we ONLY emit onMouseDown when the slot is `open` AND the parent
   // is interested. Click handler still fires for every kind.
   const draggable = kind === 'open' && onMouseDown !== undefined
+  const label = hasConflict ? `${kindLabel(kind)} · конфликт` : kindLabel(kind)
 
   return (
     <button
       type="button"
       onClick={() => onClick?.(row)}
       onMouseDown={draggable ? (e) => onMouseDown!(row, e) : undefined}
-      className={`calendar-slot-block calendar-slot-${kind}`}
+      className={`calendar-slot-block calendar-slot-${kind}${
+        hasConflict ? ' calendar-slot-conflict' : ''
+      }`}
       style={{
         position: 'absolute',
         top: `${row.topPx}px`,
@@ -40,7 +48,7 @@ export function SlotBlock({ row, onClick, onMouseDown }: SlotBlockProps) {
         left: '4px',
         right: '4px',
         background: palette.background,
-        border: `1px solid ${palette.border}`,
+        border: `${hasConflict ? '2px' : '1px'} solid ${palette.border}`,
         borderRadius: 6,
         padding: '4px 8px',
         cursor: draggable ? 'grab' : 'pointer',
@@ -54,18 +62,42 @@ export function SlotBlock({ row, onClick, onMouseDown }: SlotBlockProps) {
         overflow: 'hidden',
         zIndex: 2, // above grid background so highlights render under
       }}
-      title={`${row.startLabel} – ${row.endLabel}`}
-      aria-label={`Слот ${row.startLabel}–${row.endLabel}, ${kindLabel(kind)}`}
+      title={
+        hasConflict
+          ? `${row.startLabel} – ${row.endLabel} · конфликт с событием в Google Calendar`
+          : `${row.startLabel} – ${row.endLabel}`
+      }
+      aria-label={`Слот ${row.startLabel}–${row.endLabel}, ${label}`}
     >
       <div style={{ fontWeight: 600 }}>
+        {hasConflict && (
+          <span aria-hidden="true" style={{ marginRight: 4 }}>
+            ⚠
+          </span>
+        )}
         {row.startLabel} – {row.endLabel}
       </div>
       {tariffBadge(row) && (
         <div style={{ fontSize: 11, opacity: 0.85 }}>{tariffBadge(row)}</div>
       )}
-      <div style={{ fontSize: 11, opacity: 0.7 }}>{kindLabel(kind)}</div>
+      <div style={{ fontSize: 11, opacity: 0.7 }}>{label}</div>
     </button>
   )
+}
+
+function slotHasConflict(row: CalendarRow): boolean {
+  const slot = row.slot
+  return (
+    slot.kind === 'booked-full' &&
+    'externalConflictAt' in slot &&
+    slot.externalConflictAt !== null
+  )
+}
+
+const CONFLICT_PALETTE = {
+  background: 'rgba(239, 68, 68, 0.18)',
+  border: 'rgba(239, 68, 68, 0.85)',
+  text: '#fecaca',
 }
 
 function paletteForKind(kind: CalendarRow['slot']['kind']) {

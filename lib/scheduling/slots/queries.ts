@@ -209,6 +209,8 @@ export async function listSlotsForCalendarRange(params: {
             s.status, s.learner_account_id, s.booked_at, s.cancelled_at,
             s.cancelled_by_account_id, s.cancellation_reason, s.marked_at,
             s.tariff_id, s.notes,
+            s.external_conflict_at, s.external_conflict_kind,
+            s.conflict_source_calendar_id, s.conflict_source_event_id,
             s.events, s.created_at, s.updated_at,
             ta.email as teacher_email,
             la.email as learner_email,

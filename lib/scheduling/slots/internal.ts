@@ -30,6 +30,10 @@ export const SLOT_COLUMNS = `
   tariff_id,
   notes,
   agenda,
+  external_conflict_at,
+  external_conflict_kind,
+  conflict_source_calendar_id,
+  conflict_source_event_id,
   events,
   created_at,
   updated_at
@@ -80,6 +84,20 @@ export function rowToSlot(
     // field don't include the column in their SELECT, in which case
     // row.agenda is undefined → null projection. Backward compatible.
     agenda: row.agenda ? String(row.agenda) : null,
+    // BCS-F.3 — conflict metadata. Same backward-compat shape: queries
+    // that don't select these columns get null.
+    externalConflictAt: row.external_conflict_at
+      ? new Date(String(row.external_conflict_at)).toISOString()
+      : null,
+    externalConflictKind: row.external_conflict_kind
+      ? String(row.external_conflict_kind)
+      : null,
+    conflictSourceCalendarId: row.conflict_source_calendar_id
+      ? String(row.conflict_source_calendar_id)
+      : null,
+    conflictSourceEventId: row.conflict_source_event_id
+      ? String(row.conflict_source_event_id)
+      : null,
     events: Array.isArray(row.events)
       ? (row.events as SlotEvent[])
       : [],
