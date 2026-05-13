@@ -142,7 +142,9 @@ function TariffRow({
           />
         </div>
         <div>
-          <Label>Сорт.</Label>
+          <Label title="Меньшее число — выше в списке для оператора (форма создания слота, дропдаун выбора тарифа). На стоимость и публичный сайт не влияет.">
+            Порядок (для админки)
+          </Label>
           <Input
             type="number"
             step="1"
@@ -264,7 +266,9 @@ function NewTariffForm({
           />
         </div>
         <div>
-          <Label>Сорт.</Label>
+          <Label title="Меньшее число — выше в списке для оператора (форма создания слота, дропдаун выбора тарифа). На стоимость и публичный сайт не влияет.">
+            Порядок (для админки)
+          </Label>
           <Input
             type="number"
             step="1"
@@ -302,18 +306,31 @@ function NewTariffForm({
   )
 }
 
-function Label({ children }: { children: React.ReactNode }) {
+function Label({
+  children,
+  title,
+}: {
+  children: React.ReactNode
+  title?: string
+}) {
   return (
     <div
+      title={title}
       style={{
         color: 'var(--secondary)',
         fontSize: 11,
         textTransform: 'uppercase',
         letterSpacing: 0.4,
         marginBottom: 4,
+        cursor: title ? 'help' : undefined,
       }}
     >
       {children}
+      {title ? (
+        <span aria-hidden="true" style={{ marginLeft: 4, opacity: 0.7 }}>
+          ⓘ
+        </span>
+      ) : null}
     </div>
   )
 }

@@ -51,10 +51,14 @@ export default async function AdminRefundsPage({
       </h1>
 
       <p style={{ fontSize: 13, color: 'var(--secondary)', marginBottom: 16 }}>
-        Reversals из <code>payment_allocation_reversals</code>, новые сверху. Money-движение через
-        CloudPayments-дашборд оператора (или, после flip
-        <code> BILLING_REFUND_GATEWAY_ENABLED</code>, через API).
-        Этот листинг отражает уже записанные reversal-строки.
+        Журнал возвратов и сторно — каждая строка показывает, что
+        конкретно вернулось ученику: оплата за конкретный урок,
+        списание из пакета или возврат за весь пакет. Сами деньги
+        отправляются назад на карту ученика через CloudPayments —
+        либо вручную из дашборда оператора, либо автоматически по
+        API (включение автоматики — флаг{' '}
+        <code>BILLING_REFUND_GATEWAY_ENABLED</code>). Эта таблица
+        показывает уже состоявшиеся возвраты, новые — сверху.
       </p>
 
       {rows.length === 0 ? (
@@ -73,8 +77,8 @@ export default async function AdminRefundsPage({
             <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
               <Th>Когда</Th>
               <Th>Заказ</Th>
-              <Th>Kind</Th>
-              <Th>Target</Th>
+              <Th>Тип возврата</Th>
+              <Th>На что (ID)</Th>
               <Th align="right">Сумма, ₽</Th>
               <Th>Оператор</Th>
               <Th>Причина</Th>
