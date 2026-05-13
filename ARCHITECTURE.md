@@ -220,6 +220,43 @@ Not covered (see `ENGINEERING_BACKLOG.md` for context):
 - [`app/api/payments/webhooks/cloudpayments/pay/route.ts`](app/api/payments/webhooks/cloudpayments/pay/route.ts) - also stores Token for one-click
 - [`app/api/payments/webhooks/cloudpayments/fail/route.ts`](app/api/payments/webhooks/cloudpayments/fail/route.ts)
 
+### Booking + calendar sync (BCS wave, in flight)
+
+Wave-level design: [`docs/plans/booking-calendly-style.md`](docs/plans/booking-calendly-style.md) (7-round Codex paranoia loop SIGN-OFF). Shipped sub-waves: BCS-A schema (migrations 0042-0045), BCS-B Calendly-style learner booking, BCS-C OAuth integration scaffold + UI, BCS-D.5 atomic busy-overlap gate. In flight: BCS-D pull worker + webhook, BCS-E push worker, BCS-F conflict UX, BCS-G reconciliation.
+
+- [`migrations/0042_lesson_slots_calendar_columns.sql`](migrations/0042_lesson_slots_calendar_columns.sql) — agenda, external_event_id/calendar_id/etag, integration_epoch, external_conflict_*, conflict_source_*, last_reconciled_at, cancel_repush_count. Paired-binding CHECK + enum CHECKs.
+- [`migrations/0043_teacher_calendar_integrations.sql`](migrations/0043_teacher_calendar_integrations.sql) — per-teacher Google OAuth state, encrypted tokens (CALENDAR_ENCRYPTION_KEY), sync_state + epoch + last_reconnected_at + last_pulled_at, channel triple. MSK-only trigger + symmetric `account_profiles.timezone` guard.
+- [`migrations/0044_teacher_external_busy_intervals.sql`](migrations/0044_teacher_external_busy_intervals.sql) — pull-cached Google busy intervals. is_own_event + is_orphan_self for F8 epoch-aware self-echo. summary_encrypted (30d retention).
+- [`migrations/0045_calendar_jobs.sql`](migrations/0045_calendar_jobs.sql) — calendar_push_jobs + calendar_pull_jobs + slot_lifecycle_intents. Partial unique indexes for pending dedup.
+
+Library surface (`lib/calendar/`):
+
+- [`lib/calendar/encryption.ts`](lib/calendar/encryption.ts) — CALENDAR_ENCRYPTION_KEY resolver mirroring `lib/audit/encryption.ts`. Separate key from audit for blast-radius (plan §8 #6); optional `_KEY_OLD` for rotation read-fallback.
+- [`lib/calendar/google/config.ts`](lib/calendar/google/config.ts) — env config resolver for `GOOGLE_CALENDAR_CLIENT_ID/SECRET/REDIRECT_URL` + `GOOGLE_OAUTH_STATE_SECRET`. Exports the minimum OAuth scope list (`calendar.events` + `calendar.calendarlist.readonly`).
+- [`lib/calendar/google/state.ts`](lib/calendar/google/state.ts) — HMAC-signed CSRF state nonce bound to issuing account_id. Constant-time verify, 10-min TTL, future-skew defense.
+- [`lib/calendar/google/oauth.ts`](lib/calendar/google/oauth.ts) — `buildAuthorizationUrl`, `exchangeCodeForTokens`, `refreshAccessToken`. Discriminated error union; no in-lib retries.
+- [`lib/calendar/google/pull.ts`](lib/calendar/google/pull.ts) — `pullBusyIntervalsForCalendar` (events.list, bounded `[now-1d, now+30d]`, paginated, MSK-pinned all-day) and `listCalendars` (calendarList.list paginated, derives `isWritable` from accessRole). `shapeEvent` is a total function — bad date input returns null.
+- [`lib/calendar/integrations.ts`](lib/calendar/integrations.ts) — DB store ops for `teacher_calendar_integrations`. pgcrypto in SQL for token at-rest. `upsertGoogleIntegration({ reason: 'initial_connect' | 'token_refresh' })`. `initial_connect` rotates epoch + bumps last_reconnected_at + clears last_pulled/push_at + channel triple.
+- [`lib/calendar/dates.ts`](lib/calendar/dates.ts) / [`lib/calendar/drag-state.ts`](lib/calendar/drag-state.ts) / [`lib/calendar/paint-synth.ts`](lib/calendar/paint-synth.ts) / [`lib/calendar/types.ts`](lib/calendar/types.ts) / [`lib/calendar/view-model.ts`](lib/calendar/view-model.ts) — Wave-A/B/C operator calendar grid helpers (pre-dates BCS).
+
+API routes (BCS):
+
+- [`app/api/slots/booking-days/route.ts`](app/api/slots/booking-days/route.ts) — Calendly screen-1 day picker, learner-only, range cap 92 days.
+- [`app/api/slots/booking-times/route.ts`](app/api/slots/booking-times/route.ts) — Calendly screen-2 time list, learner-only.
+- [`app/api/teacher/calendar/google/start/route.ts`](app/api/teacher/calendar/google/start/route.ts) — POST, teacher+verified, returns `{ authorizationUrl }`.
+- [`app/api/teacher/calendar/google/callback/route.ts`](app/api/teacher/calendar/google/callback/route.ts) — GET (Google 302 destination). State nonce CSRF defense, all failures redirect to /teacher/settings/calendar.
+- [`app/api/teacher/calendar/google/disconnect/route.ts`](app/api/teacher/calendar/google/disconnect/route.ts) — POST, teacher+verified, clears tokens + sync_state=disconnected (no Google cascade-delete).
+
+UI (BCS):
+
+- [`app/cabinet/book/page.tsx`](app/cabinet/book/page.tsx) + [`month-day-picker.tsx`](app/cabinet/book/month-day-picker.tsx) — Calendly screen 1.
+- [`app/cabinet/book/[ymd]/page.tsx`](app/cabinet/book/[ymd]/page.tsx) + [`time-list.tsx`](app/cabinet/book/[ymd]/time-list.tsx) — Calendly screen 2.
+- [`app/cabinet/book/[ymd]/[slotId]/page.tsx`](app/cabinet/book/[ymd]/[slotId]/page.tsx) + [`confirm-form.tsx`](app/cabinet/book/[ymd]/[slotId]/confirm-form.tsx) — Calendly screen 3, captures agenda.
+- [`app/teacher/settings/calendar/page.tsx`](app/teacher/settings/calendar/page.tsx) + [`connect-card.tsx`](app/teacher/settings/calendar/connect-card.tsx) — Google connect/disconnect + plain-language onboarding copy.
+- [`app/cabinet/settings/calendar/page.tsx`](app/cabinet/settings/calendar/page.tsx) — learner read-only status of teacher's integration.
+
+bookSlot atomic overlap (D.5, plan §4.2): the booking UPDATE re-asserts NOT EXISTS overlap against `teacher_external_busy_intervals` filtered by `sync_state='active'` AND `last_pulled_at >= now() - 10 min` AND `is_own_event = false`. Failure surfaces as `external_conflict` on the `BookSlotResult.reason` union.
+
 ### One-click flow
 
 1. After a successful payment CloudPayments delivers `Token` in the Pay webhook
