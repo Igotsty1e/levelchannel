@@ -63,8 +63,8 @@ async function seedLearnerWithBookedSlot(args: {
   // setup. Tariff inserted optionally for amount-match validation.
   const tariffId = '00000000-0000-0000-0000-' + args.slotId.slice(-12)
   await getDbPool().query(
-    `insert into pricing_tariffs (id, slug, title_ru, amount_kopecks, is_active)
-       values ($1, $2, $3, $4, true)
+    `insert into pricing_tariffs (id, slug, title_ru, amount_kopecks, duration_minutes, is_active)
+       values ($1, $2, $3, $4, 60, true)
        on conflict (id) do nothing`,
     [tariffId, `slug-${args.slotId.slice(0, 8)}`, 'Test', args.amountKopecks],
   )

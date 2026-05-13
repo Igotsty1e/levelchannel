@@ -51,6 +51,9 @@ export async function POST(request: Request) {
   if (typeof raw.amountKopecks === 'number') {
     input.amountKopecks = raw.amountKopecks
   }
+  if (typeof raw.durationMinutes === 'number') {
+    input.durationMinutes = raw.durationMinutes
+  }
   if (typeof raw.isActive === 'boolean') input.isActive = raw.isActive
   if (typeof raw.displayOrder === 'number') {
     input.displayOrder = raw.displayOrder
@@ -59,10 +62,11 @@ export async function POST(request: Request) {
   if (
     typeof input.slug !== 'string' ||
     typeof input.titleRu !== 'string' ||
-    typeof input.amountKopecks !== 'number'
+    typeof input.amountKopecks !== 'number' ||
+    typeof input.durationMinutes !== 'number'
   ) {
     return NextResponse.json(
-      { error: 'slug, titleRu, amountKopecks are required.' },
+      { error: 'slug, titleRu, amountKopecks, durationMinutes are required.' },
       { status: 400, headers: NO_STORE },
     )
   }

@@ -116,6 +116,7 @@ function TariffRow({
   const [amountRub, setAmountRub] = useState(
     String((tariff.amountKopecks / 100).toFixed(2)),
   )
+  const [duration, setDuration] = useState(String(tariff.durationMinutes))
   const [isActive, setIsActive] = useState(tariff.isActive)
   const [order, setOrder] = useState(String(tariff.displayOrder))
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -133,7 +134,7 @@ function TariffRow({
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '1fr 140px 100px 80px',
+          gridTemplateColumns: '1fr 140px 120px 100px 80px',
           gap: 12,
           alignItems: 'center',
         }}
@@ -164,6 +165,12 @@ function TariffRow({
             value={amountRub}
             onChange={(e) => setAmountRub(e.target.value)}
           />
+        </div>
+        <div>
+          <Label title="Длительность одного занятия по этому тарифу. После первой привязки к слоту изменить нельзя — заведите новый тариф под другую длительность.">
+            Длительность
+          </Label>
+          <DurationSelect value={duration} onChange={setDuration} />
         </div>
         <div>
           <Label title="Меньшее число — выше в списке для оператора (форма создания слота, дропдаун выбора тарифа). На стоимость и публичный сайт не влияет.">
@@ -210,6 +217,7 @@ function TariffRow({
             onPatch({
               titleRu,
               amountKopecks: Math.round(Number(amountRub) * 100),
+              durationMinutes: Number(duration),
               displayOrder: Number(order),
               isActive,
             })
@@ -397,6 +405,7 @@ function NewTariffForm({
   const [titleRu, setTitleRu] = useState('')
   const [amountRub, setAmountRub] = useState('3500')
   const [order, setOrder] = useState('0')
+  const [duration, setDuration] = useState('60')
 
   return (
     <div
@@ -412,7 +421,7 @@ function NewTariffForm({
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '180px 1fr 140px 80px auto',
+          gridTemplateColumns: '180px 1fr 140px 120px 80px auto',
           gap: 12,
           alignItems: 'end',
         }}
@@ -444,6 +453,12 @@ function NewTariffForm({
           />
         </div>
         <div>
+          <Label title="Длительность одного занятия. Слот этой длительности можно будет привязать к этому тарифу; 90-минутный к 60-минутному уже не приклеится.">
+            Длительность
+          </Label>
+          <DurationSelect value={duration} onChange={setDuration} />
+        </div>
+        <div>
           <Label title="Меньшее число — выше в списке для оператора (форма создания слота, дропдаун выбора тарифа). На стоимость и публичный сайт не влияет.">
             Порядок (для админки)
           </Label>
@@ -462,6 +477,7 @@ function NewTariffForm({
               slug,
               titleRu,
               amountKopecks: Math.round(Number(amountRub) * 100),
+              durationMinutes: Number(duration),
               displayOrder: Number(order),
               isActive: true,
             })
@@ -528,5 +544,47 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
         ...(props.style ?? {}),
       }}
     />
+  )
+}
+
+// BUG-2026-05-13-3: product-standard durations are 30/45/60/90; we
+// allow a free-form numeric input for the edge cases (legacy 50-min,
+// trial 20-min, etc.) inside the DB-enforced 15-240 band.
+function DurationSelect({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (next: string) => void
+}) {
+  const standard = ['30', '45', '60', '90']
+  const isCustom = !standard.includes(value)
+  return (
+    <select
+      value={isCustom ? '__custom' : value}
+      onChange={(e) => {
+        if (e.target.value === '__custom') {
+          // Keep whatever is currently in the field; switching to
+          // custom doesn't reset.
+          return
+        }
+        onChange(e.target.value)
+      }}
+      style={{
+        width: '100%',
+        background: 'transparent',
+        border: '1px solid var(--border)',
+        borderRadius: 6,
+        padding: '8px 10px',
+        color: 'var(--text)',
+        fontSize: 13,
+      }}
+    >
+      <option value="30">30 мин</option>
+      <option value="45">45 мин</option>
+      <option value="60">60 мин</option>
+      <option value="90">90 мин</option>
+      {isCustom ? <option value="__custom">{value} мин (custom)</option> : null}
+    </select>
   )
 }

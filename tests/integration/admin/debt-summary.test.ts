@@ -75,8 +75,8 @@ async function seedLearnerWithDebt(
     [teacherId],
   )
   const tariff = await pool.query(
-    `insert into pricing_tariffs (slug, title_ru, amount_kopecks)
-     values ($1, '60 мин', $2)
+    `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes)
+     values ($1, '60 мин', $2, 60)
      returning id`,
     [`${opts.emailPrefix}-tariff-${Date.now()}-${Math.floor(Math.random() * 1e6)}`, opts.tariffKopecks],
   )

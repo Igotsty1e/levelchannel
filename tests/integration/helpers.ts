@@ -136,20 +136,25 @@ export function nearFutureBusinessBandIso(): string {
     candidate.setUTCMinutes(0, 0, 0)
     candidate.setUTCHours(candidate.getUTCHours() + 1)
   }
-  // Check MSK band; if out of band, push to the next opening
-  // (next-day 06:00 MSK = 03:00 UTC). We always end up < 24h from
-  // now because the latest possible push is "now is between 22:00
-  // MSK and midnight, so next-day 06:00 is at most ~7h away".
+  // Check MSK band; if out of band, push to the next opening.
+  // - At MSK 22:00–23:59 (late-night), next opening is tomorrow 06:00.
+  // - At MSK 00:00–05:59 (early-morning), next opening is TODAY 06:00.
+  //   The prior implementation always added +1 day, which on a CI run
+  //   at e.g. MSK 00:11 produced a candidate ~27h in the future and
+  //   broke the lifecycle test's <24h-rule expectation.
   const mskParts = mskWallParts(candidate.getTime())
   const inBand =
     mskParts.hour >= 6 && (mskParts.hour < 22 || (mskParts.hour === 22 && mskParts.minute === 0))
   if (inBand) return candidate.toISOString()
   const day = mskTodayParts()
-  // Tomorrow 06:00 MSK = same date + 1 day, hour=6 MSK = 3 UTC.
-  const tomorrowSixMsk = new Date(
-    Date.UTC(day.year, day.month - 1, day.day + 1, 3, 0, 0, 0),
+  const lateNight = mskParts.hour >= 22
+  const offsetDays = lateNight ? 1 : 0
+  // 06:00 MSK = 03:00 UTC. Anchor on the MSK calendar day, then
+  // convert to UTC via the constant +3h offset (MSK has no DST).
+  const targetMsk = new Date(
+    Date.UTC(day.year, day.month - 1, day.day + offsetDays, 3, 0, 0, 0),
   )
-  return tomorrowSixMsk.toISOString()
+  return targetMsk.toISOString()
 }
 
 function mskWallParts(utcMs: number): { hour: number; minute: number } {

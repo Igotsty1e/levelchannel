@@ -8,6 +8,11 @@ export type PricingTariff = {
   titleRu: string
   descriptionRu: string | null
   amountKopecks: number
+  // BUG-2026-05-13-3: lesson length is part of the product (a 60-min
+  // tariff is a different deliverable than a 90-min one). Required at
+  // the DB level (migration 0046) and immutable after first slot
+  // reference (same pattern as amount_kopecks).
+  durationMinutes: number
   currency: 'RUB'
   isActive: boolean
   displayOrder: number
@@ -20,6 +25,7 @@ export type TariffInput = {
   titleRu: string
   descriptionRu?: string | null
   amountKopecks: number
+  durationMinutes: number
   isActive?: boolean
   displayOrder?: number
 }
@@ -31,6 +37,10 @@ export type TariffValidationError =
   | { field: 'titleRu'; reason: 'too_short' | 'too_long' }
   | { field: 'descriptionRu'; reason: 'too_long' }
   | { field: 'amountKopecks'; reason: 'out_of_band' | 'not_integer' }
+  | { field: 'durationMinutes'; reason: 'out_of_band' | 'not_integer' }
+
+const MIN_DURATION_MIN = 15
+const MAX_DURATION_MIN = 240
 
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/
 
@@ -77,6 +87,17 @@ export function validateTariffInput(
       return { field: 'amountKopecks', reason: 'out_of_band' }
     }
   }
+  if (input.durationMinutes !== undefined) {
+    if (!Number.isInteger(input.durationMinutes)) {
+      return { field: 'durationMinutes', reason: 'not_integer' }
+    }
+    if (
+      input.durationMinutes < MIN_DURATION_MIN ||
+      input.durationMinutes > MAX_DURATION_MIN
+    ) {
+      return { field: 'durationMinutes', reason: 'out_of_band' }
+    }
+  }
   return null
 }
 
@@ -88,6 +109,7 @@ function rowToTariff(row: Record<string, unknown>): PricingTariff {
     descriptionRu:
       row.description_ru === null ? null : String(row.description_ru),
     amountKopecks: Number(row.amount_kopecks),
+    durationMinutes: Number(row.duration_minutes),
     currency: String(row.currency) as 'RUB',
     isActive: Boolean(row.is_active),
     displayOrder: Number(row.display_order),
@@ -99,7 +121,8 @@ function rowToTariff(row: Record<string, unknown>): PricingTariff {
 export async function listAllTariffs(): Promise<PricingTariff[]> {
   const pool = getDbPool()
   const result = await pool.query(
-    `select id, slug, title_ru, description_ru, amount_kopecks, currency,
+    `select id, slug, title_ru, description_ru, amount_kopecks,
+            duration_minutes, currency,
             is_active, display_order, created_at, updated_at
      from pricing_tariffs
      order by is_active desc, display_order asc, created_at asc`,
@@ -110,7 +133,8 @@ export async function listAllTariffs(): Promise<PricingTariff[]> {
 export async function listActiveTariffs(): Promise<PricingTariff[]> {
   const pool = getDbPool()
   const result = await pool.query(
-    `select id, slug, title_ru, description_ru, amount_kopecks, currency,
+    `select id, slug, title_ru, description_ru, amount_kopecks,
+            duration_minutes, currency,
             is_active, display_order, created_at, updated_at
      from pricing_tariffs
      where is_active = true
@@ -122,7 +146,8 @@ export async function listActiveTariffs(): Promise<PricingTariff[]> {
 export async function getTariffById(id: string): Promise<PricingTariff | null> {
   const pool = getDbPool()
   const result = await pool.query(
-    `select id, slug, title_ru, description_ru, amount_kopecks, currency,
+    `select id, slug, title_ru, description_ru, amount_kopecks,
+            duration_minutes, currency,
             is_active, display_order, created_at, updated_at
      from pricing_tariffs
      where id = $1`,
@@ -138,14 +163,23 @@ export async function createTariff(input: TariffInput): Promise<PricingTariff> {
       `tariff validation failed: ${validation.field}/${validation.reason}`,
     )
   }
+  // BUG-2026-05-13-3: duration_minutes is now a required input. Catch
+  // missing values at the app layer so the friendlier error fires
+  // before the DB NOT NULL constraint does.
+  if (!Number.isInteger(input.durationMinutes)) {
+    throw new Error(
+      'tariff validation failed: durationMinutes/required_integer',
+    )
+  }
   const pool = getDbPool()
   const id = randomUUID()
   const result = await pool.query(
     `insert into pricing_tariffs (
        id, slug, title_ru, description_ru, amount_kopecks,
-       is_active, display_order
-     ) values ($1, $2, $3, $4, $5, $6, $7)
-     returning id, slug, title_ru, description_ru, amount_kopecks, currency,
+       duration_minutes, is_active, display_order
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8)
+     returning id, slug, title_ru, description_ru, amount_kopecks,
+               duration_minutes, currency,
                is_active, display_order, created_at, updated_at`,
     [
       id,
@@ -153,6 +187,7 @@ export async function createTariff(input: TariffInput): Promise<PricingTariff> {
       input.titleRu.trim(),
       input.descriptionRu ?? null,
       input.amountKopecks,
+      input.durationMinutes,
       input.isActive ?? true,
       input.displayOrder ?? 0,
     ],
@@ -195,20 +230,49 @@ export async function updateTariff(
       }
     }
   }
+  // BUG-2026-05-13-3: duration_minutes is also immutable once any
+  // lesson_slot references this tariff. Same FK-as-snapshot pattern;
+  // the DB trigger `pricing_tariffs_duration_guard` (migration 0046)
+  // is the hard guard. App-layer check fires the friendlier error.
+  if ('durationMinutes' in patch && patch.durationMinutes != null) {
+    const refCheck = await pool.query(
+      `select 1 from lesson_slots where tariff_id = $1 limit 1`,
+      [id],
+    )
+    if (refCheck.rows.length > 0) {
+      const current = await pool.query(
+        `select duration_minutes from pricing_tariffs where id = $1`,
+        [id],
+      )
+      const currentDuration = current.rows[0]
+        ? Number(current.rows[0].duration_minutes)
+        : null
+      if (
+        currentDuration !== null &&
+        patch.durationMinutes !== currentDuration
+      ) {
+        throw new Error(
+          'tariff validation failed: durationMinutes/immutable_after_first_slot_reference',
+        )
+      }
+    }
+  }
   // COALESCE-by-flag pattern matching account_profiles.upsert: we need
   // to distinguish "leave unchanged" (key absent) from "clear to null"
   // (key present with null value).
   const result = await pool.query(
     `update pricing_tariffs set
-       slug           = case when $2 then $3            else slug           end,
-       title_ru       = case when $4 then $5            else title_ru       end,
-       description_ru = case when $6 then $7            else description_ru end,
-       amount_kopecks = case when $8 then $9            else amount_kopecks end,
-       is_active      = case when $10 then $11          else is_active      end,
-       display_order  = case when $12 then $13          else display_order  end,
+       slug             = case when $2 then $3            else slug             end,
+       title_ru         = case when $4 then $5            else title_ru         end,
+       description_ru   = case when $6 then $7            else description_ru   end,
+       amount_kopecks   = case when $8 then $9            else amount_kopecks   end,
+       is_active        = case when $10 then $11          else is_active        end,
+       display_order    = case when $12 then $13          else display_order    end,
+       duration_minutes = case when $14 then $15          else duration_minutes end,
        updated_at = now()
      where id = $1
-     returning id, slug, title_ru, description_ru, amount_kopecks, currency,
+     returning id, slug, title_ru, description_ru, amount_kopecks,
+               duration_minutes, currency,
                is_active, display_order, created_at, updated_at`,
     [
       id,
@@ -224,6 +288,8 @@ export async function updateTariff(
       patch.isActive ?? null,
       'displayOrder' in patch,
       patch.displayOrder ?? null,
+      'durationMinutes' in patch,
+      patch.durationMinutes ?? null,
     ],
   )
   return result.rows[0] ? rowToTariff(result.rows[0]) : null
