@@ -167,7 +167,10 @@ export function PackagesEditor({
               style={inputStyle}
             />
           </Field>
-          <Field label="Порядок">
+          <Field
+            label="Порядок (для каталога)"
+            hint="Меньшее число — выше в каталоге пакетов у ученика. На цену и состав пакета не влияет."
+          >
             <input
               type="number"
               value={draft.displayOrder}
@@ -272,13 +275,29 @@ export function PackagesEditor({
 function Field({
   label,
   children,
+  hint,
 }: {
   label: string
   children: React.ReactNode
+  hint?: string
 }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontSize: 12, color: 'var(--secondary)' }}>{label}</span>
+      <span
+        style={{
+          fontSize: 12,
+          color: 'var(--secondary)',
+          cursor: hint ? 'help' : undefined,
+        }}
+        title={hint}
+      >
+        {label}
+        {hint ? (
+          <span aria-hidden="true" style={{ marginLeft: 4, opacity: 0.7 }}>
+            ⓘ
+          </span>
+        ) : null}
+      </span>
       {children}
     </label>
   )
