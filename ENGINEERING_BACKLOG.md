@@ -6,6 +6,51 @@ to be implemented, not the current actual state of production.
 If a task already works in code or on the server, it does not belong
 here.
 
+## Wave BCS — Booking Calendly-style + Google Calendar sync (design 2026-05-13, SIGN-OFF)
+
+Full design: [`docs/plans/booking-calendly-style.md`](docs/plans/booking-calendly-style.md) — 7-round Codex paranoia loop (10→5→3→2→1→1→0 HIGH) before SIGN-OFF. Lock order, idempotency, push/pull contract, cancelled+200 healer all consistent.
+
+Two product asks fold into one wave family because they share schema (slot integration columns) and the conflict UX is meaningless without both the Calendly UI and the Google sync:
+
+- **Task 1**: replace learner booking UI with Calendly-style 3-screen flow + fast-path tiles for repeat users.
+- **Task 2**: two-way Google Calendar sync (Google only in MVP, Yandex deferred). Push events on `slot.booked`, pull busy intervals to hide overlapping `open` slots, conflict surface with 4 resolution actions.
+
+### Implementation queue (PR-decomposed)
+
+Each PR ≤500 LOC and atomically green-able. Sequencing: A (schema) → B (UI) + C (OAuth) in parallel → D (pull) → E (push) → F (conflict UX) → G (reconcile + hidden slots).
+
+- **BCS-A schema** (4 PRs): migrations 0042–0045 (lesson_slots additions, teacher_calendar_integrations, teacher_external_busy_intervals, calendar_push/pull_jobs + slot_lifecycle_intents).
+- **BCS-B Calendly UI** (5 PRs): agenda capture, booking-days API, booking-times API, confirm screen + POST, fast-path tiles + cabinet entry.
+- **BCS-C OAuth scaffolding** (6 PRs): `CALENDAR_ENCRYPTION_KEY` env + lib, Google OAuth client + state nonce + rate-limit, /api/teacher/calendar/google/* endpoints, /teacher/settings/calendar UI, /cabinet/settings/calendar (learner read-only), plain-language onboarding copy + tooltips.
+- **BCS-D pull contract** (5 PRs): pull lib (bounded full-rewrite), pull worker + cron, webhook endpoint with security checks, channel renewal cron, **bookSlot freshness contract + atomic overlap check (P0 fix)**.
+- **BCS-E push contract** (5 PRs): push worker (TX1), deterministic event id + shared extendedProperties idempotency, TX2 sync_state flip on auth failure, slot_lifecycle_intents + worker + cancel split into 2 TX, move push (events.patch).
+- **BCS-F conflict UX** (4 PRs): post-pull conflict detector, non-dismissable red banner on /teacher main, in-calendar highlight, 4-action resolution endpoints (dismiss/delete-external/cancel/move).
+- **BCS-G reconcile + hidden slots** (4 PRs): bounded reconcile sweep (F9‴ gated), hidden-slots surface (`GET /api/teacher/hidden-slots` + cabinet card), `blocked_integration` revival sweep + pathology alert, orphan-self cleanup UI (post-disconnect drift).
+
+Total estimate: 33 PRs across 7 waves. Reference cadence: billing-wave was 7 PRs / ~3 days; BCS is ~5x scope, expect 2-3 weeks of sustained shipping.
+
+### Deferred (separate waves, NOT in BCS)
+
+- **BCS-DEF-1** — Email + Telegram alerts on unresolved conflicts >2h (operator + teacher).
+- **BCS-DEF-2** — Admin "Conflict feed" dashboard with last-30d view.
+- **BCS-DEF-3** — Optional `zoomUrl` on slot — nullable at create, editable on already-booked slot.
+- **BCS-DEF-4** — Lesson-start reminders for learner (per-user settings: 60/30/10 min, email/telegram/push).
+- **BCS-DEF-5** — Lesson-start reminders for teacher (mirror settings).
+- **BCS-DEF-6** — Yandex calendar integration.
+- **BCS-DEF-7** — `syncToken`-based incremental pull (post-MVP optimization; replaces bounded full-rewrite for active teachers).
+
+### Invariants (cf. plan §8 — must survive future changes)
+
+1. Lock order: `teacher_calendar_integrations` → `teacher_external_busy_intervals` → `lesson_slots` → `calendar_push_jobs + slot_lifecycle_intents` → `calendar_pull_jobs`. Violations are P0 deadlock risk.
+2. `bookSlot` ALWAYS overlap-checks against fresh busy cache atomically. Stale cache (>10min) is IGNORED, never blocks.
+3. `extendedProperties.shared.lc_origin/lc_slot_id/lc_epoch` are LC's ownership stamp, write-once. Pull reads, never mutates.
+4. `cancel` ALWAYS enqueues `delete` intent even if `external_event_id IS NULL` (deterministic id via COALESCE).
+5. Reconciliation is bounded + gated. No runaway re-enqueue on `terminal_failure` without `last_reconnected_at` advance.
+6. OAuth tokens encrypted via separate `CALENDAR_ENCRYPTION_KEY` (blast-radius from `AUDIT_ENCRYPTION_KEY`).
+7. Webhook is enqueue-only; never mutates busy intervals directly.
+8. Foreign event `summary` stored encrypted, 64-char truncated, 30d retention.
+9. MSK-only teachers in MVP (DB CHECK enforces).
+
 ## Lesson learned — 2026-05-07 — close the smoke blind spot
 
 `/api/health` instantiates its own ad-hoc `Pool` (see
