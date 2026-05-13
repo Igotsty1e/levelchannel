@@ -243,8 +243,8 @@ describe('POST /api/admin/refunds', () => {
     const pool = getDbPool()
 
     const tariff = await pool.query(
-      `insert into pricing_tariffs (slug, title_ru, amount_kopecks)
-       values ($1, '60 мин', 100000)
+      `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes)
+       values ($1, '60 мин', 100000, 60)
        returning id`,
       [`refund-paidstate-${Date.now()}`],
     )

@@ -68,6 +68,9 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   if ('amountKopecks' in raw && typeof raw.amountKopecks === 'number') {
     patch.amountKopecks = raw.amountKopecks
   }
+  if ('durationMinutes' in raw && typeof raw.durationMinutes === 'number') {
+    patch.durationMinutes = raw.durationMinutes
+  }
   if ('isActive' in raw && typeof raw.isActive === 'boolean') {
     patch.isActive = raw.isActive
   }
@@ -97,6 +100,23 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     if (message.includes('pricing_tariffs_slug_unique')) {
       return NextResponse.json(
         { error: 'slug/already_taken' },
+        { status: 409, headers: NO_STORE },
+      )
+    }
+    if (
+      message.includes('immutable_after_first_slot_reference')
+    ) {
+      const field = message.includes('amountKopecks')
+        ? 'amountKopecks'
+        : 'durationMinutes'
+      return NextResponse.json(
+        {
+          error: `${field}/immutable_after_first_slot_reference`,
+          message:
+            field === 'durationMinutes'
+              ? 'Длительность тарифа нельзя изменить после первой привязки к слоту. Заведите новый тариф под другую длительность.'
+              : 'Цену тарифа нельзя изменить после первой привязки к слоту. Заведите новый тариф с новой ценой.',
+        },
         { status: 409, headers: NO_STORE },
       )
     }

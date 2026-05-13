@@ -48,6 +48,45 @@ async function assertTeacherRole(teacherAccountId: string): Promise<void> {
   }
 }
 
+// BUG-2026-05-13-3: when the operator binds a tariff to a slot, the
+// slot's duration must equal the tariff's duration. Otherwise a 60-min
+// slot bound to a 90-min tariff would mis-decrement packages (one
+// 90-min package unit consumed for a 60-min slot, or vice versa).
+export class SlotTariffDurationMismatchError extends Error {
+  constructor(
+    public readonly slotDuration: number,
+    public readonly tariffDuration: number,
+  ) {
+    super(
+      `slot/tariffId/duration_mismatch: slot=${slotDuration}m tariff=${tariffDuration}m`,
+    )
+    this.name = 'SlotTariffDurationMismatchError'
+  }
+}
+
+async function assertTariffDurationMatches(
+  tariffId: string,
+  slotDurationMinutes: number,
+): Promise<void> {
+  const pool = getDbPool()
+  const r = await pool.query(
+    `select duration_minutes from pricing_tariffs where id = $1`,
+    [tariffId],
+  )
+  if (r.rows.length === 0) {
+    // Unknown tariff. The downstream FK insert will fail too, but a
+    // tariff-specific error is friendlier than the generic FK message.
+    throw new Error('slot/tariffId/unknown')
+  }
+  const tariffDuration = Number(r.rows[0].duration_minutes)
+  if (tariffDuration !== slotDurationMinutes) {
+    throw new SlotTariffDurationMismatchError(
+      slotDurationMinutes,
+      tariffDuration,
+    )
+  }
+}
+
 export async function createSlot(
   input: CreateSlotInput,
 ): Promise<LessonSlot> {
@@ -59,6 +98,10 @@ export async function createSlot(
     if (!UUID_PATTERN.test(input.tariffId)) {
       throw new Error('slot/tariffId/invalid')
     }
+    // BUG-2026-05-13-3: a 90-min tariff must not clip to a 60-min slot
+    // (or vice versa). Tariff is the product unit; slot duration must
+    // match it exactly when one is bound.
+    await assertTariffDurationMatches(input.tariffId, input.durationMinutes)
   }
   await assertTeacherRole(input.teacherAccountId)
   const pool = getDbPool()
@@ -110,6 +153,9 @@ export async function bulkCreateSlots(
     if (!UUID_PATTERN.test(input.tariffId)) {
       throw new Error('slot/tariffId/invalid')
     }
+    // BUG-2026-05-13-3: tariff duration must match the bulk-create
+    // slot duration (single duration for the whole batch).
+    await assertTariffDurationMatches(input.tariffId, input.durationMinutes)
   }
   await assertTeacherRole(input.teacherAccountId)
 

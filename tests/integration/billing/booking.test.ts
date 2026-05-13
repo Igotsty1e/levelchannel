@@ -221,8 +221,8 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
     )
     // Need a tariff with same duration on the slot.
     const tariffRow = await getDbPool().query(
-      `insert into pricing_tariffs (slug, title_ru, amount_kopecks)
-       values ('pr1-postpay-tariff', '60 мин test', 350000)
+      `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes)
+       values ('pr1-postpay-tariff', '60 мин test', 350000, 60)
        returning id`,
     )
     const tariffId = String(tariffRow.rows[0].id)
@@ -332,8 +332,8 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
     )
     // Tariff for 60-min slot with postpaid path.
     const tariffRow = await getDbPool().query(
-      `insert into pricing_tariffs (slug, title_ru, amount_kopecks)
-       values ('pr1-mis-tariff', '60 мин mismatch', 350000)
+      `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes)
+       values ('pr1-mis-tariff', '60 мин mismatch', 350000, 60)
        returning id`,
     )
     const tariffId = String(tariffRow.rows[0].id)
@@ -426,8 +426,8 @@ describe('PR 1 — slotIsPaidByAllocations (CASE-filtered SUM)', () => {
     const { admin, teacher, learner } = await setupTeacherAndLearner('pr1-paid-state')
     void learner
     const tariffRow = await getDbPool().query(
-      `insert into pricing_tariffs (slug, title_ru, amount_kopecks)
-       values ('pr1-paid-state-tariff', '60 мин', 350000)
+      `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes)
+       values ('pr1-paid-state-tariff', '60 мин', 350000, 60)
        returning id`,
     )
     const tariffId = String(tariffRow.rows[0].id)
