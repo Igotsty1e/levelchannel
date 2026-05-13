@@ -120,7 +120,14 @@ describe('getCalendarEncryptionKeyOld', () => {
     __resetCalendarEncryptionKeyCache()
   })
 
-  it('returns null when not set, even in production', () => {
+  it('returns null when not set in any env (dev + prod)', () => {
+    // Strict-mirror with audit suite: OLD-key missing is never an
+    // error, even in prod (rotation is opt-in).
+    expect(
+      getCalendarEncryptionKeyOld({
+        NODE_ENV: 'development',
+      } as NodeJS.ProcessEnv),
+    ).toBeNull()
     expect(
       getCalendarEncryptionKeyOld({
         NODE_ENV: 'production',
@@ -163,5 +170,25 @@ describe('getCalendarEncryptionKeyOld', () => {
     expect(getCalendarEncryptionKeyOld()).toBe('q'.repeat(32))
 
     delete process.env.CALENDAR_ENCRYPTION_KEY_OLD
+  })
+
+  it('caches independently of the PRIMARY key', () => {
+    // Strict-mirror with audit suite (`caches independently of
+    // PRIMARY`). Confirms the two cache slots are not coupled —
+    // resetting + dropping OLD does not invalidate PRIMARY, and
+    // PRIMARY repopulates from process.env on the next call.
+    process.env.CALENDAR_ENCRYPTION_KEY = 'p'.repeat(32)
+    process.env.CALENDAR_ENCRYPTION_KEY_OLD = 'o'.repeat(32)
+    expect(getCalendarEncryptionKey()).toBe('p'.repeat(32))
+    expect(getCalendarEncryptionKeyOld()).toBe('o'.repeat(32))
+    // Resetting clears both caches. Important so a rotation that
+    // drops OLD mid-deploy doesn't leave stale cache.
+    __resetCalendarEncryptionKeyCache()
+    delete process.env.CALENDAR_ENCRYPTION_KEY_OLD
+    expect(getCalendarEncryptionKeyOld()).toBeNull()
+    // PRIMARY is still set — cache populates anew.
+    expect(getCalendarEncryptionKey()).toBe('p'.repeat(32))
+
+    delete process.env.CALENDAR_ENCRYPTION_KEY
   })
 })
