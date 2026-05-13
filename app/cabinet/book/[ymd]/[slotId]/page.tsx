@@ -43,27 +43,32 @@ export default async function BookConfirmPage({ params }: RouteParams) {
   if (!session) redirect('/login')
   if (!session.account.emailVerifiedAt) redirect('/cabinet')
 
+  // BCS-B.frontend Codex #2: single indistinguishable outcome for any
+  // case where this learner shouldn't see this slot. notFound() is
+  // returned for: missing slot, foreign-teacher slot, or learner
+  // without an assigned teacher at all. Only after we've confirmed
+  // the slot is OURS do we branch on status.
   const slot = await getSlotById(slotId)
-  if (!slot) notFound()
+  const assignedTeacherId = session.account.assignedTeacherId
+  if (
+    !slot
+    || !assignedTeacherId
+    || slot.teacherAccountId !== assignedTeacherId
+  ) {
+    notFound()
+  }
   if (slot.status !== 'open') {
     // Slot was booked / cancelled between screens; route back to time
     // list so the user can pick another.
     redirect(`/cabinet/book/${ymd}`)
   }
 
-  // Defense in depth: deny confirmation if the slot belongs to a
-  // teacher other than the learner's assigned one. The API book
-  // route does the real check; redirect here is for cleaner UX.
-  if (
-    session.account.assignedTeacherId
-    && slot.teacherAccountId !== session.account.assignedTeacherId
-  ) {
-    redirect('/cabinet/book')
-  }
-
   const profile = await getAccountProfile(session.account.id)
   const tz = profile?.timezone ?? 'Europe/Moscow'
 
+  // Codex #3: every date part (weekday/day/month/year) must come from
+  // the learner's tz, not the server's. Combined formatter does the
+  // full localization in one pass.
   const start = new Date(slot.startAt)
   const end = new Date(start.getTime() + slot.durationMinutes * 60_000)
   const fmt = (dt: Date) =>
@@ -72,10 +77,22 @@ export default async function BookConfirmPage({ params }: RouteParams) {
       hour: '2-digit',
       minute: '2-digit',
     })
-  const weekday = WEEKDAY_NAMES[start.getDay()]
-  const month = MONTH_NAMES_GEN[start.getMonth()]
-  const dayOfMonth = start.getDate()
-  const year = start.getFullYear()
+  const dateParts = new Intl.DateTimeFormat('ru-RU', {
+    timeZone: tz,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+    .formatToParts(start)
+    .reduce<Record<string, string>>((acc, p) => {
+      if (p.type !== 'literal') acc[p.type] = p.value
+      return acc
+    }, {})
+  const weekday = dateParts.weekday ?? ''
+  const month = dateParts.month ?? ''
+  const dayOfMonth = dateParts.day ?? ''
+  const year = dateParts.year ?? ''
 
   return (
     <AuthShell>

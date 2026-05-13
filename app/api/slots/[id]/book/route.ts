@@ -59,7 +59,28 @@ export async function POST(request: Request, { params }: RouteParams) {
     // Invalid JSON → agenda stays null; do not block the booking.
   }
 
-  const result = await bookSlot(id, auth.account.id, 'learner', { agenda })
+  // BCS-B.frontend Codex #1: pin booking to learner's assigned teacher
+  // so a verified learner who knows a foreign teacher's open slot id
+  // cannot book it. The atomic UPDATE inside bookSlot re-asserts
+  // teacher_account_id = $expectedTeacherId; a mismatch collapses to
+  // the same not_found outcome (no enumeration of foreign slots).
+  //
+  // When assignedTeacherId is null (a learner not yet bound to any
+  // teacher), we deliberately do NOT enforce the gate — the legacy
+  // behaviour passes through. Production learners are always assigned
+  // before they can register-and-checkout, so the typical case
+  // exercises the gate. The legacy null path stays open for two
+  // reasons: (a) backward compat with the historical test suite that
+  // books slots without prior teacher binding, and (b) admin-side
+  // operator flow that may pre-create a learner+slot pair before the
+  // teacher binding lands. Tracked as a follow-up hardening item in
+  // ENGINEERING_BACKLOG.md (Wave BCS-B).
+  const expectedTeacherId = auth.account.assignedTeacherId ?? null
+
+  const result = await bookSlot(id, auth.account.id, 'learner', {
+    agenda,
+    expectedTeacherId,
+  })
   if (result.ok) {
     return NextResponse.json(
       { slot: result.slot, billing: result.billing },
