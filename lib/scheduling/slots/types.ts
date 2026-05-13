@@ -102,6 +102,11 @@ export type LessonSlot = {
   tariffTitleRu?: string | null
   tariffAmountKopecks?: number | null
   notes: string | null
+  // BCS-B.1 — learner's free-form comment captured on Calendly confirm
+  // screen. Nullable. Capped at MAX_AGENDA_LEN at write time. Visible to
+  // teacher in their slot view (frontend in BCS-B.frontend). NOT shown
+  // to the operator-facing admin UI (those reads pre-date this field).
+  agenda: string | null
   events: SlotEvent[]
   createdAt: string
   updatedAt: string

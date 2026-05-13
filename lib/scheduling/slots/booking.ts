@@ -5,12 +5,31 @@
 import { getDbPool } from '@/lib/db/pool'
 
 import {
+  MAX_AGENDA_LEN,
   SLOT_COLUMNS,
   UUID_PATTERN,
   appendEventSql,
   rowToSlot,
 } from './internal'
 import type { BookSlotResult } from './types'
+
+// BCS-B.1 — sanitize learner-supplied agenda before persisting. Trim
+// whitespace, refuse over the cap, normalise empty string → null. The
+// caller (route) handles the surface for "too long" — here we just
+// short-circuit to null to keep the booking atomic SQL deterministic.
+function sanitizeAgenda(input: string | null | undefined): string | null {
+  if (input === null || input === undefined) return null
+  const trimmed = String(input).trim()
+  if (trimmed.length === 0) return null
+  if (trimmed.length > MAX_AGENDA_LEN) return null
+  return trimmed
+}
+
+export type BookSlotOptions = {
+  // Free-form learner comment from Calendly confirm screen. Stored on
+  // lesson_slots.agenda. Null = not provided / blank / over cap.
+  agenda?: string | null
+}
 
 // Atomic book-the-slot. Re-asserts status='open' in the WHERE so two
 // concurrent POSTs don't both win.
@@ -42,9 +61,14 @@ export async function bookSlot(
   slotId: string,
   learnerAccountId: string,
   actor: 'learner' | 'admin' = 'learner',
+  options: BookSlotOptions = {},
 ): Promise<BookSlotResult> {
   if (!UUID_PATTERN.test(slotId)) return { ok: false, reason: 'not_found' }
   const billingActive = process.env.BILLING_WAVE_ACTIVE === 'true'
+  // BCS-B.1: agenda is set ONLY on learner-initiated booking. Admin
+  // book-as-operator path passes nothing → null. Operator typing on
+  // behalf of the learner is out of scope; the cabinet UI captures it.
+  const agenda = actor === 'learner' ? sanitizeAgenda(options.agenda) : null
 
   // Legacy fast path — preserved bit-for-bit when the wave is off.
   if (!billingActive) {
@@ -54,6 +78,7 @@ export async function bookSlot(
           set status = 'booked',
               learner_account_id = $2,
               booked_at = now(),
+              agenda = $4,
               updated_at = now(),
               events = $3::jsonb || events
         where id = $1
@@ -65,6 +90,7 @@ export async function bookSlot(
         slotId,
         learnerAccountId,
         appendEventSql('slot.booked', actor, { learnerAccountId }),
+        agenda,
       ],
     )
     if (result.rows[0]) {
@@ -105,6 +131,7 @@ export async function bookSlot(
           set status = 'booked',
               learner_account_id = $2,
               booked_at = now(),
+              agenda = $4,
               updated_at = now(),
               events = $3::jsonb || events
         where id = $1
@@ -116,6 +143,7 @@ export async function bookSlot(
         slotId,
         learnerAccountId,
         appendEventSql('slot.booked', actor, { learnerAccountId }),
+        agenda,
       ],
     )
     if (slotResult.rows.length === 0) {

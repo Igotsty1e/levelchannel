@@ -17,9 +17,15 @@ type RouteParams = { params: Promise<{ id: string }> }
 // POST /api/slots/[id]/book — learner books an open slot.
 // Phase 4 D2: requires authenticated + email verified.
 //
-// Empty body. The atomic UPDATE in the store re-asserts status='open'
-// in WHERE so two concurrent POSTs can't both win — the loser gets
-// 409 with a friendly hint.
+// Body is optional. BCS-B.1 adds `{ agenda?: string }` for Calendly-
+// confirm comment capture; legacy clients sending empty bodies stay
+// supported (agenda → null). Invalid JSON in the body is tolerated —
+// we degrade to "no agenda" rather than reject the booking; the
+// learner's intent (book this slot) outranks the optional comment.
+//
+// The atomic UPDATE in the store re-asserts status='open' in WHERE so
+// two concurrent POSTs can't both win — the loser gets 409 with a
+// friendly hint.
 
 export async function POST(request: Request, { params }: RouteParams) {
   const { id } = await params
@@ -33,7 +39,27 @@ export async function POST(request: Request, { params }: RouteParams) {
   const auth = await requireLearnerArchetypeAndVerified(request)
   if (!auth.ok) return auth.response
 
-  const result = await bookSlot(id, auth.account.id, 'learner')
+  // BCS-B.1 soft body parse — tolerant of empty body or malformed JSON.
+  // sanitizeAgenda inside bookSlot defends against over-cap input.
+  let agenda: string | null = null
+  try {
+    const raw = await request.text()
+    if (raw && raw.trim().length > 0) {
+      const parsed = JSON.parse(raw) as unknown
+      if (
+        typeof parsed === 'object'
+        && parsed !== null
+        && !Array.isArray(parsed)
+        && typeof (parsed as { agenda?: unknown }).agenda === 'string'
+      ) {
+        agenda = (parsed as { agenda: string }).agenda
+      }
+    }
+  } catch {
+    // Invalid JSON → agenda stays null; do not block the booking.
+  }
+
+  const result = await bookSlot(id, auth.account.id, 'learner', { agenda })
   if (result.ok) {
     return NextResponse.json(
       { slot: result.slot, billing: result.billing },

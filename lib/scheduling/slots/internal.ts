@@ -10,6 +10,10 @@ export const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export const MAX_NOTES_LEN = 500
 export const MAX_REASON_LEN = 500
+// BCS-B.1 — learner's Calendly-confirm comment cap. Generous enough for a
+// short paragraph but small enough that abusive payloads can't poison
+// the slot row.
+export const MAX_AGENDA_LEN = 1000
 
 export const SLOT_COLUMNS = `
   id,
@@ -25,6 +29,7 @@ export const SLOT_COLUMNS = `
   marked_at,
   tariff_id,
   notes,
+  agenda,
   events,
   created_at,
   updated_at
@@ -71,6 +76,10 @@ export function rowToSlot(
     tariffTitleRu: extra.tariffTitleRu ?? null,
     tariffAmountKopecks: extra.tariffAmountKopecks ?? null,
     notes: row.notes ? String(row.notes) : null,
+    // BCS-B.1 — read agenda when present. Queries that pre-date this
+    // field don't include the column in their SELECT, in which case
+    // row.agenda is undefined → null projection. Backward compatible.
+    agenda: row.agenda ? String(row.agenda) : null,
     events: Array.isArray(row.events)
       ? (row.events as SlotEvent[])
       : [],
