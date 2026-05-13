@@ -1,10 +1,25 @@
 import { cookies } from 'next/headers'
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { getDbPool } from '@/lib/db/pool'
 import { listActiveTariffs } from '@/lib/pricing/tariffs'
 
 import TeacherCalendarClient from './client'
+
+async function countTeacherConflicts(teacherAccountId: string): Promise<number> {
+  const r = await getDbPool().query(
+    `select count(*)::int as n
+       from lesson_slots
+      where teacher_account_id = $1
+        and status = 'booked'
+        and external_conflict_at is not null
+        and start_at > now()`,
+    [teacherAccountId],
+  )
+  return Number(r.rows[0]?.n ?? 0)
+}
 
 // Wave A PR4 — full-week teacher calendar. Reads the session a second
 // time (after the layout already gated) only to surface the teacher's
@@ -26,9 +41,39 @@ export default async function TeacherPage() {
   }
 
   const tariffs = await listActiveTariffs()
+  const conflictCount = await countTeacherConflicts(current.account.id)
 
   return (
     <>
+      {conflictCount > 0 ? (
+        <div
+          role="alert"
+          style={{
+            padding: '14px 18px',
+            background: 'rgba(255, 80, 80, 0.12)',
+            border: '1px solid rgba(255, 138, 138, 0.45)',
+            borderRadius: 10,
+            color: '#ffb0b0',
+            marginBottom: 16,
+            fontSize: 14,
+            lineHeight: 1.5,
+          }}
+        >
+          ⚠️ <strong>Конфликт расписания:</strong>{' '}
+          {conflictCount === 1
+            ? '1 урок пересекается'
+            : `${conflictCount} уроков пересекаются`}{' '}
+          с событиями в вашем Google Calendar. Нажмите на красный слот в
+          расписании ниже — выберите, как разрулить.{' '}
+          <Link
+            href="/teacher/settings/calendar"
+            style={{ color: 'inherit', textDecoration: 'underline' }}
+          >
+            Настройки интеграции
+          </Link>
+          .
+        </div>
+      ) : null}
       <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 8 }}>
         Мой календарь
       </h1>
