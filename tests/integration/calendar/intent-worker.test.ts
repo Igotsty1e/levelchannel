@@ -238,4 +238,79 @@ describe('reviveBlockedIntents', () => {
     const r = await reviveBlockedIntents()
     expect(r.revived).toBe(0)
   })
+
+  // BCS-HARDEN-4 regression — wave-paranoia round-1 WARN #2.
+  // Before the fix, the SQL also required `last_pulled_at >= now()-30m`
+  // and `upsertGoogleIntegration` nulls last_pulled_at on reconnect,
+  // so blocked intents would NOT revive immediately after reconnect
+  // (had to wait for a successful pull AND then a revive tick).
+  // After the fix (drop the freshness gate), a freshly-reconnected
+  // integration with NULL last_pulled_at revives blocked intents
+  // on the first revive tick.
+  it('revives even when last_pulled_at is NULL (just-reconnected integration)', async () => {
+    const teacher = await makeTeacher('rev-just-reconnected@example.com')
+    await connect(teacher)
+    const slot = await cancelledSlot(teacher, '2026-11-09T10:00:00Z')
+    const pool = getDbPool()
+    await pool.query(
+      `insert into slot_lifecycle_intents (slot_id, kind, status, next_run_at)
+       values ($1, 'post_cancel_push', 'blocked_integration', now() + interval '1 hour')`,
+      [slot],
+    )
+    // Simulate the just-reconnected state: sync_state active but
+    // last_pulled_at still null (the OAuth callback path resets it).
+    await pool.query(
+      `update teacher_calendar_integrations
+          set sync_state = 'active', last_pulled_at = null
+        where account_id = $1`,
+      [teacher],
+    )
+    const r = await reviveBlockedIntents()
+    expect(r.revived).toBeGreaterThanOrEqual(1)
+    const after = await pool.query(
+      `select status from slot_lifecycle_intents where slot_id = $1`,
+      [slot],
+    )
+    expect(after.rows[0].status).toBe('pending')
+  })
+})
+
+// BCS-HARDEN-3 regression — wave-paranoia round-1 WARN #1.
+// Before the migration 0047 + worker fix, claimNextIntent left
+// status='pending' (only bumped attempts), so two parallel drains
+// could re-claim the same row. After the fix, the claim atomically
+// flips status to 'in_progress', so the second concurrent claim sees
+// no rows.
+describe('claimNextIntent atomicity (BCS-HARDEN-3)', () => {
+  it('flips status to in_progress so concurrent claims cannot re-pick the same row', async () => {
+    const teacher = await makeTeacher('claim-race@example.com')
+    await connect(teacher)
+    const slot = await cancelledSlot(teacher, '2026-11-10T10:00:00Z')
+    const pool = getDbPool()
+    await pool.query(
+      `insert into slot_lifecycle_intents (slot_id, kind, status, next_run_at)
+       values ($1, 'post_cancel_push', 'pending', now())`,
+      [slot],
+    )
+    // First drain. After it lands, the intent must be in a non-pending
+    // status (post_cancel_push enqueues a delete push job + flips to
+    // 'succeeded' or 'blocked_integration' or 'terminal_failure'). The
+    // KEY invariant: status is NEVER pending after a successful claim.
+    const result1 = await drainIntents({})
+    expect(result1.outcomes).toHaveLength(1)
+
+    // Second drain should claim NOTHING — the row is no longer
+    // pending; it landed in some terminal/blocked state.
+    const result2 = await drainIntents({})
+    expect(result2.outcomes).toHaveLength(0)
+
+    // Sanity: confirm the underlying row isn't back at pending +
+    // attempts != 2 (which would indicate the race).
+    const row = await pool.query(
+      `select status, attempts from slot_lifecycle_intents where slot_id = $1`,
+      [slot],
+    )
+    expect(row.rows[0].status).not.toBe('pending')
+    expect(Number(row.rows[0].attempts)).toBe(1)
+  })
 })

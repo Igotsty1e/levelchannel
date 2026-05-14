@@ -53,6 +53,14 @@ type ClaimedIntent = {
 
 async function claimNextIntent(): Promise<ClaimedIntent | null> {
   const pool = getDbPool()
+  // BCS-HARDEN-3 — wave-paranoia round-1 WARN #1. The original CTE
+  // bumped `attempts` and `last_run_at` but left `status='pending'`,
+  // so a parallel drainIntents() (overlap from the cron timer or
+  // manual re-fire) could re-claim the same row and double-execute.
+  // Mirror the pull-worker / push-worker pattern: flip to
+  // 'in_progress' atomically in the same RETURNING statement.
+  // markSucceeded / markBlocked / markTerminal / reschedule below
+  // each flip status back to its terminal value.
   const r = await pool.query(
     `with claimed as (
        select id from slot_lifecycle_intents
@@ -63,7 +71,9 @@ async function claimNextIntent(): Promise<ClaimedIntent | null> {
         for update skip locked
      )
      update slot_lifecycle_intents i
-        set attempts = i.attempts + 1, last_run_at = now()
+        set status = 'in_progress',
+            attempts = i.attempts + 1,
+            last_run_at = now()
        from claimed
       where i.id = claimed.id
       returning i.id, i.slot_id, i.kind, i.attempts`,
@@ -274,6 +284,23 @@ export async function insertPostCancelIntent(
 
 // Revival sweep — every 1h flip `blocked_integration` rows back to
 // pending when the integration looks actionable again.
+//
+// BCS-HARDEN-4 — wave-paranoia round-1 WARN #2 closed. The original
+// gate required `tci.last_pulled_at >= now() - 30min` in addition to
+// `sync_state in ('active','degraded')`. But `upsertGoogleIntegration`
+// nulls `last_pulled_at` on every reconnect (see
+// `lib/calendar/integrations.ts:upsertGoogleIntegration`), so a
+// teacher who reconnected was stuck in a two-cycle latency: their
+// blocked intents wouldn't revive until (a) the pull cron successfully
+// stamped `last_pulled_at` on the integration, AND THEN (b) the next
+// hourly revive tick saw the fresh stamp.
+//
+// The fix: drop the freshness gate. The `sync_state in
+// ('active','degraded')` check already establishes the integration is
+// reachable. If the underlying push later 401s again (real Google
+// problem), the cancel intent re-enters `blocked_integration` via
+// markBlocked anyway — there's no risk of "reviving into a
+// permanently-broken integration."
 export async function reviveBlockedIntents(): Promise<{ revived: number }> {
   const pool = getDbPool()
   const r = await pool.query(
@@ -285,7 +312,6 @@ export async function reviveBlockedIntents(): Promise<{ revived: number }> {
       where i.slot_id = s.id
         and i.status = 'blocked_integration'
         and tci.sync_state in ('active', 'degraded')
-        and tci.last_pulled_at >= now() - interval '30 minutes'
       returning i.id`,
   )
   return { revived: r.rows.length }
