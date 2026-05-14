@@ -74,46 +74,76 @@ type SeedSlotOpts = {
   externalSyncFailedAt?: string | null
 }
 
+function alignedMskStartAt(offsetDays: number, mskHour = 10): string {
+  // Slot CHECKs require: start_at minute aligned to :00/:30 MSK,
+  // hour in [6, 22) MSK, and start + duration < MSK midnight.
+  // We use MSK 10:00:00 by default — comfortably inside the band.
+  const target = new Date(Date.now() + offsetDays * 24 * 60 * 60_000)
+  // MSK = UTC+3, so UTC hour = MSK hour - 3. UTC seconds + minutes = 0.
+  target.setUTCHours(mskHour - 3, 0, 0, 0)
+  return target.toISOString()
+}
+
 async function seedSlot(opts: SeedSlotOpts): Promise<string> {
   const startOffsetDays = opts.startOffsetDays ?? 7
-  const startAt = new Date(
-    Date.now() + startOffsetDays * 24 * 60 * 60_000,
-  ).toISOString()
-  const learnerCols = opts.status === 'booked'
-    ? `, learner_account_id = $1, booked_at = now()`
-    : `, learner_account_id = null, booked_at = null`
+  const startAt = alignedMskStartAt(startOffsetDays)
   // Two-step: insert minimally valid row, then patch external columns +
   // status. Keeps the (booked → learner_account_id NOT NULL) CHECK
   // and the (external_event_id ⇔ external_calendar_id) CHECK happy.
   const insR = await getDbPool().query(
     `insert into lesson_slots (id, teacher_account_id, start_at,
                                duration_minutes, status)
-     values (gen_random_uuid(), $1, $2::timestamptz, 60, 'open')
+     values (gen_random_uuid(), $1::uuid, $2::timestamptz, 60, 'open')
      returning id`,
     [opts.teacherId, startAt],
   )
   const slotId = String(insR.rows[0].id)
-  await getDbPool().query(
-    `update lesson_slots
-        set status = $2,
-            external_calendar_id = $3,
-            external_event_id = $4,
-            integration_epoch = $5,
-            last_reconciled_at = $6::timestamptz,
-            external_sync_failed_at = $7::timestamptz
-            ${learnerCols}
-      where id = $8`,
-    [
-      opts.teacherId,
-      opts.status,
-      opts.externalCalendarId ?? 'primary',
-      opts.externalEventId,
-      opts.integrationEpoch,
-      opts.lastReconciledAt,
-      opts.externalSyncFailedAt,
-      slotId,
-    ],
-  )
+  // booked path needs learner_account_id (CHECK constraint); cancelled
+  // path leaves it null (INSERT default). Run as two separate UPDATEs
+  // to keep each SQL statement small + every param's type unambiguous.
+  if (opts.status === 'booked') {
+    await getDbPool().query(
+      `update lesson_slots
+          set status = 'booked',
+              learner_account_id = $1::uuid,
+              booked_at = now(),
+              external_calendar_id = $2::text,
+              external_event_id = $3::text,
+              integration_epoch = $4::text,
+              last_reconciled_at = $5::timestamptz,
+              external_sync_failed_at = $6::timestamptz
+        where id = $7::uuid`,
+      [
+        opts.teacherId,
+        opts.externalCalendarId ?? 'primary',
+        opts.externalEventId,
+        opts.integrationEpoch,
+        opts.lastReconciledAt,
+        opts.externalSyncFailedAt,
+        slotId,
+      ],
+    )
+  } else {
+    await getDbPool().query(
+      `update lesson_slots
+          set status = 'cancelled',
+              cancelled_at = now(),
+              external_calendar_id = $1::text,
+              external_event_id = $2::text,
+              integration_epoch = $3::text,
+              last_reconciled_at = $4::timestamptz,
+              external_sync_failed_at = $5::timestamptz
+        where id = $6::uuid`,
+      [
+        opts.externalCalendarId ?? 'primary',
+        opts.externalEventId,
+        opts.integrationEpoch,
+        opts.lastReconciledAt,
+        opts.externalSyncFailedAt,
+        slotId,
+      ],
+    )
+  }
   return slotId
 }
 
