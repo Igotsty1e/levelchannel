@@ -24,6 +24,8 @@ The project combines public marketing pages, direct checkout, payment reconcilia
 - auth, registration, verify-email, reset-password, and minimal cabinet surface
 - payment audit and telemetry layers
 - baseline hardening: headers, origin checks, HMAC verification, and rate limiting
+- tariff catalog with mandatory lesson duration (60/90 min), price/duration immutable after first slot reference, hard-delete refused when slots reference the tariff
+- booking calendar sync with Google Calendar: Calendly-style booking UI, OAuth scaffolding, two-way pull/push, post-pull conflict detector, teacher conflict resolution surface (red outline + modal actions)
 
 ## What is intentionally private
 
@@ -38,10 +40,12 @@ landing in git. The pre-commit hook runs the same script with `--staged`.
 
 ## High-level architecture
 
-- `app/` contains public pages, legal pages, auth UI, and API routes
-- `components/` contains UI building blocks, including the payment surface
+- `app/` contains public pages, legal pages, auth UI, teacher + cabinet surfaces, and API routes
+- `components/` contains UI building blocks, including the payment + calendar surfaces
 - `lib/payments/` contains payment orchestration, provider integrations, storage, and webhook logic
 - `lib/auth/` and `lib/email/` contain the account layer and transactional email logic
+- `lib/scheduling/` and `lib/calendar/` contain slot lifecycle, booking, Google Calendar OAuth + pull/push workers, and the post-pull conflict detector
+- `lib/pricing/` and `lib/billing/` contain the tariff catalog and the package/postpaid billing layer
 - `scripts/` contains operational tooling; the full production runbook is kept private
 
 Public-facing architecture and workflow notes live in [`docs/public/ARCHITECTURE.md`](docs/public/ARCHITECTURE.md), [`docs/public/ROADMAP.md`](docs/public/ROADMAP.md), and [`docs/public/AI_WORKFLOW.md`](docs/public/AI_WORKFLOW.md).
@@ -94,8 +98,11 @@ Minimum local set:
 
 - [DOCUMENTATION.md](DOCUMENTATION.md): documentation map and ownership
 - [ARCHITECTURE.md](ARCHITECTURE.md): internal file-by-file code map
+- [AGENTS.md](AGENTS.md): AI-agent entry point, doc layer, risk discipline, skill routing
 - [SECURITY.md](SECURITY.md): trust boundaries and hardening notes
 - [PAYMENTS_SETUP.md](PAYMENTS_SETUP.md): payment contract and integration notes
+- [docs/legal-pipeline.md](docs/legal-pipeline.md): mechanical guardrail for legal-RF content (commit trailer + CI gate)
+- [docs/skill-pipeline.md](docs/skill-pipeline.md): mechanical guardrail for GSTACK skill discipline (commit trailer + CI gate)
 - [docs/public/ARCHITECTURE.md](docs/public/ARCHITECTURE.md): public-facing system overview
 - [docs/public/ROADMAP.md](docs/public/ROADMAP.md): current phase and next steps
 - [docs/public/AI_WORKFLOW.md](docs/public/AI_WORKFLOW.md): AI usage boundaries
