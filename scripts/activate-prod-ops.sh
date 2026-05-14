@@ -340,9 +340,24 @@ fi
 
 step "Enable + start systemd timers"
 
+# BCS-OP-ROLLOUT wave-paranoia round-1 WARN #5 — when unit files have
+# changed (UNITS_CHANGED=1), `systemctl daemon-reload` already ran
+# above to make systemd aware. But `enable --now` is a no-op for
+# already-enabled timers, so the existing timer keeps using its
+# previously-loaded cadence / ExecStart until something restarts it.
+# Restart ALL listed timers in that case so OnCalendar / TimeoutStartSec
+# / ExecStart env changes actually take effect on this run.
 for t in "${timers[@]}"; do
   if systemctl is-enabled "$t" >/dev/null 2>&1; then
-    skip "$t already enabled"
+    if [ "$UNITS_CHANGED" = "1" ]; then
+      if systemctl restart "$t"; then
+        ok "$t already enabled, restarted to pick up unit-file changes"
+      else
+        warn "failed to restart $t — check 'systemctl status $t'"
+      fi
+    else
+      skip "$t already enabled, unit files unchanged"
+    fi
   else
     if systemctl enable --now "$t"; then
       ok "enabled + started $t"

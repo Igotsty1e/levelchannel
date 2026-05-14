@@ -32,7 +32,14 @@ const TIMEOUTS_SEC = {
 const target = process.env.CALENDAR_CRON_TARGET ?? ''
 const secret = process.env.CRON_SHARED_SECRET ?? ''
 const port = process.env.CALENDAR_CRON_PORT ?? '3000'
-const host = process.env.CALENDAR_CRON_HOST ?? '127.0.0.1'
+// BCS-OP-ROLLOUT wave-paranoia round-1 WARN #3 — hardcode loopback.
+// The bearer secret is plaintext over plain http; using a non-loopback
+// host would leak it. The route's host gate also returns 404 for any
+// non-loopback Host header by default. Operators who really need a
+// non-127.0.0.1 cron runner should front this with a TLS-terminating
+// reverse proxy on-box AND add the hostname to CRON_TRUSTED_HOST on
+// the app side — not change this script.
+const host = '127.0.0.1'
 
 if (!target || !(target in TIMEOUTS_SEC)) {
   console.error(

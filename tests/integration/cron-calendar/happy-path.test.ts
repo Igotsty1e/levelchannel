@@ -136,18 +136,9 @@ describe('POST /api/cron/calendar/pull — side-effects', () => {
     expect(Number(interval.rows[0].n)).toBe(1)
   })
 
-  it('returns 500 on worker_failed when an underlying DB query throws', async () => {
-    // Force the worker to fail by clearing CALENDAR_ENCRYPTION_KEY
-    // (runPullForCalendar refuses with encryption_key_missing). The
-    // worker returns terminal_failure outcome, NOT an exception, so
-    // the route still returns 200 with the summary. To exercise the
-    // 500 path we instead remove the env that the worker needs to
-    // even decrypt the integration row, then enqueue a job.
-    //
-    // Actually pull-worker's processOneJob catches the runner error
-    // and converts to outcome, so 500 only happens on a genuine
-    // exception (e.g. DB pool failure). We'll skip this branch since
-    // it requires more elaborate fault injection.
-    expect(true).toBe(true)
-  })
+  // BCS-OP-ROLLOUT wave-paranoia round-1 WARN #4 — placeholder
+  // `expect(true).toBe(true)` removed (was vacuous-green). The 500
+  // exception branch is left to a future fault-injection wave; the
+  // route's other status codes (404/401/503) are covered by
+  // auth.test.ts already.
 })
