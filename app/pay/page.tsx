@@ -1,8 +1,10 @@
 import type { Metadata } from 'next'
+import { cookies } from 'next/headers'
 import Link from 'next/link'
 import Script from 'next/script'
 
 import { PricingSection } from '@/components/payments/pricing-section'
+import { SESSION_COOKIE_NAME } from '@/lib/auth/sessions'
 
 // Standalone payment page. The same `<PricingSection />` that renders
 // inside the landing also lives here at a clean, shareable URL —
@@ -26,7 +28,18 @@ export const metadata: Metadata = {
   },
 }
 
-export default function PayPage() {
+export default async function PayPage() {
+  // BUG-1 (2026-05-14): logged-in learners arriving on /pay from a path
+  // where the cabinet isn't in browser history (e.g. landing → /pay,
+  // login flow → /pay) were confused that the only visible back-affordance
+  // sent them to / (home). For authenticated users, point the back link
+  // at /cabinet instead. We only check cookie PRESENCE — the cabinet page
+  // itself handles invalid/expired sessions by redirecting to /login.
+  const cookieStore = await cookies()
+  const hasSession = Boolean(cookieStore.get(SESSION_COOKIE_NAME)?.value)
+  const backHref = hasSession ? '/cabinet' : '/'
+  const backLabel = hasSession ? '← В кабинет' : '← На главную'
+
   return (
     <main style={{ minHeight: '100vh', background: 'var(--bg)' }}>
       {/* Codex 2026-05-08 (Wave 10 #5) — CloudPayments widget script
@@ -67,14 +80,14 @@ export default function PayPage() {
             LevelChannel
           </Link>
           <Link
-            href="/"
+            href={backHref}
             style={{
               color: 'var(--secondary)',
               textDecoration: 'none',
               fontSize: 14,
             }}
           >
-            ← На главную
+            {backLabel}
           </Link>
         </div>
       </header>
