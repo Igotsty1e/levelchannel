@@ -129,10 +129,15 @@ export async function pickReconcileCandidates(
         and status in ('booked', 'cancelled')
         and start_at > now() - interval '7 days'
         and start_at < now() + interval '30 days'
+      -- Codex round 1 P2: NULLS FIRST on last_reconciled_at must come
+      -- before start_at, otherwise a teacher with >limit bound slots
+      -- in the [-7d, +30d] window starves the late-starting rows.
+      -- Within the already-reconciled set we still prefer soon-starting
+      -- slots (urgency for upcoming lessons).
       order by
         (case when status = 'cancelled' then 0 else 1 end),
-        start_at asc,
-        last_reconciled_at nulls first
+        last_reconciled_at nulls first,
+        start_at asc
       limit $1`,
     [limit],
   )
@@ -354,14 +359,28 @@ async function reconcileSlot(
     return { kind: 'cancel_reenqueued' }
   }
 
-  // candidate.status === 'booked'. Compare epoch.
+  // candidate.status === 'booked'. Compare the full ownership stamp.
+  //
+  // Codex round 1 P1: lc_slot_id MUST be checked too. The push side
+  // stamps both `lc_slot_id` and `lc_epoch` precisely so reconcile
+  // can detect same-epoch misbindings (slot.external_event_id ever
+  // pointing at another slot's event within the same integration
+  // session). Comparing only lc_epoch would mark such drift as
+  // `healthy` and the misbinding would survive every sweep.
+  //
+  // Match rule: an event is "ours" iff the stamped lc_slot_id matches
+  // AND (we have no local epoch yet OR the stamped lc_epoch matches
+  // our local epoch). lc_slot_id absent on the event → orphan-self
+  // (event written outside the LC contract).
   const shared = event.extendedProperties?.shared ?? {}
+  const lcSlotId = typeof shared.lc_slot_id === 'string' ? shared.lc_slot_id : null
   const lcEpoch = typeof shared.lc_epoch === 'string' ? shared.lc_epoch : null
-  if (
+  const slotIdMismatch = lcSlotId === null || lcSlotId !== candidate.id
+  const epochMismatch =
     candidate.integrationEpoch !== null
     && lcEpoch !== null
     && lcEpoch !== candidate.integrationEpoch
-  ) {
+  if (slotIdMismatch || epochMismatch) {
     await bumpReconciledAt(candidate.id)
     return { kind: 'orphan_self' }
   }

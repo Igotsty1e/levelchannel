@@ -165,7 +165,14 @@ function googleEvent(opts: {
   id: string
   status?: 'confirmed' | 'cancelled' | 'tentative'
   lcEpoch?: string
+  lcSlotId?: string | null // pass null to drop the stamp entirely
 }): FetchEventOutcome {
+  const shared: Record<string, string> = {}
+  if (opts.lcEpoch) shared.lc_epoch = opts.lcEpoch
+  if (opts.lcSlotId !== null && opts.lcSlotId !== undefined) {
+    shared.lc_slot_id = opts.lcSlotId
+  }
+  if (opts.lcEpoch || opts.lcSlotId) shared.lc_origin = 'levelchannel'
   return {
     ok: true,
     event: {
@@ -173,9 +180,8 @@ function googleEvent(opts: {
       status: opts.status ?? 'confirmed',
       start: { dateTime: '2026-06-01T10:00:00Z' },
       end: { dateTime: '2026-06-01T11:00:00Z' },
-      extendedProperties: opts.lcEpoch
-        ? { shared: { lc_epoch: opts.lcEpoch, lc_origin: 'levelchannel' } }
-        : undefined,
+      extendedProperties:
+        Object.keys(shared).length > 0 ? { shared } : undefined,
     },
   }
 }
@@ -207,7 +213,7 @@ async function countPushJobs(slotId: string): Promise<number> {
 }
 
 describe('runReconcileSweep — booked branches', () => {
-  it('booked + 200 + epoch match → healthy: bumps reconciled_at, leaves binding', async () => {
+  it('booked + 200 + epoch match + slot_id match → healthy: bumps reconciled_at, leaves binding', async () => {
     const t = await makeTeacher('rec1@example.com')
     const epoch = await connect(t)
     const slot = await seedSlot({
@@ -217,7 +223,11 @@ describe('runReconcileSweep — booked branches', () => {
       integrationEpoch: epoch,
     })
     const fetcher = makeFetcher({
-      'evt-healthy': googleEvent({ id: 'evt-healthy', lcEpoch: epoch }),
+      'evt-healthy': googleEvent({
+        id: 'evt-healthy',
+        lcEpoch: epoch,
+        lcSlotId: slot,
+      }),
     })
 
     const res = await runReconcileSweep({ fetchEventImpl: fetcher })
@@ -243,6 +253,7 @@ describe('runReconcileSweep — booked branches', () => {
       'evt-orphan': googleEvent({
         id: 'evt-orphan',
         lcEpoch: 'totally-different-epoch',
+        lcSlotId: slot,
       }),
     })
 
@@ -253,6 +264,55 @@ describe('runReconcileSweep — booked branches', () => {
     expect(after.external_event_id).toBe('evt-orphan')
     expect(after.integration_epoch).toBe(epoch)
     expect(after.last_reconciled_at).not.toBeNull()
+  })
+
+  it('booked + 200 + same epoch + DIFFERENT lc_slot_id → orphan_self (Codex P1 regression)', async () => {
+    // Push contract stamps both lc_epoch + lc_slot_id. Same-epoch
+    // misbindings (slot points at another slot's event within the
+    // current integration session) are only catchable via lc_slot_id.
+    const t = await makeTeacher('rec1b@example.com')
+    const epoch = await connect(t)
+    const slot = await seedSlot({
+      teacherId: t,
+      status: 'booked',
+      externalEventId: 'evt-misbound',
+      integrationEpoch: epoch,
+    })
+    const fetcher = makeFetcher({
+      'evt-misbound': googleEvent({
+        id: 'evt-misbound',
+        lcEpoch: epoch,
+        lcSlotId: '00000000-0000-0000-0000-000000000000',
+      }),
+    })
+
+    const res = await runReconcileSweep({ fetchEventImpl: fetcher })
+
+    expect(res.outcomes).toEqual({ orphan_self: 1 })
+    const after = await readSlot(slot)
+    expect(after.external_event_id).toBe('evt-misbound')
+    expect(after.last_reconciled_at).not.toBeNull()
+  })
+
+  it('booked + 200 + ownership stamp entirely absent → orphan_self', async () => {
+    // Event written outside the LC contract (e.g. manually created by
+    // the teacher with the same id we'd assign). Stamp missing →
+    // not ours.
+    const t = await makeTeacher('rec1c@example.com')
+    const epoch = await connect(t)
+    const slot = await seedSlot({
+      teacherId: t,
+      status: 'booked',
+      externalEventId: 'evt-no-stamp',
+      integrationEpoch: epoch,
+    })
+    const fetcher = makeFetcher({
+      'evt-no-stamp': googleEvent({ id: 'evt-no-stamp' }),
+    })
+
+    const res = await runReconcileSweep({ fetchEventImpl: fetcher })
+
+    expect(res.outcomes).toEqual({ orphan_self: 1 })
   })
 
   it('booked + 404 → unbinds + sets external_sync_failed_at', async () => {
@@ -459,9 +519,9 @@ describe('runReconcileSweep — bounded ordering', () => {
     })
 
     const fetcher = makeFetcher({
-      'evt-b1': googleEvent({ id: 'evt-b1', lcEpoch: epoch }),
-      'evt-b2': googleEvent({ id: 'evt-b2', lcEpoch: epoch }),
-      'evt-c': googleEvent({ id: 'evt-c', lcEpoch: epoch }),
+      'evt-b1': googleEvent({ id: 'evt-b1', lcEpoch: epoch, lcSlotId: booked1 }),
+      'evt-b2': googleEvent({ id: 'evt-b2', lcEpoch: epoch, lcSlotId: booked2 }),
+      'evt-c': googleEvent({ id: 'evt-c', lcEpoch: epoch, lcSlotId: cancelled }),
     })
 
     const res = await runReconcileSweep({ limit: 2, fetchEventImpl: fetcher })
@@ -473,5 +533,53 @@ describe('runReconcileSweep — bounded ordering', () => {
     // Then booked1 (earlier start) before booked2.
     expect(pickedIds).toContain(booked1)
     expect(pickedIds).not.toContain(booked2)
+  })
+
+  it('NULL last_reconciled_at jumps the queue ahead of recently-reconciled rows (Codex P2 regression)', async () => {
+    // Per Codex round 1 P2: when more rows fit the window than the
+    // sweep limit, fresh / never-reconciled rows must NOT be starved
+    // by recently-reconciled ones. Order key = (cancelled-first,
+    // last_reconciled_at NULLS FIRST, start_at ASC).
+    const t = await makeTeacher('rec11@example.com')
+    const epoch = await connect(t)
+
+    // Two booked rows: one already reconciled "recently" (earlier
+    // start so it would win under the old ordering), one never
+    // reconciled (later start). New ordering must pick the
+    // never-reconciled row.
+    const recentlyReconciled = await seedSlot({
+      teacherId: t,
+      status: 'booked',
+      externalEventId: 'evt-old',
+      integrationEpoch: epoch,
+      startOffsetDays: 8,
+      lastReconciledAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+    })
+    const neverReconciled = await seedSlot({
+      teacherId: t,
+      status: 'booked',
+      externalEventId: 'evt-new',
+      integrationEpoch: epoch,
+      startOffsetDays: 14,
+      lastReconciledAt: null,
+    })
+
+    const fetcher = makeFetcher({
+      'evt-old': googleEvent({
+        id: 'evt-old',
+        lcEpoch: epoch,
+        lcSlotId: recentlyReconciled,
+      }),
+      'evt-new': googleEvent({
+        id: 'evt-new',
+        lcEpoch: epoch,
+        lcSlotId: neverReconciled,
+      }),
+    })
+
+    const res = await runReconcileSweep({ limit: 1, fetchEventImpl: fetcher })
+
+    expect(res.picked).toBe(1)
+    expect(res.details[0]?.slotId).toBe(neverReconciled)
   })
 })
