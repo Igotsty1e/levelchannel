@@ -89,6 +89,12 @@ export type ReconcileSlotOutcome =
   // candidate selection and the guarded UPDATE. Outcome is benign;
   // the next sweep picks up the row in its new state.
   | { kind: 'skipped_state_changed' }
+  // Codex round 5 P1 — cancelled-slot path: Google event exists at
+  // the bound id but its ownership stamp does NOT match this slot.
+  // SAFE behavior: unbind locally without enqueueing a delete (would
+  // delete somebody else's event). No external_sync_failed_at — the
+  // binding was corrupted, not "we expected delete to succeed".
+  | { kind: 'unbound_after_drift_resolved_alien' }
 
 export type CancelGateSkipReason =
   | 'inflight'
@@ -392,7 +398,34 @@ async function reconcileSlot(
   }
 
   if (candidate.status === 'cancelled') {
-    // Cancelled locally but Google still has it. F9‴ gated re-enqueue.
+    // Cancelled locally but Google still has it. Before re-enqueueing
+    // a delete, verify ownership — Codex round 5 P1: if the binding
+    // drifted to another slot's event or to a user-created event,
+    // deleting it would destroy unrelated content. Same lc_slot_id
+    // check the booked path uses, applied here for delete safety.
+    const sharedC = event.extendedProperties?.shared ?? {}
+    const lcSlotIdC =
+      typeof sharedC.lc_slot_id === 'string' ? sharedC.lc_slot_id : null
+    const lcEpochC =
+      typeof sharedC.lc_epoch === 'string' ? sharedC.lc_epoch : null
+    const slotMismatchC = lcSlotIdC === null || lcSlotIdC !== candidate.id
+    const epochMismatchC =
+      candidate.integrationEpoch !== null
+      && (lcEpochC === null || lcEpochC !== candidate.integrationEpoch)
+    if (slotMismatchC || epochMismatchC) {
+      // Drifted binding. Unbind safely WITHOUT delete enqueue. No
+      // sync_failed flag — this isn't a sync failure, this is a
+      // corrupted binding being healed.
+      const r = await unbindSlot(candidate.id, {
+        markSyncFailed: false,
+        expectedStatus: candidate.status,
+        expectedExternalEventId: candidate.externalEventId,
+      })
+      if (!r.updated) return { kind: 'skipped_state_changed' }
+      return { kind: 'unbound_after_drift_resolved_alien' }
+    }
+
+    // F9‴ gated re-enqueue (ownership confirmed above).
     const latestJob = await readLatestDeletePushJob(candidate.id)
     const decision = decideCancelReenqueue({
       latestJob,

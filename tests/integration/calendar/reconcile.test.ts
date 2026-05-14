@@ -387,6 +387,7 @@ describe('runReconcileSweep — cancelled branches', () => {
       'evt-still-there': googleEvent({
         id: 'evt-still-there',
         lcEpoch: epoch,
+        lcSlotId: slot,
       }),
     })
 
@@ -420,7 +421,11 @@ describe('runReconcileSweep — cancelled branches', () => {
     )
 
     const fetcher = makeFetcher({
-      'evt-inflight': googleEvent({ id: 'evt-inflight', lcEpoch: epoch }),
+      'evt-inflight': googleEvent({
+        id: 'evt-inflight',
+        lcEpoch: epoch,
+        lcSlotId: slot,
+      }),
     })
 
     const res = await runReconcileSweep({ fetchEventImpl: fetcher })
@@ -429,6 +434,41 @@ describe('runReconcileSweep — cancelled branches', () => {
       'cancel_gate_skipped:inflight': 1,
     })
     expect(await countPushJobs(slot)).toBe(1) // pre-seeded only
+  })
+
+  it('cancelled + 200 + ALIEN lc_slot_id → unbind safely WITHOUT delete enqueue (Codex round 5 P1)', async () => {
+    // Defense against destructive action: if external_event_id has
+    // drifted (rebound to another slot's event or a user-created
+    // event), we MUST NOT enqueue a delete or we'd destroy unrelated
+    // content. Unbind the corrupted local binding instead.
+    const t = await makeTeacher('rec_alien@example.com')
+    const epoch = await connect(t)
+    const slot = await seedSlot({
+      teacherId: t,
+      status: 'cancelled',
+      externalEventId: 'evt-alien',
+      integrationEpoch: epoch,
+    })
+    const fetcher = makeFetcher({
+      'evt-alien': googleEvent({
+        id: 'evt-alien',
+        lcEpoch: epoch,
+        // lc_slot_id points at a DIFFERENT slot (the corrupted
+        // binding scenario). Could also be entirely missing — same
+        // outcome.
+        lcSlotId: '00000000-0000-0000-0000-000000000000',
+      }),
+    })
+
+    const res = await runReconcileSweep({ fetchEventImpl: fetcher })
+
+    expect(res.outcomes).toEqual({ unbound_after_drift_resolved_alien: 1 })
+    expect(await countPushJobs(slot)).toBe(0) // NO delete enqueued
+    const after = await readSlot(slot)
+    expect(after.external_event_id).toBeNull()
+    expect(after.external_calendar_id).toBeNull()
+    expect(after.external_sync_failed_at).toBeNull() // not a sync failure
+    expect(await readCancelRepushCount(slot)).toBe(0) // never bumped
   })
 
   it('cancelled + 200 with NULL writeCalendarId falls back to slot binding (Codex round 3 P2)', async () => {
@@ -454,7 +494,7 @@ describe('runReconcileSweep — cancelled branches', () => {
       'evt-fallback': googleEvent({
         id: 'evt-fallback',
         lcEpoch: epoch,
-        lcSlotId: slot,
+        lcSlotId: slot, // ownership confirmed — fallback path engaged
       }),
     })
 
