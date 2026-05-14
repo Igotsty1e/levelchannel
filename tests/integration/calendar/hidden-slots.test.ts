@@ -53,6 +53,18 @@ async function connect(accountId: string): Promise<void> {
     writeCalendarId: 'primary',
     reason: 'initial_connect',
   })
+  // BCS-G retro Codex round 1 WARN #4: the hidden-slots query mirrors
+  // the booking-side gate which requires tci.last_pulled_at within
+  // the 10-min freshness TTL. `upsertGoogleIntegration` NULL-s
+  // last_pulled_at on every upsert (reconnect contract), so tests
+  // that want to exercise the "integration is fresh AND active"
+  // surface must stamp it explicitly.
+  await getDbPool().query(
+    `update teacher_calendar_integrations
+        set last_pulled_at = now()
+      where account_id = $1`,
+    [accountId],
+  )
 }
 
 function alignedMskStartAt(offsetDays: number, mskHour = 10): string {
@@ -278,5 +290,64 @@ describe('listHiddenSlotsForTeacher', () => {
       await listHiddenSlotsForTeacher({ teacherAccountId: 'not-a-uuid' }),
     ).toEqual([])
     expect(await countHiddenSlotsForTeacher('not-a-uuid')).toBe(0)
+  })
+
+  // BCS-G retro Codex round 1 WARN #4 regression — hidden-slots surface
+  // must mirror the booking-side gate. If `last_pulled_at` is stale
+  // (>10 min) or sync_state is anything but 'active', the booking gate
+  // ignores busy intervals → learners CAN still book → those slots
+  // are NOT hidden. Surfacing them in the teacher UI as "hidden"
+  // would be a false alarm.
+  it('omits overlaps when last_pulled_at is stale (>10min)', async () => {
+    const t = await makeTeacher('hs-stale@example.com')
+    await connect(t)
+    const startIso = alignedMskStartAt(7)
+    const endIso = new Date(
+      new Date(startIso).getTime() + 60 * 60_000,
+    ).toISOString()
+    await seedOpenSlot({ teacherId: t, startAtIso: startIso })
+    await seedBusyInterval({
+      teacherId: t,
+      startAtIso: startIso,
+      endAtIso: endIso,
+    })
+
+    // Backdate last_pulled_at past the 10-min freshness TTL.
+    await getDbPool().query(
+      `update teacher_calendar_integrations
+          set last_pulled_at = now() - interval '15 minutes'
+        where account_id = $1`,
+      [t],
+    )
+
+    const list = await listHiddenSlotsForTeacher({ teacherAccountId: t })
+    expect(list).toEqual([])
+    expect(await countHiddenSlotsForTeacher(t)).toBe(0)
+  })
+
+  it('omits overlaps when sync_state is degraded (not active)', async () => {
+    const t = await makeTeacher('hs-degraded@example.com')
+    await connect(t)
+    const startIso = alignedMskStartAt(7)
+    const endIso = new Date(
+      new Date(startIso).getTime() + 60 * 60_000,
+    ).toISOString()
+    await seedOpenSlot({ teacherId: t, startAtIso: startIso })
+    await seedBusyInterval({
+      teacherId: t,
+      startAtIso: startIso,
+      endAtIso: endIso,
+    })
+
+    await getDbPool().query(
+      `update teacher_calendar_integrations
+          set sync_state = 'degraded'
+        where account_id = $1`,
+      [t],
+    )
+
+    const list = await listHiddenSlotsForTeacher({ teacherAccountId: t })
+    expect(list).toEqual([])
+    expect(await countHiddenSlotsForTeacher(t)).toBe(0)
   })
 })

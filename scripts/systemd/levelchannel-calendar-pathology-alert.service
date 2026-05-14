@@ -21,6 +21,15 @@ ExecStart=/usr/bin/node scripts/calendar-pathology-alert.mjs
 StandardOutput=journal
 StandardError=journal
 
+# BCS-G retro Codex round 1 WARN #2 — under `ProtectSystem=strict`
+# the entire filesystem hierarchy is mounted read-only (except for
+# /dev, /proc, /sys, /tmp, /var/tmp). The dedup state file lives at
+# `<WorkingDirectory>/var/calendar-pathology-state.json`, which the
+# default strict policy blocks. Whitelist that directory so the
+# alert script can persist its offender-set fingerprint between
+# runs and the cooldown actually works.
+ReadWritePaths=__LEVELCHANNEL_APP_DIR__/var
+
 # Sandboxing (Wave 11 confirmed compatible set — same 12 directives
 # active on the other 4 maintenance units, see PR #85 + plan).
 NoNewPrivileges=true

@@ -62,6 +62,13 @@ export async function listHiddenSlotsForTeacher(opts: {
   const windowDays = Math.max(1, Math.min(opts.windowDays ?? DEFAULT_WINDOW_DAYS, 60))
 
   const pool = getDbPool()
+  // BCS-G retro Codex round 1 WARN #4 — mirror the booking-side gate
+  // predicate exactly. `lib/scheduling/slots/booking.ts:BUSY_OVERLAP_GATE_SQL`
+  // only blocks bookings when the teacher's integration is
+  // `sync_state='active'` AND `last_pulled_at >= now() - interval '10 minutes'`
+  // (the freshness TTL). Counting overlaps under `degraded` / stale
+  // / `disconnected` would surface "hidden slots" that learners can
+  // actually still book → false alarm in the teacher UI.
   const result = await pool.query(
     `with slot_overlaps as (
        select s.id as slot_id,
@@ -75,6 +82,10 @@ export async function listHiddenSlotsForTeacher(opts: {
          from lesson_slots s
          join teacher_external_busy_intervals b
            on b.teacher_account_id = s.teacher_account_id
+         join teacher_calendar_integrations tci
+           on tci.account_id = s.teacher_account_id
+          and tci.sync_state = 'active'
+          and tci.last_pulled_at >= now() - interval '10 minutes'
         where s.teacher_account_id = $1
           and s.status = 'open'
           and s.start_at > now()
@@ -120,11 +131,16 @@ export async function countHiddenSlotsForTeacher(
 ): Promise<number> {
   if (!UUID_PATTERN.test(teacherAccountId)) return 0
   const pool = getDbPool()
+  // BCS-G retro Codex round 1 WARN #4 — same booking-side gate.
   const result = await pool.query(
     `select count(distinct s.id)::int as n
        from lesson_slots s
        join teacher_external_busy_intervals b
          on b.teacher_account_id = s.teacher_account_id
+       join teacher_calendar_integrations tci
+         on tci.account_id = s.teacher_account_id
+        and tci.sync_state = 'active'
+        and tci.last_pulled_at >= now() - interval '10 minutes'
       where s.teacher_account_id = $1
         and s.status = 'open'
         and s.start_at > now()

@@ -220,6 +220,10 @@ declare -a units=(
   # non-terminal states).
   "levelchannel-refund-reconcile.service"
   "levelchannel-refund-reconcile.timer"
+  # BCS-G.3 — calendar pathology alert (F9‴ resurrection-loop
+  # detector). Sibling of the auth-flow + webhook-flow alert probes.
+  "levelchannel-calendar-pathology-alert.service"
+  "levelchannel-calendar-pathology-alert.timer"
 )
 
 UNITS_CHANGED=0
@@ -259,6 +263,7 @@ declare -a timers=(
   "levelchannel-stale-orders.timer"
   "levelchannel-auto-complete-slots.timer"
   "levelchannel-refund-reconcile.timer"
+  "levelchannel-calendar-pathology-alert.timer"
 )
 
 for t in "${timers[@]}"; do
@@ -294,7 +299,7 @@ step "Post-activation summary"
 echo
 echo "${B}Active timers:${N}"
 systemctl list-timers --no-pager 2>/dev/null \
-  | grep -E "levelchannel-(webhook-flow-alert|db-retention|stale-orders|auto-complete-slots)" \
+  | grep -E "levelchannel-(webhook-flow-alert|db-retention|stale-orders|auto-complete-slots|refund-reconcile|calendar-pathology-alert)" \
   || echo "  (timers not yet shown — they appear after first scheduled run)"
 
 echo
