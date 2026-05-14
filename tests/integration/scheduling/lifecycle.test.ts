@@ -151,13 +151,20 @@ describe('Phase 5 lifecycle + 24h rule', () => {
       }),
     )
     const slotId = (await created.json()).slot.id as string
-    await bookHandler(
+    const bookRes = await bookHandler(
       buildRequest(`/api/slots/${slotId}/book`, {
         cookie: learner.cookie,
         body: {},
       }),
       { params: Promise.resolve({ id: slotId }) },
     )
+    // Codex round 2 WARN — anchor that the slot was ACTUALLY booked
+    // before we test the admin-override path. Without this, admin
+    // cancel of an `open` slot also returns 200, so the test name
+    // ("admin cancel works inside 24h window") could pass vacuously.
+    expect(bookRes.status).toBe(200)
+    const bookJson = await bookRes.json()
+    expect(bookJson.slot.status).toBe('booked')
 
     // <24h to go (business-band-safe; same as test 1).
     await getDbPool().query(
@@ -173,6 +180,8 @@ describe('Phase 5 lifecycle + 24h rule', () => {
       { params: Promise.resolve({ id: slotId }) },
     )
     expect(cancel.status).toBe(200)
+    const cancelJson = await cancel.json()
+    expect(cancelJson.slot.status).toBe('cancelled')
   })
 
   it('admin marks past-booked slot as completed', async () => {

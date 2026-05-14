@@ -315,7 +315,12 @@ describe('Phase 4 slot flow', () => {
         cookie: admin.cookie,
         body: {
           teacherAccountId: teacher.accountId,
-          startAt: futureIsoMinutes(60),
+          // Codex round 2 BLOCKER — 60 min ahead lands the slot
+          // INSIDE the 24h gate, so a stranger.cancel could 403 on
+          // too_late_to_cancel instead of not_owner and the test
+          // would still pass. Push the slot past 24h AND assert the
+          // error code body specifically.
+          startAt: futureIsoMinutes(48 * 60),
           durationMinutes: 60,
         },
       }),
@@ -344,6 +349,16 @@ describe('Phase 4 slot flow', () => {
       { params: Promise.resolve({ id: slotId }) },
     )
     expect(cancel.status).toBe(403)
+    // Codex round 2 BLOCKER — pin the specific 403 branch so a
+    // regression that flips this to a different 403 (e.g.
+    // too_late_to_cancel) doesn't keep the test green. The 24h gate
+    // returns `{ error: 'too_late_to_cancel', minutesUntilStart }`,
+    // the not_owner branch returns the Russian copy below.
+    const cancelJson = await cancel.json()
+    expect(cancelJson.error).toBe(
+      'Можно отменить только своё бронирование.',
+    )
+    expect(cancelJson).not.toHaveProperty('minutesUntilStart')
   })
 
   it('admin gates: anon → 401, non-admin → 403', async () => {
