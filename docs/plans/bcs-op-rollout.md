@@ -1,6 +1,6 @@
 # Epic: BCS-OP-ROLLOUT — operator activation for the calendar contour
 
-**Status:** PLAN-MODE round 3 (drafted 2026-05-14 by Claude; round 1 returned BLOCK with 7 BLOCKERs + 5 WARNs, round 2 returned BLOCK with 3 BLOCKERs + 2 WARNs, all addressed in this revision)
+**Status:** PLAN-MODE round 3 — USER-RESOLVED on variant A (2026-05-14). Round 1 BLOCK (7 BLOCKERs + 5 WARNs) → round 2 revision. Round 2 BLOCK (3 BLOCKERs + 2 WARNs) → round 3 revision. Round 3 BLOCK (2 BLOCKERs + 3 WARNs) hit hard cap; user approved scope per §9.1 option A — writability opt plumbed through `drainPullJobs` → `runPullForCalendar` as part of OP.1. Ready for implementation.
 **Project:** LevelChannel
 **Codex-Paranoia model:** epic-level (per the contract at `~/.claude/CLAUDE.md §Two-checkpoint paranoia pipeline` + `~/.claude/skills/codex-paranoia/SKILL.md`)
 
@@ -340,7 +340,7 @@ Files:
 - `tests/calendar/token-retry.test.ts` (new) — `withTokenRetry` + `tryRefreshOnce` unit tests.
 - `tests/integration/calendar/channels.test.ts` (existing renewer suite — NOT `channel-renewer.test.ts` per Codex round 3 WARN #3) — extend with stopChannel-401 no-disconnect regression at the `setupChannelForIntegration` boundary.
 - `tests/integration/calendar/pull-runner.test.ts` (Codex round 2 WARN #5) — existing fetcher mocks at lines 113-117 return raw success/failure shapes; the new `withTokenRetry` adapter expects a `CallResult<T>` union. Update the mocks to return `{ok: true, value: <events-list>}` for success and `{ok: false, auth401: true|false, raw: ...}` for failure. Add at least one regression test that simulates a 1st-401-then-success retry path through `runPullForCalendar`.
-- `tests/integration/calendar/pull-worker.test.ts` (Codex round 2 WARN #5) — same fetcher-mock shape update at lines 103-115. Worker-level test does not need to add new retry scenarios beyond what pull-runner covers, but the mock shape MUST be migrated or the worker tests turn red on OP.1 land.
+- `tests/integration/calendar/pull-worker.test.ts` (Codex round 2 WARN #5) — same fetcher-mock shape update at lines 103-115. Worker-level test does not need to add new retry scenarios beyond what pull-runner covers, but the mock shape MUST be migrated or the worker tests turn red on OP.1 land. ALSO: add a writability-poisoning regression test per §9.1 variant A — seed an integration with `is_writable_in_source=true`, run `drainPullJobs`, assert that the resulting `teacher_external_busy_intervals` parent row still carries `is_writable_in_source=true` (NOT silently flipped to false).
 - `tests/integration/calendar/conflict-actions.test.ts` (Codex round 3 WARN #5) — add two regression cases against the live `/api/teacher/slots/[id]/delete-external-conflict` route: (1) first Google `events.delete` returns 401 → ensureFreshAccessToken refresh → second call returns 200 → route succeeds; (2) two consecutive 401s → `disconnectGoogleIntegration` called → route returns a graceful error. Helper-level green is not enough because this route is already production-live.
 
 NOT in scope: `lib/calendar/intent-worker.ts` (no Google API calls).
@@ -445,23 +445,30 @@ Brain dump: `~/Obsidian/Brain/raw/notes/<date>-codex-paranoia-LevelChannel-bcs-o
 - **Restart-during-cron**: each worker is idempotent at the DB level (UPDATE WHERE clauses + `ON CONFLICT DO NOTHING`); a torn run picks up next tick.
 - **Token revoke**: closed by OP.1's `withTokenRetry` + `disconnectGoogleIntegration` flip on 2nd 401.
 
-## 9. Round-3 BLOCK — UNRESOLVED + escalation to user
+## 9. Round-3 BLOCK — RESOLVED by user 2026-05-14 (variant A)
 
-Plan-mode paranoia hit the 3-round hard cap and returned BLOCK on round 3 with the following unresolved BLOCKER. Per the contract at `~/.claude/skills/codex-paranoia/SKILL.md §4.2`, this STOPS the epic from starting code until the user decides scope. The WARNs on round 3 (#3, #4, #5) were applied to this plan in-place above and are not blocking.
+Plan-mode paranoia hit the 3-round hard cap and returned BLOCK on round 3 with one unresolved BLOCKER. User signal received 2026-05-14: **proceed via option A** (plumb writability opt through `drainPullJobs` → `runPullForCalendar`). The WARNs on round 3 (#3, #4, #5) were applied to this plan in-place above and are not blocking.
 
-### 9.1 UNRESOLVED BLOCKER #1 — `is_writable_in_source` poisoning when pull cron activates
+### 9.1 RESOLVED BLOCKER #1 — `is_writable_in_source` poisoning when pull cron activates
 
 **Concern (Codex round 3, citing prior round 2 too):** `drainPullJobs` → `runPullForCalendar` does not pass a writability opt today; `runPullForCalendar` defaults `is_writable_in_source = false` when the opt is missing (`lib/calendar/pull-runner.ts:75-79, 229`). The live request-time route `app/api/teacher/slots/[id]/delete-external-conflict/route.ts:102-146` hard-refuses on `is_writable_in_source = false`. Activating pull cron without addressing this WILL cause writable Google calendars to be re-imported as read-only on the first tick, and the teacher-side delete-conflict UI will start regressing for events that worked yesterday.
 
 **Plan round 3 attempted resolution (REJECTED by Codex):** declared the gap "out of scope, follow-up epic." Round 3 confirmed this is not safe — activation IS the regression.
 
-**Resolution options for the user:**
+**User decision 2026-05-14: variant A.** Writability opt plumbed through `drainPullJobs` → `runPullForCalendar` as part of OP.1 scope. Closes BLOCKER #1 by construction (pull cron now writes the correct `is_writable_in_source` value on every cycle, not a default-false).
 
-- **(A) Add writability plumbing to OP.1.** Surgical ~5-10 LOC scope addition: `drainPullJobs` reads the existing `accessRole` from `teacher_calendar_integrations` (already in scope from the OAuth callback init path), passes a `writabilityOpt` to `runPullForCalendar`, which honors it instead of defaulting to false. Slight OP.1 scope creep; cleanest closure.
-- **(B) Drop pull from the cron activation.** Activate only push / intents / renew-channels / revive-blocked / reconcile in this epic. Ship pull cron as a separate follow-up epic AFTER the writability plumbing lands. Loses freshness-TTL closure on `teacher_external_busy_intervals` (the original problem this epic was supposed to fix), so booking-gate double-booking risk persists.
-- **(C) Document the regression risk + ship anyway.** Operator-facing warning in private runbook; manual unfix-after-import procedure. Risky — surfaces user-visible delete failures before the operator notices.
+**Implementation contract (OP.1 addition):**
+- `runPullForCalendar` already accepts a writability opt; the default-false path is what poisons the flag. Don't touch the runner signature — fix the caller.
+- `drainPullJobs` (in `lib/calendar/pull-worker.ts:~135-140`) currently calls `runPullForCalendar` without passing writability. It must determine the right value BEFORE the call. Source of truth: `teacher_calendar_integrations.is_writable_in_source` (set by the OAuth callback init path, persisted per integration). Pass the value through.
+- If the integration row's `is_writable_in_source` is `null` (legacy rows pre-init), prefer `false` (safe default that matches today's behavior) AND log a one-line warn so operator can spot init drift.
+- New test in `tests/integration/calendar/pull-worker.test.ts`: seed an integration with `is_writable_in_source=true`, run `drainPullJobs`, assert the resulting `teacher_external_busy_intervals` parent row still carries `is_writable_in_source=true` (NOT poisoned to false).
 
-**Recommendation:** (A). It's tight, surgical, and closes the BLOCKER cleanly. Final report at `/tmp/codex-paranoia-20260514T143126Z-bcs-op-rollout-final.md`.
+Rejected alternatives (preserved for audit):
+
+- **(B) Drop pull from the cron activation.** Loses freshness-TTL closure on `teacher_external_busy_intervals` (the original problem this epic was supposed to fix), so booking-gate double-booking risk persists.
+- **(C) Document the regression risk + ship anyway.** Operator-facing warning + manual procedure. Risky — surfaces user-visible delete failures before the operator notices.
+
+Final paranoia report (audit): `/tmp/codex-paranoia-20260514T143126Z-bcs-op-rollout-final.md`.
 
 ### 9.2 Round summary
 
