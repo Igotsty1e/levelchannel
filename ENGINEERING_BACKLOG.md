@@ -31,8 +31,8 @@ Total estimate: 33 PRs across 7 waves. Reference cadence: billing-wave was 7 PRs
 
 ### Hardening follow-ups inside BCS
 
-- **BCS-HARDEN-1** — Tighten cross-teacher booking gate when `assignedTeacherId IS NULL`. Today `/api/slots/[id]/book` passes through legacy behaviour for that case so the existing scheduling integration suite keeps working; production learners are always assigned before booking, so the typical path enforces the gate. Track-and-flip: rewrite the 8 legacy bookHandler tests that don't assign a teacher (`slots-flow`, `lifecycle`, `billing/booking`, `calendar-move`, `teacher-slots-auth`, `learner-archetype-gate`, `calendar-projection`, etc.), then refuse no-assignedTeacher bookings with 404 in the route.
-- **BCS-HARDEN-2** — Delete the renamed `_DEAD_BookSection` / `TabButton` / `fmtSlotTime` / `currentMondayYmd` declarations from `app/cabinet/lessons-section.tsx` (left in place by BCS-B.frontend to keep that PR diff focused on behaviour).
+- ~~**BCS-HARDEN-1**~~ — **Закрыт 2026-05-14** (PR #214, commit `232ca10`). `/api/slots/[id]/book` теперь явно отказывает с 404 на NULL-assignedTeacher; 9 интеграционных тестов + 1 unit-тест переписаны с явным `assignedTeacherId`. Codex-Paranoia: SIGN-OFF round 3/3.
+- ~~**BCS-HARDEN-2**~~ — **Закрыт 2026-05-13** (PR #202, commit `934e6a2`). Dead `_DEAD_BookSection` / `TabButton` / `fmtSlotTime` / `currentMondayYmd` declarations deleted from `app/cabinet/lessons-section.tsx`.
 
 ### Deferred (separate waves, NOT in BCS)
 
