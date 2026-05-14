@@ -535,6 +535,161 @@ describe('runReconcileSweep — bounded ordering', () => {
     expect(pickedIds).not.toContain(booked2)
   })
 
+  it('disconnected integrations are filtered out of the candidate batch (Codex round 2 P1)', async () => {
+    // Active teacher with one bound slot + disconnected teacher with
+    // one bound slot. Disconnected one should NOT even reach the
+    // candidate batch, no matter how stale its last_reconciled_at.
+    const tA = await makeTeacher('rec12a@example.com')
+    const epochA = await connect(tA)
+    const tD = await makeTeacher('rec12d@example.com')
+    await connect(tD)
+    // Force tD into disconnected state.
+    await getDbPool().query(
+      `update teacher_calendar_integrations
+          set sync_state = 'disconnected'
+        where account_id = $1`,
+      [tD],
+    )
+
+    const slotA = await seedSlot({
+      teacherId: tA,
+      status: 'booked',
+      externalEventId: 'evt-active',
+      integrationEpoch: epochA,
+    })
+    const slotD = await seedSlot({
+      teacherId: tD,
+      status: 'booked',
+      externalEventId: 'evt-disc',
+      integrationEpoch: null,
+    })
+
+    const fetcher = makeFetcher({
+      'evt-active': googleEvent({
+        id: 'evt-active',
+        lcEpoch: epochA,
+        lcSlotId: slotA,
+      }),
+      // No mapping for evt-disc — must never be fetched.
+    })
+
+    const res = await runReconcileSweep({ fetchEventImpl: fetcher })
+
+    expect(res.picked).toBe(1)
+    expect(res.outcomes).toEqual({ healthy: 1 })
+    const pickedIds = res.details.map((d) => d.slotId)
+    expect(pickedIds).toContain(slotA)
+    expect(pickedIds).not.toContain(slotD)
+  })
+
+  it('unbind no-ops when the slot row mutated under us (Codex round 2 P2)', async () => {
+    // Reconciler picks a `booked` row + would 404 → wants to mark
+    // external_sync_failed_at. Between pick and UPDATE, the user
+    // cancels and the delete worker succeeds (external_event_id
+    // already NULL). The guarded UPDATE must no-op, outcome reports
+    // skipped_state_changed, and the row is left untouched.
+    const t = await makeTeacher('rec13@example.com')
+    const epoch = await connect(t)
+    const slot = await seedSlot({
+      teacherId: t,
+      status: 'booked',
+      externalEventId: 'evt-race',
+      integrationEpoch: epoch,
+    })
+
+    // Race: simulate the concurrent cancel-and-delete BEFORE the
+    // reconcile call by NULL-ing the binding directly. The candidate
+    // snapshot still says { booked, 'evt-race' } so the guarded
+    // UPDATE will find 0 matching rows.
+    await getDbPool().query(
+      `update lesson_slots
+          set status = 'cancelled', cancelled_at = now(),
+              external_event_id = null, external_calendar_id = null,
+              integration_epoch = null
+        where id = $1`,
+      [slot],
+    )
+
+    // Now run a sweep that THINKS slot is still booked + bound. We
+    // bypass pickReconcileCandidates by injecting a "candidate"
+    // snapshot via the public API — call reconcile with a fetcher
+    // mapping that returns 404. The select won't pick it (it's now
+    // unbound), so this isn't reproducible via the public API
+    // exactly. Workaround: re-bind the row so the select picks it,
+    // then race the mutation between pick and update. Easier path:
+    // mock at the fetcher to return 404 and rely on the actual SQL
+    // to no-op when the snapshot mismatches.
+    //
+    // We re-bind, then mutate-while-fetching to simulate the race
+    // tightly: fetcher's mocked function flips the row to
+    // 'cancelled' + NULL binding BEFORE returning 'not_found'.
+    await getDbPool().query(
+      `update lesson_slots
+          set status = 'booked', cancelled_at = null,
+              learner_account_id = $1::uuid, booked_at = now(),
+              external_event_id = 'evt-race', external_calendar_id = 'primary',
+              integration_epoch = $2::text
+        where id = $3::uuid`,
+      [t, epoch, slot],
+    )
+
+    const racingFetcher: ReconcileFetchImpl = async () => {
+      // Race-simulate: another worker NULLs the binding right between
+      // candidate selection and reconcile's guarded UPDATE.
+      await getDbPool().query(
+        `update lesson_slots
+            set status = 'cancelled', cancelled_at = now(),
+                external_event_id = null, external_calendar_id = null,
+                integration_epoch = null
+          where id = $1`,
+        [slot],
+      )
+      return { ok: false, reason: 'not_found' }
+    }
+
+    const res = await runReconcileSweep({ fetchEventImpl: racingFetcher })
+
+    expect(res.outcomes).toEqual({ skipped_state_changed: 1 })
+    const after = await readSlot(slot)
+    expect(after.status).toBe('cancelled')
+    expect(after.external_event_id).toBeNull()
+    // The race winner already NULLed the binding; reconcile must NOT
+    // have stamped external_sync_failed_at on top.
+    expect(after.external_sync_failed_at).toBeNull()
+  })
+
+  it('booked + 200 + matching lc_slot_id but NO lc_epoch → orphan_self (Codex round 2 P2)', async () => {
+    // The local row has a non-null integration_epoch. The Google
+    // event carries lc_slot_id = our id (so the slot-id check passes)
+    // but no lc_epoch at all (malformed / partially-copied stamp).
+    // Match rule requires the stamp to be present when local epoch
+    // is set → orphan.
+    const t = await makeTeacher('rec14@example.com')
+    const epoch = await connect(t)
+    const slot = await seedSlot({
+      teacherId: t,
+      status: 'booked',
+      externalEventId: 'evt-half-stamp',
+      integrationEpoch: epoch,
+    })
+    const fetcher: ReconcileFetchImpl = async () => ({
+      ok: true,
+      event: {
+        id: 'evt-half-stamp',
+        status: 'confirmed',
+        start: { dateTime: '2026-06-01T10:00:00Z' },
+        end: { dateTime: '2026-06-01T11:00:00Z' },
+        extendedProperties: {
+          shared: { lc_slot_id: slot, lc_origin: 'levelchannel' },
+        },
+      },
+    })
+
+    const res = await runReconcileSweep({ fetchEventImpl: fetcher })
+
+    expect(res.outcomes).toEqual({ orphan_self: 1 })
+  })
+
   it('NULL last_reconciled_at jumps the queue ahead of recently-reconciled rows (Codex P2 regression)', async () => {
     // Per Codex round 1 P2: when more rows fit the window than the
     // sweep limit, fresh / never-reconciled rows must NOT be starved

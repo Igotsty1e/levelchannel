@@ -85,6 +85,10 @@ export type ReconcileSlotOutcome =
   | { kind: 'skipped_integration_missing' }
   | { kind: 'skipped_integration_disconnected' }
   | { kind: 'skipped_token_refresh_failed'; reason: string }
+  // Codex round 2 P2 — the slot row changed under us between
+  // candidate selection and the guarded UPDATE. Outcome is benign;
+  // the next sweep picks up the row in its new state.
+  | { kind: 'skipped_state_changed' }
 
 export type CancelGateSkipReason =
   | 'inflight'
@@ -116,28 +120,37 @@ export async function pickReconcileCandidates(
   limit: number = DEFAULT_LIMIT,
 ): Promise<CandidateSlot[]> {
   const pool = getDbPool()
+  // Codex round 2 P1: JOIN against teacher_calendar_integrations and
+  // filter to actionable sync_states. A disconnected teacher with
+  // >limit bound slots in the window otherwise eats the whole sweep
+  // budget every day while their slots can't actually be reconciled
+  // (no fresh token, events.get would fail at auth_expired). Active
+  // teachers would never make it into the batch under that load.
   const r = await pool.query(
-    `select id,
-            teacher_account_id,
-            external_calendar_id,
-            external_event_id,
-            integration_epoch,
-            status
-       from lesson_slots
-      where external_event_id is not null
-        and external_calendar_id is not null
-        and status in ('booked', 'cancelled')
-        and start_at > now() - interval '7 days'
-        and start_at < now() + interval '30 days'
+    `select s.id,
+            s.teacher_account_id,
+            s.external_calendar_id,
+            s.external_event_id,
+            s.integration_epoch,
+            s.status
+       from lesson_slots s
+       join teacher_calendar_integrations tci
+         on tci.account_id = s.teacher_account_id
+      where s.external_event_id is not null
+        and s.external_calendar_id is not null
+        and s.status in ('booked', 'cancelled')
+        and tci.sync_state in ('active', 'degraded')
+        and s.start_at > now() - interval '7 days'
+        and s.start_at < now() + interval '30 days'
       -- Codex round 1 P2: NULLS FIRST on last_reconciled_at must come
       -- before start_at, otherwise a teacher with >limit bound slots
       -- in the [-7d, +30d] window starves the late-starting rows.
       -- Within the already-reconciled set we still prefer soon-starting
       -- slots (urgency for upcoming lessons).
       order by
-        (case when status = 'cancelled' then 0 else 1 end),
-        last_reconciled_at nulls first,
-        start_at asc
+        (case when s.status = 'cancelled' then 0 else 1 end),
+        s.last_reconciled_at nulls first,
+        s.start_at asc
       limit $1`,
     [limit],
   )
@@ -166,10 +179,21 @@ async function bumpReconciledAt(slotId: string): Promise<void> {
 
 async function unbindSlot(
   slotId: string,
-  opts: { markSyncFailed: boolean },
-): Promise<void> {
+  opts: {
+    markSyncFailed: boolean
+    // Codex round 2 P2: guard the write on the originally-read snapshot.
+    // Between candidate selection and this UPDATE, another worker (or
+    // the user) can flip `status` (cancel → cancelled) or `external_event_id`
+    // (rebind / null). Without these guards the reconciler would
+    // overwrite the newer state and either (a) wrongly stamp
+    // external_sync_failed_at on a row whose delete already succeeded,
+    // or (b) erase a fresh binding from a re-book.
+    expectedStatus: 'booked' | 'cancelled'
+    expectedExternalEventId: string
+  },
+): Promise<{ updated: boolean }> {
   const pool = getDbPool()
-  await pool.query(
+  const r = await pool.query(
     `update lesson_slots
         set external_event_id = null,
             external_calendar_id = null,
@@ -179,9 +203,17 @@ async function unbindSlot(
               when $2::bool then coalesce(external_sync_failed_at, now())
               else external_sync_failed_at
             end
-      where id = $1`,
-    [slotId, opts.markSyncFailed],
+      where id = $1
+        and status = $3
+        and external_event_id = $4`,
+    [
+      slotId,
+      opts.markSyncFailed,
+      opts.expectedStatus,
+      opts.expectedExternalEventId,
+    ],
   )
+  return { updated: (r.rowCount ?? 0) > 0 }
 }
 
 type LatestDeletePushJob = {
@@ -304,7 +336,14 @@ async function reconcileSlot(
     }
     // outcome.reason === 'not_found'
     const markSyncFailed = candidate.status === 'booked'
-    await unbindSlot(candidate.id, { markSyncFailed })
+    const r = await unbindSlot(candidate.id, {
+      markSyncFailed,
+      expectedStatus: candidate.status,
+      expectedExternalEventId: candidate.externalEventId,
+    })
+    if (!r.updated) {
+      return { kind: 'skipped_state_changed' }
+    }
     return {
       kind: markSyncFailed
         ? 'unbound_after_sync_failure'
@@ -320,7 +359,14 @@ async function reconcileSlot(
   // resolved for cancelled rows.
   if (event.status === 'cancelled') {
     const markSyncFailed = candidate.status === 'booked'
-    await unbindSlot(candidate.id, { markSyncFailed })
+    const r = await unbindSlot(candidate.id, {
+      markSyncFailed,
+      expectedStatus: candidate.status,
+      expectedExternalEventId: candidate.externalEventId,
+    })
+    if (!r.updated) {
+      return { kind: 'skipped_state_changed' }
+    }
     return {
       kind: markSyncFailed
         ? 'unbound_after_sync_failure'
@@ -368,18 +414,23 @@ async function reconcileSlot(
   // session). Comparing only lc_epoch would mark such drift as
   // `healthy` and the misbinding would survive every sweep.
   //
-  // Match rule: an event is "ours" iff the stamped lc_slot_id matches
-  // AND (we have no local epoch yet OR the stamped lc_epoch matches
-  // our local epoch). lc_slot_id absent on the event → orphan-self
-  // (event written outside the LC contract).
+  // Codex round 2 P2: if the local row has an integration_epoch but
+  // the fetched event has NO `lc_epoch` (malformed / partially-copied
+  // event written outside the full LC contract), we previously fell
+  // through to `healthy`. Treat that as orphan_self too — match
+  // requires the stamp to be PRESENT when the local epoch is set.
+  //
+  // Final match rule for booked rows:
+  //   lc_slot_id present AND == candidate.id, AND
+  //   (candidate.integrationEpoch IS NULL OR
+  //    (lc_epoch present AND == candidate.integrationEpoch))
   const shared = event.extendedProperties?.shared ?? {}
   const lcSlotId = typeof shared.lc_slot_id === 'string' ? shared.lc_slot_id : null
   const lcEpoch = typeof shared.lc_epoch === 'string' ? shared.lc_epoch : null
   const slotIdMismatch = lcSlotId === null || lcSlotId !== candidate.id
   const epochMismatch =
     candidate.integrationEpoch !== null
-    && lcEpoch !== null
-    && lcEpoch !== candidate.integrationEpoch
+    && (lcEpoch === null || lcEpoch !== candidate.integrationEpoch)
   if (slotIdMismatch || epochMismatch) {
     await bumpReconciledAt(candidate.id)
     return { kind: 'orphan_self' }
