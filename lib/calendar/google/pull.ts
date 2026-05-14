@@ -351,3 +351,99 @@ export async function listCalendars(opts: {
     },
   }
 }
+
+// BCS-G.1 — Standalone events.get for the reconcile sweep (plan §4.8).
+//
+// Unlike `getAndConfirmOwnership` in google/push.ts (which is internal
+// to the 409-retry path on events.insert), this primitive is the public
+// surface the daily reconciler uses to compare what we think is in
+// Google against what's actually there. Outcome variants encode the
+// HTTP family the caller's state machine cares about:
+//
+//   - `not_found`     → 404 + 410 (event deleted on Google's side).
+//   - `auth_expired`  → 401 (token refresh needed; defer to caller).
+//   - `forbidden`     → 403 (lost access to the calendar).
+//   - `rate_limited`  → 429 (back off; retry next sweep cycle).
+//   - `server_error`  → 5xx (transient Google failure; same).
+//   - `network`/`shape` → infrastructure failures upstream of HTTP.
+//
+// Plan §4.8 reconcile state machine consumes the `ok:true` event to
+// branch on (a) `event.status === 'cancelled'` (Google-side tombstone)
+// and (b) `extendedProperties.shared.lc_epoch` match vs mismatch with
+// the local slot row.
+export type FetchEventOutcome =
+  | { ok: true; event: GoogleRawEvent }
+  | { ok: false; reason: 'not_found' }
+  | { ok: false; reason: 'rate_limited' }
+  | { ok: false; reason: 'server_error'; status: number }
+  | { ok: false; reason: 'auth_expired' }
+  | { ok: false; reason: 'forbidden' }
+  | { ok: false; reason: 'network'; message: string }
+  | { ok: false; reason: 'shape'; message: string }
+
+export async function fetchEventById(opts: {
+  accessToken: string
+  externalCalendarId: string
+  eventId: string
+  fetchImpl?: typeof fetch
+}): Promise<FetchEventOutcome> {
+  const fetchImpl = opts.fetchImpl ?? fetch
+  const url = `${GOOGLE_API_BASE}/calendars/${encodeURIComponent(
+    opts.externalCalendarId,
+  )}/events/${encodeURIComponent(opts.eventId)}`
+
+  let res: Response
+  try {
+    res = await fetchImpl(url, {
+      headers: {
+        Authorization: `Bearer ${opts.accessToken}`,
+        Accept: 'application/json',
+      },
+    })
+  } catch (e) {
+    return {
+      ok: false,
+      reason: 'network',
+      message: e instanceof Error ? e.message : String(e),
+    }
+  }
+
+  if (res.ok) {
+    let data: unknown
+    try {
+      data = await res.json()
+    } catch (e) {
+      return {
+        ok: false,
+        reason: 'shape',
+        message: e instanceof Error ? e.message : 'invalid JSON',
+      }
+    }
+    if (typeof data !== 'object' || data === null) {
+      return { ok: false, reason: 'shape', message: 'events.get returned non-object' }
+    }
+    const r = data as GoogleRawEvent
+    if (typeof r.id !== 'string' || !r.id) {
+      return { ok: false, reason: 'shape', message: 'events.get returned event without id' }
+    }
+    return { ok: true, event: r }
+  }
+
+  if (res.status === 404 || res.status === 410) {
+    return { ok: false, reason: 'not_found' }
+  }
+  if (res.status === 401) return { ok: false, reason: 'auth_expired' }
+  if (res.status === 403) return { ok: false, reason: 'forbidden' }
+  if (res.status === 429) return { ok: false, reason: 'rate_limited' }
+  if (res.status >= 500 && res.status < 600) {
+    return { ok: false, reason: 'server_error', status: res.status }
+  }
+  // Any other 4xx (400/405/etc): treat as shape so the caller logs +
+  // skips. Reconciliation is a periodic background process; a single
+  // weird response shouldn't propagate up as an exception.
+  return {
+    ok: false,
+    reason: 'shape',
+    message: `unexpected events.get status ${res.status}`,
+  }
+}

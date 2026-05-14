@@ -1,0 +1,405 @@
+// BCS-G.1 — Bounded reconcile sweep (plan §4.8 F9″ active healer +
+// F9‴ gated re-enqueue).
+//
+// What this runs (once per cron tick):
+//
+//   1. Pick up to N slots that have an external Google event bound
+//      and a start_at inside the [-7d, +30d] window. Order so the
+//      most-stale (last_reconciled_at NULLS FIRST) and the
+//      cancelled-with-external rows come first.
+//   2. For each row, fetch the integration's fresh access token,
+//      call `events.get(external_calendar_id, external_event_id)`,
+//      and apply the plan §4.8 state machine:
+//
+//        booked + 200 + epoch match    → healthy. Bump reconciled_at.
+//        booked + 200 + epoch mismatch → orphan-self. LEAVE binding,
+//                                        bump reconciled_at. F8′ UI
+//                                        surfaces the row separately.
+//        booked + 200 + status=cancelled (Google-side tombstone)
+//                                      → treat as 404: NULL binding +
+//                                        set external_sync_failed_at.
+//        booked + 404/410              → NULL binding +
+//                                        external_sync_failed_at.
+//        cancelled + 200               → F9‴ gated re-enqueue delete.
+//        cancelled + 404/410           → drift resolved. NULL binding,
+//                                        no sync_failed flag (we wanted
+//                                        the event gone).
+//        any   + 401/403/429/5xx/net   → skip. DO NOT bump
+//                                        reconciled_at — next sweep
+//                                        will see the row sooner.
+//
+// F9‴ gate (cancelled + 200 — Google still has an event we asked to
+// delete). Plan §4.8: probe the latest `calendar_push_jobs` row for
+// (slot_id, kind='delete') and decide whether to re-enqueue:
+//
+//   - no prior job → enqueue.
+//   - latest pending|in_progress → skip (worker is on it).
+//   - latest succeeded → re-enqueue iff
+//       now() - last_attempt_at > 6h
+//     (covers operator-side re-creation of the event in Google).
+//   - latest terminal_failure → re-enqueue iff
+//       tci.last_reconnected_at > latest.last_attempt_at
+//     (environment changed — the prior failure is no longer
+//     load-bearing).
+//   - latest cancelled_by_dependent → fresh enqueue.
+//
+// What this DOES NOT do (out of scope, by design):
+//   - rate-budget across teachers — the bounded LIMIT 100 per sweep
+//     plus the daily cron cadence is the budget;
+//   - kick the push worker — `enqueuePushJob` flips a `pending` row,
+//     the existing push-worker cron picks it up next tick;
+//   - heal slots whose binding is already NULL (we have nothing
+//     to compare against; F8′ UI handles orphan-self surface).
+//
+// Why "active healer" is a sweep and not a per-event reaction: the
+// push/pull contour drops or skips events under transient HTTP errors
+// + the integration-disconnect state. A daily sweep is the catch-net
+// that re-derives the truth from Google directly, independent of any
+// in-flight worker bug.
+
+import {
+  fetchEventById,
+  type FetchEventOutcome,
+} from '@/lib/calendar/google/pull'
+import { ensureFreshAccessToken } from '@/lib/calendar/google/token-refresh'
+import { getGoogleIntegration } from '@/lib/calendar/integrations'
+import { enqueuePushJob } from '@/lib/calendar/push-worker'
+import { getDbPool } from '@/lib/db/pool'
+
+const DEFAULT_LIMIT = 100
+const REENQUEUE_AFTER_SUCCESS_MS = 6 * 60 * 60_000
+
+export type ReconcileSlotOutcome =
+  | { kind: 'healthy' }
+  | { kind: 'orphan_self' }
+  | { kind: 'unbound_after_drift_resolved' }
+  | { kind: 'unbound_after_sync_failure' }
+  | { kind: 'cancel_reenqueued' }
+  | { kind: 'cancel_gate_skipped'; reason: CancelGateSkipReason }
+  | { kind: 'skipped_rate_limited' }
+  | { kind: 'skipped_server_error'; status: number }
+  | { kind: 'skipped_auth_expired' }
+  | { kind: 'skipped_forbidden' }
+  | { kind: 'skipped_network'; message: string }
+  | { kind: 'skipped_shape'; message: string }
+  | { kind: 'skipped_integration_missing' }
+  | { kind: 'skipped_integration_disconnected' }
+  | { kind: 'skipped_token_refresh_failed'; reason: string }
+
+export type CancelGateSkipReason =
+  | 'inflight'
+  | 'recent_success'
+  | 'terminal_no_env_change'
+
+export type CandidateSlot = {
+  id: string
+  teacherAccountId: string
+  externalCalendarId: string
+  externalEventId: string
+  integrationEpoch: string | null
+  status: 'booked' | 'cancelled'
+}
+
+export type ReconcileFetchImpl = (
+  opts: Parameters<typeof fetchEventById>[0],
+) => Promise<FetchEventOutcome>
+
+export type ReconcileSweepResult = {
+  picked: number
+  outcomes: Record<string, number>
+  details: Array<{ slotId: string; outcome: ReconcileSlotOutcome }>
+}
+
+const STATUS_SET = new Set(['booked', 'cancelled'])
+
+export async function pickReconcileCandidates(
+  limit: number = DEFAULT_LIMIT,
+): Promise<CandidateSlot[]> {
+  const pool = getDbPool()
+  const r = await pool.query(
+    `select id,
+            teacher_account_id,
+            external_calendar_id,
+            external_event_id,
+            integration_epoch,
+            status
+       from lesson_slots
+      where external_event_id is not null
+        and external_calendar_id is not null
+        and status in ('booked', 'cancelled')
+        and start_at > now() - interval '7 days'
+        and start_at < now() + interval '30 days'
+      order by
+        (case when status = 'cancelled' then 0 else 1 end),
+        start_at asc,
+        last_reconciled_at nulls first
+      limit $1`,
+    [limit],
+  )
+  return r.rows
+    .filter((row) => STATUS_SET.has(String(row.status)))
+    .map((row) => ({
+      id: String(row.id),
+      teacherAccountId: String(row.teacher_account_id),
+      externalCalendarId: String(row.external_calendar_id),
+      externalEventId: String(row.external_event_id),
+      integrationEpoch:
+        row.integration_epoch === null ? null : String(row.integration_epoch),
+      status: String(row.status) as 'booked' | 'cancelled',
+    }))
+}
+
+async function bumpReconciledAt(slotId: string): Promise<void> {
+  const pool = getDbPool()
+  await pool.query(
+    `update lesson_slots
+        set last_reconciled_at = now()
+      where id = $1`,
+    [slotId],
+  )
+}
+
+async function unbindSlot(
+  slotId: string,
+  opts: { markSyncFailed: boolean },
+): Promise<void> {
+  const pool = getDbPool()
+  await pool.query(
+    `update lesson_slots
+        set external_event_id = null,
+            external_calendar_id = null,
+            integration_epoch = null,
+            last_reconciled_at = now(),
+            external_sync_failed_at = case
+              when $2::bool then coalesce(external_sync_failed_at, now())
+              else external_sync_failed_at
+            end
+      where id = $1`,
+    [slotId, opts.markSyncFailed],
+  )
+}
+
+type LatestDeletePushJob = {
+  status: string
+  lastAttemptAt: string | null
+} | null
+
+async function readLatestDeletePushJob(
+  slotId: string,
+): Promise<LatestDeletePushJob> {
+  const pool = getDbPool()
+  const r = await pool.query(
+    `select status, last_attempt_at
+       from calendar_push_jobs
+      where slot_id = $1
+        and kind = 'delete'
+      order by created_at desc
+      limit 1`,
+    [slotId],
+  )
+  if (r.rowCount === 0) return null
+  const row = r.rows[0] as { status: unknown; last_attempt_at: unknown }
+  return {
+    status: String(row.status),
+    lastAttemptAt:
+      row.last_attempt_at === null
+        ? null
+        : new Date(String(row.last_attempt_at)).toISOString(),
+  }
+}
+
+export type CancelGateDecision =
+  | { enqueue: true }
+  | { enqueue: false; reason: CancelGateSkipReason }
+
+export function decideCancelReenqueue(opts: {
+  latestJob: LatestDeletePushJob
+  lastReconnectedAt: string | null
+  nowMs?: number
+}): CancelGateDecision {
+  const nowMs = opts.nowMs ?? Date.now()
+  const job = opts.latestJob
+  if (!job) return { enqueue: true }
+  if (job.status === 'pending' || job.status === 'in_progress') {
+    return { enqueue: false, reason: 'inflight' }
+  }
+  if (job.status === 'cancelled_by_dependent') {
+    return { enqueue: true }
+  }
+  if (job.status === 'succeeded') {
+    if (!job.lastAttemptAt) return { enqueue: true }
+    const ageMs = nowMs - new Date(job.lastAttemptAt).getTime()
+    if (ageMs > REENQUEUE_AFTER_SUCCESS_MS) return { enqueue: true }
+    return { enqueue: false, reason: 'recent_success' }
+  }
+  if (job.status === 'terminal_failure') {
+    if (!job.lastAttemptAt) return { enqueue: true }
+    const reconnectedAt = opts.lastReconnectedAt
+      ? new Date(opts.lastReconnectedAt).getTime()
+      : null
+    const attemptAt = new Date(job.lastAttemptAt).getTime()
+    if (reconnectedAt !== null && reconnectedAt > attemptAt) {
+      return { enqueue: true }
+    }
+    return { enqueue: false, reason: 'terminal_no_env_change' }
+  }
+  // Unknown future status — be conservative, skip.
+  return { enqueue: false, reason: 'inflight' }
+}
+
+async function reconcileSlot(
+  candidate: CandidateSlot,
+  fetchEventImpl: ReconcileFetchImpl,
+  nowMs: number,
+): Promise<ReconcileSlotOutcome> {
+  const integration = await getGoogleIntegration(candidate.teacherAccountId)
+  if (!integration) {
+    return { kind: 'skipped_integration_missing' }
+  }
+  if (integration.syncState === 'disconnected') {
+    return { kind: 'skipped_integration_disconnected' }
+  }
+
+  const tokenResult = await ensureFreshAccessToken({
+    accountId: candidate.teacherAccountId,
+  })
+  if (!tokenResult.ok) {
+    return {
+      kind: 'skipped_token_refresh_failed',
+      reason: tokenResult.reason,
+    }
+  }
+
+  const outcome = await fetchEventImpl({
+    accessToken: tokenResult.accessToken,
+    externalCalendarId: candidate.externalCalendarId,
+    eventId: candidate.externalEventId,
+  })
+
+  // Transient-failure branches: do NOT bump reconciled_at. The next
+  // sweep should retry these rows ahead of the fully-healthy ones.
+  if (!outcome.ok) {
+    if (outcome.reason === 'rate_limited') {
+      return { kind: 'skipped_rate_limited' }
+    }
+    if (outcome.reason === 'server_error') {
+      return { kind: 'skipped_server_error', status: outcome.status }
+    }
+    if (outcome.reason === 'auth_expired') {
+      return { kind: 'skipped_auth_expired' }
+    }
+    if (outcome.reason === 'forbidden') {
+      return { kind: 'skipped_forbidden' }
+    }
+    if (outcome.reason === 'network') {
+      return { kind: 'skipped_network', message: outcome.message }
+    }
+    if (outcome.reason === 'shape') {
+      return { kind: 'skipped_shape', message: outcome.message }
+    }
+    // outcome.reason === 'not_found'
+    const markSyncFailed = candidate.status === 'booked'
+    await unbindSlot(candidate.id, { markSyncFailed })
+    return {
+      kind: markSyncFailed
+        ? 'unbound_after_sync_failure'
+        : 'unbound_after_drift_resolved',
+    }
+  }
+
+  const event = outcome.event
+
+  // Google-side soft-cancellation tombstone. events.get returns the
+  // row with status='cancelled' even if showDeleted defaulted off on
+  // list queries. Treat as effective 404 for booked rows; drift
+  // resolved for cancelled rows.
+  if (event.status === 'cancelled') {
+    const markSyncFailed = candidate.status === 'booked'
+    await unbindSlot(candidate.id, { markSyncFailed })
+    return {
+      kind: markSyncFailed
+        ? 'unbound_after_sync_failure'
+        : 'unbound_after_drift_resolved',
+    }
+  }
+
+  if (candidate.status === 'cancelled') {
+    // Cancelled locally but Google still has it. F9‴ gated re-enqueue.
+    const latestJob = await readLatestDeletePushJob(candidate.id)
+    const decision = decideCancelReenqueue({
+      latestJob,
+      lastReconnectedAt: integration.lastReconnectedAt,
+      nowMs,
+    })
+    if (!decision.enqueue) {
+      await bumpReconciledAt(candidate.id)
+      return { kind: 'cancel_gate_skipped', reason: decision.reason }
+    }
+    if (!integration.writeCalendarId) {
+      // No write calendar to send delete to. Mark reconciled — the
+      // operator's calendar UI will surface the inconsistency.
+      await bumpReconciledAt(candidate.id)
+      return {
+        kind: 'cancel_gate_skipped',
+        reason: 'terminal_no_env_change',
+      }
+    }
+    await enqueuePushJob({
+      slotId: candidate.id,
+      teacherAccountId: candidate.teacherAccountId,
+      kind: 'delete',
+      payload: { write_calendar_id: integration.writeCalendarId },
+    })
+    await bumpReconciledAt(candidate.id)
+    return { kind: 'cancel_reenqueued' }
+  }
+
+  // candidate.status === 'booked'. Compare epoch.
+  const shared = event.extendedProperties?.shared ?? {}
+  const lcEpoch = typeof shared.lc_epoch === 'string' ? shared.lc_epoch : null
+  if (
+    candidate.integrationEpoch !== null
+    && lcEpoch !== null
+    && lcEpoch !== candidate.integrationEpoch
+  ) {
+    await bumpReconciledAt(candidate.id)
+    return { kind: 'orphan_self' }
+  }
+
+  await bumpReconciledAt(candidate.id)
+  return { kind: 'healthy' }
+}
+
+export async function runReconcileSweep(opts?: {
+  limit?: number
+  nowMs?: number
+  fetchEventImpl?: ReconcileFetchImpl
+}): Promise<ReconcileSweepResult> {
+  const limit = opts?.limit ?? DEFAULT_LIMIT
+  const nowMs = opts?.nowMs ?? Date.now()
+  const fetchImpl: ReconcileFetchImpl = opts?.fetchEventImpl ?? fetchEventById
+
+  const candidates = await pickReconcileCandidates(limit)
+  const outcomes: Record<string, number> = {}
+  const details: ReconcileSweepResult['details'] = []
+
+  for (const c of candidates) {
+    let outcome: ReconcileSlotOutcome
+    try {
+      outcome = await reconcileSlot(c, fetchImpl, nowMs)
+    } catch (e) {
+      outcome = {
+        kind: 'skipped_shape',
+        message: e instanceof Error ? e.message : String(e),
+      }
+    }
+    const key =
+      outcome.kind === 'cancel_gate_skipped'
+        ? `cancel_gate_skipped:${outcome.reason}`
+        : outcome.kind
+    outcomes[key] = (outcomes[key] ?? 0) + 1
+    details.push({ slotId: c.id, outcome })
+  }
+
+  return { picked: candidates.length, outcomes, details }
+}
