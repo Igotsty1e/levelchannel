@@ -68,6 +68,18 @@ DATABASE_URL=postgres://... npm run migrate:up
 npm run migrate:payments:postgres
 ```
 
+   **Phase 3 caveat (2026-05-14, Wave 6 #4):** the import script omits
+   `receipt_token_hash`, so any rows imported via this path will land
+   with `receipt_token_hash = NULL`. As of Phase 3, NULL-hash orders
+   are denied by `evaluateReceiptGate` unconditionally, meaning the
+   public `/api/payments/[invoiceId]` / `cancel` / `stream` routes will
+   401 for those rows. That is the intended end-state — operators
+   keep audit-log access via `/admin/payments/[invoiceId]`, and any
+   customer with an in-flight checkout from a JSON-era order would
+   have to start a fresh order. For a brand-new environment in 2026-05
+   or later, prefer skipping JSON entirely and starting on Postgres
+   from day 1.
+
 The production runtime and the actual VPS runbook live in
 `OPERATIONS.md`. The section below stays as a contract-level checklist
 for a new environment or for re-setup.

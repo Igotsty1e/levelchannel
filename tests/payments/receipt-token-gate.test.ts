@@ -6,15 +6,10 @@ import {
   extractReceiptToken,
 } from '@/lib/payments/receipt-token-gate'
 
-const MS_HOUR = 60 * 60 * 1000
-
 function fakeOrder(args: {
   hash?: string | null
-  ageHours?: number
-}): { createdAt: string; receiptTokenHash: string | null | undefined } {
-  const created = new Date(Date.now() - (args.ageHours ?? 0) * MS_HOUR)
+}): { receiptTokenHash: string | null | undefined } {
   return {
-    createdAt: created.toISOString(),
     receiptTokenHash: args.hash ?? null,
   }
 }
@@ -61,41 +56,19 @@ describe('extractReceiptToken', () => {
 })
 
 describe('evaluateReceiptGate', () => {
-  describe('legacy NULL-token rows', () => {
-    it('grants legacy_grace for orders younger than 24h with no token presented', () => {
-      const verdict = evaluateReceiptGate(
-        fakeOrder({ hash: null, ageHours: 6 }),
-        null,
-      )
-      expect(verdict).toEqual({ ok: true, reason: 'legacy_grace' })
+  describe('legacy NULL-token rows (Phase 3 — grace dropped)', () => {
+    it('refuses legacy NULL-hash orders unconditionally — no token presented', () => {
+      const verdict = evaluateReceiptGate(fakeOrder({ hash: null }), null)
+      expect(verdict).toEqual({ ok: false, reason: 'legacy_grace_expired' })
     })
 
-    it('grants legacy_grace for legacy orders even when a token IS presented', () => {
+    it('refuses legacy NULL-hash orders unconditionally — even when a token IS presented', () => {
       // No stored hash to compare against — token presence is moot.
       const verdict = evaluateReceiptGate(
-        fakeOrder({ hash: null, ageHours: 1 }),
+        fakeOrder({ hash: null }),
         'random-token',
       )
-      expect(verdict.ok).toBe(true)
-    })
-
-    it('refuses legacy orders past the 24h grace window', () => {
-      const verdict = evaluateReceiptGate(
-        fakeOrder({ hash: null, ageHours: 25 }),
-        null,
-      )
-      expect(verdict).toEqual({
-        ok: false,
-        reason: 'legacy_grace_expired',
-      })
-    })
-
-    it('refuses legacy orders with malformed createdAt (defensive)', () => {
-      const verdict = evaluateReceiptGate(
-        { createdAt: 'not-a-date', receiptTokenHash: null },
-        null,
-      )
-      expect(verdict.ok).toBe(false)
+      expect(verdict).toEqual({ ok: false, reason: 'legacy_grace_expired' })
     })
   })
 
@@ -103,45 +76,27 @@ describe('evaluateReceiptGate', () => {
     const { plain, hash } = mintToken()
 
     it('refuses with token_required when hash exists but no token presented', () => {
-      const verdict = evaluateReceiptGate(
-        { createdAt: new Date().toISOString(), receiptTokenHash: hash },
-        null,
-      )
+      const verdict = evaluateReceiptGate({ receiptTokenHash: hash }, null)
       expect(verdict).toEqual({ ok: false, reason: 'token_required' })
     })
 
     it('refuses with token_mismatch on a wrong token', () => {
       const verdict = evaluateReceiptGate(
-        { createdAt: new Date().toISOString(), receiptTokenHash: hash },
+        { receiptTokenHash: hash },
         'wrong-plain-token',
       )
       expect(verdict).toEqual({ ok: false, reason: 'token_mismatch' })
     })
 
     it('grants token_match on the right token', () => {
-      const verdict = evaluateReceiptGate(
-        { createdAt: new Date().toISOString(), receiptTokenHash: hash },
-        plain,
-      )
+      const verdict = evaluateReceiptGate({ receiptTokenHash: hash }, plain)
       expect(verdict).toEqual({ ok: true, reason: 'token_match' })
-    })
-
-    it('age does NOT matter when hash is present (no grace path)', () => {
-      // 30 days old, hash present, token wrong → still refused.
-      const old = evaluateReceiptGate(
-        {
-          createdAt: new Date(Date.now() - 30 * 24 * MS_HOUR).toISOString(),
-          receiptTokenHash: hash,
-        },
-        'wrong',
-      )
-      expect(old.ok).toBe(false)
     })
 
     it('refuses tokens that hash to a wildly different length (defensive)', () => {
       const tinyHash = 'a'.repeat(10) // not 64 hex
       const verdict = evaluateReceiptGate(
-        { createdAt: new Date().toISOString(), receiptTokenHash: tinyHash },
+        { receiptTokenHash: tinyHash },
         'whatever',
       )
       expect(verdict.ok).toBe(false)
@@ -160,10 +115,7 @@ describe('evaluateReceiptGate', () => {
     const wrongHash = hashToken(wrongPlain)
     expect(wrongHash).not.toBe(hash)
 
-    const verdict = evaluateReceiptGate(
-      { createdAt: new Date().toISOString(), receiptTokenHash: hash },
-      wrongPlain,
-    )
+    const verdict = evaluateReceiptGate({ receiptTokenHash: hash }, wrongPlain)
     expect(verdict.ok).toBe(false)
   })
 })
