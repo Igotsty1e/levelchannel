@@ -1,0 +1,44 @@
+# Reference systemd unit for scripts/calendar-pathology-alert.mjs.
+# `scripts/activate-prod-ops.sh` renders the placeholders below during
+# installation from the private runbook.
+#
+# This unit is one-shot — invoked by the .timer companion every 4h.
+# All env (DATABASE_URL, RESEND_API_KEY, EMAIL_FROM, ALERT_EMAIL_TO,
+# plus the optional CALENDAR_PATHOLOGY_* knobs) is read from the
+# production env file so we don't duplicate secrets.
+
+[Unit]
+Description=LevelChannel calendar pathology alert (F9‴ resurrection loops)
+After=network.target
+
+[Service]
+Type=oneshot
+User=levelchannel
+Group=levelchannel
+WorkingDirectory=__LEVELCHANNEL_APP_DIR__
+EnvironmentFile=__LEVELCHANNEL_ENV_FILE__
+ExecStart=/usr/bin/node scripts/calendar-pathology-alert.mjs
+StandardOutput=journal
+StandardError=journal
+
+# Sandboxing (Wave 11 confirmed compatible set — same 12 directives
+# active on the other 4 maintenance units, see PR #85 + plan).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+# MemoryDenyWriteExecute intentionally NOT set — V8 JIT requires W+X.
+# SystemCallFilter restored with explicit `pkey_*` allowlist for V8
+# JIT-cache hardening (Intel MPK), matching the auth-flow-alert /
+# stale-orders units.
+SystemCallFilter=@system-service pkey_alloc pkey_mprotect pkey_free
+SystemCallFilter=~@privileged @resources @debug @mount @cpu-emulation @obsolete
