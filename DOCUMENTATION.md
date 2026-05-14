@@ -56,6 +56,12 @@ in two places, agents will almost certainly drag in the stale version.
 1. `docs/github-readiness/security-audit.md`
 2. `docs/github-readiness/final-report.md`
 
+### Repo guardrails (mechanical enforcement on commit / PR)
+
+1. `docs/legal-pipeline.md` — `Legal-Pipeline-Verified:` trailer policy for commits touching regulated text. Local hook (`.githooks/commit-msg`) + CI (`legal-pipeline.yml`) enforce.
+2. `docs/skill-pipeline.md` — `Skill-Used:` trailer policy for non-trivial diffs (≥3 files OR ≥100 lines in `app/`/`lib/`/`tests/`/`migrations/`). Same hook chain + CI (`skill-pipeline.yml`) enforce. Mirrors the legal-pipeline pattern; the two trailers are independent and both required on a commit that crosses both thresholds.
+3. `AGENTS.md` §0 + §4 — the human-readable expectations the trailers enforce. Read these before starting work.
+
 ## Ownership matrix
 
 | Document | Owns | Should not carry |
@@ -72,6 +78,8 @@ in two places, agents will almost certainly drag in the stale version.
 | `ENGINEERING_BACKLOG.md` | implementation task queue | deploy facts, public legal text |
 | `PRD.md` | public-safe note that points to the private historical PRD | current decisions as source of truth |
 | `docs/plans/*` | archive of design / implementation plans | current shipped state and owner contracts |
+| `docs/legal-pipeline.md` | `Legal-Pipeline-Verified:` trailer policy + protected scope for regulated text | day-to-day legal content (lives in `app/offer/`, `app/privacy/`, `app/consent/`) |
+| `docs/skill-pipeline.md` | `Skill-Used:` trailer policy + threshold + exceptions; mirrors legal-pipeline | the human-readable expectations (live in `AGENTS.md` §0 + §4) |
 
 ## Conflict rule
 
