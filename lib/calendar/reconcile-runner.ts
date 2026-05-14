@@ -386,20 +386,21 @@ async function reconcileSlot(
       await bumpReconciledAt(candidate.id)
       return { kind: 'cancel_gate_skipped', reason: decision.reason }
     }
-    if (!integration.writeCalendarId) {
-      // No write calendar to send delete to. Mark reconciled — the
-      // operator's calendar UI will surface the inconsistency.
-      await bumpReconciledAt(candidate.id)
-      return {
-        kind: 'cancel_gate_skipped',
-        reason: 'terminal_no_env_change',
-      }
-    }
+    // Codex round 3 P2: write_calendar_id for the delete push must
+    // come from the slot binding when integration.write_calendar_id is
+    // null. The teacher may have cleared / rotated the current write
+    // calendar AFTER this event was created — the event still lives
+    // in `candidate.externalCalendarId` (that's what the binding
+    // remembers). Without this fallback the sweep would mark the
+    // row reconciled but skip the actual delete enqueue and the
+    // stale Google event would remain forever.
+    const writeCalendarId =
+      integration.writeCalendarId ?? candidate.externalCalendarId
     await enqueuePushJob({
       slotId: candidate.id,
       teacherAccountId: candidate.teacherAccountId,
       kind: 'delete',
-      payload: { write_calendar_id: integration.writeCalendarId },
+      payload: { write_calendar_id: writeCalendarId },
     })
     await bumpReconciledAt(candidate.id)
     return { kind: 'cancel_reenqueued' }

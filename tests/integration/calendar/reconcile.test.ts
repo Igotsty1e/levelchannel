@@ -419,6 +419,46 @@ describe('runReconcileSweep — cancelled branches', () => {
     expect(await countPushJobs(slot)).toBe(1) // pre-seeded only
   })
 
+  it('cancelled + 200 with NULL writeCalendarId falls back to slot binding (Codex round 3 P2)', async () => {
+    const t = await makeTeacher('rec_fallback@example.com')
+    const epoch = await connect(t)
+    // Operator/teacher cleared write_calendar_id after the original
+    // create push succeeded. Slot still carries
+    // external_calendar_id='primary' from its binding.
+    await getDbPool().query(
+      `update teacher_calendar_integrations
+          set write_calendar_id = null
+        where account_id = $1`,
+      [t],
+    )
+    const slot = await seedSlot({
+      teacherId: t,
+      status: 'cancelled',
+      externalCalendarId: 'primary',
+      externalEventId: 'evt-fallback',
+      integrationEpoch: epoch,
+    })
+    const fetcher = makeFetcher({
+      'evt-fallback': googleEvent({
+        id: 'evt-fallback',
+        lcEpoch: epoch,
+        lcSlotId: slot,
+      }),
+    })
+
+    const res = await runReconcileSweep({ fetchEventImpl: fetcher })
+
+    expect(res.outcomes).toEqual({ cancel_reenqueued: 1 })
+    expect(await countPushJobs(slot)).toBe(1)
+    // Payload should carry the slot's stored binding, not null.
+    const r = await getDbPool().query(
+      `select payload->>'write_calendar_id' as write_calendar_id
+         from calendar_push_jobs where slot_id = $1`,
+      [slot],
+    )
+    expect(r.rows[0]?.write_calendar_id).toBe('primary')
+  })
+
   it('cancelled + 404 → drift resolved: unbinds, no sync_failed flag', async () => {
     const t = await makeTeacher('rec7@example.com')
     const epoch = await connect(t)
