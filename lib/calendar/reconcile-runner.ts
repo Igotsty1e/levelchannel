@@ -177,6 +177,23 @@ async function bumpReconciledAt(slotId: string): Promise<void> {
   )
 }
 
+// Codex round 4 P2 — migration 0042 added `cancel_repush_count`
+// specifically for the F9‴ pathology: (delete succeeded → event
+// resurrects → reconciler re-enqueues delete) loops. Plan §5 minor
+// note #2 fires the operator alert at >= 3. Leaving this column at 0
+// means repeated resurrection loops stay invisible to operators and
+// any alerting built on the counter misses already-affected slots.
+async function bumpReconciledAndCancelRepush(slotId: string): Promise<void> {
+  const pool = getDbPool()
+  await pool.query(
+    `update lesson_slots
+        set last_reconciled_at = now(),
+            cancel_repush_count = cancel_repush_count + 1
+      where id = $1`,
+    [slotId],
+  )
+}
+
 async function unbindSlot(
   slotId: string,
   opts: {
@@ -402,7 +419,10 @@ async function reconcileSlot(
       kind: 'delete',
       payload: { write_calendar_id: writeCalendarId },
     })
-    await bumpReconciledAt(candidate.id)
+    // Bump the pathology counter alongside last_reconciled_at — this
+    // is the ONLY codepath in the codebase that increments
+    // cancel_repush_count, per the column's docstring in 0042.
+    await bumpReconciledAndCancelRepush(candidate.id)
     return { kind: 'cancel_reenqueued' }
   }
 

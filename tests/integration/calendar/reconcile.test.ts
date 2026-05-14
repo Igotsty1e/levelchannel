@@ -212,6 +212,14 @@ async function countPushJobs(slotId: string): Promise<number> {
   return Number(r.rows[0].n)
 }
 
+async function readCancelRepushCount(slotId: string): Promise<number> {
+  const r = await getDbPool().query(
+    `select cancel_repush_count from lesson_slots where id = $1`,
+    [slotId],
+  )
+  return Number(r.rows[0].cancel_repush_count)
+}
+
 describe('runReconcileSweep — booked branches', () => {
   it('booked + 200 + epoch match + slot_id match → healthy: bumps reconciled_at, leaves binding', async () => {
     const t = await makeTeacher('rec1@example.com')
@@ -365,7 +373,7 @@ describe('runReconcileSweep — booked branches', () => {
 })
 
 describe('runReconcileSweep — cancelled branches', () => {
-  it('cancelled + 200 + no prior job → enqueues delete push job', async () => {
+  it('cancelled + 200 + no prior job → enqueues delete push job + bumps cancel_repush_count', async () => {
     const t = await makeTeacher('rec5@example.com')
     const epoch = await connect(t)
     const slot = await seedSlot({
@@ -374,6 +382,7 @@ describe('runReconcileSweep — cancelled branches', () => {
       externalEventId: 'evt-still-there',
       integrationEpoch: epoch,
     })
+    expect(await readCancelRepushCount(slot)).toBe(0)
     const fetcher = makeFetcher({
       'evt-still-there': googleEvent({
         id: 'evt-still-there',
@@ -387,6 +396,9 @@ describe('runReconcileSweep — cancelled branches', () => {
     expect(await countPushJobs(slot)).toBe(1)
     const after = await readSlot(slot)
     expect(after.last_reconciled_at).not.toBeNull()
+    // Codex round 4 P2 — pathology counter must rise per re-enqueue
+    // so the operator alert at >= 3 fires correctly.
+    expect(await readCancelRepushCount(slot)).toBe(1)
   })
 
   it('cancelled + 200 + already-pending push job → skipped/inflight, no new job', async () => {
