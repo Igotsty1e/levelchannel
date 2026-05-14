@@ -750,6 +750,45 @@ describe('runReconcileSweep — bounded ordering', () => {
     expect(after.external_sync_failed_at).toBeNull()
   })
 
+  it('unbind no-ops when binding moved to a NEW calendar with same event_id (Codex round 6 P1)', async () => {
+    // Deterministic event_id (`deterministicEventId(slotId)` per
+    // lib/calendar/google/push.ts) means a teacher swapping their
+    // write_calendar can legitimately produce the SAME event_id on a
+    // DIFFERENT calendar. The guard must lock on the full binding
+    // pair (status, event_id, calendar_id) or it would wipe the
+    // fresh binding while reconciling the stale one.
+    const t = await makeTeacher('rec_xcal@example.com')
+    const epoch = await connect(t)
+    const slot = await seedSlot({
+      teacherId: t,
+      status: 'booked',
+      externalCalendarId: 'stale-calendar',
+      externalEventId: 'evt-x-cal',
+      integrationEpoch: epoch,
+    })
+
+    const racingFetcher: ReconcileFetchImpl = async () => {
+      // Race: another worker rebinds the slot to a NEW calendar
+      // while keeping the same event_id (deterministic).
+      await getDbPool().query(
+        `update lesson_slots
+            set external_calendar_id = 'fresh-calendar'
+          where id = $1`,
+        [slot],
+      )
+      return { ok: false, reason: 'not_found' }
+    }
+
+    const res = await runReconcileSweep({ fetchEventImpl: racingFetcher })
+
+    expect(res.outcomes).toEqual({ skipped_state_changed: 1 })
+    // The fresh binding survives — reconciler's unbind no-oped.
+    const after = await readSlot(slot)
+    expect(after.external_event_id).toBe('evt-x-cal')
+    expect(after.external_calendar_id).toBe('fresh-calendar')
+    expect(after.external_sync_failed_at).toBeNull()
+  })
+
   it('booked + 200 + matching lc_slot_id but NO lc_epoch → orphan_self (Codex round 2 P2)', async () => {
     // The local row has a non-null integration_epoch. The Google
     // event carries lc_slot_id = our id (so the slot-id check passes)

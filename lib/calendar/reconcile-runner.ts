@@ -204,15 +204,17 @@ async function unbindSlot(
   slotId: string,
   opts: {
     markSyncFailed: boolean
-    // Codex round 2 P2: guard the write on the originally-read snapshot.
-    // Between candidate selection and this UPDATE, another worker (or
-    // the user) can flip `status` (cancel → cancelled) or `external_event_id`
-    // (rebind / null). Without these guards the reconciler would
-    // overwrite the newer state and either (a) wrongly stamp
-    // external_sync_failed_at on a row whose delete already succeeded,
-    // or (b) erase a fresh binding from a re-book.
+    // Codex round 2 P2 + round 6 P1: guard the write on the FULL
+    // originally-read snapshot. Status alone is not enough; event_id
+    // alone is not enough either. Because `lib/calendar/google/push.ts`
+    // mints `deterministicEventId(slotId)`, the SAME event_id legally
+    // reappears on a DIFFERENT calendar after a teacher swaps their
+    // write_calendar. Without locking the guard on (status, event_id,
+    // calendar_id), a sweep processing the stale binding can wipe the
+    // fresh binding to the new calendar.
     expectedStatus: 'booked' | 'cancelled'
     expectedExternalEventId: string
+    expectedExternalCalendarId: string
   },
 ): Promise<{ updated: boolean }> {
   const pool = getDbPool()
@@ -228,12 +230,14 @@ async function unbindSlot(
             end
       where id = $1
         and status = $3
-        and external_event_id = $4`,
+        and external_event_id = $4
+        and external_calendar_id = $5`,
     [
       slotId,
       opts.markSyncFailed,
       opts.expectedStatus,
       opts.expectedExternalEventId,
+      opts.expectedExternalCalendarId,
     ],
   )
   return { updated: (r.rowCount ?? 0) > 0 }
@@ -363,6 +367,7 @@ async function reconcileSlot(
       markSyncFailed,
       expectedStatus: candidate.status,
       expectedExternalEventId: candidate.externalEventId,
+      expectedExternalCalendarId: candidate.externalCalendarId,
     })
     if (!r.updated) {
       return { kind: 'skipped_state_changed' }
@@ -386,6 +391,7 @@ async function reconcileSlot(
       markSyncFailed,
       expectedStatus: candidate.status,
       expectedExternalEventId: candidate.externalEventId,
+      expectedExternalCalendarId: candidate.externalCalendarId,
     })
     if (!r.updated) {
       return { kind: 'skipped_state_changed' }
@@ -420,6 +426,7 @@ async function reconcileSlot(
         markSyncFailed: false,
         expectedStatus: candidate.status,
         expectedExternalEventId: candidate.externalEventId,
+      expectedExternalCalendarId: candidate.externalCalendarId,
       })
       if (!r.updated) return { kind: 'skipped_state_changed' }
       return { kind: 'unbound_after_drift_resolved_alien' }
@@ -446,12 +453,24 @@ async function reconcileSlot(
     // stale Google event would remain forever.
     const writeCalendarId =
       integration.writeCalendarId ?? candidate.externalCalendarId
-    await enqueuePushJob({
+    const enq = await enqueuePushJob({
       slotId: candidate.id,
       teacherAccountId: candidate.teacherAccountId,
       kind: 'delete',
       payload: { write_calendar_id: writeCalendarId },
     })
+    // Codex round 6 P3: enqueuePushJob dedups on the
+    // (slot_id, kind) partial unique index when there is already a
+    // pending row. Between readLatestDeletePushJob() above and this
+    // INSERT, another worker can land a pending delete; the gate
+    // check passed but the actual insert no-ops. Treat that as
+    // "another worker beat us to it" (inflight) — do NOT bump
+    // cancel_repush_count, do NOT report cancel_reenqueued, so the
+    // pathology alert and sweep metrics stay honest.
+    if (!enq.inserted) {
+      await bumpReconciledAt(candidate.id)
+      return { kind: 'cancel_gate_skipped', reason: 'inflight' }
+    }
     // Bump the pathology counter alongside last_reconciled_at — this
     // is the ONLY codepath in the codebase that increments
     // cancel_repush_count, per the column's docstring in 0042.
