@@ -48,7 +48,7 @@ describe('withTokenRetry', () => {
   it('returns immediately on first-call success — no second ensureFreshAccessToken, no disconnect', async () => {
     mockEnsureFresh.mockResolvedValueOnce(freshOk('access-1'))
 
-    const exec = vi.fn(async (token: string): Promise<CallResult<{ n: number }>> => {
+    const exec = vi.fn(async (token: string, _i: unknown): Promise<CallResult<{ n: number }>> => {
       expect(token).toBe('access-1')
       return { ok: true, value: { n: 42 } }
     })

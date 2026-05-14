@@ -157,7 +157,7 @@ export async function runPullForCalendar(
   // 401, flip to disconnected on second.
   const wrapped = await withTokenRetry(
     opts.teacherAccountId,
-    async (token): Promise<CallResult<{ intervals: ParsedBusyInterval[] }>> => {
+    async (token, _integration): Promise<CallResult<{ intervals: ParsedBusyInterval[] }>> => {
       const r = await pullBusyIntervalsForCalendar({
         accessToken: token,
         externalCalendarId: opts.externalCalendarId,

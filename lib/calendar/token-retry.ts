@@ -19,6 +19,7 @@
 
 import {
   disconnectGoogleIntegration,
+  type TeacherCalendarIntegrationWithTokens,
 } from '@/lib/calendar/integrations'
 import { ensureFreshAccessToken } from '@/lib/calendar/google/token-refresh'
 
@@ -30,9 +31,14 @@ export type CallResult<T> =
   | { ok: true; value: T }
   | { ok: false; auth401: boolean; raw: unknown }
 
+export type TokenRetryExec<T> = (
+  token: string,
+  integration: TeacherCalendarIntegrationWithTokens,
+) => Promise<CallResult<T>>
+
 export async function withTokenRetry<T>(
   accountId: string,
-  exec: (token: string) => Promise<CallResult<T>>,
+  exec: TokenRetryExec<T>,
 ): Promise<CallResult<T>> {
   const first = await ensureFreshAccessToken({ accountId })
   if (!first.ok) {
@@ -42,7 +48,7 @@ export async function withTokenRetry<T>(
     return { ok: false, auth401: false, raw: first }
   }
 
-  let result = await exec(first.accessToken)
+  let result = await exec(first.accessToken, first.integration)
   if (result.ok || !result.auth401) {
     return result
   }
@@ -58,7 +64,7 @@ export async function withTokenRetry<T>(
     return { ok: false, auth401: false, raw: second }
   }
 
-  result = await exec(second.accessToken)
+  result = await exec(second.accessToken, second.integration)
   if (!result.ok && result.auth401) {
     // 2nd real Google 401 in a row → the access_token IS fresh (Google
     // accepted our refresh_token) but Google itself rejects it. The
@@ -76,14 +82,14 @@ export async function withTokenRetry<T>(
 // would self-break.
 export async function tryRefreshOnce<T>(
   accountId: string,
-  exec: (token: string) => Promise<CallResult<T>>,
+  exec: TokenRetryExec<T>,
 ): Promise<CallResult<T>> {
   const first = await ensureFreshAccessToken({ accountId })
   if (!first.ok) {
     return { ok: false, auth401: false, raw: first }
   }
 
-  let result = await exec(first.accessToken)
+  let result = await exec(first.accessToken, first.integration)
   if (result.ok || !result.auth401) {
     return result
   }
@@ -96,7 +102,7 @@ export async function tryRefreshOnce<T>(
     return { ok: false, auth401: false, raw: second }
   }
 
-  result = await exec(second.accessToken)
+  result = await exec(second.accessToken, second.integration)
   // Crucially: NO disconnect side effect even on 2nd 401.
   return result
 }
