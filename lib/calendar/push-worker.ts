@@ -30,7 +30,7 @@
 //     lock-order inversion the Codex paranoia loop closed (plan §4.6
 //     F6′ + F6″ + F6‴).
 
-import { ensureFreshAccessToken } from '@/lib/calendar/google/token-refresh'
+import { withTokenRetry, type CallResult } from '@/lib/calendar/token-retry'
 import {
   deleteEvent,
   insertEventIdempotent,
@@ -228,43 +228,58 @@ async function processCreate(job: ClaimedJob): Promise<PushJobOutcome> {
     return { kind: 'cancelled_by_dependent', jobId: job.id, slotId: job.slotId }
   }
 
-  const fresh = await ensureFreshAccessToken({
-    accountId: job.teacherAccountId,
-  })
-  if (!fresh.ok) {
-    return markFailure(job, `token: ${fresh.reason}`, fresh.reason === 'transient')
-  }
-
   const writeCalendar = String(job.payload.write_calendar_id ?? '')
   if (!writeCalendar) {
     return markFailure(job, 'payload_missing_write_calendar_id', false)
   }
 
-  const inserted = await insertEventIdempotent({
-    accessToken: fresh.accessToken,
-    externalCalendarId: writeCalendar,
-    slotId: slot.id,
-    input: {
-      startAt: slot.startAt,
-      endAt: slot.endAt,
-      summary:
-        typeof job.payload.summary === 'string'
-          ? job.payload.summary
-          : 'LC: урок',
-      ownership: {
-        lcOrigin: 'levelchannel',
-        lcSlotId: slot.id,
-        lcEpoch: String(job.payload.lc_epoch ?? fresh.integration.epoch),
-      },
+  // BCS-OP-ROLLOUT plan §4.6 — wrap with withTokenRetry.
+  const wrappedInsert = await withTokenRetry(
+    job.teacherAccountId,
+    async (token, integration): Promise<CallResult<{ event: { id: string; etag: string }; lcEpoch: string }>> => {
+      const lcEpoch = String(job.payload.lc_epoch ?? integration.epoch)
+      const r = await insertEventIdempotent({
+        accessToken: token,
+        externalCalendarId: writeCalendar,
+        slotId: slot.id,
+        input: {
+          startAt: slot.startAt,
+          endAt: slot.endAt,
+          summary:
+            typeof job.payload.summary === 'string'
+              ? job.payload.summary
+              : 'LC: урок',
+          ownership: {
+            lcOrigin: 'levelchannel',
+            lcSlotId: slot.id,
+            lcEpoch,
+          },
+        },
+      })
+      if (r.ok) {
+        return { ok: true, value: { event: r.event, lcEpoch } }
+      }
+      const auth401 = r.error.kind === 'http' && r.error.status === 401
+      return { ok: false, auth401, raw: r.error }
     },
-  })
-  if (!inserted.ok) {
+  )
+  if (!wrappedInsert.ok) {
+    const raw = wrappedInsert.raw as { kind?: string; status?: number; reason?: string }
+    if (raw && typeof raw.kind === 'string') {
+      return markFailure(
+        job,
+        describeError(raw as PushError),
+        isTransientPushError(raw as PushError),
+      )
+    }
     return markFailure(
       job,
-      describeError(inserted.error),
-      isTransientPushError(inserted.error),
+      `token: ${raw?.reason ?? 'unknown'}`,
+      raw?.reason === 'transient',
     )
   }
+  const inserted = { event: wrappedInsert.value.event }
+  const lcEpoch = wrappedInsert.value.lcEpoch
   // Codex E.worker review #1: post-API DB writes — slot binding +
   // job mark-succeeded — must land atomically. The initial claim TX
   // already committed (status='in_progress' is just a claim marker,
@@ -288,7 +303,7 @@ async function processCreate(job: ClaimedJob): Promise<PushJobOutcome> {
         inserted.event.id,
         writeCalendar,
         inserted.event.etag,
-        String(job.payload.lc_epoch ?? fresh.integration.epoch),
+        lcEpoch,
       ],
     )
     await client.query(
@@ -324,26 +339,40 @@ async function processUpdate(job: ClaimedJob): Promise<PushJobOutcome> {
     return { kind: 'cancelled_by_dependent', jobId: job.id, slotId: job.slotId }
   }
 
-  const fresh = await ensureFreshAccessToken({
-    accountId: job.teacherAccountId,
-  })
-  if (!fresh.ok) {
-    return markFailure(job, `token: ${fresh.reason}`, fresh.reason === 'transient')
-  }
-
-  const patched = await patchEvent({
-    accessToken: fresh.accessToken,
-    externalCalendarId: slot.externalCalendarId,
-    eventId: slot.externalEventId,
-    input: {
-      startAt: slot.startAt,
-      endAt: slot.endAt,
-      summary:
-        typeof job.payload.summary === 'string' ? job.payload.summary : undefined,
+  // BCS-OP-ROLLOUT plan §4.6 — wrap patchEvent with withTokenRetry.
+  const wrappedPatch = await withTokenRetry(
+    job.teacherAccountId,
+    async (token): Promise<CallResult<true>> => {
+      const r = await patchEvent({
+        accessToken: token,
+        externalCalendarId: slot.externalCalendarId!,
+        eventId: slot.externalEventId!,
+        input: {
+          startAt: slot.startAt,
+          endAt: slot.endAt,
+          summary:
+            typeof job.payload.summary === 'string' ? job.payload.summary : undefined,
+        },
+      })
+      if (r.ok) return { ok: true, value: true }
+      const auth401 = r.error.kind === 'http' && r.error.status === 401
+      return { ok: false, auth401, raw: r.error }
     },
-  })
-  if (!patched.ok) {
-    return markFailure(job, describeError(patched.error), isTransientPushError(patched.error))
+  )
+  if (!wrappedPatch.ok) {
+    const raw = wrappedPatch.raw as { kind?: string; reason?: string }
+    if (raw && typeof raw.kind === 'string') {
+      return markFailure(
+        job,
+        describeError(raw as PushError),
+        isTransientPushError(raw as PushError),
+      )
+    }
+    return markFailure(
+      job,
+      `token: ${raw?.reason ?? 'unknown'}`,
+      raw?.reason === 'transient',
+    )
   }
   return markSucceeded(job.id, slot.id)
 }
@@ -355,16 +384,8 @@ async function processDelete(job: ClaimedJob): Promise<PushJobOutcome> {
     // event may still exist in Google but reconcile sweep handles).
     return markSucceeded(job.id, job.slotId)
   }
-  const fresh = await ensureFreshAccessToken({
-    accountId: job.teacherAccountId,
-  })
-  if (!fresh.ok) {
-    return markFailure(job, `token: ${fresh.reason}`, fresh.reason === 'transient')
-  }
   // Plan §4.6 F6: delete uses COALESCE(external_event_id, deterministic_id).
   // We pass in slot.externalEventId if set, otherwise compute from slotId.
-  // The deterministic event id is recomputed by importing
-  // `deterministicEventId` from push.ts; we keep it local for symmetry.
   const { deterministicEventId } = await import('@/lib/calendar/google/push')
   const eventIdToDelete = slot.externalEventId ?? deterministicEventId(slot.id)
   const writeCalendar =
@@ -375,13 +396,34 @@ async function processDelete(job: ClaimedJob): Promise<PushJobOutcome> {
   if (!writeCalendar) {
     return markFailure(job, 'payload_missing_write_calendar_id', false)
   }
-  const deleted = await deleteEvent({
-    accessToken: fresh.accessToken,
-    externalCalendarId: writeCalendar,
-    eventId: eventIdToDelete,
-  })
-  if (!deleted.ok) {
-    return markFailure(job, describeError(deleted.error), isTransientPushError(deleted.error))
+  // BCS-OP-ROLLOUT plan §4.6 — wrap deleteEvent with withTokenRetry.
+  const wrappedDelete = await withTokenRetry(
+    job.teacherAccountId,
+    async (token): Promise<CallResult<true>> => {
+      const r = await deleteEvent({
+        accessToken: token,
+        externalCalendarId: writeCalendar,
+        eventId: eventIdToDelete,
+      })
+      if (r.ok) return { ok: true, value: true }
+      const auth401 = r.error.kind === 'http' && r.error.status === 401
+      return { ok: false, auth401, raw: r.error }
+    },
+  )
+  if (!wrappedDelete.ok) {
+    const raw = wrappedDelete.raw as { kind?: string; reason?: string }
+    if (raw && typeof raw.kind === 'string') {
+      return markFailure(
+        job,
+        describeError(raw as PushError),
+        isTransientPushError(raw as PushError),
+      )
+    }
+    return markFailure(
+      job,
+      `token: ${raw?.reason ?? 'unknown'}`,
+      raw?.reason === 'transient',
+    )
   }
   // Codex E.worker review #1 (symmetric with processCreate): clear
   // binding + mark job succeeded in one TX. Without the wrapper,

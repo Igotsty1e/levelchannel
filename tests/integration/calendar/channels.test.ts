@@ -64,6 +64,15 @@ function emptyOkResponse(): Response {
   } as unknown as Response
 }
 
+function tokenResponse(body: Record<string, unknown>, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+  } as unknown as Response
+}
+
 beforeEach(() => {
   process.env.CALENDAR_ENCRYPTION_KEY = TEST_KEY
   process.env.GOOGLE_CALENDAR_CLIENT_ID = 'cid'
@@ -181,6 +190,67 @@ describe('setupChannelForIntegration', () => {
       [accountId],
     )
     expect(row.rows[0].channel_id).not.toBe('lc-old')
+    expect(row.rows[0].channel_resource_id).toBe('res_new')
+  })
+
+  // BCS-OP-ROLLOUT plan §4.6.4 — stopChannel-of-OLD on 2nd 401 must NOT
+  // disconnect the integration (the NEW channel is already authoritative;
+  // disconnecting would self-break). tryRefreshOnce is the inert wrap
+  // used at this call site.
+  it('stopChannel 2nd-401 does NOT disconnect — new channel stays authoritative', async () => {
+    const accountId = await makeTeacher('ch-stop401-no-disc@example.com')
+    await connect(accountId)
+    const pool = getDbPool()
+    // Seed a prior channel triple.
+    await pool.query(
+      `update teacher_calendar_integrations
+          set channel_id = 'lc-old', channel_resource_id = 'res_old',
+              channel_token = 'old-token-padding', channel_expires_at = now() + interval '1 day'
+        where account_id = $1`,
+      [accountId],
+    )
+    let stopCallCount = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: RequestInfo | URL) => {
+        const u = String(url)
+        if (u.includes('oauth2.googleapis.com/token')) {
+          // Token refresh succeeds (used by tryRefreshOnce's force-refresh).
+          return tokenResponse({
+            access_token: 'NEW_AT',
+            expires_in: 3600,
+            token_type: 'Bearer',
+            scope: 's',
+          })
+        }
+        if (u.includes('/channels/stop')) {
+          stopCallCount++
+          // Both calls return 401 to simulate the dead-grant case.
+          return {
+            ok: false,
+            status: 401,
+            text: async () => 'unauthorized',
+            json: async () => ({}),
+          } as unknown as Response
+        }
+        // watch succeeds — new channel becomes authoritative.
+        return watchResponse({ resourceId: 'res_new' })
+      }),
+    )
+    const r = await setupChannelForIntegration({
+      accountId,
+      externalCalendarId: 'primary',
+    })
+    expect(r.ok).toBe(true) // setup succeeds; stopChannel is best-effort.
+    expect(stopCallCount).toBeGreaterThanOrEqual(2) // tried twice via tryRefreshOnce.
+
+    // Integration must NOT be flipped to disconnected — that would
+    // self-break the just-renewed channel.
+    const row = await pool.query(
+      `select sync_state, channel_resource_id from teacher_calendar_integrations where account_id = $1`,
+      [accountId],
+    )
+    expect(row.rows[0].sync_state).toBe('active')
     expect(row.rows[0].channel_resource_id).toBe('res_new')
   })
 

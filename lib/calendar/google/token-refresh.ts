@@ -55,6 +55,11 @@ export async function ensureFreshAccessToken(opts: {
   accountId: string
   nowMs?: number
   fetchImpl?: typeof fetch
+  // BCS-OP-ROLLOUT plan §4.6.1 — when true, skip the cached-token
+  // branch and force a refresh via refresh_token. Used by
+  // withTokenRetry after a real Google 401 to recover from a
+  // server-side revoke that the timestamp cache wouldn't catch.
+  forceRefresh?: boolean
 }): Promise<FreshTokenResult> {
   const nowMs = opts.nowMs ?? Date.now()
 
@@ -65,9 +70,11 @@ export async function ensureFreshAccessToken(opts: {
   if (integration.syncState === 'disconnected') {
     return { ok: false, reason: 'disconnected' }
   }
-  // If token isn't expired yet (within skew) and we have it, reuse.
+  // If token isn't expired yet (within skew) and we have it, reuse —
+  // unless the caller is forcing a refresh after a Google-side 401.
   if (
-    integration.accessToken
+    !opts.forceRefresh
+    && integration.accessToken
     && integration.tokenExpiresAt
     && new Date(integration.tokenExpiresAt).getTime() > nowMs + REFRESH_SKEW_MS
   ) {

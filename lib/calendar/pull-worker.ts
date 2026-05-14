@@ -132,9 +132,27 @@ async function processOneJob(args: {
   }
 
   // 2. Run the pull.
+  //
+  // BCS-OP-ROLLOUT plan §9.1 variant A — derive isWritableInSource
+  // from the integration row instead of letting runPullForCalendar
+  // default it to false. Today every integration is seeded with
+  // writeCalendarId='primary' + readCalendarIds=['primary'] at OAuth
+  // init (callback/route.ts:151-152). A calendar is writable in
+  // Google's eyes if it matches the integration's write target.
+  // Future: replace this with explicit accessRole plumbing from
+  // listCalendars once that lands in the cron path.
+  //
+  // If we silently default-false here, every pull cycle poisons
+  // teacher_external_busy_intervals.is_writable_in_source → the
+  // delete-external-conflict route hard-refuses on writable events
+  // (verified Codex round 3 BLOCKER #1).
+  const isWritableInSource =
+    fresh.integration.writeCalendarId !== null
+    && args.externalCalendarId === fresh.integration.writeCalendarId
   const pull = await runPullForCalendar({
     teacherAccountId: args.teacherAccountId,
     externalCalendarId: args.externalCalendarId,
+    isWritableInSource,
     fetchImpl: args.fetchImpl,
     nowMs: args.nowMs,
   })

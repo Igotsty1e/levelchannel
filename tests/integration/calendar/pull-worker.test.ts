@@ -338,6 +338,83 @@ describe('drainPullJobs', () => {
     expect(outcomes[0].kind).toBe('succeeded')
     expect(callCount).toBeGreaterThanOrEqual(2)
   })
+
+  // BCS-OP-ROLLOUT plan §9.1 variant A regression — Codex round-3
+  // BLOCKER #1 closure. Pull cron MUST NOT poison is_writable_in_source
+  // to false on every cycle. The pull-worker derives writability from
+  // the integration row (writeCalendarId match) and passes it through
+  // to runPullForCalendar; the busy_intervals rows preserve the flag.
+  it('does NOT poison is_writable_in_source on writable calendar (variant A)', async () => {
+    const teacherId = await makeTeacher('worker-writability@example.com')
+    await connect(teacherId) // upserts writeCalendarId: 'primary'
+    await enqueuePullJob({
+      teacherAccountId: teacherId,
+      externalCalendarId: 'primary', // matches writeCalendarId → writable
+    })
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        eventsListResponse([
+          {
+            id: 'E1',
+            start: { dateTime: '2026-07-01T09:00:00Z' },
+            end: { dateTime: '2026-07-01T10:00:00Z' },
+          },
+        ]),
+      ),
+    )
+
+    const { outcomes } = await drainPullJobs({})
+    expect(outcomes[0].kind).toBe('succeeded')
+
+    const pool = getDbPool()
+    const r = await pool.query(
+      `select is_writable_in_source from teacher_external_busy_intervals
+        where teacher_account_id = $1 and external_calendar_id = $2`,
+      [teacherId, 'primary'],
+    )
+    expect(r.rows).toHaveLength(1)
+    expect(r.rows[0].is_writable_in_source).toBe(true)
+  })
+
+  it('writes is_writable_in_source=false for non-writable (read-only) calendar', async () => {
+    const teacherId = await makeTeacher('worker-readonly@example.com')
+    // Connect with primary as both read AND write target.
+    await connect(teacherId)
+    // But enqueue a job for a DIFFERENT calendar (not primary) — this
+    // simulates a future multi-calendar config where a read calendar
+    // doesn't match writeCalendarId.
+    await enqueuePullJob({
+      teacherAccountId: teacherId,
+      externalCalendarId: 'other-calendar-id', // does NOT match writeCalendarId
+    })
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        eventsListResponse([
+          {
+            id: 'E2',
+            start: { dateTime: '2026-07-01T09:00:00Z' },
+            end: { dateTime: '2026-07-01T10:00:00Z' },
+          },
+        ]),
+      ),
+    )
+
+    const { outcomes } = await drainPullJobs({})
+    expect(outcomes[0].kind).toBe('succeeded')
+
+    const pool = getDbPool()
+    const r = await pool.query(
+      `select is_writable_in_source from teacher_external_busy_intervals
+        where teacher_account_id = $1 and external_calendar_id = $2`,
+      [teacherId, 'other-calendar-id'],
+    )
+    expect(r.rows).toHaveLength(1)
+    expect(r.rows[0].is_writable_in_source).toBe(false)
+  })
 })
 
 describe('enqueuePullJob', () => {

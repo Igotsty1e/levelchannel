@@ -384,6 +384,111 @@ describe('POST /api/teacher/slots/[id]/delete-external-conflict', () => {
     }
   })
 
+  // BCS-OP-ROLLOUT plan §4.6 / Codex round-3 WARN #5 — route-level
+  // 401-retry regression. The wrapped deleteEvent call must
+  // force-refresh on first 401, retry, and succeed.
+  it('first Google 401 then 204 → route succeeds via withTokenRetry refresh', async () => {
+    const t = await teacherCookieAndId('cf-del-401-retry@example.com')
+    await connect(t.accountId)
+    const slot = await makeConflictedSlot({
+      teacherId: t.accountId,
+      startIso: '2026-12-12T10:00:00Z',
+      isWritable: true,
+    })
+
+    let deleteCallCount = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: RequestInfo | URL) => {
+        const u = String(url)
+        if (u.includes('oauth2.googleapis.com/token')) {
+          // Token refresh succeeds (used by withTokenRetry's force-refresh).
+          return jsonResp(
+            {
+              access_token: 'NEW_AT',
+              expires_in: 3600,
+              token_type: 'Bearer',
+              scope: 's',
+            },
+            200,
+          )
+        }
+        if (u.includes('/calendars/') && u.includes('/events/')) {
+          deleteCallCount++
+          if (deleteCallCount === 1) {
+            return jsonResp('unauthorized', 401)
+          }
+          return jsonResp('', 204)
+        }
+        return jsonResp('not stubbed', 500)
+      }),
+    )
+
+    const res = await deleteExternalHandler(
+      buildRequest(`/api/teacher/slots/${slot}/delete-external-conflict`, {
+        cookie: t.cookie,
+        body: {},
+      }),
+      { params: Promise.resolve({ id: slot }) },
+    )
+    expect(res.status).toBe(200)
+    expect(deleteCallCount).toBe(2)
+    const j = await res.json()
+    expect(j.deletedInGoogle).toBe(true)
+  })
+
+  // Two consecutive Google 401s → integration flipped to disconnected,
+  // route surfaces a clean error.
+  it('two consecutive 401s → integration disconnected, route returns failure', async () => {
+    const t = await teacherCookieAndId('cf-del-double401@example.com')
+    await connect(t.accountId)
+    const slot = await makeConflictedSlot({
+      teacherId: t.accountId,
+      startIso: '2026-12-13T10:00:00Z',
+      isWritable: true,
+    })
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: RequestInfo | URL) => {
+        const u = String(url)
+        if (u.includes('oauth2.googleapis.com/token')) {
+          return jsonResp(
+            {
+              access_token: 'NEW_AT',
+              expires_in: 3600,
+              token_type: 'Bearer',
+              scope: 's',
+            },
+            200,
+          )
+        }
+        if (u.includes('/calendars/') && u.includes('/events/')) {
+          return jsonResp('unauthorized', 401)
+        }
+        return jsonResp('not stubbed', 500)
+      }),
+    )
+
+    const res = await deleteExternalHandler(
+      buildRequest(`/api/teacher/slots/${slot}/delete-external-conflict`, {
+        cookie: t.cookie,
+        body: {},
+      }),
+      { params: Promise.resolve({ id: slot }) },
+    )
+    expect(res.status).toBe(502)
+    const j = await res.json()
+    expect(j.error).toBe('google_delete_failed')
+
+    // Integration MUST be flipped to disconnected per plan §4.11.
+    const r = await getDbPool().query(
+      `select sync_state from teacher_calendar_integrations where account_id = $1`,
+      [t.accountId],
+    )
+    expect(r.rows[0].sync_state).toBe('disconnected')
+  })
+
   it('enqueues priority-2 pull job after successful Google delete — plan §4.7', async () => {
     const t = await teacherCookieAndId('cf-del-pull-enq@example.com')
     await connect(t.accountId)
