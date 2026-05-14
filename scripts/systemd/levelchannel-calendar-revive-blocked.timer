@@ -1,0 +1,14 @@
+# BCS-OP-ROLLOUT — revive-blocked cron cadence (plan §4.5.1).
+# Hourly at HH:13 — unique minute-of-hour, clear of other sweeps.
+
+[Unit]
+Description=Run LevelChannel calendar revive-blocked-intents hourly at HH:13
+
+[Timer]
+OnCalendar=*-*-* *:13:00
+RandomizedDelaySec=10
+Persistent=true
+Unit=levelchannel-calendar-revive-blocked.service
+
+[Install]
+WantedBy=timers.target

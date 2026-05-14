@@ -1,0 +1,14 @@
+# BCS-OP-ROLLOUT — intent cron cadence (plan §4.5.1).
+# Every 5 minutes at :35 — well clear of pull (:05) and push (:25).
+
+[Unit]
+Description=Run LevelChannel calendar intent drain every 5 minutes at HH:00/5:35
+
+[Timer]
+OnCalendar=*-*-* *:00/5:35
+RandomizedDelaySec=10
+Persistent=true
+Unit=levelchannel-calendar-intents.service
+
+[Install]
+WantedBy=timers.target

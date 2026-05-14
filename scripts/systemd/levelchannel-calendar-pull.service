@@ -1,0 +1,47 @@
+# BCS-OP-ROLLOUT — pull worker cron unit. Invokes the shared
+# scripts/calendar-cron.mjs with CALENDAR_CRON_TARGET=pull, which
+# POSTs to http://127.0.0.1:3000/api/cron/calendar/pull.
+#
+# Auth: CRON_SHARED_SECRET is read from the env file. Route gates on
+# loopback Host + bearer.
+#
+# `scripts/activate-prod-ops.sh` renders the placeholders below
+# (__LEVELCHANNEL_APP_DIR__, __LEVELCHANNEL_ENV_FILE__) during install.
+
+[Unit]
+Description=LevelChannel calendar pull worker (Google events.list → busy_intervals)
+After=network.target
+
+[Service]
+Type=oneshot
+User=levelchannel
+Group=levelchannel
+WorkingDirectory=__LEVELCHANNEL_APP_DIR__
+EnvironmentFile=__LEVELCHANNEL_ENV_FILE__
+Environment=CALENDAR_CRON_TARGET=pull
+ExecStart=/usr/bin/node scripts/calendar-cron.mjs
+StandardOutput=journal
+StandardError=journal
+
+# Per plan §4.5.2 — pull cycle worst case is ~10 min (bounded full-
+# rewrite over 100 events × pagination). Script-side fetch timeout
+# is TimeoutStartSec − 30s = 570s.
+TimeoutStartSec=600
+
+# Sandboxing — same 12-directive set as the other maintenance units.
+# No ReadWritePaths needed (cron script only POSTs HTTP).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service pkey_alloc pkey_mprotect pkey_free
+SystemCallFilter=~@privileged @resources @debug @mount @cpu-emulation @obsolete

@@ -1,0 +1,14 @@
+# BCS-OP-ROLLOUT — channel-renew cron cadence (plan §4.5.1).
+# Daily at 03:00 UTC — after reconcile (02:30) but still pre-traffic.
+
+[Unit]
+Description=Run LevelChannel calendar channel renewer daily at 03:00 UTC
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=10
+Persistent=true
+Unit=levelchannel-calendar-renew-channels.service
+
+[Install]
+WantedBy=timers.target

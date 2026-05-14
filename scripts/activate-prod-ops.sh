@@ -79,6 +79,13 @@ required_env_keys=(
   NEXT_PUBLIC_SENTRY_DSN
 )
 
+# BCS-OP-ROLLOUT plan §5 OP.3 (round 2 BLOCKER #3) — operator-OPAQUE
+# auto-generated env keys. Synthesised on first run when missing from
+# $ENV_FILE; NOT part of the operator-supplied required_env_keys gate.
+auto_generated_env_keys=(
+  CRON_SHARED_SECRET
+)
+
 for key in "${required_env_keys[@]}"; do
   if [ -z "${!key:-}" ]; then
     warn "$key must be exported before running this script"
@@ -86,8 +93,33 @@ for key in "${required_env_keys[@]}"; do
   fi
 done
 
-# ── 1. ENV VARS ──────────────────────────────────────────────────────────────
-step "Append missing env vars to $ENV_FILE"
+# ── 1. AUTO-SYNTHESISE OPAQUE SECRETS (runs BEFORE env_kv build) ────────────
+# Plan §5 OP.3 — CRON_SHARED_SECRET is generated locally on first run
+# and persisted in $ENV_FILE. Operator never sees / sets it directly.
+# Must run BEFORE the env_kv block below so the rendered systemd
+# units and the running app see the same secret.
+step "Auto-generate opaque secrets if missing"
+
+ENV_CHANGED=0
+for key in "${auto_generated_env_keys[@]}"; do
+  if grep -qE "^${key}=" "$ENV_FILE"; then
+    skip "$key already in $ENV_FILE, leaving as is"
+  else
+    secret=$(openssl rand -hex 32 | tr -d '\n')
+    printf '%s=%s\n' "$key" "$secret" >> "$ENV_FILE"
+    ok "synthesised + appended $key"
+    ENV_CHANGED=1
+    # Re-source so the rest of this script (and the subshells it
+    # spawns) sees the new value. set -a ensures exported.
+    set -a
+    # shellcheck disable=SC1090
+    . "$ENV_FILE"
+    set +a
+  fi
+done
+
+# ── 2. ENV VARS (operator-supplied) ─────────────────────────────────────────
+step "Append missing operator-supplied env vars to $ENV_FILE"
 
 declare -a env_kv=(
   "ALERT_EMAIL_TO=${ALERT_EMAIL_TO}"
@@ -96,7 +128,6 @@ declare -a env_kv=(
   "NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN}"
 )
 
-ENV_CHANGED=0
 for kv in "${env_kv[@]}"; do
   key="${kv%%=*}"
   if grep -qE "^${key}=" "$ENV_FILE"; then
@@ -224,6 +255,19 @@ declare -a units=(
   # detector). Sibling of the auth-flow + webhook-flow alert probes.
   "levelchannel-calendar-pathology-alert.service"
   "levelchannel-calendar-pathology-alert.timer"
+  # BCS-OP-ROLLOUT — 6 calendar worker cron units.
+  "levelchannel-calendar-pull.service"
+  "levelchannel-calendar-pull.timer"
+  "levelchannel-calendar-push.service"
+  "levelchannel-calendar-push.timer"
+  "levelchannel-calendar-intents.service"
+  "levelchannel-calendar-intents.timer"
+  "levelchannel-calendar-renew-channels.service"
+  "levelchannel-calendar-renew-channels.timer"
+  "levelchannel-calendar-revive-blocked.service"
+  "levelchannel-calendar-revive-blocked.timer"
+  "levelchannel-calendar-reconcile.service"
+  "levelchannel-calendar-reconcile.timer"
 )
 
 UNITS_CHANGED=0
@@ -264,20 +308,21 @@ declare -a timers=(
   "levelchannel-auto-complete-slots.timer"
   "levelchannel-refund-reconcile.timer"
   "levelchannel-calendar-pathology-alert.timer"
+  # BCS-OP-ROLLOUT — 6 calendar worker timers.
+  "levelchannel-calendar-pull.timer"
+  "levelchannel-calendar-push.timer"
+  "levelchannel-calendar-intents.timer"
+  "levelchannel-calendar-renew-channels.timer"
+  "levelchannel-calendar-revive-blocked.timer"
+  "levelchannel-calendar-reconcile.timer"
 )
 
-for t in "${timers[@]}"; do
-  if systemctl is-enabled "$t" >/dev/null 2>&1; then
-    skip "$t already enabled"
-  else
-    if systemctl enable --now "$t"; then
-      ok "enabled + started $t"
-    else
-      warn "failed to enable $t — check 'systemctl status $t'"
-    fi
-  fi
-done
-
+# BCS-OP-ROLLOUT plan §7 canonical sequence — restart the app BEFORE
+# enabling the timers. The pre-existing order enabled timers first
+# and only then restarted the app, which on first install creates a
+# race: the first timer fire hits a Next.js process that doesn't
+# yet know CRON_SHARED_SECRET → 401. With restart-before-enable, the
+# first fire hits a secret-aware app process every time.
 step "Restart levelchannel app to pick up new env"
 
 if [ "$ENV_CHANGED" = "1" ]; then
@@ -293,13 +338,27 @@ else
   skip "no env changes, app restart unnecessary"
 fi
 
+step "Enable + start systemd timers"
+
+for t in "${timers[@]}"; do
+  if systemctl is-enabled "$t" >/dev/null 2>&1; then
+    skip "$t already enabled"
+  else
+    if systemctl enable --now "$t"; then
+      ok "enabled + started $t"
+    else
+      warn "failed to enable $t — check 'systemctl status $t'"
+    fi
+  fi
+done
+
 # ── 5. POST-RUN STATUS ──────────────────────────────────────────────────────
 step "Post-activation summary"
 
 echo
 echo "${B}Active timers:${N}"
 systemctl list-timers --no-pager 2>/dev/null \
-  | grep -E "levelchannel-(webhook-flow-alert|db-retention|stale-orders|auto-complete-slots|refund-reconcile|calendar-pathology-alert)" \
+  | grep -E "levelchannel-(webhook-flow-alert|db-retention|stale-orders|auto-complete-slots|refund-reconcile|calendar-pathology-alert|calendar-(pull|push|intents|renew-channels|revive-blocked|reconcile))" \
   || echo "  (timers not yet shown — they appear after first scheduled run)"
 
 echo

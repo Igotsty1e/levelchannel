@@ -1,0 +1,37 @@
+# BCS-OP-ROLLOUT — reconcile-runner cron unit (BCS-G.1 F9‴
+# bounded reconcile sweep).
+
+[Unit]
+Description=LevelChannel calendar reconcile sweep (F9‴ gated re-enqueue)
+After=network.target
+
+[Service]
+Type=oneshot
+User=levelchannel
+Group=levelchannel
+WorkingDirectory=__LEVELCHANNEL_APP_DIR__
+EnvironmentFile=__LEVELCHANNEL_ENV_FILE__
+Environment=CALENDAR_CRON_TARGET=reconcile
+ExecStart=/usr/bin/node scripts/calendar-cron.mjs
+StandardOutput=journal
+StandardError=journal
+
+# Plan §4.5.2 — sweep of 100 candidates × 1-2 events.get each.
+# Worst case ~15 min. Script-side timeout 870s.
+TimeoutStartSec=900
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service pkey_alloc pkey_mprotect pkey_free
+SystemCallFilter=~@privileged @resources @debug @mount @cpu-emulation @obsolete
