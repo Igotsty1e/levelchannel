@@ -42,6 +42,7 @@ import {
   type ParsedBusyInterval,
   type PullError,
 } from '@/lib/calendar/google/pull'
+import { withTokenRetry, type CallResult } from '@/lib/calendar/token-retry'
 import { getDbPool } from '@/lib/db/pool'
 
 const UUID_PATTERN =
@@ -149,14 +150,51 @@ export async function runPullForCalendar(
     }
   }
 
-  const pull = await pullBusyIntervalsForCalendar({
-    accessToken: integration.accessToken,
-    externalCalendarId: opts.externalCalendarId,
-    fetchImpl: opts.fetchImpl,
-  })
-  if (!pull.ok) {
-    return { ok: false, error: pull.error }
+  // BCS-OP-ROLLOUT plan §4.6 — wrap the Google call with withTokenRetry.
+  // pullBusyIntervalsForCalendar returns 401 as a result variant
+  // ({ok:false, error:{kind:'http', status:401}}); adapt to CallResult
+  // so withTokenRetry can detect auth401 and force-refresh on first
+  // 401, flip to disconnected on second.
+  const wrapped = await withTokenRetry(
+    opts.teacherAccountId,
+    async (token): Promise<CallResult<{ intervals: ParsedBusyInterval[] }>> => {
+      const r = await pullBusyIntervalsForCalendar({
+        accessToken: token,
+        externalCalendarId: opts.externalCalendarId,
+        fetchImpl: opts.fetchImpl,
+      })
+      if (r.ok) return { ok: true, value: { intervals: r.intervals } }
+      const auth401 =
+        r.error.kind === 'http' && r.error.status === 401
+      return { ok: false, auth401, raw: r.error }
+    },
+  )
+  if (!wrapped.ok) {
+    // Surface the original Google-client error shape when possible
+    // (so the existing markFailure pattern in pull-worker still sees
+    // {kind:'http', status:401} etc). When the failure came from
+    // ensureFreshAccessToken instead, raw is a FreshTokenResult; map
+    // it to a synthetic shape compatible with RunPullError.
+    const raw = wrapped.raw
+    if (
+      raw
+      && typeof raw === 'object'
+      && 'kind' in raw
+      && typeof (raw as { kind: unknown }).kind === 'string'
+    ) {
+      return { ok: false, error: raw as PullError }
+    }
+    return {
+      ok: false,
+      error: {
+        kind: 'integration_disconnected',
+        message: `token-retry failed: ${
+          (raw as { reason?: string })?.reason ?? 'unknown'
+        }`,
+      },
+    }
   }
+  const pull = { ok: true as const, intervals: wrapped.value.intervals }
 
   // Resolve the set of slot ids belonging to this teacher so we can
   // recognise our own pushes when their `lc_slot_id` round-trips
