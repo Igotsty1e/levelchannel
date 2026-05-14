@@ -65,17 +65,24 @@ export async function POST(request: Request, { params }: RouteParams) {
   // teacher_account_id = $expectedTeacherId; a mismatch collapses to
   // the same not_found outcome (no enumeration of foreign slots).
   //
-  // When assignedTeacherId is null (a learner not yet bound to any
-  // teacher), we deliberately do NOT enforce the gate — the legacy
-  // behaviour passes through. Production learners are always assigned
-  // before they can register-and-checkout, so the typical case
-  // exercises the gate. The legacy null path stays open for two
-  // reasons: (a) backward compat with the historical test suite that
-  // books slots without prior teacher binding, and (b) admin-side
-  // operator flow that may pre-create a learner+slot pair before the
-  // teacher binding lands. Tracked as a follow-up hardening item in
-  // ENGINEERING_BACKLOG.md (Wave BCS-B).
+  // BCS-HARDEN-1 (2026-05-14) — the legacy null bypass is closed.
+  // When assignedTeacherId is null (the learner is not bound to any
+  // teacher), refuse the booking at the route layer with a 404 that
+  // matches the not_found shape. Production learners are always
+  // assigned before they hit this route from the cabinet flow, and
+  // admin-side "book as operator" uses /api/admin/slots/[id]/book-as-
+  // operator — neither touches this route with a null binding.
+  //
+  // 404 (not 403) is deliberate: it matches "this slot doesn't exist
+  // for you" and keeps the absence of a teacher binding out of the
+  // response, defending against learner-enumeration probes.
   const expectedTeacherId = auth.account.assignedTeacherId ?? null
+  if (!expectedTeacherId) {
+    return NextResponse.json(
+      { error: 'Slot not found.' },
+      { status: 404, headers: NO_STORE },
+    )
+  }
 
   const result = await bookSlot(id, auth.account.id, 'learner', {
     agenda,

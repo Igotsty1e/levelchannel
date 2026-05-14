@@ -50,7 +50,14 @@ describe('POST /api/slots/[id]/book — self-booking gate', () => {
     requireLearnerArchetypeAndVerifiedMock.mockReset()
     requireLearnerArchetypeAndVerifiedMock.mockResolvedValue({
       ok: true,
-      account: { id: 'self-1', email: 'self@example.com' },
+      // BCS-HARDEN-1 — the book route now refuses null-assignedTeacherId
+      // upfront, so the mock has to carry a non-null teacher id for
+      // the test to reach the bookSlot mock path.
+      account: {
+        id: 'self-1',
+        email: 'self@example.com',
+        assignedTeacherId: '11111111-1111-1111-1111-111111111111',
+      },
       session: { id: 's-1' },
     })
   })

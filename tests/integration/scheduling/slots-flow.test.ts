@@ -16,7 +16,9 @@ import {
   getAccountByEmail,
   grantAccountRole,
   markAccountVerified,
+  setAssignedTeacher,
 } from '@/lib/auth/accounts'
+import { getDbPool } from '@/lib/db/pool'
 
 import '../setup'
 import {
@@ -118,6 +120,8 @@ describe('Phase 4 slot flow', () => {
     const learner = await registerAndCookie('learner-b@example.com', {
       verifyEmail: true,
     })
+    // BCS-HARDEN-1 — book route refuses NULL-assignedTeacher learners.
+    await setAssignedTeacher(learner.accountId, teacher.accountId)
 
     const created = await adminCreateHandler(
       buildRequest('/api/admin/slots', {
@@ -197,6 +201,10 @@ describe('Phase 4 slot flow', () => {
     const learner2 = await registerAndCookie('learner-d2@example.com', {
       verifyEmail: true,
     })
+    // BCS-HARDEN-1 — both learners need the assigned-teacher binding
+    // since they race for the same slot.
+    await setAssignedTeacher(learner1.accountId, teacher.accountId)
+    await setAssignedTeacher(learner2.accountId, teacher.accountId)
 
     const created = await adminCreateHandler(
       buildRequest('/api/admin/slots', {
@@ -243,6 +251,8 @@ describe('Phase 4 slot flow', () => {
     const learner = await registerAndCookie('learner-e@example.com', {
       verifyEmail: true,
     })
+    // BCS-HARDEN-1 — book route refuses NULL-assignedTeacher.
+    await setAssignedTeacher(learner.accountId, teacher.accountId)
 
     const created = await adminCreateHandler(
       buildRequest('/api/admin/slots', {
@@ -293,25 +303,43 @@ describe('Phase 4 slot flow', () => {
     const stranger = await registerAndCookie('stranger-f@example.com', {
       verifyEmail: true,
     })
+    // BCS-HARDEN-1 — both learner and stranger need an assigned
+    // teacher so their book attempts actually exercise the booking
+    // path; without this, Codex round 1 BLOCKER flagged this test as
+    // vacuous (cancel of an open slot returns the same 403 not_owner).
+    await setAssignedTeacher(learner.accountId, teacher.accountId)
+    await setAssignedTeacher(stranger.accountId, teacher.accountId)
 
     const created = await adminCreateHandler(
       buildRequest('/api/admin/slots', {
         cookie: admin.cookie,
         body: {
           teacherAccountId: teacher.accountId,
-          startAt: futureIsoMinutes(60),
+          // Codex round 2 BLOCKER — 60 min ahead lands the slot
+          // INSIDE the 24h gate, so a stranger.cancel could 403 on
+          // too_late_to_cancel instead of not_owner and the test
+          // would still pass. Push the slot past 24h AND assert the
+          // error code body specifically.
+          startAt: futureIsoMinutes(48 * 60),
           durationMinutes: 60,
         },
       }),
     )
     const slotId = (await created.json()).slot.id as string
-    await bookHandler(
+    const bookRes = await bookHandler(
       buildRequest(`/api/slots/${slotId}/book`, {
         cookie: learner.cookie,
         body: {},
       }),
       { params: Promise.resolve({ id: slotId }) },
     )
+    // Anchor that the slot ACTUALLY became 'booked' for `learner`
+    // before we test stranger's cancel — otherwise the test would
+    // pass vacuously on cancel-of-open returning 403 not_owner.
+    expect(bookRes.status).toBe(200)
+    const bookJson = await bookRes.json()
+    expect(bookJson.slot.status).toBe('booked')
+    expect(bookJson.slot.learnerAccountId).toBe(learner.accountId)
 
     const cancel = await cancelHandler(
       buildRequest(`/api/slots/${slotId}/cancel`, {
@@ -321,6 +349,16 @@ describe('Phase 4 slot flow', () => {
       { params: Promise.resolve({ id: slotId }) },
     )
     expect(cancel.status).toBe(403)
+    // Codex round 2 BLOCKER — pin the specific 403 branch so a
+    // regression that flips this to a different 403 (e.g.
+    // too_late_to_cancel) doesn't keep the test green. The 24h gate
+    // returns `{ error: 'too_late_to_cancel', minutesUntilStart }`,
+    // the not_owner branch returns the Russian copy below.
+    const cancelJson = await cancel.json()
+    expect(cancelJson.error).toBe(
+      'Можно отменить только своё бронирование.',
+    )
+    expect(cancelJson).not.toHaveProperty('minutesUntilStart')
   })
 
   it('admin gates: anon → 401, non-admin → 403', async () => {
@@ -423,6 +461,13 @@ describe('Phase 4 slot flow', () => {
     const learner = await registerAndCookie('learner-j@example.com', {
       verifyEmail: true,
     })
+    // BCS-HARDEN-1 — learner needs an assigned teacher for the book
+    // call to land. Codex round 1 BLOCKER #2: without this, the book
+    // returned 404, the slot stayed 'open', and adminCancel still
+    // returned 200 (cancelling an open slot is allowed), so the test
+    // proved "admin can cancel an open slot" instead of "admin cancels
+    // a booked slot".
+    await setAssignedTeacher(learner.accountId, teacher.accountId)
 
     const created = await adminCreateHandler(
       buildRequest('/api/admin/slots', {
@@ -435,13 +480,17 @@ describe('Phase 4 slot flow', () => {
       }),
     )
     const slotId = (await created.json()).slot.id as string
-    await bookHandler(
+    const bookRes = await bookHandler(
       buildRequest(`/api/slots/${slotId}/book`, {
         cookie: learner.cookie,
         body: {},
       }),
       { params: Promise.resolve({ id: slotId }) },
     )
+    // Anchor: slot is actually booked before adminCancel runs.
+    expect(bookRes.status).toBe(200)
+    const bookJson = await bookRes.json()
+    expect(bookJson.slot.status).toBe('booked')
 
     const cancel = await adminCancelHandler(
       buildRequest(`/api/admin/slots/${slotId}/cancel`, {
@@ -451,6 +500,8 @@ describe('Phase 4 slot flow', () => {
       { params: Promise.resolve({ id: slotId }) },
     )
     expect(cancel.status).toBe(200)
+    const cancelJson = await cancel.json()
+    expect(cancelJson.slot.status).toBe('cancelled')
   })
 
   it('GET /api/slots/mine returns the learner\u2019s own bookings', async () => {
@@ -465,6 +516,8 @@ describe('Phase 4 slot flow', () => {
     const learner = await registerAndCookie('learner-k@example.com', {
       verifyEmail: true,
     })
+    // BCS-HARDEN-1 — book route refuses NULL-assignedTeacher.
+    await setAssignedTeacher(learner.accountId, teacher.accountId)
 
     const created = await adminCreateHandler(
       buildRequest('/api/admin/slots', {
@@ -492,5 +545,61 @@ describe('Phase 4 slot flow', () => {
     const json = await mine.json()
     expect(json.slots.length).toBe(1)
     expect(json.slots[0].learnerAccountId).toBe(learner.accountId)
+  })
+
+  // BCS-HARDEN-1 regression — Codex round 1 WARN #3.
+  //
+  // Pins the new contract directly so a future refactor that re-opens
+  // the null-assignedTeacherId bypass would fail this test even if
+  // all happy-path tests stay green. Without this fixate the gate
+  // could regress silently — none of the rewritten tests assert the
+  // 404 itself.
+  it('BCS-HARDEN-1: verified learner with NULL assignedTeacherId gets 404 and slot stays open', async () => {
+    const teacher = await registerAndCookie('teacher-harden1@example.com', {
+      verifyEmail: true,
+      role: 'teacher',
+    })
+    const admin = await registerAndCookie('admin-harden1@example.com', {
+      verifyEmail: true,
+      role: 'admin',
+    })
+    // Deliberately NO setAssignedTeacher — this learner is verified
+    // but unbound.
+    const orphan = await registerAndCookie('orphan-harden1@example.com', {
+      verifyEmail: true,
+    })
+
+    const created = await adminCreateHandler(
+      buildRequest('/api/admin/slots', {
+        cookie: admin.cookie,
+        body: {
+          teacherAccountId: teacher.accountId,
+          startAt: futureIsoMinutes(60),
+          durationMinutes: 60,
+        },
+      }),
+    )
+    const slotId = (await created.json()).slot.id as string
+
+    const book = await bookHandler(
+      buildRequest(`/api/slots/${slotId}/book`, {
+        cookie: orphan.cookie,
+        body: {},
+      }),
+      { params: Promise.resolve({ id: slotId }) },
+    )
+    expect(book.status).toBe(404)
+    const json = await book.json()
+    expect(json.error).toBe('Slot not found.')
+
+    // Defense in depth: confirm the slot is STILL open server-side.
+    // A regression that surfaces 404 but mutates state under the
+    // hood would be a worse failure mode than the bypass itself.
+    const probe = await getDbPool().query(
+      `select status, learner_account_id from lesson_slots where id = $1`,
+      [slotId],
+    )
+    expect(probe.rows[0].status).toBe('open')
+    expect(probe.rows[0].learner_account_id).toBeNull()
   })
 })
