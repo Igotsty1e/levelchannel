@@ -1,0 +1,36 @@
+# BCS-OP-ROLLOUT — push worker cron unit. Invokes
+# scripts/calendar-cron.mjs with CALENDAR_CRON_TARGET=push.
+
+[Unit]
+Description=LevelChannel calendar push worker (LC bookings → Google events)
+After=network.target
+
+[Service]
+Type=oneshot
+User=levelchannel
+Group=levelchannel
+WorkingDirectory=__LEVELCHANNEL_APP_DIR__
+EnvironmentFile=__LEVELCHANNEL_ENV_FILE__
+Environment=CALENDAR_CRON_TARGET=push
+ExecStart=/usr/bin/node scripts/calendar-cron.mjs
+StandardOutput=journal
+StandardError=journal
+
+# Plan §4.5.2 — push worker. Script-side timeout 270s.
+TimeoutStartSec=300
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service pkey_alloc pkey_mprotect pkey_free
+SystemCallFilter=~@privileged @resources @debug @mount @cpu-emulation @obsolete

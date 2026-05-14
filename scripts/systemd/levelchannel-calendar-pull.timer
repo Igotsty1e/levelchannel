@@ -1,0 +1,17 @@
+# BCS-OP-ROLLOUT — pull cron cadence (plan §4.5.1).
+# Every minute at :05 — leading offset 5s after each minute to avoid
+# clocking on :00 with the rest of the timer set.
+
+[Unit]
+Description=Run LevelChannel calendar pull every minute at HH:MM:05
+
+[Timer]
+OnCalendar=*-*-* *:*:05
+# Absorb cron-storm risk on very-coarse cadences. Workers' internal
+# FOR UPDATE SKIP LOCKED makes accidental overlap safe.
+RandomizedDelaySec=10
+Persistent=true
+Unit=levelchannel-calendar-pull.service
+
+[Install]
+WantedBy=timers.target

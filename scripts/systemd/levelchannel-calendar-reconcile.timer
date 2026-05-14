@@ -1,0 +1,18 @@
+# BCS-OP-ROLLOUT — reconcile cron cadence (plan §4.5.1).
+# Daily at 02:30 UTC — quiet hour for the VPS.
+#
+# DO NOT run faster than daily — plan §6 invariant #3: reconcile
+# faster than daily increments F9‴ pathology counter under normal
+# operating conditions and the operator alert fires false-positives.
+
+[Unit]
+Description=Run LevelChannel calendar reconcile sweep daily at 02:30 UTC
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+RandomizedDelaySec=10
+Persistent=true
+Unit=levelchannel-calendar-reconcile.service
+
+[Install]
+WantedBy=timers.target

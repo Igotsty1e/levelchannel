@@ -1,0 +1,15 @@
+# BCS-OP-ROLLOUT — push cron cadence (plan §4.5.1).
+# Every minute at :25 — 20s after pull. Some overlap is fine; pull
+# writes busy_intervals, push reads them.
+
+[Unit]
+Description=Run LevelChannel calendar push every minute at HH:MM:25
+
+[Timer]
+OnCalendar=*-*-* *:*:25
+RandomizedDelaySec=10
+Persistent=true
+Unit=levelchannel-calendar-push.service
+
+[Install]
+WantedBy=timers.target
