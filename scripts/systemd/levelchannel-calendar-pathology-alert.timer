@@ -1,0 +1,16 @@
+# Reference systemd timer for scripts/calendar-pathology-alert.mjs.
+# Copy to /etc/systemd/system/ on the VPS; activation lives in the
+# private operations runbook.
+
+[Unit]
+Description=Run LevelChannel calendar pathology alert every 4 hours
+
+[Timer]
+# Every 4 hours, ~17 minutes offset so it doesn't tangle with the
+# half-hourly webhook/auth-flow alerts or the daily retention cleanup.
+OnCalendar=*-*-* 00/4:17:00
+Persistent=true
+Unit=levelchannel-calendar-pathology-alert.service
+
+[Install]
+WantedBy=timers.target
