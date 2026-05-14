@@ -61,9 +61,9 @@ import {
   fetchEventById,
   type FetchEventOutcome,
 } from '@/lib/calendar/google/pull'
-import { ensureFreshAccessToken } from '@/lib/calendar/google/token-refresh'
 import { getGoogleIntegration } from '@/lib/calendar/integrations'
 import { enqueuePushJob } from '@/lib/calendar/push-worker'
+import { withTokenRetry, type CallResult } from '@/lib/calendar/token-retry'
 import { getDbPool } from '@/lib/db/pool'
 
 const DEFAULT_LIMIT = 100
@@ -324,21 +324,51 @@ async function reconcileSlot(
     return { kind: 'skipped_integration_disconnected' }
   }
 
-  const tokenResult = await ensureFreshAccessToken({
-    accountId: candidate.teacherAccountId,
-  })
-  if (!tokenResult.ok) {
+  // BCS-OP-ROLLOUT plan §4.6 — wrap fetchEventById with withTokenRetry.
+  // fetchEventById returns 401 as {ok:false, reason:'auth_expired'}.
+  const wrapped = await withTokenRetry(
+    candidate.teacherAccountId,
+    async (token): Promise<CallResult<FetchEventOutcome>> => {
+      const r = await fetchEventImpl({
+        accessToken: token,
+        externalCalendarId: candidate.externalCalendarId,
+        eventId: candidate.externalEventId,
+      })
+      // Pass the full FetchEventOutcome through — the downstream
+      // reconcile state machine branches on its specific reason variants
+      // (not_found, server_error, etc). The wrap only intercepts the
+      // auth_expired variant for retry.
+      if (r.ok) return { ok: true, value: r }
+      return {
+        ok: false,
+        auth401: r.reason === 'auth_expired',
+        raw: r,
+      }
+    },
+  )
+  // wrappedOk path uses .value (a FetchEventOutcome with ok:true).
+  // wrappedFail path: if .raw is a FetchEventOutcome variant we
+  // preserved (auth_expired or other), surface it. If .raw is a
+  // token-refresh FreshTokenResult permanent/transient, map to
+  // skipped_token_refresh_failed.
+  let outcome: FetchEventOutcome
+  if (wrapped.ok) {
+    outcome = wrapped.value
+  } else if (
+    wrapped.raw
+    && typeof wrapped.raw === 'object'
+    && 'reason' in (wrapped.raw as Record<string, unknown>)
+    && typeof (wrapped.raw as { reason: unknown }).reason === 'string'
+  ) {
+    outcome = wrapped.raw as FetchEventOutcome
+  } else {
     return {
       kind: 'skipped_token_refresh_failed',
-      reason: tokenResult.reason,
+      reason:
+        (wrapped.raw as { reason?: string })?.reason
+        ?? 'transient',
     }
   }
-
-  const outcome = await fetchEventImpl({
-    accessToken: tokenResult.accessToken,
-    externalCalendarId: candidate.externalCalendarId,
-    eventId: candidate.externalEventId,
-  })
 
   // Transient-failure branches: do NOT bump reconciled_at. The next
   // sweep should retry these rows ahead of the fully-healthy ones.

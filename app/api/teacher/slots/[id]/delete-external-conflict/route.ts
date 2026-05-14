@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { NO_STORE } from '@/lib/api/http-headers'
 import { requireTeacherAndVerified } from '@/lib/auth/guards'
 import { deleteEvent } from '@/lib/calendar/google/push'
-import { ensureFreshAccessToken } from '@/lib/calendar/google/token-refresh'
+import { withTokenRetry, type CallResult } from '@/lib/calendar/token-retry'
 import { enqueuePullJob } from '@/lib/calendar/pull-worker'
 import { getDbPool } from '@/lib/db/pool'
 import {
@@ -146,31 +146,39 @@ export async function POST(request: Request, { params }: RouteParams) {
     )
   }
 
-  const fresh = await ensureFreshAccessToken({
-    accountId: auth.account.id,
-  })
-  if (!fresh.ok) {
+  // BCS-OP-ROLLOUT plan §4.6 — wrap deleteEvent with withTokenRetry.
+  // First 401 → force-refresh, retry. Second 401 → integration flipped
+  // to disconnected (handled inside the helper).
+  const wrapped = await withTokenRetry(
+    auth.account.id,
+    async (token): Promise<CallResult<true>> => {
+      const r = await deleteEvent({
+        accessToken: token,
+        externalCalendarId: calId,
+        eventId,
+      })
+      if (r.ok) return { ok: true, value: true }
+      const auth401 = r.error.kind === 'http' && r.error.status === 401
+      return { ok: false, auth401, raw: r.error }
+    },
+  )
+  if (!wrapped.ok) {
+    const raw = wrapped.raw as { kind?: string; reason?: string }
+    if (raw && typeof raw.kind === 'string') {
+      return NextResponse.json(
+        {
+          error: 'google_delete_failed',
+          kind: raw.kind,
+        },
+        { status: 502, headers: NO_STORE },
+      )
+    }
     return NextResponse.json(
       {
         error: 'token_unavailable',
-        reason: fresh.reason,
+        reason: raw?.reason ?? 'unknown',
       },
       { status: 503, headers: NO_STORE },
-    )
-  }
-
-  const deleted = await deleteEvent({
-    accessToken: fresh.accessToken,
-    externalCalendarId: calId,
-    eventId,
-  })
-  if (!deleted.ok) {
-    return NextResponse.json(
-      {
-        error: 'google_delete_failed',
-        kind: deleted.error.kind,
-      },
-      { status: 502, headers: NO_STORE },
     )
   }
 
@@ -229,7 +237,11 @@ export async function POST(request: Request, { params }: RouteParams) {
       ok: true,
       action: 'deleted_in_google',
       deletedInGoogle: true,
-      googleStatus: deleted.status,
+      // After withTokenRetry the inner call returned ok:true with
+      // value:true (we don't preserve the Google status code). Surface
+      // HTTP 204 by convention — Google's events.delete returns 204
+      // No Content on success.
+      googleStatus: 204,
       clearedSlots,
     },
     { status: 200, headers: NO_STORE },

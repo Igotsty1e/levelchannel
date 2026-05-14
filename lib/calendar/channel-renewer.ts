@@ -22,7 +22,7 @@
 
 import { randomBytes, randomUUID } from 'node:crypto'
 
-import { ensureFreshAccessToken } from '@/lib/calendar/google/token-refresh'
+import { withTokenRetry, tryRefreshOnce, type CallResult } from '@/lib/calendar/token-retry'
 import {
   stopChannel,
   watchChannel,
@@ -110,34 +110,56 @@ export async function setupChannelForIntegration(opts: {
     return { ok: false, reason: 'config_missing', detail: 'webhook URL must be https' }
   }
 
-  const fresh = await ensureFreshAccessToken({
-    accountId: opts.accountId,
-    fetchImpl: opts.fetchImpl,
-  })
-  if (!fresh.ok) {
+  const channelId = mintChannelId()
+  const channelToken = mintChannelToken()
+  // BCS-OP-ROLLOUT plan §4.6.4 — watchChannel uses withTokenRetry
+  // (2nd 401 → disconnect is correct here; we have not yet
+  // authoritatively switched to a new channel).
+  const wrappedWatch = await withTokenRetry(
+    opts.accountId,
+    async (token): Promise<CallResult<{ channelId: string; resourceId: string; expirationMs: number }>> => {
+      const r = await watchChannel({
+        accessToken: token,
+        externalCalendarId: opts.externalCalendarId,
+        channelId,
+        channelToken,
+        webhookUrl,
+        fetchImpl: opts.fetchImpl,
+      })
+      if (r.ok) {
+        return {
+          ok: true,
+          value: {
+            channelId: r.channelId,
+            resourceId: r.resourceId,
+            expirationMs: r.expirationMs,
+          },
+        }
+      }
+      const auth401 = r.error.kind === 'http' && r.error.status === 401
+      return { ok: false, auth401, raw: r.error }
+    },
+  )
+  if (!wrappedWatch.ok) {
+    const raw = wrappedWatch.raw as { kind?: string; reason?: string }
+    if (raw && typeof raw.kind === 'string') {
+      return {
+        ok: false,
+        reason: 'watch_failed',
+        detail: describeError(raw as WatchChannelError),
+      }
+    }
     return {
       ok: false,
       reason: 'token_unavailable',
-      detail: `${fresh.reason}${fresh.detail ? `: ${fresh.detail.slice(0, 80)}` : ''}`,
+      detail: `${raw?.reason ?? 'unknown'}`,
     }
   }
-
-  const channelId = mintChannelId()
-  const channelToken = mintChannelToken()
-  const watched = await watchChannel({
-    accessToken: fresh.accessToken,
-    externalCalendarId: opts.externalCalendarId,
-    channelId,
-    channelToken,
-    webhookUrl,
-    fetchImpl: opts.fetchImpl,
-  })
-  if (!watched.ok) {
-    return {
-      ok: false,
-      reason: 'watch_failed',
-      detail: describeError(watched.error),
-    }
+  const watched = {
+    ok: true as const,
+    channelId: wrappedWatch.value.channelId,
+    resourceId: wrappedWatch.value.resourceId,
+    expirationMs: wrappedWatch.value.expirationMs,
   }
 
   const expiresAt = new Date(watched.expirationMs).toISOString()
@@ -164,14 +186,26 @@ export async function setupChannelForIntegration(opts: {
     ? String(prior.rows[0].channel_resource_id)
     : null
   if (oldChannelId && oldResourceId) {
-    await stopChannel({
-      accessToken: fresh.accessToken,
-      channelId: oldChannelId,
-      resourceId: oldResourceId,
-      fetchImpl: opts.fetchImpl,
-    }).catch(() => {
-      // Swallow — channel will expire on Google's side; the new one
-      // is already authoritative.
+    // BCS-OP-ROLLOUT plan §4.6.4 — stopChannel of OLD channel uses
+    // tryRefreshOnce (inert variant). The NEW channel is already
+    // authoritative on our side; disconnecting on 2nd 401 here would
+    // self-break the just-renewed integration. We accept the leak
+    // (Google expires unused channels within 7 days).
+    await tryRefreshOnce(
+      opts.accountId,
+      async (token): Promise<CallResult<true>> => {
+        const r = await stopChannel({
+          accessToken: token,
+          channelId: oldChannelId,
+          resourceId: oldResourceId,
+          fetchImpl: opts.fetchImpl,
+        })
+        if (r.ok) return { ok: true, value: true }
+        const auth401 = r.error.kind === 'http' && r.error.status === 401
+        return { ok: false, auth401, raw: r.error }
+      },
+    ).catch(() => {
+      // Even if the helper throws, swallow — best-effort cleanup.
     })
   }
 
