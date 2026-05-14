@@ -1,8 +1,10 @@
 import type { Metadata } from 'next'
+import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import Script from 'next/script'
 
+import { SESSION_COOKIE_NAME } from '@/lib/auth/sessions'
 import { listAllTariffs } from '@/lib/pricing/tariffs'
 import { getSlotById } from '@/lib/scheduling/slots'
 
@@ -66,6 +68,15 @@ export default async function CheckoutPage({
   const slotId = typeof sp.slot === 'string' && UUID_PATTERN.test(sp.slot) ? sp.slot : null
   const slot = slotId ? await getSlotById(slotId) : null
 
+  // BUG-1 (2026-05-14): logged-in learners on /checkout get a clear path
+  // back to cabinet (the most common point of return), instead of always
+  // routing them to the public landing. Cookie-presence-only check;
+  // /cabinet itself redirects invalid sessions to /login.
+  const cookieStore = await cookies()
+  const hasSession = Boolean(cookieStore.get(SESSION_COOKIE_NAME)?.value)
+  const backHref = hasSession ? '/cabinet' : '/'
+  const backLabel = hasSession ? '← В кабинет' : '← На главную'
+
   return (
     <main style={{ minHeight: '100vh', background: 'var(--bg)' }}>
       {/* Codex 2026-05-08 (Wave 10 #5) — CloudPayments widget script
@@ -103,14 +114,14 @@ export default async function CheckoutPage({
             LevelChannel
           </Link>
           <Link
-            href="/"
+            href={backHref}
             style={{
               color: 'var(--secondary)',
               textDecoration: 'none',
               fontSize: 14,
             }}
           >
-            ← На главную
+            {backLabel}
           </Link>
         </div>
       </header>
