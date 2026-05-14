@@ -1,0 +1,25 @@
+name: skill-pipeline
+
+# Blocks PRs that contain a non-trivial commit (≥3 files OR ≥100 lines
+# in watched trees: app/, lib/, tests/, migrations/) without a
+# `Skill-Used:` trailer. See docs/skill-pipeline.md.
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  skill-pipeline-check:
+    name: Verify Skill-Used trailer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history needed for commit walk)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 0
+
+      - name: Run skill-pipeline check
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/skill-pipeline-check.sh --ci
