@@ -16,6 +16,7 @@ import {
   getAccountByEmail,
   grantAccountRole,
   markAccountVerified,
+  setAssignedTeacher,
 } from '@/lib/auth/accounts'
 
 import '../setup'
@@ -118,6 +119,8 @@ describe('Phase 4 slot flow', () => {
     const learner = await registerAndCookie('learner-b@example.com', {
       verifyEmail: true,
     })
+    // BCS-HARDEN-1 — book route refuses NULL-assignedTeacher learners.
+    await setAssignedTeacher(learner.accountId, teacher.accountId)
 
     const created = await adminCreateHandler(
       buildRequest('/api/admin/slots', {
@@ -197,6 +200,10 @@ describe('Phase 4 slot flow', () => {
     const learner2 = await registerAndCookie('learner-d2@example.com', {
       verifyEmail: true,
     })
+    // BCS-HARDEN-1 — both learners need the assigned-teacher binding
+    // since they race for the same slot.
+    await setAssignedTeacher(learner1.accountId, teacher.accountId)
+    await setAssignedTeacher(learner2.accountId, teacher.accountId)
 
     const created = await adminCreateHandler(
       buildRequest('/api/admin/slots', {
@@ -243,6 +250,8 @@ describe('Phase 4 slot flow', () => {
     const learner = await registerAndCookie('learner-e@example.com', {
       verifyEmail: true,
     })
+    // BCS-HARDEN-1 — book route refuses NULL-assignedTeacher.
+    await setAssignedTeacher(learner.accountId, teacher.accountId)
 
     const created = await adminCreateHandler(
       buildRequest('/api/admin/slots', {
@@ -465,6 +474,8 @@ describe('Phase 4 slot flow', () => {
     const learner = await registerAndCookie('learner-k@example.com', {
       verifyEmail: true,
     })
+    // BCS-HARDEN-1 — book route refuses NULL-assignedTeacher.
+    await setAssignedTeacher(learner.accountId, teacher.accountId)
 
     const created = await adminCreateHandler(
       buildRequest('/api/admin/slots', {

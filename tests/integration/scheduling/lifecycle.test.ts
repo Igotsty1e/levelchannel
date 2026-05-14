@@ -11,6 +11,7 @@ import {
   getAccountByEmail,
   grantAccountRole,
   markAccountVerified,
+  setAssignedTeacher,
 } from '@/lib/auth/accounts'
 import { getDbPool } from '@/lib/db/pool'
 import { autoCompletePastBookedSlots } from '@/lib/scheduling/slots'
@@ -80,6 +81,7 @@ describe('Phase 5 lifecycle + 24h rule', () => {
     const learner = await registerAndCookie('learner-l1@example.com', {
       verifyEmail: true,
     })
+    await setAssignedTeacher(learner.accountId, teacher.accountId)
 
     // Create a slot in the future, book it, then backdate start_at to
     // 1h from now so the 24h rule fires.
@@ -136,6 +138,7 @@ describe('Phase 5 lifecycle + 24h rule', () => {
     const learner = await registerAndCookie('learner-l2@example.com', {
       verifyEmail: true,
     })
+    await setAssignedTeacher(learner.accountId, teacher.accountId)
 
     const created = await adminCreateHandler(
       buildRequest('/api/admin/slots', {
@@ -184,6 +187,7 @@ describe('Phase 5 lifecycle + 24h rule', () => {
     const learner = await registerAndCookie('learner-l3@example.com', {
       verifyEmail: true,
     })
+    await setAssignedTeacher(learner.accountId, teacher.accountId)
 
     const created = await adminCreateHandler(
       buildRequest('/api/admin/slots', {
@@ -232,6 +236,7 @@ describe('Phase 5 lifecycle + 24h rule', () => {
     const learner = await registerAndCookie('learner-l4@example.com', {
       verifyEmail: true,
     })
+    await setAssignedTeacher(learner.accountId, teacher.accountId)
 
     const created = await adminCreateHandler(
       buildRequest('/api/admin/slots', {
@@ -309,6 +314,7 @@ describe('Phase 5 lifecycle + 24h rule', () => {
     const learner = await registerAndCookie('learner-l6@example.com', {
       verifyEmail: true,
     })
+    await setAssignedTeacher(learner.accountId, teacher.accountId)
 
     // Two slots: one booked-and-past (should be completed), one
     // booked-and-future (should be left alone).
@@ -388,6 +394,7 @@ describe('Phase 5 lifecycle + 24h rule', () => {
         `learner-w25-${crypto.randomUUID()}@example.com`,
         { verifyEmail: true },
       )
+      await setAssignedTeacher(learner.accountId, teacher.accountId)
       const created = await adminCreateHandler(
         buildRequest('/api/admin/slots', {
           cookie: admin.cookie,
