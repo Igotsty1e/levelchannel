@@ -13,6 +13,54 @@
 > contract, security boundary, and ops runbook live in the topic-
 > specific owner docs.
 
+## 0. Bootstrap self-check — read BEFORE touching anything
+
+Mirror of `~/.claude/CLAUDE.md` § "Bootstrap" applied to this repo.
+Don't skip this block to save tokens; the cost of skipping is the
+2026-05-14 freehand session (7 PRs without `/ship` / `/codex` / `/review` /
+`/document-release` — full incident in `docs/skill-pipeline.md`).
+
+Before any non-trivial action in this repo, mentally answer:
+
+1. Have I `Read` `~/.claude/CLAUDE.md`, `~/.claude/COMPANY.md`,
+   `~/.claude/SKILLS.md`, `~/.claude/LEARNINGS.md` in this session?
+   If "no, I'll rely on the system-reminder skill list" — stop, read
+   them now via `Read` tool. The reminder is a triggers index, not
+   the routing source-of-truth.
+2. Have I `Read` this file (`AGENTS.md`) and the owner doc for what
+   I'm about to touch (`ARCHITECTURE.md` / `PAYMENTS_SETUP.md` /
+   `SECURITY.md` / `OPERATIONS.md`)?
+3. For the work I'm about to do (plan review / code review / ship /
+   debug / QA / deploy / doc sync) — which skill in `~/.claude/SKILLS.md`
+   owns it? If the answer is "I'll write the prompt freehand" — that's
+   the freehand failure mode caught 2026-05-14. Re-read SKILLS.md.
+4. If this is a multi-PR wave: have I run `/plan-eng-review` (or
+   `/autoplan`) on the plan **before** code lands? §4 below lists this
+   as non-negotiable for the project.
+
+**The freehand check** (run before EVERY non-trivial action): *"Is
+there a skill for this in `~/.claude/SKILLS.md`?"* Yes → invoke via
+`Skill` tool. No → proceed manually + flag the gap in `~/.team/activity.jsonl`
+via `~/.team/bin/log-event claude note "freehand: <reason>"`.
+
+The repo enforces this mechanically:
+
+- Local: `.githooks/commit-msg` runs `scripts/skill-pipeline-check.sh`
+  on every commit. Non-trivial diff (≥3 files OR ≥100 lines in
+  `app/` `lib/` `tests/` `migrations/`) without a `Skill-Used:` trailer
+  is refused.
+- CI: `.github/workflows/skill-pipeline.yml` enforces the same per-PR
+  before merge.
+- Visible: `.github/pull_request_template.md` carries a checklist of
+  the skill gates — fill it out per PR.
+- Diagnostic: `scripts/session-audit.sh --since "2 hours ago"` reads
+  `~/.team/activity.jsonl` + recent commits and reports skill-gate
+  drift. Use it before closing a multi-PR session.
+
+See [`docs/skill-pipeline.md`](docs/skill-pipeline.md) for the trailer
+format, threshold, exceptions, and how to add the guardrail to a new
+project.
+
 ## 1. Doc layer (LevelChannel-specific)
 
 The general doc-maintenance rule (`rg`-sweep, drift = real bug) is in
@@ -109,11 +157,16 @@ Read the owner doc before touching:
 
 ### Skill routing — non-negotiable for this project
 
-These four rules close gaps surfaced during the 2026-05-07 Wave 1+2
-+ adversarial-review session. Each rule names a concrete moment in
-the workflow and the gstack skill that owns it. The skills are
-listed in `~/.claude/SKILLS.md`; invoke via the `Skill` tool, not
-ad-hoc Bash.
+The original four rules below were set after the 2026-05-07 Wave 1+2
+adversarial-review session. The 2026-05-14 BCS-E/F/HARDEN/BUG-2/3
+session (7 PRs shipped freehand without `/ship` / `/codex` skill / `/review` /
+`/document-release`) added the next four — they cover the lifecycle
+gaps the first four didn't reach. The whole set is now mechanically
+enforced via `docs/skill-pipeline.md`.
+
+The skills are listed in `~/.claude/SKILLS.md`; invoke via the `Skill`
+tool, not ad-hoc Bash. Each rule names a concrete moment in the
+workflow and the gstack skill that owns it.
 
 | When | Skill | Why this rule exists |
 |---|---|---|
@@ -121,17 +174,41 @@ ad-hoc Bash.
 | **Before merging any PR that touches `lib/payments/` or `lib/security/`** | `/review` | Goes deeper than `public-surface` + `build` — checks SQL safety, LLM trust boundary violations, conditional side-effects. CI runs the mechanical gates; `/review` runs the structural ones. |
 | **After every prod deploy with a route-level change** | `/qa` (or `/qa-only` if read-only) | Browser-driven regression check. `post-deploy-smoke.sh` covers status-code shape; `/qa` covers actual flows (registration → verify-email → cabinet, checkout → 3DS → /thank-you). The Resend-sandbox-from issue would have surfaced here on day one. |
 | **For any second-opinion / adversarial review** | `/codex` | Self-review of own work has a known conflict-of-interest. Codex is the independent counterweight. Invoke via `Skill('codex', ...)`, not via raw `Bash('codex exec ...')` — the skill handles the stdin / usage-cap fallbacks. |
+| **For collecting + pushing every non-trivial PR** | `/ship` | Branch detect, tests, VERSION bump, CHANGELOG voice polish, commit, push, PR creation, base-branch sync — in one structured pass. Hand-rolled `gh pr create` lost VERSION/CHANGELOG hygiene across 7 PRs on 2026-05-14. Use this even when the PR is simple. |
+| **Post-merge on every non-trivial PR** | `/document-release` | Sync of README / ARCHITECTURE / PAYMENTS_SETUP / SECURITY / OPERATIONS / CLAUDE.md / CHANGELOG to the diff. Drift = real bug per `~/.claude/COMPANY.md` § Doc maintenance. Not "follow-up" — same session. |
+| **Post-merge with route-level change** | `/land-and-deploy` | Merge + wait for CI + wait for autodeploy + canary verify. Replaces hand-rolled `gh pr merge` + manual `curl /api/healthz`. |
+| **Whenever you'd hand-write a debug prompt for a bug / 500 / regression / flaky test** | `/investigate` | 4-phase root-cause loop. **NEVER** start a debug session with file `Read`s + ad-hoc `Grep` + theory. Both flaky-test fixes on 2026-05-13/14 (`refunds.test.ts`, `nearFutureBusinessBandIso`) should have entered via this skill. |
+| **At session end after shipping ≥1 wave** | `/learn` + `/document-release` + `/context-save` | `/learn` captures cross-PR patterns; `/document-release` syncs docs; `/context-save` writes a handoff snapshot so the next session (yours or Codex's) doesn't rediscover everything. Without these, learnings die at the session boundary. |
 
 These rules are mandatory, not advisory. Skipping them is a process
-debt that surfaces as a Sentry alert at midnight. If a step is
-inapplicable (e.g. doc-only PR doesn't need `/qa`), say so explicitly
-in the PR description; don't quietly drop the gate.
+debt that surfaces as a Sentry alert at midnight or as the
+"оверфит на конкретную задачу, проиграл стратегически" failure mode
+caught on 2026-05-14. If a step is inapplicable (e.g. doc-only PR
+doesn't need `/qa`), say so explicitly in the PR description AND in
+the `Skill-Used:` commit trailer; don't quietly drop the gate.
 
 The reciprocal: do NOT call code-writing skills (`/qa`, `/investigate`,
 `/design-review`) on a problem you already understand and can fix in
 under 15 minutes — they add coordination cost. The point is to
 delegate the work that benefits from a structured pass, not every
-keystroke.
+keystroke. The `Skill-Used: trivial` exemption in the commit trailer
+exists for exactly this case.
+
+### Session-end checklist (run before closing the conversation)
+
+On any session that shipped ≥1 PR — before logging off:
+
+1. `/document-release` — sweep README / ARCHITECTURE / docs / CHANGELOG
+   for drift introduced by the wave.
+2. `/learn` — capture per-project + promotable cross-project findings.
+3. `/context-save` — snapshot for the next session.
+4. `bash scripts/session-audit.sh --since "<session start>"` —
+   confirm every non-trivial commit carries the trailer.
+5. `~/.team/bin/log-event claude complete "<one-line summary>" --tags wave-shipped` —
+   handoff record for Codex / future Claude.
+
+The four-step closing protocol is cheap and catches the "drift in
+docs / lost learnings / silent freehand commit" tail every time.
 
 ### Deploy posture
 

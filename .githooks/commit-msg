@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 #
-# commit-msg hook for legal-pipeline guardrail.
-# Activated by `git config core.hooksPath .githooks` (set automatically via
-# `npm install` postinstall, or manually with the same command).
+# commit-msg hook — runs repo-level guardrails in series.
+# Activated by `git config core.hooksPath .githooks` (set automatically
+# via `npm install` postinstall, or manually with the same command).
 #
-# Delegates to scripts/legal-pipeline-check.sh which contains the shared
-# matching/trailer logic used by both this hook and the CI workflow.
+# Each delegated script contains its own shared matching/trailer logic
+# reused by the corresponding CI workflow. Run order matches the order
+# of failure cost: legal trailer (regulatory) before skill trailer
+# (process). Both must clear for the commit to land.
 
 set -e
-exec "$(git rev-parse --show-toplevel)/scripts/legal-pipeline-check.sh" \
-  --commit-msg "$1"
+root="$(git rev-parse --show-toplevel)"
+
+"$root/scripts/legal-pipeline-check.sh" --commit-msg "$1"
+"$root/scripts/skill-pipeline-check.sh" --commit-msg "$1"
