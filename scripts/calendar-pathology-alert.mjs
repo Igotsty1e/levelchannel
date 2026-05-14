@@ -196,11 +196,14 @@ async function main() {
 
     const { subject, text } = buildEmail(offenders)
     if (!ALERT_EMAIL_TO || !process.env.RESEND_API_KEY) {
-      logJson('warn', 'alert would fire but email destination/key not set', {
+      // BCS-G retro Codex round 1 WARN #3 — DO NOT advance dedup
+      // state when the operator hasn't actually been paged. The
+      // misconfig (missing ALERT_EMAIL_TO / RESEND_API_KEY) is a
+      // transient operator issue; on fix the next run should re-fire
+      // immediately, not wait out the 24h dedup window.
+      logJson('warn', 'alert would fire but email destination/key not set; state NOT advanced', {
         offenderCount: offenders.length,
       })
-      // Still write state so we don't re-log next run.
-      await writeState({ lastAlertAt: now, lastFingerprint: fp })
       return
     }
 
@@ -212,15 +215,21 @@ async function main() {
       text,
     })
     if (sent.error) {
-      logJson('warn', 'resend email failed', { error: String(sent.error) })
-    } else {
-      logJson('info', 'pathology alert email sent', {
-        offenderCount: offenders.length,
-        fingerprint: fp,
-        emailId: sent.data?.id ?? null,
+      // BCS-G retro Codex round 1 WARN #3 — Resend outage / transient
+      // failure → state NOT advanced. The next run re-attempts the
+      // page instead of silencing the same offender set for the
+      // dedup window.
+      logJson('warn', 'resend email failed; state NOT advanced', {
+        error: String(sent.error),
       })
+      return
     }
 
+    logJson('info', 'pathology alert email sent', {
+      offenderCount: offenders.length,
+      fingerprint: fp,
+      emailId: sent.data?.id ?? null,
+    })
     await writeState({ lastAlertAt: now, lastFingerprint: fp })
   } finally {
     await pool.end()
