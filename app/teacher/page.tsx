@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { countHiddenSlotsForTeacher } from '@/lib/calendar/hidden-slots'
 import { getDbPool } from '@/lib/db/pool'
 import { listActiveTariffs } from '@/lib/pricing/tariffs'
 
@@ -46,6 +47,7 @@ export default async function TeacherPage() {
 
   const tariffs = await listActiveTariffs()
   const conflictCount = await countTeacherConflicts(current.account.id)
+  const hiddenCount = await countHiddenSlotsForTeacher(current.account.id)
 
   return (
     <>
@@ -78,6 +80,36 @@ export default async function TeacherPage() {
             style={{ color: 'inherit', textDecoration: 'underline' }}
           >
             в настройках
+          </Link>
+          .
+        </div>
+      ) : null}
+      {hiddenCount > 0 ? (
+        <div
+          role="status"
+          style={{
+            padding: '12px 16px',
+            background: 'rgba(255, 196, 0, 0.10)',
+            border: '1px solid rgba(255, 209, 102, 0.40)',
+            borderRadius: 10,
+            color: '#ffd166',
+            marginBottom: 16,
+            fontSize: 14,
+            lineHeight: 1.5,
+          }}
+        >
+          🗓 <strong>Скрыто учениками:</strong>{' '}
+          {hiddenCount === 1
+            ? '1 свободный слот пересекается'
+            : `${hiddenCount} свободных слотов пересекаются`}{' '}
+          с событиями в вашем Google Calendar и не показываются
+          ученикам при записи. Это нормально — слоты остаются у вас,
+          просто скрыты пока время не освободится.{' '}
+          <Link
+            href="/teacher/settings/calendar"
+            style={{ color: 'inherit', textDecoration: 'underline' }}
+          >
+            Настройки календаря
           </Link>
           .
         </div>
