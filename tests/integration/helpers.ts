@@ -51,6 +51,34 @@ export function buildRequest(path: string, opts: RequestOptions = {}): Request {
   })
 }
 
+// BCS-OP-ROLLOUT plan §4.7.1 / Codex round-1 WARN #10 — raw-Request
+// helper for cron-route tests. Real cron callers (curl from systemd on
+// 127.0.0.1) send NEITHER `Origin` NOR `Sec-Fetch-Site`. Using
+// `buildRequest` for cron tests would silent-green even if the host
+// gate broke. This helper constructs a Request with ONLY:
+//   - Host (controlling the loopback-Host gate)
+//   - Authorization: Bearer <secret> (controlling the bearer gate)
+// No Origin / Sec-Fetch-Site / Accept.
+export function buildCronRequest(
+  path: string,
+  opts: { bearer?: string; host?: string; body?: unknown } = {},
+): Request {
+  const url = new URL(path, SITE_URL)
+  // Construct a fresh Headers — do NOT include any browser-y defaults.
+  const headers = new Headers()
+  // The Request constructor sets Host based on the URL; we explicitly
+  // override via the `host` header to control the cron-auth.ts gate.
+  if (opts.host) headers.set('host', opts.host)
+  if (opts.bearer) headers.set('authorization', `Bearer ${opts.bearer}`)
+  if (opts.body !== undefined) headers.set('content-type', 'application/json')
+
+  return new Request(url.toString(), {
+    method: 'POST',
+    headers,
+    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+  })
+}
+
 // Pull `lc_session=<value>` out of a Set-Cookie header for chained requests.
 export function extractSessionCookie(setCookie: string | null): string | null {
   if (!setCookie) return null
