@@ -64,6 +64,12 @@ export const PAYMENT_AUDIT_EVENT_TYPES = [
   // the enum + CHECK so the future webhook branch doesn't need a
   // second taxonomy migration.
   'payment.refund.gateway.webhook',
+  // PKG-RECON RECON.0 — operator-driven recovery actions on
+  // paid_not_granted package orders. Migration 0050 extends the
+  // CHECK constraint with these three values.
+  'payment.grant.retried-by-admin',
+  'payment.grant.account-attached-by-admin',
+  'payment.grant.resolved-manually-by-admin',
 ] as const
 
 export type PaymentAuditEventType = (typeof PAYMENT_AUDIT_EVENT_TYPES)[number]
@@ -79,6 +85,13 @@ export type PaymentAuditActor =
   // at /checkout/package init. The actor label distinguishes those
   // grants from real webhook deliveries in audit reads.
   | 'mock:auto_confirm'
+  // PKG-RECON RECON.0 — operator-driven recovery actions. Distinct
+  // from the bare `admin` actor so audit reads can grep for these
+  // specifically (e.g. when investigating a paid_not_granted
+  // resolution after the fact).
+  | 'admin:retry-grant'
+  | 'admin:attach-account'
+  | 'admin:resolved'
 
 // Money helper moved to lib/payments/money.ts (Codex 2026-05-10
 // CONSOLIDATE — money helpers belong with payments, not audit).

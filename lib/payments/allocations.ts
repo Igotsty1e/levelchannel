@@ -1,6 +1,14 @@
 import { getDbPool } from '@/lib/db/pool'
 
-export type AllocationKind = 'lesson_slot'
+// PKG-RECON RECON.0: AllocationKind union extended to include
+// 'package'. The DB row check has ALWAYS accepted 'package'
+// (lib/billing/package-grant.ts:191 inserts kind='package' for
+// package_purchase allocations); only the TS type was lagging.
+// Round 1 WARN #10 / round 2 INFO #4 closure: all existing reads
+// filtering `WHERE kind='lesson_slot'` were verified slot-only by
+// intent (`lib/payments/allocations.ts:119,177`,
+// `lib/billing/paid-state.ts:54`, `lib/billing/packages/debt.ts:55`).
+export type AllocationKind = 'lesson_slot' | 'package'
 
 export type PaymentAllocation = {
   paymentOrderId: string
@@ -10,7 +18,7 @@ export type PaymentAllocation = {
   createdAt: string
 }
 
-const ALLOWED_KINDS = new Set<AllocationKind>(['lesson_slot'])
+const ALLOWED_KINDS = new Set<AllocationKind>(['lesson_slot', 'package'])
 
 function rowToAllocation(row: Record<string, unknown>): PaymentAllocation {
   return {
