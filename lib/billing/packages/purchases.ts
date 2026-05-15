@@ -129,6 +129,30 @@ export async function listAccountActivePackages(
     .filter((p) => p.countRemaining > 0)
 }
 
+// PKG-RECON RECON.1 — bulk load purchases by id for admin payment
+// detail rendering. Used by `app/admin/(gated)/payments/[invoiceId]`
+// to surface `title_snapshot` + `count_initial` + `duration_minutes`
+// for `payment_allocations.kind='package'` rows (instead of the raw
+// UUID). Returns a Map for cheap lookup.
+export async function listPackagePurchasesByIds(
+  ids: string[],
+): Promise<Map<string, PackagePurchase>> {
+  if (ids.length === 0) return new Map()
+  const pool = getDbPool()
+  const result = await pool.query(
+    `select ${PURCHASE_COLS}
+       from package_purchases
+      where id = any($1::uuid[])`,
+    [ids],
+  )
+  const map = new Map<string, PackagePurchase>()
+  for (const row of result.rows) {
+    const purchase = rowToPurchase(row as Record<string, unknown>)
+    map.set(purchase.id, purchase)
+  }
+  return map
+}
+
 // Helper: does this account have a PENDING package order matching
 // the given duration in the last 15 minutes? Used by the booking
 // flow's pending-package gate (Codex round 2 HIGH 2).
