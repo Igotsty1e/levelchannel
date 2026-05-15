@@ -79,6 +79,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
             <AdminNavLink href="/admin/refunds">Возвраты</AdminNavLink>
             <AdminNavLink href="/admin/debt-summary">Задолженности</AdminNavLink>
             <AdminNavLink href="/admin/legal">Документы</AdminNavLink>
+            <AdminNavLink href="/admin/reconciliation">Реконсилиация</AdminNavLink>
           </nav>
           <p
             style={{

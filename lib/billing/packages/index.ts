@@ -20,6 +20,7 @@ export {
   accountHasPendingPackageGrantForDuration,
   createPackagePurchase,
   listAccountActivePackages,
+  listPackagePurchasesByIds,
 } from './purchases'
 
 export { listAccountPostpaidDebt } from './debt'
