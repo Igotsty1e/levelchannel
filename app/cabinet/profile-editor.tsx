@@ -6,7 +6,7 @@ import type { AccountProfile } from '@/lib/auth/profiles'
 // Pulling TIMEZONE_OPTIONS from the DB-backed profiles module would
 // drag pg into the client bundle (Module not found: 'tls'); use the
 // pure constants module instead.
-import { TIMEZONE_OPTIONS } from '@/lib/auth/timezones'
+import { TIMEZONE_OPTIONS, safeTimezone } from '@/lib/auth/timezones'
 
 export function ProfileEditor({
   initialProfile,
@@ -20,9 +20,11 @@ export function ProfileEditor({
   )
   // Default to Europe/Moscow when profile has no tz yet (most learners
   // are RU). The dropdown's options are curated IANA names; saving any
-  // other string is now refused server-side.
+  // other string is now refused server-side. safeTimezone() clamps
+  // legacy stored values (e.g. plain 'Moscow') so the dropdown lands
+  // on a valid option instead of rendering blank.
   const [timezone, setTimezone] = useState(
-    initialProfile?.timezone ?? 'Europe/Moscow',
+    safeTimezone(initialProfile?.timezone),
   )
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)

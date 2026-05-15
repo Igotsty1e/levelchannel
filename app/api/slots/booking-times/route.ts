@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { NO_STORE } from '@/lib/api/http-headers'
 import { requireLearnerArchetypeAndVerified } from '@/lib/auth/guards'
 import { getAccountProfile } from '@/lib/auth/profiles'
+import { safeTimezone } from '@/lib/auth/timezones'
 import {
   isValidIanaTz,
   isValidYmd,
@@ -51,7 +52,11 @@ export async function GET(request: Request) {
   }
 
   const profile = await getAccountProfile(auth.account.id)
-  const tz = tzParam ?? profile?.timezone ?? 'Europe/Moscow'
+  // BUG fix 2026-05-15 — see booking-days/route.ts. Legacy profile
+  // values like 'Moscow' get clamped to Europe/Moscow; explicit
+  // client-supplied `?tz=` stays raw so the invalid_tz response below
+  // surfaces caller-side bugs clearly.
+  const tz = tzParam ?? safeTimezone(profile?.timezone)
   if (!isValidIanaTz(tz)) {
     return NextResponse.json(
       { error: 'invalid_tz', message: '`tz` must be a valid IANA timezone' },

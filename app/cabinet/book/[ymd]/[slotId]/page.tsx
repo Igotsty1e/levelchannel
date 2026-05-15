@@ -5,6 +5,7 @@ import { notFound, redirect } from 'next/navigation'
 import { AuthShell } from '@/components/auth-shell'
 import { getAccountProfile } from '@/lib/auth/profiles'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { safeTimezone } from '@/lib/auth/timezones'
 import { getSlotById, isValidYmd } from '@/lib/scheduling/slots'
 
 import { ConfirmForm } from './confirm-form'
@@ -64,7 +65,7 @@ export default async function BookConfirmPage({ params }: RouteParams) {
   }
 
   const profile = await getAccountProfile(session.account.id)
-  const tz = profile?.timezone ?? 'Europe/Moscow'
+  const tz = safeTimezone(profile?.timezone)
 
   // Codex #3: every date part (weekday/day/month/year) must come from
   // the learner's tz, not the server's. Combined formatter does the
