@@ -6,6 +6,7 @@ import { AuthShell } from '@/components/auth-shell'
 import { getAccountByEmail } from '@/lib/auth/accounts'
 import { getAccountProfile } from '@/lib/auth/profiles'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { TIMEZONE_OPTIONS, safeTimezone } from '@/lib/auth/timezones'
 
 import { MonthDayPicker } from './month-day-picker'
 
@@ -42,7 +43,13 @@ export default async function BookPage() {
 
   const teacherId = session.account.assignedTeacherId
   const profile = await getAccountProfile(session.account.id)
-  const tz = profile?.timezone ?? 'Europe/Moscow'
+  // BUG fix 2026-05-15 — legacy rows may carry a non-IANA value like
+  // 'Moscow' which then leaks to /api/slots/booking-days as `tz=Moscow`
+  // and triggers "tz must be a valid IANA timezone" on the API side.
+  // safeTimezone() clamps any non-allowlisted value to Europe/Moscow.
+  const tz = safeTimezone(profile?.timezone)
+  const tzLabel =
+    TIMEZONE_OPTIONS.find((t) => t.id === tz)?.label ?? tz
 
   let teacherDisplayName: string | null = null
   if (teacherId) {
@@ -146,7 +153,7 @@ export default async function BookPage() {
                 textAlign: 'center',
               }}
             >
-              Время отображается в часовом поясе {tz}.
+              Время отображается в часовом поясе {tzLabel}.
             </p>
           </>
         )}

@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { AuthShell } from '@/components/auth-shell'
 import { getAccountProfile } from '@/lib/auth/profiles'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { safeTimezone } from '@/lib/auth/timezones'
 import { isValidYmd } from '@/lib/scheduling/slots'
 
 import { TimeList } from './time-list'
@@ -44,7 +45,7 @@ export default async function BookDayPage({ params }: RouteParams) {
   if (!session.account.emailVerifiedAt) redirect('/cabinet')
 
   const profile = await getAccountProfile(session.account.id)
-  const tz = profile?.timezone ?? 'Europe/Moscow'
+  const tz = safeTimezone(profile?.timezone)
 
   // Pretty header: localize the picked day. Date constructor treats
   // `YYYY-MM-DD` as UTC midnight; we want a human readable label in

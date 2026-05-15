@@ -222,6 +222,40 @@ describe('BCS-B.2 — GET /api/slots/booking-days', () => {
     )
     expect([401, 403]).toContain(res.status)
   })
+
+  // BUG 2026-05-15 regression — a learner with a legacy non-IANA
+  // profile.timezone (e.g. plain 'Moscow') was getting 400 invalid_tz
+  // on every booking-days call because the route fell back to
+  // `profile?.timezone ?? 'Europe/Moscow'` and `'Moscow'` is not a
+  // valid IANA name. After the fix, the route sanitises the profile
+  // default via safeTimezone() and the call succeeds (no tz param).
+  it('legacy non-IANA profile.timezone is silently clamped (no invalid_tz)', async () => {
+    const learner = await registerAndCookie('l-tz-bad@example.com', {
+      verifyEmail: true,
+    })
+    // Insert a legacy bad timezone directly via raw SQL — the API
+    // layer would refuse it on PATCH /profile, but the DB CHECK only
+    // bounds display_name + locale, so an old row can carry the value.
+    await getDbPool().query(
+      `insert into account_profiles (account_id, display_name, timezone, locale)
+       values ($1, 'Тест', 'Moscow', 'ru')
+       on conflict (account_id) do update set timezone = excluded.timezone`,
+      [learner.accountId],
+    )
+    const today = new Date().toISOString().slice(0, 10)
+    const future = new Date(Date.now() + 7 * 86_400_000)
+      .toISOString()
+      .slice(0, 10)
+    // NB: NO `tz=` query param — relies on profile fallback path.
+    const res = await bookingDaysHandler(
+      buildRequest(`/api/slots/booking-days?from=${today}&to=${future}`, {
+        cookie: learner.cookie,
+      }),
+    )
+    expect(res.status).toBe(200)
+    const json = await res.json()
+    expect(json.days).toEqual([]) // no slots, but the call succeeded
+  })
 })
 
 describe('BCS-B.2 — GET /api/slots/booking-times', () => {

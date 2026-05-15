@@ -36,15 +36,25 @@ Total estimate: 33 PRs across 7 waves. Reference cadence: billing-wave was 7 PRs
 - **BCS-HARDEN-3** — `slot_lifecycle_intents` claim path doesn't flip status to `in_progress` (Codex epic-end paranoia WARN #1, 2026-05-14). `FOR UPDATE SKIP LOCKED` protects only the statement, not the post-commit window — after OP.2 wired `drainIntents` to cron, an overlapping tick or manual re-fire can re-claim the same row and bump `attempts` twice. Fix: extend `claimNextIntent` SQL to do CTE-based `UPDATE … SET status = 'in_progress' … RETURNING` (mirrors `claimNextJob` in pull/push workers). Cite `lib/calendar/intent-worker.ts:claimNextIntent`, `migrations/0045_calendar_jobs.sql:152,176`.
 - **BCS-HARDEN-4** — `revive-blocked` cron has a hidden dependency on a recent successful pull (Codex epic-end paranoia WARN #2, 2026-05-14). Docs and route name imply revival "after teacher reconnects", but the SQL gate also requires `last_pulled_at >= now()-30m`. Since reconnect itself nulls `last_pulled_at` in `upsertGoogleIntegration`, blocked intents wait for the next successful pull cron tick AND then the next hourly revive tick — two-cycle latency that's invisible to the operator. Fix: either (a) drop the `last_pulled_at` gate (rely on cancel intent's own permanent-fail backoff), or (b) document the dependency in `ARCHITECTURE.md` + route doc comment. Cite `lib/calendar/intent-worker.ts:reviveBlockedIntents`, `lib/calendar/integrations.ts:upsertGoogleIntegration:198`.
 
-### Deferred (separate waves, NOT in BCS)
+### Active follow-up roadmap (after BCS-OP-ROLLOUT activation, 2026-05-15)
 
-- **BCS-DEF-1** — Email + Telegram alerts on unresolved conflicts >2h (operator + teacher).
+- **BCS-DEF-1** — Email + Telegram alerts on unresolved conflicts >2h (operator + teacher). **Admin coverage required:** alert thresholds + recipient lists must be operator-editable from /admin.
 - **BCS-DEF-2** — Admin "Conflict feed" dashboard with last-30d view.
 - **BCS-DEF-3** — Optional `zoomUrl` on slot — nullable at create, editable on already-booked slot.
-- **BCS-DEF-4** — Lesson-start reminders for learner (per-user settings: 60/30/10 min, email/telegram/push).
-- **BCS-DEF-5** — Lesson-start reminders for teacher (mirror settings).
-- **BCS-DEF-6** — Yandex calendar integration.
+- **BCS-DEF-4** — Lesson-start reminders for learner (per-user settings: 60/30/10 min, email/telegram/push). **Admin coverage required:** per-channel master switch + default windows operator-editable.
+- **BCS-DEF-5** — Lesson-start reminders for teacher (mirror settings, same admin coverage).
 - **BCS-DEF-7** — `syncToken`-based incremental pull (post-MVP optimization; replaces bounded full-rewrite for active teachers).
+- ~~**BCS-DEF-6**~~ — **DROPPED 2026-05-15** (user decision: Yandex not on the roadmap).
+
+### BCS-ADMIN-UX — admin tooling review round (queued 2026-05-15)
+
+Cross-cutting review wave queued ahead of BCS-DEF-1/4/5 implementation. Goal: catalogue every operator-facing setting that currently lives only in code / .env / SQL and needs an /admin UI before the corresponding feature can ship. Open questions surfaced by the product owner:
+
+- The package catalog (`pricing_packages`) has no /admin surface — operator currently can't see / buy / sell packages from the dashboard.
+- Reminder cadences / channels for BCS-DEF-4/5 must be operator-tunable, not hardcoded.
+- Conflict-alert thresholds (BCS-DEF-1) must be operator-tunable.
+
+Process: I run a discovery pass + Codex `/codex` adversarial second-opinion on the resulting admin-feature list. Output is a prioritised plan doc at `docs/plans/admin-ux-coverage.md` to feed back into BCS-DEF-1/2/3/4/5 implementation order.
 
 ### Invariants (cf. plan §8 — must survive future changes)
 

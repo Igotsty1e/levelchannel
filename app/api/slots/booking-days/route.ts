@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { NO_STORE } from '@/lib/api/http-headers'
 import { requireLearnerArchetypeAndVerified } from '@/lib/auth/guards'
 import { getAccountProfile } from '@/lib/auth/profiles'
+import { safeTimezone } from '@/lib/auth/timezones'
 import {
   listOpenBookingDays,
   validateBookingRange,
@@ -51,7 +52,11 @@ export async function GET(request: Request) {
   const tzParam = url.searchParams.get('tz')
 
   const profile = await getAccountProfile(auth.account.id)
-  const tz = tzParam ?? profile?.timezone ?? 'Europe/Moscow'
+  // BUG fix 2026-05-15 — sanitise legacy profile values like 'Moscow'
+  // (non-IANA) which would otherwise fall through validateBookingRange
+  // and 400 the caller. Client-supplied `?tz=` is left raw so a bad
+  // value still produces a clean `invalid_tz` error message.
+  const tz = tzParam ?? safeTimezone(profile?.timezone)
 
   const error = validateBookingRange({ fromYmd, toYmd, tz })
   if (error) {
