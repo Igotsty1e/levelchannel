@@ -56,6 +56,14 @@ export type GrantResult =
 export type PackageGrantActor =
   | 'webhook:cloudpayments:pay'
   | 'mock:auto_confirm'
+  // PKG-RECON RECON.0 — operator-driven entry paths for
+  // /admin/reconciliation/package-grants. Each path emits a
+  // dedicated `payment.grant.*-by-admin` audit row IN ADDITION to
+  // the standard `package.grant.succeeded/failed` row from this
+  // module, so the audit reader can distinguish "webhook
+  // succeeded on its own" vs "admin recovered the grant".
+  | 'admin:retry-grant'
+  | 'admin:attach-account'
 
 export async function processPackageGrant(
   invoiceId: string,

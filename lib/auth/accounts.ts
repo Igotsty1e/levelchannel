@@ -190,25 +190,30 @@ export async function listAccountsByRole(
 }
 
 // Operator-side: list accounts that could be booked into a slot —
-// verified, not disabled, not purged, NOT holding the admin role
-// (admin is mutually exclusive with the learner workflow per the
-// 2026-05-04 separation). Used by the /admin/slots booking dropdown
-// so the operator picks an existing learner instead of typing the
-// e-mail by hand.
+// verified, not disabled, not scheduled-for-purge, not purged,
+// NOT holding admin/teacher roles. Used by the /admin/slots booking
+// dropdown so the operator picks an existing learner instead of
+// typing the e-mail by hand.
+//
+// PKG-RECON RECON.0: the WHERE-clause shape was extracted into
+// LEARNER_ARCHETYPE_CANDIDATE_WHERE_SQL in lib/auth/learner-archetype.ts
+// as the single source of truth. Same predicate is now ALSO consumed
+// via isLearnerArchetypeCandidate(accountId) by the admin
+// attach-account recon route. Adding scheduled_purge_at to the
+// canonical predicate intentionally tightens THIS list too —
+// previously a learner in the deletion grace period could still be
+// picked from the dropdown; now they cannot.
 export async function listLearnerCandidates(): Promise<
   Array<{ id: string; email: string }>
 > {
+  const { LEARNER_ARCHETYPE_CANDIDATE_WHERE_SQL } = await import(
+    '@/lib/auth/learner-archetype'
+  )
   const pool = getAuthPool()
   const result = await pool.query(
     `select a.id, a.email
        from accounts a
-      where a.email_verified_at is not null
-        and a.disabled_at is null
-        and a.purged_at is null
-        and not exists (
-          select 1 from account_roles r
-           where r.account_id = a.id and r.role = 'admin'
-        )
+      where ${LEARNER_ARCHETYPE_CANDIDATE_WHERE_SQL}
       order by a.email asc`,
   )
   return result.rows.map((r) => ({

@@ -30,6 +30,10 @@
 //            SELECT 1 FROM package_purchases pp
 //             WHERE pp.payment_order_id = po.invoice_id
 //          )
+//          AND NOT EXISTS (
+//            SELECT 1 FROM package_grant_resolutions r
+//             WHERE r.invoice_id = po.invoice_id
+//          )
 //     )
 //
 // Branch A is bounded to 15 min because the 60-min janitor
@@ -37,10 +41,14 @@
 // without the bound, an abandoned 3DS flow could lock deletion
 // forever. Branch B has NO time bound — paid-not-granted is money
 // already captured and deserves an indefinite block until operator
-// reconciliation, e.g. via `/admin/payments`.
+// reconciliation. PKG-RECON RECON.0: the new
+// `package_grant_resolutions` NOT-EXISTS clause unblocks deletion
+// once the operator has resolved the case via /admin/reconciliation
+// (retry-grant / attach-account / mark-resolved).
 
 import type { Pool, PoolClient } from 'pg'
 
+import { findPaidNotGrantedForAccount } from '@/lib/billing/paid-not-granted'
 import { getDbPool } from '@/lib/db/pool'
 
 export type InFlightGrantReason = 'pending_within_15min' | 'paid_not_granted'
@@ -63,36 +71,28 @@ export async function checkAccountInFlightPackageGrant(
   conn: Pool | PoolClient,
   accountId: string,
 ): Promise<AccountInFlightGrantStatus> {
-  const result = await conn.query(
-    `select
-       (
-         select po.invoice_id
-           from payment_orders po
-          where po.metadata->>'accountId' = $1
-            and po.metadata->>'packageSlug' is not null
-            and po.status in ('pending', '3ds_required')
-            and po.created_at > now() - interval '15 minutes'
-          order by po.created_at asc
-          limit 1
-       ) as branch_a_invoice,
-       (
-         select po.invoice_id
-           from payment_orders po
-          where po.metadata->>'accountId' = $1
-            and po.metadata->>'packageSlug' is not null
-            and po.status = 'paid'
-            and not exists (
-              select 1 from package_purchases pp
-               where pp.payment_order_id = po.invoice_id
-            )
-          order by po.created_at asc
-          limit 1
-       ) as branch_b_invoice`,
+  // Branch A: short-window pending. Still inline here because it's
+  // unique to this guard (no operator surface needs to list "pending
+  // within 15min" orders).
+  const branchAResult = await conn.query(
+    `select po.invoice_id
+       from payment_orders po
+      where po.metadata->>'accountId' = $1
+        and po.metadata->>'packageSlug' is not null
+        and po.status in ('pending', '3ds_required')
+        and po.created_at > now() - interval '15 minutes'
+      order by po.created_at asc
+      limit 1`,
     [accountId],
   )
-  const row = result.rows[0] ?? {}
-  const branchAInvoice = row.branch_a_invoice ? String(row.branch_a_invoice) : null
-  const branchBInvoice = row.branch_b_invoice ? String(row.branch_b_invoice) : null
+  const branchAInvoice =
+    branchAResult.rows.length > 0
+      ? String(branchAResult.rows[0].invoice_id)
+      : null
+  // Branch B: paid_not_granted. Now uses the shared helper from
+  // lib/billing/paid-not-granted.ts (PKG-RECON RECON.0 — round 1
+  // WARN #11 closure). Same logic, single source of truth.
+  const branchBInvoice = await findPaidNotGrantedForAccount(conn, accountId)
   // Branch B takes precedence — paid-not-granted is the more serious
   // case (money already captured) and the message-side should escalate
   // toward operator reconciliation, not a "try again in 15 min" hint.

@@ -13,10 +13,13 @@ import { recordAllocation } from '@/lib/payments/allocations'
 
 describe('recordAllocation validation', () => {
   it('rejects invalid kind', async () => {
+    // PKG-RECON RECON.0: 'package' is now a valid AllocationKind
+    // (DB has always accepted it via package-grant.ts; TS type was
+    // lagging). Pick an actually-invalid kind for this test.
     const ok = await recordAllocation({
       paymentOrderId: 'lc_x',
-      // @ts-expect-error invalid kind
-      kind: 'package',
+      // @ts-expect-error unknown allocation kind
+      kind: 'unknown_kind',
       targetId: 'abc',
       amountKopecks: 1000,
     })
