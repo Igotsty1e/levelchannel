@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { listPaymentAuditEventsByInvoice } from '@/lib/audit/payment-events'
+import { listPackagePurchasesByIds } from '@/lib/billing/packages'
 import { listAllocationsForOrder } from '@/lib/payments/allocations'
 import { getOrder } from '@/lib/payments/store'
 import { getSlotById } from '@/lib/scheduling/slots'
@@ -33,6 +34,15 @@ export default async function AdminPaymentDetailPage({ params }: RouteParams) {
       .filter((s): s is NonNullable<typeof s> => s !== null)
       .map((s) => [s.id, s]),
   )
+
+  // PKG-RECON RECON.1 — same shape for kind='package' allocations:
+  // pre-fetch package_purchases rows so the page renders
+  // "Пакет: 10×60 мин" instead of the raw target_id UUID. Plan
+  // §4.10 (round 1 WARN #10 closure).
+  const packagePurchaseIds = allocations
+    .filter((a) => a.kind === 'package')
+    .map((a) => a.targetId)
+  const packageMap = await listPackagePurchasesByIds(packagePurchaseIds)
 
   const meta = order.metadata ?? {}
   const slotIdInMeta =
@@ -94,7 +104,8 @@ export default async function AdminPaymentDetailPage({ params }: RouteParams) {
         ) : (
           <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
             {allocations.map((a) => {
-              const slot = slotMap.get(a.targetId)
+              const slot = a.kind === 'lesson_slot' ? slotMap.get(a.targetId) : null
+              const pkg = a.kind === 'package' ? packageMap.get(a.targetId) : null
               return (
                 <li
                   key={`${a.kind}:${a.targetId}`}
@@ -117,6 +128,18 @@ export default async function AdminPaymentDetailPage({ params }: RouteParams) {
                       <span style={{ color: 'var(--secondary)' }}>
                         {`(${slot.status} · ${(a.amountKopecks / 100).toLocaleString('ru-RU')}\u00a0₽)`}
                       </span>
+                    </>
+                  ) : pkg ? (
+                    <>
+                      <span style={{ color: 'var(--text)' }}>
+                        {pkg.titleSnapshot} · {pkg.countInitial}×{pkg.durationMinutes} мин
+                      </span>{' '}
+                      <span style={{ color: 'var(--secondary)' }}>
+                        {`(${(a.amountKopecks / 100).toLocaleString('ru-RU')}\u00a0₽)`}
+                      </span>{' '}
+                      <code style={{ fontSize: 10, color: 'var(--secondary)' }}>
+                        {a.targetId.slice(0, 8)}…
+                      </code>
                     </>
                   ) : (
                     <code style={{ fontSize: 11 }}>{a.targetId}</code>
