@@ -193,6 +193,13 @@ export async function POST(request: Request, { params }: RouteParams) {
         // Call processPackageGrant in a NEW TX (it manages its own
         // connection). Re-acquire the per-invoice lock for the grant
         // call so we serialise against retry-grant + other actions.
+        //
+        // Wave-mode round 1 BLOCKER #1 closure: phase-1 commit above
+        // released the xact-bound advisory lock. Between phases, a
+        // sibling mark-resolved can write a terminal resolution row.
+        // Re-verify paid_not_granted INSIDE the new lock TX before
+        // calling processPackageGrant; otherwise we'd double-grant
+        // an invoice that was already terminally resolved.
         const lockClient = await pool.connect()
         try {
           await lockClient.query('begin')
@@ -200,6 +207,34 @@ export async function POST(request: Request, { params }: RouteParams) {
             `select pg_advisory_xact_lock(hashtextextended($1, 0))`,
             [`pkg-recon:${invoiceId}`],
           )
+          const stillPnG2 = await lockClient.query(
+            `select 1
+               from payment_orders po
+              where po.invoice_id = $1
+                and po.status = 'paid'
+                and po.metadata->>'packageSlug' is not null
+                and not exists (
+                  select 1 from package_purchases pp
+                   where pp.payment_order_id = po.invoice_id
+                )
+                and not exists (
+                  select 1 from package_grant_resolutions r
+                   where r.invoice_id = po.invoice_id
+                )
+              limit 1`,
+            [invoiceId],
+          )
+          if (stillPnG2.rows.length === 0) {
+            await lockClient.query('commit')
+            return {
+              status: 409,
+              body: {
+                error: 'not_paid_not_granted',
+                message:
+                  'This invoice was resolved by another action between phase 1 and phase 2 of this request.',
+              },
+            }
+          }
           const grantResult = await processPackageGrant(invoiceId, {
             actor: 'admin:attach-account',
           })

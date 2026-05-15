@@ -1,9 +1,20 @@
 // PKG-RECON wave RECON.0 — canonical learner-archetype predicate.
 //
-// Single source of truth for "is this account a valid learner-side
-// target?" replacing the prior split between
-// `lib/auth/accounts.ts:listLearnerCandidates` (paginated SQL) and
-// `lib/auth/guards.ts:requireLearnerArchetype*` (request-time guard).
+// Source of truth for "is this account a valid learner-side TARGET?"
+// This module unifies the SQL filter previously inlined in
+// `lib/auth/accounts.ts:listLearnerCandidates` (now refactored to
+// interpolate the shared fragment below) plus the new single-account
+// function used by PKG-RECON's attach-account route.
+//
+// SCOPE NOTE (wave-mode round 1 WARN #3): the request-time guard
+// `lib/auth/guards.ts:requireLearnerArchetype*` was NOT refactored in
+// this wave. Those guards check the REQUESTING user's role grant
+// only (rejecting admin/teacher) — they don't read
+// scheduled_purge_at / purged_at. That gap is a separate
+// reconcile-with-canonical-predicate wave; not in scope here.
+// Today the consequence is: a user in their deletion grace period
+// (scheduled_purge_at set) can still hit /api/slots/* request-time
+// guards. That's an existing latent issue we did not introduce here.
 //
 // Excluded conditions (account fails predicate when ANY holds):
 //   - email_verified_at IS NULL    (unverified email)
