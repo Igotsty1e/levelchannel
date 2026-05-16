@@ -8,7 +8,9 @@
 //   Path B: customer_email → accounts.email_normalized lookup
 //   BOTH paths must resolve to the same account; mismatch = fail-closed.
 //
-// Permanent semantic failures (seven enumerated reasons) → audit
+// Permanent semantic failures (eight enumerated reasons — seven
+// original + `already_owns_active_package` added 2026-05-16 for
+// PKG-ADMIN-GRANT cross-flow anti-stacking) → audit
 // `payment.grant.failed/<reason>` event + return without throwing.
 // The HTTP layer caller maps "no-throw" to 200 (no retry).
 //

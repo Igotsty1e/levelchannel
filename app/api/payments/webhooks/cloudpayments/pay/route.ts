@@ -133,9 +133,10 @@ export async function POST(request: Request) {
       //
       // If the order's metadata names a packageSlug, dispatch to the
       // shared grant flow (lib/billing/package-grant.ts) which
-      // implements dual-source ownership corroboration with seven
-      // semantic-failure reasons. Operational failures rethrow →
-      // CloudPayments retries naturally.
+      // implements dual-source ownership corroboration with eight
+      // semantic-failure reasons (last one: already_owns_active_package
+      // — cross-flow anti-stacking, PKG-ADMIN-GRANT 2026-05-16).
+      // Operational failures rethrow → CloudPayments retries naturally.
       try {
         const fullOrderForPkg = await getOrder(order.invoiceId)
         const metaPackageSlug = fullOrderForPkg?.metadata?.packageSlug

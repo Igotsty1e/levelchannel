@@ -37,10 +37,12 @@ import {
 //      Unless allowStacking=true, second grant of same-duration package
 //      to same learner gets 409.
 //
-// Lock: pg_advisory_xact_lock('pkg-admin-grant:' || accountId || ':' ||
-// durationMinutes) — matches the anti-stacking domain so two parallel
-// grants of DIFFERENT packages of the SAME duration to the SAME learner
-// serialize.
+// Lock: pg_advisory_xact_lock('pkg-stack:' || accountId || ':' ||
+// durationMinutes) — shared with the learner-buy route and the
+// webhook grant path (epic-end paranoia BLOCKER #1 closure,
+// 2026-05-16) so a concurrent admin grant + learner buy + delayed
+// webhook for the same (account, duration) all serialise against
+// each other.
 //
 // Single TX writes: payment_orders + package_purchases + payment_allocations.
 // All-or-nothing atomic — failure rolls back the whole grant.
