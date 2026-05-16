@@ -1,5 +1,22 @@
-export type PaymentProvider = 'mock' | 'cloudpayments'
-export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'cancelled'
+// PKG-ADMIN-GRANT (2026-05-16): 'admin_grant' is a NON-MONEY provider
+// for operator-driven package grants (refund-credits, comps, make-
+// goods). Money-side queries (admin-list, refunds, paid-state, debt)
+// filter on provider/status to exclude these from revenue aggregations.
+export type PaymentProvider = 'mock' | 'cloudpayments' | 'admin_grant'
+
+// PKG-ADMIN-GRANT (2026-05-16): 'granted' is a terminal status for
+// admin grants — distinct from 'paid' so existing money-side recovery
+// paths (paid_not_granted, deletion-guard) don't see admin grants.
+// '3ds_required' was always persisted but missing from this union;
+// added here as a follow-up fix (a separate hardening of mapRowToOrder
+// surfaced it).
+export type PaymentStatus =
+  | 'pending'
+  | '3ds_required'
+  | 'paid'
+  | 'failed'
+  | 'cancelled'
+  | 'granted'
 
 export type PaymentOrderEvent = {
   type: string
@@ -60,6 +77,11 @@ export type PaymentOrder = {
   // this column. Phase 1.5 (this wave) only mints + persists; the
   // gate is Phase 2.
   receiptTokenHash?: string | null
+  // PKG-ADMIN-GRANT (2026-05-16): operator account id for admin
+  // grants. NULL for paid orders. Triple-CHECK in migration 0051
+  // enforces provider='admin_grant' iff this is NOT NULL iff
+  // status='granted'.
+  grantedByOperatorId?: string | null
 }
 
 export type PublicPaymentOrder = Pick<
