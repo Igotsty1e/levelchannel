@@ -77,6 +77,18 @@ export async function getPackageBySlug(slug: string): Promise<LessonPackage | nu
   return result.rows[0] ? rowToPackage(result.rows[0]) : null
 }
 
+// PKG-ADMIN-GRANT LBL.1 — operator grant route picks by `id` (UUID
+// from URL `/admin/packages/[id]/grant`), not slug. Same shape as
+// `getPackageBySlug`.
+export async function getPackageById(id: string): Promise<LessonPackage | null> {
+  const pool = getDbPool()
+  const result = await pool.query(
+    `select ${PACKAGE_COLS} from lesson_packages where id = $1::uuid`,
+    [id],
+  )
+  return result.rows[0] ? rowToPackage(result.rows[0]) : null
+}
+
 // Admin-side create. Used by the future /admin/packages catalog UI
 // (PR 4). Validation lives at the call site; this just inserts.
 export async function createPackage(input: {
