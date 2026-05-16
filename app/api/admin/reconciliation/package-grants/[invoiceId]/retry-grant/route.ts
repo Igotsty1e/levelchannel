@@ -139,6 +139,14 @@ export async function POST(request: Request, { params }: RouteParams) {
       }
 
       // Re-lock for the actual grant action.
+      //
+      // Wave-mode round 1 BLOCKER #1 closure: phase 1 above
+      // committed and RELEASED the advisory lock (it's xact-bound).
+      // Between phase-1-commit and phase-2-relock, another admin
+      // could have inserted a package_grant_resolutions row (e.g.
+      // mark-resolved). Re-verify paid_not_granted INSIDE the new
+      // lock TX before calling processPackageGrant, else we'd
+      // double-grant a terminal invoice.
       const lockClient = await pool.connect()
       try {
         await lockClient.query('begin')
@@ -146,6 +154,43 @@ export async function POST(request: Request, { params }: RouteParams) {
           `select pg_advisory_xact_lock(hashtextextended($1, 0))`,
           [`pkg-recon:${invoiceId}`],
         )
+        // Phase-2 race re-check (round 1 BLOCKER #1 closure).
+        //
+        // Between phase-1 COMMIT and phase-2 lock re-acquisition the
+        // xact-bound advisory lock was released; a sibling
+        // mark-resolved could have written a terminal resolution row.
+        // Re-checking only the `package_grant_resolutions` table is
+        // SUFFICIENT for the race we need to close:
+        //   - status=paid is monotonic (orders don't unflip to pending).
+        //   - package_purchases collision is handled inside
+        //     processPackageGrant via UNIQUE(payment_order_id) →
+        //     `already_granted` kind.
+        //   - Only a terminal package_grant_resolutions row inserted
+        //     by a sibling action races us here.
+        //
+        // Why we don't re-read `payment_orders` here: that would take
+        // ACCESS SHARE on payment_orders and deadlock with
+        // `ensureSchema()` inside processPackageGrant on its first
+        // call in a fresh worker (CREATE TABLE IF NOT EXISTS needs
+        // ACCESS EXCLUSIVE). Limiting the re-verify to a single small
+        // table that ensureSchema never touches keeps the lockClient
+        // TX cheap and unblocking.
+        const resolved = await lockClient.query(
+          `select 1 from package_grant_resolutions
+            where invoice_id = $1 limit 1`,
+          [invoiceId],
+        )
+        if (resolved.rows.length > 0) {
+          await lockClient.query('commit')
+          return {
+            status: 409,
+            body: {
+              error: 'not_paid_not_granted',
+              message:
+                'This invoice was resolved by another action between phase 1 and phase 2 of this request.',
+            },
+          }
+        }
         const grantResult = await processPackageGrant(invoiceId, {
           actor: 'admin:retry-grant',
         })

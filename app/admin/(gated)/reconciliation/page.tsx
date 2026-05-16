@@ -2,6 +2,8 @@ import Link from 'next/link'
 
 import { listPaidNotGrantedOrders } from '@/lib/billing/paid-not-granted'
 
+import { ActionsCell } from './actions-cell'
+
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
@@ -61,9 +63,13 @@ export default async function ReconciliationPage() {
         но grant-flow не смог их закрепить за учеником (семь причин
         перечислены в <code>lib/billing/package-grant.ts</code>). До
         ручного разрешения такой заказ блокирует удаление аккаунта
-        (deletion-guard). Действия (повторить grant, привязать к
-        другому аккаунту, отметить как закрытый вручную) появятся в
-        ближайших PR; пока — read-only список.
+        (deletion-guard). Три действия на выбор: <b>Retry grant</b>{' '}
+        (после фикса root cause, например реактивации пакета),{' '}
+        <b>Attach to account</b> (если ученик попал не на свой аккаунт —
+        переписывает metadata.accountId + customer_email и повторяет grant),{' '}
+        <b>Mark resolved</b> (если оператор закрыл вопрос out-of-band —
+        вернул через CP-дашборд, выдал эквивалент тарифом и т.п.).
+        Mark resolved разблокирует удаление аккаунта без выдачи пакета.
       </p>
 
       <Section
@@ -165,14 +171,7 @@ export default async function ReconciliationPage() {
                       </code>
                     </Td>
                     <Td>
-                      <span
-                        style={{
-                          color: 'var(--secondary)',
-                          fontSize: 11,
-                        }}
-                      >
-                        скоро (RECON.2-4)
-                      </span>
+                      <ActionsCell invoiceId={row.invoiceId} />
                     </Td>
                   </tr>
                 )
