@@ -3,8 +3,16 @@ import { describe, expect, it } from 'vitest'
 import { POST as createHandler } from '@/app/api/payments/route'
 import { POST as mockConfirmHandler } from '@/app/api/payments/mock/[invoiceId]/confirm/route'
 import { GET as streamHandler } from '@/app/api/payments/[invoiceId]/stream/route'
+import { POST as loginHandler } from '@/app/api/auth/login/route'
+import { POST as registerHandler } from '@/app/api/auth/register/route'
+import {
+  getAccountByEmail,
+  grantAccountRole,
+  markAccountVerified,
+} from '@/lib/auth/accounts'
+import { getDbPool } from '@/lib/db/pool'
 
-import { buildRequest } from '../helpers'
+import { buildRequest, extractSessionCookie } from '../helpers'
 import './setup'
 
 // End-to-end SSE smoke. Single Postgres + the in-process status bus.
@@ -193,6 +201,82 @@ describe('GET /api/payments/[invoiceId]/stream', () => {
         searchParams: { token: b.receiptToken },
       }),
       { params: Promise.resolve({ invoiceId: a.invoiceId }) },
+    )
+    await assertRejectedStream(res)
+  })
+
+  // RECEIPT-3DS-TOKEN (2026-05-16) — session-fallback for the
+  // stream route. Mirrors the GET status route's anti-spoof
+  // contract per-consumer (round-3 WARN #5).
+  async function setupSessionAndOrder(emailPrefix: string): Promise<{
+    cookie: string
+    accountId: string
+    invoiceId: string
+  }> {
+    const email = `${emailPrefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`
+    await registerHandler(
+      buildRequest('/api/auth/register', {
+        body: { email, password: 'StrongPassword123', personalDataConsentAccepted: true },
+      }),
+    )
+    const acc = await getAccountByEmail(email)
+    await markAccountVerified(acc!.id)
+    const login = await loginHandler(
+      buildRequest('/api/auth/login', { body: { email, password: 'StrongPassword123' } }),
+    )
+    const cookie = extractSessionCookie(login.headers.get('Set-Cookie'))!
+    const invoiceId = `lc_sse_${Date.now()}${Math.floor(Math.random() * 1e6)}`
+    await getDbPool().query(
+      `insert into payment_orders (
+         invoice_id, amount_rub, currency, description, provider, status,
+         created_at, updated_at, customer_email, receipt_email, receipt,
+         metadata, receipt_token_hash
+       ) values (
+         $1, 1500, 'RUB', 'sse session seed', 'cloudpayments', 'pending',
+         now(), now(), $2, $2, '{}'::jsonb,
+         $3::jsonb, $4
+       )`,
+      [
+        invoiceId,
+        email,
+        JSON.stringify({ source: 'one_click', accountId: acc!.id }),
+        'a'.repeat(64),
+      ],
+    )
+    return { cookie, accountId: acc!.id, invoiceId }
+  }
+
+  it('opens stream with matching learner session (no token) → 200', async () => {
+    const { cookie, invoiceId } = await setupSessionAndOrder('sse-learner-ok')
+    const res = await streamHandler(
+      buildRequest(`/api/payments/${invoiceId}/stream`, { cookie }),
+      { params: Promise.resolve({ invoiceId }) },
+    )
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('text/event-stream')
+    try {
+      await res.body?.cancel()
+    } catch {
+      // already closed
+    }
+  })
+
+  it('refuses 401 on admin session matching metadata', async () => {
+    const { cookie, accountId, invoiceId } = await setupSessionAndOrder('sse-admin-401')
+    await grantAccountRole(accountId, 'admin', null)
+    const res = await streamHandler(
+      buildRequest(`/api/payments/${invoiceId}/stream`, { cookie }),
+      { params: Promise.resolve({ invoiceId }) },
+    )
+    await assertRejectedStream(res)
+  })
+
+  it('refuses 401 on teacher session matching metadata', async () => {
+    const { cookie, accountId, invoiceId } = await setupSessionAndOrder('sse-teacher-401')
+    await grantAccountRole(accountId, 'teacher', null)
+    const res = await streamHandler(
+      buildRequest(`/api/payments/${invoiceId}/stream`, { cookie }),
+      { params: Promise.resolve({ invoiceId }) },
     )
     await assertRejectedStream(res)
   })

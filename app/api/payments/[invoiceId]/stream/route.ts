@@ -1,4 +1,5 @@
 import { syncMockOrderState, toPublicOrder } from '@/lib/payments/provider'
+import { resolveSessionAccountIdForReceiptGate } from '@/lib/payments/receipt-gate-session'
 import {
   evaluateReceiptGate,
   extractReceiptToken,
@@ -78,7 +79,8 @@ export async function GET(request: Request, { params }: RouteParams) {
     })
   }
   const presented = extractReceiptToken(request)
-  const verdict = evaluateReceiptGate(fullOrder, presented)
+  const sessionAccountId = await resolveSessionAccountIdForReceiptGate(request)
+  const verdict = evaluateReceiptGate(fullOrder, presented, { sessionAccountId })
   if (!verdict.ok) {
     return new Response(JSON.stringify({ error: 'not_found', message: 'Payment not found.' }), {
       status: 401,

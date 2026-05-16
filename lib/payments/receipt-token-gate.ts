@@ -43,7 +43,7 @@ import type { PaymentOrder } from '@/lib/payments/types'
 //   always 64 chars), but be defensive.
 
 export type ReceiptGateVerdict =
-  | { ok: true; reason: 'token_match' }
+  | { ok: true; reason: 'token_match' | 'session_match' }
   | {
       ok: false
       reason:
@@ -71,32 +71,61 @@ export function extractReceiptToken(request: Request): string | null {
 }
 
 export function evaluateReceiptGate(
-  order: Pick<PaymentOrder, 'receiptTokenHash'>,
+  order: Pick<PaymentOrder, 'receiptTokenHash' | 'metadata'>,
   presentedToken: string | null,
+  options: { sessionAccountId?: string | null } = {},
 ): ReceiptGateVerdict {
   const storedHash = order.receiptTokenHash ?? null
 
   // Legacy row (pre-Phase-1.5): hash never minted. Phase 3 drops
   // the 24h grace — pre-wave orders are unreachable via these
-  // routes from now on.
+  // routes from now on. Session fallback does NOT bypass this:
+  // pre-Phase-1.5 orders intentionally have no auth proof beyond
+  // the hash that was never minted.
   if (!storedHash) {
     return { ok: false, reason: 'legacy_grace_expired' }
   }
 
-  // Hash present: require a matching token.
+  // Token-first path. A valid token wins over any session check —
+  // this preserves the token-only invariant for callers who haven't
+  // adopted session-fallback (e.g. anonymous /thank-you polls).
+  if (presentedToken) {
+    const incomingHash = hashToken(presentedToken)
+    if (incomingHash.length === storedHash.length) {
+      const a = Buffer.from(incomingHash, 'utf8')
+      const b = Buffer.from(storedHash, 'utf8')
+      if (timingSafeEqual(a, b)) {
+        return { ok: true, reason: 'token_match' }
+      }
+    }
+    // Token presented but didn't match — fall through to session
+    // check (the holder may have BOTH a token AND a session; the
+    // session is the redundancy).
+  }
+
+  // RECEIPT-3DS-TOKEN session fallback (2026-05-16).
+  // The 3DS-callback server-side redirect to /thank-you cannot
+  // carry the plain receipt token (it was returned ONCE at
+  // order-init time and only the hash is stored). For
+  // authenticated saved-card buyers, accept the session when its
+  // account.id matches order.metadata.accountId. The gate is dumb
+  // about which sessions are "trusted" — the consumer is
+  // responsible for NOT passing admin/teacher sessionAccountId
+  // (otherwise an admin could read any order via session-fallback,
+  // bypassing the /admin/payments surface's audit trail).
+  if (options.sessionAccountId) {
+    const meta = order.metadata as { accountId?: unknown } | null | undefined
+    const metaAccountId =
+      meta && typeof meta.accountId === 'string' && meta.accountId.length > 0
+        ? meta.accountId
+        : null
+    if (metaAccountId && metaAccountId === options.sessionAccountId) {
+      return { ok: true, reason: 'session_match' }
+    }
+  }
+
   if (!presentedToken) {
     return { ok: false, reason: 'token_required' }
   }
-
-  const incomingHash = hashToken(presentedToken)
-  if (incomingHash.length !== storedHash.length) {
-    return { ok: false, reason: 'token_mismatch' }
-  }
-
-  const a = Buffer.from(incomingHash, 'utf8')
-  const b = Buffer.from(storedHash, 'utf8')
-  if (!timingSafeEqual(a, b)) {
-    return { ok: false, reason: 'token_mismatch' }
-  }
-  return { ok: true, reason: 'token_match' }
+  return { ok: false, reason: 'token_mismatch' }
 }

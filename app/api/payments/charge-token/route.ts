@@ -145,6 +145,9 @@ export async function POST(request: Request) {
           ipAddress: ip === 'unknown' ? undefined : ip,
           userAgent: request.headers.get('user-agent') || undefined,
         }),
+        // RECEIPT-3DS-TOKEN: pin metadata.accountId so /thank-you's
+        // post-3DS poll can session-fallback the receipt-token gate.
+        accountId: session.account.id,
       })
     } catch (err) {
       // Synchronous failure inside the charge path — most likely a CP

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { resolveSessionAccountIdForReceiptGate } from '@/lib/payments/receipt-gate-session'
 import {
   evaluateReceiptGate,
   extractReceiptToken,
@@ -43,7 +44,8 @@ export async function GET(
   }
 
   const presented = extractReceiptToken(request)
-  const verdict = evaluateReceiptGate(order, presented)
+  const sessionAccountId = await resolveSessionAccountIdForReceiptGate(request)
+  const verdict = evaluateReceiptGate(order, presented, { sessionAccountId })
   if (!verdict.ok) {
     // Same body shape as not-found to avoid revealing whether an
     // invoiceId exists by the response code alone. 401 because
