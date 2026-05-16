@@ -169,6 +169,238 @@ describe('POST /api/checkout/package/[slug] — server-authored metadata', () =>
     )
     expect(r.status).toBe(404)
   })
+
+  // PKG-LEARNER-BUY LBL.0 — auth gate swap to
+  // requireLearnerArchetypeAndVerified + isLearnerArchetypeCandidate.
+  it('admin role → wrong_role 403', async () => {
+    const { grantAccountRole } = await import('@/lib/auth/accounts')
+    const learner = await reg('pr2-admin-403@example.com')
+    await grantAccountRole(learner.accountId, 'admin', null)
+    const pkg = await createPackage({
+      slug: 'pr2-admin-403-pkg',
+      titleRu: 'Admin reject',
+      durationMinutes: 60,
+      count: 5,
+      amountKopecks: 100_00,
+    })
+    const r = await checkoutPackageHandler(
+      buildRequest(`/api/checkout/package/${pkg.slug}`, {
+        cookie: learner.cookie,
+        body: {},
+      }),
+      { params: Promise.resolve({ slug: pkg.slug }) },
+    )
+    expect(r.status).toBe(403)
+    const body = await r.json()
+    expect(body.error).toBe('wrong_role')
+  })
+
+  it('teacher role → wrong_role 403', async () => {
+    const { grantAccountRole } = await import('@/lib/auth/accounts')
+    const learner = await reg('pr2-teacher-403@example.com')
+    await grantAccountRole(learner.accountId, 'teacher', null)
+    const pkg = await createPackage({
+      slug: 'pr2-teacher-403-pkg',
+      titleRu: 'Teacher reject',
+      durationMinutes: 60,
+      count: 5,
+      amountKopecks: 100_00,
+    })
+    const r = await checkoutPackageHandler(
+      buildRequest(`/api/checkout/package/${pkg.slug}`, {
+        cookie: learner.cookie,
+        body: {},
+      }),
+      { params: Promise.resolve({ slug: pkg.slug }) },
+    )
+    expect(r.status).toBe(403)
+    const body = await r.json()
+    expect(body.error).toBe('wrong_role')
+  })
+
+  it('deletion-grace (scheduled_purge_at set) → learner_target_unavailable 403', async () => {
+    const learner = await reg('pr2-purge-403@example.com')
+    await getDbPool().query(
+      `update accounts set scheduled_purge_at = now() + interval '30 days' where id = $1`,
+      [learner.accountId],
+    )
+    const pkg = await createPackage({
+      slug: 'pr2-purge-403-pkg',
+      titleRu: 'Purge reject',
+      durationMinutes: 60,
+      count: 5,
+      amountKopecks: 100_00,
+    })
+    const r = await checkoutPackageHandler(
+      buildRequest(`/api/checkout/package/${pkg.slug}`, {
+        cookie: learner.cookie,
+        body: {},
+      }),
+      { params: Promise.resolve({ slug: pkg.slug }) },
+    )
+    expect(r.status).toBe(403)
+    const body = await r.json()
+    expect(body.error).toBe('learner_target_unavailable')
+  })
+
+  // PKG-LEARNER-BUY LBL.0 — pending + active-owned gates.
+  it('pending order in last 15 min → 409 pending_package_in_flight', async () => {
+    const learner = await reg('pr2-pending-409@example.com')
+    const pkg = await createPackage({
+      slug: 'pr2-pending-409-pkg',
+      titleRu: 'Pending gate',
+      durationMinutes: 60,
+      count: 5,
+      amountKopecks: 100_00,
+    })
+    // Seed a pending order on a different invoice for the same
+    // (account, duration). Status='pending' so it counts.
+    await getDbPool().query(
+      `insert into payment_orders (
+         invoice_id, amount_rub, currency, description, provider, status,
+         created_at, updated_at, customer_email, receipt_email, receipt, metadata
+       ) values (
+         $1, 100, 'RUB', 'pending test', 'cloudpayments', 'pending',
+         now(), now(), $2, $2, '{}'::jsonb, $3::jsonb
+       )`,
+      [
+        freshInvoiceId('lc_pend'),
+        learner.email,
+        JSON.stringify({
+          accountId: learner.accountId,
+          packageSlug: pkg.slug,
+          packageDurationMinutes: 60,
+        }),
+      ],
+    )
+    const r = await checkoutPackageHandler(
+      buildRequest(`/api/checkout/package/${pkg.slug}`, {
+        cookie: learner.cookie,
+        body: {},
+      }),
+      { params: Promise.resolve({ slug: pkg.slug }) },
+    )
+    expect(r.status).toBe(409)
+    const body = await r.json()
+    expect(body.error).toBe('pending_package_in_flight')
+  })
+
+  it('already-owned active package of same duration → 409 already_owns_active_package', async () => {
+    const learner = await reg('pr2-owned-409@example.com')
+    const pkg = await createPackage({
+      slug: 'pr2-owned-409-pkg',
+      titleRu: 'Owned 60min',
+      durationMinutes: 60,
+      count: 5,
+      amountKopecks: 100_00,
+    })
+    // Seed an active 60-min purchase directly. Need a payment_orders
+    // row first (FK).
+    const seedInvoice = freshInvoiceId('lc_seedpkg')
+    await getDbPool().query(
+      `insert into payment_orders (
+         invoice_id, amount_rub, currency, description, provider, status,
+         created_at, updated_at, paid_at, customer_email, receipt_email,
+         receipt, metadata
+       ) values (
+         $1, 100, 'RUB', 'seed', 'mock', 'paid',
+         now(), now(), now(), $2, $2, '{}'::jsonb, '{}'::jsonb
+       )`,
+      [seedInvoice, learner.email],
+    )
+    const ownedId = (
+      await getDbPool().query(
+        `insert into package_purchases (
+           account_id, package_id, payment_order_id, amount_kopecks,
+           title_snapshot, duration_minutes, count_initial, expires_at
+         ) values ($1, $2, $3,
+                   $4, $5, $6, $7, now() + interval '30 days')
+         returning id`,
+        [
+          learner.accountId,
+          pkg.id,
+          seedInvoice,
+          pkg.amountKopecks,
+          pkg.titleRu,
+          pkg.durationMinutes,
+          pkg.count,
+        ],
+      )
+    ).rows[0].id
+    expect(typeof ownedId).toBe('string')
+    const r = await checkoutPackageHandler(
+      buildRequest(`/api/checkout/package/${pkg.slug}`, {
+        cookie: learner.cookie,
+        body: {},
+      }),
+      { params: Promise.resolve({ slug: pkg.slug }) },
+    )
+    expect(r.status).toBe(409)
+    const body = await r.json()
+    expect(body.error).toBe('already_owns_active_package')
+    expect(body.existingPurchaseId).toBe(ownedId)
+  })
+
+  // PKG-LEARNER-BUY LBL.0 — production widget intent. In mock mode,
+  // checkoutIntent is null; the cloudpayments path is exercised by
+  // flipping the env stub.
+  it('mock provider returns checkoutIntent=null', async () => {
+    const learner = await reg('pr2-intent-mock@example.com')
+    const pkg = await createPackage({
+      slug: 'pr2-intent-mock-pkg',
+      titleRu: 'Mock intent',
+      durationMinutes: 60,
+      count: 5,
+      amountKopecks: 100_00,
+    })
+    const r = await checkoutPackageHandler(
+      buildRequest(`/api/checkout/package/${pkg.slug}`, {
+        cookie: learner.cookie,
+        body: {},
+      }),
+      { params: Promise.resolve({ slug: pkg.slug }) },
+    )
+    expect(r.status).toBe(200)
+    const body = await r.json()
+    expect(body.checkoutIntent).toBeNull()
+    expect(body.receiptToken).toBeTruthy()
+  })
+
+  it('cloudpayments provider returns checkoutIntent with externalId == invoiceId', async () => {
+    vi.stubEnv('PAYMENTS_PROVIDER', 'cloudpayments')
+    vi.stubEnv('PAYMENTS_ALLOW_MOCK_CONFIRM', '')
+    // Minimal CP credentials so buildCloudPaymentsWidgetIntent has a
+    // publicId to put in the response. The widget never actually
+    // fires in tests.
+    vi.stubEnv('CLOUDPAYMENTS_PUBLIC_ID', 'pk_test_public')
+    vi.stubEnv('CLOUDPAYMENTS_API_SECRET', 'sk_test_secret')
+    try {
+      const learner = await reg('pr2-intent-cp@example.com')
+      const pkg = await createPackage({
+        slug: 'pr2-intent-cp-pkg',
+        titleRu: 'CP intent',
+        durationMinutes: 60,
+        count: 5,
+        amountKopecks: 100_00,
+      })
+      const r = await checkoutPackageHandler(
+        buildRequest(`/api/checkout/package/${pkg.slug}`, {
+          cookie: learner.cookie,
+          body: {},
+        }),
+        { params: Promise.resolve({ slug: pkg.slug }) },
+      )
+      expect(r.status).toBe(200)
+      const body = await r.json()
+      expect(body.checkoutIntent).toBeTruthy()
+      expect(body.checkoutIntent.externalId).toBe(body.invoiceId)
+      expect(body.checkoutIntent.description).toBe(`Пакет: ${pkg.titleRu}`)
+      expect(body.status).toBe('pending')
+    } finally {
+      vi.stubEnv('PAYMENTS_PROVIDER', 'mock')
+      vi.stubEnv('PAYMENTS_ALLOW_MOCK_CONFIRM', 'true')
+    }
+  })
 })
 
 describe('processPackageGrant — webhook ownership contract', () => {
