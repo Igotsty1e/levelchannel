@@ -56,6 +56,7 @@ import pg from 'pg'
 import { Resend } from 'resend'
 
 import { resolveSslConfig } from './_pg-ssl.mjs'
+import { recordProbeRun, PROBE_NAMES, VERDICT_KINDS } from './lib/probe-runs.mjs'
 
 const WINDOW_MINUTES = Number(process.env.WEBHOOK_FLOW_WINDOW_MINUTES || 60)
 const MIN_VOLUME = Number(process.env.WEBHOOK_FLOW_MIN_VOLUME || 5)
@@ -125,6 +126,9 @@ function decide(stats) {
   return decideVerdict(stats)
 }
 
+// ALERTS-OBS (2026-05-16) — return contract refactor (mirrors
+// auth-flow-alert.mjs change). Caller distinguishes config_missing /
+// send_failed / sent.
 async function sendAlertEmail({ stats, verdict }) {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) {
@@ -132,14 +136,14 @@ async function sendAlertEmail({ stats, verdict }) {
       stats,
       verdict,
     })
-    return
+    return { ok: false, error: 'missing_resend_api_key' }
   }
   if (!ALERT_EMAIL_TO) {
     logJson('warn', 'ALERT_EMAIL_TO not set; would have alerted', {
       stats,
       verdict,
     })
-    return
+    return { ok: false, error: 'missing_alert_email_to' }
   }
 
   const resend = new Resend(apiKey)
@@ -180,21 +184,32 @@ async function sendAlertEmail({ stats, verdict }) {
 </ul>
 <p>Diagnose: SSH, then <code>journalctl -u levelchannel --since "1 hour ago"</code>. Runbook: <code>OPERATIONS.md §10</code> + <code>§12</code>.</p>`
 
-  const result = await resend.emails.send({
-    from: EMAIL_FROM,
-    to: [ALERT_EMAIL_TO],
-    subject,
-    text,
-    html,
-  })
+  // ALERTS-OBS wave-mode WARN #1 closure (2026-05-17): wrap Resend
+  // call to convert transport exceptions into the return-contract
+  // shape (mirrors auth-flow-alert.mjs).
+  let result
+  try {
+    result = await resend.emails.send({
+      from: EMAIL_FROM,
+      to: [ALERT_EMAIL_TO],
+      subject,
+      text,
+      html,
+    })
+  } catch (transportErr) {
+    const detail = transportErr instanceof Error ? transportErr.message : String(transportErr)
+    logJson('error', 'resend send threw', { error: detail, stats })
+    return { ok: false, error: 'resend_send_failed', detail }
+  }
   if (result.error) {
     logJson('error', 'resend send failed', {
       error: result.error.message,
       stats,
     })
-    return
+    return { ok: false, error: 'resend_send_failed', detail: result.error.message }
   }
   logJson('info', 'alert email sent', { to: ALERT_EMAIL_TO, stats, verdict })
+  return { ok: true, emailId: result.data?.id ?? null }
 }
 
 async function main() {
@@ -207,13 +222,92 @@ async function main() {
     max: 1,
     ssl: resolveSslConfig(process.env.DATABASE_URL),
   })
+  // ALERTS-OBS (2026-05-16) — capture env snapshot at the top of
+  // the run.
+  const capturedThresholds = {
+    WEBHOOK_FLOW_WINDOW_MINUTES: WINDOW_MINUTES,
+    WEBHOOK_FLOW_MIN_VOLUME: MIN_VOLUME,
+    WEBHOOK_FLOW_TERMINATED_RATIO: TERMINATED_RATIO_FLOOR,
+  }
+  const recipientEmailSnapshot = ALERT_EMAIL_TO || null
   try {
     const stats = await readWindowStats(pool)
     const verdict = decide(stats)
     logJson('info', 'verdict', { stats, verdict })
-    if (verdict.kind === 'alert') {
-      await sendAlertEmail({ stats, verdict })
+    // ALERTS-OBS round-3 WARN #4 closure: stats.derived carries
+    // verdict-side fields. For low_volume_skip / all_resolved
+    // decideVerdict returns only { kind }, so we backfill terminated
+    // and resolved from raw counters; ratio stays null (no signal —
+    // the alert path didn't run).
+    const terminated = stats.paidWebhooks + stats.failWebhooks
+    const resolved = terminated + stats.cancelled
+    const derived = {
+      ratio: typeof verdict.ratio === 'number' ? verdict.ratio : null,
+      terminated,
+      resolved,
     }
+    const enrichedStats = { ...stats, derived, thresholds: capturedThresholds }
+    if (verdict.kind === 'low_volume_skip') {
+      await recordProbeRun(pool, {
+        probeName: PROBE_NAMES.WEBHOOK_FLOW,
+        verdictKind: VERDICT_KINDS.LOW_VOLUME_SKIP,
+        stats: enrichedStats,
+      })
+      return
+    }
+    if (verdict.kind === 'all_resolved') {
+      await recordProbeRun(pool, {
+        probeName: PROBE_NAMES.WEBHOOK_FLOW,
+        verdictKind: VERDICT_KINDS.ALL_RESOLVED,
+        stats: enrichedStats,
+      })
+      return
+    }
+    if (verdict.kind === 'ok') {
+      await recordProbeRun(pool, {
+        probeName: PROBE_NAMES.WEBHOOK_FLOW,
+        verdictKind: VERDICT_KINDS.OK,
+        stats: enrichedStats,
+      })
+      return
+    }
+    // verdict.kind === 'alert' (webhook-flow has NO dedup state by
+    // design, so every alert run sends and writes a probe row).
+    const sendResult = await sendAlertEmail({ stats, verdict })
+    if (sendResult.ok) {
+      await recordProbeRun(pool, {
+        probeName: PROBE_NAMES.WEBHOOK_FLOW,
+        verdictKind: VERDICT_KINDS.ALERT_SENT,
+        alertSent: true,
+        recipientEmail: recipientEmailSnapshot,
+        alertEmailId: sendResult.emailId,
+        stats: enrichedStats,
+      })
+    } else {
+      const isConfigMissing =
+        sendResult.error === 'missing_resend_api_key' ||
+        sendResult.error === 'missing_alert_email_to'
+      await recordProbeRun(pool, {
+        probeName: PROBE_NAMES.WEBHOOK_FLOW,
+        verdictKind: isConfigMissing
+          ? VERDICT_KINDS.CONFIG_MISSING
+          : VERDICT_KINDS.ALERT_SEND_FAILED,
+        alertSent: false,
+        recipientEmail: recipientEmailSnapshot,
+        stats: enrichedStats,
+        errorMessage: sendResult.detail ?? sendResult.error,
+      })
+    }
+  } catch (err) {
+    // ALERTS-OBS round-3 WARN #5 closure: top-level catch writes
+    // an `error` verdict row BEFORE re-throwing.
+    await recordProbeRun(pool, {
+      probeName: PROBE_NAMES.WEBHOOK_FLOW,
+      verdictKind: VERDICT_KINDS.ERROR,
+      errorMessage: err instanceof Error ? err.message : String(err),
+      stats: { thresholds: capturedThresholds },
+    })
+    throw err
   } finally {
     await pool.end()
   }

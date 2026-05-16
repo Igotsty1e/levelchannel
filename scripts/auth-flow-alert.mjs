@@ -56,6 +56,7 @@ import pg from 'pg'
 import { Resend } from 'resend'
 
 import { resolveSslConfig } from './_pg-ssl.mjs'
+import { recordProbeRun, PROBE_NAMES, VERDICT_KINDS } from './lib/probe-runs.mjs'
 
 const WINDOW_MINUTES = Number(process.env.AUTH_FLOW_WINDOW_MINUTES || 60)
 const MAX_PER_IP = Number(process.env.AUTH_FLOW_MAX_PER_IP || 50)
@@ -221,6 +222,13 @@ export function shouldSuppress({
   return nowMs - prevState.sentAtMs < windowMs
 }
 
+// ALERTS-OBS (2026-05-16) — return contract refactor.
+// Caller distinguishes config_missing / send_failed / sent so it can
+// (a) advance dedup state ONLY on a real send and (b) record the
+// right verdict_kind in probe_runs. Previously this function returned
+// undefined on every path, so the caller always advanced dedup
+// state — a real bug that silently masked retries on missing-key
+// or Resend-outage failures (paranoia round-1 BLOCKER #5).
 async function sendAlertEmail({ stats, verdict }) {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) {
@@ -228,14 +236,14 @@ async function sendAlertEmail({ stats, verdict }) {
       stats,
       verdict,
     })
-    return
+    return { ok: false, error: 'missing_resend_api_key' }
   }
   if (!ALERT_EMAIL_TO) {
     logJson('warn', 'ALERT_EMAIL_TO not set; would have alerted', {
       stats,
       verdict,
     })
-    return
+    return { ok: false, error: 'missing_alert_email_to' }
   }
 
   const resend = new Resend(apiKey)
@@ -293,21 +301,34 @@ async function sendAlertEmail({ stats, verdict }) {
 <pre>${emailLines}</pre>
 <p>Diagnose: SSH, then <code>psql</code> against <code>auth_audit_events</code>. See plain-text version of this email for full commands.</p>`
 
-  const result = await resend.emails.send({
-    from: EMAIL_FROM,
-    to: [ALERT_EMAIL_TO],
-    subject,
-    text,
-    html,
-  })
+  // ALERTS-OBS wave-mode WARN #1 closure (2026-05-17): wrap the
+  // Resend SDK call so transport-level exceptions (network error,
+  // DNS, TLS, etc.) yield `alert_send_failed` via the return
+  // contract instead of bubbling to the probe's top-level catch as
+  // a generic `error` verdict.
+  let result
+  try {
+    result = await resend.emails.send({
+      from: EMAIL_FROM,
+      to: [ALERT_EMAIL_TO],
+      subject,
+      text,
+      html,
+    })
+  } catch (transportErr) {
+    const detail = transportErr instanceof Error ? transportErr.message : String(transportErr)
+    logJson('error', 'resend send threw', { error: detail, stats })
+    return { ok: false, error: 'resend_send_failed', detail }
+  }
   if (result.error) {
     logJson('error', 'resend send failed', {
       error: result.error.message,
       stats,
     })
-    return
+    return { ok: false, error: 'resend_send_failed', detail: result.error.message }
   }
   logJson('info', 'alert email sent', { to: ALERT_EMAIL_TO, stats, verdict })
+  return { ok: true, emailId: result.data?.id ?? null }
 }
 
 async function main() {
@@ -320,39 +341,113 @@ async function main() {
     max: 1,
     ssl: resolveSslConfig(process.env.DATABASE_URL),
   })
+  // ALERTS-OBS (2026-05-16) — capture env-read snapshot at the top
+  // of the run so the probe_runs row carries thresholds AS THEY
+  // WERE on this tick, not what the admin process happens to
+  // remember (paranoia round-1 BLOCKER #8 closure).
+  const capturedThresholds = {
+    AUTH_FLOW_WINDOW_MINUTES: WINDOW_MINUTES,
+    AUTH_FLOW_MAX_PER_IP: MAX_PER_IP,
+    AUTH_FLOW_MAX_PER_EMAIL_HASH: MAX_PER_EMAIL_HASH,
+    AUTH_FLOW_DEDUP_WINDOW_MS: DEDUP_WINDOW_MS,
+  }
+  const recipientEmailSnapshot = ALERT_EMAIL_TO || null
   try {
     const stats = await readWindowStats(pool)
     const verdict = decideVerdict(stats)
     logJson('info', 'verdict', { stats, verdict })
-    if (verdict.kind === 'alert') {
-      // Dedup: don't re-alert on the same offender set within the
-      // dedup window. Same set + counts = same fingerprint = skip.
-      // First-time fire OR escalation (counts grew on existing
-      // offenders) OR new offender = different fingerprint = fire.
-      const fingerprint = offenderFingerprint(stats)
-      const prevState = await readDedupState(STATE_FILE)
-      const nowMs = Date.now()
-      if (
-        shouldSuppress({
-          fingerprint,
-          prevState,
-          nowMs,
-          windowMs: DEDUP_WINDOW_MS,
-        })
-      ) {
-        logJson('info', 'alert suppressed by dedup', {
-          fingerprint,
-          prevSentAt: new Date(prevState.sentAtMs).toISOString(),
-          dedupWindowMs: DEDUP_WINDOW_MS,
-        })
-      } else {
-        await sendAlertEmail({ stats, verdict })
-        await writeDedupState(STATE_FILE, {
-          fingerprint,
-          sentAtMs: nowMs,
-        })
-      }
+    const enrichedStats = { ...stats, thresholds: capturedThresholds }
+    if (verdict.kind === 'no_failures') {
+      await recordProbeRun(pool, {
+        probeName: PROBE_NAMES.AUTH_FLOW,
+        verdictKind: VERDICT_KINDS.NO_FAILURES,
+        stats: enrichedStats,
+      })
+      return
     }
+    if (verdict.kind === 'ok') {
+      await recordProbeRun(pool, {
+        probeName: PROBE_NAMES.AUTH_FLOW,
+        verdictKind: VERDICT_KINDS.WITHIN_THRESHOLDS,
+        stats: enrichedStats,
+      })
+      return
+    }
+    // verdict.kind === 'alert'
+    // Dedup: don't re-alert on the same offender set within the
+    // dedup window. Same set + counts = same fingerprint = skip.
+    // First-time fire OR escalation (counts grew on existing
+    // offenders) OR new offender = different fingerprint = fire.
+    const fingerprint = offenderFingerprint(stats)
+    const prevState = await readDedupState(STATE_FILE)
+    const nowMs = Date.now()
+    if (
+      shouldSuppress({
+        fingerprint,
+        prevState,
+        nowMs,
+        windowMs: DEDUP_WINDOW_MS,
+      })
+    ) {
+      logJson('info', 'alert suppressed by dedup', {
+        fingerprint,
+        prevSentAt: new Date(prevState.sentAtMs).toISOString(),
+        dedupWindowMs: DEDUP_WINDOW_MS,
+      })
+      await recordProbeRun(pool, {
+        probeName: PROBE_NAMES.AUTH_FLOW,
+        verdictKind: VERDICT_KINDS.DEDUP_SKIP,
+        fingerprint,
+        stats: enrichedStats,
+      })
+      return
+    }
+    const sendResult = await sendAlertEmail({ stats, verdict })
+    if (sendResult.ok) {
+      // ALERTS-OBS — advance dedup state ONLY on real send success
+      // (paranoia round-1 BLOCKER #5: previously this advanced on
+      // missing-key / Resend-outage failures too, silently masking
+      // retries).
+      await writeDedupState(STATE_FILE, {
+        fingerprint,
+        sentAtMs: nowMs,
+      })
+      await recordProbeRun(pool, {
+        probeName: PROBE_NAMES.AUTH_FLOW,
+        verdictKind: VERDICT_KINDS.ALERT_SENT,
+        alertSent: true,
+        recipientEmail: recipientEmailSnapshot,
+        alertEmailId: sendResult.emailId,
+        fingerprint,
+        stats: enrichedStats,
+      })
+    } else {
+      const isConfigMissing =
+        sendResult.error === 'missing_resend_api_key' ||
+        sendResult.error === 'missing_alert_email_to'
+      await recordProbeRun(pool, {
+        probeName: PROBE_NAMES.AUTH_FLOW,
+        verdictKind: isConfigMissing
+          ? VERDICT_KINDS.CONFIG_MISSING
+          : VERDICT_KINDS.ALERT_SEND_FAILED,
+        alertSent: false,
+        recipientEmail: recipientEmailSnapshot,
+        fingerprint,
+        stats: enrichedStats,
+        errorMessage: sendResult.detail ?? sendResult.error,
+      })
+    }
+  } catch (err) {
+    // ALERTS-OBS round-3 WARN #5 closure: top-level catch writes
+    // an `error` verdict row BEFORE re-throwing, so the admin page
+    // shows the failure instead of stale "last run" data forever.
+    await recordProbeRun(pool, {
+      probeName: PROBE_NAMES.AUTH_FLOW,
+      verdictKind: VERDICT_KINDS.ERROR,
+      errorMessage: err instanceof Error ? err.message : String(err),
+      stats: { thresholds: capturedThresholds },
+    })
+    throw err
   } finally {
     await pool.end()
   }
