@@ -268,6 +268,16 @@ async function main() {
         `delete from rate_limit_buckets
           where reset_at < now() - interval '1 hour'`,
       ),
+      // ALERTS-OBS (2026-05-16) — probe_runs is the observability
+      // sink for the three systemd alert probes. 90-day retention
+      // covers a full quarterly retro window; volume ~6 rows/h × 24
+      // × 90 = ~13k rows max.
+      deleteWindow(
+        pool,
+        'probe_runs',
+        `delete from probe_runs
+          where ran_at < now() - interval '90 days'`,
+      ),
       // Wave 1.2 webhook delivery dedup. 90-day retention matches the
       // janitor doc on `purgeStaleWebhookDeliveries` in
       // lib/payments/webhook-dedup.ts — long enough to debug a real

@@ -43,6 +43,7 @@ import pg from 'pg'
 import { Resend } from 'resend'
 
 import { resolveSslConfig } from './_pg-ssl.mjs'
+import { recordProbeRun, PROBE_NAMES, VERDICT_KINDS } from './lib/probe-runs.mjs'
 
 const THRESHOLD = Number(process.env.CALENDAR_PATHOLOGY_THRESHOLD || 3)
 const REPORT_LIMIT = Math.max(
@@ -169,13 +170,32 @@ async function main() {
     ssl: resolveSslConfig(process.env.DATABASE_URL),
   })
 
+  // ALERTS-OBS (2026-05-16) — capture env snapshot at the top of
+  // the run.
+  const capturedThresholds = {
+    CALENDAR_PATHOLOGY_THRESHOLD: THRESHOLD,
+    CALENDAR_PATHOLOGY_REPORT_LIMIT: REPORT_LIMIT,
+    CALENDAR_PATHOLOGY_DEDUP_WINDOW_MS: DEDUP_WINDOW_MS,
+  }
+  const recipientEmailSnapshot = ALERT_EMAIL_TO || null
+
   try {
     const offenders = await readOffenders(pool)
     if (offenders.length === 0) {
       logJson('info', 'no offenders above threshold', {
         threshold: THRESHOLD,
       })
+      await recordProbeRun(pool, {
+        probeName: PROBE_NAMES.CALENDAR_PATHOLOGY,
+        verdictKind: VERDICT_KINDS.NO_OFFENDERS,
+        stats: { offenderCount: 0, thresholds: capturedThresholds },
+      })
       return
+    }
+
+    const enrichedStats = {
+      offenderCount: offenders.length,
+      thresholds: capturedThresholds,
     }
 
     const fp = fingerprint(offenders)
@@ -191,6 +211,12 @@ async function main() {
         fingerprint: fp,
         windowMs: DEDUP_WINDOW_MS,
       })
+      await recordProbeRun(pool, {
+        probeName: PROBE_NAMES.CALENDAR_PATHOLOGY,
+        verdictKind: VERDICT_KINDS.DEDUP_SKIP,
+        fingerprint: fp,
+        stats: enrichedStats,
+      })
       return
     }
 
@@ -203,6 +229,14 @@ async function main() {
       // immediately, not wait out the 24h dedup window.
       logJson('warn', 'alert would fire but email destination/key not set; state NOT advanced', {
         offenderCount: offenders.length,
+      })
+      await recordProbeRun(pool, {
+        probeName: PROBE_NAMES.CALENDAR_PATHOLOGY,
+        verdictKind: VERDICT_KINDS.CONFIG_MISSING,
+        recipientEmail: recipientEmailSnapshot,
+        fingerprint: fp,
+        stats: enrichedStats,
+        errorMessage: !ALERT_EMAIL_TO ? 'missing_alert_email_to' : 'missing_resend_api_key',
       })
       return
     }
@@ -222,6 +256,14 @@ async function main() {
       logJson('warn', 'resend email failed; state NOT advanced', {
         error: String(sent.error),
       })
+      await recordProbeRun(pool, {
+        probeName: PROBE_NAMES.CALENDAR_PATHOLOGY,
+        verdictKind: VERDICT_KINDS.ALERT_SEND_FAILED,
+        recipientEmail: recipientEmailSnapshot,
+        fingerprint: fp,
+        stats: enrichedStats,
+        errorMessage: String(sent.error),
+      })
       return
     }
 
@@ -231,6 +273,25 @@ async function main() {
       emailId: sent.data?.id ?? null,
     })
     await writeState({ lastAlertAt: now, lastFingerprint: fp })
+    await recordProbeRun(pool, {
+      probeName: PROBE_NAMES.CALENDAR_PATHOLOGY,
+      verdictKind: VERDICT_KINDS.ALERT_SENT,
+      alertSent: true,
+      recipientEmail: recipientEmailSnapshot,
+      alertEmailId: sent.data?.id ?? null,
+      fingerprint: fp,
+      stats: enrichedStats,
+    })
+  } catch (err) {
+    // ALERTS-OBS round-3 WARN #5 closure: top-level catch writes
+    // an `error` verdict row BEFORE re-throwing.
+    await recordProbeRun(pool, {
+      probeName: PROBE_NAMES.CALENDAR_PATHOLOGY,
+      verdictKind: VERDICT_KINDS.ERROR,
+      errorMessage: err instanceof Error ? err.message : String(err),
+      stats: { thresholds: capturedThresholds },
+    })
+    throw err
   } finally {
     await pool.end()
   }
