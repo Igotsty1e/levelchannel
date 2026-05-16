@@ -70,6 +70,11 @@ export const PAYMENT_AUDIT_EVENT_TYPES = [
   'payment.grant.retried-by-admin',
   'payment.grant.account-attached-by-admin',
   'payment.grant.resolved-manually-by-admin',
+  // PKG-ADMIN-GRANT (2026-05-16) — operator-driven non-money grant.
+  // Migration 0052 extends the CHECK constraint. Best-effort audit;
+  // load-bearing record is the package_purchases row +
+  // payment_orders.description (reason, NOT NULL).
+  'package.grant.operator-granted',
 ] as const
 
 export type PaymentAuditEventType = (typeof PAYMENT_AUDIT_EVENT_TYPES)[number]
@@ -92,6 +97,11 @@ export type PaymentAuditActor =
   | 'admin:retry-grant'
   | 'admin:attach-account'
   | 'admin:resolved'
+  // PKG-ADMIN-GRANT (2026-05-16) — operator-driven non-money grant
+  // route at /api/admin/packages/[id]/grant. Distinct from
+  // 'admin:retry-grant' (which re-runs an existing paid order's grant)
+  // so audit reads can grep these apart from money-flow recovery.
+  | 'admin:grant'
 
 // Money helper moved to lib/payments/money.ts (Codex 2026-05-10
 // CONSOLIDATE — money helpers belong with payments, not audit).

@@ -69,7 +69,41 @@ async function ensureSchema() {
   await initPromise
 }
 
+// PKG-ADMIN-GRANT (2026-05-16) — explicit accept-list, no coercion.
+//
+// Previous shape coerced unknown `provider` → 'mock' and unknown
+// `status` → 'pending', which historically hid '3ds_required' rows
+// as 'pending' and would silently mis-classify a future
+// 'admin_grant' row as 'mock' + 'pending'. Loud-fail on unknown is
+// the operational-safe behaviour — a row not matching the union is
+// data corruption, not a recoverable condition.
+const KNOWN_PROVIDERS = new Set<PaymentOrder['provider']>([
+  'cloudpayments',
+  'mock',
+  'admin_grant',
+])
+const KNOWN_STATUSES = new Set<PaymentOrder['status']>([
+  'pending',
+  '3ds_required',
+  'paid',
+  'failed',
+  'cancelled',
+  'granted',
+])
+
 function mapRowToOrder(row: Record<string, unknown>): PaymentOrder {
+  const provider = String(row.provider) as PaymentOrder['provider']
+  if (!KNOWN_PROVIDERS.has(provider)) {
+    throw new Error(
+      `Unexpected provider in payment_orders row: ${String(row.provider)}`,
+    )
+  }
+  const status = String(row.status) as PaymentOrder['status']
+  if (!KNOWN_STATUSES.has(status)) {
+    throw new Error(
+      `Unexpected status in payment_orders row: ${String(row.status)}`,
+    )
+  }
   return {
     invoiceId: String(row.invoice_id),
     amountRub: Number(row.amount_rub),
@@ -82,13 +116,8 @@ function mapRowToOrder(row: Record<string, unknown>): PaymentOrder {
       return 'RUB'
     })(),
     description: String(row.description),
-    provider: row.provider === 'cloudpayments' ? 'cloudpayments' : 'mock',
-    status:
-      row.status === 'paid' ||
-      row.status === 'failed' ||
-      row.status === 'cancelled'
-        ? row.status
-        : 'pending',
+    provider,
+    status,
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
     paidAt: row.paid_at ? new Date(String(row.paid_at)).toISOString() : undefined,
@@ -109,6 +138,8 @@ function mapRowToOrder(row: Record<string, unknown>): PaymentOrder {
       row.customer_comment == null ? null : String(row.customer_comment),
     receiptTokenHash:
       row.receipt_token_hash == null ? null : String(row.receipt_token_hash),
+    grantedByOperatorId:
+      row.granted_by_operator_id == null ? null : String(row.granted_by_operator_id),
   }
 }
 
@@ -134,6 +165,7 @@ function toInsertValues(order: PaymentOrder) {
     JSON.stringify(order.events),
     order.customerComment ?? null,
     order.receiptTokenHash ?? null,
+    order.grantedByOperatorId ?? null,
   ]
 }
 
@@ -178,9 +210,10 @@ export async function createOrderPostgres(order: PaymentOrder) {
       mock_auto_confirm_at,
       events,
       customer_comment,
-      receipt_token_hash
+      receipt_token_hash,
+      granted_by_operator_id
     ) values (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18::jsonb,$19,$20
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18::jsonb,$19,$20,$21::uuid
     )`,
     toInsertValues(order),
   )
@@ -232,7 +265,8 @@ export async function updateOrderPostgres(
         mock_auto_confirm_at = $17,
         events = $18::jsonb,
         customer_comment = $19,
-        receipt_token_hash = $20
+        receipt_token_hash = $20,
+        granted_by_operator_id = $21::uuid
       where invoice_id = $1`,
       toInsertValues(next),
     )

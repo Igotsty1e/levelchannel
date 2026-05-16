@@ -9,13 +9,13 @@ import {
 function fakeOrder(args: {
   hash?: string | null
   metaAccountId?: string | null
-}): {
-  receiptTokenHash: string | null | undefined
-  metadata: Record<string, unknown> | null
-} {
+}): Pick<
+  import('@/lib/payments/types').PaymentOrder,
+  'receiptTokenHash' | 'metadata'
+> {
   return {
     receiptTokenHash: args.hash ?? null,
-    metadata: args.metaAccountId ? { accountId: args.metaAccountId } : null,
+    metadata: args.metaAccountId ? { accountId: args.metaAccountId } : undefined,
   }
 }
 
