@@ -113,6 +113,115 @@ describe('POST /api/admin/settings/alerts/[probe]/test-send', () => {
     expect(json.error).toBe('reason_required')
   })
 
+  it('admin + valid env + Resend mock send failure → 502 + probe_runs row with verdict_kind=test_send_failed', async () => {
+    // Wave-mode WARN #2 closure: cover the 502 send_failed path.
+    // We can't easily make a real Resend call fail in test, so we
+    // poison the API key to a clearly-invalid value and ALERT_EMAIL_TO
+    // to a synthesized address. Resend will return error in the
+    // response body (NOT throw), which we map to 502.
+    const { cookie, accountId } = await makeAdmin('admin-send-fail')
+    const prevAlertEmailTo = process.env.ALERT_EMAIL_TO
+    const prevResendKey = process.env.RESEND_API_KEY
+    process.env.ALERT_EMAIL_TO = 'ops-test@example.com'
+    process.env.RESEND_API_KEY = 're_invalid_key_for_test'
+    try {
+      const res = await testSendHandler(
+        buildRequest('/api/admin/settings/alerts/calendar-pathology/test-send', {
+          cookie,
+          body: { confirmReason: 'verifying transport failure path' },
+          headers: { 'Idempotency-Key': `test-${Date.now()}-send-fail` },
+        }),
+        { params: Promise.resolve({ probe: 'calendar-pathology' }) },
+      )
+      expect(res.status).toBe(502)
+      const json = await res.json()
+      expect(json.error).toBe('send_failed')
+      const probeRow = await getDbPool().query(
+        `select verdict_kind, alert_sent, is_test, initiator_account_id, error_message
+           from probe_runs
+          where probe_name = 'calendar-pathology' and is_test = true
+          order by ran_at desc limit 1`,
+      )
+      expect(probeRow.rows.length).toBe(1)
+      expect(probeRow.rows[0].verdict_kind).toBe('test_send_failed')
+      expect(probeRow.rows[0].alert_sent).toBe(false)
+      expect(probeRow.rows[0].initiator_account_id).toBe(accountId)
+      expect(probeRow.rows[0].error_message).toBeTruthy()
+    } finally {
+      if (prevAlertEmailTo !== undefined) process.env.ALERT_EMAIL_TO = prevAlertEmailTo
+      else delete process.env.ALERT_EMAIL_TO
+      if (prevResendKey !== undefined) process.env.RESEND_API_KEY = prevResendKey
+      else delete process.env.RESEND_API_KEY
+    }
+  })
+
+  it('admin + missing probe_runs table → 503 migration_pending, no Resend call, no probe_runs row', async () => {
+    // Wave-mode WARN #2 closure: cover the 503 migration-pending
+    // path. Simulate by dropping the table inside the test (the
+    // afterEach recreates via truncate, but we re-migrate via the
+    // afterEach is OK since drop+migrate restores it).
+    const { cookie } = await makeAdmin('admin-migration-pending')
+    const pool = getDbPool()
+    await pool.query(`drop table probe_runs cascade`)
+    const prevAlertEmailTo = process.env.ALERT_EMAIL_TO
+    const prevResendKey = process.env.RESEND_API_KEY
+    process.env.ALERT_EMAIL_TO = 'ops-test@example.com'
+    process.env.RESEND_API_KEY = 're_should_not_be_used'
+    try {
+      const res = await testSendHandler(
+        buildRequest('/api/admin/settings/alerts/auth-flow/test-send', {
+          cookie,
+          body: { confirmReason: 'verifying preflight 503' },
+          headers: { 'Idempotency-Key': `test-${Date.now()}-pending` },
+        }),
+        { params: Promise.resolve({ probe: 'auth-flow' }) },
+      )
+      expect(res.status).toBe(503)
+      const json = await res.json()
+      expect(json.error).toBe('migration_pending')
+    } finally {
+      // Restore the table so subsequent tests (and afterEach) work.
+      await pool.query(`
+        create table if not exists probe_runs (
+          id uuid primary key default gen_random_uuid(),
+          probe_name text not null check (probe_name in (
+            'auth-flow', 'calendar-pathology', 'webhook-flow'
+          )),
+          ran_at timestamptz not null default now(),
+          verdict_kind text not null check (verdict_kind in (
+            'alert_sent', 'alert_send_failed', 'dedup_skip',
+            'no_failures', 'within_thresholds', 'no_offenders',
+            'low_volume_skip', 'all_resolved', 'ok',
+            'config_missing', 'error',
+            'test_send_succeeded', 'test_send_failed'
+          )),
+          alert_sent boolean not null default false,
+          recipient_email text null,
+          alert_email_id text null,
+          fingerprint text null,
+          stats jsonb null,
+          error_message text null,
+          is_test boolean not null default false,
+          initiator_account_id uuid null references accounts(id) on delete restrict,
+          created_at timestamptz not null default now()
+        )
+      `)
+      await pool.query(`
+        create index if not exists probe_runs_real_runs_idx
+          on probe_runs (probe_name, ran_at desc) where is_test = false
+      `)
+      await pool.query(`
+        create index if not exists probe_runs_real_alerts_idx
+          on probe_runs (probe_name, ran_at desc)
+          where alert_sent = true and is_test = false
+      `)
+      if (prevAlertEmailTo !== undefined) process.env.ALERT_EMAIL_TO = prevAlertEmailTo
+      else delete process.env.ALERT_EMAIL_TO
+      if (prevResendKey !== undefined) process.env.RESEND_API_KEY = prevResendKey
+      else delete process.env.RESEND_API_KEY
+    }
+  })
+
   it('admin + missing ALERT_EMAIL_TO → 422 + probe_runs row with verdict_kind=test_send_failed', async () => {
     const { cookie, accountId } = await makeAdmin('admin-missing-recipient')
     const prevAlertEmailTo = process.env.ALERT_EMAIL_TO

@@ -301,13 +301,25 @@ async function sendAlertEmail({ stats, verdict }) {
 <pre>${emailLines}</pre>
 <p>Diagnose: SSH, then <code>psql</code> against <code>auth_audit_events</code>. See plain-text version of this email for full commands.</p>`
 
-  const result = await resend.emails.send({
-    from: EMAIL_FROM,
-    to: [ALERT_EMAIL_TO],
-    subject,
-    text,
-    html,
-  })
+  // ALERTS-OBS wave-mode WARN #1 closure (2026-05-17): wrap the
+  // Resend SDK call so transport-level exceptions (network error,
+  // DNS, TLS, etc.) yield `alert_send_failed` via the return
+  // contract instead of bubbling to the probe's top-level catch as
+  // a generic `error` verdict.
+  let result
+  try {
+    result = await resend.emails.send({
+      from: EMAIL_FROM,
+      to: [ALERT_EMAIL_TO],
+      subject,
+      text,
+      html,
+    })
+  } catch (transportErr) {
+    const detail = transportErr instanceof Error ? transportErr.message : String(transportErr)
+    logJson('error', 'resend send threw', { error: detail, stats })
+    return { ok: false, error: 'resend_send_failed', detail }
+  }
   if (result.error) {
     logJson('error', 'resend send failed', {
       error: result.error.message,

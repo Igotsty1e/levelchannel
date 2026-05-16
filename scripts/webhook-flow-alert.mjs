@@ -184,13 +184,23 @@ async function sendAlertEmail({ stats, verdict }) {
 </ul>
 <p>Diagnose: SSH, then <code>journalctl -u levelchannel --since "1 hour ago"</code>. Runbook: <code>OPERATIONS.md §10</code> + <code>§12</code>.</p>`
 
-  const result = await resend.emails.send({
-    from: EMAIL_FROM,
-    to: [ALERT_EMAIL_TO],
-    subject,
-    text,
-    html,
-  })
+  // ALERTS-OBS wave-mode WARN #1 closure (2026-05-17): wrap Resend
+  // call to convert transport exceptions into the return-contract
+  // shape (mirrors auth-flow-alert.mjs).
+  let result
+  try {
+    result = await resend.emails.send({
+      from: EMAIL_FROM,
+      to: [ALERT_EMAIL_TO],
+      subject,
+      text,
+      html,
+    })
+  } catch (transportErr) {
+    const detail = transportErr instanceof Error ? transportErr.message : String(transportErr)
+    logJson('error', 'resend send threw', { error: detail, stats })
+    return { ok: false, error: 'resend_send_failed', detail }
+  }
   if (result.error) {
     logJson('error', 'resend send failed', {
       error: result.error.message,

@@ -242,12 +242,31 @@ async function main() {
     }
 
     const resend = new Resend(process.env.RESEND_API_KEY)
-    const sent = await resend.emails.send({
-      from: EMAIL_FROM,
-      to: [ALERT_EMAIL_TO],
-      subject,
-      text,
-    })
+    // ALERTS-OBS wave-mode WARN #1 closure (2026-05-17): wrap Resend
+    // call so transport exceptions (network/DNS/TLS) get classified
+    // as alert_send_failed too, not bubbled to the top-level `error`
+    // catch.
+    let sent
+    try {
+      sent = await resend.emails.send({
+        from: EMAIL_FROM,
+        to: [ALERT_EMAIL_TO],
+        subject,
+        text,
+      })
+    } catch (transportErr) {
+      const detail = transportErr instanceof Error ? transportErr.message : String(transportErr)
+      logJson('warn', 'resend send threw; state NOT advanced', { error: detail })
+      await recordProbeRun(pool, {
+        probeName: PROBE_NAMES.CALENDAR_PATHOLOGY,
+        verdictKind: VERDICT_KINDS.ALERT_SEND_FAILED,
+        recipientEmail: recipientEmailSnapshot,
+        fingerprint: fp,
+        stats: enrichedStats,
+        errorMessage: detail,
+      })
+      return
+    }
     if (sent.error) {
       // BCS-G retro Codex round 1 WARN #3 — Resend outage / transient
       // failure → state NOT advanced. The next run re-attempts the
