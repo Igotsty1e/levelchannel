@@ -245,7 +245,13 @@ export async function POST(request: Request, { params }: RouteParams) {
     if (provider === 'cloudpayments') {
       const order = await getOrder(invoiceId)
       if (order) {
-        checkoutIntent = buildCloudPaymentsWidgetIntent(order)
+        // Epic-end paranoia BLOCKER #2 closure: thread the plain
+        // receipt token through so the CP server-side success redirect
+        // carries `&token=`. Mock provider skips the widget entirely
+        // so this branch is cloudpayments-only.
+        checkoutIntent = buildCloudPaymentsWidgetIntent(order, {
+          receiptToken: receiptTokenPair.plain,
+        })
       }
     }
 

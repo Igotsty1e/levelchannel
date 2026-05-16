@@ -16,6 +16,8 @@ import {
 } from '@/lib/scheduling/slots'
 import { listLearnersForTeacher } from '@/lib/scheduling/teacher-learners'
 
+import { isLearnerArchetypeCandidate } from '@/lib/auth/learner-archetype'
+
 import { BillingSections } from './billing-sections'
 import { DangerZone } from './danger-zone'
 import { LessonsSection } from './lessons-section'
@@ -108,6 +110,13 @@ export default async function CabinetPage() {
         )
       : Promise.resolve({ rows: [] as Array<{ postpaid_allowed: boolean }> }),
   ])
+
+  // PKG-LEARNER-BUY epic-close WARN #3 — server SoT for "should the
+  // BillingSections show the Купить пакет CTA?". Matches the same
+  // predicate /cabinet/packages + /api/checkout/package/[slug] use.
+  const canBuyPackages = isLearner
+    ? await isLearnerArchetypeCandidate(account.id)
+    : false
   const greetingName = profile?.displayName?.trim() || account.email
   // Wave 52 — pass two sets to <LessonsSection>: "paid" + "refunded".
   // A refunded slot needs a distinct neutral pill, not the yellow
@@ -178,7 +187,10 @@ export default async function CabinetPage() {
             }
           />
 
-          <BillingSections learnerTimezone={profile?.timezone ?? null} />
+          <BillingSections
+            learnerTimezone={profile?.timezone ?? null}
+            canBuyPackages={canBuyPackages}
+          />
 
           <div className="card" style={{ padding: 24, marginBottom: 24 }}>
             <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>

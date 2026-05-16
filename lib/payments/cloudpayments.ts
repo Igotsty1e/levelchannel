@@ -107,13 +107,27 @@ export function createCloudPaymentsOrder(
   }
 }
 
+// `receiptToken` is the PLAIN one-time token returned by the order-
+// init route. The hash is stored on `payment_orders.receipt_token_hash`
+// and gates /api/payments/[invoiceId] reads — without the plain token
+// in the URL, /thank-you's polling fetch returns 401. Optional here
+// because some callers (chargeWithSavedCard one-click path) don't
+// thread it through and depend on the legacy grace mechanism; for
+// every NEW init path the caller MUST pass it so the
+// `successRedirectUrl` carries `&token=` (PKG-LEARNER-BUY epic-end
+// paranoia BLOCKER #2 closure).
 export function buildCloudPaymentsWidgetIntent(
   order: PaymentOrder,
+  options: { receiptToken?: string | null } = {},
 ): CloudPaymentsWidgetIntent {
   const rememberCard =
     typeof order.metadata?.rememberCard === 'boolean'
       ? order.metadata.rememberCard
       : false
+
+  const tokenParam = options.receiptToken
+    ? `&token=${encodeURIComponent(options.receiptToken)}`
+    : ''
 
   return {
     publicTerminalId: paymentConfig.cloudpayments.publicId,
@@ -145,7 +159,7 @@ export function buildCloudPaymentsWidgetIntent(
       rememberCard,
     },
     tokenize: rememberCard,
-    successRedirectUrl: `${paymentConfig.siteUrl}/thank-you?invoiceId=${encodeURIComponent(order.invoiceId)}`,
+    successRedirectUrl: `${paymentConfig.siteUrl}/thank-you?invoiceId=${encodeURIComponent(order.invoiceId)}${tokenParam}`,
     failRedirectUrl: `${paymentConfig.siteUrl}/?payment=failed&invoiceId=${encodeURIComponent(order.invoiceId)}`,
     retryPayment: false,
   }

@@ -19,8 +19,10 @@ import { useState } from 'react'
 //   - no comment field (operator workflow that needs comments still
 //     uses /pay)
 //
-// CloudPayments script is loaded globally by app/layout.tsx, so
-// `window.cp` is available without a per-page <Script />.
+// CloudPayments script is loaded by app/checkout/[tariffSlug]/page.tsx
+// at the page level (Codex 2026-05-08 Wave 10 #5 — layout-level load
+// was removed). This client island assumes `window.cp` has been
+// hydrated by the time `onSubmit` fires.
 
 type Props = {
   tariffTitle: string

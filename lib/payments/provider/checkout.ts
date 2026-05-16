@@ -59,6 +59,14 @@ export async function createPayment(
   let order: PaymentOrder
   let checkoutIntent: CloudPaymentsWidgetIntent | null = null
 
+  // Wave 6.1 #4 Phase 1.5 — mint a receipt token. Hash is persisted on
+  // the order; plain token is returned ONCE in this response and never
+  // stored. Phase 2 gates `/api/payments/[invoiceId]/{,cancel,stream}`
+  // on this token; the plain token must thread into both the widget
+  // intent's `successRedirectUrl` (CP-provider success path) AND any
+  // client-side redirect (mock + cancel path).
+  const receiptTokenPair = mintToken()
+
   if (paymentConfig.provider === 'cloudpayments') {
     const invoiceId = `lc_${randomUUID().replace(/-/g, '').slice(0, 18)}`
     order = createCloudPaymentsOrder(amountRub, customerEmail, invoiceId, {
@@ -67,7 +75,13 @@ export async function createPayment(
       customerComment: options.customerComment ?? null,
       slotId: options.slotId ?? null,
     })
-    checkoutIntent = buildCloudPaymentsWidgetIntent(order)
+    // Epic-end paranoia BLOCKER #2 closure: pass the plain token into
+    // the widget builder so the CloudPayments server-side success
+    // redirect carries `&token=`. Without it /thank-you's polling
+    // 401s on /api/payments/[invoiceId].
+    checkoutIntent = buildCloudPaymentsWidgetIntent(order, {
+      receiptToken: receiptTokenPair.plain,
+    })
   } else {
     order = createMockOrder(amountRub, customerEmail, {
       personalDataConsent: options.personalDataConsent,
@@ -76,13 +90,6 @@ export async function createPayment(
     })
   }
 
-  // Wave 6.1 #4 Phase 1.5 — mint a receipt token. Hash is persisted on
-  // the order; plain token is returned ONCE in this response and never
-  // stored. Phase 2 will gate `/api/payments/[invoiceId]/{,cancel,stream}`
-  // on this token; right now those routes still accept anyone-with-the-
-  // invoiceId, but new orders carry a token in the response so the UI
-  // can start threading it through redirects ahead of the gate.
-  const receiptTokenPair = mintToken()
   order.receiptTokenHash = receiptTokenPair.hash
 
   await createOrder(order)
