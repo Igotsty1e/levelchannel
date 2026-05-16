@@ -26,6 +26,7 @@ The project combines public marketing pages, direct checkout, payment reconcilia
 - baseline hardening: headers, origin checks, HMAC verification, and rate limiting
 - tariff catalog with mandatory lesson duration (60/90 min), price/duration immutable after first slot reference, hard-delete refused when slots reference the tariff
 - booking calendar sync with Google Calendar: Calendly-style booking UI, OAuth scaffolding, two-way pull/push, post-pull conflict detector, teacher conflict resolution surface (red outline + modal actions)
+- learner-facing package catalog at `/cabinet/packages` with a buy CTA, race-safe purchase gates (one pending and one already-active package of the same duration both refused under a per-(account, duration) advisory lock), and CloudPayments widget intent returned inline from the checkout-init response
 
 ## What is intentionally private
 

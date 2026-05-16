@@ -131,6 +131,59 @@ If on the first one-click charge the bank requires 3DS, the flow is:
 
 Convenient to plug into an external uptime monitor or watchdog.
 
+## Package-buy init (PKG-LEARNER-BUY, 2026-05-16)
+
+`POST /api/checkout/package/[slug]` is the learner-only init route
+that backs the `/cabinet/packages` buy CTA. The contract:
+
+- Auth: `requireLearnerArchetypeAndVerified` + post-guard
+  `isLearnerArchetypeCandidate` (deletion-grace coverage). Admin /
+  teacher / unverified / deletion-grace accounts get rejected before
+  the order is created.
+- Idempotency: wrapped in `withIdempotency` scoped to
+  `checkout:package:${slug}:${accountId}` so an `Idempotency-Key`
+  replay across different packages or different accounts is a cache
+  miss, not a leak.
+- Race-safe gates: inside the idempotent body the route opens a
+  single `PoolClient` transaction, takes a
+  `pg_advisory_xact_lock(hashtextextended('pkg-buy:' || accountId || ':' || durationMinutes, 0))`,
+  then evaluates two gates and runs the `INSERT INTO payment_orders`
+  on the SAME client. Gate 1 (`accountHasPendingPackageGrantForDuration`)
+  rejects with 409 `pending_package_in_flight`; Gate 2
+  (`learnerHasActivePackageOfDuration`, mirror of
+  `listAccountActivePackages`) rejects with 409
+  `already_owns_active_package`. Concurrent POSTs from the same
+  learner for the same duration serialise; different-duration
+  purchases proceed concurrently.
+- Response shape: `{ invoiceId, provider, status, amountRub,
+  packageSlug, receiptToken, checkoutIntent }`. `checkoutIntent` is
+  the server-built `CloudPaymentsWidgetIntent` for `provider='cloudpayments'`
+  (with `successRedirectUrl` carrying the receipt token), `null` for
+  `provider='mock'`.
+
+## Known limitations
+
+**RECEIPT-3DS-TOKEN** — server-side fallback redirects to
+`/thank-you` do not thread the receipt token plain into the URL:
+
+- `app/api/payments/3ds-callback/route.ts:172` (`redirectThankYou`)
+  303s the user to `/thank-you?invoiceId=...` after a successful 3DS
+  finalize. No `&token=...` is appended.
+- `buildCloudPaymentsWidgetIntent.successRedirectUrl` in
+  `lib/payments/cloudpayments.ts` only carries `&token=` when the
+  caller passes `{ receiptToken }`. Legacy call sites that don't
+  thread it will produce a redirect URL without the token.
+
+Impact is bounded: `/thank-you`'s status fetch returns 401 (the
+`receipt_token_hash` gate on `/api/payments/[invoiceId]` denies the
+read) until the operator inspects the order via
+`/admin/payments/[invoiceId]`. The package grant itself fires from
+the parallel CloudPayments Pay webhook (`processPackageGrantInline`
+on mock-auto-confirm; `app/api/payments/webhooks/cloudpayments/pay`
+in production) and is unaffected — the user's package lands
+regardless of whether `/thank-you` shows the green tick. Tracked as
+a follow-up wave.
+
 ## What's next
 
 Strategic payment priorities live in `ROADMAP.md`; concrete engineering
