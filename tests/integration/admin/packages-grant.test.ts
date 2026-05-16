@@ -102,6 +102,35 @@ describe('POST /api/admin/packages/[id]/grant — operator-driven grant', () => 
     )
     expect(allocRow.rows[0].kind).toBe('package')
     expect(allocRow.rows[0].target_id).toBe(json.purchaseId)
+
+    // Wave-mode paranoia WARN #5 (2026-05-16) — assert the
+    // 'package.grant.operator-granted' audit row landed. The audit
+    // dispatch is post-commit best-effort, so it MAY race the test
+    // assertion; we poll up to 2s for the row to appear.
+    let auditRow: { actor: string; event_type: string; payload: unknown } | null = null
+    for (let i = 0; i < 20; i++) {
+      const r = await getDbPool().query(
+        `select actor, event_type, payload
+           from payment_audit_events
+          where invoice_id = $1
+            and event_type = 'package.grant.operator-granted'
+          order by created_at desc
+          limit 1`,
+        [json.invoiceId],
+      )
+      if (r.rows.length > 0) {
+        auditRow = r.rows[0]
+        break
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    expect(auditRow).not.toBeNull()
+    expect(auditRow!.actor).toBe('admin:grant')
+    const auditPayload = auditRow!.payload as Record<string, unknown>
+    expect(auditPayload.targetAccountId).toBe(learner.id)
+    expect(auditPayload.purchaseId).toBe(json.purchaseId)
+    expect(auditPayload.reason).toBe('компенсация за инцидент')
+    expect(auditPayload.allowStacking).toBe(false)
   })
 
   it('anonymous → 401', async () => {

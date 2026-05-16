@@ -205,11 +205,15 @@ export async function POST(request: Request, { params }: RouteParams) {
       try {
         await lockClient.query('begin')
 
-        // Lock by (accountId, durationMinutes) — matches anti-stacking
-        // gate domain. Different packages of the same duration to the
-        // same learner serialize here.
+        // Lock by (accountId, durationMinutes). Uses the shared
+        // 'pkg-stack:' prefix so the admin-grant flow serializes
+        // against the learner-buy flow (which uses the same prefix
+        // since the epic-end paranoia BLOCKER #1 fix). Prior version
+        // used a separate 'pkg-admin-grant:' prefix that let admin
+        // grants race concurrent learner buys for the same (account,
+        // duration) and produced two package_purchases rows.
         await lockClient.query(
-          `select pg_advisory_xact_lock(hashtextextended('pkg-admin-grant:' || $1 || ':' || $2, 0))`,
+          `select pg_advisory_xact_lock(hashtextextended('pkg-stack:' || $1 || ':' || $2, 0))`,
           [targetAccountId, pkg.durationMinutes],
         )
 
@@ -255,7 +259,12 @@ export async function POST(request: Request, { params }: RouteParams) {
           packageId: pkg.id,
         }
 
-        // INSERT synthetic payment_orders row.
+        // INSERT synthetic payment_orders row. paid_at stays NULL — an
+        // admin grant is NOT a payment event, and the admin payments
+        // detail page renders "Оплачен" off paid_at; setting it to
+        // now() would misclassify the grant as paid. Wave-mode
+        // paranoia WARN #2 (2026-05-16). status='granted' alone is the
+        // signal; the detail page uses status to render "Выдан".
         await lockClient.query(
           `insert into payment_orders (
              invoice_id, amount_rub, currency, description,
@@ -267,7 +276,7 @@ export async function POST(request: Request, { params }: RouteParams) {
            ) values (
              $1, $2, 'RUB', $3,
              'admin_grant', 'granted',
-             now(), now(), now(),
+             now(), now(), null,
              $4, $4,
              $5::jsonb, $6::jsonb,
              $7::uuid

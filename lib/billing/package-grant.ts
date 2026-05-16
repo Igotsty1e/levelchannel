@@ -18,6 +18,7 @@
 
 import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
 import { createPackagePurchase, getPackageBySlug } from '@/lib/billing/packages'
+import { learnerHasActivePackageOfDuration } from '@/lib/billing/packages/eligibility'
 import { getDbPool } from '@/lib/db/pool'
 import { sendOperatorPackageGrantFailureNotification } from '@/lib/email/dispatch'
 import { normalizeEmail } from '@/lib/email/normalize'
@@ -41,6 +42,15 @@ export type GrantSemanticFailure =
   | 'multi_account_match'
   | 'metadata_email_mismatch'
   | 'package_unknown_or_inactive'
+  // PKG-ADMIN-GRANT epic-end paranoia BLOCKER #1 (2026-05-16).
+  // The webhook grant path runs LONG after the learner-buy lock was
+  // released, so a concurrent admin grant for the same
+  // (account, duration) can sneak in between. Hitting this means
+  // "learner paid but a duplicate active package already exists" —
+  // operator must refund the duplicate buyer manually. Treated as a
+  // semantic failure (not operational): 200 to CP, no retry, audit row
+  // + operator email so the paid-but-not-granted incident is visible.
+  | 'already_owns_active_package'
 
 export type GrantResult =
   | { kind: 'granted'; packagePurchaseId: string }
@@ -172,6 +182,59 @@ export async function processPackageGrant(
   const client = await pool.connect()
   try {
     await client.query('begin')
+
+    // PKG-ADMIN-GRANT epic-end paranoia BLOCKER #1 (2026-05-16).
+    // Acquire the shared `pkg-stack:` advisory lock so the webhook
+    // grant path serialises against concurrent admin grants AND
+    // learner-buy POSTs on the same (account, duration). Without this
+    // lock the webhook can race an admin grant that committed between
+    // the learner's buy POST (which released its own short lock at
+    // commit time) and now — both would call createPackagePurchase,
+    // both would succeed (different invoice_ids → no UNIQUE conflict),
+    // and the learner ends up with two active packages of the same
+    // duration in violation of the anti-stacking invariant.
+    await client.query(
+      `select pg_advisory_xact_lock(hashtextextended('pkg-stack:' || $1 || ':' || $2, 0))`,
+      [accountId, pkg.durationMinutes],
+    )
+
+    // Replay check first: did we already create a purchase for THIS
+    // exact invoice_id? Webhook retries / mock-auto-confirm re-runs
+    // are routine and MUST be idempotent. Without this branch, the
+    // ownedActive check below would fire on the package we just
+    // created on the previous attempt and mis-classify the replay as
+    // `already_owns_active_package`. Ordering is load-bearing.
+    const replayRow = await client.query(
+      `select id from package_purchases where payment_order_id = $1`,
+      [invoiceId],
+    )
+    if (replayRow.rows.length > 0) {
+      await client.query('commit')
+      // Wave 46 — audit the replay. Operator breadcrumb so
+      // "package granted twice" investigations can spot the second
+      // hit and confirm it's an idempotent no-op, not a real grant.
+      await auditSucceeded(invoiceId, fullOrder, actor, String(replayRow.rows[0].id), {
+        replay: true,
+      })
+      return { kind: 'already_granted' }
+    }
+
+    const ownedActive = await learnerHasActivePackageOfDuration(
+      accountId,
+      pkg.durationMinutes,
+    )
+    if (ownedActive) {
+      // Commit so the audit row written below is not blocked behind
+      // the still-open lock TX. The grant itself is suppressed.
+      await client.query('commit')
+      await audit(invoiceId, fullOrder, 'already_owns_active_package', actor, {
+        existingPurchaseId: ownedActive.purchaseId,
+        existingTitleSnapshot: ownedActive.titleSnapshot,
+        durationMinutes: pkg.durationMinutes,
+      })
+      return { kind: 'semantic_failure', reason: 'already_owns_active_package' }
+    }
+
     const purchase = await createPackagePurchase(client, {
       accountId,
       packageId: pkg.id,
@@ -183,12 +246,11 @@ export async function processPackageGrant(
       expiresAt,
     })
     if (!purchase) {
-      // UNIQUE on payment_order_id rejected — already granted, no-op.
+      // UNIQUE on payment_order_id rejected — should be unreachable
+      // given the replayRow check above + the held lock, but if it
+      // ever fires, treat it as a replay (the row landed during the
+      // microsecond between our SELECT and our INSERT).
       await client.query('commit')
-      // Wave 46 — audit the replay. Webhook retries / mock-confirm
-      // re-runs are routine; the operator needs the breadcrumb so
-      // "паchet выдан дважды" investigations can spot the second
-      // hit and confirm it's an idempotent no-op, not a real grant.
       await auditSucceeded(invoiceId, fullOrder, actor, null, { replay: true })
       return { kind: 'already_granted' }
     }

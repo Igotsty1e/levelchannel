@@ -124,15 +124,21 @@ export async function POST(request: Request, { params }: RouteParams) {
     // same learner for packages of the same duration serialise; the
     // loser observes the winner's pending order and gets 409
     // pending_package_in_flight. Different-duration purchases proceed
-    // concurrently. Namespace `pkg-buy:` does not collide with
-    // `pkg-recon:`, `pkg_consume:`, `cp:`, or `legal:` (verified
-    // 2026-05-16).
+    // concurrently.
+    //
+    // PKG-ADMIN-GRANT epic-end paranoia BLOCKER #1 (2026-05-16): shared
+    // `pkg-stack:` prefix lines this lock up with the admin-grant flow
+    // so a concurrent operator grant + learner buy on the same
+    // (account, duration) serialise against each other. Previous
+    // `pkg-buy:` prefix let the two flows run in parallel and a
+    // duplicate package_purchases row could appear when the learner's
+    // webhook grant fired AFTER the admin grant had already committed.
     const pool = getDbPool()
     const lockClient = await pool.connect()
     try {
       await lockClient.query('begin')
       await lockClient.query(
-        `select pg_advisory_xact_lock(hashtextextended('pkg-buy:' || $1 || ':' || $2, 0))`,
+        `select pg_advisory_xact_lock(hashtextextended('pkg-stack:' || $1 || ':' || $2, 0))`,
         [accountId, pkg.durationMinutes],
       )
 

@@ -146,10 +146,15 @@ that backs the `/cabinet/packages` buy CTA. The contract:
   miss, not a leak.
 - Race-safe gates: inside the idempotent body the route acquires a
   dedicated `PoolClient`, opens a transaction, and takes a
-  `pg_advisory_xact_lock(hashtextextended('pkg-buy:' || accountId || ':' || durationMinutes, 0))`
-  on it. The lock is session-scoped, so it serialises every parallel
-  POST from the same learner for the same package duration against
-  everyone else. The two pre-INSERT gates
+  `pg_advisory_xact_lock(hashtextextended('pkg-stack:' || accountId || ':' || durationMinutes, 0))`
+  on it. The `pkg-stack:` prefix is shared with the admin-grant flow
+  (`POST /api/admin/packages/[id]/grant`) and the webhook grant path
+  (`lib/billing/package-grant.ts:processPackageGrant`), so a concurrent
+  admin grant + learner buy + delayed webhook for the same
+  `(account, duration)` all serialise against each other. The lock is
+  session-scoped, so it serialises every parallel POST from the same
+  learner for the same package duration against everyone else. The
+  two pre-INSERT gates
   (`accountHasPendingPackageGrantForDuration` →
   `pending_package_in_flight` 409, and `learnerHasActivePackageOfDuration`
   → `already_owns_active_package` 409) read via the shared `pool`,
@@ -163,6 +168,55 @@ that backs the `/cabinet/packages` buy CTA. The contract:
   the server-built `CloudPaymentsWidgetIntent` for `provider='cloudpayments'`
   (with `successRedirectUrl` carrying the receipt token), `null` for
   `provider='mock'`.
+
+## Admin-driven package grant (PKG-ADMIN-GRANT, 2026-05-16)
+
+`POST /api/admin/packages/[id]/grant` lets an operator issue a
+non-money package grant (refund-credits, marketing comps, customer-
+service make-goods). Body: `{ targetAccountId, reason, allowStacking? }`
+— server-authoritative on everything else (amount, duration, count,
+title, expiry) from the catalog. Auth: `requireAdminRole`.
+
+- **Storage shape:** writes a synthetic `payment_orders` row with
+  `provider='admin_grant'`, `status='granted'`, `paid_at=NULL`
+  (admin grants are NOT payment events; the admin payments detail
+  page renders "Выдан" off `status` and `updated_at` instead of
+  "Оплачен" off `paid_at`), and `granted_by_operator_id=<actor>`.
+  Migration `0051` enforces a triple-CHECK so the three signals
+  always agree.
+- **Atomic single TX:** `payment_orders` + `package_purchases` +
+  `payment_allocations` write in one transaction on a dedicated
+  `lockClient`. Failure rolls back the entire grant. The admin-grant
+  flow SKIPS `processPackageGrant` and calls `createPackagePurchase`
+  directly.
+- **Anti-stacking lock:** acquires
+  `pg_advisory_xact_lock(hashtextextended('pkg-stack:' || accountId || ':' || durationMinutes, 0))`
+  on the lockClient. Same `pkg-stack:` prefix as the learner-buy
+  route AND the webhook-grant path, so a concurrent admin grant +
+  learner buy + delayed webhook on the same `(account, duration)`
+  all serialise against each other (epic-end paranoia BLOCKER #1
+  closure).
+- **Anti-stacking gate:** `learnerHasActivePackageOfDuration(targetAccountId, durationMinutes)`
+  rejects the grant with `409 already_owns_active_package` unless
+  `allowStacking: true` is passed in the body.
+- **Idempotency:** `withIdempotency` at the route boundary +
+  deterministic `invoice_id = lc_adm_<sha256(packageId+accountId+dayBucket)>`
+  inside the TX. Same operator clicking twice on the same day
+  produces the same `invoice_id`; UNIQUE constraint rejects the
+  duplicate with `409 duplicate_grant_today`. `allowStacking: true`
+  swaps in a random salt so genuine same-day stacks are possible.
+- **Refund block:** `POST /api/admin/refunds` refuses `kind='package'`
+  refunds on `provider='admin_grant'` orders (you can't refund
+  money that was never charged). The check runs only when the
+  order row exists, preserving the existing `allocation_not_found`
+  contract for missing orders.
+- **Retention:** synthetic `admin_grant` rows live forever in
+  `payment_orders` (same as paid orders — `db-retention-cleanup`
+  intentionally excludes `payment_orders` because 54-ФЗ + audit
+  trail require immutability). Volume is bounded by operator-grant
+  rate, which is low by definition (manual operator action). No
+  separate cleanup needed; a future retention overhaul should treat
+  paid + granted rows identically.
 
 ## Receipt-token gate — dual-mode (2026-05-16)
 
