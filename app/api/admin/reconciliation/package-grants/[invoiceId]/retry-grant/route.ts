@@ -154,24 +154,33 @@ export async function POST(request: Request, { params }: RouteParams) {
           `select pg_advisory_xact_lock(hashtextextended($1, 0))`,
           [`pkg-recon:${invoiceId}`],
         )
-        const stillPnG2 = await lockClient.query(
-          `select 1
-             from payment_orders po
-            where po.invoice_id = $1
-              and po.status = 'paid'
-              and po.metadata->>'packageSlug' is not null
-              and not exists (
-                select 1 from package_purchases pp
-                 where pp.payment_order_id = po.invoice_id
-              )
-              and not exists (
-                select 1 from package_grant_resolutions r
-                 where r.invoice_id = po.invoice_id
-              )
-            limit 1`,
+        // Phase-2 race re-check (round 1 BLOCKER #1 closure).
+        //
+        // Between phase-1 COMMIT and phase-2 lock re-acquisition the
+        // xact-bound advisory lock was released; a sibling
+        // mark-resolved could have written a terminal resolution row.
+        // Re-checking only the `package_grant_resolutions` table is
+        // SUFFICIENT for the race we need to close:
+        //   - status=paid is monotonic (orders don't unflip to pending).
+        //   - package_purchases collision is handled inside
+        //     processPackageGrant via UNIQUE(payment_order_id) →
+        //     `already_granted` kind.
+        //   - Only a terminal package_grant_resolutions row inserted
+        //     by a sibling action races us here.
+        //
+        // Why we don't re-read `payment_orders` here: that would take
+        // ACCESS SHARE on payment_orders and deadlock with
+        // `ensureSchema()` inside processPackageGrant on its first
+        // call in a fresh worker (CREATE TABLE IF NOT EXISTS needs
+        // ACCESS EXCLUSIVE). Limiting the re-verify to a single small
+        // table that ensureSchema never touches keeps the lockClient
+        // TX cheap and unblocking.
+        const resolved = await lockClient.query(
+          `select 1 from package_grant_resolutions
+            where invoice_id = $1 limit 1`,
           [invoiceId],
         )
-        if (stillPnG2.rows.length === 0) {
+        if (resolved.rows.length > 0) {
           await lockClient.query('commit')
           return {
             status: 409,

@@ -207,24 +207,25 @@ export async function POST(request: Request, { params }: RouteParams) {
             `select pg_advisory_xact_lock(hashtextextended($1, 0))`,
             [`pkg-recon:${invoiceId}`],
           )
-          const stillPnG2 = await lockClient.query(
-            `select 1
-               from payment_orders po
-              where po.invoice_id = $1
-                and po.status = 'paid'
-                and po.metadata->>'packageSlug' is not null
-                and not exists (
-                  select 1 from package_purchases pp
-                   where pp.payment_order_id = po.invoice_id
-                )
-                and not exists (
-                  select 1 from package_grant_resolutions r
-                   where r.invoice_id = po.invoice_id
-                )
-              limit 1`,
+          // Phase-2 race re-check (round 1 BLOCKER #1 closure).
+          //
+          // Between phase-1 COMMIT and phase-2 lock re-acquisition the
+          // xact-bound advisory lock was released; a sibling
+          // mark-resolved could have written a terminal resolution row.
+          // Re-checking only `package_grant_resolutions` is sufficient:
+          // status=paid is monotonic, package_purchases double-insert
+          // is handled by UNIQUE(payment_order_id) inside
+          // processPackageGrant. Limiting the re-verify to a small
+          // table that ensureSchema never touches avoids an ACCESS
+          // SHARE/EXCLUSIVE deadlock with processPackageGrant's first
+          // `CREATE TABLE IF NOT EXISTS payment_orders` on a fresh
+          // worker.
+          const resolved = await lockClient.query(
+            `select 1 from package_grant_resolutions
+              where invoice_id = $1 limit 1`,
             [invoiceId],
           )
-          if (stillPnG2.rows.length === 0) {
+          if (resolved.rows.length > 0) {
             await lockClient.query('commit')
             return {
               status: 409,
