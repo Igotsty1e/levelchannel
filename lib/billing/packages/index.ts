@@ -10,6 +10,7 @@ export type { PostpaidDebtSlot } from './debt'
 // Values
 export {
   createPackage,
+  getPackageById,
   getPackageBySlug,
   listActivePackages,
   listActivePackagesByDuration,
