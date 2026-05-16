@@ -238,6 +238,8 @@ export function PackagesEditor({
                   borderTop: '1px solid var(--border)',
                   fontSize: 14,
                   opacity: p.isActive ? 1 : 0.5,
+                  gap: 12,
+                  flexWrap: 'wrap',
                 }}
               >
                 <div>
@@ -260,9 +262,16 @@ export function PackagesEditor({
                     ) : null}
                   </div>
                 </div>
-                <span style={{ fontSize: 12, color: p.isActive ? '#9bdf9b' : '#ff8a8a' }}>
-                  {p.isActive ? 'активен' : 'архив'}
-                </span>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, color: p.isActive ? '#9bdf9b' : '#ff8a8a' }}>
+                    {p.isActive ? 'активен' : 'архив'}
+                  </span>
+                  {/* PKG-ADMIN-GRANT LBL.2 — inline grant action.
+                      Only visible on active packages — admin-grant
+                      route refuses inactive with 422 package_inactive,
+                      so hiding the button keeps the UI honest. */}
+                  {p.isActive ? <GrantButton pkg={p} /> : null}
+                </div>
               </li>
             ))}
           </ul>
@@ -301,6 +310,119 @@ function Field({
       {children}
     </label>
   )
+}
+
+// PKG-ADMIN-GRANT LBL.2 — inline grant action per package row.
+//
+// Calls POST /api/admin/packages/[id]/grant. Each click generates a
+// FRESH Idempotency-Key (round-5 WARN #2 — same key replays cached
+// response; fresh key per intentional grant). For stacked grants
+// (allowStacking=true), operator must give a fresh key OR the cached
+// response from the prior submit replays.
+//
+// UI shape: button → 3 native prompt()s for {targetAccountId, reason,
+// allowStacking?}. Mirrors PKG-RECON actions-cell.tsx pattern (also
+// native prompts — see app/admin/(gated)/reconciliation/actions-cell.tsx).
+// Modal-based pickers are a follow-up wave when we extract a reusable
+// learner-archetype account picker.
+function GrantButton({ pkg }: { pkg: AdminPackage }) {
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [done, setDone] = useState<string | null>(null)
+
+  async function onClick() {
+    setErr(null)
+    setDone(null)
+    const targetAccountId = window.prompt(
+      'UUID аккаунта ученика (target):',
+      '',
+    )
+    if (!targetAccountId) return
+    const reason = window.prompt(
+      'Причина выдачи (durable, попадает в payment_orders.description):',
+      '',
+    )
+    if (reason === null || !reason.trim()) {
+      setErr('Reason required.')
+      return
+    }
+    const allowStacking = window.confirm(
+      'Разрешить стекать с существующим активным пакетом той же длительности? OK = да, Cancel = нет.',
+    )
+    setBusy(true)
+    try {
+      const res = await fetch(
+        `/api/admin/packages/${encodeURIComponent(pkg.id)}/grant`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': freshIdempotencyKey(),
+          },
+          body: JSON.stringify({
+            targetAccountId: targetAccountId.trim(),
+            reason: reason.trim(),
+            allowStacking,
+          }),
+        },
+      )
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setErr(json.message ?? json.error ?? `HTTP ${res.status}`)
+        setBusy(false)
+        return
+      }
+      setDone(
+        `Выдан: ${json.titleSnapshot} (${json.count} шт), истекает ${
+          json.expiresAt ? new Date(json.expiresAt).toLocaleDateString('ru-RU') : '—'
+        }`,
+      )
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'unknown')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={busy}
+        style={{
+          padding: '4px 10px',
+          fontSize: 12,
+          fontWeight: 600,
+          background: busy ? 'rgba(255,255,255,0.05)' : 'var(--accent, #5b8ef7)',
+          color: busy ? 'var(--secondary)' : 'var(--accent-contrast, #fff)',
+          border: 'none',
+          borderRadius: 4,
+          cursor: busy ? 'wait' : 'pointer',
+        }}
+        title={`Выдать "${pkg.titleRu}" ученику бесплатно (compensation/comp).`}
+      >
+        {busy ? '…' : 'Выдать ученику'}
+      </button>
+      {done ? (
+        <span style={{ color: '#9bdf9b', fontSize: 11, maxWidth: 280, textAlign: 'right' }}>
+          ✓ {done}
+        </span>
+      ) : null}
+      {err ? (
+        <span style={{ color: '#ff8a8a', fontSize: 11, maxWidth: 280, textAlign: 'right' }}>
+          {err}
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
+function freshIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID()
+  }
+  return `idem-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
 const inputStyle: React.CSSProperties = {
