@@ -1,12 +1,20 @@
 import { afterAll, describe, expect, it } from 'vitest'
 
 import { POST as cancelHandler } from '@/app/api/payments/[invoiceId]/cancel/route'
+import { GET as paymentStatusHandler } from '@/app/api/payments/[invoiceId]/route'
 import { POST as mockConfirmHandler } from '@/app/api/payments/mock/[invoiceId]/confirm/route'
 import { POST as createHandler } from '@/app/api/payments/route'
+import { POST as loginHandler } from '@/app/api/auth/login/route'
+import { POST as registerHandler } from '@/app/api/auth/register/route'
+import {
+  getAccountByEmail,
+  grantAccountRole,
+  markAccountVerified,
+} from '@/lib/auth/accounts'
 import { listPaymentAuditEventsByInvoice } from '@/lib/audit/payment-events'
 import { getDbPool } from '@/lib/db/pool'
 
-import { buildRequest } from '../helpers'
+import { buildRequest, extractSessionCookie } from '../helpers'
 import './setup'
 
 // End-to-end exercises against real Postgres + the route handlers
@@ -344,6 +352,269 @@ describe('POST /api/payments/[invoiceId]/cancel', () => {
     const bEvents = await listPaymentAuditEventsByInvoice(b.invoiceId)
     expect(aEvents.some((e) => e.eventType === 'order.cancelled')).toBe(false)
     expect(bEvents.some((e) => e.eventType === 'order.cancelled')).toBe(false)
+  })
+})
+
+// RECEIPT-3DS-TOKEN (2026-05-16) — session-fallback for the
+// receipt-token gate. The saved-card 3DS server-side redirect to
+// /thank-you cannot carry the plain token; an authenticated learner
+// session matching order.metadata.accountId is accepted as proof.
+
+async function registerAndLogin(emailPrefix: string): Promise<{
+  cookie: string
+  accountId: string
+  email: string
+}> {
+  const email = `${emailPrefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`
+  await registerHandler(
+    buildRequest('/api/auth/register', {
+      body: { email, password: 'StrongPassword123', personalDataConsentAccepted: true },
+    }),
+  )
+  const acc = await getAccountByEmail(email)
+  await markAccountVerified(acc!.id)
+  const login = await loginHandler(
+    buildRequest('/api/auth/login', { body: { email, password: 'StrongPassword123' } }),
+  )
+  return {
+    cookie: extractSessionCookie(login.headers.get('Set-Cookie'))!,
+    accountId: acc!.id,
+    email,
+  }
+}
+
+async function seedPaidNotGrantedOrderForAccount(opts: {
+  accountId: string
+  email: string
+}): Promise<string> {
+  const invoiceId = `lc_recpt_${Date.now()}${Math.floor(Math.random() * 1e6)}`
+  // Receipt-token gate needs receipt_token_hash != null (post-Phase-3),
+  // so seed with a placeholder hash. Tests don't present a real
+  // matching token — they want the session fallback to take over.
+  const placeholderHash = 'a'.repeat(64)
+  await getDbPool().query(
+    `insert into payment_orders (
+       invoice_id, amount_rub, currency, description, provider, status,
+       created_at, updated_at, customer_email, receipt_email, receipt,
+       metadata, receipt_token_hash
+     ) values (
+       $1, 1500, 'RUB', 'session fallback seed', 'cloudpayments', 'pending',
+       now(), now(), $2, $2, '{}'::jsonb,
+       $3::jsonb, $4
+     )`,
+    [
+      invoiceId,
+      opts.email,
+      JSON.stringify({ source: 'one_click', accountId: opts.accountId }),
+      placeholderHash,
+    ],
+  )
+  return invoiceId
+}
+
+describe('receipt-token-gate session fallback', () => {
+  it('GET /api/payments/[id] with matching learner session (no token) → 200', async () => {
+    const learner = await registerAndLogin('rcpt-learner-200')
+    const invoiceId = await seedPaidNotGrantedOrderForAccount({
+      accountId: learner.accountId,
+      email: learner.email,
+    })
+    const res = await paymentStatusHandler(
+      buildRequest(`/api/payments/${invoiceId}`, {
+        method: 'GET',
+        cookie: learner.cookie,
+      }),
+      { params: Promise.resolve({ invoiceId }) },
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.order?.invoiceId).toBe(invoiceId)
+  })
+
+  it('GET with matching UNVERIFIED learner session → 200 (verify NOT required)', async () => {
+    // Anti-spoof predicate is intentionally lighter than
+    // isLearnerArchetypeCandidate; this test pins the choice.
+    const email = `rcpt-unverif-${Date.now()}@example.com`
+    await registerHandler(
+      buildRequest('/api/auth/register', {
+        body: { email, password: 'StrongPassword123', personalDataConsentAccepted: true },
+      }),
+    )
+    const acc = await getAccountByEmail(email)
+    // NOTE: NOT calling markAccountVerified here.
+    const login = await loginHandler(
+      buildRequest('/api/auth/login', { body: { email, password: 'StrongPassword123' } }),
+    )
+    const cookie = extractSessionCookie(login.headers.get('Set-Cookie'))!
+    const invoiceId = await seedPaidNotGrantedOrderForAccount({
+      accountId: acc!.id,
+      email,
+    })
+    const res = await paymentStatusHandler(
+      buildRequest(`/api/payments/${invoiceId}`, {
+        method: 'GET',
+        cookie,
+      }),
+      { params: Promise.resolve({ invoiceId }) },
+    )
+    expect(res.status).toBe(200)
+  })
+
+  it('GET with admin session matching metadata → 401 (admin must NOT use session fallback)', async () => {
+    const admin = await registerAndLogin('rcpt-admin-401')
+    await grantAccountRole(admin.accountId, 'admin', null)
+    const invoiceId = await seedPaidNotGrantedOrderForAccount({
+      accountId: admin.accountId,
+      email: admin.email,
+    })
+    const res = await paymentStatusHandler(
+      buildRequest(`/api/payments/${invoiceId}`, {
+        method: 'GET',
+        cookie: admin.cookie,
+      }),
+      { params: Promise.resolve({ invoiceId }) },
+    )
+    expect(res.status).toBe(401)
+  })
+
+  it('GET with teacher session matching metadata → 401', async () => {
+    const teacher = await registerAndLogin('rcpt-teacher-401')
+    await grantAccountRole(teacher.accountId, 'teacher', null)
+    const invoiceId = await seedPaidNotGrantedOrderForAccount({
+      accountId: teacher.accountId,
+      email: teacher.email,
+    })
+    const res = await paymentStatusHandler(
+      buildRequest(`/api/payments/${invoiceId}`, {
+        method: 'GET',
+        cookie: teacher.cookie,
+      }),
+      { params: Promise.resolve({ invoiceId }) },
+    )
+    expect(res.status).toBe(401)
+  })
+
+  it('GET with learner session whose accountId does NOT match metadata → 401', async () => {
+    const learner = await registerAndLogin('rcpt-learner-mismatch')
+    const other = await registerAndLogin('rcpt-other')
+    const invoiceId = await seedPaidNotGrantedOrderForAccount({
+      accountId: other.accountId,
+      email: other.email,
+    })
+    const res = await paymentStatusHandler(
+      buildRequest(`/api/payments/${invoiceId}`, {
+        method: 'GET',
+        cookie: learner.cookie,
+      }),
+      { params: Promise.resolve({ invoiceId }) },
+    )
+    expect(res.status).toBe(401)
+  })
+
+  it('token-first ordering: valid token + matching learner cookie → token_match audit (token wins)', async () => {
+    // Wave-mode round 2 WARN #1 regression net. If a future refactor
+    // accidentally runs the session resolver BEFORE checking the
+    // token, this test still passes status-wise (200) but the audit
+    // gate field would shift from token_match to session_match,
+    // signaling the silent regression. Pin the token-first contract
+    // at the route level via the audit row, since we don't have a
+    // mock framework for spying on the resolver directly.
+    const learner = await registerAndLogin('rcpt-tokenfirst')
+    // Create an order through the public POST so we get a real
+    // receiptToken AND the same email-as-account binding the session
+    // would match.
+    const createRes = await createHandler(
+      buildCreateRequest({
+        amountRub: 1500,
+        customerEmail: learner.email,
+        personalDataConsentAccepted: true,
+      }),
+    )
+    expect(createRes.status).toBe(200)
+    const createBody = await createRes.json()
+    const invoiceId = createBody.order.invoiceId as string
+    const receiptToken = createBody.receiptToken as string
+    // Patch the order's metadata so accountId matches the learner —
+    // /api/payments doesn't write it server-side today (slot-binding
+    // flow only), but for this test we want BOTH paths to pass; the
+    // assertion is that token wins despite session also matching.
+    await getDbPool().query(
+      `update payment_orders
+          set metadata = jsonb_set(coalesce(metadata, '{}'::jsonb), '{accountId}', to_jsonb($1::text), true)
+        where invoice_id = $2`,
+      [learner.accountId, invoiceId],
+    )
+    // Cancel with BOTH a valid token AND the matching learner cookie.
+    const cancelRes = await cancelHandler(
+      buildRequest(`/api/payments/${invoiceId}/cancel`, {
+        body: {},
+        cookie: learner.cookie,
+        headers: { 'X-Receipt-Token': receiptToken },
+      }),
+      { params: Promise.resolve({ invoiceId }) },
+    )
+    expect(cancelRes.status).toBe(200)
+    const events = await listPaymentAuditEventsByInvoice(invoiceId)
+    const cancel = events.find((e) => e.eventType === 'order.cancelled')
+    expect(cancel).toBeTruthy()
+    const payload = cancel!.payload as { gate?: string } | null
+    // Token must win even when session would also have worked.
+    expect(payload?.gate).toBe('token_match')
+  })
+
+  it('POST cancel with matching learner session → 200 + audit gate=session_match', async () => {
+    const learner = await registerAndLogin('rcpt-cancel-200')
+    const invoiceId = await seedPaidNotGrantedOrderForAccount({
+      accountId: learner.accountId,
+      email: learner.email,
+    })
+    const res = await cancelHandler(
+      buildRequest(`/api/payments/${invoiceId}/cancel`, {
+        body: {},
+        cookie: learner.cookie,
+      }),
+      { params: Promise.resolve({ invoiceId }) },
+    )
+    expect(res.status).toBe(200)
+    const events = await listPaymentAuditEventsByInvoice(invoiceId)
+    const cancel = events.find((e) => e.eventType === 'order.cancelled')
+    expect(cancel).toBeTruthy()
+    const payload = cancel!.payload as { gate?: string } | null
+    expect(payload?.gate).toBe('session_match')
+  })
+
+  it('POST cancel with admin session matching metadata → 401', async () => {
+    const admin = await registerAndLogin('rcpt-cancel-admin')
+    await grantAccountRole(admin.accountId, 'admin', null)
+    const invoiceId = await seedPaidNotGrantedOrderForAccount({
+      accountId: admin.accountId,
+      email: admin.email,
+    })
+    const res = await cancelHandler(
+      buildRequest(`/api/payments/${invoiceId}/cancel`, {
+        body: {},
+        cookie: admin.cookie,
+      }),
+      { params: Promise.resolve({ invoiceId }) },
+    )
+    expect(res.status).toBe(401)
+  })
+
+  it('POST cancel with teacher session matching metadata → 401', async () => {
+    const teacher = await registerAndLogin('rcpt-cancel-teacher')
+    await grantAccountRole(teacher.accountId, 'teacher', null)
+    const invoiceId = await seedPaidNotGrantedOrderForAccount({
+      accountId: teacher.accountId,
+      email: teacher.email,
+    })
+    const res = await cancelHandler(
+      buildRequest(`/api/payments/${invoiceId}/cancel`, {
+        body: {},
+        cookie: teacher.cookie,
+      }),
+      { params: Promise.resolve({ invoiceId }) },
+    )
+    expect(res.status).toBe(401)
   })
 })
 

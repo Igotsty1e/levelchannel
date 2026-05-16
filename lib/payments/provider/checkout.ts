@@ -127,6 +127,12 @@ export async function chargeWithSavedCard(params: {
   customerEmail: string
   ipAddress?: string
   personalDataConsent: PersonalDataConsentSnapshot
+  // RECEIPT-3DS-TOKEN (2026-05-16) — caller's authenticated session
+  // account id. Persisted as `metadata.accountId` so the receipt-
+  // token gate's session-fallback path can match when the 3DS
+  // server-side callback redirects the buyer back to /thank-you
+  // without the plain token in the URL.
+  accountId?: string
 }): Promise<ChargeWithSavedCardOutcome> {
   if (paymentConfig.provider !== 'cloudpayments') {
     return { kind: 'no_saved_card' }
@@ -148,9 +154,7 @@ export async function chargeWithSavedCard(params: {
 
   // Wave 6.1 #4 Phase 1.5 — mint receipt token for the one-click path
   // too, so Phase 2's gate on [invoiceId]/{,cancel,stream} works
-  // uniformly for both regular and one-click orders. The plain token
-  // is currently discarded (one-click flow returns redirect/result,
-  // not a token) — Phase 2 will surface it where needed.
+  // uniformly for both regular and one-click orders.
   const oneClickReceiptToken = mintToken()
   const orderWithMetadata: PaymentOrder = {
     ...order,
@@ -158,6 +162,8 @@ export async function chargeWithSavedCard(params: {
     metadata: {
       ...(order.metadata || {}),
       source: 'one_click',
+      // RECEIPT-3DS-TOKEN: see params.accountId comment above.
+      ...(params.accountId ? { accountId: params.accountId } : {}),
     },
     events: [
       ...order.events,

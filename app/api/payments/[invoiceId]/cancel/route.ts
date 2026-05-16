@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { NO_STORE } from '@/lib/api/http-headers'
 import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
 import { markOrderCancelled } from '@/lib/payments/provider'
+import { resolveSessionAccountIdForReceiptGate } from '@/lib/payments/receipt-gate-session'
 import {
   evaluateReceiptGate,
   extractReceiptToken,
@@ -52,8 +53,16 @@ export async function POST(
       { status: 404, headers: NO_STORE },
     )
   }
+  // Token-first ordering at route level (wave-paranoia round 1 BLOCKER #1).
+  // Session resolver only runs if the token check failed.
   const presented = extractReceiptToken(request)
-  const verdict = evaluateReceiptGate(existing, presented)
+  let verdict = evaluateReceiptGate(existing, presented)
+  if (!verdict.ok) {
+    const sessionAccountId = await resolveSessionAccountIdForReceiptGate(request)
+    if (sessionAccountId) {
+      verdict = evaluateReceiptGate(existing, presented, { sessionAccountId })
+    }
+  }
   if (!verdict.ok) {
     return NextResponse.json(
       { error: 'not_found', message: 'Payment not found.' },
@@ -85,6 +94,10 @@ export async function POST(
     payload: {
       source: 'client',
       reason: 'widget_closed',
+      // RECEIPT-3DS-TOKEN — record which gate path was used so a
+      // forensic investigation can distinguish token-based cancels
+      // from session-based cancels.
+      gate: verdict.reason,
     },
   })
 

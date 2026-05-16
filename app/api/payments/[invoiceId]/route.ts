@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { resolveSessionAccountIdForReceiptGate } from '@/lib/payments/receipt-gate-session'
 import {
   evaluateReceiptGate,
   extractReceiptToken,
@@ -42,8 +43,20 @@ export async function GET(
     )
   }
 
+  // Token-first ordering at route level (wave-paranoia round 1 BLOCKER #1).
+  // Only run the session resolver (which does getCurrentSession +
+  // listAccountRoles DB queries) AFTER the cheap token check has
+  // failed. A valid token bearer must NEVER depend on auth-store
+  // availability — token-only callers (anonymous /pay) must stay
+  // authorized even if the session lookup path is degraded.
   const presented = extractReceiptToken(request)
-  const verdict = evaluateReceiptGate(order, presented)
+  let verdict = evaluateReceiptGate(order, presented)
+  if (!verdict.ok) {
+    const sessionAccountId = await resolveSessionAccountIdForReceiptGate(request)
+    if (sessionAccountId) {
+      verdict = evaluateReceiptGate(order, presented, { sessionAccountId })
+    }
+  }
   if (!verdict.ok) {
     // Same body shape as not-found to avoid revealing whether an
     // invoiceId exists by the response code alone. 401 because

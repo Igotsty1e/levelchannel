@@ -164,28 +164,63 @@ that backs the `/cabinet/packages` buy CTA. The contract:
   (with `successRedirectUrl` carrying the receipt token), `null` for
   `provider='mock'`.
 
-## Known limitations
+## Receipt-token gate — dual-mode (2026-05-16)
 
-**RECEIPT-3DS-TOKEN** — server-side fallback redirects to
-`/thank-you` do not thread the receipt token plain into the URL:
+`lib/payments/receipt-token-gate.ts:evaluateReceiptGate` accepts
+TWO orthogonal proofs of authorisation:
 
-- `app/api/payments/3ds-callback/route.ts:172` (`redirectThankYou`)
-  303s the user to `/thank-you?invoiceId=...` after a successful 3DS
-  finalize. No `&token=...` is appended.
-- `buildCloudPaymentsWidgetIntent.successRedirectUrl` in
-  `lib/payments/cloudpayments.ts` only carries `&token=` when the
-  caller passes `{ receiptToken }`. Legacy call sites that don't
-  thread it will produce a redirect URL without the token.
+1. **Token path (primary, anonymous-compatible):** an `X-Receipt-Token`
+   header or `?token=<plain>` query param. Matched against
+   `payment_orders.receipt_token_hash` in constant time. Mints
+   happen at order-init; the plain token is returned ONCE in the
+   create response and never stored. Anonymous /pay buyers,
+   widget-path users, and authenticated buyers whose redirect URL
+   threaded the token all use this path.
+2. **Session fallback (RECEIPT-3DS-TOKEN, 2026-05-16):** if the
+   token path doesn't yield a match, the gate accepts an
+   authenticated session when `session.account.id ===
+   order.metadata.accountId`. The fallback is GENERIC — it
+   matches any order where `metadata.accountId` was written
+   server-side, NOT just saved-card 3DS. Today that's:
+   - saved-card 3DS path (`/api/payments/charge-token` →
+     `chargeWithSavedCard` writes `metadata.accountId` —
+     RECEIPT-3DS-TOKEN's primary motivating use case).
+   - package buy (`/api/checkout/package/[slug]` writes
+     `metadata.accountId` per PKG-LEARNER-BUY LBL.0).
+   - any future server-authoritative order init that writes the
+     buyer's account id into metadata.
+   The motivating bug was the 3DS-callback redirect; the broader
+   coverage is intentional — an authenticated learner reading
+   their own payment status is strictly less-privileged than
+   token-based reads, so denying it just because the URL lost a
+   `&token=` would be over-strict.
 
-Impact is bounded: `/thank-you`'s status fetch returns 401 (the
-`receipt_token_hash` gate on `/api/payments/[invoiceId]` denies the
-read) until the operator inspects the order via
-`/admin/payments/[invoiceId]`. The package grant itself fires from
-the parallel CloudPayments Pay webhook (`processPackageGrantInline`
-on mock-auto-confirm; `app/api/payments/webhooks/cloudpayments/pay`
-in production) and is unaffected — the user's package lands
-regardless of whether `/thank-you` shows the green tick. Tracked as
-a follow-up wave.
+**Anti-spoof at the consumer layer** (NOT the gate): the three
+gate consumers (`/api/payments/[invoiceId]/{route,cancel,stream}`)
+explicitly REJECT admin/teacher sessions before threading the
+session.account.id into the gate. This prevents an operator's
+session from silently bypassing the `/admin/payments/[invoiceId]`
+audit trail. The role check is intentionally lighter than
+`isLearnerArchetypeCandidate` — it admits unverified-but-
+authenticated saved-card buyers (the saved-card init path doesn't
+require email verification, so the gate shouldn't either; reading
+your own payment status is strictly less-privileged than
+initiating a new payment).
+
+Audit visibility: the cancel route records `payment_audit_events
+.payload.gate ∈ {token_match, session_match}` so forensic queries
+can distinguish which proof was used.
+
+## Out-of-scope (NOT addressed by RECEIPT-3DS-TOKEN)
+
+- Anonymous /pay free-amount + 3DS — anonymous users have no
+  session; they continue to rely on the token-in-URL path which
+  works because `/api/payments` returns plain to the client and
+  the client redirects with `&token=`.
+- Encrypted-cipher metadata round-trip — explicitly rejected in
+  plan-mode round 1 of RECEIPT-3DS-TOKEN; would have added a new
+  AEAD format + atomic-consume + retention surface for a low-
+  frequency UX bug.
 
 ## What's next
 
