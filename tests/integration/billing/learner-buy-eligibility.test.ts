@@ -173,6 +173,61 @@ describe('learnerHasActivePackageOfDuration vs listAccountActivePackages', () =>
     expect(active).toEqual([])
   })
 
+  // Epic-end paranoia round 1 BLOCKER #1 regression. Earlier shape
+  // `ORDER BY expires_at ASC LIMIT 1` + JS-side count_remaining filter
+  // would mis-pick an EARLIER exhausted purchase ahead of a LATER
+  // active one and return null. SQL now filters count_remaining > 0
+  // directly. Seeding count_initial=0 hits a CHECK constraint, so we
+  // simulate "exhausted" by inserting a package_consumption row
+  // against a freshly-seeded slot. Requires a teacher account + a
+  // valid future MSK-band slot.
+  it('finds later active package when earlier same-duration purchase has count_remaining=0', async () => {
+    const learner = await makeLearner('drift-mixed-learner')
+    const teacher = await makeLearner('drift-mixed-teacher')
+    const pkg = await createPackage({
+      slug: `drift-mixed-${Date.now()}`,
+      titleRu: 'Mixed',
+      durationMinutes: 60,
+      count: 1,
+      amountKopecks: 100_00,
+    })
+    const exhaustedId = await seedPurchase({
+      accountId: learner,
+      packageId: pkg.id,
+      amountKopecks: pkg.amountKopecks,
+      titleSnapshot: 'Старый — 1 уже потрачен',
+      durationMinutes: 60,
+      countInitial: 1,
+      expiresIn: '7 days',
+    })
+    const activeId = await seedPurchase({
+      accountId: learner,
+      packageId: pkg.id,
+      amountKopecks: pkg.amountKopecks,
+      titleSnapshot: 'Новый — 5 осталось',
+      durationMinutes: 60,
+      countInitial: 5,
+      expiresIn: '60 days',
+    })
+    // Consume the one unit on the earlier purchase via a fresh slot.
+    // 06:00 UTC = 09:00 MSK is in band; far future avoids any rule.
+    const slotRow = await getDbPool().query(
+      `insert into lesson_slots (id, teacher_account_id, start_at, duration_minutes, status)
+       values (gen_random_uuid(), $1::uuid, '2027-01-15T06:00:00Z'::timestamptz, 60, 'open')
+       returning id`,
+      [teacher],
+    )
+    await getDbPool().query(
+      `insert into package_consumptions (slot_id, package_purchase_id, consumed_by_actor)
+       values ($1::uuid, $2::uuid, 'learner')`,
+      [slotRow.rows[0].id, exhaustedId],
+    )
+    const owned = await learnerHasActivePackageOfDuration(learner, 60)
+    expect(owned).not.toBeNull()
+    expect(owned!.purchaseId).toBe(activeId)
+    expect(owned!.countRemaining).toBe(5)
+  })
+
   it('returns positive countRemaining for non-consumed purchases', async () => {
     const accountId = await makeLearner('drift-remaining')
     const pkg = await createPackage({

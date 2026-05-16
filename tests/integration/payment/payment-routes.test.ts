@@ -69,6 +69,25 @@ describe('POST /api/payments — create + idempotency', () => {
     const invoiceId = body.order.invoiceId as string
     expect(invoiceId).toMatch(/^lc_/)
 
+    // PKG-LEARNER-BUY epic-end paranoia round 2 WARN #1 — pin the
+    // CloudPayments server-side success-redirect contract for the
+    // tariff/free-amount checkout path too (mirrors the package-buy
+    // regression in checkout-package.test.ts). Without `&token=` on
+    // successRedirectUrl, /thank-you's polling 401s on
+    // /api/payments/[invoiceId]. The assertion only applies when
+    // provider=cloudpayments (mock provider returns checkoutIntent=null
+    // — no widget, no redirect).
+    expect(typeof body.receiptToken).toBe('string')
+    if (body.checkoutIntent !== null) {
+      expect(body.checkoutIntent?.successRedirectUrl).toContain('/thank-you')
+      expect(body.checkoutIntent?.successRedirectUrl).toContain(
+        `invoiceId=${encodeURIComponent(invoiceId)}`,
+      )
+      expect(body.checkoutIntent?.successRedirectUrl).toContain(
+        `&token=${encodeURIComponent(body.receiptToken)}`,
+      )
+    }
+
     const row = await readOrderRow(invoiceId)
     expect(row).not.toBeNull()
     expect(row.status).toBe('pending')

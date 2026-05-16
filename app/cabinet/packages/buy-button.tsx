@@ -8,7 +8,8 @@ import type { CloudPaymentsWidgetIntent } from '@/lib/payments/types'
 // PKG-LEARNER-BUY LBL.1 — buy-button client island.
 //
 // POSTs /api/checkout/package/[slug] (server-authoritative; client only
-// supplies the slug via URL + consent acceptance via header). On 200:
+// supplies the slug via URL — body is empty, the server reads accountId
+// + email from the session). On 200:
 // - mock provider → status='paid' (mock-auto-confirm fired inline) →
 //   redirect to /thank-you?invoiceId=...&token=...
 // - cloudpayments provider → status='pending' + checkoutIntent → launch

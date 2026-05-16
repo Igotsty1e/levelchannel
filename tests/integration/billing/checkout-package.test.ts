@@ -397,6 +397,17 @@ describe('POST /api/checkout/package/[slug] — server-authored metadata', () =>
       expect(body.checkoutIntent.externalId).toBe(body.invoiceId)
       expect(body.checkoutIntent.description).toBe(`Пакет: ${pkg.titleRu}`)
       expect(body.status).toBe('pending')
+      // Epic-end paranoia BLOCKER #2 regression — successRedirectUrl
+      // MUST carry the same plain receipt token that was returned in
+      // the response body, otherwise /thank-you 401s on its polling.
+      expect(typeof body.receiptToken).toBe('string')
+      expect(body.checkoutIntent.successRedirectUrl).toContain('/thank-you')
+      expect(body.checkoutIntent.successRedirectUrl).toContain(
+        `&token=${encodeURIComponent(body.receiptToken)}`,
+      )
+      expect(body.checkoutIntent.successRedirectUrl).toContain(
+        `invoiceId=${encodeURIComponent(body.invoiceId)}`,
+      )
     } finally {
       vi.stubEnv('PAYMENTS_PROVIDER', 'mock')
       vi.stubEnv('PAYMENTS_ALLOW_MOCK_CONFIRM', 'true')

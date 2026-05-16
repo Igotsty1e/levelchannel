@@ -82,8 +82,17 @@ function statusLabel(s: string): string {
 
 export function BillingSections({
   learnerTimezone,
+  canBuyPackages,
 }: {
   learnerTimezone: string | null
+  // Epic-end paranoia round 1 WARN #3 — only show the "Купить пакет"
+  // CTA to fully-eligible learners. Cabinet renders this card for
+  // unverified + deletion-grace accounts too (they still see their
+  // existing packages), but /cabinet/packages would redirect them
+  // back via isLearnerArchetypeCandidate. Server passes the SoT
+  // verdict here so we never display a CTA that the server will
+  // refuse on click.
+  canBuyPackages: boolean
 }) {
   const tz = learnerTimezone ?? TZ_DEFAULT
   const [packages, setPackages] = useState<AccountPackage[] | null>(null)
@@ -131,18 +140,22 @@ export function BillingSections({
           <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>
             Мои пакеты
           </h2>
-          {/* PKG-LEARNER-BUY LBL.2 — discovery CTA to /cabinet/packages */}
-          <Link
-            href="/cabinet/packages"
-            style={{
-              fontSize: 13,
-              color: 'var(--accent, #5b8ef7)',
-              textDecoration: 'none',
-              fontWeight: 600,
-            }}
-          >
-            Купить пакет →
-          </Link>
+          {/* PKG-LEARNER-BUY LBL.2 + epic-close WARN #3 — discovery CTA
+              to /cabinet/packages, only rendered when the server says
+              the account is buy-eligible. */}
+          {canBuyPackages ? (
+            <Link
+              href="/cabinet/packages"
+              style={{
+                fontSize: 13,
+                color: 'var(--accent, #5b8ef7)',
+                textDecoration: 'none',
+                fontWeight: 600,
+              }}
+            >
+              Купить пакет →
+            </Link>
+          ) : null}
         </div>
         {error ? (
           <p style={{ color: '#ff8a8a', fontSize: 13 }}>Ошибка: {error}</p>
