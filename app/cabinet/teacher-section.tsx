@@ -76,17 +76,30 @@ export function TeacherSection({ initialSlots, teacherTimezone }: Props) {
         <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>
           Мои занятия как учитель
         </h2>
-        <Link
-          href="/teacher"
-          style={{
-            color: 'var(--accent, #6ea8fe)',
-            fontSize: 13,
-            textDecoration: 'none',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          Полный календарь →
-        </Link>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <Link
+            href="/teacher/settings/calendar"
+            style={{
+              color: 'var(--secondary)',
+              fontSize: 13,
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Настройки календаря →
+          </Link>
+          <Link
+            href="/teacher"
+            style={{
+              color: 'var(--accent, #6ea8fe)',
+              fontSize: 13,
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Полный календарь →
+          </Link>
+        </div>
       </div>
       <p
         style={{
