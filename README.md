@@ -27,6 +27,8 @@ The project combines public marketing pages, direct checkout, payment reconcilia
 - tariff catalog with mandatory lesson duration (60/90 min), price/duration immutable after first slot reference, hard-delete refused when slots reference the tariff
 - booking calendar sync with Google Calendar: Calendly-style booking UI, OAuth scaffolding, two-way pull/push, post-pull conflict detector, teacher conflict resolution surface (red outline + modal actions)
 - learner-facing package catalog at `/cabinet/packages` with a buy CTA, race-safe purchase gates (one pending and one already-active package of the same duration both refused under a per-(account, duration) advisory lock), and CloudPayments widget intent returned inline from the checkout-init response
+- operator-driven non-money package grant via `POST /api/admin/packages/[id]/grant` with synthetic `payment_orders` rows (`provider='admin_grant'`, `status='granted'`), inline grant button in the admin packages editor, anti-stacking serialised against the learner-buy and webhook-grant paths on the shared `pkg-stack:` advisory-lock prefix, and a `granted_by_operator_id` triple-CHECK invariant in the schema
+- operator observability for systemd alert probes (auth-flow, calendar-pathology, webhook-flow) at `/admin/settings/alerts`: per-probe last-run + last-alert + effective thresholds read from probe_runs row snapshots, plus a dry-run test-send button to verify the Resend transport without waiting for a real incident
 
 ## What is intentionally private
 
