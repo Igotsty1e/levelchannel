@@ -48,3 +48,6 @@ temp/
 next-env.d.ts
 .gstack/
 /var/
+
+# Claude Code internal session state
+.claude/

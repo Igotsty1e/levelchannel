@@ -3,9 +3,13 @@ import { escapeHtml } from '@/lib/email/escape'
 // Wave 15 — operator-facing notification on a permanent
 // package-grant failure (`payment.grant.failed` audit event).
 //
-// Fires on six of the seven enumerated semantic reasons from
-// lib/billing/package-grant.ts. NOT on `idempotent_replay` — that's
-// expected webhook-retry traffic, never a real failure.
+// Fires on every enumerated semantic-failure reason from
+// lib/billing/package-grant.ts (eight as of PKG-ADMIN-GRANT
+// 2026-05-16, last added: already_owns_active_package — a learner
+// paid but a duplicate active package already exists from a
+// concurrent admin grant; operator must refund). Webhook retries
+// for the SAME invoice take the idempotent-replay path and emit a
+// success audit row, not this email.
 //
 // Why per-event email AND not just rely on the audit log: a paid
 // order whose grant fails leaves the customer paying without a

@@ -78,6 +78,14 @@ export default async function AdminPaymentDetailPage({ params }: RouteParams) {
         {order.paidAt ? (
           <Field label="Оплачен">{formatDateTime(order.paidAt)}</Field>
         ) : null}
+        {order.status === 'granted' ? (
+          <Field label="Выдан">{formatDateTime(order.updatedAt)}</Field>
+        ) : null}
+        {order.status === 'granted' && order.grantedByOperatorId ? (
+          <Field label="Оператор">
+            <code style={{ fontSize: 11 }}>{order.grantedByOperatorId}</code>
+          </Field>
+        ) : null}
         {order.failedAt ? (
           <Field label="Отклонён">{formatDateTime(order.failedAt)}</Field>
         ) : null}

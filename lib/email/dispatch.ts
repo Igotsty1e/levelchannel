@@ -109,8 +109,9 @@ export async function sendOperatorPaymentFailureNotification(
 }
 
 // Wave 15 — package-grant failure dispatch. Fires from
-// processPackageGrant on six of the seven enumerated semantic
-// reasons (NOT idempotent_replay). Best-effort; silent skip when
+// processPackageGrant on every semantic-failure reason (eight as
+// of PKG-ADMIN-GRANT 2026-05-16, last added:
+// already_owns_active_package). Best-effort; silent skip when
 // OPERATOR_NOTIFY_EMAIL is empty; never blocks the webhook ack.
 export async function sendOperatorPackageGrantFailureNotification(
   params: Omit<OperatorPackageGrantFailureParams, 'siteUrl'>,
