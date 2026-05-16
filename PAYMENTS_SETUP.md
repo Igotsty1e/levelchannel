@@ -179,9 +179,21 @@ TWO orthogonal proofs of authorisation:
 2. **Session fallback (RECEIPT-3DS-TOKEN, 2026-05-16):** if the
    token path doesn't yield a match, the gate accepts an
    authenticated session when `session.account.id ===
-   order.metadata.accountId`. Used by the saved-card 3DS path
-   where the CloudPayments server-side redirect can't carry the
-   plain token (only the hash is in the DB).
+   order.metadata.accountId`. The fallback is GENERIC — it
+   matches any order where `metadata.accountId` was written
+   server-side, NOT just saved-card 3DS. Today that's:
+   - saved-card 3DS path (`/api/payments/charge-token` →
+     `chargeWithSavedCard` writes `metadata.accountId` —
+     RECEIPT-3DS-TOKEN's primary motivating use case).
+   - package buy (`/api/checkout/package/[slug]` writes
+     `metadata.accountId` per PKG-LEARNER-BUY LBL.0).
+   - any future server-authoritative order init that writes the
+     buyer's account id into metadata.
+   The motivating bug was the 3DS-callback redirect; the broader
+   coverage is intentional — an authenticated learner reading
+   their own payment status is strictly less-privileged than
+   token-based reads, so denying it just because the URL lost a
+   `&token=` would be over-strict.
 
 **Anti-spoof at the consumer layer** (NOT the gate): the three
 gate consumers (`/api/payments/[invoiceId]/{route,cancel,stream}`)

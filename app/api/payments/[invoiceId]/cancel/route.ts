@@ -53,9 +53,16 @@ export async function POST(
       { status: 404, headers: NO_STORE },
     )
   }
+  // Token-first ordering at route level (wave-paranoia round 1 BLOCKER #1).
+  // Session resolver only runs if the token check failed.
   const presented = extractReceiptToken(request)
-  const sessionAccountId = await resolveSessionAccountIdForReceiptGate(request)
-  const verdict = evaluateReceiptGate(existing, presented, { sessionAccountId })
+  let verdict = evaluateReceiptGate(existing, presented)
+  if (!verdict.ok) {
+    const sessionAccountId = await resolveSessionAccountIdForReceiptGate(request)
+    if (sessionAccountId) {
+      verdict = evaluateReceiptGate(existing, presented, { sessionAccountId })
+    }
+  }
   if (!verdict.ok) {
     return NextResponse.json(
       { error: 'not_found', message: 'Payment not found.' },

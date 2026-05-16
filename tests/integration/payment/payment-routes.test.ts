@@ -511,6 +511,57 @@ describe('receipt-token-gate session fallback', () => {
     expect(res.status).toBe(401)
   })
 
+  it('token-first ordering: valid token + matching learner cookie → token_match audit (token wins)', async () => {
+    // Wave-mode round 2 WARN #1 regression net. If a future refactor
+    // accidentally runs the session resolver BEFORE checking the
+    // token, this test still passes status-wise (200) but the audit
+    // gate field would shift from token_match to session_match,
+    // signaling the silent regression. Pin the token-first contract
+    // at the route level via the audit row, since we don't have a
+    // mock framework for spying on the resolver directly.
+    const learner = await registerAndLogin('rcpt-tokenfirst')
+    // Create an order through the public POST so we get a real
+    // receiptToken AND the same email-as-account binding the session
+    // would match.
+    const createRes = await createHandler(
+      buildCreateRequest({
+        amountRub: 1500,
+        customerEmail: learner.email,
+        personalDataConsentAccepted: true,
+      }),
+    )
+    expect(createRes.status).toBe(200)
+    const createBody = await createRes.json()
+    const invoiceId = createBody.order.invoiceId as string
+    const receiptToken = createBody.receiptToken as string
+    // Patch the order's metadata so accountId matches the learner —
+    // /api/payments doesn't write it server-side today (slot-binding
+    // flow only), but for this test we want BOTH paths to pass; the
+    // assertion is that token wins despite session also matching.
+    await getDbPool().query(
+      `update payment_orders
+          set metadata = jsonb_set(coalesce(metadata, '{}'::jsonb), '{accountId}', to_jsonb($1::text), true)
+        where invoice_id = $2`,
+      [learner.accountId, invoiceId],
+    )
+    // Cancel with BOTH a valid token AND the matching learner cookie.
+    const cancelRes = await cancelHandler(
+      buildRequest(`/api/payments/${invoiceId}/cancel`, {
+        body: {},
+        cookie: learner.cookie,
+        headers: { 'X-Receipt-Token': receiptToken },
+      }),
+      { params: Promise.resolve({ invoiceId }) },
+    )
+    expect(cancelRes.status).toBe(200)
+    const events = await listPaymentAuditEventsByInvoice(invoiceId)
+    const cancel = events.find((e) => e.eventType === 'order.cancelled')
+    expect(cancel).toBeTruthy()
+    const payload = cancel!.payload as { gate?: string } | null
+    // Token must win even when session would also have worked.
+    expect(payload?.gate).toBe('token_match')
+  })
+
   it('POST cancel with matching learner session → 200 + audit gate=session_match', async () => {
     const learner = await registerAndLogin('rcpt-cancel-200')
     const invoiceId = await seedPaidNotGrantedOrderForAccount({

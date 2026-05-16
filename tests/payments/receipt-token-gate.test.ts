@@ -8,9 +8,14 @@ import {
 
 function fakeOrder(args: {
   hash?: string | null
-}): { receiptTokenHash: string | null | undefined } {
+  metaAccountId?: string | null
+}): {
+  receiptTokenHash: string | null | undefined
+  metadata: Record<string, unknown> | null
+} {
   return {
     receiptTokenHash: args.hash ?? null,
+    metadata: args.metaAccountId ? { accountId: args.metaAccountId } : null,
   }
 }
 
@@ -117,5 +122,75 @@ describe('evaluateReceiptGate', () => {
 
     const verdict = evaluateReceiptGate({ receiptTokenHash: hash }, wrongPlain)
     expect(verdict.ok).toBe(false)
+  })
+
+  // RECEIPT-3DS-TOKEN (2026-05-16) — session fallback ordering.
+  describe('session fallback (RECEIPT-3DS-TOKEN)', () => {
+    const { hash } = mintToken()
+    const accountId = '00000000-0000-0000-0000-000000000abc'
+
+    it('returns session_match when no token presented + session matches metadata.accountId', () => {
+      const order = fakeOrder({ hash, metaAccountId: accountId })
+      const verdict = evaluateReceiptGate(order, null, {
+        sessionAccountId: accountId,
+      })
+      expect(verdict).toEqual({ ok: true, reason: 'session_match' })
+    })
+
+    it('falls through to session_match when token presented but wrong + session matches', () => {
+      // token_mismatch + matching session → session_match (load-bearing).
+      const order = fakeOrder({ hash, metaAccountId: accountId })
+      const verdict = evaluateReceiptGate(order, 'definitely-wrong-token', {
+        sessionAccountId: accountId,
+      })
+      expect(verdict).toEqual({ ok: true, reason: 'session_match' })
+    })
+
+    it('returns token_match when token is correct, ignores session entirely', () => {
+      const { plain: rightPlain, hash: rightHash } = mintToken()
+      const order = fakeOrder({ hash: rightHash, metaAccountId: accountId })
+      const verdict = evaluateReceiptGate(order, rightPlain, {
+        sessionAccountId: accountId,
+      })
+      expect(verdict).toEqual({ ok: true, reason: 'token_match' })
+    })
+
+    it('returns token_required when no token, no session', () => {
+      const order = fakeOrder({ hash, metaAccountId: accountId })
+      const verdict = evaluateReceiptGate(order, null)
+      expect(verdict).toEqual({ ok: false, reason: 'token_required' })
+    })
+
+    it('returns token_required when session does NOT match metadata.accountId', () => {
+      const order = fakeOrder({ hash, metaAccountId: accountId })
+      const verdict = evaluateReceiptGate(order, null, {
+        sessionAccountId: '00000000-0000-0000-0000-000000000def',
+      })
+      expect(verdict).toEqual({ ok: false, reason: 'token_required' })
+    })
+
+    it('returns token_required when session matches but metadata.accountId is missing', () => {
+      // Anti-spoof: NULL metadata.accountId never matches.
+      const order = fakeOrder({ hash, metaAccountId: null })
+      const verdict = evaluateReceiptGate(order, null, {
+        sessionAccountId: accountId,
+      })
+      expect(verdict).toEqual({ ok: false, reason: 'token_required' })
+    })
+
+    it('returns legacy_grace_expired even when session matches (NULL-hash always denied)', () => {
+      // Session fallback MUST NOT bypass the legacy-grace deny.
+      const order = fakeOrder({ hash: null, metaAccountId: accountId })
+      const verdict = evaluateReceiptGate(order, null, {
+        sessionAccountId: accountId,
+      })
+      expect(verdict).toEqual({ ok: false, reason: 'legacy_grace_expired' })
+    })
+
+    it('returns token_mismatch when wrong token presented + no session given', () => {
+      const order = fakeOrder({ hash, metaAccountId: accountId })
+      const verdict = evaluateReceiptGate(order, 'wrong')
+      expect(verdict).toEqual({ ok: false, reason: 'token_mismatch' })
+    })
   })
 })

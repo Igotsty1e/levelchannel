@@ -78,9 +78,16 @@ export async function GET(request: Request, { params }: RouteParams) {
       headers: { 'Content-Type': 'application/json' },
     })
   }
+  // Token-first ordering at route level (wave-paranoia round 1 BLOCKER #1).
+  // Session resolver only runs if the token check failed.
   const presented = extractReceiptToken(request)
-  const sessionAccountId = await resolveSessionAccountIdForReceiptGate(request)
-  const verdict = evaluateReceiptGate(fullOrder, presented, { sessionAccountId })
+  let verdict = evaluateReceiptGate(fullOrder, presented)
+  if (!verdict.ok) {
+    const sessionAccountId = await resolveSessionAccountIdForReceiptGate(request)
+    if (sessionAccountId) {
+      verdict = evaluateReceiptGate(fullOrder, presented, { sessionAccountId })
+    }
+  }
   if (!verdict.ok) {
     return new Response(JSON.stringify({ error: 'not_found', message: 'Payment not found.' }), {
       status: 401,
