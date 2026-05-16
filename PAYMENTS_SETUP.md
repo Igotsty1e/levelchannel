@@ -144,17 +144,20 @@ that backs the `/cabinet/packages` buy CTA. The contract:
   `checkout:package:${slug}:${accountId}` so an `Idempotency-Key`
   replay across different packages or different accounts is a cache
   miss, not a leak.
-- Race-safe gates: inside the idempotent body the route opens a
-  single `PoolClient` transaction, takes a
-  `pg_advisory_xact_lock(hashtextextended('pkg-buy:' || accountId || ':' || durationMinutes, 0))`,
-  then evaluates two gates and runs the `INSERT INTO payment_orders`
-  on the SAME client. Gate 1 (`accountHasPendingPackageGrantForDuration`)
-  rejects with 409 `pending_package_in_flight`; Gate 2
-  (`learnerHasActivePackageOfDuration`, mirror of
-  `listAccountActivePackages`) rejects with 409
-  `already_owns_active_package`. Concurrent POSTs from the same
-  learner for the same duration serialise; different-duration
-  purchases proceed concurrently.
+- Race-safe gates: inside the idempotent body the route acquires a
+  dedicated `PoolClient`, opens a transaction, and takes a
+  `pg_advisory_xact_lock(hashtextextended('pkg-buy:' || accountId || ':' || durationMinutes, 0))`
+  on it. The lock is session-scoped, so it serialises every parallel
+  POST from the same learner for the same package duration against
+  everyone else. The two pre-INSERT gates
+  (`accountHasPendingPackageGrantForDuration` →
+  `pending_package_in_flight` 409, and `learnerHasActivePackageOfDuration`
+  → `already_owns_active_package` 409) read via the shared `pool`,
+  NOT via the lock-holding client — that's fine because the lock
+  prevents any other session from racing in between their reads and
+  the lock-holder's `INSERT INTO payment_orders` which runs on the
+  lock client inside the same TX. Different-duration purchases
+  proceed concurrently.
 - Response shape: `{ invoiceId, provider, status, amountRub,
   packageSlug, receiptToken, checkoutIntent }`. `checkoutIntent` is
   the server-built `CloudPaymentsWidgetIntent` for `provider='cloudpayments'`
