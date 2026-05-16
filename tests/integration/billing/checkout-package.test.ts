@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { POST as checkoutPackageHandler } from '@/app/api/checkout/package/[slug]/route'
+import { GET as paymentStatusHandler } from '@/app/api/payments/[invoiceId]/route'
 import { GET as accountPackagesHandler } from '@/app/api/account/packages/route'
 import { POST as loginHandler } from '@/app/api/auth/login/route'
 import { POST as registerHandler } from '@/app/api/auth/register/route'
@@ -400,6 +401,57 @@ describe('POST /api/checkout/package/[slug] — server-authored metadata', () =>
       vi.stubEnv('PAYMENTS_PROVIDER', 'mock')
       vi.stubEnv('PAYMENTS_ALLOW_MOCK_CONFIRM', 'true')
     }
+  })
+
+  // PKG-LEARNER-BUY LBL.2 — receipt-token threading regression.
+  //
+  // The /thank-you page polls GET /api/payments/[invoiceId] with the
+  // plain receipt token in X-Receipt-Token. The buy-button + tariff
+  // checkout-form now thread the token into the redirect URL so the
+  // page can forward it as a header. Without the token, the gate
+  // returns 401 — which would silently break /thank-you for ALL
+  // package buyers.
+  it('GET /api/payments/[invoiceId] with X-Receipt-Token succeeds; without it returns 401', async () => {
+    const learner = await reg('pr2-receipt-gate@example.com')
+    const pkg = await createPackage({
+      slug: 'pr2-receipt-gate-pkg',
+      titleRu: 'Receipt gate',
+      durationMinutes: 60,
+      count: 5,
+      amountKopecks: 100_00,
+    })
+    const buyRes = await checkoutPackageHandler(
+      buildRequest(`/api/checkout/package/${pkg.slug}`, {
+        cookie: learner.cookie,
+        body: {},
+      }),
+      { params: Promise.resolve({ slug: pkg.slug }) },
+    )
+    expect(buyRes.status).toBe(200)
+    const buyBody = await buyRes.json()
+    const invoiceId = buyBody.invoiceId as string
+    const receiptToken = buyBody.receiptToken as string
+    expect(typeof invoiceId).toBe('string')
+    expect(typeof receiptToken).toBe('string')
+
+    // With token: 200 with order shape.
+    const okRes = await paymentStatusHandler(
+      buildRequest(`/api/payments/${invoiceId}`, {
+        method: 'GET',
+        headers: { 'X-Receipt-Token': receiptToken },
+      }),
+      { params: Promise.resolve({ invoiceId }) },
+    )
+    expect(okRes.status).toBe(200)
+    const okBody = await okRes.json()
+    expect(okBody.order?.invoiceId).toBe(invoiceId)
+
+    // Without token: 401 (gate enforced).
+    const denyRes = await paymentStatusHandler(
+      buildRequest(`/api/payments/${invoiceId}`, { method: 'GET' }),
+      { params: Promise.resolve({ invoiceId }) },
+    )
+    expect(denyRes.status).toBe(401)
   })
 })
 

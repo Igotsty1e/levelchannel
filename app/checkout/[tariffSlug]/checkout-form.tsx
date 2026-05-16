@@ -86,13 +86,24 @@ export function CheckoutForm({
       }
       const intent = data.checkoutIntent as CloudPaymentsWidgetIntent | null
       const invoiceId = data.order?.invoiceId as string | undefined
+      // PKG-LEARNER-BUY LBL.2 — thread the plain receipt token into the
+      // /thank-you redirect. Without `&token=`, the page hits the
+      // receipt-token gate on /api/payments/[invoiceId] and 401s.
+      // Affects BOTH the mock-no-widget path and the cloudpayments
+      // success path below. 3DS-callback redirect is out of scope (the
+      // plain token is only known at order-init).
+      const receiptToken = data.receiptToken as string | undefined
+      const thankYouHref = (id: string) =>
+        receiptToken
+          ? `/thank-you?invoiceId=${encodeURIComponent(id)}&token=${encodeURIComponent(receiptToken)}`
+          : `/thank-you?invoiceId=${encodeURIComponent(id)}`
       const cp = (window as Window & { cp?: { CloudPayments: new () => unknown } }).cp
       if (!intent || !cp?.CloudPayments) {
         // No widget intent — provider is mock or script not loaded.
         // In mock mode the order still lands; redirect to /thank-you
         // so the existing page polls the order to terminal status.
         if (invoiceId) {
-          router.push(`/thank-you?invoiceId=${encodeURIComponent(invoiceId)}`)
+          router.push(thankYouHref(invoiceId))
         } else {
           setErr(
             'Не удалось запустить оплату. Обновите страницу и попробуйте снова.',
@@ -122,7 +133,7 @@ export function CheckoutForm({
       })
 
       if (result.status === 'success') {
-        router.push(`/thank-you?invoiceId=${encodeURIComponent(invoiceId!)}`)
+        router.push(thankYouHref(invoiceId!))
       } else {
         setErr(
           'Оплата не завершена. Можно попробовать ещё раз — этот же тариф откроется заново.',

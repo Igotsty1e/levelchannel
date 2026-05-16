@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
 // Billing wave PR 3 — cabinet sections for prepaid packages and
@@ -117,9 +118,32 @@ export function BillingSections({
   return (
     <>
       <div className="card" style={{ padding: 24, marginBottom: 24 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
-          Мои пакеты
-        </h2>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'baseline',
+            marginBottom: 12,
+            gap: 12,
+            flexWrap: 'wrap',
+          }}
+        >
+          <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>
+            Мои пакеты
+          </h2>
+          {/* PKG-LEARNER-BUY LBL.2 — discovery CTA to /cabinet/packages */}
+          <Link
+            href="/cabinet/packages"
+            style={{
+              fontSize: 13,
+              color: 'var(--accent, #5b8ef7)',
+              textDecoration: 'none',
+              fontWeight: 600,
+            }}
+          >
+            Купить пакет →
+          </Link>
+        </div>
         {error ? (
           <p style={{ color: '#ff8a8a', fontSize: 13 }}>Ошибка: {error}</p>
         ) : packages === null ? (
