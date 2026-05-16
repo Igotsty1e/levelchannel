@@ -11,17 +11,22 @@ const PAGE_SIZE = 50
 const STATUSES: Array<PaymentStatus | 'all'> = [
   'all',
   'pending',
+  '3ds_required',
   'paid',
   'failed',
   'cancelled',
+  'granted',
 ]
 
 const STATUS_LABEL: Record<PaymentStatus | 'all', string> = {
   all: 'все',
   pending: 'ожидают',
+  '3ds_required': '3DS',
   paid: 'оплачены',
   failed: 'отказ',
   cancelled: 'отменены',
+  // PKG-ADMIN-GRANT (2026-05-16) — non-money operator grants.
+  granted: 'выданы админом',
 }
 
 type SearchParams = Promise<{

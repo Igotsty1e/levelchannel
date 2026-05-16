@@ -113,6 +113,34 @@ export async function POST(request: Request) {
   }
 
   const pool = getDbPool()
+
+  // PKG-ADMIN-GRANT (2026-05-16) — admin grants are NOT money flow.
+  // payment_orders.provider='admin_grant' carries no actual charge to
+  // reverse; allowing this route to "refund" it would book a phantom
+  // reversal against a 0-RUB synthetic order and produce confusing
+  // audit/email. Operators void admin grants via PKG-ADMIN-VOID
+  // (follow-up wave), NOT through this money-flow route.
+  const providerRow = await pool.query(
+    `select provider from payment_orders where invoice_id = $1`,
+    [paymentOrderId],
+  )
+  if (providerRow.rows.length === 0) {
+    return NextResponse.json(
+      { error: 'order_not_found', message: 'payment_orders row not found.' },
+      { status: 404, headers: NO_STORE },
+    )
+  }
+  if (providerRow.rows[0].provider === 'admin_grant') {
+    return NextResponse.json(
+      {
+        error: 'cannot_refund_admin_grant',
+        message:
+          'This order is an admin grant (non-money flow). Use PKG-ADMIN-VOID instead — refund route is for money flow only.',
+      },
+      { status: 422, headers: NO_STORE },
+    )
+  }
+
   const client = await pool.connect()
   try {
     await client.query('begin')
