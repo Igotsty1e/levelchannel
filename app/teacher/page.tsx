@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { countHiddenSlotsForTeacher } from '@/lib/calendar/hidden-slots'
+import { getGoogleIntegrationMeta } from '@/lib/calendar/integrations'
 import { getDbPool } from '@/lib/db/pool'
 import { listActiveTariffs } from '@/lib/pricing/tariffs'
 
@@ -48,6 +49,16 @@ export default async function TeacherPage() {
   const tariffs = await listActiveTariffs()
   const conflictCount = await countTeacherConflicts(current.account.id)
   const hiddenCount = await countHiddenSlotsForTeacher(current.account.id)
+  // 2026-05-16 UI gap closure — backend Google integration exists
+  // since BCS-C.ui (#192) but the only links to /teacher/settings/calendar
+  // were inside conflict / hidden-slot banners, which only render after
+  // the integration is already connected. Brand-new teachers had no
+  // discoverable entry point. Show an always-visible status row above
+  // the calendar header.
+  const integration = await getGoogleIntegrationMeta(current.account.id)
+  const isCalendarConnected =
+    integration?.syncState === 'active'
+    || integration?.syncState === 'degraded'
 
   return (
     <>
@@ -114,6 +125,41 @@ export default async function TeacherPage() {
           .
         </div>
       ) : null}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 12,
+          marginBottom: 12,
+          padding: '10px 14px',
+          border: '1px solid var(--border)',
+          borderRadius: 8,
+          fontSize: 13,
+          color: 'var(--secondary)',
+          flexWrap: 'wrap',
+        }}
+      >
+        <span>
+          Google Calendar:{' '}
+          {isCalendarConnected ? (
+            <strong style={{ color: '#9bdf9b' }}>● Подключено</strong>
+          ) : (
+            <strong style={{ color: '#ff8a8a' }}>○ Не подключено</strong>
+          )}
+        </span>
+        <Link
+          href="/teacher/settings/calendar"
+          style={{
+            color: 'var(--text)',
+            textDecoration: 'none',
+            fontWeight: 600,
+            fontSize: 13,
+          }}
+        >
+          {isCalendarConnected ? 'Настройки →' : 'Подключить →'}
+        </Link>
+      </div>
       <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 8 }}>
         Мой календарь
       </h1>
