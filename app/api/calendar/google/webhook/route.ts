@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server'
 import { timingSafeEqual } from 'node:crypto'
 
 import { NO_STORE } from '@/lib/api/http-headers'
+import {
+  getCalendarEncryptionKey,
+  getCalendarEncryptionKeyOld,
+} from '@/lib/calendar/encryption'
 import { getDbPool } from '@/lib/db/pool'
 import { enforceRateLimit } from '@/lib/security/request'
 
@@ -84,17 +88,44 @@ export async function POST(request: Request) {
   }
 
   const pool = getDbPool()
+  // AUDIT-SEC-4 (2026-05-17) — decrypt-aware read. Prefer the
+  // encrypted column; fall back to plaintext channel_token for rows
+  // written before migration 0054 landed (Phase A). After Phase B
+  // nulls plaintext for migrated rows, the encrypted branch is
+  // load-bearing. Keys may be null in dev/test; pgp_sym_decrypt_either
+  // returns NULL on null PRIMARY or wrong-key, never throws — the
+  // COALESCE then degrades to the plaintext column safely.
+  let encKey: string | null = null
+  let encKeyOld: string | null = null
+  try {
+    encKey = getCalendarEncryptionKey()
+    encKeyOld = getCalendarEncryptionKeyOld()
+  } catch {
+    // In production the resolver throws if CALENDAR_ENCRYPTION_KEY is
+    // unset. Treat as null: legacy plaintext rows still match; new
+    // dual-write rows silent-drop (the right failure mode — preserves
+    // the existing anti-probe shape).
+    encKey = null
+    encKeyOld = null
+  }
   const client = await pool.connect()
   try {
     await client.query('begin')
     const lookup = await client.query(
-      `select account_id, channel_token, channel_resource_id,
+      `select account_id,
+              coalesce(
+                case when channel_token_enc is null then null
+                     else pgp_sym_decrypt_either(channel_token_enc, $2::text, $3::text)
+                end,
+                channel_token
+              ) as channel_token,
+              channel_resource_id,
               last_seen_message_number, read_calendar_ids,
               channel_expires_at, sync_state
          from teacher_calendar_integrations
         where channel_id = $1
         for update`,
-      [channelId],
+      [channelId, encKey, encKeyOld],
     )
     if (lookup.rows.length === 0) {
       await client.query('commit')

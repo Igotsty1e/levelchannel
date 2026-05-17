@@ -272,12 +272,16 @@ in the same vault, rotate it through the same cadence.
 
 ### At-rest encryption — Calendar key rotation
 
-The Google Calendar integration encrypts three columns at rest with
+The Google Calendar integration encrypts four columns at rest with
 `CALENDAR_ENCRYPTION_KEY` (separate env from `AUDIT_ENCRYPTION_KEY`
 for blast-radius isolation):
 
 - `teacher_calendar_integrations.access_token_enc`
 - `teacher_calendar_integrations.refresh_token_enc`
+- `teacher_calendar_integrations.channel_token_enc` (AUDIT-SEC-4,
+  2026-05-17 — Google push-channel verification secret; see
+  §AUDIT-SEC-4 channel_token migration below for the Phase A/B/C
+  rollout discipline)
 - `teacher_external_busy_intervals.summary_encrypted` (foreign event
   titles, truncated to 64 chars, 30-day retention).
 
@@ -312,7 +316,7 @@ Key rotation mirrors the audit-encryption flow (AUDIT-SEC-2,
      node scripts/rotate-calendar-encryption.mjs
    ```
    Idempotent — already-PRIMARY-encrypted rows are skipped per
-   target. Walks the three columns sequentially with their own
+   target. Walks the four columns sequentially with their own
    preflight + batched UPDATE. Pre-flight aborts if any row
    decrypts under NEITHER PRIMARY nor the supplied OLD (the
    wrong-OLD-key footgun: if the operator supplies a stale or
@@ -330,7 +334,8 @@ Key rotation mirrors the audit-encryption flow (AUDIT-SEC-2,
      where access_token_enc is not null
        and pgp_sym_decrypt_either(access_token_enc, '<new>', null) is null;
    ```
-   Expect 0. Same shape for `refresh_token_enc` and for
+   Expect 0. Same shape for `refresh_token_enc`,
+   `channel_token_enc`, and
    `teacher_external_busy_intervals.summary_encrypted`.
 
 6. **Restart the calendar-pull timer** (if stopped in step 3).
@@ -344,7 +349,99 @@ unreadable** — the integration disconnects on next pull and the
 teacher must re-authenticate via `/teacher/settings/calendar`. Foreign
 event summaries (`teacher_external_busy_intervals.summary_encrypted`)
 also become unreadable but auto-recover on the next pull cycle.
-Treat the key as a peer of `AUDIT_ENCRYPTION_KEY`.
+Push-channel verification secrets (`channel_token_enc`) also become
+unreadable; the webhook silent-drops affected channels until the
+next renewal cycle re-encrypts under the new key. Treat the key as
+a peer of `AUDIT_ENCRYPTION_KEY`.
+
+### AUDIT-SEC-4 channel_token migration
+
+The `channel_token` column was originally added as plaintext `text`
+(migration 0043). AUDIT-SEC-4 (2026-05-17, migration 0054) adds a
+parallel encrypted bytea column `channel_token_enc` and dual-writes
+both. The migration ships in three operator-controlled phases:
+
+**Phase A — automatic on deploy.** As soon as the PR lands:
+
+- Migration 0054 adds the nullable `channel_token_enc` column.
+- `setupChannelForIntegration` fails closed BEFORE the external
+  Google `channels.watch` call if the encryption key is unset OR
+  the `channel_token_enc` column is missing — no orphan Google
+  channels are ever created.
+- Every channel-renewal cycle (every ~5 days per integration)
+  dual-writes both columns.
+- The webhook handler reads decrypt-aware: it prefers
+  `pgp_sym_decrypt_either(channel_token_enc, ...)` and falls back
+  to the plaintext column. Legacy plaintext-only rows keep working
+  until the next renewal upgrades them.
+
+No operator action required for Phase A. Phase A is rollback-safe
+as long as Phase B has not run: reverting the PR leaves
+`channel_token_enc` populated but unused.
+
+**Phase B — operator-driven, after the rollback window closes.**
+
+⚠️ **Phase B is a one-way door.** The pre-Phase-A webhook does not
+know about `channel_token_enc`. After Phase B nulls the plaintext
+column, a rollback to pre-Phase-A code silent-drops every push
+notification on the affected rows until the next channel-renewal
+re-populates plaintext (which the pre-Phase-A code expects). Run
+Phase B ONLY after:
+
+1. Phase A has been live in production for ≥14 days.
+2. No rollback to a pre-Phase-A build is planned within the next
+   7 days.
+3. `CALENDAR_ENCRYPTION_KEY` is the same key the renewer has been
+   encrypting under since Phase A landed.
+
+Phase B is automated by `scripts/null-plaintext-channel-token.mjs`.
+The script does preflight + snapshot + destructive UPDATE +
+post-verify, all driven by env vars (the encryption key never lands
+in shell history or `pg_stat_statements`):
+
+```bash
+# Read-only preflight (default — never destructive):
+DATABASE_URL=postgres://... CALENDAR_ENCRYPTION_KEY=... \
+  node scripts/null-plaintext-channel-token.mjs
+
+# Actually run it, eyes-on:
+DATABASE_URL=postgres://... CALENDAR_ENCRYPTION_KEY=... \
+  node scripts/null-plaintext-channel-token.mjs --execute --confirm
+```
+
+The preflight aborts on any of:
+- A row has `channel_token` set but `channel_token_enc` is null
+  (Phase A hasn't covered that row yet — wait for the next
+  renewer cycle).
+- No encrypted rows at all (Phase A never deployed).
+- Sample roundtrip mismatch: a row's `channel_token_enc` decrypts
+  to a value that differs from its `channel_token`. Means the env
+  key does not match what the app encrypted with.
+
+Rollback (if anything goes wrong, including a deferred decision
+to back out within the snapshot retention window):
+
+```sql
+begin;
+  update teacher_calendar_integrations t
+     set channel_token = b.channel_token
+    from teacher_calendar_integrations_pre_sec4_phase_b b
+   where t.account_id = b.account_id
+     and t.channel_token is null;
+commit;
+```
+
+Drop the snapshot after ≥7 days of prod confidence:
+
+```sql
+drop table teacher_calendar_integrations_pre_sec4_phase_b;
+```
+
+**Phase C — drop the plaintext column.** Deferred. A follow-up
+migration removes `channel_token` from the schema and the
+`coalesce(..., channel_token)` fallback from the webhook. Land it
+in a future release after Phase B has been clean in production for
+≥30 days across the entire fleet.
 
 ## Implemented controls
 
