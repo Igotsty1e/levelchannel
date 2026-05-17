@@ -68,6 +68,43 @@ Process: I run a discovery pass + Codex `/codex` adversarial second-opinion on t
 8. Foreign event `summary` stored encrypted, 64-char truncated, 30d retention.
 9. MSK-only teachers in MVP (DB CHECK enforces).
 
+## Audit findings — 2026-05-17
+
+Three parallel sub-agent audits (code quality / documentation / security) on current main. Findings consolidated below as new backlog items. Each tagged with severity, owner doc/file, suggested action, estimated effort. None are correctness blockers shipping today; codebase is operationally strong. These are completion gaps, doc drift, and hardening refinements.
+
+### Security findings (HIGH priority)
+
+- **AUDIT-SEC-1 (HIGH)** — Complete audit-encryption Phase B on prod: run `scripts/null-plaintext-audit-pii.mjs` against `payment_audit_events` so plaintext email + IP columns are NULLed out after the encrypted columns finished backfilling. Today's DB dump still leaks plaintext PII pre-Wave-2.1 rows. ETA: 1h operator time. Reference: `SECURITY.md §Wave 2.1 phase plan`.
+- **AUDIT-SEC-2 (HIGH)** — Add `scripts/rotate-calendar-encryption.mjs` mirroring `scripts/rotate-audit-encryption.mjs`. Today `CALENDAR_ENCRYPTION_KEY` has no automated rotation path — if the key is ever lost, all encrypted teacher OAuth tokens become permanently unreadable. `getCalendarEncryptionKeyOld` is already scaffolded in `lib/calendar/encryption.ts` (matching the audit-encryption rotation shape). ETA: 4h dev.
+- **AUDIT-SEC-3 (HIGH)** — Align `requireLearnerArchetypeAndVerified` with the canonical `LEARNER_ARCHETYPE_CANDIDATE_WHERE_SQL` predicate from `lib/auth/learner-archetype.ts`. Request-time guards today don't check `scheduled_purge_at` / `purged_at` — a user inside deletion-grace can still hit `/api/slots/*` book endpoints. Round-1 WARN #3 from a prior wave; never closed. ETA: 4h dev + 6 integration tests.
+- **AUDIT-SEC-4 (MEDIUM)** — Encrypt Google Calendar `channel_token` at rest using the existing `CALENDAR_ENCRYPTION_KEY` (today plaintext in `teacher_calendar_integrations`). Low immediate impact (channel tokens expire ~24h, payload is just "check for changes"), but defense-in-depth on DB dump. ETA: 8h dev.
+
+### Code-quality findings (HIGH priority)
+
+- **AUDIT-CODE-1 (HIGH)** — Add idempotency wrapper to `POST /api/admin/accounts/[id]/disable` + `/role` + `/postpaid`. Today a double-click revokes sessions twice / flips role twice. Money-moving routes already use `withIdempotency`; account-mutation routes don't. ETA: 4h dev.
+- **AUDIT-CODE-2 (HIGH)** — Fix idempotency cache poisoning on `POST /api/admin/settings/alerts/[probe]/test-send` 422 path: env-var checks happen AFTER a `probe_runs` row is written; if operator then sets `ALERT_EMAIL_TO` and retries with the same Idempotency-Key, the cached 422 wins. Fix: env preflight before any DB write, OR exclude 4xx from idempotency cache. ETA: 2h dev.
+- **AUDIT-CODE-3 (MEDIUM)** — Extract `isUndefinedTableError` helper into `lib/db/errors.ts` and import from `lib/admin/probe-status.ts` + `app/api/admin/settings/alerts/[probe]/test-send/route.ts`. Today duplicated; risk of silent drift. ETA: 1h refactor.
+- **AUDIT-CODE-4 (MEDIUM)** — Standardize catch blocks to `catch (err: unknown)` + `err instanceof Error` guards repo-wide. Several catch sites today access `.message` on untyped errors — string-throw or object-throw would crash. ETA: 4h sweep.
+- **AUDIT-CODE-5 (MEDIUM)** — Add integration tests for `app/api/admin/accounts/[id]/{disable,role,postpaid}/route.ts`. No coverage today; existing patterns under `tests/integration/admin/` are the template. ETA: 8h test work.
+- **AUDIT-CODE-6 (MEDIUM)** — Add end-to-end integration test covering full learner-buy → webhook → package-grant → purchase cycle. Today each leg is tested in isolation; no test exercises the seam. Mirrors the BCS-F.1 wire-up gap failure mode (module tested, wire-up not). ETA: 6h test work.
+- **AUDIT-CODE-7 (LOW)** — Add success-side `console.log` in `lib/calendar/pull-worker.ts` after detector returns ok. Today only the error branch logs; operators can't confirm detector actually ran on a given pull from journald alone. ETA: 0.5h.
+- **AUDIT-CODE-8 (LOW)** — Add explicit success-side metrics on `drainPullJobs` (events pulled, duration, outcome counts). ETA: 2h.
+
+### Documentation findings (MEDIUM priority)
+
+- **AUDIT-DOC-1 (HIGH)** — Expand `ARCHITECTURE.md §API routes` to cover all 81 routes (currently ~48 documented). The 33 missing are concentrated in `app/api/admin/`, `app/api/account/`, `app/api/admin/reconciliation/`, `app/api/admin/settings/`, `app/api/teacher/` recent additions. Agents discovering API contracts today have to code-read. ETA: 4h sweep.
+- **AUDIT-DOC-2 (HIGH)** — Add `ARCHITECTURE.md §Database Schema (Recent Migrations)` section listing migrations 0049–0053 with one-line semantic purpose per new table: `package_grant_resolutions` (PKG-RECON), `probe_runs` (ALERTS-OBS), plus 0051's new `granted_by_operator_id` column with triple-CHECK. ETA: 1h.
+- **AUDIT-DOC-3 (MEDIUM)** — Consolidate `pkg-stack:` advisory-lock contract: appears verbatim in 5 places (README, ARCHITECTURE, PAYMENTS_SETUP×2, ENGINEERING_BACKLOG). Owner: `PAYMENTS_SETUP.md §Package-buy init`. Other docs should reference it, not restate. ETA: 1h.
+- **AUDIT-DOC-4 (MEDIUM)** — Update `docs/plans/*.md` status headers to "shipped 2026-05-[date] (PR #XXX)" for the 4 shipped epic plans (pkg-recon, pkg-learner-buy, receipt-3ds-token, alerts-obs). Currently they read as DRAFT / READY. ETA: 0.5h.
+- **AUDIT-DOC-5 (MEDIUM)** — Add `PAYMENTS_SETUP.md §3DS Receipt-Token Session Fallback` documenting RECEIPT-3DS-TOKEN's generic session fallback (session.account.id == order.metadata.accountId). `chargeWithSavedCard` now writes `metadata.accountId` — load-bearing for the fallback. ETA: 1h.
+- **AUDIT-DOC-6 (MEDIUM)** — `docs/public/ROADMAP.md` + `docs/public/ARCHITECTURE.md` lag the May 14-17 wave: no mention of package catalog, admin grant, alerts observability. ETA: 1h.
+- **AUDIT-DOC-7 (LOW)** — `SECURITY.md §Auth and account layer` add one sentence on the receipt-token gate's session-fallback rule. ETA: 0.25h.
+- **AUDIT-DOC-8 (LOW)** — `OPERATIONS.md` document `probe_runs` retention (90 days), `slot_admin_actions` operator-purge implication (ON DELETE RESTRICT blocks operator-account deletion until rows are cleaned). ETA: 0.5h.
+
+### Aggregate
+
+Total: 4 SEC + 8 CODE + 8 DOC = 20 actionable items. ~46h of dev work + some operator time. None are correctness blockers shipping today.
+
 ## Bug intake — 2026-05-13
 
 Reported by product owner. Each item: reproduce → verify → fix. Triage TBD; no severity assigned yet — confirm reproduction first, then prioritize.
