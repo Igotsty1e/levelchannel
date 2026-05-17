@@ -85,17 +85,37 @@ do work.
 - single-use-tokens whitelist invariant: `tableFor(scope)` throws a
   typed error if the scope is invalid; SQL is never built on top of
   an `undefined` table name.
-- learner-archetype gate on `/api/slots/*`: `requireLearnerArchetype`
-  and `requireLearnerArchetypeAndVerified` (`lib/auth/guards.ts`)
-  block authenticated `admin` and `teacher` accounts from learner-side
-  slot endpoints (`mine`, `available`, `[id]/book`, `[id]/cancel`)
-  with `error: 'wrong_role'`. Deny-list rather than allow-list because
-  legacy accounts have no role row at all (the cabinet treats "no
-  role" as an implicit student); per migration 0023 admin is mutually
-  exclusive with student / teacher, so the deny-list is sufficient.
-  Anonymous browse on `/api/slots/available` stays open (loose
-  contract, no learner data leaks since open slots carry teacher +
-  tariff + timing only).
+- learner-archetype gate on `/api/slots/*` and learner-write
+  endpoints (`/api/checkout/package/[slug]`, `/api/payments/charge-token`,
+  etc.): `requireLearnerArchetype` and `requireLearnerArchetypeAndVerified`
+  (`lib/auth/guards.ts`).
+  - **Stage 1 — role deny-list:** authenticated `admin` and `teacher`
+    accounts get `wrong_role` (403). Legacy accounts have no role row
+    at all (the cabinet treats "no role" as an implicit student); per
+    migration 0023 admin is mutually exclusive with student / teacher,
+    so the deny-list rules out elevated accounts cleanly.
+  - **Stage 2 — canonical-predicate check (AUDIT-SEC-3, 2026-05-17,
+    `AndVerified` variant only):** after the role check,
+    `requireLearnerArchetypeAndVerified` calls
+    `isLearnerArchetypeCandidate(account.id)` (canonical predicate at
+    `lib/auth/learner-archetype.ts`). This re-asserts the full set of
+    target-eligibility invariants — `email_verified_at IS NOT NULL`,
+    `disabled_at IS NULL`, `scheduled_purge_at IS NULL`, `purged_at
+    IS NULL`, no admin / teacher role — and returns 403 with
+    `error='learner_target_unavailable'` if any fails. The Stage 1
+    role check alone is insufficient: a learner inside deletion
+    grace (scheduled_purge_at set) would otherwise continue booking
+    slots and buying packages for the full grace window even though
+    the admin-side picker already excludes them as a target.
+  - **Non-`AndVerified` variant** (`requireLearnerArchetype`) keeps
+    only Stage 1 today. Adopting the canonical predicate there would
+    tighten the contract for its two callers
+    (`/api/slots/mine` read + `/api/slots/[id]/cancel`) since the
+    canonical predicate requires `email_verified_at`. Tracked as a
+    follow-up in `lib/auth/learner-archetype.ts` SCOPE NOTE.
+  - Anonymous browse on `/api/slots/available` stays open (loose
+    contract, no learner data leaks since open slots carry teacher +
+    tariff + timing only).
 
 ## Protected assets
 
