@@ -22,9 +22,14 @@ type RouteParams = { params: Promise<{ id: string }> }
 // clients get prepaid-only; loyal long-term clients get the toggle
 // flipped after a track record of paid orders.
 //
-// AUDIT-CODE-1 (2026-05-17): wrapped in withIdempotency so a
-// double-click doesn't UPDATE the column twice and emit two audit
-// rows.
+// AUDIT-CODE-1 (2026-05-17): wrapped in withIdempotency for
+// SEQUENTIAL same-key replay dedup. CONCURRENT same-key fire MAY
+// still execute the executor twice — see contract on
+// lib/security/idempotency.ts. UPDATE accounts SET postpaid_allowed
+// is idempotent in effect (re-setting the same value is a no-op).
+// The current path emits no audit row and no notification email,
+// so a duplicate executor invocation produces only one redundant
+// UPDATE.
 
 export async function POST(request: Request, { params }: RouteParams) {
   const { id } = await params

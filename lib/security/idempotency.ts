@@ -38,6 +38,32 @@ function jsonResponse(outcome: IdempotencyOutcome, replay: boolean) {
 // Хранение только в Postgres: file-backend = single-process, ему
 // дедуп бессмысленен (in-memory достаточно), плюс файловый JSON
 // плохо переживает быстрые конкурентные записи.
+//
+// CONTRACT (precisely — post-merge paranoia round 2 fix-forward,
+// 2026-05-17):
+//
+//   This helper deduplicates SEQUENTIAL same-key replays. The
+//   lookup → execute → save flow has NO inter-request reservation.
+//   Two parallel requests arriving with the SAME Idempotency-Key
+//   within the executor's runtime window MAY BOTH run the executor
+//   (their side effects fire twice) — the ON CONFLICT save then
+//   keeps only one cached response.
+//
+//   A previous attempt (rolled back) wrapped the whole flow in a
+//   session-scoped pg_advisory_lock on a dedicated client. That
+//   serialised correctly under low concurrency, but under N ≥
+//   DATABASE_POOL_MAX concurrent same-key requests, each waiter
+//   held a pool connection while blocked on the lock — the winner
+//   couldn't get a second connection for the cached lookup/save
+//   and the whole pool deadlocked. So the fix shipped a worse bug
+//   than the one it claimed to close. Honest contract: dedup
+//   SEQUENTIAL replay only.
+//
+//   For routes where concurrent same-key dedup matters (Resend send,
+//   payment INSERT, etc.) the route layer adds its own atomic
+//   coordination — usually a pg_advisory_xact_lock keyed on a
+//   domain invariant (e.g. PKG-ADMIN-GRANT's pkg-stack:account:
+//   duration). Don't ask this helper to do more than it does.
 export async function withIdempotency(
   request: Request,
   scope: string,

@@ -305,6 +305,28 @@ describe('POST /api/admin/settings/alerts/[probe]/test-send', () => {
       // (Resend mock returned ok) or 502 (real Resend rejected the
       // poisoned key). Either way, NOT 422 with the cache-body.
       expect(r2.status).not.toBe(422)
+
+      // Post-merge paranoia round 1 WARN #2 closure — strengthen the
+      // load-bearing assertion. Beyond "status !== 422", prove the
+      // second attempt actually executed the live send path: a NEW
+      // probe_runs row was written with a distinct fingerprint AND
+      // a non-null recipient (the env was set before retry). If the
+      // cache had replayed, no second row would exist.
+      const probeRows = await getDbPool().query(
+        `select fingerprint, recipient_email
+           from probe_runs
+          where probe_name = 'auth-flow'
+            and is_test = true
+          order by ran_at asc`,
+      )
+      expect(probeRows.rows.length).toBeGreaterThanOrEqual(2)
+      const fingerprints = new Set(
+        probeRows.rows.map((r) => String(r.fingerprint)),
+      )
+      expect(fingerprints.size).toBe(probeRows.rows.length)
+      const recipients = probeRows.rows.map((r) => r.recipient_email)
+      expect(recipients).toContain(null) // first attempt: env missing
+      expect(recipients).toContain('ops-cache-poison@example.com') // second
     } finally {
       if (prevAlertEmailTo !== undefined) process.env.ALERT_EMAIL_TO = prevAlertEmailTo
       else delete process.env.ALERT_EMAIL_TO

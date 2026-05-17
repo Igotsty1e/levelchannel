@@ -164,6 +164,14 @@ export async function POST(request: Request, { params }: RouteParams) {
     )
   }
 
+  // withIdempotency below deduplicates SEQUENTIAL same-key replays
+  // (operator's tab retries, network-flap auto-retry with reused
+  // Idempotency-Key). CONCURRENT same-key fire MAY still send two
+  // emails — see contract on lib/security/idempotency.ts. Resend
+  // is NOT idempotent (each call is a distinct send), so concurrent
+  // double-fire produces two operator inbox entries. Acceptable
+  // because the admin UI generates a fresh UUID Idempotency-Key per
+  // click; same-key concurrent requires an explicitly racing client.
   return withIdempotency(
     request,
     `admin:alerts:test-send:${probe}:${auth.account.id}`,
