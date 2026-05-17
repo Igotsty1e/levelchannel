@@ -116,6 +116,14 @@ describe('drainPullJobs', () => {
     expect(outcomes).toHaveLength(1)
     expect(outcomes[0].kind).toBe('succeeded')
 
+    // AUDIT-CODE-8 (2026-05-17): succeeded outcomes carry
+    // `intervalsAfter` + `durationMs` for cron-route aggregation.
+    if (outcomes[0].kind !== 'succeeded') throw new Error('unreachable')
+    expect(typeof outcomes[0].intervalsAfter).toBe('number')
+    expect(outcomes[0].intervalsAfter).toBeGreaterThanOrEqual(0)
+    expect(typeof outcomes[0].durationMs).toBe('number')
+    expect(outcomes[0].durationMs).toBeGreaterThanOrEqual(0)
+
     const pool = getDbPool()
     const job = await pool.query(
       'select status from calendar_pull_jobs where teacher_account_id=$1',
