@@ -1,6 +1,7 @@
 # RECEIPT-3DS-TOKEN — session-bound fallback for /thank-you after 3DS
 
 **Wave name:** `receipt-3ds-token`
+**Status:** SHIPPED 2026-05-16 (PR #242). Archive.
 **Priority:** P1 followup (carved out of PKG-LEARNER-BUY epic-end RISK-4)
 **Predecessor:** PKG-LEARNER-BUY (merged 2026-05-16)
 **Scope:** **Option B** (session-bound fallback) selected after plan-mode round 1 surfaced 5 BLOCKERs on Option A (encrypted metadata cipher). Option A would have added a JS AEAD format + atomic consume + new retention job + new env key + health check coverage — substantial new security/operational surface for a low-frequency UX bug. Option B adds one narrow fallback to an existing gate.
