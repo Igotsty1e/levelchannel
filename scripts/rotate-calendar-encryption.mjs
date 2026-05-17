@@ -8,6 +8,7 @@
 // Tables + encrypted columns covered:
 //   - teacher_calendar_integrations.access_token_enc
 //   - teacher_calendar_integrations.refresh_token_enc
+//   - teacher_calendar_integrations.channel_token_enc (AUDIT-SEC-4)
 //   - teacher_external_busy_intervals.summary_encrypted
 //
 // Run order on the target environment (also in SECURITY.md
@@ -65,6 +66,11 @@ const ROTATION_TARGETS = [
   {
     table: 'teacher_calendar_integrations',
     column: 'refresh_token_enc',
+    ageColumn: 'created_at',
+  },
+  {
+    table: 'teacher_calendar_integrations',
+    column: 'channel_token_enc',
     ageColumn: 'created_at',
   },
   {

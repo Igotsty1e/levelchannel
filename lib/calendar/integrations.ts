@@ -172,6 +172,7 @@ export async function upsertGoogleIntegration(
          read_calendar_ids, write_calendar_id,
          sync_state, epoch, last_reconnected_at,
          channel_id, channel_resource_id, channel_expires_at, channel_token,
+         channel_token_enc,
          last_seen_message_number,
          created_at, updated_at
        ) values (
@@ -182,6 +183,7 @@ export async function upsertGoogleIntegration(
          $7, $8,
          'active', gen_random_uuid()::text, now(),
          null, null, null, null,
+         null,
          null,
          now(), now()
        )
@@ -210,6 +212,7 @@ export async function upsertGoogleIntegration(
          channel_resource_id = null,
          channel_expires_at = null,
          channel_token = null,
+         channel_token_enc = null,
          last_seen_message_number = null,
          last_error = null,
          updated_at = now()
@@ -345,6 +348,7 @@ export async function disconnectGoogleIntegration(
             channel_resource_id = null,
             channel_expires_at = null,
             channel_token = null,
+            channel_token_enc = null,
             last_seen_message_number = null,
             updated_at = now()
       where account_id = $1

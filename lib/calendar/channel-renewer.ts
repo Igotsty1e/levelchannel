@@ -23,6 +23,7 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 
 import { withTokenRetry, tryRefreshOnce, type CallResult } from '@/lib/calendar/token-retry'
+import { getCalendarEncryptionKey } from '@/lib/calendar/encryption'
 import {
   stopChannel,
   watchChannel,
@@ -73,6 +74,54 @@ export async function setupChannelForIntegration(opts: {
   fetchImpl?: typeof fetch
 }): Promise<SetupChannelOutcome> {
   const pool = getDbPool()
+
+  // AUDIT-SEC-4 (2026-05-17) — fail closed BEFORE any external
+  // Google channels.watch call on any condition that would prevent
+  // the post-watch dual-write UPDATE from succeeding. Otherwise we
+  // create a live Google push channel that we have no local record
+  // of: webhook silent-drops because no row matches channel_id, the
+  // OAuth callback still redirects connected=1 (it treats setup
+  // failures as non-fatal), and the user never sees the leak.
+  //
+  // Two conditions:
+  //   1. CALENDAR_ENCRYPTION_KEY unset — the resolver throws in
+  //      production and returns null in dev/test. try/catch handles
+  //      both.
+  //   2. Migration 0054 not yet applied — channel_token_enc column
+  //      doesn't exist, the dual-write UPDATE would error 42703.
+  //      Schema preflight via information_schema.
+  let encKey: string | null
+  try {
+    encKey = getCalendarEncryptionKey()
+  } catch (e) {
+    return {
+      ok: false,
+      reason: 'config_missing',
+      detail: `CALENDAR_ENCRYPTION_KEY: ${e instanceof Error ? e.message : String(e)}`,
+    }
+  }
+  if (!encKey) {
+    return {
+      ok: false,
+      reason: 'config_missing',
+      detail: 'CALENDAR_ENCRYPTION_KEY unset',
+    }
+  }
+  const schemaCheck = await pool.query(
+    `select 1
+       from information_schema.columns
+      where table_name = 'teacher_calendar_integrations'
+        and column_name = 'channel_token_enc'
+      limit 1`,
+  )
+  if (schemaCheck.rows.length === 0) {
+    return {
+      ok: false,
+      reason: 'config_missing',
+      detail: 'channel_token_enc column missing — migration 0054 not applied',
+    }
+  }
+
   // Read prior channel state so we can stop it after the rotation
   // succeeds. (Stopping the OLD before watching the new would create
   // a deafness window; stopping after the new is hot is safe.)
@@ -170,11 +219,12 @@ export async function setupChannelForIntegration(opts: {
         set channel_id = $2,
             channel_resource_id = $3,
             channel_token = $4,
+            channel_token_enc = pgp_sym_encrypt($4, $6),
             channel_expires_at = $5::timestamptz,
             last_seen_message_number = null,
             updated_at = now()
       where account_id = $1`,
-    [opts.accountId, watched.channelId, watched.resourceId, channelToken, expiresAt],
+    [opts.accountId, watched.channelId, watched.resourceId, channelToken, expiresAt, encKey],
   )
 
   // Stop the old channel (best-effort; even if it fails Google will

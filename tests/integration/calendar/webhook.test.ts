@@ -56,15 +56,22 @@ async function makeTeacherWithChannel(opts: {
   })
   // Stamp channel fields directly — upsert doesn't take them yet
   // (channels.watch is BCS-D.4 territory).
+  //
+  // AUDIT-SEC-4 (2026-05-17) — fixture dual-writes channel_token
+  // AND channel_token_enc so the test surface matches what the
+  // renewer produces in production. Stamping only plaintext would
+  // make the dual-write a silent no-op as far as this test is
+  // concerned (R1 BLOCKER #3 / R2 BLOCKER #2 closure).
   const pool = getDbPool()
   const expiresInMs = opts.channelExpiresInMs ?? 6 * 24 * 60 * 60_000
   await pool.query(
     `update teacher_calendar_integrations
         set channel_id = $2, channel_resource_id = $3, channel_token = $4,
+            channel_token_enc = pgp_sym_encrypt($4, $7),
             channel_expires_at = now() + ($5 || ' milliseconds')::interval,
             sync_state = $6
       where account_id = $1`,
-    [account.id, CHANNEL_ID, RESOURCE_ID, CHANNEL_TOKEN, String(expiresInMs), opts.syncState ?? 'active'],
+    [account.id, CHANNEL_ID, RESOURCE_ID, CHANNEL_TOKEN, String(expiresInMs), opts.syncState ?? 'active', TEST_KEY],
   )
   return account.id
 }

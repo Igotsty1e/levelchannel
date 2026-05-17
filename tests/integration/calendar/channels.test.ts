@@ -315,12 +315,20 @@ describe('renewExpiringChannels', () => {
   it('renews integrations whose channel expires soon', async () => {
     const accountId = await makeTeacher('renew-1@example.com')
     await connect(accountId)
+    // AUDIT-SEC-4 (2026-05-17) — seed both plaintext and encrypted
+    // channel_token so the row matches what setupChannelForIntegration
+    // writes in production. Stamping only plaintext would let a
+    // regression in the renewer dual-write hide here (the test below
+    // would still pass if channel_token_enc were never written).
+    // R1 BLOCKER #3 / R2 BLOCKER #2 closure.
     await getDbPool().query(
       `update teacher_calendar_integrations
           set channel_id = 'lc-soon', channel_resource_id = 'res_soon',
-              channel_token = 'tok', channel_expires_at = now() + interval '1 hour'
+              channel_token = 'tok',
+              channel_token_enc = pgp_sym_encrypt('tok', $2),
+              channel_expires_at = now() + interval '1 hour'
         where account_id = $1`,
-      [accountId],
+      [accountId, TEST_KEY],
     )
     vi.stubGlobal(
       'fetch',
@@ -334,11 +342,23 @@ describe('renewExpiringChannels', () => {
     expect(r.attempted).toBeGreaterThanOrEqual(1)
     expect(r.renewed).toBeGreaterThanOrEqual(1)
 
+    // Production-shape assertion: after renewal, both columns must
+    // hold the SAME channel_token. A regression that drops the
+    // pgp_sym_encrypt clause from setupChannelForIntegration's
+    // UPDATE leaves channel_token_enc stale (= the seeded ciphertext
+    // for 'tok'), so decoding under TEST_KEY would no longer equal
+    // the new plaintext.
     const row = await getDbPool().query(
-      `select channel_resource_id from teacher_calendar_integrations where account_id = $1`,
-      [accountId],
+      `select channel_resource_id,
+              channel_token,
+              pgp_sym_decrypt(channel_token_enc, $2::text) as decrypted_token
+         from teacher_calendar_integrations
+        where account_id = $1`,
+      [accountId, TEST_KEY],
     )
     expect(row.rows[0].channel_resource_id).toBe('res_renewed')
+    expect(row.rows[0].channel_token).toBeTruthy()
+    expect(row.rows[0].decrypted_token).toBe(row.rows[0].channel_token)
   })
 
   it('skips disconnected integrations', async () => {

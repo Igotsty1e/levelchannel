@@ -306,4 +306,118 @@ describe('scripts/rotate-calendar-encryption.mjs', () => {
     expect(combined).toContain('CALENDAR_ENCRYPTION_KEY_OLD is likely wrong')
     expect(combined).toContain('Re-check both keys before re-running')
   }, 30_000)
+
+  // AUDIT-SEC-4 (2026-05-17) — channel_token_enc is the fourth
+  // rotation target. Mixed-rollout state: row-A under OLD_KEY,
+  // row-B under PRIMARY (already rotated), row-C with no
+  // channel_token_enc at all (legacy plaintext-only). After
+  // rotation: row-A rewritten under PRIMARY, row-B untouched,
+  // row-C untouched (the script's predicate skips null ciphertext
+  // — that's the mid-rollout tolerance round-1 INFO #9 surfaced).
+  it('happy path: rotates channel_token_enc and tolerates mixed-rollout null rows', async () => {
+    const pool = getDbPool()
+
+    // Three teachers, three integration shapes.
+    const teacherA = await makeTeacher('rotate-ch-a@example.com')
+    const teacherB = await makeTeacher('rotate-ch-b@example.com')
+    const teacherC = await makeTeacher('rotate-ch-c@example.com')
+
+    // Seed integration rows directly (the upsert helper only writes
+    // access/refresh; channel_token + _enc come from the renewer in
+    // production).
+    process.env.CALENDAR_ENCRYPTION_KEY = OLD_KEY
+    __resetCalendarEncryptionKeyCache()
+    for (const accountId of [teacherA, teacherB, teacherC]) {
+      const r = await upsertGoogleIntegration({
+        accountId,
+        accessToken: 'AT-ch-' + accountId.slice(0, 4),
+        refreshToken: 'RT-ch-' + accountId.slice(0, 4),
+        scope: 's',
+        tokenExpiresAt: new Date(Date.now() + 3_600_000),
+        readCalendarIds: ['primary'],
+        writeCalendarId: 'primary',
+        reason: 'initial_connect',
+      })
+      expect(r.ok).toBe(true)
+    }
+
+    // Row A — channel_token_enc under OLD_KEY (needs rotation).
+    await pool.query(
+      `update teacher_calendar_integrations
+          set channel_id = 'lc-a', channel_resource_id = 'res-a',
+              channel_token = 'tok-a',
+              channel_token_enc = pgp_sym_encrypt('tok-a', $2),
+              channel_expires_at = now() + interval '1 day'
+        where account_id = $1`,
+      [teacherA, OLD_KEY],
+    )
+    // Row B — channel_token_enc under NEW_KEY/PRIMARY (must be
+    // skipped by the rotator).
+    await pool.query(
+      `update teacher_calendar_integrations
+          set channel_id = 'lc-b', channel_resource_id = 'res-b',
+              channel_token = 'tok-b',
+              channel_token_enc = pgp_sym_encrypt('tok-b', $2),
+              channel_expires_at = now() + interval '1 day'
+        where account_id = $1`,
+      [teacherB, NEW_KEY],
+    )
+    // Row C — plaintext only, channel_token_enc NULL (legacy
+    // shape; rotator must skip, NOT abort — the mid-rollout
+    // tolerance contract).
+    await pool.query(
+      `update teacher_calendar_integrations
+          set channel_id = 'lc-c', channel_resource_id = 'res-c',
+              channel_token = 'tok-c',
+              channel_token_enc = null,
+              channel_expires_at = now() + interval '1 day'
+        where account_id = $1`,
+      [teacherC],
+    )
+
+    await execFileP(
+      process.execPath,
+      ['scripts/rotate-calendar-encryption.mjs', '--batch-size', '10'],
+      {
+        env: {
+          ...process.env,
+          CALENDAR_ENCRYPTION_KEY: NEW_KEY,
+          CALENDAR_ENCRYPTION_KEY_OLD: OLD_KEY,
+        },
+        cwd: process.cwd(),
+      },
+    )
+
+    // Row A — rewritten under NEW; OLD no longer decrypts.
+    const a = await pool.query(
+      `select pgp_sym_decrypt_either(channel_token_enc, $1, null) as old_dec,
+              pgp_sym_decrypt_either(channel_token_enc, $2, null) as new_dec
+         from teacher_calendar_integrations
+        where account_id = $3`,
+      [OLD_KEY, NEW_KEY, teacherA],
+    )
+    expect(a.rows[0].new_dec).toBe('tok-a')
+    expect(a.rows[0].old_dec).toBeNull()
+
+    // Row B — already under NEW; still decrypts cleanly under NEW.
+    const b = await pool.query(
+      `select pgp_sym_decrypt_either(channel_token_enc, $1, null) as new_dec
+         from teacher_calendar_integrations
+        where account_id = $2`,
+      [NEW_KEY, teacherB],
+    )
+    expect(b.rows[0].new_dec).toBe('tok-b')
+
+    // Row C — channel_token_enc still null (mid-rollout legacy);
+    // plaintext stays as well. The rotator must NEVER write the
+    // encrypted column on its own — that's the renewer's job.
+    const c = await pool.query(
+      `select channel_token, channel_token_enc
+         from teacher_calendar_integrations
+        where account_id = $1`,
+      [teacherC],
+    )
+    expect(c.rows[0].channel_token).toBe('tok-c')
+    expect(c.rows[0].channel_token_enc).toBeNull()
+  }, 30_000)
 })

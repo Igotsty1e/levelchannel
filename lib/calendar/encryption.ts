@@ -7,6 +7,7 @@
 // What gets encrypted with this key:
 //   - teacher_calendar_integrations.access_token_enc
 //   - teacher_calendar_integrations.refresh_token_enc
+//   - teacher_calendar_integrations.channel_token_enc (AUDIT-SEC-4)
 //   - teacher_external_busy_intervals.summary_encrypted
 //
 // Blast-radius isolation: this is a SEPARATE env from
