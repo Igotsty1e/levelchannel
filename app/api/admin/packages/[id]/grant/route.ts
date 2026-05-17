@@ -10,8 +10,8 @@ import {
 import { requireAdminRole } from '@/lib/auth/guards'
 import { isLearnerArchetypeCandidate } from '@/lib/auth/learner-archetype'
 import { getPackageById } from '@/lib/billing/packages'
-import { createPackagePurchase } from '@/lib/billing/packages/purchases'
-import { learnerHasActivePackageOfDuration } from '@/lib/billing/packages/eligibility'
+import { createPackagePurchase } from '@/lib/billing/packages'
+import { learnerHasActivePackageOfDuration } from '@/lib/billing/packages'
 import { getDbPool } from '@/lib/db/pool'
 import { withIdempotency } from '@/lib/security/idempotency'
 import {

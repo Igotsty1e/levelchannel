@@ -20,7 +20,7 @@
 
 import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
 import { createPackagePurchase, getPackageBySlug } from '@/lib/billing/packages'
-import { learnerHasActivePackageOfDuration } from '@/lib/billing/packages/eligibility'
+import { learnerHasActivePackageOfDuration } from '@/lib/billing/packages'
 import { getDbPool } from '@/lib/db/pool'
 import { sendOperatorPackageGrantFailureNotification } from '@/lib/email/dispatch'
 import { normalizeEmail } from '@/lib/email/normalize'

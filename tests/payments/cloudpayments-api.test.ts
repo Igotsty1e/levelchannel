@@ -316,13 +316,13 @@ describe('refundTransaction', () => {
     await refundTransaction({
       transactionId: '99',
       amount: 150,
-      jsonData: { reason: 'test' },
+      jsonData: JSON.stringify({ reason: 'test' }),
     })
     expect(capturedBody).toBeDefined()
     const parsed = JSON.parse(capturedBody!) as Record<string, unknown>
     expect(parsed.TransactionId).toBe('99')
     expect(parsed.Amount).toBe(150)
-    expect(parsed.JsonData).toEqual({ reason: 'test' })
+    expect(parsed.JsonData).toBe(JSON.stringify({ reason: 'test' }))
   })
 
   it('omits Amount + JsonData when not provided', async () => {

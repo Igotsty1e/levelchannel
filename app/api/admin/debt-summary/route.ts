@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
 import { requireAdminRole } from '@/lib/auth/guards'
-import { listAccountsWithPostpaidDebtAggregate } from '@/lib/billing/packages/debt'
+import { listAccountsWithPostpaidDebtAggregate } from '@/lib/billing/packages'
 import { enforceRateLimit } from '@/lib/security/request'
 
 export const runtime = 'nodejs'
