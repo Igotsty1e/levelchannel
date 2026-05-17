@@ -28,14 +28,40 @@ export async function POST(request: Request) {
     const durationMs = Date.now() - t0
     // BCS-OP-ROLLOUT §4.3.1 — explicit allowlist summary; outcomes are
     // enum-shaped + counts (safe; no PII).
+    //
+    // AUDIT-CODE-8 (2026-05-17) — `succeeded` outcomes now carry
+    // per-job `intervalsAfter` + `durationMs`. Aggregate into the
+    // cron tick summary so operators see "pulled N foreign busy
+    // intervals this tick" + "slowest job took X ms" without diving
+    // into per-job logs.
+    const succeededOutcomes = result.outcomes.filter(
+      (o): o is Extract<typeof o, { kind: 'succeeded' }> =>
+        o.kind === 'succeeded',
+    )
+    const intervalsPulledTotal = succeededOutcomes.reduce(
+      (acc, o) => acc + o.intervalsAfter,
+      0,
+    )
+    const jobDurations = succeededOutcomes.map((o) => o.durationMs)
+    const maxJobDurationMs =
+      jobDurations.length > 0 ? Math.max(...jobDurations) : 0
+    const avgJobDurationMs =
+      jobDurations.length > 0
+        ? Math.round(
+            jobDurations.reduce((a, b) => a + b, 0) / jobDurations.length,
+          )
+        : 0
     const summary = {
       total: result.outcomes.length,
-      succeeded: result.outcomes.filter((o) => o.kind === 'succeeded').length,
+      succeeded: succeededOutcomes.length,
       retried: result.outcomes.filter((o) => o.kind === 'retried').length,
       terminal_failures: result.outcomes.filter(
         (o) => o.kind === 'terminal_failure',
       ).length,
       skipped: result.outcomes.filter((o) => o.kind === 'skipped').length,
+      intervals_pulled_total: intervalsPulledTotal,
+      max_job_duration_ms: maxJobDurationMs,
+      avg_job_duration_ms: avgJobDurationMs,
     }
     console.log(
       JSON.stringify({

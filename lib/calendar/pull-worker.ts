@@ -32,7 +32,20 @@ const BACKOFF_SCHEDULE_MS = [
 ]
 
 export type PullJobOutcome =
-  | { kind: 'succeeded'; jobId: string; teacherAccountId: string }
+  // AUDIT-CODE-8 (2026-05-17): the succeeded variant now also
+  // carries observability metrics: `intervalsAfter` (count of
+  // foreign busy intervals the pull cached for this teacher +
+  // calendar) and `durationMs` (wall-clock from job claim to
+  // success). The cron route aggregates these for operator
+  // dashboards; per-job breakdowns aren't logged here (the cron
+  // route is the per-tick summary surface).
+  | {
+      kind: 'succeeded'
+      jobId: string
+      teacherAccountId: string
+      intervalsAfter: number
+      durationMs: number
+    }
   | {
       kind: 'retried'
       jobId: string
@@ -116,6 +129,10 @@ async function processOneJob(args: {
   nowMs?: number
 }): Promise<PullJobOutcome> {
   const pool = getDbPool()
+  // AUDIT-CODE-8: capture wall-clock at job start; the succeeded
+  // variant carries this so the cron route can compute avg / max
+  // durations across the drain.
+  const jobStartedAtMs = Date.now()
 
   // 1. Get fresh access token.
   const fresh = await ensureFreshAccessToken({
@@ -238,6 +255,8 @@ async function processOneJob(args: {
     kind: 'succeeded',
     jobId: args.jobId,
     teacherAccountId: args.teacherAccountId,
+    intervalsAfter: pull.intervalsAfter,
+    durationMs: Date.now() - jobStartedAtMs,
   }
 }
 
