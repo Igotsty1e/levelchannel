@@ -25,3 +25,9 @@ export {
 } from './purchases'
 
 export { listAccountPostpaidDebt } from './debt'
+
+// API-BOUNDARIES (2026-05-18) — facade exports for eligibility so
+// outside callers don't import @/lib/billing/packages/eligibility
+// directly.
+export type { ActiveOwnedPackage } from './eligibility'
+export { learnerHasActivePackageOfDuration } from './eligibility'

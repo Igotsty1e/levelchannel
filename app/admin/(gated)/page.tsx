@@ -1,7 +1,7 @@
 import Link from 'next/link'
 
 import { listAccounts } from '@/lib/auth/accounts'
-import { listAccountsWithPostpaidDebtAggregate } from '@/lib/billing/packages/debt'
+import { listAccountsWithPostpaidDebtAggregate } from '@/lib/billing/packages'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
