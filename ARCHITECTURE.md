@@ -262,6 +262,111 @@ full migration files in `migrations/` are the source of truth.
 - [`app/api/payments/webhooks/cloudpayments/fail/route.ts`](app/api/payments/webhooks/cloudpayments/fail/route.ts)
 - [`app/api/checkout/package/[slug]/route.ts`](app/api/checkout/package/%5Bslug%5D/route.ts) - package-buy init. PKG-LEARNER-BUY LBL.0 (2026-05-16) refactor in place: guard via `requireLearnerArchetypeAndVerified` + post-guard `isLearnerArchetypeCandidate` (deletion-grace coverage; matches the cabinet page SoT), wrapped in `withIdempotency(scope = checkout:package:${slug}:${accountId})` to defeat replay across packages and accounts (Codex post-review HIGH closure). The body of the idempotency callback acquires a dedicated `PoolClient`, opens a TX, and takes a per-(accountId, durationMinutes) `pg_advisory_xact_lock(hashtextextended('pkg-stack:' || account || ':' || duration, 0))` on it. The `pkg-stack:` prefix is shared with the admin-grant route AND `lib/billing/package-grant.ts:processPackageGrant` (PKG-ADMIN-GRANT epic-end paranoia BLOCKER #1 closure, 2026-05-16) so a concurrent admin grant + learner buy + delayed webhook for the same `(account, duration)` all serialise against each other. The two gates — Gate 1 (`accountHasPendingPackageGrantForDuration` → 409 `pending_package_in_flight`) and Gate 2 (`learnerHasActivePackageOfDuration` → 409 `already_owns_active_package`) — read via the shared pool (NOT the lock client), which is correct because the lock blocks any other session from racing between their reads and the lock-holder's `INSERT INTO payment_orders` on the lock client, all inside the same TX. After the TX commits, the route calls `buildCloudPaymentsWidgetIntent(order, { receiptToken })` for `provider=cloudpayments` and returns the intent in the response body as `checkoutIntent` (mock provider returns `checkoutIntent: null`). Different-duration purchases from the same learner proceed concurrently.
 
+#### API surface map (all 81 routes, May 2026)
+
+The route docstrings above lean toward "load-bearing context" rather than complete coverage. This table is the quick-reference for every route under `app/api/`: who guards it, what it does in one sentence. The 12 routes documented in detail above are linked there; the rest live as code comments.
+
+##### Public — auth + checkout (anonymous-eligible)
+
+| Route | Method | Auth | Purpose |
+|---|---|---|---|
+| `app/api/auth/register` | POST | anonymous | account create + consent record + verify-email send |
+| `app/api/auth/login` | POST | anonymous | session mint, sha256 cookie set |
+| `app/api/auth/logout` | POST | session | revoke session row |
+| `app/api/auth/me` | GET | session | current account + clears cookie on stale |
+| `app/api/auth/verify` | POST | anonymous + token | verify-email finalize (single-use token) |
+| `app/api/auth/resend-verify` | POST | session | rate-limited resend of verify-email |
+| `app/api/auth/reset-request` | POST | anonymous | password-reset link send (enumeration-safe) |
+| `app/api/auth/reset-confirm` | POST | anonymous + token | password-reset finalize + revoke all sessions |
+| `app/api/payments` | POST | anonymous | tariff-free-amount payment init (legacy /pay flow) |
+| `app/api/payments/[invoiceId]` | GET | receipt-token gate | order status read |
+| `app/api/payments/[invoiceId]/cancel` | POST | receipt-token gate | abandon pending order |
+| `app/api/payments/[invoiceId]/stream` | GET (SSE) | receipt-token gate | live payment status events |
+| `app/api/payments/events` | POST | anonymous | client-side telemetry beacons |
+| `app/api/payments/saved-card` | POST | session | one-click eligibility check by email |
+| `app/api/payments/charge-token` | POST | session | one-click charge via CP `tokens/charge` |
+| `app/api/payments/3ds-callback` | POST | anonymous + invoice | 3DS ACS return finalize |
+| `app/api/payments/mock/[invoiceId]/confirm` | POST | anonymous (gated by env) | mock-mode payment confirm |
+| `app/api/checkout/package/[slug]` | POST | learner-archetype + verified | package buy init (PKG-LEARNER-BUY) |
+| `app/api/payments/webhooks/cloudpayments/{check,pay,fail}` | POST | HMAC | CloudPayments webhook handlers |
+| `app/api/health` | GET | anonymous | health probe (no DB roundtrip needed) |
+
+##### Cabinet — learner account (session required)
+
+| Route | Method | Auth | Purpose |
+|---|---|---|---|
+| `app/api/account/profile` | GET / PUT | session | account profile read + update |
+| `app/api/account/packages` | GET | session | learner's active package purchases + remaining counts |
+| `app/api/account/postpaid-debt` | GET | session | postpaid debt summary for the learner |
+| `app/api/account/consents/withdraw` | POST | session | withdraw personal-data consent (deletion grace path) |
+| `app/api/account/delete` | POST | session | request account deletion (stamps `scheduled_purge_at`) |
+| `app/api/slots/mine` | GET | learner-archetype | own slots (upcoming + past) |
+| `app/api/slots/available` | GET | anonymous | open slots for a tariff/teacher pair |
+| `app/api/slots/calendar` | GET | anonymous | calendar grid view for a teacher |
+| `app/api/slots/booking-days` | GET | learner-archetype + verified | Calendly screen-1 day picker |
+| `app/api/slots/booking-times` | GET | learner-archetype + verified | Calendly screen-2 time list |
+| `app/api/slots/[id]/book` | POST | learner-archetype + verified | book a slot (TX with overlap check + push intent) |
+| `app/api/slots/[id]/cancel` | POST | learner-archetype | cancel learner-side (24h gate) |
+
+##### Teacher — calendar surface (teacher role required)
+
+| Route | Method | Auth | Purpose |
+|---|---|---|---|
+| `app/api/teacher/slots` | GET / POST | teacher + verified | own slots list + create single |
+| `app/api/teacher/slots/bulk-create` | POST | teacher + verified | bulk-create slots in a date range |
+| `app/api/teacher/slots/[id]/cancel` | POST | teacher + verified | cancel teacher-side |
+| `app/api/teacher/slots/[id]/move` | PATCH | teacher + verified | move an open slot |
+| `app/api/teacher/slots/[id]/conflicts` | GET | teacher + verified | per-slot live conflict re-scan (+N other conflicts picker) |
+| `app/api/teacher/slots/[id]/dismiss-conflict` | POST | teacher + verified | clear `external_conflict_at` for a slot |
+| `app/api/teacher/slots/[id]/delete-external-conflict` | POST | teacher + verified | synchronous Google events.delete on the foreign event |
+| `app/api/teacher/hidden-slots` | GET | teacher + verified | BCS-G hidden-slots (own events of LC that fell out of MSK business band) |
+| `app/api/teacher/calendar/google/start` | POST | teacher + verified | begin Google OAuth (returns authorizationUrl) |
+| `app/api/teacher/calendar/google/callback` | GET | OAuth state nonce | OAuth code exchange + integration upsert |
+| `app/api/teacher/calendar/google/disconnect` | POST | teacher + verified | clear tokens + flip `sync_state='disconnected'` |
+| `app/api/teacher/calendar/orphan-slots` | GET | teacher + verified | post-disconnect drift list (slots with stale `external_event_id`) |
+| `app/api/teacher/calendar/orphan-slots/ignore` | POST | teacher + verified | suppress one orphan-self row |
+
+##### Admin — operator surface (admin role required, `requireAdminRole` + origin gate + rate limit)
+
+| Route | Method | Purpose |
+|---|---|---|
+| `app/api/admin/accounts/[id]/cancel-deletion` | POST | clear `scheduled_purge_at` (operator-side undelete during grace) |
+| `app/api/admin/accounts/[id]/disable` | POST | toggle `disabled_at` + revoke sessions (`withIdempotency`) |
+| `app/api/admin/accounts/[id]/role` | POST | grant / revoke admin / teacher / student role (`withIdempotency`) |
+| `app/api/admin/accounts/[id]/postpaid` | POST | toggle `postpaid_allowed` (`withIdempotency`) |
+| `app/api/admin/accounts/[id]/teacher` | POST | bind a teacher to a learner (assigned-teacher contract) |
+| `app/api/admin/pricing` + `[id]` | GET/POST/PATCH/DELETE | tariff CRUD; hard-delete refused when slots reference; price + duration immutable post-purchase |
+| `app/api/admin/packages` + `[id]` | GET/POST/PATCH/DELETE | package CRUD; economic fields immutable after first purchase (0033 trigger) |
+| `app/api/admin/packages/[id]/grant` | POST | PKG-ADMIN-GRANT non-money operator grant (synthetic `payment_orders` row + audit) |
+| `app/api/admin/slots` + `[id]` | GET/POST/PATCH/DELETE | slot CRUD (operator-side) |
+| `app/api/admin/slots/bulk-preview` + `bulk-create` | POST | weekday-grid bulk slot generation: preview deselect, commit |
+| `app/api/admin/slots/[id]/cancel` | POST | cancel slot (operator-side; reason required for booked) |
+| `app/api/admin/slots/[id]/move` | PATCH | move open slot (operator-side) |
+| `app/api/admin/slots/[id]/mark` | POST | operator lifecycle stamp (manual completed / no-show / refunded) |
+| `app/api/admin/slots/[id]/book-as-operator` | POST | book a slot on behalf of a learner |
+| `app/api/admin/payments/*` (page surfaces, not API) | — | payments list + detail (read-only admin page) |
+| `app/api/admin/refunds` | POST | record refund / package reversal (existing manual ledger) |
+| `app/api/admin/refunds/gateway-initiated` | POST | initiate CP-side refund via `payments/refund` API |
+| `app/api/admin/debt-summary` | GET | postpaid debt rollup across all learners |
+| `app/api/admin/legal/versions` | GET / POST | publish legal-document versions (offer / privacy / personal_data) |
+| `app/api/admin/reconciliation/package-grants` | GET | PKG-RECON list of `paid_not_granted` orders |
+| `app/api/admin/reconciliation/package-grants/[invoiceId]/retry-grant` | POST | re-run `processPackageGrant` for a stuck order |
+| `app/api/admin/reconciliation/package-grants/[invoiceId]/attach-account` | POST | rewrite metadata.accountId + re-run grant |
+| `app/api/admin/reconciliation/package-grants/[invoiceId]/mark-resolved` | POST | durable resolution row (refunded_offline / manual_grant / comped / other) |
+| `app/api/admin/settings/alerts/[probe]/test-send` | POST | ALERTS-OBS dry-run test email + `probe_runs` is_test row |
+
+##### Calendar webhook + cron surfaces
+
+| Route | Method | Auth | Purpose |
+|---|---|---|---|
+| `app/api/calendar/google/webhook` | POST | constant-time channel-token + monotonic message-number | Google channels.watch push-notification receiver |
+| `app/api/cron/calendar/pull` | POST | cron-auth (loopback + bearer) | drain calendar_pull_jobs |
+| `app/api/cron/calendar/push` | POST | cron-auth | drain calendar_push_jobs |
+| `app/api/cron/calendar/intents` | POST | cron-auth | drain slot_lifecycle_intents |
+| `app/api/cron/calendar/renew-channels` | POST | cron-auth | rotate Google watch channels approaching expiry |
+| `app/api/cron/calendar/revive-blocked` | POST | cron-auth | flip blocked_integration intents back to pending |
+| `app/api/cron/calendar/reconcile` | POST | cron-auth | BCS-G.1 bounded reconcile sweep (daily only) |
+
 ### Booking + calendar sync (BCS wave, in flight)
 
 Wave-level design: [`docs/plans/booking-calendly-style.md`](docs/plans/booking-calendly-style.md) (7-round Codex paranoia loop SIGN-OFF). Shipped sub-waves: BCS-A schema (migrations 0042-0045), BCS-B Calendly-style learner booking, BCS-C OAuth integration scaffold + UI, BCS-D pull worker + webhook + channel renewal + D.5 atomic gate, BCS-E push primitives + push worker + intent worker + cancel split + book wire-up, BCS-F.1 post-pull conflict detector + F.UI non-dismissable red banner + 3 action endpoints. In flight: BCS-G reconciliation + hidden slots; deferred BCS-F.3 in-calendar highlight, admin/teacher cancel-push wire, move push.
