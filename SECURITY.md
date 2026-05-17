@@ -258,6 +258,82 @@ first, **every encrypted row becomes permanently unreadable**.
 Treat the key as a peer of `CLOUDPAYMENTS_API_SECRET` — back it up
 in the same vault, rotate it through the same cadence.
 
+### At-rest encryption — Calendar key rotation
+
+The Google Calendar integration encrypts three columns at rest with
+`CALENDAR_ENCRYPTION_KEY` (separate env from `AUDIT_ENCRYPTION_KEY`
+for blast-radius isolation):
+
+- `teacher_calendar_integrations.access_token_enc`
+- `teacher_calendar_integrations.refresh_token_enc`
+- `teacher_external_busy_intervals.summary_encrypted` (foreign event
+  titles, truncated to 64 chars, 30-day retention).
+
+Key rotation mirrors the audit-encryption flow (AUDIT-SEC-2,
+2026-05-17, automated by `scripts/rotate-calendar-encryption.mjs`):
+
+1. **Generate** a fresh key:
+   ```bash
+   openssl rand -base64 48
+   ```
+
+2. **Set both keys** in the operator-side env store:
+   - `CALENDAR_ENCRYPTION_KEY` = the new value (PRIMARY)
+   - `CALENDAR_ENCRYPTION_KEY_OLD` = the previous value
+   Restart the app. From this point, NEW token writes /
+   busy-interval inserts encrypt with the new PRIMARY; reads
+   succeed for both old + new rows via `pgp_sym_decrypt_either`
+   (migration 0027 shares the SQL helper with audit-encryption).
+
+3. **Live-traffic safety:** the calendar-pull cron reads + writes
+   the same tables the script holds row-level locks on. Either
+   `systemctl stop levelchannel-calendar-pull.timer` for the
+   ~minutes the rotation runs, OR accept brief pull-job
+   `transient_failure` rows during the rotation window (the worker
+   already retries pulls on transient SKIP-LOCKED contention).
+
+4. **Run the rotation script:**
+   ```bash
+   CALENDAR_ENCRYPTION_KEY=<new> \
+   CALENDAR_ENCRYPTION_KEY_OLD=<previous> \
+   DATABASE_URL=<url> \
+     node scripts/rotate-calendar-encryption.mjs
+   ```
+   Idempotent — already-PRIMARY-encrypted rows are skipped per
+   target. Walks the three columns sequentially with their own
+   preflight + batched UPDATE. Pre-flight aborts if any row
+   decrypts under NEITHER PRIMARY nor the supplied OLD (the
+   wrong-OLD-key footgun: if the operator supplies a stale or
+   wrong `_OLD`, an unguarded script would report "0 rows OLD-only,
+   nothing to do" and exit 0; the operator then drops the real
+   OLD from env and every legacy row is permanently bricked.
+   The preflight detects this gap — rows that PRIMARY alone
+   cannot decrypt MUST equal rows that the supplied OLD can
+   decrypt; anything else means a third key is in play or the
+   supplied OLD is wrong).
+
+5. **Verify** in psql:
+   ```sql
+   select count(*) from teacher_calendar_integrations
+     where access_token_enc is not null
+       and pgp_sym_decrypt_either(access_token_enc, '<new>', null) is null;
+   ```
+   Expect 0. Same shape for `refresh_token_enc` and for
+   `teacher_external_busy_intervals.summary_encrypted`.
+
+6. **Restart the calendar-pull timer** (if stopped in step 3).
+
+7. **Drop `CALENDAR_ENCRYPTION_KEY_OLD`** from env. Restart.
+   Rotation window closed.
+
+If you ever lose `CALENDAR_ENCRYPTION_KEY` without doing rotation
+first, **every teacher's Google OAuth tokens become permanently
+unreadable** — the integration disconnects on next pull and the
+teacher must re-authenticate via `/teacher/settings/calendar`. Foreign
+event summaries (`teacher_external_busy_intervals.summary_encrypted`)
+also become unreadable but auto-recover on the next pull cycle.
+Treat the key as a peer of `AUDIT_ENCRYPTION_KEY`.
+
 ## Implemented controls
 
 ### 1. Frontend / Browser
