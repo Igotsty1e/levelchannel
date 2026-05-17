@@ -40,10 +40,11 @@ async function makeAdmin(email: string): Promise<string> {
 
 async function clearOperatorSettings(): Promise<void> {
   const pool = getDbPool()
-  // Use a separate connection to avoid TX leftovers from a failed test.
   await pool.query(`delete from operator_settings`)
-  // events table: the trigger blocks UPDATE only, DELETE is allowed.
-  await pool.query(`delete from operator_settings_events`)
+  // events table: the immutability trigger blocks UPDATE AND
+  // DELETE on rows < 89 days. TRUNCATE bypasses row-level
+  // BEFORE UPDATE/DELETE triggers — used here for test cleanup.
+  await pool.query(`truncate operator_settings_events restart identity`)
 }
 
 beforeEach(async () => {
@@ -330,8 +331,12 @@ describe('operator_settings_events immutability', () => {
     ).rejects.toThrow(/immutable/i)
   })
 
-  it('DELETE on event rows is permitted (for retention sweep)', async () => {
-    const admin = await makeAdmin('os-retention@example.com')
+  it('DELETE on RECENT event rows (<89 days) is blocked by the trigger', async () => {
+    // Wave-R1 BLOCKER #2 closure — recent rows MUST stay immutable
+    // so app-process compromise cannot erase audit history to cover
+    // a credential exfiltration. Only the 90-day retention sweep
+    // can prune, and only rows older than 89 days.
+    const admin = await makeAdmin('os-recent-del@example.com')
     await setOperatorSetting({
       key: 'CALENDAR_PATHOLOGY_THRESHOLD',
       value: '5',
@@ -339,16 +344,34 @@ describe('operator_settings_events immutability', () => {
       byAccountId: admin,
     })
     const pool = getDbPool()
-    const before = await pool.query(
-      `select count(*) as n from operator_settings_events`,
+    await expect(
+      pool.query(
+        `delete from operator_settings_events where key = $1`,
+        ['CALENDAR_PATHOLOGY_THRESHOLD'],
+      ),
+    ).rejects.toThrow(/immutable/i)
+  })
+
+  it('DELETE on OLD event rows (>89 days, retention window) is permitted', async () => {
+    // The retention sweep DELETE `where ts < now() - interval '90 days'`
+    // MUST work. Verify via direct INSERT with backdated ts (UPDATE is
+    // blocked; INSERT bypasses the immutability trigger by construction).
+    const admin = await makeAdmin('os-old-del@example.com')
+    const pool = getDbPool()
+    await pool.query(
+      `insert into operator_settings_events
+         (key, event_kind, old_value, new_value, updated_by_account_id, ts)
+       values ($1, 'set', null, '5', $2, now() - interval '120 days')`,
+      ['CALENDAR_PATHOLOGY_THRESHOLD', admin],
     )
-    expect(Number(before.rows[0].n)).toBeGreaterThan(0)
     await pool.query(
       `delete from operator_settings_events where key = $1`,
       ['CALENDAR_PATHOLOGY_THRESHOLD'],
     )
     const after = await pool.query(
-      `select count(*) as n from operator_settings_events`,
+      `select count(*) as n from operator_settings_events
+        where key = $1`,
+      ['CALENDAR_PATHOLOGY_THRESHOLD'],
     )
     expect(Number(after.rows[0].n)).toBe(0)
   })

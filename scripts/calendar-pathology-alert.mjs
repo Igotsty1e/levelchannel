@@ -47,10 +47,15 @@ import { resolveOperatorSettingsForProbe } from './lib/operator-settings.mjs'
 import { recordProbeRun, PROBE_NAMES, VERDICT_KINDS } from './lib/probe-runs.mjs'
 
 // ALERTS-EDITOR Sub-PR B (2026-05-18) — THRESHOLD / REPORT_LIMIT /
-// DEDUP_WINDOW_MS are resolved at tick start from
-// operator_settings (DB → env → default). Top-of-script constants
-// removed; main() reads the snapshot in ONE round-trip after pool
-// init and threads the values through readOffenders + dedup gate.
+// DEDUP_WINDOW_MS are resolved at tick start from operator_settings
+// (DB → env → default). Module-scope `let` so buildEmail() and the
+// dedup gate (helper closures defined above main()) can reference
+// them. Wave-R1 BLOCKER #1 closure — earlier draft used `const`
+// inside main() which broke buildEmail with ReferenceError on the
+// actual alert path (probe-resolver tests don't exercise that branch).
+let THRESHOLD = 3
+let REPORT_LIMIT = 10
+let DEDUP_WINDOW_MS = 24 * 60 * 60 * 1000
 
 const STATE_FILE = process.env.CALENDAR_PATHOLOGY_STATE_FILE
   ? resolvePath(process.env.CALENDAR_PATHOLOGY_STATE_FILE)
@@ -72,7 +77,7 @@ function logJson(level, msg, extra = {}) {
   )
 }
 
-async function readOffenders(pool, threshold, reportLimit) {
+async function readOffenders(pool) {
   const r = await pool.query(
     `select id,
             teacher_account_id,
@@ -87,7 +92,7 @@ async function readOffenders(pool, threshold, reportLimit) {
         and cancel_repush_count >= $1
       order by cancel_repush_count desc, start_at asc
       limit $2`,
-    [threshold, reportLimit],
+    [THRESHOLD, REPORT_LIMIT],
   )
   return r.rows.map((row) => ({
     slotId: String(row.id),
@@ -176,9 +181,9 @@ async function main() {
     pool,
     'calendar-pathology',
   )
-  const THRESHOLD = settings.CALENDAR_PATHOLOGY_THRESHOLD.value
-  const REPORT_LIMIT = settings.CALENDAR_PATHOLOGY_REPORT_LIMIT.value
-  const DEDUP_WINDOW_MS = settings.CALENDAR_PATHOLOGY_DEDUP_WINDOW_MS.value
+  THRESHOLD = settings.CALENDAR_PATHOLOGY_THRESHOLD.value
+  REPORT_LIMIT = settings.CALENDAR_PATHOLOGY_REPORT_LIMIT.value
+  DEDUP_WINDOW_MS = settings.CALENDAR_PATHOLOGY_DEDUP_WINDOW_MS.value
 
   // R2 BLOCKER #4 closure — scalar `thresholds` for backwards
   // compatibility with /admin/settings/alerts rendering; new
@@ -197,7 +202,7 @@ async function main() {
   const recipientEmailSnapshot = ALERT_EMAIL_TO || null
 
   try {
-    const offenders = await readOffenders(pool, THRESHOLD, REPORT_LIMIT)
+    const offenders = await readOffenders(pool)
     if (offenders.length === 0) {
       logJson('info', 'no offenders above threshold', {
         threshold: THRESHOLD,

@@ -40,7 +40,9 @@ async function makeAdmin(prefix: string): Promise<string> {
 async function clearOpSettings(): Promise<void> {
   const pool = getDbPool()
   await pool.query(`delete from operator_settings`)
-  await pool.query(`delete from operator_settings_events`)
+  // events table: 89-day immutability trigger blocks DELETE on
+  // recent rows; TRUNCATE bypasses row-level triggers.
+  await pool.query(`truncate operator_settings_events restart identity`)
   await pool.query(`delete from probe_runs`)
 }
 

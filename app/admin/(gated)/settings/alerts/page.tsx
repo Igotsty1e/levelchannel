@@ -1,10 +1,17 @@
 import {
+  listOperatorSettingsForAdmin,
+  SETTING_SCHEMA,
+  type AdminSettingView,
+  type SettingKey,
+} from '@/lib/admin/operator-settings'
+import {
   PROBE_NAMES,
   type ProbeName,
   type ProbeStatus,
   getProbeStatus,
 } from '@/lib/admin/probe-status'
 
+import { SettingEditor } from './setting-editor'
 import { TestSendButton } from './test-send-button'
 
 export const dynamic = 'force-dynamic'
@@ -36,8 +43,15 @@ const PROBE_TITLES: Record<ProbeName, string> = {
 }
 
 export default async function AdminAlertsPage() {
-  const statuses = await Promise.all(PROBE_NAMES.map(getProbeStatus))
-  const migrationPending = statuses.some((s) => 'migrationPending' in s && s.migrationPending)
+  const [statuses, settings] = await Promise.all([
+    Promise.all(PROBE_NAMES.map(getProbeStatus)),
+    listOperatorSettingsForAdmin(),
+  ])
+  const probeMigrationPending = statuses.some(
+    (s) => 'migrationPending' in s && s.migrationPending,
+  )
+  const settingsMigrationPending =
+    'migrationPending' in settings && settings.migrationPending === true
 
   return (
     <>
@@ -56,11 +70,32 @@ export default async function AdminAlertsPage() {
         Три systemd-пробника шлют письма оператору при подозрительной
         активности. Здесь видно когда они последний раз бежали, какой
         был вердикт, какие пороги действуют сейчас, и можно отправить
-        тестовое письмо чтобы проверить транспорт. Редактирование
-        порогов — отдельная волна (ALERTS-EDITOR), пока только env.
+        тестовое письмо чтобы проверить транспорт. Пороги редактируются
+        прямо здесь: DB → env → default. Изменения подхватываются
+        следующим тиком systemd-пробника.
       </p>
 
-      {migrationPending ? (
+      {probeMigrationPending ? (
+        <div
+          style={{
+            padding: '12px 16px',
+            border: '1px solid #c97a00',
+            background: '#fff7e6',
+            borderRadius: 8,
+            marginBottom: 12,
+            color: '#1f1f1f',
+            fontSize: 13,
+            lineHeight: 1.5,
+          }}
+        >
+          <strong>Наблюдение недоступно.</strong> Таблица{' '}
+          <code>probe_runs</code> (миграция <code>0053</code>) не
+          найдена. Запустите <code>npm run migrate:up</code> на VPS —
+          last-run / last-alert появятся со следующего тика.
+        </div>
+      ) : null}
+
+      {settingsMigrationPending ? (
         <div
           style={{
             padding: '12px 16px',
@@ -73,10 +108,10 @@ export default async function AdminAlertsPage() {
             lineHeight: 1.5,
           }}
         >
-          <strong>БД миграция не применена.</strong> Таблица{' '}
-          <code>probe_runs</code> не найдена в базе. Запустите
-          <code> npm run migrate:up </code>на VPS — после этого данные
-          появятся со следующего тика systemd-пробников.
+          <strong>Редактор порогов недоступен.</strong> Таблица{' '}
+          <code>operator_settings</code> не найдена. Запустите{' '}
+          <code>npm run migrate:up</code> (миграция 0055) на VPS, после
+          этого редактор активируется.
         </div>
       ) : null}
 
@@ -87,6 +122,7 @@ export default async function AdminAlertsPage() {
             probeName={PROBE_NAMES[idx]}
             title={PROBE_TITLES[PROBE_NAMES[idx]]}
             status={status}
+            settings={settings}
           />
         ))}
       </div>
@@ -98,12 +134,20 @@ function ProbeCard({
   probeName,
   title,
   status,
+  settings,
 }: {
   probeName: ProbeName
   title: string
   status: ProbeStatus
+  settings: AdminSettingView
 }) {
-  const migrationPending = 'migrationPending' in status && status.migrationPending
+  const migrationPending =
+    'migrationPending' in status && status.migrationPending
+
+  // Per-probe knobs from the global schema. Filtered by scope.
+  const probeKeys = (Object.keys(SETTING_SCHEMA) as SettingKey[]).filter(
+    (k) => SETTING_SCHEMA[k].scope === probeName,
+  )
 
   return (
     <section
@@ -134,6 +178,56 @@ function ProbeCard({
       ) : (
         <ProbeBody status={status as Exclude<ProbeStatus, { migrationPending: true }>} />
       )}
+
+      <div style={{ marginTop: 16 }}>
+        <div
+          style={{
+            fontSize: 12,
+            color: 'var(--secondary)',
+            textTransform: 'uppercase',
+            letterSpacing: 0.4,
+            marginBottom: 4,
+          }}
+        >
+          Редактор порогов
+        </div>
+        {probeKeys.map((k) => {
+          const meta = SETTING_SCHEMA[k]
+          const settingsAvailable =
+            !('migrationPending' in settings) || !settings.migrationPending
+          const entry =
+            settingsAvailable && 'keys' in settings ? settings.keys[k] : null
+          if (!entry) {
+            // Migration-pending state: editor row still rendered but
+            // disabled so the operator sees the knob exists.
+            return (
+              <SettingEditor
+                key={k}
+                settingKey={k}
+                meta={meta}
+                value={meta.default}
+                source="default"
+                rawDb={null}
+                rawEnv={null}
+                updatedAt={null}
+                disabled
+              />
+            )
+          }
+          return (
+            <SettingEditor
+              key={k}
+              settingKey={k}
+              meta={meta}
+              value={entry.value}
+              source={entry.source}
+              rawDb={entry.rawDb}
+              rawEnv={entry.rawEnv}
+              updatedAt={entry.updatedAt}
+            />
+          )
+        })}
+      </div>
     </section>
   )
 }

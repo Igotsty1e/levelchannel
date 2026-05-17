@@ -53,19 +53,38 @@ create index if not exists operator_settings_events_ts_idx
 -- rather than GRANT semantics — required so single-pool single-TX
 -- atomicity holds for the operator_settings + audit write.
 --
--- Blocks UPDATE only. DELETE is permitted so the retention sweep
--- (scripts/db-retention-cleanup.mjs, 90-day window) can prune old
--- rows. This matches the existing payment_audit_events pattern
--- where the audit-writer role is INSERT-only but the retention
--- role still does DELETE.
-create or replace function block_update_on_operator_settings_events()
+-- - UPDATE on any event row: blocked unconditionally.
+-- - DELETE on a row younger than 89 days: blocked. Older rows can
+--   be pruned by the 90-day retention sweep
+--   (scripts/db-retention-cleanup.mjs); rows in the [0, 89d] window
+--   stay immutable so an app-process compromise CANNOT erase
+--   recent audit rows to cover an admin-credential exfiltration.
+--   Wave-R1 BLOCKER #2 closure (the earlier UPDATE-only trigger
+--   left a real anti-tamper gap vs the audit-writer pattern).
+--
+-- The 89-day boundary is one day tighter than the retention sweep's
+-- 90-day window, so the sweep trivially passes the predicate.
+-- Operator-side forensic DELETEs of older rows are unaffected.
+create or replace function block_immutable_operator_settings_events()
 returns trigger language plpgsql as $$
 begin
-  raise exception 'operator_settings_events rows are immutable (audit log)';
+  if tg_op = 'UPDATE' then
+    raise exception 'operator_settings_events rows are immutable (audit log; UPDATE blocked)';
+  elsif tg_op = 'DELETE' then
+    if old.ts is null or old.ts > now() - interval '89 days' then
+      raise exception 'operator_settings_events rows younger than 89 days are immutable (audit log; recent DELETE blocked)';
+    end if;
+    -- Old enough to delete: return OLD so the DELETE proceeds.
+    -- Returning NULL would silently cancel the operation.
+    return old;
+  end if;
+  return null;
 end$$;
 
 drop trigger if exists block_update_on_operator_settings_events_trg
   on operator_settings_events;
-create trigger block_update_on_operator_settings_events_trg
-  before update on operator_settings_events
-  for each row execute function block_update_on_operator_settings_events();
+drop trigger if exists block_immutable_operator_settings_events_trg
+  on operator_settings_events;
+create trigger block_immutable_operator_settings_events_trg
+  before update or delete on operator_settings_events
+  for each row execute function block_immutable_operator_settings_events();

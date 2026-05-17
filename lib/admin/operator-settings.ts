@@ -377,6 +377,99 @@ export async function setOperatorSetting(input: {
   }
 }
 
+// ALERTS-EDITOR Sub-PR C (2026-05-18) — admin-page reader. Returns
+// per-key ResolvedSetting + DB row updated_at + updatedByAccountId.
+// Every form submit carries the expectedUpdatedAt the operator was
+// looking at, for optimistic concurrency. Also surfaces
+// `migrationPending: true` if the table itself is missing, so the
+// page can show a banner instead of crashing.
+export type AdminSettingView =
+  | { migrationPending: true }
+  | {
+      migrationPending?: false
+      keys: Record<
+        string,
+        ResolvedSetting & {
+          updatedAt: string | null
+          updatedByAccountId: string | null
+        }
+      >
+    }
+
+export async function listOperatorSettingsForAdmin(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<AdminSettingView> {
+  const dbRows = new Map<
+    string,
+    { value: string; updated_at: unknown; updated_by_account_id: unknown }
+  >()
+  try {
+    const pool = getDbPool()
+    const r = await pool.query(
+      `select key, value, updated_at, updated_by_account_id
+         from operator_settings`,
+    )
+    for (const row of r.rows) {
+      dbRows.set(String(row.key), {
+        value: String(row.value),
+        updated_at: row.updated_at,
+        updated_by_account_id: row.updated_by_account_id,
+      })
+    }
+  } catch (err) {
+    if (isUndefinedTableError(err)) {
+      return { migrationPending: true }
+    }
+    throw err
+  }
+  const keys: Record<
+    string,
+    ResolvedSetting & {
+      updatedAt: string | null
+      updatedByAccountId: string | null
+    }
+  > = {}
+  for (const k of Object.keys(SETTING_SCHEMA) as SettingKey[]) {
+    const schema = SETTING_SCHEMA[k]
+    const dbRow = dbRows.get(k) ?? null
+    const rawDb = dbRow?.value ?? null
+    const envRawSource = env[schema.envName]
+    const rawEnv =
+      typeof envRawSource === 'string' ? envRawSource.trim() : null
+    let value: number = schema.default
+    let source: SettingSource = 'default'
+    if (rawDb !== null) {
+      const v = validate(schema, rawDb)
+      if (v !== null) {
+        value = v
+        source = 'db'
+      }
+    }
+    if (source === 'default' && rawEnv && rawEnv.length > 0) {
+      const v = validate(schema, rawEnv)
+      if (v !== null) {
+        value = v
+        source = 'env'
+      }
+    }
+    keys[k] = {
+      value,
+      source,
+      rawDb,
+      rawEnv,
+      updatedAt: dbRow
+        ? new Date(String(dbRow.updated_at)).toISOString()
+        : null,
+      updatedByAccountId: dbRow
+        ? dbRow.updated_by_account_id === null
+          ? null
+          : String(dbRow.updated_by_account_id)
+        : null,
+    }
+  }
+  return { keys }
+}
+
 export async function deleteOperatorSetting(input: {
   key: SettingKey
   expectedUpdatedAt: string
