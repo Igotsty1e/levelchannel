@@ -56,13 +56,17 @@ import pg from 'pg'
 import { Resend } from 'resend'
 
 import { resolveSslConfig } from './_pg-ssl.mjs'
+import { resolveOperatorSettingsForProbe } from './lib/operator-settings.mjs'
 import { recordProbeRun, PROBE_NAMES, VERDICT_KINDS } from './lib/probe-runs.mjs'
 
-const WINDOW_MINUTES = Number(process.env.WEBHOOK_FLOW_WINDOW_MINUTES || 60)
-const MIN_VOLUME = Number(process.env.WEBHOOK_FLOW_MIN_VOLUME || 5)
-const TERMINATED_RATIO_FLOOR = Number(
-  process.env.WEBHOOK_FLOW_TERMINATED_RATIO || 0.3,
-)
+// ALERTS-EDITOR Sub-PR B (2026-05-18) — module-scope `let` vars
+// assigned at tick start from operator_settings (DB → env →
+// default). Helper functions above main() reference these vars,
+// so module-scope is the minimal-touch shape (script is a one-shot
+// per cron tick).
+let WINDOW_MINUTES = 60
+let MIN_VOLUME = 5
+let TERMINATED_RATIO_FLOOR = 0.3
 
 const ALERT_EMAIL_TO = process.env.ALERT_EMAIL_TO?.trim() || ''
 const EMAIL_FROM = process.env.EMAIL_FROM?.trim() || 'LevelChannel <noreply@example.com>'
@@ -222,23 +226,32 @@ async function main() {
     max: 1,
     ssl: resolveSslConfig(process.env.DATABASE_URL),
   })
-  // ALERTS-OBS (2026-05-16) — capture env snapshot at the top of
-  // the run.
+  // ALERTS-EDITOR Sub-PR B (2026-05-18) — snapshot read at tick
+  // start. Assigns module-scope `let` vars before any helper that
+  // references them runs.
+  const settings = await resolveOperatorSettingsForProbe(
+    pool,
+    'webhook-flow',
+  )
+  WINDOW_MINUTES = settings.WEBHOOK_FLOW_WINDOW_MINUTES.value
+  MIN_VOLUME = settings.WEBHOOK_FLOW_MIN_VOLUME.value
+  TERMINATED_RATIO_FLOOR = settings.WEBHOOK_FLOW_TERMINATED_RATIO.value
+
   const capturedThresholds = {
     WEBHOOK_FLOW_WINDOW_MINUTES: WINDOW_MINUTES,
     WEBHOOK_FLOW_MIN_VOLUME: MIN_VOLUME,
     WEBHOOK_FLOW_TERMINATED_RATIO: TERMINATED_RATIO_FLOOR,
+  }
+  const capturedThresholdsSource = {
+    WEBHOOK_FLOW_WINDOW_MINUTES: settings.WEBHOOK_FLOW_WINDOW_MINUTES.source,
+    WEBHOOK_FLOW_MIN_VOLUME: settings.WEBHOOK_FLOW_MIN_VOLUME.source,
+    WEBHOOK_FLOW_TERMINATED_RATIO: settings.WEBHOOK_FLOW_TERMINATED_RATIO.source,
   }
   const recipientEmailSnapshot = ALERT_EMAIL_TO || null
   try {
     const stats = await readWindowStats(pool)
     const verdict = decide(stats)
     logJson('info', 'verdict', { stats, verdict })
-    // ALERTS-OBS round-3 WARN #4 closure: stats.derived carries
-    // verdict-side fields. For low_volume_skip / all_resolved
-    // decideVerdict returns only { kind }, so we backfill terminated
-    // and resolved from raw counters; ratio stays null (no signal —
-    // the alert path didn't run).
     const terminated = stats.paidWebhooks + stats.failWebhooks
     const resolved = terminated + stats.cancelled
     const derived = {
@@ -246,7 +259,12 @@ async function main() {
       terminated,
       resolved,
     }
-    const enrichedStats = { ...stats, derived, thresholds: capturedThresholds }
+    const enrichedStats = {
+      ...stats,
+      derived,
+      thresholds: capturedThresholds,
+      thresholds_source: capturedThresholdsSource,
+    }
     if (verdict.kind === 'low_volume_skip') {
       await recordProbeRun(pool, {
         probeName: PROBE_NAMES.WEBHOOK_FLOW,
@@ -305,7 +323,10 @@ async function main() {
       probeName: PROBE_NAMES.WEBHOOK_FLOW,
       verdictKind: VERDICT_KINDS.ERROR,
       errorMessage: err instanceof Error ? err.message : String(err),
-      stats: { thresholds: capturedThresholds },
+      stats: {
+        thresholds: capturedThresholds,
+        thresholds_source: capturedThresholdsSource,
+      },
     })
     throw err
   } finally {
