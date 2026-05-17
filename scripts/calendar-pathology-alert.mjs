@@ -43,16 +43,15 @@ import pg from 'pg'
 import { Resend } from 'resend'
 
 import { resolveSslConfig } from './_pg-ssl.mjs'
+import { resolveOperatorSettingsForProbe } from './lib/operator-settings.mjs'
 import { recordProbeRun, PROBE_NAMES, VERDICT_KINDS } from './lib/probe-runs.mjs'
 
-const THRESHOLD = Number(process.env.CALENDAR_PATHOLOGY_THRESHOLD || 3)
-const REPORT_LIMIT = Math.max(
-  1,
-  Math.min(Number(process.env.CALENDAR_PATHOLOGY_REPORT_LIMIT || 10), 100),
-)
-const DEDUP_WINDOW_MS = Number(
-  process.env.CALENDAR_PATHOLOGY_DEDUP_WINDOW_MS || 24 * 60 * 60 * 1000,
-)
+// ALERTS-EDITOR Sub-PR B (2026-05-18) — THRESHOLD / REPORT_LIMIT /
+// DEDUP_WINDOW_MS are resolved at tick start from
+// operator_settings (DB → env → default). Top-of-script constants
+// removed; main() reads the snapshot in ONE round-trip after pool
+// init and threads the values through readOffenders + dedup gate.
+
 const STATE_FILE = process.env.CALENDAR_PATHOLOGY_STATE_FILE
   ? resolvePath(process.env.CALENDAR_PATHOLOGY_STATE_FILE)
   : resolvePath('./var/calendar-pathology-state.json')
@@ -73,7 +72,7 @@ function logJson(level, msg, extra = {}) {
   )
 }
 
-async function readOffenders(pool) {
+async function readOffenders(pool, threshold, reportLimit) {
   const r = await pool.query(
     `select id,
             teacher_account_id,
@@ -88,7 +87,7 @@ async function readOffenders(pool) {
         and cancel_repush_count >= $1
       order by cancel_repush_count desc, start_at asc
       limit $2`,
-    [THRESHOLD, REPORT_LIMIT],
+    [threshold, reportLimit],
   )
   return r.rows.map((row) => ({
     slotId: String(row.id),
@@ -170,17 +169,35 @@ async function main() {
     ssl: resolveSslConfig(process.env.DATABASE_URL),
   })
 
-  // ALERTS-OBS (2026-05-16) — capture env snapshot at the top of
-  // the run.
+  // ALERTS-EDITOR Sub-PR B (2026-05-18) — snapshot read at tick
+  // start. ONE round-trip; the resolved values + sources are the
+  // immutable config for the rest of this tick.
+  const settings = await resolveOperatorSettingsForProbe(
+    pool,
+    'calendar-pathology',
+  )
+  const THRESHOLD = settings.CALENDAR_PATHOLOGY_THRESHOLD.value
+  const REPORT_LIMIT = settings.CALENDAR_PATHOLOGY_REPORT_LIMIT.value
+  const DEDUP_WINDOW_MS = settings.CALENDAR_PATHOLOGY_DEDUP_WINDOW_MS.value
+
+  // R2 BLOCKER #4 closure — scalar `thresholds` for backwards
+  // compatibility with /admin/settings/alerts rendering; new
+  // parallel `thresholds_source` exposes (db | env | default)
+  // per-key for the editor UI to consume in Sub-PR C.
   const capturedThresholds = {
     CALENDAR_PATHOLOGY_THRESHOLD: THRESHOLD,
     CALENDAR_PATHOLOGY_REPORT_LIMIT: REPORT_LIMIT,
     CALENDAR_PATHOLOGY_DEDUP_WINDOW_MS: DEDUP_WINDOW_MS,
   }
+  const capturedThresholdsSource = {
+    CALENDAR_PATHOLOGY_THRESHOLD: settings.CALENDAR_PATHOLOGY_THRESHOLD.source,
+    CALENDAR_PATHOLOGY_REPORT_LIMIT: settings.CALENDAR_PATHOLOGY_REPORT_LIMIT.source,
+    CALENDAR_PATHOLOGY_DEDUP_WINDOW_MS: settings.CALENDAR_PATHOLOGY_DEDUP_WINDOW_MS.source,
+  }
   const recipientEmailSnapshot = ALERT_EMAIL_TO || null
 
   try {
-    const offenders = await readOffenders(pool)
+    const offenders = await readOffenders(pool, THRESHOLD, REPORT_LIMIT)
     if (offenders.length === 0) {
       logJson('info', 'no offenders above threshold', {
         threshold: THRESHOLD,
@@ -188,7 +205,11 @@ async function main() {
       await recordProbeRun(pool, {
         probeName: PROBE_NAMES.CALENDAR_PATHOLOGY,
         verdictKind: VERDICT_KINDS.NO_OFFENDERS,
-        stats: { offenderCount: 0, thresholds: capturedThresholds },
+        stats: {
+          offenderCount: 0,
+          thresholds: capturedThresholds,
+          thresholds_source: capturedThresholdsSource,
+        },
       })
       return
     }
@@ -196,6 +217,7 @@ async function main() {
     const enrichedStats = {
       offenderCount: offenders.length,
       thresholds: capturedThresholds,
+      thresholds_source: capturedThresholdsSource,
     }
 
     const fp = fingerprint(offenders)
@@ -308,7 +330,10 @@ async function main() {
       probeName: PROBE_NAMES.CALENDAR_PATHOLOGY,
       verdictKind: VERDICT_KINDS.ERROR,
       errorMessage: err instanceof Error ? err.message : String(err),
-      stats: { thresholds: capturedThresholds },
+      stats: {
+        thresholds: capturedThresholds,
+        thresholds_source: capturedThresholdsSource,
+      },
     })
     throw err
   } finally {

@@ -56,20 +56,21 @@ import pg from 'pg'
 import { Resend } from 'resend'
 
 import { resolveSslConfig } from './_pg-ssl.mjs'
+import { resolveOperatorSettingsForProbe } from './lib/operator-settings.mjs'
 import { recordProbeRun, PROBE_NAMES, VERDICT_KINDS } from './lib/probe-runs.mjs'
 
-const WINDOW_MINUTES = Number(process.env.AUTH_FLOW_WINDOW_MINUTES || 60)
-const MAX_PER_IP = Number(process.env.AUTH_FLOW_MAX_PER_IP || 50)
-const MAX_PER_EMAIL_HASH = Number(process.env.AUTH_FLOW_MAX_PER_EMAIL_HASH || 20)
+// ALERTS-EDITOR Sub-PR B (2026-05-18) — WINDOW_MINUTES /
+// MAX_PER_IP / MAX_PER_EMAIL_HASH / DEDUP_WINDOW_MS are resolved
+// at tick start from operator_settings (DB → env → default).
+// Module-scope `let` so helper functions defined above main() can
+// reference them; assignment happens once inside main() before any
+// helper is called. The script is a one-shot per cron tick — no
+// concurrent invocations to worry about.
+let WINDOW_MINUTES = 60
+let MAX_PER_IP = 50
+let MAX_PER_EMAIL_HASH = 20
+let DEDUP_WINDOW_MS = 4 * 60 * 60 * 1000
 
-// Codex review 2026-05-09 — dedup window. The cron timer fires every
-// 30 min; a sustained brute-force attack would otherwise produce 48
-// identical alert emails per day. With dedup, the operator sees one
-// email per unique offender-set per ~4 hours. Tunable via env if
-// the operator finds the rate too sparse / too loud.
-const DEDUP_WINDOW_MS = Number(
-  process.env.AUTH_FLOW_DEDUP_WINDOW_MS || 4 * 60 * 60 * 1000,
-)
 const STATE_FILE = process.env.AUTH_FLOW_STATE_FILE
   ? resolvePath(process.env.AUTH_FLOW_STATE_FILE)
   : resolvePath('./var/auth-flow-alert-state.json')
@@ -341,22 +342,40 @@ async function main() {
     max: 1,
     ssl: resolveSslConfig(process.env.DATABASE_URL),
   })
-  // ALERTS-OBS (2026-05-16) — capture env-read snapshot at the top
-  // of the run so the probe_runs row carries thresholds AS THEY
-  // WERE on this tick, not what the admin process happens to
-  // remember (paranoia round-1 BLOCKER #8 closure).
+  // ALERTS-EDITOR Sub-PR B (2026-05-18) — snapshot read at tick
+  // start. ONE round-trip; assigns the module-scope `let` vars
+  // before any helper that references them is called.
+  const settings = await resolveOperatorSettingsForProbe(
+    pool,
+    'auth-flow',
+  )
+  WINDOW_MINUTES = settings.AUTH_FLOW_WINDOW_MINUTES.value
+  MAX_PER_IP = settings.AUTH_FLOW_MAX_PER_IP.value
+  MAX_PER_EMAIL_HASH = settings.AUTH_FLOW_MAX_PER_EMAIL_HASH.value
+  DEDUP_WINDOW_MS = settings.AUTH_FLOW_DEDUP_WINDOW_MS.value
+
   const capturedThresholds = {
     AUTH_FLOW_WINDOW_MINUTES: WINDOW_MINUTES,
     AUTH_FLOW_MAX_PER_IP: MAX_PER_IP,
     AUTH_FLOW_MAX_PER_EMAIL_HASH: MAX_PER_EMAIL_HASH,
     AUTH_FLOW_DEDUP_WINDOW_MS: DEDUP_WINDOW_MS,
   }
+  const capturedThresholdsSource = {
+    AUTH_FLOW_WINDOW_MINUTES: settings.AUTH_FLOW_WINDOW_MINUTES.source,
+    AUTH_FLOW_MAX_PER_IP: settings.AUTH_FLOW_MAX_PER_IP.source,
+    AUTH_FLOW_MAX_PER_EMAIL_HASH: settings.AUTH_FLOW_MAX_PER_EMAIL_HASH.source,
+    AUTH_FLOW_DEDUP_WINDOW_MS: settings.AUTH_FLOW_DEDUP_WINDOW_MS.source,
+  }
   const recipientEmailSnapshot = ALERT_EMAIL_TO || null
   try {
     const stats = await readWindowStats(pool)
     const verdict = decideVerdict(stats)
     logJson('info', 'verdict', { stats, verdict })
-    const enrichedStats = { ...stats, thresholds: capturedThresholds }
+    const enrichedStats = {
+      ...stats,
+      thresholds: capturedThresholds,
+      thresholds_source: capturedThresholdsSource,
+    }
     if (verdict.kind === 'no_failures') {
       await recordProbeRun(pool, {
         probeName: PROBE_NAMES.AUTH_FLOW,
@@ -445,7 +464,10 @@ async function main() {
       probeName: PROBE_NAMES.AUTH_FLOW,
       verdictKind: VERDICT_KINDS.ERROR,
       errorMessage: err instanceof Error ? err.message : String(err),
-      stats: { thresholds: capturedThresholds },
+      stats: {
+        thresholds: capturedThresholds,
+        thresholds_source: capturedThresholdsSource,
+      },
     })
     throw err
   } finally {
