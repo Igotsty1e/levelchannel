@@ -1,6 +1,8 @@
 # Wave PKG-RECON — operator reconciliation UI for `paid_not_granted` package orders
 
-**Status:** PLAN-MODE round 3 BLOCK + POST-CAP fixes applied 2026-05-15 (round 1 BLOCK 9+3 → revision; round 2 BLOCK 5+2 → revision; round 3 BLOCK 1+2 (down 89% from round 1); hard cap reached; round 3 BLOCKER #1 + WARNs #2+#3 applied in-place post-cap under user autonomy grant "делай по максимуму"; Codex INFO #4 confirmed round-2 BLOCKERs are genuinely closed).
+**Status:** SHIPPED 2026-05-15 (PRs #227 + #232-#236). Archive of the design + plan-mode trail.
+
+Plan-mode history: round 1 BLOCK (9 BLOCKERs + 3 WARNs) → revision → round 2 BLOCK (5 BLOCKERs + 2 WARNs) → revision → round 3 BLOCK (1 BLOCKER + 2 WARNs, down 89% from round 1). Hard cap reached; round 3 BLOCKER #1 + WARNs #2+#3 applied in-place post-cap under user autonomy grant "делай по максимуму"; Codex INFO #4 confirmed round-2 BLOCKERs are genuinely closed.
 **Project:** LevelChannel
 **Predecessor:** `docs/plans/admin-ux-coverage.md` §9 Codex #3+#4 — `paid_not_granted` reconciliation is the missing P0 operator workflow.
 

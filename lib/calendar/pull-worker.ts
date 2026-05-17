@@ -202,6 +202,21 @@ async function processOneJob(args: {
         teacherAccountId: args.teacherAccountId,
         error: detectorResult.error,
       })
+    } else {
+      // AUDIT-CODE-7 (2026-05-17) — emit success-side log so operators
+      // can confirm the detector actually ran on a given pull. Without
+      // this, journald only sees the failure branch and "silent
+      // success" looks identical to "didn't run".
+      const o = detectorResult.outcome
+      // eslint-disable-next-line no-console
+      console.log('[pull-worker] conflict detector ok', {
+        jobId: args.jobId,
+        teacherAccountId: args.teacherAccountId,
+        scanned: o.scanned,
+        conflictsStamped: o.conflictsStamped,
+        conflictsCleared: o.conflictsCleared,
+        conflictsUnchanged: o.conflictsUnchanged,
+      })
     }
   } catch (err) {
     // eslint-disable-next-line no-console
