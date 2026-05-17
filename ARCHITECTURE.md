@@ -10,6 +10,20 @@ The project has two halves:
 Most of the product logic right now sits in the checkout flow and the
 processing of payment statuses.
 
+## Per-module READMEs (2026-05-18, DOC-MODULE-CONTRACTS)
+
+Module-specific contracts + invariants + file inventory live next to each module's code. This file stays as the top-level overview + cross-module diagram + API surface map. When in doubt about a module's invariants, the per-module README is the canonical source.
+
+- [`lib/billing/README.md`](lib/billing/README.md) — package grants, consumption, refund reversals (4 critical-path files).
+- [`lib/payments/README.md`](lib/payments/README.md) — CloudPayments wire protocol, payment-orders CRUD, allocations (2 critical-path files).
+- [`lib/auth/README.md`](lib/auth/README.md) — sessions, guards, learner-archetype, single-use tokens (3 critical-path files).
+- [`lib/scheduling/README.md`](lib/scheduling/README.md) — slot lifecycle, atomic cancel/book, MSK band, env-tunable 24h gate (2 critical-path files).
+- [`lib/calendar/README.md`](lib/calendar/README.md) — Google OAuth, pull/push workers, channel renewer, conflict detector (2 critical-path files).
+- [`lib/admin/README.md`](lib/admin/README.md) — operator-tunable settings, probe-status (1 critical-path file).
+- [`lib/security/README.md`](lib/security/README.md) — idempotency, rate-limit, origin gate (2 critical-path files).
+
+The critical-path inventory (`docs/critical-path.md`) lists the 20 load-bearing files across these modules. PRs touching any of them MUST carry `Codex-Paranoia: SIGN-OFF`.
+
 ## Layout
 
 ### Frontend
