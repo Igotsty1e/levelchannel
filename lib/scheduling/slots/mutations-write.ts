@@ -402,3 +402,65 @@ export async function deleteOpenSlot(
   )
   return { ok: false, reason: probe.rowCount ? 'not_open' : 'not_found' }
 }
+
+// BCS-DEF-3 (2026-05-18) — set or clear zoom URL on a booked slot.
+// Admin (kind='admin') has no ownership clause; teacher
+// (kind='teacher') requires the slot to be teacher-owned. Allowed
+// on `booked` slots only — open slots have no learner to share
+// the link with; terminal slots are immutable.
+//
+// Cleared via raw === null (passes through the column straight to
+// null). Set via a non-empty string; the route validates with
+// validateZoomUrl BEFORE this call (DB CHECK is the safety net).
+export async function setSlotZoomUrl(
+  slotId: string,
+  zoomUrl: string | null,
+  byAccountId: string,
+  kind: 'admin' | 'teacher',
+): Promise<import('./types').SetSlotZoomUrlResult> {
+  if (!UUID_PATTERN.test(slotId)) return { ok: false, reason: 'not_found' }
+  const pool = getDbPool()
+  const ownerClause = kind === 'teacher' ? 'and teacher_account_id = $4' : ''
+  const result = await pool.query(
+    `update lesson_slots
+        set zoom_url = $2,
+            updated_at = now(),
+            events = $3::jsonb || events
+      where id = $1
+        and status = 'booked'
+        ${ownerClause}
+      returning ${SLOT_COLUMNS}`,
+    kind === 'teacher'
+      ? [
+          slotId,
+          zoomUrl,
+          appendEventSql('slot.zoom_url_updated', kind, {
+            byAccountId,
+            zoomUrl,
+          }),
+          byAccountId,
+        ]
+      : [
+          slotId,
+          zoomUrl,
+          appendEventSql('slot.zoom_url_updated', kind, {
+            byAccountId,
+            zoomUrl,
+          }),
+        ],
+  )
+  if (result.rows[0]) return { ok: true, slot: rowToSlot(result.rows[0]) }
+  // 0 rows updated. Disambiguate not_found / not_booked / not_owner.
+  const probe = await pool.query(
+    `select status, teacher_account_id from lesson_slots where id = $1`,
+    [slotId],
+  )
+  if (probe.rows.length === 0) return { ok: false, reason: 'not_found' }
+  const status = String(probe.rows[0].status)
+  if (status !== 'booked') return { ok: false, reason: 'not_booked' }
+  if (kind === 'teacher' && String(probe.rows[0].teacher_account_id) !== byAccountId) {
+    return { ok: false, reason: 'not_owner' }
+  }
+  // Shouldn't reach here, but treat as not_found for safety.
+  return { ok: false, reason: 'not_found' }
+}
