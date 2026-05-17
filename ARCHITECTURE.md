@@ -201,6 +201,21 @@ Plan: [`docs/plans/alerts-obs.md`](docs/plans/alerts-obs.md). 3-round Codex para
   - `0046_pricing_tariffs_duration_minutes.sql` - BUG-3 (2026-05-14). Adds `duration_minutes integer not null` to `pricing_tariffs` with backfill default 60 (production reality: only `lesson-60min` was ever used), then drops the DEFAULT so new inserts must supply a duration. CHECK band 15-240. Installs `pricing_tariffs_duration_guard` trigger mirroring the `amount_kopecks_immutable` pattern from migration 0033 — duration is immutable after the first slot reference.
 - The legacy `ensureSchema*` functions in `lib/payments/store-postgres.ts`, `lib/security/idempotency-postgres.ts`, `lib/telemetry/store-postgres.ts` stay as a safety net. Once the runner is wired into the deploy pipeline and has rolled at least once on prod, they can be removed gradually - but not in this cycle.
 
+#### Recent migrations (May 2026)
+
+Quick-reference for the 5 most-recently-shipped schema changes; the
+full migration files in `migrations/` are the source of truth.
+
+| Mig | Wave | Adds | Purpose |
+|---|---|---|---|
+| `0049_package_grant_resolutions.sql` | PKG-RECON (2026-05-15) | new table `package_grant_resolutions` | durable operator-resolution log for `paid_not_granted` orders. PK=`invoice_id` (one terminal resolution per order). `resolution in ('granted','attached_and_granted','marked_resolved_manually')`. Deletion-guard consults this table — a resolved order no longer blocks account deletion. |
+| `0050_payment_audit_events_pkg_recon.sql` | PKG-RECON | extends `payment_audit_events.event_type_check` | 3 new event kinds: `payment.grant.retried-by-admin`, `payment.grant.account-attached-by-admin`, `payment.grant.resolved-manually-by-admin`. |
+| `0051_payment_orders_admin_grant.sql` | PKG-ADMIN-GRANT (2026-05-16) | extends `payment_orders.provider` + `.status` + new `granted_by_operator_id uuid` | triple-CHECK invariant: `provider='admin_grant' iff granted_by_operator_id IS NOT NULL iff status='granted'`. Admin-grant route writes synthetic non-money rows with this signature. Refund route refuses `kind='package'` on these orders. |
+| `0052_payment_audit_events_admin_grant.sql` | PKG-ADMIN-GRANT | extends `payment_audit_events.event_type_check` | new event kind: `package.grant.operator-granted`. Actor `'admin:grant'` records the operator id. |
+| `0053_probe_runs.sql` | ALERTS-OBS (2026-05-17) | new table `probe_runs` | per-tick observability sink for the 3 systemd cron alert probes. CHECK on `probe_name` (3 values) + `verdict_kind` (13 values). Two partial indexes: latest-real-run + latest-real-alert (`WHERE is_test = false`). `initiator_account_id` FK ON DELETE RESTRICT preserves operator-action provenance. |
+
+90-day retention for `probe_runs` lives in `scripts/db-retention-cleanup.mjs`. Key rotations for the calendar-encrypted columns (separate from audit-encryption key) ship as `scripts/rotate-calendar-encryption.mjs` (AUDIT-SEC-2, 2026-05-17).
+
 ### Security layer
 
 - [`scripts/cancel-stale-orders.mjs`](scripts/cancel-stale-orders.mjs) - hourly systemd job that flips abandoned pending orders to `cancelled` past `STALE_ORDER_THRESHOLD_MINUTES` (default 60, floor 30). Per-row tx writes the order event + audit row. Reference unit / timer in `scripts/systemd/levelchannel-stale-orders.{service,timer}`
