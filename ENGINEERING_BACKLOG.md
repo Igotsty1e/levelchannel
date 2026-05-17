@@ -105,12 +105,12 @@ Three parallel sub-agent audits (code quality / documentation / security) on cur
 
 - **AUDIT-DOC-1 (HIGH)** — Expand `ARCHITECTURE.md §API routes` to cover all 81 routes (currently ~48 documented). The 33 missing are concentrated in `app/api/admin/`, `app/api/account/`, `app/api/admin/reconciliation/`, `app/api/admin/settings/`, `app/api/teacher/` recent additions. Agents discovering API contracts today have to code-read. ETA: 4h sweep.
 - **AUDIT-DOC-2 (HIGH)** — Add `ARCHITECTURE.md §Database Schema (Recent Migrations)` section listing migrations 0049–0053 with one-line semantic purpose per new table: `package_grant_resolutions` (PKG-RECON), `probe_runs` (ALERTS-OBS), plus 0051's new `granted_by_operator_id` column with triple-CHECK. ETA: 1h.
-- **AUDIT-DOC-3 (MEDIUM)** — Consolidate `pkg-stack:` advisory-lock contract: appears verbatim in 5 places (README, ARCHITECTURE, PAYMENTS_SETUP×2, ENGINEERING_BACKLOG). Owner: `PAYMENTS_SETUP.md §Package-buy init`. Other docs should reference it, not restate. ETA: 1h.
-- **AUDIT-DOC-4 (MEDIUM)** — Update `docs/plans/*.md` status headers to "shipped 2026-05-[date] (PR #XXX)" for the 4 shipped epic plans (pkg-recon, pkg-learner-buy, receipt-3ds-token, alerts-obs). Currently they read as DRAFT / READY. ETA: 0.5h.
-- **AUDIT-DOC-5 (MEDIUM)** — Add `PAYMENTS_SETUP.md §3DS Receipt-Token Session Fallback` documenting RECEIPT-3DS-TOKEN's generic session fallback (session.account.id == order.metadata.accountId). `chargeWithSavedCard` now writes `metadata.accountId` — load-bearing for the fallback. ETA: 1h.
+- ~~**AUDIT-DOC-3**~~ — **Closed 2026-05-17** (PR #262). PAYMENTS_SETUP.md §Admin-driven package grant теперь ссылается на §Package-buy init вместо дублирования полного `pg_advisory_xact_lock` контракта.
+- ~~**AUDIT-DOC-4**~~ — **Closed 2026-05-17** (PR #256). Status headers обновлены на 4 shipped plan docs (pkg-recon, pkg-learner-buy, receipt-3ds-token, alerts-obs).
+- ~~**AUDIT-DOC-5**~~ — **Closed-as-already-done.** PAYMENTS_SETUP.md §Receipt-token gate — dual-mode (~line 220) already documents the RECEIPT-3DS-TOKEN session fallback including `chargeWithSavedCard` writing `metadata.accountId`. No action needed.
 - **AUDIT-DOC-6 (MEDIUM)** — `docs/public/ROADMAP.md` + `docs/public/ARCHITECTURE.md` lag the May 14-17 wave: no mention of package catalog, admin grant, alerts observability. ETA: 1h.
-- **AUDIT-DOC-7 (LOW)** — `SECURITY.md §Auth and account layer` add one sentence on the receipt-token gate's session-fallback rule. ETA: 0.25h.
-- **AUDIT-DOC-8 (LOW)** — `OPERATIONS.md` document `probe_runs` retention (90 days), `slot_admin_actions` operator-purge implication (ON DELETE RESTRICT blocks operator-account deletion until rows are cleaned). ETA: 0.5h.
+- ~~**AUDIT-DOC-7**~~ — **Closed 2026-05-17** (PR #262). SECURITY.md §Auth and account layer теперь имеет sentence about the receipt-token gate's dual-mode (token + session-fallback), pointing at PAYMENTS_SETUP for full contract.
+- ~~**AUDIT-DOC-8**~~ — **Closed-as-stale 2026-05-17.** ARCHITECTURE.md already documents `probe_runs` 90d retention (line 179). `slot_admin_actions` table belongs to CONFLICT-FEED epic which is PARKED — premature. Operator-facing private runbook deltas (`docs/private/OPERATIONS.private.md`) are out of public-repo scope.
 
 ### Aggregate
 
