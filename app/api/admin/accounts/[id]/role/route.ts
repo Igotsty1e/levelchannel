@@ -28,10 +28,14 @@ type RouteParams = { params: Promise<{ id: string }> }
 // but not from themselves — prevents an accidental "revoke last admin"
 // foot-gun. (CLI script can recover, but that's an extra step.)
 //
-// AUDIT-CODE-1 (2026-05-17): wrapped in withIdempotency so a
-// double-click doesn't grant/revoke twice (the lib helpers are
-// idempotent in effect, but a duplicate audit row + duplicate
-// notification email are still real side effects worth deduping).
+// AUDIT-CODE-1 (2026-05-17): wrapped in withIdempotency for
+// SEQUENTIAL same-key replay dedup. CONCURRENT same-key fire MAY
+// still execute the executor twice — see contract on
+// lib/security/idempotency.ts. grantAccountRole and
+// revokeAccountRole are idempotent in effect (ON CONFLICT on grant,
+// DELETE on revoke). The current path emits no audit row and no
+// notification email, so duplicate executor invocation produces
+// only redundant DB statements, no externally-visible noise.
 
 export async function POST(request: Request, { params }: RouteParams) {
   const { id } = await params

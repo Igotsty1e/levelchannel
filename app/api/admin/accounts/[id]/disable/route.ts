@@ -25,9 +25,24 @@ type RouteParams = { params: Promise<{ id: string }> }
 // Self-protection: cannot disable yourself.
 //
 // AUDIT-CODE-1 (2026-05-17): wrapped in withIdempotency so a
-// double-click on the admin UI doesn't revoke sessions twice / flip
-// the disabled flag twice. Scope keyed on (id, operator) — two
-// different operators can still issue independent disables.
+// SEQUENTIAL same-key replay (UI retries, browser back+forward,
+// network-flap auto-retry where the client reuses the
+// Idempotency-Key) skips re-running disableAccount +
+// revokeAllSessionsForAccount on retry. Scope keyed on (id,
+// operator) — two different operators can still issue independent
+// disables.
+//
+// CONCURRENT same-key fire (two parallel POSTs within the
+// executor's runtime window) MAY still execute both side effects —
+// see the contract note on lib/security/idempotency.ts. In
+// practice this requires an explicitly racing client; the admin UI
+// uses one form-submit per click, so concurrent same-key is
+// operator-initiated only. The underlying mutations are idempotent
+// in effect (`disabled_at = coalesce(disabled_at, now())`,
+// `revokeAllSessionsForAccount` is `UPDATE ... WHERE revoked_at IS
+// NULL`) — there's no audit-row emission or operator email on this
+// path, so a duplicate executor invocation produces no extra side
+// effects beyond the two redundant SQL statements.
 
 export async function POST(request: Request, { params }: RouteParams) {
   const { id } = await params

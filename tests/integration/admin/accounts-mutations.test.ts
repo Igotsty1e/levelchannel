@@ -220,6 +220,50 @@ describe('POST /api/admin/accounts/[id]/role', () => {
     const json = await res.json()
     expect(json.error).toBe('cannot_revoke_admin_self')
   })
+
+  it('post-merge WARN #3: idempotent replay returns cached response WITHOUT re-applying role grant', async () => {
+    const admin = await makeAdmin('role-idemp-admin')
+    const target = await makeLearner('role-idemp-target')
+    const key = `role-idemp-${Date.now()}`
+
+    const r1 = await roleHandler(
+      buildRequest(`/api/admin/accounts/${target.accountId}/role`, {
+        cookie: admin.cookie,
+        body: { role: 'teacher', op: 'grant' },
+        headers: { 'Idempotency-Key': key },
+      }),
+      { params: Promise.resolve({ id: target.accountId }) },
+    )
+    expect(r1.status).toBe(200)
+
+    // Operator-side revoke between replays to make the cached effect
+    // observable: if idempotency replays correctly, the second
+    // request with the same key returns cached 200 WITHOUT re-running
+    // grantAccountRole — so account_roles stays empty (we just revoked).
+    const pool = getDbPool()
+    await pool.query(
+      `delete from account_roles where account_id = $1 and role = 'teacher'`,
+      [target.accountId],
+    )
+
+    const r2 = await roleHandler(
+      buildRequest(`/api/admin/accounts/${target.accountId}/role`, {
+        cookie: admin.cookie,
+        body: { role: 'teacher', op: 'grant' },
+        headers: { 'Idempotency-Key': key },
+      }),
+      { params: Promise.resolve({ id: target.accountId }) },
+    )
+    expect(r2.status).toBe(200)
+    // Replay surface marker.
+    expect(r2.headers.get('Idempotency-Replay')).toBe('true')
+
+    const after = await pool.query(
+      `select role from account_roles where account_id = $1 and role = 'teacher'`,
+      [target.accountId],
+    )
+    expect(after.rows.length).toBe(0)
+  })
 })
 
 describe('POST /api/admin/accounts/[id]/postpaid', () => {
@@ -248,6 +292,47 @@ describe('POST /api/admin/accounts/[id]/postpaid', () => {
     expect(res.status).toBe(200)
     const json = await res.json()
     expect(json.postpaidAllowed).toBe(true)
+  })
+
+  it('post-merge WARN #3: idempotent replay returns cached response WITHOUT re-applying postpaid update', async () => {
+    const admin = await makeAdmin('postpaid-idemp-admin')
+    const target = await makeLearner('postpaid-idemp-target')
+    const key = `postpaid-idemp-${Date.now()}`
+
+    const r1 = await postpaidHandler(
+      buildRequest(`/api/admin/accounts/${target.accountId}/postpaid`, {
+        cookie: admin.cookie,
+        body: { allowed: true },
+        headers: { 'Idempotency-Key': key },
+      }),
+      { params: Promise.resolve({ id: target.accountId }) },
+    )
+    expect(r1.status).toBe(200)
+
+    // Reset BETWEEN replays to make the cached behavior observable.
+    const pool = getDbPool()
+    await pool.query(
+      `update accounts set postpaid_allowed = false where id = $1`,
+      [target.accountId],
+    )
+
+    const r2 = await postpaidHandler(
+      buildRequest(`/api/admin/accounts/${target.accountId}/postpaid`, {
+        cookie: admin.cookie,
+        body: { allowed: true },
+        headers: { 'Idempotency-Key': key },
+      }),
+      { params: Promise.resolve({ id: target.accountId }) },
+    )
+    expect(r2.status).toBe(200)
+    expect(r2.headers.get('Idempotency-Replay')).toBe('true')
+
+    // Cached replay must NOT have re-applied the UPDATE.
+    const after = await pool.query(
+      `select postpaid_allowed from accounts where id = $1`,
+      [target.accountId],
+    )
+    expect(after.rows[0].postpaid_allowed).toBe(false)
   })
 
   it('invalid uuid → 400', async () => {
