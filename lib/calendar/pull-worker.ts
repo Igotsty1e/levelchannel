@@ -16,6 +16,7 @@
 // is already disconnected by the helper, and we terminal-fail the
 // job. `transient` → schedule retry.
 
+import { runConflictDetectionForTeacher } from '@/lib/calendar/conflict-detector'
 import type { PullError } from '@/lib/calendar/google/pull'
 import { ensureFreshAccessToken } from '@/lib/calendar/google/token-refresh'
 import { runPullForCalendar, type RunPullError } from '@/lib/calendar/pull-runner'
@@ -165,7 +166,53 @@ async function processOneJob(args: {
     )
   }
 
-  // 3. Success.
+  // 3. Run the post-pull conflict detector.
+  //
+  // BCS-F.1 (booking-calendly-style.md §6 line 356) shipped the
+  // detector module + 4 conflict columns + teacher banner UI +
+  // dismiss/delete-external endpoints, but the wire-up step into
+  // this worker was missed — `runConflictDetectionForTeacher`
+  // had only test call-sites until 2026-05-17. Without this call,
+  // `lesson_slots.external_conflict_at` stays NULL forever on
+  // production and the teacher's red banner never fires for a real
+  // post-book overlap. Surfaced by CONFLICT-FEED (BCS-DEF-2)
+  // plan-mode paranoia round 1 (`docs/plans/conflict-feed.md`).
+  //
+  // The detector runs against `teacher_account_id` (not the single
+  // calendar) so a multi-calendar teacher gets ONE detector pass
+  // after each per-calendar pull lands its busy intervals. That's
+  // intentional double-work — each calendar's pull triggers a
+  // full-teacher rescan — but the cost is bounded (only `booked`
+  // future slots are scanned) and the alternative (deduping across
+  // calendars in the same teacher's parallel pull cycle) is a
+  // bigger refactor.
+  //
+  // Best-effort: detector failure MUST NOT fail the pull job. The
+  // pull's primary job (refreshing busy intervals) succeeded; the
+  // detector is observational. A failure here logs to journald and
+  // the job still flips to 'succeeded'. Next tick re-scans.
+  try {
+    const detectorResult = await runConflictDetectionForTeacher({
+      teacherAccountId: args.teacherAccountId,
+    })
+    if (!detectorResult.ok) {
+      // eslint-disable-next-line no-console
+      console.warn('[pull-worker] conflict detector returned error', {
+        jobId: args.jobId,
+        teacherAccountId: args.teacherAccountId,
+        error: detectorResult.error,
+      })
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[pull-worker] conflict detector threw', {
+      jobId: args.jobId,
+      teacherAccountId: args.teacherAccountId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+
+  // 4. Success.
   await pool.query(
     `update calendar_pull_jobs
         set status = 'succeeded', last_error = null
