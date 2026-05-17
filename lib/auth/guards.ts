@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { type Account, listAccountRoles } from '@/lib/auth/accounts'
+import { isLearnerArchetypeCandidate } from '@/lib/auth/learner-archetype'
 import { type Session, getCurrentSession } from '@/lib/auth/sessions'
 
 export type GuardResult =
@@ -128,6 +129,30 @@ export async function requireLearnerArchetypeAndVerified(
   const roles = await listAccountRoles(auth.account.id)
   if (roles.includes('admin') || roles.includes('teacher')) {
     return rejectElevated()
+  }
+  // AUDIT-SEC-3 (2026-05-17) — align with the canonical predicate so
+  // accounts inside deletion-grace (scheduled_purge_at set) or
+  // already-purged or disabled can NOT hit downstream learner write
+  // endpoints (/api/slots/[id]/book, /api/checkout/package/[slug],
+  // etc.). Role check above is necessary but not sufficient: a learner
+  // who tapped /account/delete still has their session valid until
+  // grace expires + the anonymizer fires; without this gate they
+  // could continue booking slots during the grace window. The
+  // canonical predicate also re-asserts email-verified (already
+  // enforced by requireAuthenticatedAndVerified — defense-in-depth).
+  const stillEligible = await isLearnerArchetypeCandidate(auth.account.id)
+  if (!stillEligible) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        {
+          error: 'learner_target_unavailable',
+          message:
+            'Аккаунт не может выполнять ученическую операцию (в графике удаления, выключен или роль изменилась).',
+        },
+        { status: 403, headers: { 'Cache-Control': 'no-store, max-age=0' } },
+      ),
+    }
   }
   return { ok: true, account: auth.account, session: auth.session }
 }

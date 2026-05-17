@@ -6,15 +6,21 @@
 // interpolate the shared fragment below) plus the new single-account
 // function used by PKG-RECON's attach-account route.
 //
-// SCOPE NOTE (wave-mode round 1 WARN #3): the request-time guard
-// `lib/auth/guards.ts:requireLearnerArchetype*` was NOT refactored in
-// this wave. Those guards check the REQUESTING user's role grant
-// only (rejecting admin/teacher) — they don't read
-// scheduled_purge_at / purged_at. That gap is a separate
-// reconcile-with-canonical-predicate wave; not in scope here.
-// Today the consequence is: a user in their deletion grace period
-// (scheduled_purge_at set) can still hit /api/slots/* request-time
-// guards. That's an existing latent issue we did not introduce here.
+// SCOPE NOTE (PKG-RECON wave-mode round 1 WARN #3):
+//   - `requireLearnerArchetypeAndVerified` was reconciled with the
+//     canonical predicate by AUDIT-SEC-3 (2026-05-17, PR #257) — it
+//     now calls `isLearnerArchetypeCandidate(account.id)` after the
+//     role check, so a user inside the deletion grace period
+//     (scheduled_purge_at set) or already-purged or disabled gets
+//     rejected at the booking / package-buy / charge-token request
+//     boundary, NOT just at the admin-side target picker.
+//   - `requireLearnerArchetype` (the non-Verified variant) was NOT
+//     reconciled in that pass because the canonical predicate
+//     requires email_verified_at — adopting it there would tighten
+//     the contract for the two existing non-Verified call sites
+//     (/api/slots/mine read, /api/slots/[id]/cancel). A follow-up
+//     wave should either accept that tightening or introduce a
+//     `non-verified-aware` slimmer predicate.
 //
 // Excluded conditions (account fails predicate when ANY holds):
 //   - email_verified_at IS NULL    (unverified email)
