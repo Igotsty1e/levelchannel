@@ -5,7 +5,7 @@
 // Types
 export type { LessonPackage } from './catalog'
 export type { PackagePurchase } from './purchases'
-export type { PostpaidDebtSlot } from './debt'
+export type { PostpaidDebtSlot, AccountPostpaidDebtSummary } from './debt'
 
 // Values
 export {
@@ -24,7 +24,10 @@ export {
   listPackagePurchasesByIds,
 } from './purchases'
 
-export { listAccountPostpaidDebt } from './debt'
+export {
+  listAccountPostpaidDebt,
+  listAccountsWithPostpaidDebtAggregate,
+} from './debt'
 
 // API-BOUNDARIES (2026-05-18) — facade exports for eligibility so
 // outside callers don't import @/lib/billing/packages/eligibility
