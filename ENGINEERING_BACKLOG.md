@@ -96,9 +96,9 @@ Three parallel sub-agent audits (code quality / documentation / security) on cur
 - **AUDIT-CODE-2 (HIGH)** — Fix idempotency cache poisoning on `POST /api/admin/settings/alerts/[probe]/test-send` 422 path: env-var checks happen AFTER a `probe_runs` row is written; if operator then sets `ALERT_EMAIL_TO` and retries with the same Idempotency-Key, the cached 422 wins. Fix: env preflight before any DB write, OR exclude 4xx from idempotency cache. ETA: 2h dev.
 - **AUDIT-CODE-3 (MEDIUM)** — Extract `isUndefinedTableError` helper into `lib/db/errors.ts` and import from `lib/admin/probe-status.ts` + `app/api/admin/settings/alerts/[probe]/test-send/route.ts`. Today duplicated; risk of silent drift. ETA: 1h refactor.
 - **AUDIT-CODE-4 (MEDIUM)** — Standardize catch blocks to `catch (err: unknown)` + `err instanceof Error` guards repo-wide. Several catch sites today access `.message` on untyped errors — string-throw or object-throw would crash. ETA: 4h sweep.
-- **AUDIT-CODE-5 (MEDIUM)** — Add integration tests for `app/api/admin/accounts/[id]/{disable,role,postpaid}/route.ts`. No coverage today; existing patterns under `tests/integration/admin/` are the template. ETA: 8h test work.
+- ~~**AUDIT-CODE-5 (MEDIUM)**~~ — **Closed-as-already-done 2026-05-17 (PR #255).** `tests/integration/admin/accounts-mutations.test.ts` covers all three admin account routes (disable, role, postpaid) with 13 cases including anon/non-admin/self-disable/role-flip/postpaid-on-off/idempotency. Created alongside AUDIT-CODE-1 wave. No further action.
 - **AUDIT-CODE-6 (MEDIUM)** — Add end-to-end integration test covering full learner-buy → webhook → package-grant → purchase cycle. Today each leg is tested in isolation; no test exercises the seam. Mirrors the BCS-F.1 wire-up gap failure mode (module tested, wire-up not). ETA: 6h test work.
-- **AUDIT-CODE-7 (LOW)** — Add success-side `console.log` in `lib/calendar/pull-worker.ts` after detector returns ok. Today only the error branch logs; operators can't confirm detector actually ran on a given pull from journald alone. ETA: 0.5h.
+- ~~**AUDIT-CODE-7 (LOW)**~~ — **Closed-as-already-done 2026-05-17.** `lib/calendar/pull-worker.ts:222-237` already emits the success-side `[pull-worker] conflict detector ok` log with `jobId`/`teacherAccountId`/outcome. Anchor comment carries the `AUDIT-CODE-7 (2026-05-17)` tag. No further action.
 - **AUDIT-CODE-8 (LOW)** — Add explicit success-side metrics on `drainPullJobs` (events pulled, duration, outcome counts). ETA: 2h.
 
 ### Documentation findings (MEDIUM priority)
@@ -115,6 +115,8 @@ Three parallel sub-agent audits (code quality / documentation / security) on cur
 ### Aggregate
 
 Total: 4 SEC + 8 CODE + 8 DOC = 20 actionable items. ~46h of dev work + some operator time. None are correctness blockers shipping today.
+
+**Status 2026-05-17 (post-audit wave):** 19/20 items closed across PR #252-#268. Only **AUDIT-SEC-1** remains — operator action (run `scripts/null-plaintext-audit-pii.mjs --execute --confirm` against prod after the Wave 2.1 encrypted-column backfill has soaked). Cannot ship from agent; lives on the operator runbook.
 
 ## Bug intake — 2026-05-13
 
