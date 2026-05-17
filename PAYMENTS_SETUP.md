@@ -189,12 +189,11 @@ title, expiry) from the catalog. Auth: `requireAdminRole`.
   `lockClient`. Failure rolls back the entire grant. The admin-grant
   flow SKIPS `processPackageGrant` and calls `createPackagePurchase`
   directly.
-- **Anti-stacking lock:** acquires
-  `pg_advisory_xact_lock(hashtextextended('pkg-stack:' || accountId || ':' || durationMinutes, 0))`
-  on the lockClient. Same `pkg-stack:` prefix as the learner-buy
-  route AND the webhook-grant path, so a concurrent admin grant +
-  learner buy + delayed webhook on the same `(account, duration)`
-  all serialise against each other (epic-end paranoia BLOCKER #1
+- **Anti-stacking lock:** uses the shared `pkg-stack:` advisory-lock
+  contract documented in §Package-buy init above. Same prefix +
+  same `(accountId, durationMinutes)` key, so a concurrent admin
+  grant + learner buy + delayed webhook on the same key all
+  serialise against each other (epic-end paranoia BLOCKER #1
   closure).
 - **Anti-stacking gate:** `learnerHasActivePackageOfDuration(targetAccountId, durationMinutes)`
   rejects the grant with `409 already_owns_active_package` unless

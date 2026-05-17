@@ -85,6 +85,18 @@ do work.
 - single-use-tokens whitelist invariant: `tableFor(scope)` throws a
   typed error if the scope is invalid; SQL is never built on top of
   an `undefined` table name.
+- receipt-token gate dual mode (`lib/payments/receipt-token-gate.ts:evaluateReceiptGate`):
+  gates `/api/payments/[invoiceId]/{route,cancel,stream}` accept either
+  (a) a token match against `payment_orders.receipt_token_hash` in
+  constant time, or (b) an authenticated learner session whose
+  `session.account.id` equals `order.metadata.accountId`
+  (RECEIPT-3DS-TOKEN, 2026-05-16). The session-fallback consumer
+  rejects elevated sessions (admin / teacher) BEFORE threading the
+  account id into the gate — admin/teacher reads go through
+  `/admin/payments/[invoiceId]` instead. Anti-spoof lives at the
+  consumer (`lib/payments/receipt-gate-session.ts`); the gate itself
+  is dumb equality. Full contract in `PAYMENTS_SETUP.md §Receipt-token
+  gate — dual-mode`.
 - learner-archetype gate on `/api/slots/*` and learner-write
   endpoints (`/api/checkout/package/[slug]`, `/api/payments/charge-token`,
   etc.): `requireLearnerArchetype` and `requireLearnerArchetypeAndVerified`
