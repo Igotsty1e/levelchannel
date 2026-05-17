@@ -70,19 +70,30 @@ describe('requireLearnerArchetypeAndVerified — canonical-predicate alignment (
     expect(result.response.status).toBe(403)
   })
 
-  it('disabled_at IS NOT NULL → 403 (canonical predicate, NEW)', async () => {
+  it('disabled_at IS NOT NULL → 401 from layered auth gate (lookupSession blocks first)', async () => {
+    // Post-merge paranoia round 1 WARN #4 closure: this test was
+    // accepting [401, 403] which masked whether the canonical
+    // predicate actually fired. In reality, `lookupSession`
+    // (lib/auth/sessions.ts:68) checks `a.disabled_at` in the join,
+    // so the auth gate ALWAYS bounces first with 401 for this
+    // column. The canonical predicate's `disabled_at` clause is
+    // defense-in-depth (covers a hypothetical future where
+    // lookupSession drops the column) but is unreachable through
+    // requireLearnerArchetypeAndVerified today. Asserting 401
+    // exactly makes the layering explicit.
+    //
+    // The canonical predicate's disabled_at clause IS unit-tested
+    // separately via `isLearnerArchetypeCandidate(id)` in
+    // tests/integration/auth/learner-archetype-predicate.test.ts
+    // (drift detector against listLearnerCandidates).
     const { cookie, accountId } = await makeLearnerWithSession('learner-disabled')
     await disableAccount(accountId)
     const result = await requireLearnerArchetypeAndVerified(
       buildRequest('/anything', { cookie }),
     )
-    // Auth gate fires first because disable revoked the session via
-    // sessions.revoked_at. That's a 401, not a 403 — and that's
-    // FINE: the user is bounced just the same. Either status proves
-    // the gate doesn't let a disabled account through.
     expect(result.ok).toBe(false)
     if (result.ok) return
-    expect([401, 403]).toContain(result.response.status)
+    expect(result.response.status).toBe(401)
   })
 
   it('scheduled_purge_at IS NOT NULL → 403 (canonical predicate, NEW)', async () => {
