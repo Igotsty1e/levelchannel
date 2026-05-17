@@ -33,18 +33,29 @@ Total estimate: 33 PRs across 7 waves. Reference cadence: billing-wave was 7 PRs
 
 - ~~**BCS-HARDEN-1**~~ — **Закрыт 2026-05-14** (PR #214, commit `232ca10`). `/api/slots/[id]/book` теперь явно отказывает с 404 на NULL-assignedTeacher; 9 интеграционных тестов + 1 unit-тест переписаны с явным `assignedTeacherId`. Codex-Paranoia: SIGN-OFF round 3/3.
 - ~~**BCS-HARDEN-2**~~ — **Закрыт 2026-05-13** (PR #202, commit `934e6a2`). Dead `_DEAD_BookSection` / `TabButton` / `fmtSlotTime` / `currentMondayYmd` declarations deleted from `app/cabinet/lessons-section.tsx`.
-- **BCS-HARDEN-3** — `slot_lifecycle_intents` claim path doesn't flip status to `in_progress` (Codex epic-end paranoia WARN #1, 2026-05-14). `FOR UPDATE SKIP LOCKED` protects only the statement, not the post-commit window — after OP.2 wired `drainIntents` to cron, an overlapping tick or manual re-fire can re-claim the same row and bump `attempts` twice. Fix: extend `claimNextIntent` SQL to do CTE-based `UPDATE … SET status = 'in_progress' … RETURNING` (mirrors `claimNextJob` in pull/push workers). Cite `lib/calendar/intent-worker.ts:claimNextIntent`, `migrations/0045_calendar_jobs.sql:152,176`.
-- **BCS-HARDEN-4** — `revive-blocked` cron has a hidden dependency on a recent successful pull (Codex epic-end paranoia WARN #2, 2026-05-14). Docs and route name imply revival "after teacher reconnects", but the SQL gate also requires `last_pulled_at >= now()-30m`. Since reconnect itself nulls `last_pulled_at` in `upsertGoogleIntegration`, blocked intents wait for the next successful pull cron tick AND then the next hourly revive tick — two-cycle latency that's invisible to the operator. Fix: either (a) drop the `last_pulled_at` gate (rely on cancel intent's own permanent-fail backoff), or (b) document the dependency in `ARCHITECTURE.md` + route doc comment. Cite `lib/calendar/intent-worker.ts:reviveBlockedIntents`, `lib/calendar/integrations.ts:upsertGoogleIntegration:198`.
+- ~~**BCS-HARDEN-3**~~ — **Закрыт 2026-05-15** (PR #223, commit `fa5c862`). `claimNextIntent` теперь делает CTE-based atomic `UPDATE ... SET status='in_progress' RETURNING ...`, флипает статус в той же statement что и FOR UPDATE SKIP LOCKED — overlapping tick не может re-claim ту же row.
+- ~~**BCS-HARDEN-4**~~ — **Закрыт 2026-05-15** (PR #223 same commit). `last_pulled_at >= now()-30m` gate в `reviveBlockedIntents` снят — revival больше не ждёт двух cron-ticks после reconnect.
 
 ### Active follow-up roadmap (after BCS-OP-ROLLOUT activation, 2026-05-15)
 
-- **BCS-DEF-1** — Email + Telegram alerts on unresolved conflicts >2h (operator + teacher). **Admin coverage required:** alert thresholds + recipient lists must be operator-editable from /admin.
-- **BCS-DEF-2** — Admin "Conflict feed" dashboard with last-30d view.
+- **BCS-DEF-1** — Email + Telegram alerts on unresolved conflicts >2h (operator + teacher). **Admin coverage required:** alert thresholds + recipient lists must be operator-editable from /admin. Now unblocked: BCS-F.1 wire-up gap closed by PR #251 (2026-05-17) — `external_conflict_at` actually gets stamped on prod, so an alert on "stamped >2h" is meaningful.
+- **BCS-DEF-2** — Admin "Conflict feed" dashboard with last-30d view. Plan drafted as `docs/plans/conflict-feed.md` 2026-05-17; PARKED on round-1 paranoia with 4 BLOCKERs + 6 WARNs documented for future revival. Foundation gap (BCS-F.1 wire-up) closed by PR #251; revive when ready.
 - **BCS-DEF-3** — Optional `zoomUrl` on slot — nullable at create, editable on already-booked slot.
 - **BCS-DEF-4** — Lesson-start reminders for learner (per-user settings: 60/30/10 min, email/telegram/push). **Admin coverage required:** per-channel master switch + default windows operator-editable.
 - **BCS-DEF-5** — Lesson-start reminders for teacher (mirror settings, same admin coverage).
 - **BCS-DEF-7** — `syncToken`-based incremental pull (post-MVP optimization; replaces bounded full-rewrite for active teachers).
 - ~~**BCS-DEF-6**~~ — **DROPPED 2026-05-15** (user decision: Yandex not on the roadmap).
+
+### Shipped post-BCS-OP-ROLLOUT (2026-05-15…2026-05-17)
+
+For chronological context — items closed since the BCS-OP-ROLLOUT activation note above:
+
+- ~~**PKG-RECON**~~ (2026-05-15, PRs #227 + #232-#236) — `/admin/reconciliation/package-grants` reconciliation UI for `paid_not_granted` orders; three operator actions (retry-grant / attach-account / mark-resolved); migration 0049 `package_grant_resolutions`.
+- ~~**PKG-LEARNER-BUY**~~ (2026-05-16, PRs #237-#241) — `/cabinet/packages` learner buy CTA; race-safe gates on shared `pkg-stack:` advisory-lock prefix; CloudPayments widget intent threaded inline with receipt token in `successRedirectUrl`.
+- ~~**RECEIPT-3DS-TOKEN**~~ (2026-05-16, PR #242) — receipt-token gate accepts authenticated learner session matching `order.metadata.accountId` (generic fallback, anti-spoof rejects admin/teacher). Closes 3DS-callback /thank-you 401.
+- ~~**PKG-ADMIN-GRANT**~~ (2026-05-16, PRs #243 cal nav + #245 LBL.0 + #246 LBL.1 + #247 LBL.2 + #248 epic-close) — operator-driven non-money grant via `POST /api/admin/packages/[id]/grant` with synthetic `payment_orders` rows (`provider='admin_grant'`, `status='granted'`, `paid_at=NULL`). Migration 0051 triple-CHECK. Shared `pkg-stack:` lock unifies admin-grant with learner-buy + webhook serialization.
+- ~~**ALERTS-OBS**~~ (2026-05-17, PR #249) — read-only `/admin/settings/alerts` per-probe observability for the 3 systemd cron alert probes. Migration 0053 `probe_runs`. Shared `scripts/lib/probe-runs.mjs` ESM helper (no `@/` aliases). 3-round paranoia plan + 1-round paranoia wave.
+- ~~**BCS-F.1 wire-up gap**~~ (2026-05-17, PR #251) — `runConflictDetectionForTeacher()` was a module without a production call-site; teacher banner never fired on prod. Wired into `pull-worker.processOneJob()` after success. Surfaced by CONFLICT-FEED plan-mode paranoia round 1 as BLOCKER #1.
 
 ### BCS-ADMIN-UX — admin tooling review round (queued 2026-05-15)
 
