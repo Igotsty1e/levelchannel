@@ -85,7 +85,7 @@ Three parallel sub-agent audits (code quality / documentation / security) on cur
 
 ### Security findings (HIGH priority)
 
-- **AUDIT-SEC-1 (HIGH)** — Complete audit-encryption Phase B on prod: run `scripts/null-plaintext-audit-pii.mjs` against `payment_audit_events` so plaintext email + IP columns are NULLed out after the encrypted columns finished backfilling. Today's DB dump still leaks plaintext PII pre-Wave-2.1 rows. ETA: 1h operator time. Reference: `SECURITY.md §Wave 2.1 phase plan`.
+- ~~**AUDIT-SEC-1 (HIGH)**~~ — **CLOSED 2026-05-17.** Phase B null-out applied on prod via `scripts/null-plaintext-audit-pii.mjs --execute --confirm`. Sequence: prior Phase B left a stale snapshot blocking re-run; verified 18 prior-nulled rows decrypt cleanly under current `AUDIT_ENCRYPTION_KEY`; user authorized dropping the stale `payment_audit_events_pre_phase_b` snapshot; backfill caught 1 plaintext-only row (added since prior Phase B); fresh Phase B nulled all 32 rows (snapshot retained ≥7 days for rollback). Encryption-at-rest claim now holds across full `payment_audit_events`.
 - **AUDIT-SEC-2 (HIGH)** — Add `scripts/rotate-calendar-encryption.mjs` mirroring `scripts/rotate-audit-encryption.mjs`. Today `CALENDAR_ENCRYPTION_KEY` has no automated rotation path — if the key is ever lost, all encrypted teacher OAuth tokens become permanently unreadable. `getCalendarEncryptionKeyOld` is already scaffolded in `lib/calendar/encryption.ts` (matching the audit-encryption rotation shape). ETA: 4h dev.
 - **AUDIT-SEC-3 (HIGH)** — Align `requireLearnerArchetypeAndVerified` with the canonical `LEARNER_ARCHETYPE_CANDIDATE_WHERE_SQL` predicate from `lib/auth/learner-archetype.ts`. Request-time guards today don't check `scheduled_purge_at` / `purged_at` — a user inside deletion-grace can still hit `/api/slots/*` book endpoints. Round-1 WARN #3 from a prior wave; never closed. ETA: 4h dev + 6 integration tests.
 - **AUDIT-SEC-4 (MEDIUM) — DONE 2026-05-17.** Migration 0054 added bytea `channel_token_enc`. Dual-write in `lib/calendar/channel-renewer.ts setupChannelForIntegration` with top-of-function fail-closed guard (key+schema preflight before any external Google call); decrypt-aware read in `app/api/calendar/google/webhook/route.ts` with plaintext fallback for legacy rows. Rotation script + runbook updated to four columns. Phase B null-out via `scripts/null-plaintext-channel-token.mjs` (operator, post-rollback-window). 3-round paranoia plan-mode loop SIGN-OFF + post-loop runbook syntax fix per R3 BLOCKER #1.
@@ -116,7 +116,7 @@ Three parallel sub-agent audits (code quality / documentation / security) on cur
 
 Total: 4 SEC + 8 CODE + 8 DOC = 20 actionable items. ~46h of dev work + some operator time. None are correctness blockers shipping today.
 
-**Status 2026-05-17 (post-audit wave):** 19/20 items closed across PR #252-#268. Only **AUDIT-SEC-1** remains — operator action (run `scripts/null-plaintext-audit-pii.mjs --execute --confirm` against prod after the Wave 2.1 encrypted-column backfill has soaked). Cannot ship from agent; lives on the operator runbook.
+**Status 2026-05-17 (audit wave fully closed):** 20/20 items closed across PR #252-#268 + post-merge operator run for AUDIT-SEC-1 (Phase B null-out applied on prod, snapshot retained for the 7-day rollback window).
 
 ## Bug intake — 2026-05-13
 
