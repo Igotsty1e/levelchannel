@@ -262,6 +262,56 @@ describe('POST /api/admin/settings/alerts/[probe]/test-send', () => {
       else delete process.env.RESEND_API_KEY
     }
   })
+
+  it('AUDIT-CODE-2: 422 missing-env path does NOT poison idempotency cache (retry with same key after env is set sends real email)', async () => {
+    const { cookie } = await makeAdmin('admin-cache-poison')
+    const prevAlertEmailTo = process.env.ALERT_EMAIL_TO
+    const prevResendKey = process.env.RESEND_API_KEY
+    const idempotencyKey = `test-cache-poison-${Date.now()}`
+
+    try {
+      // Attempt #1: ALERT_EMAIL_TO missing → 422.
+      delete process.env.ALERT_EMAIL_TO
+      process.env.RESEND_API_KEY = 'fake-for-422-path'
+      const r1 = await testSendHandler(
+        buildRequest('/api/admin/settings/alerts/auth-flow/test-send', {
+          cookie,
+          body: { confirmReason: 'cache poison repro' },
+          headers: { 'Idempotency-Key': idempotencyKey },
+        }),
+        { params: Promise.resolve({ probe: 'auth-flow' }) },
+      )
+      expect(r1.status).toBe(422)
+      const j1 = await r1.json()
+      expect(j1.error).toBe('missing_alert_email_to')
+
+      // Attempt #2: operator sets ALERT_EMAIL_TO, retries with SAME
+      // Idempotency-Key. Before AUDIT-CODE-2 fix this returned the
+      // cached 422 body and never reached Resend. After fix: the env
+      // check runs OUTSIDE withIdempotency, so the second attempt
+      // proceeds (and either succeeds or returns 502 from Resend).
+      // We poison the Resend key so we don't actually send mail —
+      // the assertion is that the response is NOT the cached 422.
+      process.env.ALERT_EMAIL_TO = 'ops-cache-poison@example.com'
+      const r2 = await testSendHandler(
+        buildRequest('/api/admin/settings/alerts/auth-flow/test-send', {
+          cookie,
+          body: { confirmReason: 'cache poison repro' },
+          headers: { 'Idempotency-Key': idempotencyKey },
+        }),
+        { params: Promise.resolve({ probe: 'auth-flow' }) },
+      )
+      // The second call MUST escape the cached 422. It might be 200
+      // (Resend mock returned ok) or 502 (real Resend rejected the
+      // poisoned key). Either way, NOT 422 with the cache-body.
+      expect(r2.status).not.toBe(422)
+    } finally {
+      if (prevAlertEmailTo !== undefined) process.env.ALERT_EMAIL_TO = prevAlertEmailTo
+      else delete process.env.ALERT_EMAIL_TO
+      if (prevResendKey !== undefined) process.env.RESEND_API_KEY = prevResendKey
+      else delete process.env.RESEND_API_KEY
+    }
+  })
 })
 
 describe('getProbeStatus (lib/admin/probe-status)', () => {

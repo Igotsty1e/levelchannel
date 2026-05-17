@@ -92,68 +92,84 @@ export async function POST(request: Request, { params }: RouteParams) {
     )
   }
 
+  // AUDIT-CODE-2 (2026-05-17) — move env-existence + migration-pending
+  // preflights OUTSIDE withIdempotency so transient 422/503 responses
+  // do NOT get cached. Before this fix, a missing ALERT_EMAIL_TO
+  // produced a 422 row in idempotency_records keyed on the request
+  // hash; once the operator set the env var and retried with the same
+  // Idempotency-Key, the cached 422 replayed and the real Resend send
+  // never happened. Now the env/table checks are pre-cache; only the
+  // actual Resend call + its outcome (which IS a real side effect we
+  // want to dedupe) sits inside withIdempotency.
+  const pool = getDbPool()
+
+  // Migration-pending preflight (round-3 BLOCKER #1 closure stays
+  // in force; just moved outside the idempotency wrapper).
+  try {
+    await pool.query(`select 1 from probe_runs limit 0`)
+  } catch (err) {
+    if (isUndefinedTableError(err)) {
+      return NextResponse.json(
+        {
+          error: 'migration_pending',
+          message:
+            'БД миграция 0053 не применена. Запустите npm run migrate:up на VPS.',
+        },
+        { status: 503, headers: NO_STORE },
+      )
+    }
+    throw err
+  }
+
+  const recipient = process.env.ALERT_EMAIL_TO?.trim() || ''
+  const apiKey = process.env.RESEND_API_KEY?.trim() || ''
+  const emailFrom =
+    process.env.EMAIL_FROM?.trim() || 'LevelChannel <noreply@example.com>'
+
+  const operatorId = auth.account.id
+  const initiatorStats = { reason: confirmReason, probe }
+
+  if (!recipient || !apiKey) {
+    // Write a probe_runs row so the operator's admin page reflects
+    // the attempted test-send + its config-missing diagnosis. Fresh
+    // fingerprint per attempt so double-click during the env-missing
+    // window produces two distinct audit rows (acceptable — they're
+    // labeled is_test=true and excluded from "last run" / "last alert"
+    // queries).
+    const failFingerprint = `test-${operatorId}-${Date.now()}-cfg`
+    await pool.query(
+      `insert into probe_runs (
+         probe_name, verdict_kind, alert_sent,
+         recipient_email, fingerprint, stats, error_message,
+         is_test, initiator_account_id
+       ) values ($1, 'test_send_failed', false, $2, $3, $4::jsonb, $5, true, $6::uuid)`,
+      [
+        probe,
+        recipient || null,
+        failFingerprint,
+        JSON.stringify(initiatorStats),
+        !recipient ? 'missing_alert_email_to' : 'missing_resend_api_key',
+        operatorId,
+      ],
+    )
+    return NextResponse.json(
+      {
+        error: !recipient ? 'missing_alert_email_to' : 'missing_resend_api_key',
+        message:
+          !recipient
+            ? 'ALERT_EMAIL_TO не задан в env на VPS.'
+            : 'RESEND_API_KEY не задан в env на VPS.',
+      },
+      { status: 422, headers: NO_STORE },
+    )
+  }
+
   return withIdempotency(
     request,
     `admin:alerts:test-send:${probe}:${auth.account.id}`,
     rawBody,
     async () => {
-      const pool = getDbPool()
-
-      // Migration-pending preflight (round-3 BLOCKER #1 closure).
-      // MUST run before any Resend call so an unmigrated DB doesn't
-      // get a side-effect email + 200 response.
-      try {
-        await pool.query(`select 1 from probe_runs limit 0`)
-      } catch (err) {
-        if (isUndefinedTableError(err)) {
-          return {
-            status: 503,
-            body: {
-              error: 'migration_pending',
-              message:
-                'БД миграция 0053 не применена. Запустите npm run migrate:up на VPS.',
-            },
-          }
-        }
-        throw err
-      }
-
-      const recipient = process.env.ALERT_EMAIL_TO?.trim() || ''
-      const apiKey = process.env.RESEND_API_KEY?.trim() || ''
-      const emailFrom =
-        process.env.EMAIL_FROM?.trim() || 'LevelChannel <noreply@example.com>'
-
-      const operatorId = auth.account.id
       const fingerprint = `test-${operatorId}-${Date.now()}`
-      const initiatorStats = { reason: confirmReason, probe }
-
-      if (!recipient || !apiKey) {
-        await pool.query(
-          `insert into probe_runs (
-             probe_name, verdict_kind, alert_sent,
-             recipient_email, fingerprint, stats, error_message,
-             is_test, initiator_account_id
-           ) values ($1, 'test_send_failed', false, $2, $3, $4::jsonb, $5, true, $6::uuid)`,
-          [
-            probe,
-            recipient || null,
-            fingerprint,
-            JSON.stringify(initiatorStats),
-            !recipient ? 'missing_alert_email_to' : 'missing_resend_api_key',
-            operatorId,
-          ],
-        )
-        return {
-          status: 422,
-          body: {
-            error: !recipient ? 'missing_alert_email_to' : 'missing_resend_api_key',
-            message:
-              !recipient
-                ? 'ALERT_EMAIL_TO не задан в env на VPS.'
-                : 'RESEND_API_KEY не задан в env на VPS.',
-          },
-        }
-      }
 
       // Resend SDK import is dynamic so the route doesn't pull the
       // dependency at module load (mirrors the probe scripts'
