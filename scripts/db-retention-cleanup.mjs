@@ -278,6 +278,17 @@ async function main() {
         `delete from probe_runs
           where ran_at < now() - interval '90 days'`,
       ),
+      // ALERTS-EDITOR Sub-PR A (2026-05-17) — operator_settings_events
+      // is the immutable audit log for /admin threshold edits.
+      // 90-day window matches probe_runs. The audit-table trigger
+      // blocks UPDATE (per-row immutability) but PERMITS DELETE so
+      // this retention sweep works.
+      deleteWindow(
+        pool,
+        'operator_settings_events',
+        `delete from operator_settings_events
+          where ts < now() - interval '90 days'`,
+      ),
       // Wave 1.2 webhook delivery dedup. 90-day retention matches the
       // janitor doc on `purgeStaleWebhookDeliveries` in
       // lib/payments/webhook-dedup.ts — long enough to debug a real
