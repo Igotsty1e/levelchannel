@@ -67,7 +67,7 @@ Per `app/admin/(gated)/layout.tsx:73-81`, the navigation surface is:
 | Knob | Current location | Operator-tunable? |
 |---|---|---|
 | MSK business band 06:00–22:00 | migration 0031 CHECK constraint | NO — system invariant, schema-level. Documented as such. |
-| 24h cancel window | `lib/scheduling/slots/canLearnerCancel` constant | Tunable per-operator policy — should be in /admin |
+| 24h cancel window | `lib/scheduling/slots/canLearnerCancel` (default 24, env-tunable via `LEARNER_CANCEL_WINDOW_HOURS` since POLICY-KNOBS 2026-05-17) | Env-tunable today; /admin UI editor deferred to ALERTS-EDITOR follow-up |
 | Slot duration 30/45/60/90 default options | `lib/pricing/tariffs.ts` DurationSelect | Already operator-tunable via Тарифы admin |
 | Refund grace window | `lib/billing/refund-attempts.ts` / `lib/billing/reversals.ts` (NB: `lib/billing/refunds.ts` does not exist — Codex #10) | Should be in /admin (currently constant). Refund domain re-walk pending per §10.2. |
 
@@ -208,7 +208,7 @@ Codex `/codex` consultation returned 10 substantive findings. Verbatim:
 | **P2** | **Wave ALERTS-OBS** — `/admin/settings/alerts` read-only surface: last-run, last-alert, effective-thresholds, dry-run test-send. NO editor yet. Reads from probes' existing dedup state files + journald + new lightweight observability emit on each run. |
 | **P3** | **Wave ALERTS-EDITOR** — only after ALERTS-OBS proves the operator workflow. New `operator_settings` table WITH explicit env fallback. Contract: probes read DB→env→hardcoded-default, no memoization in long-lived code. |
 | **P3** | **Wave CONFLICT-FEED** (BCS-DEF-2) — depends on alert-observability shape landing first. |
-| **P3** | **Wave REMINDERS** + **Wave POLICY-KNOBS** — as before, sequenced after alert framework. |
+| **P3** | **Wave REMINDERS** — as before, sequenced after alert framework. ~~**Wave POLICY-KNOBS**~~ — **PARTIALLY SHIPPED 2026-05-17** as env-tunable (`LEARNER_CANCEL_WINDOW_HOURS`, default 24, clamp [0..720]). Full /admin UI editor still deferred to ALERTS-EDITOR follow-up. See `docs/plans/policy-knobs.md` + `SECURITY.md` Phase B section pattern. |
 
 ### 10.2 Concrete sub-tasks before PKG-RECON wave starts
 

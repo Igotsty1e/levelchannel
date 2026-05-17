@@ -23,6 +23,16 @@ Public repository readers should use:
 - `SECURITY.md` for trust boundaries and hardening notes
 - `docs/public/` for public-facing architecture and roadmap context
 
+## Operator-tunable env knobs (pointers only — procedure lives in the private runbook)
+
+- `LEARNER_CANCEL_WINDOW_HOURS` — minimum hours-until-start required
+  for a learner self-service cancel. Default 24; clamp [0..720]; 0
+  disables the gate (operator policy). Strict integer parser — any
+  malformed value (whitespace, sign, decimal, non-digit) falls back
+  to default 24. Implemented in `lib/scheduling/policy.ts` since
+  POLICY-KNOBS (2026-05-17). See the private runbook for the
+  operator procedure (env-file edit + systemctl restart).
+
 ## Maintenance rule
 
 Do not reintroduce production hostnames, server IPs, private SSH commands,

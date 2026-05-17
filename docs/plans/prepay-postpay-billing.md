@@ -471,6 +471,10 @@ RETURNING package_purchase_id;
 
 Idempotent: if `restored_at` is already non-null, the UPDATE matches 0 rows and the call is a no-op. Two concurrent cancel paths (e.g. learner cancels just as admin cancels) cannot both restore — the WHERE clause is the boundary.
 
+<!-- POLICY-KNOBS (2026-05-17): the "24h" referenced below is the
+default of LEARNER_CANCEL_WINDOW_HOURS (env-tunable; clamp [0..720]).
+Cancel semantics apply to the configured value, not literally 24h. -->
+
 ### Learner cancels prepaid future slot, ≥24h before start
 
 Existing `cancelLearnerSlot` runs first (atomic UPDATE on lesson_slots with status='booked' AND 24h gate). On success, **the same transaction** restores the consumption: `UPDATE package_consumptions SET restored_at=now(), ... WHERE slot_id=$slot AND restored_at IS NULL`. If 0 rows → no consumption to restore (postpaid path). If 1 row → unit logically restored.

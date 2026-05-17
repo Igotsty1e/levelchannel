@@ -34,8 +34,11 @@ export type {
 } from './types'
 
 // Values (runtime exports)
+// LEARNER_CANCEL_THRESHOLD_MS removed in POLICY-KNOBS (2026-05-17);
+// the threshold is now env-tunable via getLearnerCancelThresholdMs()
+// in lib/scheduling/policy.ts. canLearnerCancel calls the function
+// on every invocation.
 export {
-  LEARNER_CANCEL_THRESHOLD_MS,
   LIFECYCLE_STATUSES,
   MSK_BUSINESS_HOUR_MAX,
   MSK_BUSINESS_HOUR_MIN,

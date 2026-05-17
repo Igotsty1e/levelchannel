@@ -3,6 +3,12 @@
 Status: **approved (proposed defaults) 2026-05-04**. Defaults below.
 If anything is wrong, course-correct mid-wave; I'll update the doc.
 
+**2026-05-17 amendment (POLICY-KNOBS):** the 24-hour threshold below
+is now env-tunable via `LEARNER_CANCEL_WINDOW_HOURS` (default 24,
+clamp [0..720], strict-regex parser). The "24h" references below are
+the default; operators can roll a different window via the env var
+and `systemctl restart`. See `docs/plans/policy-knobs.md`.
+
 ## Why this wave exists
 
 Phase 4 shipped the booking surface but stopped at the booked / cancelled

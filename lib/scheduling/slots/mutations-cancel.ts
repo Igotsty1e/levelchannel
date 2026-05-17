@@ -5,6 +5,7 @@
 // modules entirely.
 
 import { getDbPool } from '@/lib/db/pool'
+import { getLearnerCancelWindowHours } from '@/lib/scheduling/policy'
 
 import {
   MAX_REASON_LEN,
@@ -107,6 +108,10 @@ export async function cancelLearnerSlot(
   let cancelledRow: Record<string, unknown> | null = null
   try {
     await client.query('begin')
+    // POLICY-KNOBS (2026-05-17) — the 24-hour gate is env-tunable
+    // via LEARNER_CANCEL_WINDOW_HOURS. Read on every invocation;
+    // no module-scope memoization.
+    const cancelWindowHours = getLearnerCancelWindowHours()
     const result = await client.query(
       `update lesson_slots
           set status = 'cancelled',
@@ -118,7 +123,7 @@ export async function cancelLearnerSlot(
         where id = $1
           and learner_account_id = $2
           and status = 'booked'
-          and start_at - now() >= interval '24 hours'
+          and start_at - now() >= make_interval(hours => $5::int)
         returning ${SLOT_COLUMNS}`,
       [
         slotId,
@@ -128,6 +133,7 @@ export async function cancelLearnerSlot(
           cancelledByAccountId: learnerAccountId,
           reason,
         }),
+        cancelWindowHours,
       ],
     )
     if (result.rows[0]) {

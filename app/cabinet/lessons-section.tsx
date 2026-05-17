@@ -50,6 +50,14 @@ type Props = {
   // path with no package/postpaid logic. The preview banner then
   // would lie, so we hide it.
   billingWaveActive: boolean
+  // POLICY-KNOBS (2026-05-17) — minimum hours-until-start required
+  // for a learner self-service cancel. Materialised by the server
+  // component from getLearnerCancelWindowHours(). Default 24, env-
+  // tunable via LEARNER_CANCEL_WINDOW_HOURS.
+  // POLICY-KNOBS follow-up: component-level test once jsdom+RTL lands
+  // in vitest config — gap intentionally documented per round-2 WARN
+  // #3 closure in docs/plans/policy-knobs.md.
+  cancelWindowHours: number
 }
 
 const TZ_DEFAULT = 'Europe/Moscow'
@@ -84,11 +92,14 @@ function statusLabel(status: string): string {
   }
 }
 
-const HOURS_24_MS = 24 * 60 * 60 * 1000
-
-function isTooLateToCancel(startAtIso: string): boolean {
-  return new Date(startAtIso).getTime() - Date.now() < HOURS_24_MS
-}
+// POLICY-KNOBS (2026-05-17) — fallback for the cancel window if the
+// prop somehow arrives undefined/NaN. The server component is
+// expected to always pass a finite int from getLearnerCancelWindowHours;
+// this guard keeps the UI from silently leaving the cancel button
+// enabled (which would happen with `undefined * 60 * 60 * 1000 === NaN`).
+// See docs/plans/policy-knobs.md §3.4 for the asymmetric failure modes
+// when fallback ≠ server policy.
+const FALLBACK_CANCEL_WINDOW_HOURS = 24
 
 export function LessonsSection({
   initialMine,
@@ -102,7 +113,19 @@ export function LessonsSection({
   activePackages,
   postpaidAllowed,
   billingWaveActive,
+  cancelWindowHours,
 }: Props) {
+  const effectiveCancelWindowHours =
+    Number.isFinite(cancelWindowHours)
+    && Number.isInteger(cancelWindowHours)
+    && cancelWindowHours >= 0
+      ? cancelWindowHours
+      : FALLBACK_CANCEL_WINDOW_HOURS
+  const cancelThresholdMs = effectiveCancelWindowHours * 60 * 60 * 1000
+
+  function isTooLateToCancel(startAtIso: string): boolean {
+    return new Date(startAtIso).getTime() - Date.now() < cancelThresholdMs
+  }
   // Defensive: if a pre-whitelist profile carries a bad value, fall
   // back to Europe/Moscow rather than crash the cabinet on the first
   // Date.toLocaleString call.
@@ -180,7 +203,7 @@ export function LessonsSection({
         const data = await res.json().catch(() => ({}))
         if (data?.error === 'too_late_to_cancel') {
           setErr(
-            'До начала менее 24 часов — отменить через систему уже нельзя. Напишите оператору.',
+            `До начала менее ${effectiveCancelWindowHours} ч — отменить через систему уже нельзя. Напишите оператору.`,
           )
         } else {
           setErr(data?.message || data?.error || `HTTP `)
@@ -327,9 +350,9 @@ export function LessonsSection({
                                     fontSize: 11,
                                     fontStyle: 'italic',
                                   }}
-                                  title="До начала менее 24 часов. Напишите оператору."
+                                  title={`До начала менее ${effectiveCancelWindowHours} ч. Напишите оператору.`}
                                 >
-                                  &lt;24ч — через оператора
+                                  &lt;{effectiveCancelWindowHours}ч — через оператора
                                 </span>
                               ) : null}
                             </li>

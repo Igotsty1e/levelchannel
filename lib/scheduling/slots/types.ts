@@ -44,12 +44,15 @@ export const TERMINAL_STATUSES: SlotStatus[] = [
 ]
 
 // Phase 5 — 24-hour rule: a learner can cancel only if start_at is
-// at least 24 hours away. Operator/admin paths bypass this — they
-// have the override.
+// at least N hours away, where N is governed by
+// LEARNER_CANCEL_WINDOW_HOURS (default 24) via lib/scheduling/policy.ts
+// since POLICY-KNOBS (2026-05-17). Operator/admin paths bypass this
+// — they have the override.
 //
-// Pure function so the cabinet UI can check it client-side too without
-// re-implementing the threshold.
-export const LEARNER_CANCEL_THRESHOLD_MS = 24 * 60 * 60 * 1000
+// Pure function so the cabinet UI can check it client-side too. The
+// client receives the materialised window as a prop from a server
+// component; see app/cabinet/lessons-section.tsx for the wire.
+import { getLearnerCancelThresholdMs } from '@/lib/scheduling/policy'
 
 export type LearnerCancelDecision =
   | { ok: true }
@@ -67,7 +70,7 @@ export function canLearnerCancel(
     return { ok: false, reason: 'already_terminal' }
   }
   const diffMs = startMs - nowMs
-  if (diffMs < LEARNER_CANCEL_THRESHOLD_MS) {
+  if (diffMs < getLearnerCancelThresholdMs()) {
     return {
       ok: false,
       reason: 'too_late_to_cancel',

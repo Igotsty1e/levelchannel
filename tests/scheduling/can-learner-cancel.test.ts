@@ -32,6 +32,24 @@ describe('canLearnerCancel', () => {
     expect(decision.ok).toBe(false)
   })
 
+  // POLICY-KNOBS round-1 WARN #6 closure — pin the exact fencepost:
+  // the contract is `diffMs < threshold` (i.e. >= threshold passes).
+  // The SQL gate uses `>=`, so this MUST match.
+  it('allows cancel exactly at 24h boundary', () => {
+    const now = Date.parse('2026-05-04T10:00:00Z')
+    const startAt = new Date(now + 24 * MS_HOUR).toISOString()
+    expect(canLearnerCancel({ status: 'booked', startAt }, now)).toEqual({
+      ok: true,
+    })
+  })
+
+  it('refuses cancel at 24h - 1ms', () => {
+    const now = Date.parse('2026-05-04T10:00:00Z')
+    const startAt = new Date(now + 24 * MS_HOUR - 1).toISOString()
+    const decision = canLearnerCancel({ status: 'booked', startAt }, now)
+    expect(decision.ok).toBe(false)
+  })
+
   it('refuses cancel for non-booked slot', () => {
     const now = Date.parse('2026-05-04T10:00:00Z')
     const startAt = new Date(now + 30 * MS_HOUR).toISOString()
