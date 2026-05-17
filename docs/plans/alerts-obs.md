@@ -1,14 +1,16 @@
 # ALERTS-OBS — `/admin/settings/alerts` read-only observability
 
-**Status:** READY FOR IMPLEMENTATION v3 (2026-05-16, post-paranoia round 3 + manual fresh-eyes verification).
+**Status:** SHIPPED 2026-05-17 (PR #249). Archive.
 
-Trail:
+Plan-mode trail:
 - Round 1: BLOCK (8 BLOCKERs + 3 WARNs) → v2 closed all.
 - Round 2: BLOCK (2 BLOCKERs invented-shapes + rollout-race + 3 WARNs) → v3 closed all.
 - Round 3 (final, cap-3): BLOCK (2 BLOCKERs missing-table + taxonomy + 3 WARNs) → fixed inline post-cap.
 - Manual fresh-eyes Explore pass: 3 additional gaps (retention shape mismatch, ambiguous probe-coverage in §4.3, hard-coded 302 redirect status) → fixed inline.
 
-Implementation may now begin. Wave-mode paranoia gates merge.
+Wave-mode paranoia: SIGN-OFF round 1/3 with 2 WARNs (transport-error wrap + 502/503 test coverage) closed inline before merge.
+
+Follow-ups discovered during wave-mode and tracked in `ENGINEERING_BACKLOG.md §Audit findings — 2026-05-17`: AUDIT-CODE-2 (idempotency cache poisoning fix, PR #254), AUDIT-CODE-3 (extract `isUndefinedTableError` helper), AUDIT-CODE-7 (success-side detector log).
 **Wave name:** ALERTS-OBS (one-PR epic; small enough to fit in a single PR).
 **Trigger:** admin-ux-coverage §10.1 P2. Operator has no signal today that the three alert probes (auth-flow, calendar-pathology, webhook-flow) are actually running, what they last decided, or that the email transport works — only journald and per-probe local dedup state files. The operator cannot see this without SSH.
 

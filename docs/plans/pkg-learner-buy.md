@@ -4,7 +4,9 @@
 **Priority:** P1 (admin-ux-coverage.md §10.1)
 **Predecessor:** PKG-RECON (operator-side reconciliation, merged 2026-05-16)
 **Author:** Claude (autonomous)
-**Status:** REVISED after round-3 paranoia BLOCK — scope retreated from "refactor createPayment to be package-aware" to "keep inline INSERT, add `buildCloudPaymentsWidgetIntent` call right after". Preserves mock-paid contract + package-specific description + receipt JSON. Slug-regex internal contradiction removed.
+**Status:** SHIPPED 2026-05-16 (PRs #237-#241 epic-close). Archive.
+
+Plan-mode trail: round-3 paranoia BLOCK forced scope retreat from "refactor createPayment to be package-aware" to "keep inline INSERT, add `buildCloudPaymentsWidgetIntent` call right after". Preserved mock-paid contract + package-specific description + receipt JSON. Slug-regex internal contradiction removed. Epic-end wave-mode paranoia SIGN-OFF round 2/3.
 
 ## 1. Goal
 
