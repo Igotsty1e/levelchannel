@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   chargeWithSavedToken,
   confirmThreeDs,
+  refundTransaction,
 } from '@/lib/payments/cloudpayments-api'
 
 const ORIGINAL_FETCH = globalThis.fetch
@@ -183,5 +184,161 @@ describe('chargeWithSavedToken', () => {
       'base64',
     ).toString('utf8')
     expect(decoded).toBe('test_public_id:test_api_secret')
+  })
+
+  // COVERAGE-PAYMENTS (2026-05-18) — uncovered branch at line ~297:
+  // response body is not valid JSON → error.
+  it('returns error when response body is not valid JSON', async () => {
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response('<html>500 internal</html>', {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        }),
+    ) as unknown as typeof fetch
+    const result = await chargeWithSavedToken(baseRequest)
+    expect(result.kind).toBe('error')
+    if (result.kind === 'error') {
+      expect(typeof result.message).toBe('string')
+    }
+  })
+})
+
+// COVERAGE-PAYMENTS (2026-05-18) — refundTransaction was entirely
+// untested (lines 374-470 in lib/payments/cloudpayments-api.ts).
+// Covers: success, declined, empty-transactionId, non-2xx, invalid
+// JSON, Success=true-without-TransactionId (Codex Wave 60 MEDIUM #3),
+// network failure, optional amount + jsonData fields land on wire.
+describe('refundTransaction', () => {
+  const baseRequest = {
+    transactionId: '12345',
+  }
+
+  it('returns success when CloudPayments confirms the refund', async () => {
+    mockFetchResponse({
+      Success: true,
+      Model: { TransactionId: 67890 },
+    })
+    const result = await refundTransaction(baseRequest)
+    expect(result.kind).toBe('success')
+    if (result.kind === 'success') {
+      expect(result.transactionId).toBe('67890')
+    }
+  })
+
+  it('returns declined with message + reasonCode on explicit decline', async () => {
+    mockFetchResponse({
+      Success: false,
+      Message: 'Already refunded',
+      Model: {
+        TransactionId: 67890,
+        ReasonCode: 5040,
+        CardHolderMessage: 'Возврат уже выполнен',
+      },
+    })
+    const result = await refundTransaction(baseRequest)
+    expect(result.kind).toBe('declined')
+    if (result.kind === 'declined') {
+      expect(result.reasonCode).toBe('5040')
+      expect(result.message).toContain('уже выполнен')
+    }
+  })
+
+  it('returns error on empty/whitespace transactionId without hitting the wire', async () => {
+    let called = false
+    globalThis.fetch = vi.fn(async () => {
+      called = true
+      return new Response('', { status: 200 })
+    }) as unknown as typeof fetch
+    const result = await refundTransaction({ transactionId: '   ' })
+    expect(result.kind).toBe('error')
+    expect(called).toBe(false)
+    if (result.kind === 'error') {
+      expect(result.message).toContain('TransactionId')
+    }
+  })
+
+  it('returns error on non-2xx HTTP', async () => {
+    globalThis.fetch = vi.fn(
+      async () => new Response('gateway boom', { status: 500 }),
+    ) as unknown as typeof fetch
+    const result = await refundTransaction(baseRequest)
+    expect(result.kind).toBe('error')
+    if (result.kind === 'error') {
+      expect(result.message).toContain('HTTP 500')
+    }
+  })
+
+  it('returns error when response body is not valid JSON', async () => {
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response('<html>gateway html</html>', {
+          status: 200,
+          headers: { 'content-type': 'text/html' },
+        }),
+    ) as unknown as typeof fetch
+    const result = await refundTransaction(baseRequest)
+    expect(result.kind).toBe('error')
+  })
+
+  it('returns error on Success=true without Model.TransactionId (Codex Wave 60 MEDIUM #3)', async () => {
+    mockFetchResponse({
+      Success: true,
+      Model: {},
+    })
+    const result = await refundTransaction(baseRequest)
+    expect(result.kind).toBe('error')
+    if (result.kind === 'error') {
+      expect(result.message).toContain('TransactionId')
+    }
+  })
+
+  it('returns error on network failure', async () => {
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error('network down')
+    }) as unknown as typeof fetch
+    const result = await refundTransaction(baseRequest)
+    expect(result.kind).toBe('error')
+    if (result.kind === 'error') {
+      expect(result.message).toBe('network down')
+    }
+  })
+
+  it('threads optional amount + jsonData onto the wire only when set', async () => {
+    let capturedBody: string | undefined
+    globalThis.fetch = vi.fn(async (_url, init?: RequestInit) => {
+      capturedBody = init?.body as string
+      return new Response(
+        JSON.stringify({ Success: true, Model: { TransactionId: 1 } }),
+        { status: 200 },
+      )
+    }) as unknown as typeof fetch
+    await refundTransaction({
+      transactionId: '99',
+      amount: 150,
+      jsonData: { reason: 'test' },
+    })
+    expect(capturedBody).toBeDefined()
+    const parsed = JSON.parse(capturedBody!) as Record<string, unknown>
+    expect(parsed.TransactionId).toBe('99')
+    expect(parsed.Amount).toBe(150)
+    expect(parsed.JsonData).toEqual({ reason: 'test' })
+  })
+
+  it('omits Amount + JsonData when not provided', async () => {
+    let capturedBody: string | undefined
+    globalThis.fetch = vi.fn(async (_url, init?: RequestInit) => {
+      capturedBody = init?.body as string
+      return new Response(
+        JSON.stringify({ Success: true, Model: { TransactionId: 1 } }),
+        { status: 200 },
+      )
+    }) as unknown as typeof fetch
+    await refundTransaction({ transactionId: '99' })
+    expect(capturedBody).toBeDefined()
+    const parsed = JSON.parse(capturedBody!) as Record<string, unknown>
+    expect(parsed.TransactionId).toBe('99')
+    expect('Amount' in parsed).toBe(false)
+    expect('JsonData' in parsed).toBe(false)
   })
 })

@@ -29,11 +29,16 @@ export default defineConfig({
         'lib/auth/email-hash.ts',
         'lib/email/escape.ts',
       ],
+      // COVERAGE-PAYMENTS (2026-05-18) — ratchet up from 70/70/70/70
+      // after adding refundTransaction + chargeWithSavedToken
+      // invalid-JSON unit tests. Floor each threshold a few points
+      // below the actual measured value so a stray regression trips
+      // CI but normal churn doesn't. Payments alone sits at ~96/89/97/96.
       thresholds: {
-        lines: 70,
-        functions: 70,
-        branches: 70,
-        statements: 70,
+        lines: 85,
+        functions: 95,
+        branches: 80,
+        statements: 85,
       },
     },
   },
