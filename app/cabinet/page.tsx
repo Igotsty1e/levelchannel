@@ -14,6 +14,7 @@ import {
   listSlotsAsTeacher,
   listSlotsForLearner,
 } from '@/lib/scheduling/slots'
+import { getLearnerCancelWindowHours } from '@/lib/scheduling/policy'
 import { listLearnersForTeacher } from '@/lib/scheduling/teacher-learners'
 
 import { isLearnerArchetypeCandidate } from '@/lib/auth/learner-archetype'
@@ -185,6 +186,7 @@ export default async function CabinetPage() {
             billingWaveActive={
               process.env.BILLING_WAVE_ACTIVE === 'true'
             }
+            cancelWindowHours={getLearnerCancelWindowHours()}
           />
 
           <BillingSections

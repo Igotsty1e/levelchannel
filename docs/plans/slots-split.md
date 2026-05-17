@@ -34,8 +34,13 @@ lib/scheduling/slots/
   types.ts               pure types + lifecycle constants. No DB calls.
                          Contains the public type surface: SlotStatus,
                          SlotLifecycleStatus, LIFECYCLE_STATUSES,
-                         TERMINAL_STATUSES, LEARNER_CANCEL_THRESHOLD_MS,
+                         TERMINAL_STATUSES,
                          LearnerCancelDecision, canLearnerCancel,
+                         (LEARNER_CANCEL_THRESHOLD_MS constant was
+                          removed in POLICY-KNOBS 2026-05-17 — the
+                          threshold is now env-tunable via
+                          getLearnerCancelThresholdMs in
+                          lib/scheduling/policy.ts),
                          LessonSlot, SlotEvent, PublicSlot, toPublicSlot,
                          and all Result/Input types
                          (BookSlotResult, BookSlotBilling, CreateSlotInput,
@@ -147,10 +152,10 @@ export type {
 } from './types'
 
 // Values (runtime exports)
+// LEARNER_CANCEL_THRESHOLD_MS removed POLICY-KNOBS 2026-05-17.
 export {
   LIFECYCLE_STATUSES,
   TERMINAL_STATUSES,
-  LEARNER_CANCEL_THRESHOLD_MS,
   MSK_BUSINESS_HOUR_MIN,
   MSK_BUSINESS_HOUR_MAX,
   SLOT_GRID_MINUTES,
