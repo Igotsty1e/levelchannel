@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
-import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import {
   type AccountRole,
   grantAccountRole,
   revokeAccountRole,
 } from '@/lib/auth/accounts'
 import { requireAdminRole } from '@/lib/auth/guards'
+import { withIdempotency } from '@/lib/security/idempotency'
 import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
@@ -27,6 +27,11 @@ type RouteParams = { params: Promise<{ id: string }> }
 // Self-protection: an admin can revoke `admin` from another account
 // but not from themselves — prevents an accidental "revoke last admin"
 // foot-gun. (CLI script can recover, but that's an extra step.)
+//
+// AUDIT-CODE-1 (2026-05-17): wrapped in withIdempotency so a
+// double-click doesn't grant/revoke twice (the lib helpers are
+// idempotent in effect, but a duplicate audit row + duplicate
+// notification email are still real side effects worth deduping).
 
 export async function POST(request: Request, { params }: RouteParams) {
   const { id } = await params
@@ -40,9 +45,18 @@ export async function POST(request: Request, { params }: RouteParams) {
   const guard = await requireAdminRole(request)
   if (!guard.ok) return guard.response
 
-  const parsed = await readJsonObjectOr400(request)
-  if (!parsed.ok) return parsed.response
-  const raw = parsed.body
+  let rawBody: string
+  let raw: { role?: unknown; op?: unknown } = {}
+  try {
+    rawBody = await request.text()
+    raw = rawBody.length > 0 ? JSON.parse(rawBody) : {}
+  } catch {
+    return NextResponse.json(
+      { error: 'invalid_body', message: 'Body must be valid JSON.' },
+      { status: 400, headers: NO_STORE },
+    )
+  }
+
   const role = typeof raw.role === 'string' ? raw.role : ''
   const op = typeof raw.op === 'string' ? raw.op : ''
   if (!ALLOWED_ROLES.has(role as AccountRole)) {
@@ -74,34 +88,40 @@ export async function POST(request: Request, { params }: RouteParams) {
     )
   }
 
-  try {
-    if (op === 'grant') {
-      await grantAccountRole(id, role as AccountRole, guard.account.id)
-    } else {
-      await revokeAccountRole(id, role as AccountRole)
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'unknown'
-    if (msg === 'role/admin_exclusive') {
-      return NextResponse.json(
-        {
-          error:
-            'Аккаунт с ролью admin не может быть одновременно teacher или student. Сначала отзовите admin.',
-        },
-        { status: 400, headers: NO_STORE },
-      )
-    }
-    console.warn('[admin.accounts.role] unexpected error', {
-      accountId: id,
-      role,
-      op,
-      error: msg,
-    })
-    return NextResponse.json(
-      { error: 'internal_error' },
-      { status: 500, headers: NO_STORE },
-    )
-  }
-
-  return NextResponse.json({ ok: true }, { status: 200, headers: NO_STORE })
+  return withIdempotency(
+    request,
+    `admin:accounts:role:${id}:${role}:${op}:${guard.account.id}`,
+    rawBody,
+    async () => {
+      try {
+        if (op === 'grant') {
+          await grantAccountRole(id, role as AccountRole, guard.account.id)
+        } else {
+          await revokeAccountRole(id, role as AccountRole)
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'unknown'
+        if (msg === 'role/admin_exclusive') {
+          return {
+            status: 400,
+            body: {
+              error:
+                'Аккаунт с ролью admin не может быть одновременно teacher или student. Сначала отзовите admin.',
+            },
+          }
+        }
+        console.warn('[admin.accounts.role] unexpected error', {
+          accountId: id,
+          role,
+          op,
+          error: msg,
+        })
+        return {
+          status: 500,
+          body: { error: 'internal_error' },
+        }
+      }
+      return { status: 200, body: { ok: true } }
+    },
+  )
 }
