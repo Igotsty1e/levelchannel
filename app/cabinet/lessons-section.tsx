@@ -326,6 +326,25 @@ export function LessonsSection({
                                   )
                                 ) : null}
                               </span>
+                              {s.status === 'booked' && s.zoomUrl ? (
+                                <a
+                                  href={s.zoomUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    marginRight: 8,
+                                    padding: '4px 10px',
+                                    background: 'rgba(155,223,155,0.15)',
+                                    color: '#9bdf9b',
+                                    border: '1px solid rgba(155,223,155,0.4)',
+                                    borderRadius: 6,
+                                    fontSize: 12,
+                                    textDecoration: 'none',
+                                  }}
+                                >
+                                  ▶ Войти на занятие
+                                </a>
+                              ) : null}
                               {s.status === 'booked' && !tooLate ? (
                                 <button
                                   type="button"
