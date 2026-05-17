@@ -174,15 +174,47 @@ export function nearFutureBusinessBandIso(): string {
   const inBand =
     mskParts.hour >= 6 && (mskParts.hour < 22 || (mskParts.hour === 22 && mskParts.minute === 0))
   if (inBand) return candidate.toISOString()
-  const day = mskTodayParts()
+  // BCS-DEF-3 (2026-05-18) bug fix — anchor on the CANDIDATE's MSK
+  // calendar day, not `new Date()`'s. Earlier shape used
+  // `mskTodayParts()` which returns the CURRENT MSK day; when the
+  // candidate is past MSK midnight (now's MSK = 23:46, candidate's
+  // MSK = 00:30 +1d) the +0/+1 offset is computed against the wrong
+  // anchor and the function returns ~17h in the past. Caught by
+  // POLICY-KNOBS `LEARNER_CANCEL_WINDOW_HOURS=0` test running at
+  // UTC 20:46 (MSK 23:46).
+  const day = mskCalendarDayFor(candidate.getTime())
   const lateNight = mskParts.hour >= 22
   const offsetDays = lateNight ? 1 : 0
-  // 06:00 MSK = 03:00 UTC. Anchor on the MSK calendar day, then
-  // convert to UTC via the constant +3h offset (MSK has no DST).
+  // 06:00 MSK = 03:00 UTC. Anchor on the candidate's MSK calendar
+  // day, then convert to UTC via the constant +3h offset (no DST).
   const targetMsk = new Date(
     Date.UTC(day.year, day.month - 1, day.day + offsetDays, 3, 0, 0, 0),
   )
   return targetMsk.toISOString()
+}
+
+function mskCalendarDayFor(utcMs: number): {
+  year: number
+  month: number
+  day: number
+} {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Moscow',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  const parts = dtf.formatToParts(new Date(utcMs))
+  const map: Record<string, number> = {}
+  for (const p of parts) {
+    if (p.type === 'literal') continue
+    map[p.type] = Number(p.value)
+  }
+  return {
+    year: map.year ?? 0,
+    month: map.month ?? 0,
+    day: map.day ?? 0,
+  }
 }
 
 function mskWallParts(utcMs: number): { hour: number; minute: number } {

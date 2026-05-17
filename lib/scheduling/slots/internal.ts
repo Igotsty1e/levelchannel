@@ -30,6 +30,7 @@ export const SLOT_COLUMNS = `
   tariff_id,
   notes,
   agenda,
+  zoom_url,
   external_conflict_at,
   external_conflict_kind,
   conflict_source_calendar_id,
@@ -98,6 +99,9 @@ export function rowToSlot(
     conflictSourceEventId: row.conflict_source_event_id
       ? String(row.conflict_source_event_id)
       : null,
+    // BCS-DEF-3 — backward-compat: SELECTs that pre-date the column
+    // don't include it; row.zoom_url is undefined → null projection.
+    zoomUrl: row.zoom_url ? String(row.zoom_url) : null,
     events: Array.isArray(row.events)
       ? (row.events as SlotEvent[])
       : [],

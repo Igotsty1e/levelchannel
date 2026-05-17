@@ -120,6 +120,12 @@ export type LessonSlot = {
   externalConflictKind: string | null
   conflictSourceCalendarId: string | null
   conflictSourceEventId: string | null
+  // BCS-DEF-3 — optional Zoom (or similar) URL for the lesson. Set
+  // by admin or by the teacher on a booked slot. Nullable; capped
+  // at 512 chars; must start with https:// (DB CHECK + app
+  // validator). Learner sees as a "Join lesson" link in the
+  // cabinet on booked slots.
+  zoomUrl: string | null
   events: SlotEvent[]
   createdAt: string
   updatedAt: string
@@ -271,6 +277,18 @@ export type MoveOpenSlotResult =
   | {
       ok: false
       reason: 'not_found' | 'not_open' | 'slot_collision'
+    }
+
+// BCS-DEF-3 — set/clear zoom URL on a slot. Allowed on `booked`
+// slots (the lesson is scheduled and the join link is meaningful);
+// rejected on terminal states. `not_owner` is the teacher-side
+// failure mode; admin path bypasses that gate. `invalid_url` is
+// the validator failure (length / scheme).
+export type SetSlotZoomUrlResult =
+  | { ok: true; slot: LessonSlot }
+  | {
+      ok: false
+      reason: 'not_found' | 'not_booked' | 'not_owner' | 'invalid_url'
     }
 
 export type MoveTeacherSlotResult =

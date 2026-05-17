@@ -267,3 +267,39 @@ function weekdayInTz(utcMs: number, timezone: string): number {
   }
   return map[dtf.format(new Date(utcMs))] ?? 0
 }
+
+// BCS-DEF-3 (2026-05-18) — validate a zoom URL for slot.zoomUrl.
+// Returns null when valid; otherwise structured error. Empty string
+// and null both clear the field (the caller passes null to the
+// helper). Constraints:
+//   - max 512 chars (matches DB CHECK + lesson_slots_zoom_url_shape);
+//   - must start with `https://` (no http: or javascript: schemes);
+//   - URL constructor must accept it (rules out garbage like `https://`
+//     alone).
+// The validator is a pure function so the admin + teacher routes
+// share one source of truth. DB CHECK is the safety net at the
+// schema layer.
+export const MAX_ZOOM_URL_LEN = 512
+
+export type ZoomUrlValidationError = { field: 'zoomUrl'; reason: 'too_long' | 'invalid_scheme' | 'invalid_url' }
+
+export function validateZoomUrl(raw: string): ZoomUrlValidationError | null {
+  if (raw.length > MAX_ZOOM_URL_LEN) {
+    return { field: 'zoomUrl', reason: 'too_long' }
+  }
+  if (!raw.startsWith('https://')) {
+    return { field: 'zoomUrl', reason: 'invalid_scheme' }
+  }
+  try {
+    const u = new URL(raw)
+    if (u.protocol !== 'https:') {
+      return { field: 'zoomUrl', reason: 'invalid_scheme' }
+    }
+    if (!u.hostname) {
+      return { field: 'zoomUrl', reason: 'invalid_url' }
+    }
+  } catch {
+    return { field: 'zoomUrl', reason: 'invalid_url' }
+  }
+  return null
+}

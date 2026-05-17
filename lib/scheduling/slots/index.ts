@@ -76,7 +76,11 @@ export {
   editOpenSlot,
   moveOpenSlot,
   moveOpenSlotByTeacher,
+  setSlotZoomUrl,
 } from './mutations-write'
+
+export { MAX_ZOOM_URL_LEN, validateZoomUrl } from './validation'
+export type { ZoomUrlValidationError } from './validation'
 
 export {
   cancelLearnerSlot,
