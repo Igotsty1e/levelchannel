@@ -9,6 +9,7 @@ Owns:
 - **24h cancel window** — env-tunable via `LEARNER_CANCEL_WINDOW_HOURS` since POLICY-KNOBS 2026-05-17 (`policy.ts`). Default 24h, range [0..720h], strict integer-regex parser.
 - **MSK business band** — 06:00–22:00 schema-level CHECK in migration 0031. The pure validator in `validation.ts` mirrors it.
 - **Lifecycle marks** — operator stamps `completed` / `no_show_*` post-`start_at`. Cron sweep auto-flips `booked` → `completed` after `start_at + duration_minutes`.
+- **Zoom URL on booked slot** (BCS-DEF-3, 2026-05-18) — `setSlotZoomUrl(slotId, zoomUrl, byAccountId, kind)` atomically writes `lesson_slots.zoom_url` on a booked slot. Admin path bypasses ownership; teacher path enforces it via SQL `teacher_account_id = $4` clause. URL validator (`validateZoomUrl` in `validation.ts`) gates: https-only, length ≤ 512, URL() parse. Migration 0056 adds the column + a CHECK constraint as last-line safety. Cabinet renders the "▶ Войти на занятие" link on booked slots; admin + teacher edit via `/api/{admin,teacher}/slots/[id]/zoom-url`.
 - **Teacher-learners view** — `teacher-learners.ts` query for the operator's per-teacher dashboard.
 - **External-busy integration** — see `lib/calendar/README.md` for the Google-side surface; this module owns the SLOT side of booking only.
 
