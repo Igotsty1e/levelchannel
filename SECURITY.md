@@ -192,6 +192,18 @@ the historical contract. Operator rollout: apply migration 0029,
 `ALTER USER levelchannel_audit_writer WITH PASSWORD '<secret>'`,
 build the URL, add to env file, restart.
 
+### ALERTS-EDITOR trust boundary (2026-05-18)
+
+The `/admin/settings/alerts` editor (ALERTS-EDITOR PR #272/#273 + this PR) makes 10 alert thresholds operator-tunable via `operator_settings`. Audit-table immutability follows the same pattern but with a **different mechanism**: instead of a separate INSERT-only role + pool, `operator_settings_events` enforces immutability via a per-row trigger (`block_immutable_operator_settings_events_trg`). This lets the config write AND audit insert land in the SAME transaction on the main pool — required for atomicity (paranoia R2 BLOCKER #2: split-pool design could commit config without an audit row).
+
+The trigger semantics (Wave-R1 BLOCKER #2 closure):
+- **UPDATE on any event row is blocked unconditionally.**
+- **DELETE on a row younger than 89 days is blocked.** Only rows older than 89 days can be pruned. The 90-day retention sweep (`scripts/db-retention-cleanup.mjs`) hits only `ts < now() - interval '90 days'` rows so the sweep trivially passes. An app-process compromise CANNOT erase recent audit rows to cover an admin-credential exfiltration — those rows stay immutable until the natural 89-day window passes.
+
+**ALERT_EMAIL_TO stays env-only** by design: making the recipient web-editable would let an attacker with admin credentials silently reroute every alert email away from the operator (suppression / reroute attack). Recipient changes still require SSH + env-file edit + systemctl restart, audit-loggable at the env-edit layer.
+
+Threshold knobs ARE operator-tunable. An admin-account compromise CAN over-inflate thresholds to suppress real incidents (e.g. `*_MAX_PER_IP` to 999999). Mitigation: every edit lands in `operator_settings_events` with `account_id` + `old_value` + `new_value`; 90-day retention covers a forensic quarter; the per-row immutability trigger blocks UPDATE so historical edits can't be rewritten. Post-incident review can identify and reverse the rogue edits.
+
 **At-rest encryption.** From Wave 2.1 (PR #45 squash `a094337`,
 shipped 2026-05-07), `customer_email` and `client_ip` are also
 written to bytea columns `customer_email_enc` and `client_ip_enc`
