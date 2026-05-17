@@ -80,6 +80,9 @@ in two places, agents will almost certainly drag in the stale version.
 | `docs/plans/*` | archive of design / implementation plans | current shipped state and owner contracts |
 | `docs/legal-pipeline.md` | `Legal-Pipeline-Verified:` trailer policy + protected scope for regulated text | day-to-day legal content (lives in `app/offer/`, `app/privacy/`, `app/consent/`) |
 | `docs/skill-pipeline.md` | `Skill-Used:` trailer policy + threshold + exceptions; mirrors legal-pipeline | the human-readable expectations (live in `AGENTS.md` §0 + §4) |
+| `docs/critical-path.md` | inventory of 20 files whose breakage = production incident; `Codex-Paranoia: SIGN-OFF` trailer policy enforced by `scripts/check-critical-path-trailer.mjs` + `critical-path-trailer.yml` | day-to-day file inventory (covered by per-module READMEs) |
+| `docs/backlog/archive/*` | shipped / closed waves no longer on the active surface; forensic + retro use | active task queue (lives in `ENGINEERING_BACKLOG.md`) |
+| `lib/*/README.md` (since 2026-05-18, DOC-MODULE-CONTRACTS) | per-module contracts: invariants, file inventory, public API, test surface | cross-module flow (lives in `ARCHITECTURE.md`) |
 
 ## Conflict rule
 

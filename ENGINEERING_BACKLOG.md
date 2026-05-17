@@ -40,7 +40,7 @@ Total estimate: 33 PRs across 7 waves. Reference cadence: billing-wave was 7 PRs
 
 - **BCS-DEF-1** — Email + Telegram alerts on unresolved conflicts >2h (operator + teacher). **Admin coverage required:** alert thresholds + recipient lists must be operator-editable from /admin. Now unblocked: BCS-F.1 wire-up gap closed by PR #251 (2026-05-17) — `external_conflict_at` actually gets stamped on prod, so an alert on "stamped >2h" is meaningful.
 - **BCS-DEF-2** — Admin "Conflict feed" dashboard with last-30d view. Plan drafted as `docs/plans/conflict-feed.md` 2026-05-17; PARKED on round-1 paranoia with 4 BLOCKERs + 6 WARNs documented for future revival. Foundation gap (BCS-F.1 wire-up) closed by PR #251; revive when ready.
-- **BCS-DEF-3** — Optional `zoomUrl` on slot — nullable at create, editable on already-booked slot.
+- ~~**BCS-DEF-3**~~ — **SHIPPED 2026-05-18** (PRs #281 + #282). Migration 0056 `lesson_slots.zoom_url` (https-only, ≤512 chars, DB CHECK + app validator); `setSlotZoomUrl` atomic UPDATE; admin + teacher PATCH routes; cabinet "▶ Войти на занятие" link on booked slots; 10 unit + 9 integration cases. Drive-by fix: `nearFutureBusinessBandIso` MSK-midnight day-anchor bug.
 - **BCS-DEF-4** — Lesson-start reminders for learner (per-user settings: 60/30/10 min, email/telegram/push). **Admin coverage required:** per-channel master switch + default windows operator-editable.
 - **BCS-DEF-5** — Lesson-start reminders for teacher (mirror settings, same admin coverage).
 - **BCS-DEF-7** — `syncToken`-based incremental pull (post-MVP optimization; replaces bounded full-rewrite for active teachers).
