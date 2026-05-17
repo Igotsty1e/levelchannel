@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
-import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { disableAccount, reenableAccount } from '@/lib/auth/accounts'
 import { requireAdminRole } from '@/lib/auth/guards'
 import { revokeAllSessionsForAccount } from '@/lib/auth/sessions'
+import { withIdempotency } from '@/lib/security/idempotency'
 import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
@@ -23,6 +23,11 @@ type RouteParams = { params: Promise<{ id: string }> }
 // the deletion-cancel flow); only valid if the row hasn't been purged.
 //
 // Self-protection: cannot disable yourself.
+//
+// AUDIT-CODE-1 (2026-05-17): wrapped in withIdempotency so a
+// double-click on the admin UI doesn't revoke sessions twice / flip
+// the disabled flag twice. Scope keyed on (id, operator) — two
+// different operators can still issue independent disables.
 
 export async function POST(request: Request, { params }: RouteParams) {
   const { id } = await params
@@ -36,9 +41,18 @@ export async function POST(request: Request, { params }: RouteParams) {
   const guard = await requireAdminRole(request)
   if (!guard.ok) return guard.response
 
-  const parsed = await readJsonObjectOr400(request)
-  if (!parsed.ok) return parsed.response
-  if (typeof parsed.body.disabled !== 'boolean') {
+  let rawBody: string
+  let body: { disabled?: unknown } = {}
+  try {
+    rawBody = await request.text()
+    body = rawBody.length > 0 ? JSON.parse(rawBody) : {}
+  } catch {
+    return NextResponse.json(
+      { error: 'invalid_body', message: 'Body must be valid JSON.' },
+      { status: 400, headers: NO_STORE },
+    )
+  }
+  if (typeof body.disabled !== 'boolean') {
     return NextResponse.json(
       {
         error: 'invalid_body',
@@ -47,7 +61,7 @@ export async function POST(request: Request, { params }: RouteParams) {
       { status: 400, headers: NO_STORE },
     )
   }
-  const disabled = parsed.body.disabled
+  const disabled = body.disabled
   if (disabled && id === guard.account.id) {
     return NextResponse.json(
       {
@@ -58,12 +72,18 @@ export async function POST(request: Request, { params }: RouteParams) {
     )
   }
 
-  if (disabled) {
-    await disableAccount(id)
-    await revokeAllSessionsForAccount(id)
-  } else {
-    await reenableAccount(id)
-  }
-
-  return NextResponse.json({ ok: true }, { status: 200, headers: NO_STORE })
+  return withIdempotency(
+    request,
+    `admin:accounts:disable:${id}:${guard.account.id}`,
+    rawBody,
+    async () => {
+      if (disabled) {
+        await disableAccount(id)
+        await revokeAllSessionsForAccount(id)
+      } else {
+        await reenableAccount(id)
+      }
+      return { status: 200, body: { ok: true } }
+    },
+  )
 }
