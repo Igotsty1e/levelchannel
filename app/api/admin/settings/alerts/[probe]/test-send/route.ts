@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
 import { requireAdminRole } from '@/lib/auth/guards'
+import { isUndefinedTableError } from '@/lib/db/errors'
 import { getDbPool } from '@/lib/db/pool'
 import { withIdempotency } from '@/lib/security/idempotency'
 import {
@@ -32,16 +33,10 @@ export const dynamic = 'force-dynamic'
 
 type RouteParams = { params: Promise<{ probe: string }> }
 
-const ERR_UNDEFINED_TABLE = '42P01'
-
-function isUndefinedTableError(err: unknown): boolean {
-  return (
-    typeof err === 'object'
-    && err !== null
-    && 'code' in err
-    && (err as { code?: unknown }).code === ERR_UNDEFINED_TABLE
-  )
-}
+// `isUndefinedTableError` lives in lib/db/errors — AUDIT-CODE-3
+// (2026-05-17) extracted it from this file + lib/admin/probe-status.ts
+// so the two stay aligned. Migration-pending preflight returns 503 on
+// the same Postgres SQLSTATE 42P01 the admin page banner reads.
 
 export async function POST(request: Request, { params }: RouteParams) {
   const originGate = enforceTrustedBrowserOrigin(request)

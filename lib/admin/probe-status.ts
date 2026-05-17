@@ -1,3 +1,4 @@
+import { isUndefinedTableError } from '@/lib/db/errors'
 import { getDbPool } from '@/lib/db/pool'
 
 // ALERTS-OBS (2026-05-16) — read-only observability for the three
@@ -45,20 +46,13 @@ export type ProbeStatus =
       } | null
     }
 
-// Postgres "relation does not exist" error code. Migration 0053
-// hasn't applied on prod yet → admin page renders a banner, endpoint
-// returns 503. Avoids 500 during the deploy-before-migrate window
-// (plan §5, round-2 BLOCKER #2 closure).
-const ERR_UNDEFINED_TABLE = '42P01'
-
-function isUndefinedTableError(err: unknown): boolean {
-  return (
-    typeof err === 'object'
-    && err !== null
-    && 'code' in err
-    && (err as { code?: unknown }).code === ERR_UNDEFINED_TABLE
-  )
-}
+// Postgres "relation does not exist" error code (`42P01`) is checked
+// via `isUndefinedTableError` from `lib/db/errors`. AUDIT-CODE-3
+// (2026-05-17) extracted the helper from this file + the sibling
+// test-send route to a shared module so the two stay aligned. This
+// matters during the deploy-before-migrate window when migration 0053
+// hasn't applied yet — admin page renders a banner, endpoint returns
+// 503 instead of 500.
 
 export async function getProbeStatus(probeName: ProbeName): Promise<ProbeStatus> {
   const pool = getDbPool()
