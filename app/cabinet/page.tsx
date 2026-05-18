@@ -24,6 +24,7 @@ import { BillingSections } from './billing-sections'
 import { LessonsSection } from './lessons-section'
 import { LogoutButton } from './logout-button'
 import { ResendVerifyButton } from './resend-verify-button'
+import { TeacherInviteSection } from './teacher-invite-section'
 import { TeacherLearnersSection } from './teacher-learners-section'
 import { TeacherSection } from './teacher-section'
 
@@ -184,6 +185,7 @@ export default async function CabinetPage() {
             initialSlots={teacherSlots}
             teacherTimezone={profile?.timezone ?? null}
           />
+          <TeacherInviteSection isVerified={isVerified} />
           <TeacherLearnersSection learners={teacherLearners} />
         </>
       ) : null}

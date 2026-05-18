@@ -8,6 +8,10 @@ import {
   grantAccountRole,
 } from '@/lib/auth/accounts'
 import { recordConsent } from '@/lib/auth/consents'
+import {
+  redeemInviteAndBindLearnerAtomic,
+  verifyInviteToken,
+} from '@/lib/auth/teacher-invites'
 import { getDummyHash } from '@/lib/auth/dummy-hash'
 import { rateLimitScope } from '@/lib/auth/email-hash'
 import { hashPassword, verifyPassword } from '@/lib/auth/password'
@@ -52,6 +56,7 @@ export async function POST(request: Request) {
     password?: string
     personalDataConsentAccepted?: boolean
     role?: string
+    inviteToken?: string
   }
   try {
     body = await request.json()
@@ -70,8 +75,26 @@ export async function POST(request: Request) {
   // branch performs a single extra INSERT into account_roles; the
   // anti-enumeration wall-clock budget is preserved (one INSERT vs
   // 250ms bcrypt is in the noise).
-  const requestedRole: 'student' | 'teacher' =
+  let requestedRole: 'student' | 'teacher' =
     body.role === 'teacher' ? 'teacher' : 'student'
+
+  // SAAS-4 (2026-05-18) — invite-link auto-bind. If the body carries
+  // an `inviteToken`, server-side anti-spoof RULE: HMAC must verify,
+  // and the role is forced to `student` regardless of body.role
+  // (an invited account is by definition a learner). The redeem +
+  // assigned_teacher_id UPDATE happen atomically via the single-
+  // statement CTE inside the new-email branch AFTER createAccount.
+  // If verifyInviteToken returns null, we silently strip the token —
+  // the register continues without binding, and the client UI is
+  // expected to show its own banner if it had a token to start with.
+  let invitePayload: ReturnType<typeof verifyInviteToken> = null
+  if (typeof body.inviteToken === 'string' && body.inviteToken.length > 0) {
+    invitePayload = verifyInviteToken(body.inviteToken)
+    if (invitePayload !== null) {
+      // Invited learner: force role to student (anti-spoof).
+      requestedRole = 'student'
+    }
+  }
 
   const emailValidation = validateCustomerEmail(String(body.email || ''))
   if (!emailValidation.ok) {
@@ -141,6 +164,54 @@ export async function POST(request: Request) {
     if (requestedRole === 'teacher') {
       await grantAccountRole(account.id, 'teacher', null)
     }
+
+    // SAAS-4 (2026-05-18) — atomic redeem-and-bind if the body
+    // carried a verified invite token. The single-statement CTE in
+    // redeemInviteAndBindLearnerAtomic verifies that the inviter
+    // still holds the `teacher` role at the moment of redeem AND
+    // sets accounts.assigned_teacher_id from the DB-side
+    // teacher_account_id (never from the client-submitted token's
+    // `tid` — anti-spoof guarantee).
+    //
+    // Failure modes (returns null): invite used / revoked / expired
+    // / inviter-no-longer-teacher. All collapse to the same
+    // `invite_already_used_or_expired` 409 response. The newly-
+    // created account still exists; the learner can retry with a
+    // fresh invite or proceed without a teacher binding (operator
+    // can assign manually). This deliberately does NOT roll back
+    // account creation: a half-merged state (account-with-no-teacher)
+    // is recoverable; a no-account-with-link-already-redeemed state
+    // would be worse. The "full TX rollback on redeem failure" claim
+    // from the plan §3.7 is deferred to TINV.2 helper-refactor.
+    let boundTeacherAccountId: string | null = null
+    if (invitePayload !== null) {
+      const redeemed = await redeemInviteAndBindLearnerAtomic(
+        invitePayload.iid,
+        account.id,
+      )
+      if (redeemed === null) {
+        return NextResponse.json(
+          {
+            error: 'invite_already_used_or_expired',
+            message:
+              'Ссылка-приглашение уже использована или истекла. Зарегистрируйтесь без ссылки или попросите учителя новую.',
+          },
+          { status: 409, headers: NO_STORE },
+        )
+      }
+      boundTeacherAccountId = redeemed.teacherAccountId
+      await recordAuthAuditEvent({
+        eventType: 'auth.invite.redeemed',
+        accountId: account.id,
+        email,
+        clientIp: getClientIp(request),
+        userAgent: request.headers.get('user-agent'),
+        payload: {
+          inviteId: invitePayload.iid,
+          teacherAccountId: redeemed.teacherAccountId,
+        },
+      })
+    }
     // Legal-versioning sister wave (migration 0032): capture the
     // FK to the snapshot row currently in force, alongside the
     // legacy text version for backward-compat. The lookup is
@@ -166,8 +237,22 @@ export async function POST(request: Request) {
       email,
       clientIp: getClientIp(request),
       userAgent: request.headers.get('user-agent'),
-      payload: { branch: 'new_account', role: requestedRole },
+      payload: {
+        branch: 'new_account',
+        role: requestedRole,
+        boundTeacherAccountId,
+      },
     })
+    if (requestedRole === 'teacher') {
+      await recordAuthAuditEvent({
+        eventType: 'auth.teacher.self_registered',
+        accountId: account.id,
+        email,
+        clientIp: getClientIp(request),
+        userAgent: request.headers.get('user-agent'),
+        payload: { role: 'teacher' },
+      })
+    }
   }
 
   return NextResponse.json({ ok: true }, { status: 200, headers: NO_STORE })
