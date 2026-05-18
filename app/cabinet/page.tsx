@@ -223,17 +223,8 @@ export default async function CabinetPage() {
 
           <div className="card" style={{ padding: 24, marginBottom: 24 }}>
             <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
-              Кабинет в разработке
+              Скоро здесь появится
             </h2>
-            <p
-              style={{
-                color: 'var(--secondary)',
-                fontSize: 14,
-                lineHeight: 1.6,
-              }}
-            >
-              Здесь скоро появится:
-            </p>
             <ul
               style={{
                 color: 'var(--secondary)',
@@ -243,7 +234,7 @@ export default async function CabinetPage() {
                 marginTop: 8,
               }}
             >
-              <li>оплата уроков и история платежей</li>
+              <li>оплата занятий и история платежей</li>
               <li>история занятий и материалы</li>
             </ul>
           </div>
