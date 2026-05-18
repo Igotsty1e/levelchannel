@@ -94,3 +94,35 @@ export function timeAxisLabels(): string[] {
   out.push('23:30')
   return out
 }
+
+// SAAS-1: Apple-style calendar shows hour-only labels for the time
+// axis (sub-tick at :30 is rendered as a faint dotted divider in the
+// grid background, not a label). Used by components/calendar/Grid.tsx
+// for the new presentation; the half-hour HIT-TEST (drag-paint, drag-
+// move, halfHourFromOffset) is unchanged — Apple-style is visual only.
+export function hourAxisLabels(): string[] {
+  const out: string[] = []
+  for (let h = CALENDAR_GRID_START_HOUR; h <= 23; h += 1) {
+    out.push(`${String(h).padStart(2, '0')}:00`)
+  }
+  return out
+}
+
+// SAAS-1 current-time indicator support. Returns the pixel offset of
+// `now` from the grid's top (MSK 06:00), clamped to the grid band.
+// Returns null if `now` is outside the visible band.
+export function currentTimeTopPx(nowMs: number): number | null {
+  const minutes = mskMinutesFromGridStart(nowMs)
+  if (minutes < 0) return null
+  const dayMinutes =
+    (23 - CALENDAR_GRID_START_HOUR + 0.5) * 60 // up to 23:30
+  if (minutes > dayMinutes) return null
+  return minutes * CALENDAR_GRID_PX_PER_MIN
+}
+
+// Re-export the private helper for the CurrentTimeIndicator's needs.
+// Keeps the test seam pure-function-shaped without leaking the internal
+// `Intl.DateTimeFormat` dependency to the component layer.
+export function mskYmdNow(nowMs: number): string {
+  return formatMskYmd(nowMs)
+}

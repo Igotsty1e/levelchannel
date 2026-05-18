@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   CALENDAR_GRID_DAY_HEIGHT_PX,
@@ -8,8 +8,10 @@ import {
 } from '@/lib/calendar/dates'
 import {
   type CalendarRow,
+  currentTimeTopPx,
   groupSlotsByDay,
-  timeAxisLabels,
+  hourAxisLabels,
+  mskYmdNow,
   weekDayKeys,
 } from '@/lib/calendar/view-model'
 import type { CalendarSlot } from '@/lib/calendar/types'
@@ -61,9 +63,23 @@ const CELL_HEIGHT_PX = 30 * CALENDAR_GRID_PX_PER_MIN
 
 export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
   const days = weekDayKeys(fromYmd)
-  const labels = timeAxisLabels()
+  // SAAS-1: Apple-style time axis shows hour labels only; half-hour
+  // marks are dotted sub-ticks in the grid background.
+  const labels = hourAxisLabels()
   const grouped = groupSlotsByDay(slots)
   const dayHeight = CALENDAR_GRID_DAY_HEIGHT_PX
+
+  // SAAS-1: today highlight + current-time indicator (live tick every
+  // 60 s). nowMs is null on first SSR render to avoid hydration
+  // mismatch; populated by useEffect on mount.
+  const [nowMs, setNowMs] = useState<number | null>(null)
+  useEffect(() => {
+    setNowMs(Date.now())
+    const tick = setInterval(() => setNowMs(Date.now()), 60_000)
+    return () => clearInterval(tick)
+  }, [])
+  const todayYmd = nowMs !== null ? mskYmdNow(nowMs) : null
+  const currentTimeTop = nowMs !== null ? currentTimeTopPx(nowMs) : null
 
   // Refs to each day column for hit-test coord math during drag.
   // Uses a Map keyed by ymd so paint/move handlers can find the
@@ -136,26 +152,37 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
     >
       {/* Header row: empty corner + 7 day labels */}
       <div style={{ background: 'rgba(255,255,255,0.04)' }} />
-      {days.map((ymd, i) => (
-        <div
-          key={ymd}
-          style={{
-            background: 'rgba(255,255,255,0.04)',
-            padding: '12px 8px',
-            borderLeft: '1px solid rgba(255,255,255,0.06)',
-            textAlign: 'center',
-          }}
-        >
-          <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase' }}>
-            {DOW_RU[i]}
+      {days.map((ymd, i) => {
+        const isToday = todayYmd === ymd
+        return (
+          <div
+            key={ymd}
+            style={{
+              background: isToday
+                ? 'color-mix(in srgb, var(--accent, #D88A82) 8%, rgba(255,255,255,0.04))'
+                : 'rgba(255,255,255,0.04)',
+              padding: '12px 8px',
+              borderLeft: '1px solid rgba(255,255,255,0.06)',
+              textAlign: 'center',
+            }}
+          >
+            <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase' }}>
+              {DOW_RU[i]}
+            </div>
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 600,
+                color: isToday ? 'var(--accent, #D88A82)' : '#e4e4e7',
+              }}
+            >
+              {ymd.slice(8, 10)}.{ymd.slice(5, 7)}
+            </div>
           </div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#e4e4e7' }}>
-            {ymd.slice(8, 10)}.{ymd.slice(5, 7)}
-          </div>
-        </div>
-      ))}
+        )
+      })}
 
-      {/* Time axis column */}
+      {/* Time axis column — Apple-style hour-only labels */}
       <div
         style={{
           position: 'relative',
@@ -169,7 +196,7 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
             key={label}
             style={{
               position: 'absolute',
-              top: `${i * 30 * CALENDAR_GRID_PX_PER_MIN}px`,
+              top: `${i * 60 * CALENDAR_GRID_PX_PER_MIN}px`,
               left: 0,
               right: 0,
               fontSize: 10,
@@ -177,6 +204,7 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
               textAlign: 'right',
               padding: '0 6px',
               transform: 'translateY(-50%)',
+              fontVariantNumeric: 'tabular-nums',
             }}
           >
             {label}
@@ -185,12 +213,15 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
       </div>
 
       {/* Day columns */}
-      {days.map((ymd) => (
+      {days.map((ymd) => {
+        const isToday = todayYmd === ymd
+        return (
         <div
           key={ymd}
           ref={setDayRef(ymd)}
           role="gridcell"
           aria-label={`День ${ymd}`}
+          data-today={isToday ? 'true' : undefined}
           onMouseDown={(e) => handleColumnMouseDown(e, ymd)}
           onMouseMove={(e) => handleColumnMouseMove(e, ymd)}
           style={{
@@ -199,10 +230,57 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
             borderLeft: '1px solid rgba(255,255,255,0.06)',
             borderTop: '1px solid rgba(255,255,255,0.06)',
             backgroundImage: gridBackground(),
-            backgroundSize: `100% ${30 * CALENDAR_GRID_PX_PER_MIN}px`,
+            backgroundSize: `100% ${60 * CALENDAR_GRID_PX_PER_MIN}px`,
+            backgroundColor: isToday
+              ? 'color-mix(in srgb, var(--accent, #D88A82) 4%, transparent)'
+              : 'transparent',
             cursor: drag?.onCellMouseDown ? 'crosshair' : 'default',
           }}
         >
+          {/* SAAS-1: dotted half-hour sub-tick overlay (1 per hour) */}
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              backgroundImage:
+                `repeating-linear-gradient(to bottom, transparent 0, transparent ${
+                  30 * CALENDAR_GRID_PX_PER_MIN - 1
+                }px, rgba(255,255,255,0.035) ${
+                  30 * CALENDAR_GRID_PX_PER_MIN - 1
+                }px, rgba(255,255,255,0.035) ${30 * CALENDAR_GRID_PX_PER_MIN}px)`,
+              backgroundSize: `100% ${60 * CALENDAR_GRID_PX_PER_MIN}px`,
+              pointerEvents: 'none',
+            }}
+          />
+          {/* SAAS-1: current-time indicator (only on today column) */}
+          {isToday && currentTimeTop !== null ? (
+            <div
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                top: `${currentTimeTop}px`,
+                height: 0,
+                borderTop: '1.5px solid #e85a4f',
+                zIndex: 7,
+                pointerEvents: 'none',
+              }}
+            >
+              <span
+                style={{
+                  position: 'absolute',
+                  left: -4,
+                  top: -4,
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  background: '#e85a4f',
+                }}
+              />
+            </div>
+          ) : null}
           {(grouped.get(ymd) || []).map((row, i) => (
             <SlotBlock
               key={row.slot.kind === 'booked-other' ? `bo-${i}-${row.topPx}` : row.slot.id ?? `r-${i}`}
@@ -230,7 +308,8 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
             />
           ) : null}
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -294,11 +373,12 @@ function MoveGhost({
 }
 
 function gridBackground(): string {
-  // Faint horizontal lines every 30 min. Implemented as repeating
-  // linear-gradient so we don't have to render 35 separator divs per day.
+  // SAAS-1: hour-only grid divider (Apple-style). Half-hour sub-tick
+  // is rendered as a separate dotted overlay inside each day column
+  // (see the inline aria-hidden div in the column render).
   return `repeating-linear-gradient(to bottom, transparent 0, transparent ${
-    30 * CALENDAR_GRID_PX_PER_MIN - 1
-  }px, rgba(255,255,255,0.04) ${30 * CALENDAR_GRID_PX_PER_MIN - 1}px, rgba(255,255,255,0.04) ${
-    30 * CALENDAR_GRID_PX_PER_MIN
+    60 * CALENDAR_GRID_PX_PER_MIN - 1
+  }px, rgba(255,255,255,0.06) ${60 * CALENDAR_GRID_PX_PER_MIN - 1}px, rgba(255,255,255,0.06) ${
+    60 * CALENDAR_GRID_PX_PER_MIN
   }px)`
 }
