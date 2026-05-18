@@ -106,6 +106,8 @@ Minimum local set:
 - [AGENTS.md](AGENTS.md): AI-agent entry point, doc layer, risk discipline, skill routing
 - [SECURITY.md](SECURITY.md): trust boundaries and hardening notes
 - [PAYMENTS_SETUP.md](PAYMENTS_SETUP.md): payment contract and integration notes
+- [docs/design-system.md](docs/design-system.md): Apple-HIG token palette, type scale, spacing, radii, motion, primitive components. Read before any UI change.
+- [docs/content-style.md](docs/content-style.md): Russian copy style guide + 40-entry forbidden-words glossary + admin menu rename proposal. Read before any user-visible string change.
 - [docs/legal-pipeline.md](docs/legal-pipeline.md): mechanical guardrail for legal-RF content (commit trailer + CI gate)
 - [docs/skill-pipeline.md](docs/skill-pipeline.md): mechanical guardrail for GSTACK skill discipline (commit trailer + CI gate)
 - [docs/public/ARCHITECTURE.md](docs/public/ARCHITECTURE.md): public-facing system overview

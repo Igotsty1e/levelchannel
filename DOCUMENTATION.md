@@ -22,6 +22,17 @@ in two places, agents will almost certainly drag in the stale version.
 2. `PAYMENTS_SETUP.md` if the payment contract changes
 3. `SECURITY.md` if the trust boundary or hardening changes
 
+### UI work (any visual change in admin / cabinet / auth)
+
+1. `docs/design-system.md` — Apple-HIG token palette, type scale, spacing, radii, motion, primitive components. **Read before writing inline styles or new CSS.** New colors/shadows/radii must use the documented tokens.
+2. The wave's plan doc in `docs/plans/<wave>.md` (if one exists) for the surface-specific spec.
+3. The relevant module README in `lib/*/README.md` for invariants.
+
+### Copy work (any user-visible Russian string in admin / cabinet / errors / emails)
+
+1. `docs/content-style.md` — tone rules, audience matrix, forbidden-words glossary (40+ entries), microcopy patterns, admin menu rename proposal. **Read before writing new strings or editing existing copy.** The glossary is authoritative: don't introduce «Реконсилиация» / «Webhook» / «Слот» as user-visible text — use the documented replacements.
+2. The wave's plan doc if one exists.
+
 ### Prod, server, DB, deploy, logs, backups
 
 1. private operations runbook (not committed to the public repository surface)
@@ -83,6 +94,8 @@ in two places, agents will almost certainly drag in the stale version.
 | `docs/critical-path.md` | inventory of 20 files whose breakage = production incident; `Codex-Paranoia: SIGN-OFF` trailer policy enforced by `scripts/check-critical-path-trailer.mjs` + `critical-path-trailer.yml` | day-to-day file inventory (covered by per-module READMEs) |
 | `docs/backlog/archive/*` | shipped / closed waves no longer on the active surface; forensic + retro use | active task queue (lives in `ENGINEERING_BACKLOG.md`) |
 | `lib/*/README.md` (since 2026-05-18, DOC-MODULE-CONTRACTS) | per-module contracts: invariants, file inventory, public API, test surface | cross-module flow (lives in `ARCHITECTURE.md`) |
+| `docs/design-system.md` (since 2026-05-18, SAAS-6 foundation) | Apple-HIG token palette + type scale + spacing + radii + motion + primitive components + migration baseline. **Read before changing any UI surface** (admin, cabinet, auth shells). | per-feature visual specs (live in `docs/plans/<wave>.md`) |
+| `docs/content-style.md` (since 2026-05-18, SAAS-2 foundation) | Russian copy style guide: tone, audience matrix, forbidden-words glossary (40+ entries), microcopy patterns, admin menu rename proposal. **Read before changing any user-visible string** in admin / cabinet / errors / emails. | per-surface copy edits (each cites this doc by `§<n>`) |
 
 ## Conflict rule
 

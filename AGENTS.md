@@ -29,7 +29,8 @@ Before any non-trivial action in this repo, mentally answer:
    the routing source-of-truth.
 2. Have I `Read` this file (`AGENTS.md`) and the owner doc for what
    I'm about to touch (`ARCHITECTURE.md` / `PAYMENTS_SETUP.md` /
-   `SECURITY.md` / `OPERATIONS.md`)?
+   `SECURITY.md` / `OPERATIONS.md` / `docs/design-system.md` for UI
+   work / `docs/content-style.md` for copy work)?
 3. For the work I'm about to do (plan review / code review / ship /
    debug / QA / deploy / doc sync) — which skill in `~/.claude/SKILLS.md`
    owns it? If the answer is "I'll write the prompt freehand" — that's
@@ -77,9 +78,13 @@ The general doc-maintenance rule (`rg`-sweep, drift = real bug) is in
 | `ROADMAP.md` | Outcome-level priorities. Product, operations, compliance. No low-level implementation queue here. |
 | `ENGINEERING_BACKLOG.md` | Concrete engineering queue. System tasks not yet shipped. |
 | `PRD.md` | Public-safe note that points to the private historical PRD. Do not decide current behaviour from it. |
+| `docs/design-system.md` | Apple-HIG token palette + type scale + spacing + radii + motion + primitive components. **Mandatory read before any UI change in admin / cabinet / auth shells.** New colors, shadows, radii must use the documented tokens; introducing a one-off `rgba(...)` or hex that doesn't fit the scale = doc drift. |
+| `docs/content-style.md` | Russian copy style guide: tone rules, audience matrix (учащийся / учитель / оператор), forbidden-words glossary (40+ entries), microcopy patterns, admin menu rename proposal. **Mandatory read before any user-visible Russian string change.** The glossary is authoritative — don't introduce «Реконсилиация» / «Webhook» / «Слот» as user-visible text. |
 
 If your diff touches `lib/payments/` and you did not update
 `ARCHITECTURE.md` or `PAYMENTS_SETUP.md`, you did not finish.
+If your diff touches a UI surface and you did not check `docs/design-system.md`, you did not finish.
+If your diff edits user-visible Russian copy and you did not check `docs/content-style.md` for forbidden words, you did not finish.
 
 ## 2. Risk discipline (LevelChannel: production money)
 
