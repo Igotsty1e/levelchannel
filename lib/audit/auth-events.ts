@@ -16,6 +16,14 @@ export const AUTH_AUDIT_EVENT_TYPES = [
   'auth.reset.confirmed',
   'auth.verify.success',
   'auth.session.revoked',
+  // SAAS-3+4 TINV.1 (2026-05-18) — teacher self-reg + invite events.
+  // SQL CHECK constraint mirror lives in migrations/0057_teacher_invites.sql.
+  // Drift between this tuple and the CHECK is caught by
+  // tests/integration/auth/auth-audit-event-types-drift.test.ts (TINV.6.6).
+  'auth.teacher.self_registered',
+  'auth.invite.created',
+  'auth.invite.revoked',
+  'auth.invite.redeemed',
 ] as const
 
 export type AuthAuditEventType = (typeof AUTH_AUDIT_EVENT_TYPES)[number]
