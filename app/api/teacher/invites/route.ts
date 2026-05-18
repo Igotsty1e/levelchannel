@@ -7,6 +7,7 @@ import {
   createInviteForTeacher,
   listInvitesForTeacher,
 } from '@/lib/auth/teacher-invites'
+import { enforceAccountRateLimit } from '@/lib/security/account-rate-limit'
 import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
@@ -25,13 +26,11 @@ export const dynamic = 'force-dynamic'
 // anti-enumeration timing test + cross-teacher authz integration test
 // land with TINV.8.
 
-// Per-account rate-limit cap. Round-2 paranoia WARN about
-// enforceRateLimit always appending IP is acknowledged: the round-3
-// note in the plan recommends a dedicated enforceAccountRateLimit
-// helper. That helper is a TINV.4-follow-up; for this slice the
-// existing enforceRateLimit is used (key includes IP). VPN/IP
-// rotation can bypass the per-teacher cap; the email-verify gate +
-// 5/h IP-cap still provide a reasonable floor for the MVP.
+// Per-account rate-limit cap. SAAS-3+4 TINV.4-follow-up (2026-05-18):
+// uses `enforceAccountRateLimit` (key: `account:<id>:<scope>`, no IP
+// suffix). This closes round-2 WARN#5+#6 — the original
+// `enforceRateLimit` always appended `:${ip}` to the key, making the
+// per-teacher cap actually per-teacher-per-IP and VPN-bypassable.
 const GENERATE_RATE_LIMIT_PER_HOUR = 5
 
 export async function POST(request: Request) {
@@ -42,9 +41,9 @@ export async function POST(request: Request) {
   if (!auth.ok) return auth.response
   const teacherAccountId = auth.account.id
 
-  const rl = await enforceRateLimit(
-    request,
-    `teacher:invite-generate:${teacherAccountId}`,
+  const rl = await enforceAccountRateLimit(
+    teacherAccountId,
+    'invite-generate',
     GENERATE_RATE_LIMIT_PER_HOUR,
     60 * 60_000,
   )
