@@ -139,9 +139,9 @@ export default async function AdminDebtSummaryPage({
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '1px solid var(--border)' }}>
               <Th>Аккаунт</Th>
-              <Th>Email</Th>
+              <Th>E-mail</Th>
               <Th align="right">Долг, ₽</Th>
-              <Th align="right">Слотов</Th>
+              <Th align="right">Занятий</Th>
               <Th>Старший долг</Th>
             </tr>
           </thead>
