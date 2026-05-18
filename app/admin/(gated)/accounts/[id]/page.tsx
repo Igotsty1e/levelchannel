@@ -202,7 +202,7 @@ export default async function AdminAccountDetailPage({ params }: RouteParams) {
 
       {!account.purgedAt && isLearnerView ? (
         <Section title="Биллинг">
-          <Field label="Постоплата разрешена">
+          <Field label="Оплата после занятия разрешена">
             <span style={{ color: postpaidAllowed ? '#9bdf9b' : '#ff8a8a' }}>
               {postpaidAllowed ? 'да' : 'нет'}
             </span>{' '}
