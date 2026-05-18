@@ -73,7 +73,7 @@ export function MobileFallback({
   const grouped = groupSlotsByDay(slots)
 
   return (
-    <div role="list" aria-label="Слоты на неделю (мобильный список)">
+    <div role="list" aria-label="Занятия на неделю (мобильный список)">
       {days.map((ymd) => {
         const rows = grouped.get(ymd) || []
         if (rows.length === 0) return null
