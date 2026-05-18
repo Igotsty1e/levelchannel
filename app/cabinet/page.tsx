@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers'
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { AuthShell } from '@/components/auth-shell'
@@ -20,10 +21,8 @@ import { listLearnersForTeacher } from '@/lib/scheduling/teacher-learners'
 import { isLearnerArchetypeCandidate } from '@/lib/auth/learner-archetype'
 
 import { BillingSections } from './billing-sections'
-import { DangerZone } from './danger-zone'
 import { LessonsSection } from './lessons-section'
 import { LogoutButton } from './logout-button'
-import { ProfileEditor } from './profile-editor'
 import { ResendVerifyButton } from './resend-verify-button'
 import { TeacherLearnersSection } from './teacher-learners-section'
 import { TeacherSection } from './teacher-section'
@@ -135,6 +134,34 @@ export default async function CabinetPage() {
 
   return (
     <AuthShell>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 16,
+          marginBottom: 16,
+        }}
+      >
+        <span aria-hidden="true" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Link
+            href="/cabinet/profile"
+            style={{
+              color: 'var(--text)',
+              textDecoration: 'none',
+              fontSize: 14,
+              padding: '6px 14px',
+              borderRadius: 8,
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.08)',
+            }}
+          >
+            Профиль
+          </Link>
+          <LogoutButton />
+        </div>
+      </div>
       <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>
         Личный кабинет
       </h1>
@@ -150,8 +177,6 @@ export default async function CabinetPage() {
           <ResendVerifyButton />.
         </AuthInfoBox>
       ) : null}
-
-      <ProfileEditor initialProfile={profile} fallbackEmail={account.email} />
 
       {isTeacher ? (
         <>
@@ -222,10 +247,6 @@ export default async function CabinetPage() {
           </div>
         </>
       ) : null}
-
-      <DangerZone />
-
-      <LogoutButton />
     </AuthShell>
   )
 }
