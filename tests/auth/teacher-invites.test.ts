@@ -112,19 +112,24 @@ describe('verifyInviteToken rejects tampered tokens', () => {
   it('flipped HMAC byte → null', () => {
     const token = signInviteToken(PAYLOAD, TEST_ENV)
     const [payload, hmac] = token.split('.')
-    // Flip the last character of the HMAC to a different base64url char.
-    const lastChar = hmac.slice(-1)
-    const flipped =
-      hmac.slice(0, -1) + (lastChar === 'A' ? 'B' : 'A')
+    // Flip the FIRST char of the HMAC instead of the last — base64url
+    // encoding pads the trailing bits of the last char with zeros for
+    // 32-byte HMACs, so a last-char flip can decode to the SAME bytes
+    // (only the high 2 bits of the last char are significant). Flipping
+    // the first char always changes the first decoded byte.
+    const firstChar = hmac.slice(0, 1)
+    const flippedFirst = firstChar === 'A' ? 'B' : 'A'
+    const flipped = flippedFirst + hmac.slice(1)
     expect(verifyInviteToken(`${payload}.${flipped}`, TEST_ENV)).toBeNull()
   })
 
   it('flipped payload byte → null (HMAC mismatch)', () => {
     const token = signInviteToken(PAYLOAD, TEST_ENV)
     const [payload, hmac] = token.split('.')
-    const lastChar = payload.slice(-1)
-    const flipped =
-      payload.slice(0, -1) + (lastChar === 'A' ? 'B' : 'A')
+    // Same first-char-flip strategy as above, applied to the payload.
+    const firstChar = payload.slice(0, 1)
+    const flippedFirst = firstChar === 'A' ? 'B' : 'A'
+    const flipped = flippedFirst + payload.slice(1)
     expect(verifyInviteToken(`${flipped}.${hmac}`, TEST_ENV)).toBeNull()
   })
 
