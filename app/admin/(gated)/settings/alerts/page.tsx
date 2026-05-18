@@ -56,7 +56,7 @@ export default async function AdminAlertsPage() {
   return (
     <>
       <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 8 }}>
-        Алерты — наблюдение
+        Уведомления оператора
       </h1>
       <p
         style={{

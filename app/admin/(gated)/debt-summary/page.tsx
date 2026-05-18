@@ -43,7 +43,7 @@ export default async function AdminDebtSummaryPage({
   return (
     <>
       <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 24 }}>
-        Задолженности (постоплата)
+        Задолженности учеников
       </h1>
 
       <div

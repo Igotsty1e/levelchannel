@@ -57,7 +57,7 @@ export default async function AdminPackagesPage() {
   return (
     <>
       <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 8 }}>
-        Пакеты
+        Пакеты занятий
       </h1>
       <p
         style={{

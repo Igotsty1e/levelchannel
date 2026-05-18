@@ -32,7 +32,7 @@ export default async function AdminLegalPage() {
   return (
     <>
       <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 8 }}>
-        Документы и версии
+        Документы и соглашения
       </h1>
       <p
         style={{
