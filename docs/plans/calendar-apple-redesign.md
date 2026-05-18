@@ -176,9 +176,11 @@ current ymd:
 
 ```css
 [role="gridcell"][aria-label^="День "][data-today="true"] {
-  background-color: rgba(var(--accent-rgb), 0.04);
+  background-color: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 ```
+
+**Round-3 paranoia revision 2026-05-18 — user decision option (a):** all `rgba(var(--*-rgb), α)` patterns in this plan have been rewritten to CSS `color-mix(in srgb, var(--<token>) <pct>%, transparent)`. The `--*-rgb` companion tokens DO NOT exist in `docs/design-system.md` v1 (only `--accent`, `--accent-bg`, `--accent-bg-strong`, `--danger`, `--danger-bg`, `--info`, `--info-bg`, `--text-on-accent`). `color-mix()` is supported by all 4 major browsers since 2023 (Chrome 111+, Safari 16.2+, Firefox 113+, Edge 111+ — well above LevelChannel's browser baseline). Single-token contract preserved; foundation stays narrow.
 
 Day header for today renders the day number inside an accent-filled
 circle (Apple pattern):
@@ -209,13 +211,15 @@ sticky header 6 · current-time line 7.
 Replaces `SlotBlock.paletteForKind` (`:103-128`) with CSS classes.
 Palette is in a new `lib/calendar/palette.ts` (shareable, testable):
 
-| `slot.kind`              | accent var       | bg α | text          | left-border |
-|--------------------------|------------------|------|---------------|-------------|
-| `open`                   | `--status-open`  | 0.15 | accent        | 3 px solid  |
-| `booked-self`            | `--accent`       | 0.18 | accent        | 3 px solid  |
-| `booked-other` / `-full` | `--neutral`      | 0.10 | `--secondary` | 3 px solid  |
-| `past-full` / `-redacted`| `--neutral-dim`  | 0.08 | `--muted`     | 3 px solid  |
-| conflict overlay         | `--danger` | 0.18 | error         | 3 px solid (cascade-overrides kind) |
+| `slot.kind`              | `--chip-accent` resolves to | bg α | text          | left-border |
+|--------------------------|-----------------------------|------|---------------|-------------|
+| `open`                   | `--success` (semantic green)| 15%  | `--text-primary` | 3 px solid |
+| `booked-self`            | `--accent`                  | 18%  | `--text-primary` | 3 px solid |
+| `booked-other` / `-full` | `--text-secondary`          | 10%  | `--text-secondary` | 3 px solid |
+| `past-full` / `-redacted`| `--text-tertiary`           | 8%   | `--text-tertiary` | 3 px solid |
+| conflict overlay         | `--danger`                  | 18%  | `--text-primary` | 3 px solid (cascade-overrides kind) |
+
+`paletteClassFor(kind)` resolves to a class name with the chip-accent token assigned via a CSS custom property at the element scope:
 
 ```css
 .calendar-slot-block {
@@ -224,19 +228,32 @@ Palette is in a new `lib/calendar/palette.ts` (shareable, testable):
   font-size: 12px;
   line-height: 1.3;
   border: none;
-  border-left: 3px solid;                 /* accent stroke */
-  background-color: rgba(var(--chip-accent-rgb), 0.15);
-  color: var(--chip-text);
+  border-left: 3px solid var(--chip-accent);
+  background-color: color-mix(in srgb, var(--chip-accent) 15%, transparent);
+  color: var(--text-primary);
   transition: background-color 100ms ease;    /* §Motion */
 }
-.calendar-slot-block:hover     { background-color: rgba(var(--chip-accent-rgb), 0.25); }
-.calendar-slot-block:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.calendar-slot-block.kind-booked-self  { --chip-accent: var(--accent); }
+.calendar-slot-block.kind-open         { --chip-accent: var(--success); }
+.calendar-slot-block.kind-booked-other,
+.calendar-slot-block.kind-full         { --chip-accent: var(--text-secondary); }
+.calendar-slot-block.kind-past-full,
+.calendar-slot-block.kind-redacted     { --chip-accent: var(--text-tertiary); }
+.calendar-slot-block:hover {
+  background-color: color-mix(in srgb, var(--chip-accent) 25%, transparent);
+}
+.calendar-slot-block:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .calendar-slot-conflict {
-  border-left-color: var(--danger);
-  background-color: rgba(var(--danger-rgb), 0.18);
-  color: var(--danger-fg);
+  --chip-accent: var(--danger);
+  background-color: color-mix(in srgb, var(--danger) 18%, transparent);
+  color: var(--text-primary);
 }
 ```
+
+The element-scoped `--chip-accent` swap is the modern equivalent of the original "pass color in as a CSS variable" pattern, but uses ONLY tokens defined in `docs/design-system.md` v1. No new foundation token required.
 
 Content layout preserved: time range (mono digits), optional tariff
 badge, kind label. Russian copy verbatim.
@@ -286,11 +303,11 @@ fallback land in MVP.
   z-index: 5;
 }
 .calendar-paint-ghost {
-  background: rgba(var(--accent-rgb), 0.20);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
   border-left: 3px solid var(--accent);
 }
 .calendar-move-ghost {
-  background: rgba(var(--info-rgb), 0.20);
+  background: color-mix(in srgb, var(--info) 20%, transparent);
   border-left: 3px solid var(--info);
 }
 ```
@@ -341,7 +358,31 @@ grid). SlotBlock is already a focusable `<button>`; that stays. New
 
 **Round-1 paranoia revision 2026-05-18:** added 5.docs (doc-sweep, WARN#7), revised 5.A scope (token-blast-radius, WARN#5+#6), added 5.F drag-math-coverage (BLOCKER#3).
 
-**5.A — design tokens, SCOPED to `:root`-scope `.saas-chrome`.** Round-1 WARN#5: `app/globals.css :root` vars (`--bg`, `--text`, `--accent` etc.) are consumed by `/pay`, `/admin/(gated)/layout.tsx`, marketing landing. Touching them changes blast radius beyond /admin/slots. Per `docs/design-system.md` §"Migration baseline" Phase 0, scope SaaS tokens under a class selector applied to the admin/cabinet/auth shell wrappers (e.g. `.saas-chrome { --text-on-accent: ...; --danger: ...; }`), NOT `:root`. /admin/slots calendar renders inside `.saas-chrome` and consumes these; /pay does not, stays on its current palette. **Token names align with design-system: `--text-on-accent` (not `--text-on-accent`), `--danger` (not `--danger`), `--info`, `--success`, `--warning`** (round-1 WARN#6).
+**5.A — design tokens, scoped to `.saas-chrome` class selector.** Round-1 WARN#5 + round-3 attachment-point fix: `app/globals.css :root` vars (`--bg`, `--text`, `--accent` etc.) are consumed by `/pay`, `/admin/(gated)/layout.tsx`, marketing landing. Touching them changes blast radius beyond /admin/slots. Per `docs/design-system.md` §"Migration baseline" Phase 0, scope SaaS tokens under a class selector:
+
+```css
+.saas-chrome {
+  --accent: #D88A82;
+  --text-on-accent: #fff;
+  --text-primary: #F5F5F7;
+  --text-secondary: #9c9ca0;
+  --text-tertiary: #6c6c70;
+  --danger: #e85a4f;
+  --info: #4a9eff;
+  --success: #6fcf97;
+  --warning: #f2c94c;
+  /* ...etc. per design-system §Color */
+}
+```
+
+**Attachment-point inventory (round-3 WARN#3 closure)** — `.saas-chrome` is added to exactly these shell wrappers in this sub-PR:
+- `app/admin/(gated)/layout.tsx` — wraps the admin chrome `<div>` (around line 43, the outermost container that holds the sidebar + content area).
+- `components/auth-shell.tsx` — wraps the `<div>` returned by `AuthShell` (around line 9).
+- Cabinet shell — `app/cabinet/page.tsx` doesn't use AuthShell at the top; if its outer div doesn't carry the class through `AuthShell`, add `.saas-chrome` to its outermost wrapper too. Verify at impl by reading the current render tree.
+
+NOT added to: `/pay`, marketing landing, `/offer`, `/privacy`, `/consent` — these keep current palette (the gradient + warm beige tones). The class scope means tokens defined inside `.saas-chrome` do NOT leak via inheritance because they're CSS custom properties scoped to that element + descendants.
+
+**Files touched in 5.A:** `app/globals.css` (+120 inside `.saas-chrome` block), `app/admin/(gated)/layout.tsx` (+1 class), `components/auth-shell.tsx` (+1 class), `app/cabinet/page.tsx` (+1 class IF its outer container doesn't already inherit from AuthShell).
 
 **5.B — hour-grid constants + axis labels.** `lib/calendar/dates.ts` adds `CALENDAR_HOUR_ROW_PX=90`, `CALENDAR_GRID_START_HOUR=6`, `CALENDAR_GRID_END_HOUR_EXCLUSIVE=24`, `CALENDAR_GRID_VISIBLE_ROWS=18`, `CALENDAR_GRID_DAY_HEIGHT_PX_V2=1620` (keeps old 35-row consts for transition). `lib/calendar/view-model.ts` adds `hourAxisLabels()` (length 18), marks `timeAxisLabels()` `@deprecated`. Tests: extend `dates.test.ts` + `view-model.test.ts` with the 22:00→23:30 geometry case from §3.1.
 
@@ -399,7 +440,7 @@ rollback). Rollout: 5.A → 5.B → 5.C (smoke) → 5.D (smoke) → 5.E
 | R7 | `setInterval` leak on unmount | Low | `useEffect` cleanup; pattern reused from Toolbar. |
 | R8 | Hidden caller of `CALENDAR_GRID_DAY_HEIGHT_PX` | Low | Grep shows 2 hits; keep-and-deprecate handles a 3rd. |
 | R9 | High-contrast / forced-colors mode | Medium | `border-left` is structural; design-system §Color has `forced-colors: active` fallbacks. |
-| R10 | MobileFallback hides redesign on 720 px (verified from `components/calendar/MobileFallback.tsx:40-61`, NOT 720 px as round-1 draft claimed) | Low | Container ~1100 px nominal; existing 720 px breakpoint stays; round-1 WARN#4 surfaced the misreading. |
+| R10 | MobileFallback hides redesign on viewports under 720 px (verified from `components/calendar/MobileFallback.tsx:40`). | Low | Container ~1100 px nominal on operator desktops; existing 720 px breakpoint stays. Round-1 WARN#4 + round-3 cleanup: original draft mistakenly cited 900 px; corrected to actual code value 720 px. |
 | R11 | `:focus-visible` ring vs browser default outline | Low | Chip declares `border: none`; outline is explicit. |
 | R12 | New `border-left: 3 px` eats padding on narrow columns | Low | 130 px column worst-case still fits `18:30 – 19:30` at fontSize 12 with 11 px left padding. |
 
