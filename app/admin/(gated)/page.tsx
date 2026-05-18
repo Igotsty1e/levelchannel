@@ -29,17 +29,17 @@ export default async function AdminDashboardPage() {
           marginBottom: 32,
         }}
       >
-        <Card title="Всего аккаунтов" value={String(total)} href="/admin/accounts" />
+        <Card title="Всего учётных записей" value={String(total)} href="/admin/accounts" />
         <Card title="Тарифы" value="управление" href="/admin/pricing" />
         <Card
-          title="Постоплатный долг"
+          title="Задолженность учеников"
           value={debtRows.length === 0 ? '—' : `${debtRubFormatted} ₽`}
           href="/admin/debt-summary"
         />
       </div>
       <p style={{ color: 'var(--secondary)', fontSize: 13, lineHeight: 1.6 }}>
-        Расширенные дашборды (платежи, регистрации за неделю, отказы)
-        запланированы в P2 — `ENGINEERING_BACKLOG.md`.
+        Подробные отчёты (платежи, регистрации за неделю, отказы)
+        планируются в следующих волнах.
       </p>
     </>
   )
