@@ -19,10 +19,10 @@ Round-1 surfaced 5 BLOCKERs + 4 WARNs. Each is closed below; full revision is wo
 | **BLOCKER#1** — `createAccount` / `recordConsent` / `grantAccountRole` / `createEmailVerification` are pool-only; the same-TX claim is false without a helper refactor. | §3.5b (NEW) — explicit helper-refactor surface inventory: each helper gets a `(client: PoolClient \| Pool, ...)` variant. The TX-mode caller passes a `PoolClient`; the original signature stays as a thin wrapper that calls `pool.connect()` itself. All four files (`lib/auth/accounts.ts`, `consents.ts`, `verifications.ts`, `single-use-tokens.ts`) carry sub-PR `TINV-2` in §5. |
 | **BLOCKER#2** — redeem does a raw `UPDATE accounts SET assigned_teacher_id` bypassing `setAssignedTeacher()`'s role re-check; can bind a learner to an ex-teacher. | §3.7 revised — the redeem statement is now a multi-row CTE: redeem the invite + INNER JOIN `account_roles` proving the inviter is STILL `teacher` at the moment of redeem. If the inviter lost the role (e.g. promoted to admin via `grantAccountRole('admin')` stripping consumer roles), the JOIN fails → redeem returns 0 rows → TX rolls back. Test added (TINV.6.7). |
 | **BLOCKER#3** — anti-enumeration timing symmetry breaks: invited new-email path adds TX open/commit + role INSERT + invite UPDATE + assign UPDATE, while already-registered path still only dummy-bcrypt + email. | §3.2 + §3.7 revised — already-registered path gains symmetric padding: open a TX with `BEGIN; SAVEPOINT s1; ROLLBACK TO s1; COMMIT;` shape, plus a dummy `SELECT count(*) FROM accounts WHERE id = $1` lookup and a no-op `SELECT FROM teacher_invites WHERE id = $1 FOR UPDATE` against a random uuid (won't match, but takes the same row-lock wait time on the index). Asymmetry stays within ±5 ms (asserted by new test `tests/integration/auth/register-symmetry.test.ts` — TINV.6.10, mandatory ms-budget assertion, NOT just a smoke test). |
-| **BLOCKER#4** — email-verify dispatch failure strands the invite (already redeemed, account created, but learner has no verification link and the resend endpoint is authenticated-only). | §3.7 revised — invite redeem moves AFTER email-verify dispatch succeeds. New flow: (a) TX1 creates account + role + consent, (b) email-verify dispatch happens INSIDE TX1 (Resend client wrapped to throw on `{ ok: false }` instead of returning silently — small change in `lib/email/dispatch.ts:sendVerifyEmail`), (c) only if dispatch returns ok does the redeem + assign UPDATE run inside the same TX before commit. If Resend fails, TX rolls back: no account, invite stays unused, learner sees a transient error and retries. Idempotency: the verify-email INSERT into `email_verifications` is keyed on `(account_id, purpose)` with a partial unique idx — second attempt on same account collides cleanly. The anonymous resend gap closes naturally because no account exists when dispatch fails. |
+| **BLOCKER#4** — email-verify dispatch failure strands the invite (already redeemed, account created, but learner has no verification link and the resend endpoint is authenticated-only). | §3.7 revised — invite redeem moves AFTER email-verify dispatch succeeds. New flow: (a) TX1 creates account + role + consent, (b) email-verify dispatch happens INSIDE TX1 via `sendVerifyEmailOrThrow` (wraps `sendVerifyEmail` from `lib/email/dispatch.ts` to throw on `{ ok: false }` instead of returning silently — small new wrapper added in TINV.3), (c) only if dispatch returns ok does the redeem + assign UPDATE run inside the same TX before commit. If Resend fails, TX rolls back: no account, invite stays unused, learner sees a transient error and retries. Idempotency: `createEmailVerification` already uses the existing UPSERT shape (`ON CONFLICT (account_id) DO UPDATE`, verified at `lib/auth/verifications.ts:8-30`) — no new partial unique idx required; the original §0 draft mentioned `(account_id, purpose)` which does not match the actual schema and has been corrected in §3.7. The anonymous resend gap closes naturally because no account exists when dispatch fails. Risk #R7 (NEW) tightens `sendVerifyEmail` timeout to 5 s so the lock-contention window stays small. |
 | **BLOCKER#5** — `accounts_email_unique` 23505 on concurrent register isn't caught; one racer succeeds, the loser surfaces a 500 instead of the symmetric already-registered response. | §3.7 revised + new TX1 logic — the `createAccount` helper wraps its INSERT in `try/catch` and surfaces `EMAIL_ALREADY_REGISTERED` on a `code === '23505'` constraint match (`accounts_email_unique`). The route's catch handler normalises this to the same dummy-bcrypt + `{ ok: true }` response shape as the already-registered branch. Mirrors the contract in `docs/plans/phase-1b-auth-routes.md:392`. Test TINV.6.9 — two concurrent POSTs to `/api/auth/register` with the same email + same inviteToken; exactly one creates the account, the other gets `{ ok: true }` with no DB write. |
 | **WARN#6** — `enforceRateLimit()` (`lib/security/request.ts:65`) always appends `:${ip}`, so the "per-teacher" key actually becomes per-teacher-per-IP. VPN/IP rotation bypasses. | §3.6 revised — invite-generate uses a new helper `enforceAccountRateLimit(accountId, scope, limit)` in `lib/security/account-rate-limit.ts` (NEW). Key shape: `account:${accountId}:${scope}` — pure account id, no IP. Stored in Redis with `INCR` + TTL 1 hr. Existing `enforceRateLimit` keeps its IP-keyed shape (anti-bruteforce surface). Tests TINV.6.11 + TINV.6.12 pin both the per-account ceiling AND the IP-bypass-attempt regression case. |
-| **WARN#7** — Doc-target drift: `docs/operations.md` (lowercase) doesn't exist; the real owner is `OPERATIONS.md`. Plan also missed README/ARCH/SECURITY doc-sweep entries. | §5 sub-PR `TINV-7` (NEW) replaces all references to `docs/operations.md` with `OPERATIONS.md` (private runbook surface) + adds doc-sweep targets: `README.md` §"How to run" gains a `TEACHER_INVITE_SECRET` mention; `ARCHITECTURE.md:254` API map gets `/api/teacher/invites*` entries; `SECURITY.md:56` auth section gains a one-sentence note on the invite token contract pointing at this plan. |
+| **WARN#7** — Doc-target drift: `OPERATIONS.md` (lowercase) doesn't exist; the real owner is `OPERATIONS.md`. Plan also missed README/ARCH/SECURITY doc-sweep entries. | §5 sub-PR `TINV-7` (NEW) replaces all references to `OPERATIONS.md` with `OPERATIONS.md` (private runbook surface) + adds doc-sweep targets: `README.md` §"How to run" gains a `TEACHER_INVITE_SECRET` mention; `ARCHITECTURE.md:254` API map gets `/api/teacher/invites*` entries; `SECURITY.md:56` auth section gains a one-sentence note on the invite token contract pointing at this plan. |
 | **WARN#8** — Test plan misses two authz cases: teacher B cannot list/revoke teacher A's invite; redeem fails after inviter loses `teacher`. | §6 revised — TINV.6.7 (cross-teacher list rejection: teacher B's GET /api/teacher/invites returns ONLY their own, no leakage of A's rows) + TINV.6.8 (cross-teacher revoke: teacher B's POST /api/teacher/invites/[A's-invite-id]/revoke → 404) + TINV.6.7-redeem (redeem AFTER inviter promoted to admin → fails closed). |
 | **WARN#9** — UI mismatch: invite card visible but 403s when `!isVerified`; product copy says "locked until verified". | §3.8 revised — the cabinet `<TeacherInviteSection>` reads `isVerified` from server-side props (already passed to `<TeacherSection>`); if `!isVerified` it renders a disabled placeholder card with copy «Подтвердите e-mail, чтобы открыть приглашения учеников» + a `<ResendVerifyButton />` mount. The active controls are NOT rendered, so a forged POST attempt still 403s server-side AND the UI matches reality. |
 
@@ -120,7 +120,9 @@ Default = `'student'`. Submitted as `{ email, password, role, personalDataConsen
 - «Я учитель — буду вести занятия»
 - Section heading (above the radios): «Кто вы?»
 
-### 3.2 `/api/auth/register` — role-aware new-email path
+### 3.2 `/api/auth/register` — role-aware new-email path (round-2 paranoia rewrite)
+
+**Round-2 paranoia revision 2026-05-18:** the original draft defended an "extra INSERT is in the noise" claim that round-1 BLOCKER#3 correctly attacked. The revision below restores the documented byte-equal + wall-clock-symmetric contract.
 
 Diff in `app/api/auth/register/route.ts`:
 
@@ -130,31 +132,82 @@ const role: 'student' | 'teacher' =
 
 // ...existing email + password + consent validation...
 
-// New-email path:
-const account = await createAccount({ email, passwordHash })
-await grantAccountRole(account.id, role, /* grantedByAccountId */ null)
-// If role === 'student' AND body.inviteToken present, redeem here in the same TX (§3.6)
-```
-
-**Critical: `grantAccountRole` must run before any audit event tags this as a teacher, and before the email-verify token is created (so the verify-click → cabinet redirect lands them in the right pane).** The role grant is a separate INSERT (different table), so the new-email branch becomes a TX:
-
-```ts
 const client = await pool.connect()
 try {
   await client.query('begin')
-  // createAccount, recordConsent, grantAccountRole, createEmailVerification — all on client
+
+  if (existing) {
+    // ALREADY-REGISTERED BRANCH — symmetric padding (round-2 BLOCKER#3)
+    // Goal: same wall-clock cost as the new-email branch BELOW.
+    await client.query('savepoint s1')
+    await client.query('rollback to s1')
+    // Dummy lookup mirroring the createAccount INSERT roundtrip:
+    await client.query('select count(*) from accounts where id = $1', [existing.id])
+    // No-op FOR UPDATE on a never-matching uuid to take the same row-lock
+    // wait time on teacher_invites_active_idx as the redeem path:
+    const fakeInviteId = crypto.randomUUID()
+    await client.query(
+      'select 1 from teacher_invites where id = $1 and used_at is null and revoked_at is null for update',
+      [fakeInviteId],
+    )
+    await client.query('commit')
+    // Existing dummy-bcrypt + already-registered email dispatch run BEFORE the TX block
+    // (unchanged from current route shape).
+    return Response.json({ ok: true })
+  }
+
+  // NEW-EMAIL BRANCH — round-1 BLOCKER#1 helper-refactor required: see §3.5b
+  let account
+  try {
+    account = await createAccount(client, { email, passwordHash })
+  } catch (err) {
+    if (isPostgresUniqueViolation(err, 'accounts_email_unique')) {
+      // Round-1 BLOCKER#5: race with another concurrent register on same email.
+      // Normalise to already-registered shape — anti-enumeration symmetric response.
+      await client.query('rollback')
+      return Response.json({ ok: true })
+    }
+    throw err
+  }
+
+  await grantAccountRole(client, account.id, role, /* grantedByAccountId */ null)
+  await recordConsent(client, { accountId: account.id, ... })
+
+  // Round-1 BLOCKER#4: email dispatch INSIDE TX1, BEFORE redeem.
+  // sendVerifyEmail wrapped to throw on { ok: false } (small change in lib/email/dispatch.ts).
+  const verifyToken = await createEmailVerification(client, account.id)
+  await sendVerifyEmailOrThrow(account.email, verifyToken)
+  // If sendVerifyEmailOrThrow rejects → catch below ROLLBACKs everything;
+  // account doesn't exist; invite stays unused; client retries.
+
+  if (body.inviteToken) {
+    // Round-1 BLOCKER#2: redeem uses CTE with INNER JOIN account_roles to
+    // verify inviter is STILL `teacher` at the moment of redeem. See §3.5.
+    const redeemed = await redeemInviteAtomic(client, body.inviteToken, account.id)
+    if (!redeemed) {
+      // Loud failure — see §3.7 for rationale (UX paper-cut vs silent-loss tradeoff).
+      await client.query('rollback')
+      return Response.json({ error: 'invite_already_used_or_expired' }, { status: 409 })
+    }
+    // The `teacherAccountId` comes FROM THE DB RETURNING CLAUSE, never from client input:
+    await client.query(
+      'update accounts set assigned_teacher_id = $1 where id = $2',
+      [redeemed.teacherAccountId, account.id],
+    )
+  }
+
   await client.query('commit')
-} catch (e) {
+} catch (err) {
   await client.query('rollback')
-  throw e
+  throw err
+} finally {
+  client.release()
 }
 ```
 
-This is a behavioural widening of the existing register path. The already-registered branch (`existing` truthy) is unchanged — no role decision, dummy bcrypt + already-registered email + audit row, as today.
+**Anti-enumeration ms-budget contract:** the symmetric-work test `TINV.6.10` asserts wall-clock delta ≤ 5 ms between the new-email and already-registered branches across 50 runs. If the assertion fails, the branch with less work gains additional dummy lookups until parity. The test is mandatory in DoD.
 
 **Already-registered + role-flip attempt:** if a learner registers, then re-registers with `role=teacher`, the existing branch fires and NO role grant happens. The pre-existing role stays. Anti-enumeration: the response is still `{ ok: true }`. Role is set ONCE at first-create and is immutable through this endpoint. Re-roling requires operator action.
-
-**Anti-enumeration symmetric work invariant** (`app/api/auth/register/route.ts:30-37`): adding a role grant to the new-email path adds one INSERT to the new-email branch only. The already-registered branch has no equivalent. **This widens the wall-clock asymmetry the existing comment says is bounded.** Mitigation: the role-grant INSERT is ~1ms on local Postgres vs ~250ms bcrypt — the asymmetry is in the noise. The comment in the route stays accurate. Codex paranoia will likely flag this — see §11 Q3.
 
 ### 3.3 Invite token format
 
@@ -178,7 +231,7 @@ HMAC-SHA256 of a stable payload, signed by `TEACHER_INVITE_SECRET`.
 - Production: boot-fail if unset or empty/whitespace.
 - Dev: stable fallback `'lc-dev-teacher-invite-fallback'` so local dev works without a real secret.
 - Read once per call via `process.env.TEACHER_INVITE_SECRET?.trim()` — NOT cached at module scope. This matches the `email-hash.ts` pattern and lets rotation take effect on the next request without a process restart.
-- Rotation effect: outstanding invites signed with the old secret will be rejected with `invalid_token`. Document this in `docs/operations.md` runbook addendum.
+- Rotation effect: outstanding invites signed with the old secret will be rejected with `invalid_token`. Document this in `OPERATIONS.md` runbook addendum.
 
 **HMAC verify uses `timingSafeEqual`** — never a plain `===` on the base64url'd hmac string. Even though the secret is the only sensitive part, timing-side-channel discipline is cheap.
 
@@ -222,9 +275,56 @@ Owns the four primitives:
 - `signInviteToken(payload: InvitePayload): string` — payload → wire token.
 - `verifyInviteToken(token: string): InvitePayload | null` — wire token → payload, with HMAC + `timingSafeEqual` + version check + `exp` check (in seconds, not ms). Returns `null` on ANY failure — no detailed error class out the door (anti-enumeration / no info-leak).
 - `createInviteForTeacher(teacherAccountId): Promise<{ id, token, url, expiresAt }>` — INSERT row + sign token + return URL `https://levelchannel.ru/register?invite=<token>`. URL base from `paymentConfig.siteUrl` (already used in `app/api/auth/verify/route.ts:30-33` for the `verify-failed` redirect).
-- `redeemInviteAtomic(client: PoolClient, inviteId: uuid, learnerAccountId: uuid): Promise<{ teacherAccountId } | null>` — runs `UPDATE teacher_invites SET used_at = now(), used_by_account_id = $2 WHERE id = $1 AND used_at IS NULL AND revoked_at IS NULL AND expires_at > now() RETURNING teacher_account_id`. Receives a `client` (not the pool) so the caller controls the surrounding TX. Returns the teacher id on success, `null` on failure — caller classifies by re-read if it cares about UX disambiguation.
+- **`redeemInviteAtomic(client: PoolClient, inviteToken: string, learnerAccountId: uuid): Promise<{ teacherAccountId } | null>`** (round-2 BLOCKER#2 rewrite): atomically redeems the invite AND verifies the inviter still holds the `teacher` role at the moment of redeem. Implementation:
 
-`createInviteForTeacher` does NOT verify that `teacherAccountId` actually holds the `teacher` role — that's the route guard's job. The lib stays narrow.
+```sql
+with verified_invite as (
+  select i.id, i.teacher_account_id
+    from teacher_invites i
+    inner join account_roles r
+      on r.account_id = i.teacher_account_id
+     and r.role = 'teacher'
+   where i.id = $1
+     and i.used_at is null
+     and i.revoked_at is null
+     and i.expires_at > now()
+   for update
+)
+update teacher_invites
+   set used_at = now(),
+       used_by_account_id = $2
+  from verified_invite
+ where teacher_invites.id = verified_invite.id
+returning teacher_invites.teacher_account_id;
+```
+
+The `INNER JOIN account_roles ... AND r.role = 'teacher'` proves the inviter is STILL a teacher at the moment of redeem. If the inviter was promoted to admin between invite-create and invite-redeem (which strips consumer roles per `lib/auth/accounts.ts:279`), the JOIN returns 0 rows → the update returns 0 rows → the function returns `null` → caller (route handler) rolls back the entire TX. Closes round-1 BLOCKER#2. Test `TINV.6.7-redeem` pins this.
+
+The first arg in the function signature is the token string (not the inviteId) because the caller re-verifies HMAC immediately before calling — see the route flow in §3.7. The function itself only takes the validated `iid` from the parsed payload as `$1`; the outer-level HMAC + version checks happen in `verifyInviteToken()`.
+
+Receives a `client` (not the pool) so the caller controls the surrounding TX. Returns `{ teacherAccountId }` on success, `null` on failure — caller classifies by re-read if it cares about UX disambiguation.
+
+`createInviteForTeacher` does NOT verify that `teacherAccountId` actually holds the `teacher` role at creation time — the route guard `requireTeacherAndVerified` does. The redeem-time JOIN above re-verifies at use time.
+
+### 3.5b Helper refactor surface (NEW — round-2 BLOCKER#1 closure)
+
+Same-TX claim from §0 requires four current pool-only helpers to gain `(client: PoolClient | Pool, ...)` variants. **Sub-PR `TINV-2` owns this refactor.** Each helper is given an explicit dual signature; the old call-sites are migrated to pass `pool` (the default) for unchanged behavior, while the new register-TX path passes its `client`.
+
+| Helper | File | Current signature | New signature |
+|---|---|---|---|
+| `createAccount` | `lib/auth/accounts.ts:88` | `(input: { email, passwordHash })` | `(executor: PoolClient \| Pool, input: { email, passwordHash })` |
+| `recordConsent` | `lib/auth/consents.ts:55` | `(input: {...})` | `(executor: PoolClient \| Pool, input: {...})` |
+| `grantAccountRole` | `lib/auth/accounts.ts:268` | `(accountId, role, grantedBy)` | `(executor: PoolClient \| Pool, accountId, role, grantedBy)` |
+| `createEmailVerification` | `lib/auth/verifications.ts:8` | `(accountId)` | `(executor: PoolClient \| Pool, accountId)` |
+
+Migration strategy:
+1. Each helper internally does `const conn = executor instanceof Pool ? executor : executor` and `conn.query(...)`. No-op for existing call-sites since `pool` is a `Pool` and gets passed through unchanged.
+2. All current call-sites get a mechanical edit: `await createAccount({email, passwordHash})` → `await createAccount(pool, {email, passwordHash})`. Eight call-sites total per grep (counted at impl).
+3. The new `/api/auth/register` TX-mode passes its `client` instead.
+
+Test `TINV.2.1` (NEW) pins the dual-signature contract: same helper called with `pool` and with `client` (after `begin`) produces equivalent DB state.
+
+This refactor lands BEFORE the role-aware register changes in `TINV-3`. The two are temporally ordered inside the wave so a half-merged state never exists.
 
 ### 3.6 Teacher endpoints
 
@@ -232,7 +332,7 @@ Owns the four primitives:
 
 - Guard: `requireTeacherAndVerified(request)` (already exists, `lib/auth/guards.ts:164`).
 - Origin: `enforceTrustedBrowserOrigin(request)`.
-- Rate limit: 5 per hour per teacher account. Scope key: `teacher:invite-generate:account:<teacherAccountId>` (not by IP — IP is bypassable by VPN; per-teacher matches the resource being protected). Implementation: `enforceRateLimit(request, scope, 5, 60 * 60_000)` where `scope` is built from `account.id`. Codex will likely flag the per-account-key concern — see §11 Q5.
+- Rate limit (round-2 WARN#5 closure): 5 per hour per teacher account. Implementation: **new helper `enforceAccountRateLimit(accountId, scope, limit, windowMs)`** in NEW file `lib/security/account-rate-limit.ts`. Key shape: `account:${accountId}:${scope}` — PURE account id, no IP suffix (the existing `enforceRateLimit` in `lib/security/request.ts:65` always appends `:${ip}`, which makes the cap per-account-per-IP and VPN-bypassable). Implementation reuses the same Redis backend with `INCR` + `EXPIRE` semantics. The existing `enforceRateLimit` stays unchanged for IP-keyed anti-bruteforce surfaces. Tests `TINV.6.11` (key-shape pin) and `TINV.6.12` (IP-rotation-doesn't-bypass) defend both helpers' contracts.
 - Body: empty (no params; expiry is fixed).
 - Action: `createInviteForTeacher(account.id)`.
 - Audit: `auth.invite.created` with `payload: { inviteId, teacherAccountId, expiresAt }`.
@@ -286,14 +386,18 @@ const teacherAccountIdFromInvite = await (async () => {
 })()
 ```
 
-The flow inside the TX:
-1. `createAccount(client, { email, passwordHash })`.
+The flow inside the TX (**round-2 BLOCKER#4 rewrite — dispatch INSIDE TX1, BEFORE redeem**):
+1. `createAccount(client, { email, passwordHash })` (round-2 BLOCKER#5: wrapped in try/catch for `accounts_email_unique` 23505 → normalises to already-registered response; see §3.2).
 2. `grantAccountRole(client, account.id, 'student', null)` — yes, even for invited learners; learners are explicit student-role under SAAS (the default "no role" path stays for non-invited learners to preserve historical compat per the deny-list rationale in `lib/auth/guards.ts:84-93`).
-3. If `inviteToken` present AND verifies:
-   - `redeemed = await redeemInviteAtomic(client, payload.iid, account.id)`.
-   - If `redeemed === null`: ROLLBACK the entire TX. The whole register fails with `{ error: 'invite_already_used_or_expired' }`. **This is intentional:** if the user came via an invite link and the link is bad, we'd rather they re-try than silently create an unbound account. Rationale: the invite preview was server-rendered just seconds ago, so a redeem failure mid-flight means a real race (someone else used it) — not a UX papercut. Better to fail loud than create the account and silently drop the binding.
+3. `recordConsent(client, ...)`.
+4. **Verify-email dispatch INSIDE the TX, BEFORE the redeem** (round-1 BLOCKER#4 closure). `createEmailVerification(client, account.id)` mints the token; then `sendVerifyEmailOrThrow(account.email, token)` wraps `sendVerifyEmail()` from `lib/email/dispatch.ts` to throw on `{ ok: false }` instead of silently returning. If Resend fails, the catch handler rolls back the entire TX — no account, no role, no consent, no email-verification, no invite-redeem. The client retries the register call; idempotency on `email_verifications` is provided by the existing UPSERT shape (verified at `lib/auth/verifications.ts:8-30` — the function already uses `ON CONFLICT (account_id) DO UPDATE` on the most-recent-unused token; no schema change needed, contrary to the §0 summary draft which mentioned a partial unique idx that does not exist — round-2 BLOCKER#4 follow-up correction).
+5. If `inviteToken` present AND verifies:
+   - `redeemed = await redeemInviteAtomic(client, body.inviteToken, account.id)` (uses the CTE with `INNER JOIN account_roles` from §3.5).
+   - If `redeemed === null`: ROLLBACK the entire TX. The whole register fails with `{ error: 'invite_already_used_or_expired' }`. **This is intentional:** if the user came via an invite link and the link is bad, we'd rather they re-try than silently create an unbound account. Rationale: the invite preview was server-rendered just seconds ago, so a redeem failure mid-flight means a real race (someone else used it) OR the inviter just lost the teacher role — not a UX papercut. Better to fail loud than create the account and silently drop the binding.
    - If `redeemed.teacherAccountId` returned: `UPDATE accounts SET assigned_teacher_id = $1 WHERE id = $2` inside the same TX, with `teacher_account_id` taken FROM THE DB RETURNING CLAUSE, never from the client-submitted `inviteId` or `inviteToken.tid`. This is the load-bearing anti-spoof guarantee.
-4. Verify-email token + Resend dispatch fire AFTER commit — these are best-effort side effects, not transactional.
+6. `COMMIT`.
+
+**Risk acknowledgement (NEW — round-2 BLOCKER#4 follow-up):** putting Resend dispatch inside TX1 means the transaction holds row-locks during external HTTP I/O. Resend's median latency is ~200 ms and timeout cap is 10 s in `lib/email/client.ts`. With ~5/hour rate limit on invite generation + similar order on register, the lock-contention window is negligible at MVP scale. Risk #R7 (NEW) covers a tightened `sendVerifyEmail` timeout (5 s, fail fast) as the mitigation.
 
 **Edge case — invite present but role='teacher' submitted:**
 The form pre-locks the role to `student` for invited registers. But a forged POST body could attempt `{ role: 'teacher', inviteToken: '…' }`. Server rule: **if `inviteToken` verifies, force role to `student`**, ignoring the body's role. Document this in route comment and assert via test (TINV.6.4).
@@ -303,7 +407,28 @@ The existing-email branch fires. The invite is NOT redeemed (the existing email 
 
 ### 3.8 Cabinet UI — teacher invite section
 
-`app/cabinet/teacher-section.tsx` gets a sibling card OR a new component `<TeacherInviteSection>` rendered between `<TeacherSection>` and `<TeacherLearnersSection>` in `app/cabinet/page.tsx:156-164`.
+`app/cabinet/teacher-section.tsx` gets a sibling card OR a new component `<TeacherInviteSection isVerified={boolean}>` rendered between `<TeacherSection>` and `<TeacherLearnersSection>` in `app/cabinet/page.tsx:156-164`. The `isVerified` prop is passed down from `app/cabinet/page.tsx` (already computed at line 65: `const isVerified = account.emailVerifiedAt !== null`).
+
+**Round-2 WARN#9 closure — !isVerified placeholder render:**
+
+```tsx
+export function TeacherInviteSection({ isVerified }: { isVerified: boolean }) {
+  if (!isVerified) {
+    return (
+      <section className="card">
+        <h3>Пригласить ученика</h3>
+        <p>Чтобы открыть приглашения учеников, подтвердите свой e-mail.</p>
+        <ResendVerifyButton />
+      </section>
+    )
+  }
+  return <ActiveInviteSection />  // Full UI below
+}
+```
+
+When `!isVerified` the active controls (`[Создать ссылку]`, `[Отозвать]`, list of invites) are NOT rendered. A forged POST attempt still 403s server-side via `requireTeacherAndVerified`, AND the UI matches that reality. No "click button → 403 → confusing error toast" loop.
+
+**Verified state (full UI):**
 
 ```
 Пригласить ученика
@@ -436,33 +561,58 @@ Each sub-PR is independently merge-able + self-tested + carries `Codex-Paranoia:
 - `lib/audit/auth-events.ts:11-19` — extend `AUTH_AUDIT_EVENT_TYPES` tuple to match.
 - `lib/auth/teacher-invites.ts` — env-read helper for `TEACHER_INVITE_SECRET`. Mirror `lib/auth/email-hash.ts:15-32` exactly: prod-required, dev-fallback, no module-scope cache.
 - README addendum: `TEACHER_INVITE_SECRET` env var documented in `lib/auth/README.md` + `.env.example`.
-- Prod runbook addendum: `docs/operations.md` — "Before deploying TINV.X, set `TEACHER_INVITE_SECRET` on the VPS via `systemctl edit levelchannel.service` env override + restart". **Env-flip race rule: secret MUST be live before TINV.2 code path can read it.**
+- Prod runbook addendum: `OPERATIONS.md` — "Before deploying TINV.X, set `TEACHER_INVITE_SECRET` on the VPS via `systemctl edit levelchannel.service` env override + restart". **Env-flip race rule: secret MUST be live before TINV.2 code path can read it.**
 
 Tests: migration applies clean on a fresh DB; rollback (manual SQL) is documented; `AUTH_AUDIT_EVENT_TYPES` matches SQL CHECK (drift test).
 
-### TINV.2 — Lib `teacher-invites.ts` (sign/verify/create/redeem)
+### TINV.2 — Helper refactor (round-2 BLOCKER#1 ownership)
 
-- `signInviteToken`, `verifyInviteToken`, `createInviteForTeacher`, `redeemInviteAtomic`.
+**This sub-PR exists explicitly to close round-2 BLOCKER#1.** Adds `(executor: PoolClient | Pool, ...)` variants to four pool-only helpers so the new register-TX path can pass its `client`:
+
+- `createAccount` in `lib/auth/accounts.ts:88` — gains executor param.
+- `recordConsent` in `lib/auth/consents.ts:55` — gains executor param.
+- `grantAccountRole` in `lib/auth/accounts.ts:268` — gains executor param.
+- `createEmailVerification` in `lib/auth/verifications.ts:8` — gains executor param.
+
+All existing call-sites get a mechanical pass: `await createAccount({...})` → `await createAccount(pool, {...})`. Approximate touch: 8 call-sites across the codebase (counted at impl).
+
+Test `TINV.2.1` asserts dual-signature contract: same helper called with `pool` and with a `client` inside `BEGIN`/`COMMIT` produces equivalent DB state. Pure migration; no behaviour change for existing flows.
+
+This sub-PR lands BEFORE TINV.3 (which uses the new signatures). Half-merged state is impossible.
+
+### TINV.3 — Lib `teacher-invites.ts` (sign/verify/create/redeem)
+
+- `signInviteToken`, `verifyInviteToken`, `createInviteForTeacher`, `redeemInviteAtomic` (uses the CTE INNER JOIN from §3.5).
+- New helper `enforceAccountRateLimit` in `lib/security/account-rate-limit.ts` (round-2 WARN#5+#6 closure).
+- New wrapper `sendVerifyEmailOrThrow` in `lib/email/dispatch.ts` (round-2 BLOCKER#4 closure — throws on `{ ok: false }`).
 - Unit tests in `tests/unit/auth/teacher-invites.test.ts`: round-trip sign/verify, tampered HMAC rejected, expired token rejected, version mismatch rejected, malformed base64url rejected, `timingSafeEqual` on equal-length-but-different-bytes returns false.
 
-### TINV.3 — Backend endpoints
+### TINV.4 — Backend endpoints
 
 - `app/api/teacher/invites/route.ts` — POST (create), GET (list).
 - `app/api/teacher/invites/[id]/revoke/route.ts` — POST.
 - `app/api/auth/register/route.ts` — role-aware path + invite-redeem TX. **Touches the most security-sensitive route in the codebase.** Self-review pass MUST include a manual diff against `app/api/auth/register/route.ts:39-149` confirming the anti-enumeration symmetric-work shape is preserved.
 
-### TINV.4 — UI
+### TINV.5 — UI
 
 - `app/register/page.tsx` — server-component wrapper + client island. Role radio. Invite preflight.
-- `app/cabinet/teacher-section.tsx` (or new `<TeacherInviteSection>`) — invite-generation card + list.
+- `app/cabinet/teacher-section.tsx` (or new `<TeacherInviteSection>`) — invite-generation card + list, with `!isVerified` placeholder branch per §3.8.
 - Russian copy locked per §3.1 + §3.8 — orthography pass before commit.
 
-### TINV.5 — Audit-event wiring
+### TINV.6 — Audit-event wiring
 
 - All four new event types fired at the documented points.
 - Verify all rows have `email_hash` populated (the recorder enforces this — `lib/audit/auth-events.ts:48-86`).
 
-### TINV.6 — Integration tests
+### TINV.7 — Doc-sweep (round-1 WARN#7 closure)
+
+- Update `README.md` §"How to run" — add `TEACHER_INVITE_SECRET` to env-required list.
+- Update `ARCHITECTURE.md` §"API routes" (around line 254) — add `/api/teacher/invites` POST + GET, `/api/teacher/invites/[id]/revoke` POST entries.
+- Update `SECURITY.md` §"Auth and account layer" (around line 56) — add one-sentence note: "Teacher invite tokens use HMAC-SHA256 over a versioned JSON payload signed by `TEACHER_INVITE_SECRET`; redeem is single-use, expires-bound, and re-verifies inviter's `teacher` role at the moment of redeem. See `docs/plans/teacher-self-reg-invite.md` for the full contract."
+- Update `lib/auth/README.md` — add `teacher-invites.ts` to the module surface list.
+- Update `.env.example` — `TEACHER_INVITE_SECRET=<replace-with-strong-secret>` entry.
+
+### TINV.8 — Integration tests
 
 See §6.
 
@@ -517,6 +667,66 @@ See §6.
 ### 6.6 Drift test
 
 - `tests/integration/auth/auth-audit-event-types-drift.test.ts` — assert `AUTH_AUDIT_EVENT_TYPES` (TS) matches the SQL CHECK constraint enumeration on `auth_audit_events`. Pattern from `tests/integration/auth/learner-archetype-predicate.test.ts`.
+
+### 6.7 Cross-teacher list authz (round-2 WARN#8)
+
+`tests/integration/auth/teacher-invite-list-authz.test.ts`:
+- Teacher A creates invite I-A. Teacher B creates invite I-B.
+- GET /api/teacher/invites as A → returns ONLY I-A (no I-B leakage).
+- GET /api/teacher/invites as B → returns ONLY I-B (no I-A leakage).
+- Verifies `teacher_account_id = $1` SQL WHERE clause is the security boundary.
+
+### 6.7-revoke Cross-teacher revoke authz (round-2 WARN#8)
+
+`tests/integration/auth/teacher-invite-cross-revoke.test.ts`:
+- Teacher A creates invite I-A.
+- POST /api/teacher/invites/<I-A.id>/revoke as Teacher B → 404 (NOT 403; ownership-in-WHERE shape returns 0 rows, the route normalises to 404 to avoid id-existence enumeration).
+- I-A in DB: `revoked_at IS NULL` (unchanged).
+
+### 6.7-redeem Role-loss redeem fail (round-1 BLOCKER#2 + round-2 WARN#8)
+
+`tests/integration/auth/teacher-invite-role-loss-redeem.test.ts`:
+- Teacher A self-registers + verifies. Creates invite I-A.
+- Operator promotes A to admin via `grantAccountRole(A.id, 'admin', null)` — per `lib/auth/accounts.ts:268-303`, this strips consumer roles including `teacher`.
+- Anonymous POST /api/auth/register with I-A.token + fresh learner email → 409 `invite_already_used_or_expired`.
+- DB: no learner account created (TX rolled back); I-A `used_at IS NULL`.
+- Verifies the redeem CTE INNER JOIN account_roles WHERE r.role='teacher' returns 0 rows.
+
+### 6.8 Cross-teacher revoke 404 normalisation
+
+Folded into 6.7-revoke above.
+
+### 6.9 Concurrent register race on same email (round-1 BLOCKER#5)
+
+`tests/integration/auth/register-concurrent-same-email.test.ts`:
+- Two parallel POSTs to /api/auth/register with the SAME email + SAME password + SAME inviteToken, via `Promise.all`.
+- Expected outcomes (any-order acceptable):
+  - Exactly ONE returns the new-email success shape (account created in DB).
+  - The OTHER returns the symmetric already-registered shape (`{ ok: true }`, no DB write beyond the dummy lookup).
+- DB ends with exactly one `accounts` row for that email; one `teacher_invites.used_at` set; one `accounts.assigned_teacher_id` set.
+- Verifies `accounts_email_unique` 23505 is caught and normalised, not surfaced as 500.
+
+### 6.10 Anti-enumeration timing symmetry (round-1 BLOCKER#3, MANDATORY)
+
+`tests/integration/auth/register-symmetry.test.ts`:
+- 50 sequential runs each of:
+  - POST /api/auth/register with `{ email: <fresh>, password, ... }` → measure wall-clock.
+  - POST /api/auth/register with `{ email: <known-existing>, password, ... }` → measure wall-clock.
+- Compute the mean wall-clock for each branch.
+- Assert `Math.abs(mean_new - mean_existing) <= 5` ms — the ±5 ms parity budget.
+- If the assertion fails, the branch with less work is missing a dummy lookup; tighten the symmetry padding in §3.2 and re-run until parity. **This test is a release gate**, not a smoke test.
+- Run in CI on the integration suite; fails CI if budget breached.
+
+### 6.11 Per-account rate-limit key shape (round-2 WARN#5+#6)
+
+`tests/integration/auth/teacher-invite-rate-limit-key.test.ts`:
+- Teacher A POSTs /api/teacher/invites 5x from IP 10.0.0.1 → all 200.
+- Teacher A POSTs from IP 10.0.0.2 (simulated VPN rotation) → 6th call returns 429 (cap hit on `account:<A.id>:invite-generate`, regardless of IP).
+- Verifies `enforceAccountRateLimit()` uses pure account id, no IP suffix.
+
+### 6.12 IP-bypass-attempt regression (round-2 WARN#6)
+
+Folded into 6.11 above (same test asserts BOTH the cap AND the no-bypass).
 
 ---
 

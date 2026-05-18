@@ -131,6 +131,14 @@ Product is pivoting from single-teacher-channel to multi-teacher SaaS. Each task
 
 **CONFLICT-FEED — defer.** Foundation готова (BCS-F.1 wire-up закрыт PR #251); 4 design-BLOCKERs из round-1 паранойи остаются (см. `docs/plans/conflict-feed.md`). Решение product owner 2026-05-18: defer до тех пор, пока на проде не появится ≥3 учителей ИЛИ operator не пожалуется на отсутствие /admin-видимости конфликтов. До тех пор teacher banner и оператор-side SQL достаточны.
 
+### Follow-ups out of immediate SAAS-1..6 scope
+
+Captured here so future waves pick them up without re-discovering. All surfaced by `/codex-paranoia plan` rounds 2026-05-18.
+
+- **SAAS-1-FOLLOWUP-KEYBOARD** — Arrow-key cell navigation + Enter-to-create on empty cells in `/admin/slots` Calendar view. Today empty cells expose only mouse handlers on `role="gridcell"` (`components/calendar/Grid.tsx:192-195`); the primary operator action is unreachable from keyboard / screen-reader. Out of SAAS-1 wave (visual redesign only). Required to close WCAG 2.1 Operable; foundation work for accessibility wave.
+- **SAAS-INFRA-1** — Add `@testing-library/react` + `jsdom` to `vitest.config.ts` unit suite so component-render assertions can land. Today `vitest.config.ts` is `environment: 'node'` and `package.json` carries no RTL/jsdom dep; pure-function tests are the only currently-supported shape for `tests/calendar/**` and `tests/scheduling/**`. Blocking: `SlotBlock` palette-class component render coverage (deferred from SAAS-1), `cabinet-profile-page` Server Component render coverage (deferred from SAAS-5).
+- **SAAS-6-A11Y-1** — Add skip-to-content link to `<AuthShell>` and `<SiteHeader>` per `docs/design-system.md` §Accessibility. Today neither shell carries one; design-system mandates it on every shell. Foundation work for SAAS-6 design rollout; capture-only here.
+
 ## Cross-cutting backlog — 2026-05-18 (added by product owner)
 
 - **DOC-SPLIT** — Разрезать ENGINEERING_BACKLOG.md на per-epic файлы в `docs/backlog/`. Top-level `ENGINEERING_BACKLOG.md` остаётся индексом; закрытые волны — в `docs/backlog/archive/`. Цель: больше не ронять контекст-окно на одном файле в 1000+ строк.

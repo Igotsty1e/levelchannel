@@ -8,7 +8,7 @@
 
 ## 1. Goal
 
-Move two currently-inline cabinet sections — **ProfileEditor** (name + timezone) and **DangerZone** (revoke consent, delete account) — off `/cabinet` and onto a dedicated **`/cabinet/profile`** sub-route. Add a single **"⚙ Профиль"** affordance to the `/cabinet` header (top-right, next to "Выйти") that links to the new page.
+Move two currently-inline cabinet sections — **ProfileEditor** (name + timezone) and **DangerZone** (revoke consent, delete account) — off `/cabinet` and onto a dedicated **`/cabinet/profile`** sub-route. Add a single **"Профиль"** affordance to the `/cabinet` header (top-right, next to "Выйти") that links to the new page.
 
 What stays on `/cabinet`:
 - `<h1>Личный кабинет</h1>` + greeting.
@@ -98,7 +98,7 @@ Current `/cabinet` has no header strip — `<h1>` sits flush against the top of 
 - Left: empty (or breadcrumb in a future wave).
 - Right: `<Link href="/cabinet/profile">Профиль</Link>` followed by `<LogoutButton />`.
 
-Copy decision (round-1 paranoia revision 2026-05-18): **"Профиль"** as plain word, no glyph. Original draft used "⚙ Профиль" with a unicode gear; round-1 paranoia BLOCKER#4 surfaced two collisions:
+Copy decision (round-1 paranoia revision 2026-05-18): **"Профиль"** as plain word, no glyph. Original draft used "Профиль" with a unicode gear; round-1 paranoia BLOCKER#4 surfaced two collisions:
 
 1. `docs/content-style.md` bans decorative emoji in product chrome (the gear codepoint is on the unicode-emoji presentation track).
 2. `docs/design-system.md` explicitly defers iconography library choice (lucide-react vs SF-Symbols-style set) to the primitives wave. Picking an inline glyph here pre-commits a contract the foundation has not ratified.
@@ -132,7 +132,7 @@ Single back-arrow link `← Назад в кабинет` in the page header. No
 All Russian copy in this wave is checked against the project's established register (cabinet header is informal-formal: «Здравствуйте, …», "Личный кабинет" — sentence-case, no exclamations). Specifically:
 
 - **«Профиль»** — page `<h1>` and button label. Capital П, single word. (Not «Мой профиль» — possessive is redundant when the page is gated to one's own profile; design-system.md §"Voice & Tone" should canonicalise this rule.)
-- **«⚙ Профиль»** — header button. The glyph is followed by a single regular space, then the word. NOT a non-breaking space (the button is short enough that wrap is not a concern; a regular space is fine and is the established convention in the rest of the project, e.g. `app/cabinet/billing-sections.tsx`).
+- **«Профиль»** — header button label, single word. (Original draft had a leading gear glyph `⚙ Профиль`; round-1 BLOCKER#4 caught the collision with `docs/content-style.md` emoji ban + design-system iconography-deferred. Round-3 cleanup: every reference to the gear glyph in this plan has been removed; the icon-vs-word decision returns when `lib/ui/primitives/Icon.tsx` ships in SAAS-6.)
 - **«← Назад в кабинет»** — back link. Lowercase «в». Arrow is U+2190 (regular left-arrow), not the heavier U+2B05.
 - **`<title>Профиль — LevelChannel</title>`** — em-dash (U+2014) between name and product, mirroring `app/cabinet/page.tsx:48` (`'Кабинет — LevelChannel'`).
 - All ProfileEditor / DangerZone strings are reused verbatim — no copy edits in this wave.
@@ -213,7 +213,7 @@ Round-1 paranoia WARN#6 surfaced that the project's `auth-shell.tsx` and `site-h
 ## 7. Migration / rollout
 
 - **Pure code refactor.** No DB migration. No new env var. No new endpoint. No new dependency.
-- **No feature flag.** Visual change. Revertable by `git revert`. Blast radius: any user whose muscle memory expects ProfileEditor inline on /cabinet — they now click "⚙ Профиль" instead. Low.
+- **No feature flag.** Visual change. Revertable by `git revert`. Blast radius: any user whose muscle memory expects ProfileEditor inline on /cabinet — they now click "Профиль" instead. Low.
 - **Bookmarks/links.** `/cabinet` URL still valid; users land on the new (decluttered) version. `/cabinet/profile` is a new URL, no inbound links exist yet. No 301 needed.
 - **Cache.** Both routes are `dynamic = 'force-dynamic'`, runtime `nodejs`. No edge cache to invalidate.
 
@@ -232,7 +232,7 @@ Round-1 paranoia WARN#6 surfaced that the project's `auth-shell.tsx` and `site-h
 ## 9. Open questions for paranoia
 
 1. **Position of the Профиль button — header-right vs footer-pinned?** §3.ii places it header-right next to LogoutButton (Apple/macOS account-menu convention). Is footer-pinned (mobile thumb-zone) a stronger choice for a Russian learner audience that's mostly on mobile? Need user data — currently unavailable; defaulting to header-right.
-2. **Glyph vs word — `⚙ Профиль` vs `⚙` icon-only vs avatar circle?** §3.ii argues for `⚙ Профиль`. Codex challenge: would avatar-circle be more learnable? My counter: no avatar uploads exist (`profile-editor.tsx` collects name + timezone only — no `photoUrl`), so an avatar circle would be a coloured-initial placeholder, which is more visual noise than `⚙ Профиль`. Defer until avatar-upload wave (not on roadmap).
+2. **Word vs icon vs avatar circle?** §3.ii argues for plain word `Профиль`. Round-1 paranoia BLOCKER#4 resolved this: emoji glyphs are banned in product chrome by `docs/content-style.md`, and design-system iconography (lucide-react vs custom set) is deferred to `lib/ui/primitives/Icon.tsx`. Plain word is the safe choice; an `<Icon name="settings"/>` swap is a one-line follow-up after SAAS-6 primitives land. Avatar-circle is deferred until avatar-upload wave (not on roadmap).
 3. **Does ResendVerifyButton also move to /cabinet/profile?** §1 says NO — it stays inline on `/cabinet` as part of the verify banner. Argument for moving: profile-management is "the place" for email actions. Argument against: the banner is an INTERRUPT, not a setting; moving it hides the resend action behind a navigation step. I lean against the move; paranoia-confirm.
 4. **Do we keep the `tests/integration/cabinet/cabinet-page.test.ts` work item?** §6.ii says NO — that file doesn't exist today, and introducing a new SSR smoke test for /cabinet is its own follow-up. Task brief mentioned "Update tests/integration/cabinet/cabinet-page.test.ts (if exists) to assert profile sections NO LONGER appear" — the conditional is satisfied (doesn't exist → no update needed). Paranoia-confirm scope cut is acceptable.
 5. **Auth-gate duplication — accept now or factor out a helper?** §3.i deliberately copies the 10-line auth gate from `app/cabinet/page.tsx:51-83`. Pros of copy: no abstraction debt, identical behaviour by inspection. Cons: two sites to keep in sync. A `requireCabinetSession()` helper in `lib/auth/guards.ts` would be the right move — but the project already has `requireLearnerArchetypeAndVerified` (returns 401 JSON, not SSR redirect) which is a different shape. Introducing a third guard shape adds API-surface entropy. Paranoia: is "copy now, DRY later" the right call?
@@ -247,19 +247,25 @@ Round-1 paranoia WARN#6 surfaced that the project's `auth-shell.tsx` and `site-h
 - Onboarding / forced-profile-completion flow (Q7).
 - Factoring out a shared `requireCabinetSession()` helper (Q5).
 - New SSR smoke test for `/cabinet` itself (Q4 / §6.ii).
-- Migration to an SVG icon sprite for `⚙` (§3.ii — one-line follow-up after design-system.md lands).
+- Migration from plain word `Профиль` to `<Icon name="settings"/>` after `lib/ui/primitives/Icon.tsx` ships in SAAS-6 (one-line follow-up).
 - Moving ResendVerifyButton onto /cabinet/profile (Q3 — explicitly NO in §1).
 - Adding a "your account is scheduled for deletion" banner for grace-period users (§4 case F).
 
 ## 11. Acceptance criteria (definition of done)
 
+**Round-2 paranoia revision 2026-05-18:** test paths updated to the unit-suite location matching §6 pivot (round-1 BLOCKER#1). Negative test is now mandatory (round-2 BLOCKER#2).
+
 - [ ] `app/cabinet/profile/page.tsx` exists, server-rendered, gated on session, redirects admin → `/admin`.
 - [ ] `app/cabinet/page.tsx` no longer mounts `<ProfileEditor />` or `<DangerZone />`.
-- [ ] `app/cabinet/page.tsx` mounts `<Link href="/cabinet/profile">⚙ Профиль</Link>` + `<LogoutButton />` in a flex header row above `<h1>`.
+- [ ] `app/cabinet/page.tsx` mounts `<Link href="/cabinet/profile">Профиль</Link>` + `<LogoutButton />` in a flex header row above `<h1>`.
 - [ ] LogoutButton no longer rendered at the bottom of `/cabinet`.
 - [ ] `app/cabinet/profile/page.tsx` has `metadata.robots = { index: false, follow: false }`.
-- [ ] All 7 cases in `tests/integration/cabinet/profile-page.test.ts` pass.
-- [ ] `npm run test:integration` green; `npm run build` green; `npm run typecheck` green.
+- [ ] All 7 cases in `tests/scheduling/cabinet-profile-page.test.ts` (unit suite, NOT integration — round-1 BLOCKER#1) pass.
+- [ ] All 4 cases in `tests/scheduling/cabinet-main-page.test.ts` (round-2 BLOCKER#2 negative-assertion test) pass — including assertions that "Часовой пояс" and "Опасные действия" substrings are ABSENT from /cabinet markup.
+- [ ] `ARCHITECTURE.md` cabinet section updated to point at `/cabinet/profile` for ProfileEditor + DangerZone (round-1 WARN#5).
+- [ ] `ENGINEERING_BACKLOG.md` carries the `SAAS-6-A11Y-1` follow-up entry (round-1 WARN#6 — already added in scoping-wave PR #286).
+- [ ] **Test-tooling deps** (`@testing-library/react` + `jsdom` if required by Server Component invocation pattern, OR `react-dom/server.renderToStaticMarkup` if string-snapshot approach is sufficient — verify at implementation) added to `package.json` devDeps as part of this PR. If RTL/jsdom path chosen, `vitest.config.ts` (NOT `vitest.integration.config.ts`) gains `environment: 'jsdom'` for cabinet test files only via vitest's per-file environment comment. Defer to `SAAS-INFRA-1` IF the lift is too large; in that case the page-component test is dropped from this wave and the negative-assertion test on /cabinet runs without Server-Component import (assert by reading source-file imports + grep-style assertions; less robust but unblocks the wave).
+- [ ] `npm run test:unit` (or whatever the unit-suite script is named) green; `npm run build` green; `npm run typecheck` green. Integration suite (`npm run test:integration`) stays green but contains no NEW assertions for this wave.
 - [ ] Visual screenshots (desktop + mobile, both routes) in PR body.
 - [ ] PR commit body carries `Codex-Paranoia: SIGN-OFF round N/3` (single-PR epic; standard wave trailer).
 - [ ] No DB / API / env changes.

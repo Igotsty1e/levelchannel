@@ -183,7 +183,7 @@ current ymd:
 Day header for today renders the day number inside an accent-filled
 circle (Apple pattern):
 `<span class="day-number-today">15</span>` →
-`background: var(--accent); color: var(--accent-contrast); border-radius: 50%`.
+`background: var(--accent); color: var(--text-on-accent); border-radius: 50%`.
 
 ### 3.4 Sticky day-header row
 
@@ -215,7 +215,7 @@ Palette is in a new `lib/calendar/palette.ts` (shareable, testable):
 | `booked-self`            | `--accent`       | 0.18 | accent        | 3 px solid  |
 | `booked-other` / `-full` | `--neutral`      | 0.10 | `--secondary` | 3 px solid  |
 | `past-full` / `-redacted`| `--neutral-dim`  | 0.08 | `--muted`     | 3 px solid  |
-| conflict overlay         | `--status-error` | 0.18 | error         | 3 px solid (cascade-overrides kind) |
+| conflict overlay         | `--danger` | 0.18 | error         | 3 px solid (cascade-overrides kind) |
 
 ```css
 .calendar-slot-block {
@@ -232,9 +232,9 @@ Palette is in a new `lib/calendar/palette.ts` (shareable, testable):
 .calendar-slot-block:hover     { background-color: rgba(var(--chip-accent-rgb), 0.25); }
 .calendar-slot-block:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .calendar-slot-conflict {
-  border-left-color: var(--status-error);
-  background-color: rgba(var(--status-error-rgb), 0.18);
-  color: var(--status-error-fg);
+  border-left-color: var(--danger);
+  background-color: rgba(var(--danger-rgb), 0.18);
+  color: var(--danger-fg);
 }
 ```
 
@@ -251,7 +251,7 @@ displayed week contains today (MSK):
 .calendar-now-line {
   position: absolute; left: 0; right: 0;
   height: 0;
-  border-top: 1px solid var(--status-error);
+  border-top: 1px solid var(--danger);
   z-index: 7;
   pointer-events: none;
 }
@@ -260,7 +260,7 @@ displayed week contains today (MSK):
   left: -4px; top: -4px;
   width: 8px; height: 8px;
   border-radius: 50%;
-  background: var(--status-error);
+  background: var(--danger);
 }
 ```
 
@@ -270,7 +270,7 @@ axis). Updates every 60 s via `useInterval`.
 ### 3.7 Responsive — MobileFallback breakpoint
 
 `useNarrowContainer` (`MobileFallback.tsx`) — **threshold stays at
-~900 px container width** (design-system §Spacing breakpoint "md"). The
+~720 px (verified from `components/calendar/MobileFallback.tsx:40`) container width** (design-system §Spacing breakpoint "md"). The
 fallback renders the per-day list, same as today. No visual change in
 fallback land in MVP.
 
@@ -341,7 +341,7 @@ grid). SlotBlock is already a focusable `<button>`; that stays. New
 
 **Round-1 paranoia revision 2026-05-18:** added 5.docs (doc-sweep, WARN#7), revised 5.A scope (token-blast-radius, WARN#5+#6), added 5.F drag-math-coverage (BLOCKER#3).
 
-**5.A — design tokens, SCOPED to `:root`-scope `.saas-chrome`.** Round-1 WARN#5: `app/globals.css :root` vars (`--bg`, `--text`, `--accent` etc.) are consumed by `/pay`, `/admin/(gated)/layout.tsx`, marketing landing. Touching them changes blast radius beyond /admin/slots. Per `docs/design-system.md` §"Migration baseline" Phase 0, scope SaaS tokens under a class selector applied to the admin/cabinet/auth shell wrappers (e.g. `.saas-chrome { --text-on-accent: ...; --danger: ...; }`), NOT `:root`. /admin/slots calendar renders inside `.saas-chrome` and consumes these; /pay does not, stays on its current palette. **Token names align with design-system: `--text-on-accent` (not `--accent-contrast`), `--danger` (not `--status-error`), `--info`, `--success`, `--warning`** (round-1 WARN#6).
+**5.A — design tokens, SCOPED to `:root`-scope `.saas-chrome`.** Round-1 WARN#5: `app/globals.css :root` vars (`--bg`, `--text`, `--accent` etc.) are consumed by `/pay`, `/admin/(gated)/layout.tsx`, marketing landing. Touching them changes blast radius beyond /admin/slots. Per `docs/design-system.md` §"Migration baseline" Phase 0, scope SaaS tokens under a class selector applied to the admin/cabinet/auth shell wrappers (e.g. `.saas-chrome { --text-on-accent: ...; --danger: ...; }`), NOT `:root`. /admin/slots calendar renders inside `.saas-chrome` and consumes these; /pay does not, stays on its current palette. **Token names align with design-system: `--text-on-accent` (not `--text-on-accent`), `--danger` (not `--danger`), `--info`, `--success`, `--warning`** (round-1 WARN#6).
 
 **5.B — hour-grid constants + axis labels.** `lib/calendar/dates.ts` adds `CALENDAR_HOUR_ROW_PX=90`, `CALENDAR_GRID_START_HOUR=6`, `CALENDAR_GRID_END_HOUR_EXCLUSIVE=24`, `CALENDAR_GRID_VISIBLE_ROWS=18`, `CALENDAR_GRID_DAY_HEIGHT_PX_V2=1620` (keeps old 35-row consts for transition). `lib/calendar/view-model.ts` adds `hourAxisLabels()` (length 18), marks `timeAxisLabels()` `@deprecated`. Tests: extend `dates.test.ts` + `view-model.test.ts` with the 22:00→23:30 geometry case from §3.1.
 
@@ -399,7 +399,7 @@ rollback). Rollout: 5.A → 5.B → 5.C (smoke) → 5.D (smoke) → 5.E
 | R7 | `setInterval` leak on unmount | Low | `useEffect` cleanup; pattern reused from Toolbar. |
 | R8 | Hidden caller of `CALENDAR_GRID_DAY_HEIGHT_PX` | Low | Grep shows 2 hits; keep-and-deprecate handles a 3rd. |
 | R9 | High-contrast / forced-colors mode | Medium | `border-left` is structural; design-system §Color has `forced-colors: active` fallbacks. |
-| R10 | MobileFallback hides redesign on 720 px (verified from `components/calendar/MobileFallback.tsx:40-61`, NOT 900 px as round-1 draft claimed) | Low | Container ~1100 px nominal; existing 720 px breakpoint stays; round-1 WARN#4 surfaced the misreading. |
+| R10 | MobileFallback hides redesign on 720 px (verified from `components/calendar/MobileFallback.tsx:40-61`, NOT 720 px as round-1 draft claimed) | Low | Container ~1100 px nominal; existing 720 px breakpoint stays; round-1 WARN#4 surfaced the misreading. |
 | R11 | `:focus-visible` ring vs browser default outline | Low | Chip declares `border: none`; outline is explicit. |
 | R12 | New `border-left: 3 px` eats padding on narrow columns | Low | 130 px column worst-case still fits `18:30 – 19:30` at fontSize 12 with 11 px left padding. |
 
@@ -408,8 +408,8 @@ rollback). Rollout: 5.A → 5.B → 5.C (smoke) → 5.D (smoke) → 5.E
 1. **Half-hour legibility.** Is dotted sub-tick + chip's own `HH:MM`
    label enough? Fallback: dashed sub-tick or start-minute superscript.
 2. **Today day-number circle: `--accent` (green, brand) or
-   `--status-error` (red, Apple precedent)?** Held for paranoia.
-3. **MobileFallback breakpoint 900 px — too generous?** Confirm via
+   `--danger` (red, Apple precedent)?** Held for paranoia.
+3. **MobileFallback breakpoint 720 px — too generous?** Confirm via
    operator survey before tightening.
 4. **Keyboard nav deferral — WCAG 2.1 Operable risk?** SlotBlock is a
    focusable `<button>` (Tab + Enter work). Missing: arrow-key cell
@@ -434,23 +434,32 @@ rollback). Rollout: 5.A → 5.B → 5.C (smoke) → 5.D (smoke) → 5.E
 2. `SLOT_GRID_MINUTES = 30` is the schema's source of truth.
 3. Drag-state coords stay half-hour `0..35`. Any future "1-minute grid"
    needs reducer + DB CHECK migrated in lockstep.
-4. `MobileFallback` stays the < 900 px container path.
+4. `MobileFallback` stays the < 720 px container path.
 5. Chip classes are the styling contract (SlotBlock writes classes;
    design-system owns rules). Inline `style` only for absolute-position
    math (`top` / `height`).
 6. Today highlight + now-line render only when displayed week contains
    today (MSK). Never off-week.
 
-## 11. Files touched (≈ 500 LoC over 5 sub-PRs; each ≤ ~150)
+## 11. Files touched (≈ 550 LoC over 7 sub-PRs — 5.A..5.F + 5.docs; each ≤ ~150)
 
 `lib/calendar/dates.ts` (+20), `lib/calendar/view-model.ts` (+10/-2),
-`lib/calendar/palette.ts` NEW (+60), `components/calendar/Grid.tsx`
-(+60/-30), `components/calendar/SlotBlock.tsx` (+30/-50),
+`lib/calendar/palette.ts` NEW (+60),
+`lib/calendar/grid-hit-test.ts` NEW (+40 — extracted from Grid/SlotCalendar per 5.F),
+`components/calendar/Grid.tsx` (+60/-30),
+`components/calendar/SlotBlock.tsx` (+30/-50),
 `components/calendar/CurrentTimeIndicator.tsx` NEW (+90),
-`app/globals.css` (+120), `tests/calendar/dates.test.ts` (+10),
-`tests/calendar/view-model.test.ts` (+10),
-`tests/calendar/slot-block-render.test.tsx` NEW (+60),
-`tests/calendar/current-time.test.ts` NEW (+60).
+`app/globals.css` (+120 under `.saas-chrome` selector, NOT `:root`),
+`tests/calendar/dates.test.ts` (+15 — includes 22:00→23:30 geometry pin),
+`tests/calendar/view-model.test.ts` (+15),
+`tests/calendar/grid-hit-test.test.ts` NEW (+50 — round-1 BLOCKER#3),
+`tests/calendar/palette.test.ts` NEW (+30 — pure-function class-name lookup),
+`tests/calendar/current-time.test.ts` NEW (+60),
+`ARCHITECTURE.md` (doc-sweep: calendar section +5),
+`lib/calendar/README.md` (doc-sweep: +3 if needed),
+`ENGINEERING_BACKLOG.md` (SAAS-1-FOLLOWUP-KEYBOARD + SAAS-INFRA-1 entries +6).
+
+**REMOVED from the wave (round-1 BLOCKER#2):** the original `tests/calendar/slot-block-render.test.tsx` jsdom + RTL test. `vitest.config.ts` is `environment: 'node'` with no jsdom dep; component-render assertions deferred to `SAAS-INFRA-1` backlog item.
 
 ## 12. Out-of-scope
 
