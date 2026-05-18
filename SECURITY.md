@@ -64,6 +64,25 @@ do work.
   in place (Phase 1B Lane A):** `lib/email/config.ts` throws on module
   load if `RESEND_API_KEY` or `AUTH_RATE_LIMIT_SECRET` is empty under
   `NODE_ENV=production`.
+- **teacher invite-link tokens (SAAS-3+4, 2026-05-18):** HMAC-SHA256
+  over a versioned JSON payload `{ v:1, iid, tid, exp }` signed by
+  `TEACHER_INVITE_SECRET` (distinct trust boundary from
+  `AUTH_RATE_LIMIT_SECRET`; rotation rejects outstanding invites).
+  Wire format: `base64url(payload).base64url(hmac)`. Verify uses
+  `timingSafeEqual` on equal-length buffers. Redeem is single-use,
+  expires-bound (7 days default), and re-verifies the inviter still
+  holds the `teacher` role at the moment of redeem via an EXISTS
+  sub-query inside a single-statement writable CTE
+  (`redeemInviteAndBindLearnerAtomic`) — closes the round-3 race
+  window where an admin demotes the teacher between the role-check
+  and the `accounts.assigned_teacher_id` UPDATE. Anti-spoof:
+  `assigned_teacher_id` comes from the DB CTE's `teacher_account_id`,
+  NEVER from the client-submitted `inviteToken.tid` or hidden form
+  field. Auto-synthesized by `scripts/activate-prod-ops.sh` on first
+  prod activation (operator-opaque, same OPAQUE contract as
+  `CRON_SHARED_SECRET`). See
+  [`docs/plans/teacher-self-reg-invite.md`](docs/plans/teacher-self-reg-invite.md)
+  for the full contract.
 - per-email rate-limit scopes (`lib/auth/email-hash.ts`) keyed by a
   dedicated `AUTH_RATE_LIMIT_SECRET`. **Do not reuse**
   `TELEMETRY_HASH_SECRET`: different trust boundaries - the telemetry

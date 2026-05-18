@@ -34,6 +34,7 @@ Owns:
 | `timezones.ts` | IANA TZ whitelist |
 | `pool.ts` | `getAuthPool()` (delegates to `getDbPool()`; legacy boundary) |
 | `client.ts` | client-side session helpers (Next.js components) |
+| `teacher-invites.ts` | SAAS-3+4 (2026-05-18). HMAC sign/verify primitives + DB-bound `createInviteForTeacher` / `listInvitesForTeacher` / `revokeInvite` / `redeemInviteAndBindLearnerAtomic` (single-statement CTE with EXISTS role-check). `TEACHER_INVITE_SECRET` per-call env read. Migration 0057 owns the schema. |
 
 ## Invariants
 
