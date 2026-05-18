@@ -82,8 +82,14 @@ required_env_keys=(
 # BCS-OP-ROLLOUT plan §5 OP.3 (round 2 BLOCKER #3) — operator-OPAQUE
 # auto-generated env keys. Synthesised on first run when missing from
 # $ENV_FILE; NOT part of the operator-supplied required_env_keys gate.
+#
+# SAAS-3+4 TINV.1 (2026-05-18) — TEACHER_INVITE_SECRET joins the
+# auto-synth set. lib/auth/teacher-invites.ts boot-fails on every
+# call in production when this is unset; auto-generate to prevent
+# operator footgun on first prod activation after the SaaS pivot.
 auto_generated_env_keys=(
   CRON_SHARED_SECRET
+  TEACHER_INVITE_SECRET
 )
 
 for key in "${required_env_keys[@]}"; do
