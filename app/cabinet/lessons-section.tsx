@@ -225,7 +225,7 @@ export function LessonsSection({
         </h2>
         {mine.length === 0 ? (
           <p style={{ color: 'var(--secondary)', fontSize: 14 }}>
-            У вас пока нет записей. Запишитесь на свободный слот ниже.
+            У вас пока нет записей. Выберите свободное время ниже.
           </p>
         ) : (
           <>

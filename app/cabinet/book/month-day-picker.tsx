@@ -202,7 +202,7 @@ export function MonthDayPicker({ tz }: { tz: string }) {
               role="gridcell"
               disabled={!isAvailable || isPast}
               onClick={() => router.push(`/cabinet/book/${cellYmd}`)}
-              aria-label={`${day} ${MONTH_NAMES[view.monthIdx]}${isAvailable ? ', свободные слоты' : ''}`}
+              aria-label={`${day} ${MONTH_NAMES[view.monthIdx]}${isAvailable ? ', свободное время' : ''}`}
               style={{
                 background: isAvailable && !isPast
                   ? 'rgba(59, 130, 246, 0.15)'
@@ -263,7 +263,7 @@ export function MonthDayPicker({ tz }: { tz: string }) {
             textAlign: 'center',
           }}
         >
-          На этот месяц свободных слотов нет.
+          На этот месяц свободного времени нет.
         </p>
       ) : null}
     </div>
