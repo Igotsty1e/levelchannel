@@ -70,17 +70,21 @@ export default async function AdminLayout({ children }: { children: ReactNode })
             Админка
           </p>
           <nav style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <AdminNavLink href="/admin">Дашборд</AdminNavLink>
-            <AdminNavLink href="/admin/accounts">Аккаунты</AdminNavLink>
+            {/* SAAS-2 admin menu rename (2026-05-18) per docs/content-style.md §7.
+                Goal: replace technical / unclear labels with operator-friendly
+                Russian copy. URLs stay unchanged to preserve bookmarks +
+                operator runbooks. */}
+            <AdminNavLink href="/admin">Сводка</AdminNavLink>
+            <AdminNavLink href="/admin/accounts">Учётные записи</AdminNavLink>
             <AdminNavLink href="/admin/pricing">Тарифы</AdminNavLink>
-            <AdminNavLink href="/admin/packages">Пакеты</AdminNavLink>
-            <AdminNavLink href="/admin/slots">Слоты</AdminNavLink>
+            <AdminNavLink href="/admin/packages">Пакеты занятий</AdminNavLink>
+            <AdminNavLink href="/admin/slots">Занятия</AdminNavLink>
             <AdminNavLink href="/admin/payments">Платежи</AdminNavLink>
             <AdminNavLink href="/admin/refunds">Возвраты</AdminNavLink>
             <AdminNavLink href="/admin/debt-summary">Задолженности</AdminNavLink>
-            <AdminNavLink href="/admin/legal">Документы</AdminNavLink>
-            <AdminNavLink href="/admin/settings/alerts">Алерты</AdminNavLink>
-            <AdminNavLink href="/admin/reconciliation">Реконсилиация</AdminNavLink>
+            <AdminNavLink href="/admin/legal">Документы и соглашения</AdminNavLink>
+            <AdminNavLink href="/admin/settings/alerts">Уведомления оператора</AdminNavLink>
+            <AdminNavLink href="/admin/reconciliation">Сверка платежей</AdminNavLink>
           </nav>
           <p
             style={{
