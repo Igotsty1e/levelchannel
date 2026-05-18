@@ -15,6 +15,21 @@ function formatRub(kopecks: number): string {
   })
 }
 
+// SAAS-2 (2026-05-19) — DB enum `lesson_slot` mapped to operator-readable
+// Russian per docs/content-style.md §4 ("Никогда не показывать имя
+// статуса БД пользователю"). Map intentionally returns the input
+// verbatim for unknown values so a future schema CHECK extension
+// (e.g. `'package_unit'`) renders without crashing the admin page
+// until the next i18n pass catches up.
+function refundKindLabel(kind: string): string {
+  switch (kind) {
+    case 'lesson_slot':
+      return 'возврат за занятие'
+    default:
+      return kind
+  }
+}
+
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString('ru-RU', {
     year: 'numeric',
@@ -101,7 +116,7 @@ export default async function AdminRefundsPage({
                     {r.paymentOrderId}
                   </Link>
                 </Td>
-                <Td>{r.kind}</Td>
+                <Td>{refundKindLabel(r.kind)}</Td>
                 <Td>
                   <code style={{ fontSize: 12 }}>{r.targetId.slice(0, 8)}…</code>
                 </Td>
