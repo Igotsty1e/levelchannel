@@ -4,8 +4,8 @@ import { NO_STORE } from '@/lib/api/http-headers'
 import { recordAuthAuditEvent } from '@/lib/audit/auth-events'
 import { requireTeacherAndVerified } from '@/lib/auth/guards'
 import { revokeInvite } from '@/lib/auth/teacher-invites'
+import { enforceAccountRateLimit } from '@/lib/security/account-rate-limit'
 import {
-  enforceRateLimit,
   enforceTrustedBrowserOrigin,
   getClientIp,
 } from '@/lib/security/request'
@@ -30,9 +30,9 @@ export async function POST(
   const auth = await requireTeacherAndVerified(request)
   if (!auth.ok) return auth.response
 
-  const rl = await enforceRateLimit(
-    request,
-    `teacher:invite-revoke:${auth.account.id}`,
+  const rl = await enforceAccountRateLimit(
+    auth.account.id,
+    'invite-revoke',
     30,
     60 * 60_000,
   )
