@@ -139,10 +139,13 @@ describe('TINV.8 — teacher invite-link integration', () => {
     )
     const { url } = await createRes.json()
     const token = decodeURIComponent((url as string).match(/invite=([^&]+)/)![1])
-    // Flip last char of HMAC.
+    // Flip FIRST char of HMAC (same as the unit-test fix in #305):
+    // last-char flips can land on base64 padding bits and decode to
+    // the same bytes — first-char flips always change the high byte.
     const [payloadEnc, hmac] = token.split('.')
-    const tampered =
-      payloadEnc + '.' + hmac.slice(0, -1) + (hmac.slice(-1) === 'A' ? 'B' : 'A')
+    const firstChar = hmac.slice(0, 1)
+    const flippedFirst = firstChar === 'A' ? 'B' : 'A'
+    const tampered = payloadEnc + '.' + flippedFirst + hmac.slice(1)
 
     const regRes = await registerHandler(
       buildRequest('/api/auth/register', {
