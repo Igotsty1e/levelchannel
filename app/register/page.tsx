@@ -12,6 +12,7 @@ export default function RegisterPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [role, setRole] = useState<'student' | 'teacher'>('student')
   const [consent, setConsent] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -29,6 +30,7 @@ export default function RegisterPage() {
       email: email.trim(),
       password,
       personalDataConsentAccepted: true,
+      role,
     })
     if (result.ok) {
       router.push(`/verify-pending?email=${encodeURIComponent(email.trim())}`)
@@ -74,6 +76,70 @@ export default function RegisterPage() {
             style={authInputStyle}
           />
         </AuthField>
+
+        <fieldset
+          style={{
+            border: 'none',
+            margin: '0 0 16px',
+            padding: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+          }}
+        >
+          <legend
+            style={{
+              color: 'var(--secondary)',
+              fontSize: 13,
+              marginBottom: 6,
+              padding: 0,
+            }}
+          >
+            Кто вы?
+          </legend>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              fontSize: 14,
+              color: 'var(--text)',
+              cursor: 'pointer',
+            }}
+          >
+            <input
+              type="radio"
+              name="role"
+              value="student"
+              checked={role === 'student'}
+              onChange={() => setRole('student')}
+              disabled={submitting}
+              style={{ accentColor: '#C87878' }}
+            />
+            <span>Я ученик — буду заниматься с учителем</span>
+          </label>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              fontSize: 14,
+              color: 'var(--text)',
+              cursor: 'pointer',
+            }}
+          >
+            <input
+              type="radio"
+              name="role"
+              value="teacher"
+              checked={role === 'teacher'}
+              onChange={() => setRole('teacher')}
+              disabled={submitting}
+              style={{ accentColor: '#C87878' }}
+            />
+            <span>Я учитель — буду проводить занятия</span>
+          </label>
+        </fieldset>
 
         <label
           style={{
