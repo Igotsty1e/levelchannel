@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { FormEvent, useState } from 'react'
 
 import { AuthShell } from '@/components/auth-shell'
@@ -10,8 +10,17 @@ import { postAuthJson } from '@/lib/auth/client'
 
 export default function RegisterPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  // SAAS-4 (2026-05-18) — capture the invite token from the URL. The
+  // server-side preflight (validity + inviting teacher's email) is
+  // intentionally out of scope for this slice: the client passes the
+  // token to /api/auth/register, which verifies HMAC + redeems
+  // atomically. A future polish PR can add a /api/teacher/invites/
+  // preview endpoint to render «Вас пригласил <email>» before submit.
+  const inviteToken = searchParams.get('invite') ?? null
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  // An invited learner has role pre-locked to student.
   const [role, setRole] = useState<'student' | 'teacher'>('student')
   const [consent, setConsent] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -30,7 +39,8 @@ export default function RegisterPage() {
       email: email.trim(),
       password,
       personalDataConsentAccepted: true,
-      role,
+      role: inviteToken ? 'student' : role,
+      ...(inviteToken ? { inviteToken } : {}),
     })
     if (result.ok) {
       router.push(`/verify-pending?email=${encodeURIComponent(email.trim())}`)
@@ -77,69 +87,86 @@ export default function RegisterPage() {
           />
         </AuthField>
 
-        <fieldset
-          style={{
-            border: 'none',
-            margin: '0 0 16px',
-            padding: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-          }}
-        >
-          <legend
+        {inviteToken ? (
+          <div
             style={{
-              color: 'var(--secondary)',
-              fontSize: 13,
-              marginBottom: 6,
+              padding: '12px 14px',
+              borderRadius: 8,
+              background: 'rgba(34,197,94,0.12)',
+              border: '1px solid rgba(34,197,94,0.35)',
+              color: '#bbf7d0',
+              fontSize: 14,
+              lineHeight: 1.4,
+              marginBottom: 16,
+            }}
+          >
+            Вы регистрируетесь по приглашению учителя. После регистрации вы будете автоматически привязаны к этому учителю.
+          </div>
+        ) : (
+          <fieldset
+            style={{
+              border: 'none',
+              margin: '0 0 16px',
               padding: 0,
-            }}
-          >
-            Кто вы?
-          </legend>
-          <label
-            style={{
               display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              fontSize: 14,
-              color: 'var(--text)',
-              cursor: 'pointer',
+              flexDirection: 'column',
+              gap: 8,
             }}
           >
-            <input
-              type="radio"
-              name="role"
-              value="student"
-              checked={role === 'student'}
-              onChange={() => setRole('student')}
-              disabled={submitting}
-              style={{ accentColor: '#C87878' }}
-            />
-            <span>Я ученик — буду заниматься с учителем</span>
-          </label>
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              fontSize: 14,
-              color: 'var(--text)',
-              cursor: 'pointer',
-            }}
-          >
-            <input
-              type="radio"
-              name="role"
-              value="teacher"
-              checked={role === 'teacher'}
-              onChange={() => setRole('teacher')}
-              disabled={submitting}
-              style={{ accentColor: '#C87878' }}
-            />
-            <span>Я учитель — буду проводить занятия</span>
-          </label>
-        </fieldset>
+            <legend
+              style={{
+                color: 'var(--secondary)',
+                fontSize: 13,
+                marginBottom: 6,
+                padding: 0,
+              }}
+            >
+              Кто вы?
+            </legend>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                fontSize: 14,
+                color: 'var(--text)',
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="radio"
+                name="role"
+                value="student"
+                checked={role === 'student'}
+                onChange={() => setRole('student')}
+                disabled={submitting}
+                style={{ accentColor: '#C87878' }}
+              />
+              <span>Я ученик — буду заниматься с учителем</span>
+            </label>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                fontSize: 14,
+                color: 'var(--text)',
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="radio"
+                name="role"
+                value="teacher"
+                checked={role === 'teacher'}
+                onChange={() => setRole('teacher')}
+                disabled={submitting}
+                style={{ accentColor: '#C87878' }}
+              />
+              <span>Я учитель — буду проводить занятия</span>
+            </label>
+          </fieldset>
+        )}
 
         <label
           style={{

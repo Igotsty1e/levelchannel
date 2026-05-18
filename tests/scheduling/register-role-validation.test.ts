@@ -84,6 +84,9 @@ describe('SAAS-3 /api/auth/register route', () => {
 
   it('audit payload includes the role on the new-email branch', () => {
     const src = read('app/api/auth/register/route.ts')
-    expect(src).toMatch(/payload:\s*\{\s*branch:\s*['"]new_account['"],\s*role:\s*requestedRole\s*\}/)
+    // SAAS-4 (TINV.4) extended the payload with boundTeacherAccountId.
+    // Match the role + branch fields without pinning the exact object shape.
+    expect(src).toMatch(/branch:\s*['"]new_account['"]/)
+    expect(src).toMatch(/role:\s*requestedRole/)
   })
 })
