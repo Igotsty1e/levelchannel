@@ -2,7 +2,11 @@ import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
 import { recordAuthAuditEvent } from '@/lib/audit/auth-events'
-import { createAccount, getAccountByEmail } from '@/lib/auth/accounts'
+import {
+  createAccount,
+  getAccountByEmail,
+  grantAccountRole,
+} from '@/lib/auth/accounts'
 import { recordConsent } from '@/lib/auth/consents'
 import { getDummyHash } from '@/lib/auth/dummy-hash'
 import { rateLimitScope } from '@/lib/auth/email-hash'
@@ -47,6 +51,7 @@ export async function POST(request: Request) {
     email?: string
     password?: string
     personalDataConsentAccepted?: boolean
+    role?: string
   }
   try {
     body = await request.json()
@@ -56,6 +61,17 @@ export async function POST(request: Request) {
       { status: 400, headers: NO_STORE },
     )
   }
+
+  // SAAS-3 (2026-05-18) — registration accepts an optional `role` to
+  // distinguish learners from self-registered teachers. Missing/invalid
+  // role defaults to 'student', preserving the pre-SaaS default-no-role
+  // learner-archetype shape on the existing-email branch (we never
+  // grant a role to existing accounts). Only the new-email + teacher
+  // branch performs a single extra INSERT into account_roles; the
+  // anti-enumeration wall-clock budget is preserved (one INSERT vs
+  // 250ms bcrypt is in the noise).
+  const requestedRole: 'student' | 'teacher' =
+    body.role === 'teacher' ? 'teacher' : 'student'
 
   const emailValidation = validateCustomerEmail(String(body.email || ''))
   if (!emailValidation.ok) {
@@ -116,6 +132,15 @@ export async function POST(request: Request) {
       email,
       passwordHash,
     })
+    // SAAS-3 (2026-05-18) — self-registered teacher gets an explicit
+    // teacher role on the new-email path. Learner-archetype default
+    // (no role = learner) is preserved by NOT granting on student.
+    // Failure to grant is fatal to register because returning ok:true
+    // without the role would silently land a teacher on the learner
+    // surface — worse than a fail-fast 5xx that prompts retry.
+    if (requestedRole === 'teacher') {
+      await grantAccountRole(account.id, 'teacher', null)
+    }
     // Legal-versioning sister wave (migration 0032): capture the
     // FK to the snapshot row currently in force, alongside the
     // legacy text version for backward-compat. The lookup is
@@ -141,7 +166,7 @@ export async function POST(request: Request) {
       email,
       clientIp: getClientIp(request),
       userAgent: request.headers.get('user-agent'),
-      payload: { branch: 'new_account' },
+      payload: { branch: 'new_account', role: requestedRole },
     })
   }
 
