@@ -18,7 +18,7 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export const metadata = {
-  title: 'Алерты. Админка',
+  title: 'Уведомления оператора. Админка',
 }
 
 // ALERTS-OBS (2026-05-16) — read-only /admin/settings/alerts page.
