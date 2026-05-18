@@ -84,8 +84,8 @@ export default async function AdminAccountDetailPage({ params }: RouteParams) {
 
       {account.purgedAt ? (
         <Banner tone="muted">
-          Аккаунт удалён {formatDateTime(account.purgedAt)}. Данные обезличены,
-          платёжная история сохранена под 54-ФЗ.
+          Учётная запись удалена {formatDateTime(account.purgedAt)}. Данные
+          обезличены, история платежей сохранена в соответствии с 54-ФЗ.
         </Banner>
       ) : account.scheduledPurgeAt ? (
         <Banner tone="warn">
@@ -129,7 +129,7 @@ export default async function AdminAccountDetailPage({ params }: RouteParams) {
               <AdminActionButton
                 endpoint={`/api/admin/accounts/${account.id}/disable`}
                 body={{ disabled: true }}
-                confirmText="Отключить аккаунт?"
+                confirmText="Отключить учётную запись?"
                 variant="danger"
               >
                 Отключить
