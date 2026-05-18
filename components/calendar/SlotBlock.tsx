@@ -47,10 +47,14 @@ export function SlotBlock({ row, onClick, onMouseDown }: SlotBlockProps) {
         height: `${row.heightPx}px`,
         left: '4px',
         right: '4px',
+        // SAAS-1: Apple-chip styling — accent stroke on the left,
+        // tinted bg via color-mix() against the accent stroke color,
+        // no full border (just the left accent + faint right tint).
         background: palette.background,
-        border: `${hasConflict ? '2px' : '1px'} solid ${palette.border}`,
+        border: 'none',
+        borderLeft: `3px solid ${palette.border}`,
         borderRadius: 6,
-        padding: '4px 8px',
+        padding: '4px 8px 4px 10px',
         cursor: draggable ? 'grab' : 'pointer',
         textAlign: 'left',
         color: palette.text,
@@ -61,6 +65,8 @@ export function SlotBlock({ row, onClick, onMouseDown }: SlotBlockProps) {
         gap: 2,
         overflow: 'hidden',
         zIndex: 2, // above grid background so highlights render under
+        transition: 'background-color 120ms ease-out',
+        fontVariantNumeric: 'tabular-nums',
       }}
       title={
         hasConflict

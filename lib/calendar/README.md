@@ -4,6 +4,8 @@
 
 ## Purpose
 
+> **SAAS-1 update 2026-05-18:** the admin `/admin/slots` Calendar view presentation layer has shifted to an Apple-Calendar aesthetic — hour-only grid lines, dotted half-hour sub-ticks, today-column accent tint, live current-time indicator, accent-stroke event chips with `color-mix()` tints. The DATA layer (slot lifecycle, hit-test math on 30-min boundaries, drag-paint reducer) is unchanged. New pure helpers in `view-model.ts`: `hourAxisLabels()`, `currentTimeTopPx(nowMs)`, `mskYmdNow(nowMs)`. Component-render coverage for the chip styling is deferred to `SAAS-INFRA-1` backlog (`@testing-library/react` + `jsdom` not yet in `package.json`).
+
 Owns the full Google Calendar surface:
 - **OAuth** — `google/oauth.ts` + `google/state.ts` + `google/config.ts` (HMAC-signed CSRF state, scope `calendar.events` + `calendar.calendarlist.readonly`).
 - **Encrypted token storage** — `integrations.ts`. Access/refresh tokens + (since AUDIT-SEC-4 2026-05-17) channel verification token are bytea-encrypted under `CALENDAR_ENCRYPTION_KEY` (separate from `AUDIT_ENCRYPTION_KEY` for blast-radius). Rotation via `pgp_sym_decrypt_either`.
