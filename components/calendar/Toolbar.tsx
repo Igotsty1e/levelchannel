@@ -67,7 +67,7 @@ export function Toolbar({
         style={btnStyle()}
         aria-label="Обновить календарь"
       >
-        {loading ? 'Загрузка…' : '↻ Обновить'}
+        {loading ? 'Загружаем…' : '↻ Обновить'}
       </button>
     </div>
   )
