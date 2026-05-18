@@ -221,7 +221,7 @@ export function LessonsSection({
     <>
       <div className="card" style={{ padding: 24, marginBottom: 24 }}>
         <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
-          Мои уроки
+          Мои занятия
         </h2>
         {mine.length === 0 ? (
           <p style={{ color: 'var(--secondary)', fontSize: 14 }}>
@@ -472,7 +472,7 @@ function BookingCta({
             fontSize: 13,
           }}
         >
-          ✓ Записано. Урок появился в разделе «Мои уроки» выше.
+          ✓ Записано. Занятие появилось в разделе «Мои занятия» выше.
           <button
             type="button"
             onClick={() => setShowBanner(false)}
