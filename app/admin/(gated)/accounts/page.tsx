@@ -165,7 +165,7 @@ export default async function AdminAccountsPage({
                     color: 'var(--secondary)',
                   }}
                 >
-                  Ничего не найдено.
+                  Аккаунтов с такими параметрами нет. Попробуйте сбросить фильтр или поиск.
                 </td>
               </tr>
             ) : null}

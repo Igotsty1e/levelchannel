@@ -178,7 +178,7 @@ export default async function AdminPaymentsPage({
                     color: 'var(--secondary)',
                   }}
                 >
-                  Ничего не найдено.
+                  Платежей с такими параметрами нет. Попробуйте сбросить фильтр или поиск.
                 </td>
               </tr>
             ) : null}
