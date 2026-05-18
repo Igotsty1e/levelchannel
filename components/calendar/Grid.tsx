@@ -7,6 +7,10 @@ import {
   CALENDAR_GRID_PX_PER_MIN,
 } from '@/lib/calendar/dates'
 import {
+  CELL_HEIGHT_PX as HIT_TEST_CELL_HEIGHT_PX,
+  halfHourFromOffset as halfHourFromOffsetPure,
+} from '@/lib/calendar/grid-hit-test'
+import {
   type CalendarRow,
   currentTimeTopPx,
   groupSlotsByDay,
@@ -92,12 +96,10 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
     [],
   )
 
-  function halfHourFromOffset(offsetY: number): number {
-    const cell = Math.floor(offsetY / CELL_HEIGHT_PX)
-    if (cell < 0) return 0
-    if (cell > 35) return 35
-    return cell
-  }
+  // SAAS-1 5.F (2026-05-18) — moved to lib/calendar/grid-hit-test.ts.
+  // Local alias keeps the call-site below readable + matches the
+  // SlotBlock-aligned slot-top math that uses CELL_HEIGHT_PX.
+  const halfHourFromOffset = halfHourFromOffsetPure
 
   function handleColumnMouseDown(
     e: React.MouseEvent<HTMLDivElement>,
