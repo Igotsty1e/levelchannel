@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 
 import { CALENDAR_GRID_PX_PER_MIN } from '@/lib/calendar/dates'
+import { findCellAt as pureFindCellAt } from '@/lib/calendar/grid-hit-test'
 import {
   type DragState,
   initialDragState,
@@ -143,21 +144,21 @@ export function SlotCalendar({
     clientX: number,
     clientY: number,
   ): { ymd: string; halfHour: number } | null {
+    // SAAS-1 5.F (2026-05-18) — delegate to the pure helper so the
+    // geometry logic is node-testable. We still iterate dayRefs here
+    // because each rect is live (DOM mutates on scroll/resize).
     for (const [ymd, el] of dayRefs.current) {
       const rect = el.getBoundingClientRect()
-      if (
-        clientX >= rect.left &&
-        clientX < rect.right &&
-        clientY >= rect.top &&
-        clientY < rect.bottom
-      ) {
-        const offsetY = clientY - rect.top
-        const halfHour = Math.max(
-          0,
-          Math.min(35, Math.floor(offsetY / CELL_HEIGHT_PX)),
-        )
-        return { ymd, halfHour }
-      }
+      const hit = pureFindCellAt(clientX, clientY, [
+        {
+          ymd,
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          bottom: rect.bottom,
+        },
+      ])
+      if (hit) return hit
     }
     return null
   }
