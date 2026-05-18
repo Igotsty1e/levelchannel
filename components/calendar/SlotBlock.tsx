@@ -1,5 +1,6 @@
 'use client'
 
+import { paletteForRow, type SlotKind } from '@/lib/calendar/palette'
 import type { CalendarRow } from '@/lib/calendar/view-model'
 
 // Wave A — single slot block, kind-aware visuals. Uses absolute
@@ -25,7 +26,7 @@ export type SlotBlockProps = {
 export function SlotBlock({ row, onClick, onMouseDown }: SlotBlockProps) {
   const kind = row.slot.kind
   const hasConflict = slotHasConflict(row)
-  const palette = hasConflict ? CONFLICT_PALETTE : paletteForKind(kind)
+  const palette = paletteForRow({ kind: kind as SlotKind, hasConflict })
   // Only `open` slots are movable per the data layer (booked /
   // completed / cancelled are immovable). Wiring layer mirrors this:
   // we ONLY emit onMouseDown when the slot is `open` AND the parent
@@ -98,47 +99,6 @@ function slotHasConflict(row: CalendarRow): boolean {
     'externalConflictAt' in slot &&
     slot.externalConflictAt !== null
   )
-}
-
-const CONFLICT_PALETTE = {
-  background: 'rgba(239, 68, 68, 0.18)',
-  border: 'rgba(239, 68, 68, 0.85)',
-  text: '#fecaca',
-}
-
-function paletteForKind(kind: CalendarRow['slot']['kind']) {
-  switch (kind) {
-    case 'open':
-      return {
-        background: 'rgba(34, 197, 94, 0.15)',
-        border: 'rgba(34, 197, 94, 0.5)',
-        text: '#bbf7d0',
-      }
-    case 'booked-self':
-      return {
-        background: 'rgba(59, 130, 246, 0.18)',
-        border: 'rgba(59, 130, 246, 0.55)',
-        text: '#bfdbfe',
-      }
-    case 'booked-other':
-    case 'booked-full':
-      return {
-        background: 'rgba(107, 114, 128, 0.18)',
-        border: 'rgba(107, 114, 128, 0.5)',
-        text: '#d1d5db',
-      }
-    case 'past-full':
-    case 'past-redacted':
-      return paletteForPast(kind === 'past-full' ? (undefined as unknown as 'completed') : 'completed')
-  }
-}
-
-function paletteForPast(_status: string) {
-  return {
-    background: 'rgba(75, 85, 99, 0.15)',
-    border: 'rgba(75, 85, 99, 0.4)',
-    text: '#9ca3af',
-  }
 }
 
 function kindLabel(kind: CalendarRow['slot']['kind']): string {
