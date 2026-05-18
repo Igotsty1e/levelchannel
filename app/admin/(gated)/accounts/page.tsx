@@ -30,7 +30,7 @@ export default async function AdminAccountsPage({
   return (
     <>
       <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>
-        Аккаунты
+        Учётные записи
       </h1>
 
       <form
