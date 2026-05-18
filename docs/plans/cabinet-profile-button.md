@@ -91,18 +91,23 @@ export default async function CabinetProfilePage() {
 5. **`<DangerZone />`** — verbatim mount, no changes.
 6. *(No second LogoutButton at the bottom — header copy is enough. Round-1 own-paranoia: a bottom-of-page logout near "Удалить аккаунт" is a misclick hazard.)*
 
-### 3.ii Updated `/cabinet` header — add "⚙ Профиль" button
+### 3.ii Updated `/cabinet` header — add "Профиль" button
 
 Current `/cabinet` has no header strip — `<h1>` sits flush against the top of the AuthShell column. Wave introduces a one-line flex row **above** `<h1>` containing:
 
 - Left: empty (or breadcrumb in a future wave).
-- Right: `<Link href="/cabinet/profile" className="btn-secondary">⚙ Профиль</Link>` followed by `<LogoutButton />`.
+- Right: `<Link href="/cabinet/profile">Профиль</Link>` followed by `<LogoutButton />`.
 
-The gear icon `⚙` (U+2699) is a plain unicode glyph — no asset, no icon library, no SVG. Design-system.md §"Header utilities" canonicalises the "icon + label" pattern; this wave is the FIRST consumer, so the design-system doc is informed by what lands here. (If design-system.md prescribes an SVG sprite by the time it merges, follow-up PR swaps the glyph for the sprite — one-line change.)
+Copy decision (round-1 paranoia revision 2026-05-18): **"Профиль"** as plain word, no glyph. Original draft used "⚙ Профиль" with a unicode gear; round-1 paranoia BLOCKER#4 surfaced two collisions:
 
-Copy decision: **"⚙ Профиль"** (word, not icon-only). Rationale:
-- Icon-only buttons are an a11y debt on a Russian-language site where users are not steeped in iOS/macOS gear-icon conventions.
-- "Профиль" is short enough (7 chars + glyph) that it does NOT crowd "Выйти" even on 360px-wide mobile (measured: 56+16+62 ≈ 134px, well under 360px column).
+1. `docs/content-style.md` bans decorative emoji in product chrome (the gear codepoint is on the unicode-emoji presentation track).
+2. `docs/design-system.md` explicitly defers iconography library choice (lucide-react vs SF-Symbols-style set) to the primitives wave. Picking an inline glyph here pre-commits a contract the foundation has not ratified.
+
+Pure word resolves both. When the design-system iconography decision lands (foundation §"Iconography" — open question A.2), a follow-up PR swaps the text node for an `<Icon name="settings"/>` primitive without changing the link itself.
+
+**Styling — round-1 revision.** Original draft used `className="btn-secondary"`. Codex BLOCKER#3 (round 1) caught two problems: (a) `.btn-secondary` forces `width: 100%` at `<=640px` viewport (`app/globals.css:229`), which would stack the header buttons full-width on mobile — destroying the compact top-right flex row, (b) design-system.md §"Migration baseline" classes `.btn-secondary` as marketing-only; SaaS chrome must not consume it. Revised approach: use inline styles or a `style={{}}` prop with tokens drawn from design-system §"Color" + §"Spacing" + §"Radii" (e.g. `padding: 6px 14px; border-radius: 8px; background: var(--surface-2); color: var(--text-primary); font-size: 15px;`). The same inline-style approach goes on `<LogoutButton />`'s wrapper — verify by editing `logout-button.tsx:34` to drop `className="btn-secondary"` IF the link is rendered without sibling marketing chrome breaking. Either way, the SaaS header buttons in this wave do not consume `.btn-secondary`.
+
+When the `lib/ui/primitives/Button.tsx` primitive lands (SAAS-6 wave 1), follow-up PR swaps the inline-style anchor for `<Button as="a" variant="secondary" size="sm" href="/cabinet/profile">Профиль</Button>` — one-line change.
 
 Position: top-right of the AuthShell content column, NOT in `SiteHeader`. Reason: `SiteHeader` is shared across `/register`, `/login`, `/forgot`, `/reset`, `/cabinet`, `/verify-pending`, `/verify-failed` (per `auth-shell.tsx:5`). Putting "Профиль" there would render it on `/login` for unauth users — a phantom CTA. Per-page header is correct.
 
@@ -143,45 +148,67 @@ Orthography sanity check done; if a Russian-native paranoia reviewer flags a reg
 | C | Logout from `/cabinet/profile`. | `LogoutButton` is reused unchanged — POSTs `/api/auth/logout` then `router.push('/')`. Same as on `/cabinet`. No new redirect logic. |
 | D | Admin lands on `/cabinet/profile`. | Page-level auth gate redirects to `/admin` (mirroring `app/cabinet/page.tsx:81-83`). Admin doesn't have a learner profile shape; their settings live on the admin surface. |
 | E | Teacher lands on `/cabinet/profile`. | Allowed — teachers DO have ProfileEditor (name + tz) and DangerZone (delete account). Same render as learner. No teacher-only sections to worry about (teacher-section + teacher-learners-section stay on `/cabinet`, not duplicated here). |
-| F | User in 30-day deletion-grace lands on `/cabinet/profile`. | The session lookup (`lookupSession`) is what enforces grace-period gating elsewhere; if it returns null, → `/login`. If it returns a valid session (grace not expired and not blocking session use), they see ProfileEditor + DangerZone. They CAN re-delete (idempotent on server side). Out-of-scope: rendering a "your account is scheduled for deletion in N days" banner — covered by separate plan (deletion-grace UX, not this wave). |
+| F | User in 30-day deletion-grace lands on `/cabinet/profile`. | Round-1 paranoia INFO#7 correction: `lookupSession()` does NOT filter on `scheduled_purge_at` / `purged_at` (it only filters revoked/expired/disabled sessions per `lib/auth/sessions.ts:66`). The actual gate is `app/api/account/delete/route.ts:85` which sets `disabled_at` AND revokes all sessions when the user requests deletion — so a grace-period user trying to use a session that pre-dates their delete-request will get `lookupSession` → null → `/login`. A grace-period user who did NOT yet delete but somehow holds a valid session WILL see ProfileEditor + DangerZone; they can re-delete (idempotent). Out-of-scope: rendering a "scheduled for deletion in N days" banner — covered by separate plan (deletion-grace UX, not this wave). |
 | G | `/cabinet/profile?some=querystring`. | Ignored — page does not read search params. |
 | H | User bookmarks `/cabinet/profile` then logs out. | Visit redirects to `/login` (no session cookie). Standard. |
 
 ## 5. Implementation phases (single PR)
 
-**One PR, four ordered commits inside it:**
+**One PR, five ordered commits inside it (round-1 revision adds the doc-sweep step):**
 
 1. **(a) New page + route.** Create `app/cabinet/profile/page.tsx` per §3.i. Mounts unchanged ProfileEditor + DangerZone. Includes `noindex` robots metadata.
-2. **(b) Header update on /cabinet.** Add the `⚙ Профиль` link + LogoutButton flex row at the top of `app/cabinet/page.tsx`'s returned JSX (above `<h1>`). Remove the existing `<LogoutButton />` mount at the bottom (line 228) — it moves into the header row. Remove the `<ProfileEditor />` mount (line 154) and the `<DangerZone />` mount (line 226). The bottom of `/cabinet` is now LessonsSection / BillingSections / placeholder card (learner) or TeacherSection / TeacherLearnersSection (teacher).
-3. **(c) Integration tests.** New test file + (if needed) update to existing cabinet test. See §6.
-4. **(d) Visual screenshot review.** Use `gstack` / `browse` to capture `/cabinet` (uncluttered learner view) + `/cabinet/profile` (centered, header strip, two cards) on desktop 1280×800 and mobile 375×667. Attach to PR description. No commit per se — review evidence.
+2. **(b) Header update on /cabinet.** Add the `Профиль` link + LogoutButton flex row at the top of `app/cabinet/page.tsx`'s returned JSX (above `<h1>`). Remove the existing `<LogoutButton />` mount at the bottom (line 228) — it moves into the header row. Remove the `<ProfileEditor />` mount (line 154) and the `<DangerZone />` mount (line 226). The bottom of `/cabinet` is now LessonsSection / BillingSections / placeholder card (learner) or TeacherSection / TeacherLearnersSection (teacher).
+3. **(c) Doc sweep — required.** Round-1 paranoia WARN#5: `ARCHITECTURE.md` currently lists `<ProfileEditor>` + `<DangerZone>` as `/cabinet`-rendered subtree (lines 43, 46 — verify line numbers at impl). Update those entries to point at `/cabinet/profile`. Add a one-line entry for the new `app/cabinet/profile/page.tsx` route. `DOCUMENTATION.md` §"Code and architecture" needs no change (it points at ARCHITECTURE.md by topic, not file). Cabinet-relevant section in `lib/auth/README.md` and `lib/scheduling/README.md` does not mention `/cabinet/profile`; no edit needed there.
+4. **(d) Unit tests (see §6).** Two new files; both go to `tests/scheduling/` (NOT `tests/integration/cabinet/`).
+5. **(e) Visual screenshot review.** Use `gstack` / `browse` to capture `/cabinet` (uncluttered learner view) + `/cabinet/profile` (centered, header strip, two cards) on desktop 1280×800 and mobile 375×667. Attach to PR description. No commit per se — review evidence.
 
 Trailer on the close-PR (since this is a single-PR epic, standard wave shape):
 `Codex-Paranoia: SIGN-OFF round N/3`
 
 ## 6. Tests
 
-### 6.i New file `tests/integration/cabinet/profile-page.test.ts`
+**Round-1 paranoia revision 2026-05-18:** original draft cited `tests/integration/scheduling/teacher-guard.test.ts` + `admin-gate.test.ts` as precedent for "supertest + cookie-jar against SSR pages". Codex BLOCKER#1 caught the mismatch — the integration runner calls route handlers directly via `vitest.integration.config.ts` (no Next.js HTTP server, no App Router page rendering). The cited tests probe API routes, not pages. Page-level SSR assertions need a different shape. Below is the revised test plan.
 
-Cases (using the standard supertest + cookie-jar pattern established by `tests/integration/scheduling/teacher-guard.test.ts` and `tests/integration/admin/admin-gate.test.ts`):
+### 6.i Unit-level invocation of the page Server Component
 
-1. **Anonymous → 307 to `/login`.** No session cookie → redirect.
-2. **Invalid session cookie → 307 to `/login`.** Cookie present but `lookupSession` returns null.
-3. **Learner-archetype (verified) → 200, renders ProfileEditor + DangerZone markers.** Assert page text includes "Профиль" `<h1>`, "Имя" label (from ProfileEditor), "Опасные действия" header (from DangerZone).
-4. **Teacher → 200, renders ProfileEditor + DangerZone.** Teacher accounts also get profile management. No teacher-section duplication assertion.
-5. **Admin → 307 to `/admin`.** Mirrors `/cabinet` admin redirect.
-6. **Email-unverified learner → 200, page renders, verification banner present.** Assert "E-mail ещё не подтверждён" substring.
-7. **`robots` meta is `noindex,nofollow`.** Parse `<head>` for `<meta name="robots" content="noindex,nofollow">` — defends the §10 SEO risk mitigation against future regression.
+**File:** `tests/scheduling/cabinet-profile-page.test.ts` (under the `vitest.config.ts` unit suite, NOT the integration suite — because we're calling the page as an async function, not hitting an HTTP server).
 
-Test directory does not yet exist (`tests/integration/cabinet/*` returned 0 files). New directory; conform to surrounding `tests/integration/<area>/<file>.test.ts` shape.
+Strategy: import `CabinetProfilePage` from `app/cabinet/profile/page.tsx` as an async function, mock its three external deps (`cookies` from `next/headers`, `lookupSession` from `lib/auth/sessions`, `listAccountRoles` from `lib/auth/accounts`, `getAccountProfile` from `lib/auth/profiles`), invoke it, and assert on the returned JSX tree using `@testing-library/react`'s `render` + `screen` queries (or the lighter `react-dom/server.renderToStaticMarkup` if the page returns no client islands at the top level — verify when the file lands).
 
-### 6.ii No update needed to `tests/integration/cabinet/cabinet-page.test.ts`
+Cases:
 
-That file does not exist today (verified via Glob). The current cabinet has no integration tests directly on the page — its sections are tested through their underlying APIs. We do NOT introduce a new cabinet-page test in this wave; that's tracked as a separate "cabinet SSR smoke test" follow-up. Round-1 own-paranoia notes this is a defensible scope cut — task brief's bullet about updating that file should be paranoia-confirmed (Q4 below).
+1. **No session cookie → throws `redirect('/login')`.** Mock `cookies()` to return empty store; assert the page invocation rejects with the Next.js redirect throwable.
+2. **Invalid session → throws `redirect('/login')`.** Mock `lookupSession` to return null.
+3. **Admin role → throws `redirect('/admin')`.** Mock `listAccountRoles` to return `['admin']`.
+4. **Learner-archetype (verified) → renders ProfileEditor + DangerZone.** Mock returns a learner; assert rendered markup contains "Имя", "Часовой пояс", "Опасные действия" substrings. (Use `renderToStaticMarkup` for a string snapshot or `render` + `screen.getByText`.)
+5. **Teacher role → renders ProfileEditor + DangerZone.** Same assertions; no teacher-only sections.
+6. **Email-unverified learner → renders verification banner + still renders ProfileEditor / DangerZone.** Assert substring "E-mail ещё не подтверждён".
+7. **`generateMetadata` returns `robots: { index: false, follow: false }`.** Direct call to the page's metadata export.
+
+If the testing-library import is not yet in `package.json`, add `@testing-library/react` + `@testing-library/jest-dom` (devDeps) in the same PR.
+
+### 6.ii Negative test — `/cabinet` no longer renders profile editor / danger zone
+
+**Round-1 paranoia BLOCKER#2:** the original plan had no automated guard against "developer adds /cabinet/profile but forgets to remove ProfileEditor from /cabinet". Adding it now.
+
+**File:** `tests/scheduling/cabinet-main-page.test.ts` (companion to 6.i).
+
+Strategy: import `CabinetPage` from `app/cabinet/page.tsx` as an async function, mock external deps to a learner-archetype-verified state, invoke + render. Assertions:
+
+1. **Renders LessonsSection** — assert substring "Мои занятия" or whatever lessons-section's header text is (verify at impl).
+2. **Does NOT render ProfileEditor.** Assert "Часовой пояс" substring is ABSENT (timezone label is unique to ProfileEditor and not used elsewhere in /cabinet's tree).
+3. **Does NOT render DangerZone.** Assert "Опасные действия" substring is ABSENT.
+4. **Renders the new header strip with "Профиль" link → `/cabinet/profile`.** Assert presence of `<a href="/cabinet/profile">` in the markup.
+
+This is the silent-green-on-the-wrong-path defence — if a future refactor accidentally re-introduces ProfileEditor on /cabinet, this test fails.
 
 ### 6.iii Manual / visual
 
-Per §5.(d). Pair of screenshots in PR body.
+Per §5.(e). Pair of screenshots in PR body — `/cabinet` (uncluttered) and `/cabinet/profile` (two cards + header strip), at desktop 1280×800 and mobile 375×667.
+
+### 6.iv Accessibility follow-up (out of scope, documented)
+
+Round-1 paranoia WARN#6 surfaced that the project's `auth-shell.tsx` and `site-header.tsx` do NOT yet have a skip-to-content link, which `docs/design-system.md` §"Accessibility" mandates. Adding a skip-link is design-system foundation work, not part of this single-PR wave. Captured as `SAAS-6-A11Y-1: add skip-to-content link to AuthShell + SiteHeader` in `ENGINEERING_BACKLOG.md` for SAAS-6 design-system rollout. This wave does not regress a11y (the new page inherits the same shell), but it doesn't fix the pre-existing gap either.
 
 ## 7. Migration / rollout
 

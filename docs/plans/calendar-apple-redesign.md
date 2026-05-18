@@ -137,18 +137,23 @@ ease curves).
 
 ### 3.1 Hour-row grid constants
 
-New exports in `lib/calendar/dates.ts`:
+**Round-1 paranoia revision 2026-05-18 — BLOCKER#1:** the original draft proposed `CALENDAR_GRID_VISIBLE_ROWS = 17` (06:00–22:00), which clips slot ends past 22:00. Schema invariants allow slot `start_at` up to 22:00 (band CHECK) and `duration_minutes` up to 240 min — meaning a 22:00 / 90-min slot ending at 23:30 IS valid and pinned in `tests/calendar/view-model.test.ts:66-77`. The previous `CALENDAR_GRID_DAY_HEIGHT_PX = 1575` was sized for exactly this case (1575 px = 17:30 hours × 90 px/hour from 06:00 to 23:30).
+
+Revised constants in `lib/calendar/dates.ts`:
 
 ```
-CALENDAR_HOUR_ROW_PX            = 60 * 1.5 = 90
-CALENDAR_GRID_END_HOUR_INCLUSIVE = 22
-CALENDAR_GRID_VISIBLE_ROWS      = 17           // 06..22 inclusive
-CALENDAR_GRID_DAY_HEIGHT_PX_V2  = 17 * 90 = 1530
+CALENDAR_HOUR_ROW_PX             = 60 * 1.5 = 90
+CALENDAR_GRID_START_HOUR         = 6
+CALENDAR_GRID_END_HOUR_EXCLUSIVE = 24                   // visible up to 24:00
+CALENDAR_GRID_VISIBLE_ROWS       = 18                   // 06..24 inclusive
+CALENDAR_GRID_DAY_HEIGHT_PX_V2   = 18 * 90 = 1620       // > 1575 (existing)
 ```
 
-The existing `CALENDAR_GRID_DAY_HEIGHT_PX` (1575) stays exported until
-the tidy-up sub-PR; `grep -r CALENDAR_GRID_DAY_HEIGHT_PX` shows only
-two consumers (Grid.tsx:66, SlotCalendar.tsx:65).
+Rationale: 18 rows (06:00–24:00) is the smallest band that fully shows every slot the schema allows (max start 22:00 + max duration 240 = 26:00 next day, BUT the test corpus + production data show no slots end past 24:00; the rare 22:00+120-min case extends to 24:00 exactly, which the new band covers; the theoretical 22:00+240-min case would clip — flagged as known-non-regression because no such slot has ever shipped on prod and the existing 1575 px geometry also clips it).
+
+The existing `CALENDAR_GRID_DAY_HEIGHT_PX` (1575) stays exported until the tidy-up sub-PR; `grep -r CALENDAR_GRID_DAY_HEIGHT_PX` shows only two consumers (Grid.tsx:66, SlotCalendar.tsx:65). Both swap to the v2 constant.
+
+**Geometry test (regression pin):** `tests/calendar/view-model.test.ts` gets a new case asserting the 22:00→23:30 slot has `top=1440, height=135, bottom=1575 <= dayHeight=1620`. This is the failing assertion under the original draft and the keystone of BLOCKER#1.
 
 ### 3.2 Grid lines + half-hour sub-ticks
 
@@ -332,53 +337,38 @@ grid). SlotBlock is already a focusable `<button>`; that stays. New
 7. **Conflict outline preserved** (`SlotBlock.tsx:88-95`). 2 px red
    border becomes 3 px left-stroke + 0.18 bg via cascade override.
 
-## 5. Implementation phases — 5 sub-PRs (each ≤ ~150 LoC delta)
+## 5. Implementation phases — 6 sub-PRs (each ≤ ~150 LoC delta)
 
-**5.A — design tokens.** `app/globals.css` lands the design-system
-tokens (`--accent`, `--accent-rgb`, `--status-open`, `--status-error`,
-`--neutral`, `--muted`, `--secondary`, `--chip-text`,
-`--chip-accent-rgb`, etc.) sourced from `docs/design-system.md` §Color
-§Typography. CSS-only. No tests.
+**Round-1 paranoia revision 2026-05-18:** added 5.docs (doc-sweep, WARN#7), revised 5.A scope (token-blast-radius, WARN#5+#6), added 5.F drag-math-coverage (BLOCKER#3).
 
-**5.B — hour-grid constants + axis labels.**
-`lib/calendar/dates.ts` adds `CALENDAR_HOUR_ROW_PX=90`,
-`_END_HOUR_INCLUSIVE=22`, `_VISIBLE_ROWS=17`, `_DAY_HEIGHT_PX_V2=1530`
-(keeps old 35-row consts for transition). `lib/calendar/view-model.ts`
-adds `hourAxisLabels()` (length 17), marks `timeAxisLabels()`
-`@deprecated`. Tests: extend `dates.test.ts` + `view-model.test.ts`.
+**5.A — design tokens, SCOPED to `:root`-scope `.saas-chrome`.** Round-1 WARN#5: `app/globals.css :root` vars (`--bg`, `--text`, `--accent` etc.) are consumed by `/pay`, `/admin/(gated)/layout.tsx`, marketing landing. Touching them changes blast radius beyond /admin/slots. Per `docs/design-system.md` §"Migration baseline" Phase 0, scope SaaS tokens under a class selector applied to the admin/cabinet/auth shell wrappers (e.g. `.saas-chrome { --text-on-accent: ...; --danger: ...; }`), NOT `:root`. /admin/slots calendar renders inside `.saas-chrome` and consumes these; /pay does not, stays on its current palette. **Token names align with design-system: `--text-on-accent` (not `--accent-contrast`), `--danger` (not `--status-error`), `--info`, `--success`, `--warning`** (round-1 WARN#6).
 
-**5.C — port Grid.tsx to hour grid + sticky header.** Time-axis uses
-`hourAxisLabels()` at `i * CALENDAR_HOUR_ROW_PX`. Replace
-`gridBackground()` with layered overlay (§3.2). Wrap header in sticky
-positioned div (§3.4). Apply `data-today="true"` (§3.3). **Drag math
-unchanged** — hit-test buckets stay 45 px. Tests stay green.
+**5.B — hour-grid constants + axis labels.** `lib/calendar/dates.ts` adds `CALENDAR_HOUR_ROW_PX=90`, `CALENDAR_GRID_START_HOUR=6`, `CALENDAR_GRID_END_HOUR_EXCLUSIVE=24`, `CALENDAR_GRID_VISIBLE_ROWS=18`, `CALENDAR_GRID_DAY_HEIGHT_PX_V2=1620` (keeps old 35-row consts for transition). `lib/calendar/view-model.ts` adds `hourAxisLabels()` (length 18), marks `timeAxisLabels()` `@deprecated`. Tests: extend `dates.test.ts` + `view-model.test.ts` with the 22:00→23:30 geometry case from §3.1.
 
-**5.D — SlotBlock visual.** Replace inline `style` with CSS classes
-(§3.5). New `lib/calendar/palette.ts` exports class resolution per
-kind + conflict overlay. Tests: new
-`tests/calendar/slot-block-render.test.tsx` (jsdom) asserts class
-names; conflict adds overlay class.
+**5.C — port Grid.tsx to hour grid + sticky header.** Time-axis uses `hourAxisLabels()` at `i * CALENDAR_HOUR_ROW_PX`. Replace `gridBackground()` with layered overlay (§3.2). Wrap header in sticky positioned div (§3.4). Apply `data-today="true"` (§3.3). **Drag math hit-test stays 45-px half-hour bucket** — 5.F adds the explicit coverage previously missing.
 
-**5.E — today highlight + current-time indicator.** New
-`components/calendar/CurrentTimeIndicator.tsx` per §3.6, wired as
-z-index 7 sibling overlay spanning the 7 day columns. Renders only
-when `currentMskYmd ∈ weekDayKeys`. Today day-number circle in header
-(§3.3). `useInterval(60_000)` re-render. Tests: new
-`tests/calendar/current-time.test.ts`.
+**5.D — SlotBlock visual.** Replace inline `style` with CSS classes (§3.5). New `lib/calendar/palette.ts` exports class resolution per kind + conflict overlay. Tests: **node-env, NOT jsdom** (round-1 BLOCKER#2): assert `paletteClassFor(kind)` returns the expected class string from a pure function — no DOM render. Component-render assertions deferred until project gains jsdom infra; tracked as `SAAS-INFRA-1: add @testing-library/react + jsdom to vitest unit suite`.
 
-**5.tidy — cleanup (optional, post-staging-soak).** Delete
-`timeAxisLabels()`; delete `CALENDAR_GRID_DAY_HEIGHT_PX` (rename `_V2`
-→ primary). NOT on the critical path.
+**5.E — today highlight + current-time indicator.** New `components/calendar/CurrentTimeIndicator.tsx` per §3.6, wired as z-index 7 sibling overlay spanning the 7 day columns. Renders only when `currentMskYmd ∈ weekDayKeys`. Today day-number circle in header (§3.3). `useInterval(60_000)` re-render. Tests: new `tests/calendar/current-time.test.ts` — pure-function math (`currentTimeTopPx(now)`), no component render.
+
+**5.F — drag-math seam coverage (NEW round-1 BLOCKER#3).** Add `tests/calendar/grid-hit-test.test.ts` that pins `halfHourFromOffset(yPx)` (`components/calendar/Grid.tsx:79-105`) and `findCellAt(clientX, clientY, rect)` (`components/calendar/SlotCalendar.tsx:142-158`) under the new 90 px hour row. Cases: yPx=0 → :00; yPx=44 → :00; yPx=45 → :30; yPx=89 → :30; yPx=90 → next-hour :00. Pure function extraction — if the current code embeds these in component bodies, this sub-PR refactors them OUT to `lib/calendar/grid-hit-test.ts` first. This is the test that defends "pointer math accidentally drifts to wrong half-hour bucket" silent-green regression cited in the BLOCKER.
+
+**5.docs — required doc-sweep (round-1 WARN#7).** Update: `ARCHITECTURE.md` calendar section (cite new constants + `lib/calendar/palette.ts` + `components/calendar/CurrentTimeIndicator.tsx`); `lib/calendar/README.md` if it discusses geometry; `ENGINEERING_BACKLOG.md` add formal entries `SAAS-1-FOLLOWUP-KEYBOARD` (keyboard create on empty cells — round-1 WARN#8) and `SAAS-INFRA-1` (jsdom + RTL — round-1 BLOCKER#2 deferred component-render coverage). Without this step the structural change ships with stale prose.
+
+**5.tidy — cleanup (optional, post-staging-soak).** Delete `timeAxisLabels()`; delete `CALENDAR_GRID_DAY_HEIGHT_PX` (rename `_V2` → primary). NOT on the critical path.
 
 ## 6. Tests — concrete additions
 
+**Test-environment caveat (round-1 BLOCKER#2):** `vitest.config.ts` is `environment: 'node'` and `package.json` ships no `@testing-library/react` / `jsdom` deps. All new test files in this wave run under node env on pure functions only. Component-render assertions are deferred to `SAAS-INFRA-1`. The original draft's `tests/calendar/slot-block-render.test.tsx` (jsdom + React DOM rendering) is REMOVED from this wave.
+
 | File                                                          | Status | What                                               |
 |---------------------------------------------------------------|--------|----------------------------------------------------|
-| `tests/calendar/dates.test.ts`                                | EXTEND | New constants                                      |
-| `tests/calendar/view-model.test.ts`                           | EXTEND | `hourAxisLabels()`                                 |
+| `tests/calendar/dates.test.ts`                                | EXTEND | New constants + 22:00→23:30 geometry case (§3.1)   |
+| `tests/calendar/view-model.test.ts`                           | EXTEND | `hourAxisLabels()` + 22:00→23:30 top/height/bottom |
 | `tests/calendar/drag-state.test.ts`                           | GREEN  | Reducer untouched                                  |
-| `tests/calendar/slot-block-render.test.tsx`                   | NEW    | Class names per kind, conflict overlay             |
-| `tests/calendar/current-time.test.ts`                         | NEW    | Time-indicator math                                |
+| `tests/calendar/grid-hit-test.test.ts`                        | NEW    | `halfHourFromOffset` + `findCellAt` (BLOCKER#3)    |
+| `tests/calendar/palette.test.ts`                              | NEW    | `paletteClassFor(kind)` pure function              |
+| `tests/calendar/current-time.test.ts`                         | NEW    | `currentTimeTopPx(now)` pure function              |
 | `tests/integration/scheduling/calendar-projection.test.ts`    | GREEN  | Reverify `topPx` after hour-row visual shift       |
 | `tests/integration/scheduling/calendar-move.test.ts`          | GREEN  | Move endpoint unchanged                            |
 | `tests/integration/scheduling/calendar-auth.test.ts`          | GREEN  | Auth unchanged                                     |
@@ -387,8 +377,7 @@ when `currentMskYmd ∈ weekDayKeys`. Today day-number circle in header
 | `tests/scheduling/bulk-preview.test.ts`                       | GREEN  | Preview unchanged                                  |
 | `tests/calendar/paint-synth.test.ts`                          | GREEN  | Paint→half-hour starts unchanged                   |
 
-Coverage goal: every existing slot/calendar test stays green; new tests
-cover the logic seams of the visual shift only.
+Coverage goal: every existing slot/calendar test stays green; new tests cover the pure-function logic seams (geometry, hit-test, palette, current-time math) of the visual shift only.
 
 ## 7. Migration plan
 
@@ -410,7 +399,7 @@ rollback). Rollout: 5.A → 5.B → 5.C (smoke) → 5.D (smoke) → 5.E
 | R7 | `setInterval` leak on unmount | Low | `useEffect` cleanup; pattern reused from Toolbar. |
 | R8 | Hidden caller of `CALENDAR_GRID_DAY_HEIGHT_PX` | Low | Grep shows 2 hits; keep-and-deprecate handles a 3rd. |
 | R9 | High-contrast / forced-colors mode | Medium | `border-left` is structural; design-system §Color has `forced-colors: active` fallbacks. |
-| R10 | MobileFallback hides redesign on 1366×768 + sidebar collapse | Low | Container ~1100 px nominal; breakpoint stays. |
+| R10 | MobileFallback hides redesign on 720 px (verified from `components/calendar/MobileFallback.tsx:40-61`, NOT 900 px as round-1 draft claimed) | Low | Container ~1100 px nominal; existing 720 px breakpoint stays; round-1 WARN#4 surfaced the misreading. |
 | R11 | `:focus-visible` ring vs browser default outline | Low | Chip declares `border: none`; outline is explicit. |
 | R12 | New `border-left: 3 px` eats padding on narrow columns | Low | 130 px column worst-case still fits `18:30 – 19:30` at fontSize 12 with 11 px left padding. |
 
