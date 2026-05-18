@@ -203,27 +203,27 @@ export function ActionsCell({ invoiceId }: Props) {
         onClick={doRetry}
         disabled={busy !== null}
         style={btnStyle('primary')}
-        title="Re-run the grant (after fixing root cause, e.g. re-activated package)"
+        title="Повторить выдачу пакета после устранения причины (например, пакет был неактивен)"
       >
-        {busy === 'retry' ? '…' : 'Retry grant'}
+        {busy === 'retry' ? '…' : 'Повторить выдачу'}
       </button>
       <button
         type="button"
         onClick={doAttach}
         disabled={busy !== null}
         style={btnStyle('secondary')}
-        title="Attach this order to a different account (e.g. wrong email on widget)"
+        title="Привязать заказ к другому аккаунту (если ученик попал не на свой)"
       >
-        {busy === 'attach' ? '…' : 'Attach to account'}
+        {busy === 'attach' ? '…' : 'Привязать к аккаунту'}
       </button>
       <button
         type="button"
         onClick={doMark}
         disabled={busy !== null}
         style={btnStyle('secondary')}
-        title="Manually mark resolved (refunded out-of-band, comped, etc.)"
+        title="Закрыть вручную (возврат через CloudPayments, эквивалент тарифом и т.п.)"
       >
-        {busy === 'mark' ? '…' : 'Mark resolved'}
+        {busy === 'mark' ? '…' : 'Закрыть вручную'}
       </button>
     </div>
   )
