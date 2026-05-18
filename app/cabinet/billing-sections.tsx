@@ -160,7 +160,7 @@ export function BillingSections({
         {error ? (
           <p style={{ color: '#ff8a8a', fontSize: 13 }}>Ошибка: {error}</p>
         ) : packages === null ? (
-          <p style={{ color: 'var(--secondary)', fontSize: 13 }}>Загрузка…</p>
+          <p style={{ color: 'var(--secondary)', fontSize: 13 }}>Загружаем…</p>
         ) : packages.length === 0 ? (
           <p style={{ color: 'var(--secondary)', fontSize: 14, lineHeight: 1.6 }}>
             У вас нет активных пакетов. Каждое занятие нужно оплачивать
@@ -244,7 +244,7 @@ export function BillingSections({
           К оплате
         </h2>
         {debt === null ? (
-          <p style={{ color: 'var(--secondary)', fontSize: 13 }}>Загрузка…</p>
+          <p style={{ color: 'var(--secondary)', fontSize: 13 }}>Загружаем…</p>
         ) : debt.length === 0 ? (
           <p style={{ color: 'var(--secondary)', fontSize: 14 }}>
             Нет неоплаченных проведённых занятий.
