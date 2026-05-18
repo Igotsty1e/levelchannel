@@ -74,7 +74,7 @@ export function SlotBlock({ row, onClick, onMouseDown }: SlotBlockProps) {
           ? `${row.startLabel} – ${row.endLabel} · конфликт с событием в Google Calendar`
           : `${row.startLabel} – ${row.endLabel}`
       }
-      aria-label={`Слот ${row.startLabel}–${row.endLabel}, ${label}`}
+      aria-label={`Занятие ${row.startLabel}–${row.endLabel}, ${label}`}
     >
       <div style={{ fontWeight: 600 }}>
         {hasConflict && (
