@@ -116,7 +116,7 @@ export function TeacherSection({ initialSlots, teacherTimezone }: Props) {
       {upcomingPreview.length === 0 ? (
         <p style={{ color: 'var(--secondary)', fontSize: 14 }}>
           Ближайших занятий нет. Когда оператор создаст или назначит
-          слот — он появится здесь и в полном календаре.
+          новое занятие — оно появится здесь и в полном календаре.
         </p>
       ) : (
         <>

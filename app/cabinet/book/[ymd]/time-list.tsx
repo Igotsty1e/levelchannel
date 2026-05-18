@@ -84,7 +84,7 @@ export function TimeList({ ymd, tz }: { ymd: string; tz: string }) {
           textAlign: 'center',
         }}
       >
-        На эту дату свободных слотов нет.
+        На эту дату свободного времени нет.
       </p>
     )
   }
