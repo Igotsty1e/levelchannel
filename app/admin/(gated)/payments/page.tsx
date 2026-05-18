@@ -69,9 +69,9 @@ export default async function AdminPaymentsPage({
           lineHeight: 1.6,
         }}
       >
-        Все ордеры — и из <code>/pay</code> (свободная сумма), и из{' '}
-        <code>/checkout/&lt;тариф&gt;</code>. Колонка «Слот» заполнена,
-        если платёж был привязан к бронированию.
+        Все заказы на оплату — и со страницы «Оплата произвольной суммы»,
+        и из чекаута тарифа. Колонка «Занятие» заполнена, если платёж
+        был привязан к записи.
       </p>
 
       <form
@@ -137,7 +137,7 @@ export default async function AdminPaymentsPage({
               <th style={th}>E-mail</th>
               <th style={th}>Сумма</th>
               <th style={th}>Статус</th>
-              <th style={th}>Слот</th>
+              <th style={th}>Занятие</th>
             </tr>
           </thead>
           <tbody>
