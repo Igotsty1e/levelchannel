@@ -143,7 +143,7 @@ export function BookConfirmModal({
           throw new Error(
             body?.message ||
               body?.error ||
-              'Этот слот только что занят. Попробуйте другой.',
+              'Это занятие только что занято. Попробуйте другое.',
           )
         }
         throw new Error(body?.message || body?.error || `HTTP ${res.status}`)
@@ -187,7 +187,7 @@ export function BookConfirmModal({
         }}
       >
         <h2 id="book-confirm-title" style={{ fontSize: 18, marginBottom: 12 }}>
-          Слот {row.startLabel} – {row.endLabel}{' '}
+          Занятие {row.startLabel} – {row.endLabel}{' '}
           <span style={{ fontSize: 12, color: '#71717a', fontWeight: 400 }}>
             (МСК)
           </span>
@@ -221,8 +221,8 @@ export function BookConfirmModal({
               lineHeight: 1.5,
             }}
           >
-            Это ваш слот. Отменить запись можно в разделе «Мои уроки» —
-            не позднее, чем за 24 часа до начала.
+            Это ваше занятие. Отменить запись можно в разделе «Мои занятия»
+            — не позднее, чем за 24 часа до начала.
           </p>
         ) : null}
 
@@ -238,7 +238,7 @@ export function BookConfirmModal({
         ) : canBook && billingWaveActive && postpaidAllowed ? (
           <BillingPreview
             tone="postpaid"
-            title="Постоплата"
+            title="Оплата после занятия"
             body="Счёт будет выставлен после занятия. Оплата происходит в кабинете."
           />
         ) : null}
@@ -333,7 +333,7 @@ function statusLabel(kind: CalendarRow['slot']['kind']): string {
     case 'open':
       return 'Свободен'
     case 'booked-self':
-      return 'Ваш слот'
+      return 'Ваше занятие'
     case 'booked-other':
       return 'Занято'
     case 'booked-full':
