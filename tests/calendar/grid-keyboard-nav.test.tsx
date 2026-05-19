@@ -201,4 +201,141 @@ describe('Grid keyboard nav — roving tabindex + activation', () => {
     fireEvent.keyDown(grid, { key: 'PageDown' })
     expect(cellOf(DAYS[0], MAX_HALF_HOUR).getAttribute('tabindex')).toBe('0')
   })
+
+  // SAAS-1-FOLLOWUP-KEYBOARD wave-paranoia round-2 WARN closure
+  // (2026-05-19) — pin the `onCellKeyboardCommit` branch of
+  // handleGridKeyDown PLUS the `e.target.tagName === 'BUTTON'`
+  // early-return.
+  //
+  // The two pinned invariants:
+  //   1. When the parent supplies the NEW `onCellKeyboardCommit`
+  //      handler, Enter on an empty cell calls it (atomic
+  //      mouseDown+mouseUp dispatch) and NOT the legacy
+  //      `onCellMouseDown`.
+  //   2. When the parent supplies ONLY the legacy
+  //      `onCellMouseDown`, Enter on an empty cell still falls back
+  //      to it (back-compat).
+  //   3. When focus is on a SlotBlock <button>, the grid-level
+  //      keydown bails out (early return) — the button's native
+  //      onClick handles activation. We assert this by routing
+  //      the keydown through the button (so e.target is the
+  //      button) and verifying neither grid path fired.
+  describe('round-2 WARN regression pins', () => {
+    it('Enter on empty cell prefers onCellKeyboardCommit over onCellMouseDown', async () => {
+      const onCellMouseDown = vi.fn()
+      const onCellKeyboardCommit = vi.fn()
+      const user = userEvent.setup()
+      render(
+        <Grid
+          fromYmd={FROM_YMD}
+          slots={[]}
+          drag={{ onCellMouseDown, onCellKeyboardCommit }}
+        />,
+      )
+      await user.tab()
+      await user.keyboard('{Enter}')
+      // Atomic commit handler MUST fire — the legacy mouseDown-only
+      // path would leak paint state with no mouseup, so the new
+      // branch takes priority.
+      expect(onCellKeyboardCommit).toHaveBeenCalledTimes(1)
+      expect(onCellKeyboardCommit).toHaveBeenCalledWith(DAYS[0], 6)
+      expect(onCellMouseDown).not.toHaveBeenCalled()
+    })
+
+    it('Space on empty cell prefers onCellKeyboardCommit over onCellMouseDown', async () => {
+      // Space follows the same branch as Enter — pin both keys so a
+      // future refactor of `e.key === 'Enter' || e.key === ' '` can't
+      // silently drop Space.
+      const onCellMouseDown = vi.fn()
+      const onCellKeyboardCommit = vi.fn()
+      const user = userEvent.setup()
+      render(
+        <Grid
+          fromYmd={FROM_YMD}
+          slots={[]}
+          drag={{ onCellMouseDown, onCellKeyboardCommit }}
+        />,
+      )
+      await user.tab()
+      await user.keyboard(' ')
+      expect(onCellKeyboardCommit).toHaveBeenCalledTimes(1)
+      expect(onCellKeyboardCommit).toHaveBeenCalledWith(DAYS[0], 6)
+      expect(onCellMouseDown).not.toHaveBeenCalled()
+    })
+
+    it('Enter on empty cell falls back to onCellMouseDown when onCellKeyboardCommit is absent (back-compat)', async () => {
+      // No onCellKeyboardCommit — legacy path must still work for
+      // callers that haven't migrated to the atomic handler yet.
+      const onCellMouseDown = vi.fn()
+      const user = userEvent.setup()
+      render(
+        <Grid
+          fromYmd={FROM_YMD}
+          slots={[]}
+          drag={{ onCellMouseDown }}
+        />,
+      )
+      await user.tab()
+      await user.keyboard('{Enter}')
+      expect(onCellMouseDown).toHaveBeenCalledTimes(1)
+      expect(onCellMouseDown).toHaveBeenCalledWith(DAYS[0], 6)
+    })
+
+    it('Enter on a SlotBlock <button> fires the button onClick AND the grid-level handler bails out (no preventDefault, no paint)', async () => {
+      // The `e.target.tagName === 'BUTTON'` early-return: when focus
+      // is on a SlotBlock, Enter must go through the button's native
+      // activation, not the grid's roving-cell handler. We assert:
+      //   - onSlotClick fires (from the button's native onClick),
+      //   - onCellKeyboardCommit / onCellMouseDown do NOT fire (the
+      //     grid handler returned early),
+      //   - preventDefault was NOT called on the keydown (a defended
+      //     button can do its native thing).
+      const onSlotClick = vi.fn()
+      const onCellMouseDown = vi.fn()
+      const onCellKeyboardCommit = vi.fn()
+      const { container } = render(
+        <Grid
+          fromYmd={FROM_YMD}
+          slots={fixtureSlots}
+          onSlotClick={onSlotClick}
+          drag={{ onCellMouseDown, onCellKeyboardCommit }}
+        />,
+      )
+      // Find the SlotBlock <button> rendered for the fixture slot.
+      const slotButton = container.querySelector(
+        'button.calendar-slot-block',
+      ) as HTMLButtonElement | null
+      expect(slotButton).not.toBeNull()
+      // Dispatch a keydown that originates on the button (so
+      // e.target.tagName === 'BUTTON' AND e.target !== e.currentTarget
+      // when it bubbles to the grid). React's fireEvent bubbles by
+      // default, so the grid's onKeyDown will see this event with
+      // target === the slot button.
+      const grid = container.querySelector('[role="grid"]') as HTMLElement
+      let gridSawDefaultPrevented = false
+      grid.addEventListener('keydown', (ev) => {
+        // Capture after React's handler ran. If the grid called
+        // e.preventDefault() (the broken pre-fix behavior) this
+        // flag flips true.
+        gridSawDefaultPrevented = ev.defaultPrevented
+      })
+      // Simulate "Enter pressed while the slot button has focus".
+      // We don't trigger the button's onClick implicitly — jsdom
+      // doesn't synthesize click-from-Enter on <button> via
+      // fireEvent.keyDown. We invoke onClick explicitly to model
+      // what the browser would do natively, AND verify the grid
+      // didn't preventDefault (which would have blocked the native
+      // activation).
+      fireEvent.keyDown(slotButton!, { key: 'Enter' })
+      // Native Enter-on-button → click. Model that.
+      slotButton!.click()
+      expect(onSlotClick).toHaveBeenCalledTimes(1)
+      expect(onCellMouseDown).not.toHaveBeenCalled()
+      expect(onCellKeyboardCommit).not.toHaveBeenCalled()
+      // The grid's handler took the early-return branch, so it did
+      // NOT call e.preventDefault() (which would block the browser
+      // from synthesising the click on the button).
+      expect(gridSawDefaultPrevented).toBe(false)
+    })
+  })
 })
