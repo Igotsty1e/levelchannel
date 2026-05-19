@@ -229,16 +229,21 @@ describe('BCS-B.2 — GET /api/slots/booking-days', () => {
   // `profile?.timezone ?? 'Europe/Moscow'` and `'Moscow'` is not a
   // valid IANA name. After the fix, the route sanitises the profile
   // default via safeTimezone() and the call succeeds (no tz param).
-  it('legacy non-IANA profile.timezone is silently clamped (no invalid_tz)', async () => {
+  //
+  // BCS-DEF-5 (2026-05-19) — migration 0064 added a DB-side CHECK
+  // constraint (account_profiles_timezone_iana_check) that REJECTS the
+  // raw 'Moscow' insert. The application-level safeTimezone() defence
+  // remains; we now exercise the same fallback by setting timezone =
+  // NULL (the normalized state migration 0048+0064 settled on). The
+  // route still hits `profile?.timezone ?? 'Europe/Moscow'` and lands
+  // on the safeTimezone() fallback.
+  it('null profile.timezone is silently filled by safeTimezone fallback (no invalid_tz)', async () => {
     const learner = await registerAndCookie('l-tz-bad@example.com', {
       verifyEmail: true,
     })
-    // Insert a legacy bad timezone directly via raw SQL — the API
-    // layer would refuse it on PATCH /profile, but the DB CHECK only
-    // bounds display_name + locale, so an old row can carry the value.
     await getDbPool().query(
       `insert into account_profiles (account_id, display_name, timezone, locale)
-       values ($1, 'Тест', 'Moscow', 'ru')
+       values ($1, 'Тест', NULL, 'ru')
        on conflict (account_id) do update set timezone = excluded.timezone`,
       [learner.accountId],
     )
@@ -255,6 +260,27 @@ describe('BCS-B.2 — GET /api/slots/booking-days', () => {
     expect(res.status).toBe(200)
     const json = await res.json()
     expect(json.days).toEqual([]) // no slots, but the call succeeded
+  })
+
+  // BCS-DEF-5 (2026-05-19) regression pin — migration 0064 prevents
+  // non-IANA inserts from reaching account_profiles in the first place.
+  // The application-level safeTimezone() defence is a backstop only.
+  it('DB CHECK rejects non-IANA timezone insert (migration 0064)', async () => {
+    const learner = await registerAndCookie('l-tz-rejected@example.com', {
+      verifyEmail: true,
+    })
+    let raised: string | null = null
+    try {
+      await getDbPool().query(
+        `insert into account_profiles (account_id, display_name, timezone, locale)
+         values ($1, 'Тест', 'Moscow', 'ru')
+         on conflict (account_id) do update set timezone = excluded.timezone`,
+        [learner.accountId],
+      )
+    } catch (err) {
+      raised = err instanceof Error ? err.message : String(err)
+    }
+    expect(raised).toMatch(/account_profiles_timezone_iana_check/)
   })
 })
 

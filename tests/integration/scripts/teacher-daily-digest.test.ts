@@ -111,26 +111,51 @@ async function seedBookedSlot(opts: {
   return slotId
 }
 
-function pickedNow(localHours: number, localMinutes: number): Date {
-  // Construct a UTC Date that, when projected into Europe/Moscow (no
-  // DST, UTC+3), yields `localHours:localMinutes`. Anchor on a fixed
-  // future calendar day so the cron's `now() - 24h .. now() + 36h`
-  // window always covers our seeded slots regardless of when CI runs.
-  const utcHour = localHours - 3
-  // Today UTC anchor; the candidate-set query uses Postgres now(), so
-  // we keep the JS-side `now` close to it (no drift gymnastics).
-  const today = new Date()
-  return new Date(
-    Date.UTC(
-      today.getUTCFullYear(),
-      today.getUTCMonth(),
-      today.getUTCDate(),
-      utcHour,
-      localMinutes,
-      0,
-      0,
-    ),
+// Compute an ISO timestamp for `today_msk` at `localHour:00` MSK
+// (UTC+3). Aligns to 30-min boundary so the
+// lesson_slots_start_30min_aligned CHECK passes. Pinning to MSK lets
+// the seed slot land on "today_local in MSK" exactly, matching the
+// candidate query's `today AT TIME ZONE 'Europe/Moscow'::date`
+// projection regardless of when CI runs.
+async function todayMskIsoAtHour(localHour: number): Promise<string> {
+  const pool = getDbPool()
+  const r = await pool.query(
+    `select (
+       date_trunc('day', now() AT TIME ZONE 'Europe/Moscow')
+       + ($1::int || ' hours')::interval
+     ) AT TIME ZONE 'Europe/Moscow' as ts`,
+    [localHour],
   )
+  return new Date(String(r.rows[0].ts)).toISOString()
+}
+
+// Compute a JS Date object representing today MSK 08:00:00 (= 05:00
+// UTC). The candidate-set query uses Postgres now() and projects to
+// MSK; our JS now uses the SAME wall-clock day as Postgres but at the
+// firing-band-passing 08:00 MSK instant. This keeps the JS-computed
+// ymd in lockstep with Postgres-computed their_today_local.
+async function tickNowInFiringBand(): Promise<Date> {
+  const pool = getDbPool()
+  const r = await pool.query(
+    `select (
+       date_trunc('day', now() AT TIME ZONE 'Europe/Moscow')
+       + interval '8 hours'
+     ) AT TIME ZONE 'Europe/Moscow' as ts`,
+  )
+  return new Date(String(r.rows[0].ts))
+}
+
+// Sibling of tickNowInFiringBand but at 11:00 MSK — outside the
+// [07:59:00, 08:01:00] firing band.
+async function tickNowOutsideFiringBand(): Promise<Date> {
+  const pool = getDbPool()
+  const r = await pool.query(
+    `select (
+       date_trunc('day', now() AT TIME ZONE 'Europe/Moscow')
+       + interval '11 hours'
+     ) AT TIME ZONE 'Europe/Moscow' as ts`,
+  )
+  return new Date(String(r.rows[0].ts))
 }
 
 // Build a stub resendSend that captures every call.
@@ -162,31 +187,28 @@ function makeResendStub(behaviour: 'success' | 'failure' = 'success') {
 
 describe('nowInTimezoneParts + isWithinFiringBand', () => {
   it('07:59:00 → inside band', () => {
-    const now = pickedNow(7, 59)
+    const now = new Date('2026-06-01T04:59:00.000Z') // 07:59 MSK
     const { hms } = mod.nowInTimezoneParts(now, 'Europe/Moscow')
     expect(hms).toBe('07:59:00')
     expect(mod.isWithinFiringBand(hms)).toBe(true)
   })
   it('08:00:30 → inside band', () => {
-    const now = pickedNow(8, 0)
-    now.setUTCSeconds(30)
+    const now = new Date('2026-06-01T05:00:30.000Z') // 08:00:30 MSK
     const { hms } = mod.nowInTimezoneParts(now, 'Europe/Moscow')
     expect(mod.isWithinFiringBand(hms)).toBe(true)
   })
   it('08:01:00 → inside band (inclusive upper edge)', () => {
-    const now = pickedNow(8, 1)
+    const now = new Date('2026-06-01T05:01:00.000Z') // 08:01 MSK
     const { hms } = mod.nowInTimezoneParts(now, 'Europe/Moscow')
     expect(mod.isWithinFiringBand(hms)).toBe(true)
   })
   it('08:01:30 → outside band', () => {
-    const now = pickedNow(8, 1)
-    now.setUTCSeconds(30)
+    const now = new Date('2026-06-01T05:01:30.000Z') // 08:01:30 MSK
     const { hms } = mod.nowInTimezoneParts(now, 'Europe/Moscow')
     expect(mod.isWithinFiringBand(hms)).toBe(false)
   })
   it('07:58:30 → outside band', () => {
-    const now = pickedNow(7, 58)
-    now.setUTCSeconds(30)
+    const now = new Date('2026-06-01T04:58:30.000Z') // 07:58:30 MSK
     const { hms } = mod.nowInTimezoneParts(now, 'Europe/Moscow')
     expect(mod.isWithinFiringBand(hms)).toBe(false)
   })
@@ -218,7 +240,7 @@ describe('selectCandidateTeachers — gates', () => {
       displayName: 'Анна',
     })
     const learnerId = await makeLearner('learner')
-    const startAt = new Date(Date.now() + 4 * 3600_000).toISOString()
+    const startAt = await todayMskIsoAtHour(15)
     await seedBookedSlot({
       teacherId,
       learnerId,
@@ -237,7 +259,7 @@ describe('selectCandidateTeachers — gates', () => {
       timezone: 'Europe/Moscow',
     })
     const learnerId = await makeLearner('learner-d')
-    const startAt = new Date(Date.now() + 4 * 3600_000).toISOString()
+    const startAt = await todayMskIsoAtHour(15)
     await seedBookedSlot({ teacherId, learnerId, startAtUtcIso: startAt })
     await getDbPool().query(
       `update accounts set disabled_at = now() where id = $1::uuid`,
@@ -253,7 +275,7 @@ describe('selectCandidateTeachers — gates', () => {
       timezone: 'Europe/Moscow',
     })
     const learnerId = await makeLearner('learner-p')
-    const startAt = new Date(Date.now() + 4 * 3600_000).toISOString()
+    const startAt = await todayMskIsoAtHour(15)
     await seedBookedSlot({ teacherId, learnerId, startAtUtcIso: startAt })
     await getDbPool().query(
       `update accounts set scheduled_purge_at = now() + interval '30 days'
@@ -270,7 +292,7 @@ describe('selectCandidateTeachers — gates', () => {
       timezone: 'Europe/Moscow',
     })
     const learnerId = await makeLearner('learner-s')
-    const startAt = new Date(Date.now() + 4 * 3600_000).toISOString()
+    const startAt = await todayMskIsoAtHour(15)
     await seedBookedSlot({ teacherId, learnerId, startAtUtcIso: startAt })
 
     // Insert a terminal sent row for "their today".
@@ -293,7 +315,7 @@ describe('selectCandidateTeachers — gates', () => {
       timezone: 'Europe/Moscow',
     })
     const learnerId = await makeLearner('learner-m')
-    const startAt = new Date(Date.now() + 4 * 3600_000).toISOString()
+    const startAt = await todayMskIsoAtHour(15)
     await seedBookedSlot({ teacherId, learnerId, startAtUtcIso: startAt })
 
     // Row at attempts=3, max_attempts=3 → excluded by candidate query.
@@ -315,7 +337,7 @@ describe('selectCandidateTeachers — gates', () => {
       timezone: 'Europe/Moscow',
     })
     const learnerId = await makeLearner('learner-r')
-    const startAt = new Date(Date.now() + 4 * 3600_000).toISOString()
+    const startAt = await todayMskIsoAtHour(15)
     await seedBookedSlot({ teacherId, learnerId, startAtUtcIso: startAt })
 
     await getDbPool().query(
@@ -339,12 +361,12 @@ describe('processOneTeacher — verdict paths', () => {
       displayName: 'Учитель Тестовый',
     })
     const learnerId = await makeLearner('learner-ob')
-    const startAt = new Date(Date.now() + 4 * 3600_000).toISOString()
+    const startAt = await todayMskIsoAtHour(15)
     await seedBookedSlot({ teacherId, learnerId, startAtUtcIso: startAt })
 
     const candidates = await mod.selectCandidateTeachers(getDbPool(), 3, 200)
     const stub = makeResendStub('success')
-    const outNow = new Date('2026-06-01T08:00:00.000Z') // 11:00 MSK
+    const outNow = await tickNowOutsideFiringBand() // 11:00 MSK today
     const result = await mod.processOneTeacher({
       pool: getDbPool(),
       candidate: candidates[0],
@@ -368,9 +390,18 @@ describe('processOneTeacher — verdict paths', () => {
       timezone: 'Europe/Moscow',
     })
     const learnerId = await makeLearner('learner-ed')
-    // Slot is 30 hours from now — outside the teacher's local TODAY in
-    // every reasonable interpretation.
-    const startAt = new Date(Date.now() + 30 * 3600_000).toISOString()
+    // Slot is YESTERDAY 15:00 MSK — outside the teacher's TODAY in MSK
+    // (past-band of the candidate query) but still inside the 24h
+    // window backwards (= within candidate-set scope). The per-teacher
+    // SELECT `start_at >= today_local_00:00 AT TIME ZONE` excludes it
+    // from the slot list → empty_day branch.
+    const yesterdaySlot = await getDbPool().query(
+      `select (
+         date_trunc('day', now() AT TIME ZONE 'Europe/Moscow')
+         - interval '1 day' + interval '15 hours'
+       ) AT TIME ZONE 'Europe/Moscow' as ts`,
+    )
+    const startAt = new Date(String(yesterdaySlot.rows[0].ts)).toISOString()
     await seedBookedSlot({ teacherId, learnerId, startAtUtcIso: startAt })
 
     const candidates = await mod.selectCandidateTeachers(getDbPool(), 3, 200)
@@ -378,7 +409,7 @@ describe('processOneTeacher — verdict paths', () => {
 
     const stub = makeResendStub('success')
     // Use a real-ish "in-band" time so the firing band gate passes.
-    const tickNow = pickedNow(8, 0)
+    const tickNow = await tickNowInFiringBand()
     const result = await mod.processOneTeacher({
       pool: getDbPool(),
       candidate: candidates[0],
@@ -406,18 +437,8 @@ describe('processOneTeacher — verdict paths', () => {
       displayName: 'Анна',
     })
     const learnerId = await makeLearner('learner-hs')
-    // Slot ~today at 15:00 MSK (= 12:00 UTC). Use today's MSK date.
-    const today = new Date()
-    const slotUtc = new Date(
-      Date.UTC(
-        today.getUTCFullYear(),
-        today.getUTCMonth(),
-        today.getUTCDate(),
-        12, // 15:00 MSK
-        0,
-        0,
-      ),
-    ).toISOString()
+    // Slot today at 15:00 MSK.
+    const slotUtc = await todayMskIsoAtHour(15)
     await seedBookedSlot({
       teacherId,
       learnerId,
@@ -429,7 +450,7 @@ describe('processOneTeacher — verdict paths', () => {
     expect(candidates.length).toBe(1)
 
     const stub = makeResendStub('success')
-    const tickNow = pickedNow(8, 0)
+    const tickNow = await tickNowInFiringBand()
     const result = await mod.processOneTeacher({
       pool: getDbPool(),
       candidate: candidates[0],
@@ -462,22 +483,12 @@ describe('processOneTeacher — verdict paths', () => {
       timezone: 'Europe/Moscow',
     })
     const learnerId = await makeLearner('learner-id')
-    const today = new Date()
-    const slotUtc = new Date(
-      Date.UTC(
-        today.getUTCFullYear(),
-        today.getUTCMonth(),
-        today.getUTCDate(),
-        12,
-        0,
-        0,
-      ),
-    ).toISOString()
+    const slotUtc = await todayMskIsoAtHour(15)
     await seedBookedSlot({ teacherId, learnerId, startAtUtcIso: slotUtc })
 
     const candidates = await mod.selectCandidateTeachers(getDbPool(), 3, 200)
     const stub = makeResendStub('success')
-    const tickNow = pickedNow(8, 0)
+    const tickNow = await tickNowInFiringBand()
     await mod.processOneTeacher({
       pool: getDbPool(),
       candidate: candidates[0],
@@ -499,22 +510,12 @@ describe('processOneTeacher — verdict paths', () => {
       timezone: 'Europe/Moscow',
     })
     const learnerId = await makeLearner('learner-tf')
-    const today = new Date()
-    const slotUtc = new Date(
-      Date.UTC(
-        today.getUTCFullYear(),
-        today.getUTCMonth(),
-        today.getUTCDate(),
-        12,
-        0,
-        0,
-      ),
-    ).toISOString()
+    const slotUtc = await todayMskIsoAtHour(15)
     await seedBookedSlot({ teacherId, learnerId, startAtUtcIso: slotUtc })
 
     const candidates = await mod.selectCandidateTeachers(getDbPool(), 3, 200)
     const stub = makeResendStub('failure')
-    const tickNow = pickedNow(8, 0)
+    const tickNow = await tickNowInFiringBand()
     const result = await mod.processOneTeacher({
       pool: getDbPool(),
       candidate: candidates[0],
@@ -557,17 +558,7 @@ describe('processOneTeacher — verdict paths', () => {
       timezone: 'Europe/Moscow',
     })
     const learnerId = await makeLearner('learner-tsf')
-    const today = new Date()
-    const slotUtc = new Date(
-      Date.UTC(
-        today.getUTCFullYear(),
-        today.getUTCMonth(),
-        today.getUTCDate(),
-        12,
-        0,
-        0,
-      ),
-    ).toISOString()
+    const slotUtc = await todayMskIsoAtHour(15)
     await seedBookedSlot({ teacherId, learnerId, startAtUtcIso: slotUtc })
 
     // Pre-seed a row at attempts=3 with skipped_reason=NULL (the
@@ -596,7 +587,7 @@ describe('processOneTeacher — verdict paths', () => {
       theirTodayLocal: new Date().toISOString().slice(0, 10),
     }
     const stub = makeResendStub('success')
-    const tickNow = pickedNow(8, 0)
+    const tickNow = await tickNowInFiringBand()
     const result = await mod.processOneTeacher({
       pool: getDbPool(),
       candidate: candFake,
@@ -624,17 +615,7 @@ describe('processOneTeacher — verdict paths', () => {
       timezone: null,
     })
     const learnerId = await makeLearner('learner-bt')
-    const today = new Date()
-    const slotUtc = new Date(
-      Date.UTC(
-        today.getUTCFullYear(),
-        today.getUTCMonth(),
-        today.getUTCDate(),
-        12,
-        0,
-        0,
-      ),
-    ).toISOString()
+    const slotUtc = await todayMskIsoAtHour(15)
     await seedBookedSlot({ teacherId, learnerId, startAtUtcIso: slotUtc })
 
     const accountEmail = (
@@ -650,7 +631,7 @@ describe('processOneTeacher — verdict paths', () => {
       theirTodayLocal: new Date().toISOString().slice(0, 10),
     }
     const stub = makeResendStub('success')
-    const tickNow = pickedNow(8, 0)
+    const tickNow = await tickNowInFiringBand()
     const result = await mod.processOneTeacher({
       pool: getDbPool(),
       candidate: candFake,
