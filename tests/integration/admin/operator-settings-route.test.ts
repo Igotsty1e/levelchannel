@@ -239,6 +239,134 @@ describe('POST /api/admin/settings/alerts/setting/[key] (admin happy path)', () 
   })
 })
 
+// BCS-DEF-1-TEST-FILLOUT item 7 (2026-05-19) — per-key POST + DELETE
+// coverage for the 4 new CONFLICT_UNRESOLVED_* keys added by the
+// BCS-DEF-1 epic. Mirrors the CALENDAR_PATHOLOGY_THRESHOLD harness
+// above. SETTING_SCHEMA contract:
+//   CONFLICT_UNRESOLVED_THRESHOLD_MINUTES    min=5,      max=1440
+//   CONFLICT_UNRESOLVED_REPORT_LIMIT         min=1,      max=500
+//   CONFLICT_UNRESOLVED_PER_TEACHER_LIMIT    min=1,      max=50
+//   CONFLICT_UNRESOLVED_DEDUP_WINDOW_MS      min=60_000, max=604_800_000
+type ConflictKeySpec = {
+  key:
+    | 'CONFLICT_UNRESOLVED_THRESHOLD_MINUTES'
+    | 'CONFLICT_UNRESOLVED_REPORT_LIMIT'
+    | 'CONFLICT_UNRESOLVED_PER_TEACHER_LIMIT'
+    | 'CONFLICT_UNRESOLVED_DEDUP_WINDOW_MS'
+  valid: string
+  outOfRange: string
+}
+
+const CONFLICT_KEYS: ReadonlyArray<ConflictKeySpec> = [
+  {
+    key: 'CONFLICT_UNRESOLVED_THRESHOLD_MINUTES',
+    valid: '180',
+    outOfRange: '1441',
+  },
+  {
+    key: 'CONFLICT_UNRESOLVED_REPORT_LIMIT',
+    valid: '25',
+    outOfRange: '501',
+  },
+  {
+    key: 'CONFLICT_UNRESOLVED_PER_TEACHER_LIMIT',
+    valid: '10',
+    outOfRange: '51',
+  },
+  {
+    key: 'CONFLICT_UNRESOLVED_DEDUP_WINDOW_MS',
+    valid: '7200000',
+    outOfRange: '59999',
+  },
+]
+
+describe.each(CONFLICT_KEYS)(
+  'CONFLICT_UNRESOLVED_* per-key route ($key)',
+  ({ key, valid, outOfRange }) => {
+    it(`POST <valid value> → 200 + row in operator_settings`, async () => {
+      const admin = await registerAndCookie({
+        email: `os-route-cu-${key.toLowerCase()}-set@example.com`,
+        verified: true,
+        role: 'admin',
+      })
+      const res = await postHandler(
+        postReq(key, { value: valid, expectedUpdatedAt: null }, admin.cookie),
+        { params: Promise.resolve({ key }) },
+      )
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { ok: boolean; updatedAt: string }
+      expect(body.ok).toBe(true)
+      expect(body.updatedAt).toBeTruthy()
+
+      const pool = getDbPool()
+      const r = await pool.query(
+        `select value from operator_settings where key = $1`,
+        [key],
+      )
+      expect(r.rows.length).toBe(1)
+      expect(String(r.rows[0].value)).toBe(valid)
+    })
+
+    it(`DELETE after POST → 200 + row removed`, async () => {
+      const admin = await registerAndCookie({
+        email: `os-route-cu-${key.toLowerCase()}-del@example.com`,
+        verified: true,
+        role: 'admin',
+      })
+      const first = await postHandler(
+        postReq(key, { value: valid, expectedUpdatedAt: null }, admin.cookie),
+        { params: Promise.resolve({ key }) },
+      )
+      expect(first.status).toBe(200)
+      const firstBody = (await first.json()) as { updatedAt: string }
+
+      const res = await deleteHandler(
+        deleteReq(
+          key,
+          { expectedUpdatedAt: firstBody.updatedAt },
+          admin.cookie,
+        ),
+        { params: Promise.resolve({ key }) },
+      )
+      expect(res.status).toBe(200)
+
+      const pool = getDbPool()
+      const r = await pool.query(
+        `select count(*)::int as n from operator_settings where key = $1`,
+        [key],
+      )
+      expect(r.rows[0].n).toBe(0)
+    })
+
+    it(`POST <out-of-range value> → 400 invalid_value`, async () => {
+      const admin = await registerAndCookie({
+        email: `os-route-cu-${key.toLowerCase()}-oor@example.com`,
+        verified: true,
+        role: 'admin',
+      })
+      const res = await postHandler(
+        postReq(
+          key,
+          { value: outOfRange, expectedUpdatedAt: null },
+          admin.cookie,
+        ),
+        { params: Promise.resolve({ key }) },
+      )
+      expect(res.status).toBe(400)
+      const body = (await res.json()) as { error: string }
+      expect(body.error).toBe('invalid_value')
+
+      // No row should be persisted on rejection.
+      const pool = getDbPool()
+      const r = await pool.query(
+        `select count(*)::int as n from operator_settings where key = $1`,
+        [key],
+      )
+      expect(r.rows[0].n).toBe(0)
+    })
+  },
+)
+
 describe('DELETE /api/admin/settings/alerts/setting/[key]', () => {
   it('admin happy delete returns 200', async () => {
     const admin = await registerAndCookie({
