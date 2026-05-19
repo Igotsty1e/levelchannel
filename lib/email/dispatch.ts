@@ -1,6 +1,10 @@
 import { sendEmail } from '@/lib/email/client'
 import { renderAlreadyRegisteredEmail } from '@/lib/email/templates/already-registered'
 import {
+  renderLearnerLessonReminderEmail,
+  type LearnerLessonReminderParams,
+} from '@/lib/email/templates/learner-lesson-reminder'
+import {
   renderOperatorPackageGrantFailureEmail,
   type OperatorPackageGrantFailureParams,
 } from '@/lib/email/templates/operator-package-grant-failure'
@@ -106,6 +110,29 @@ export async function sendOperatorPaymentFailureNotification(
     text: tpl.text,
   })
   return { ...result, recipient: to } as const
+}
+
+// BCS-DEF-4 (2026-05-19) — learner lesson reminder dispatch. Used
+// only by scripts/learner-reminder-dispatch.mjs (the cron-driven
+// scheduler), but lives here for two reasons:
+//   1. Symmetry with the rest of the transactional senders so the
+//      "what emails can leave this app?" question has one answer.
+//   2. Tests can mock `sendEmail` once and cover every sender.
+//
+// Caller passes the rendered cabinet URL already (template doesn't
+// know paymentConfig); the dispatch wrapper just injects siteUrl on
+// behalf of the .mjs caller which is outside the @/ alias surface.
+export async function sendLearnerLessonReminderEmail(
+  to: string,
+  params: Omit<LearnerLessonReminderParams, 'cabinetUrl'> & {
+    cabinetUrl?: string
+  },
+) {
+  const tpl = renderLearnerLessonReminderEmail({
+    ...params,
+    cabinetUrl: params.cabinetUrl ?? `${paymentConfig.siteUrl}/cabinet`,
+  })
+  return sendEmail({ to, subject: tpl.subject, html: tpl.html, text: tpl.text })
 }
 
 // Wave 15 — package-grant failure dispatch. Fires from

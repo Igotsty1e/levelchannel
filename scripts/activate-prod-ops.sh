@@ -273,6 +273,12 @@ declare -a units=(
   # sibling of the alert-probe family.
   "levelchannel-conflict-unresolved-alert.service"
   "levelchannel-conflict-unresolved-alert.timer"
+  # BCS-DEF-4 (2026-05-19) — learner lesson reminder dispatcher.
+  # NOT an alert probe (cron-driven scheduler over lesson_slots);
+  # co-located here because it shares the same systemd cadence /
+  # sandbox / env-file shape. 1-min cadence, +30-second gate window.
+  "levelchannel-learner-reminder-dispatch.service"
+  "levelchannel-learner-reminder-dispatch.timer"
   # BCS-OP-ROLLOUT — 6 calendar worker cron units.
   "levelchannel-calendar-pull.service"
   "levelchannel-calendar-pull.timer"
@@ -337,6 +343,8 @@ declare -a timers=(
   "levelchannel-auth-flow-alert.timer"
   # BCS-DEF-1 Phase 2 (2026-05-19) — conflict-unresolved alert timer.
   "levelchannel-conflict-unresolved-alert.timer"
+  # BCS-DEF-4 (2026-05-19) — learner lesson reminder dispatcher timer.
+  "levelchannel-learner-reminder-dispatch.timer"
   # BCS-OP-ROLLOUT — 6 calendar worker timers.
   "levelchannel-calendar-pull.timer"
   "levelchannel-calendar-push.timer"
@@ -404,7 +412,7 @@ step "Post-activation summary"
 echo
 echo "${B}Active timers:${N}"
 systemctl list-timers --no-pager 2>/dev/null \
-  | grep -E "levelchannel-(webhook-flow-alert|auth-flow-alert|conflict-unresolved-alert|db-retention|stale-orders|auto-complete-slots|refund-reconcile|calendar-pathology-alert|teacher-daily-digest|calendar-(pull|push|intents|renew-channels|revive-blocked|reconcile))" \
+  | grep -E "levelchannel-(webhook-flow-alert|auth-flow-alert|conflict-unresolved-alert|learner-reminder-dispatch|db-retention|stale-orders|auto-complete-slots|refund-reconcile|calendar-pathology-alert|teacher-daily-digest|calendar-(pull|push|intents|renew-channels|revive-blocked|reconcile))" \
   || echo "  (timers not yet shown — they appear after first scheduled run)"
 
 echo
