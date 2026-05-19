@@ -220,13 +220,12 @@ describe('lib/admin/conflict-feed.ts — listAdminConflicts', () => {
     })
     // Booked + no stamp → excluded.
     await seedSlot({ teacherId, conflictAt: null })
-    // Cancelled + still-stamped (zombie row simulating pre-wave data)
-    // → excluded by status filter.
-    await seedSlot({
-      teacherId,
-      status: 'cancelled',
-      conflictAt: new Date(),
-    })
+    // Note: cancelled+stamped seed removed — the DB CHECK
+    // `lesson_slots_cancelled_invariants` already rejects it
+    // (a cancelled row must have `external_conflict_at IS NULL`).
+    // The status='booked' filter in `listAdminConflicts` is
+    // therefore defense-in-depth against an invariant that's
+    // already enforced one layer below.
 
     const conflicts = await listAdminConflicts({
       since: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
@@ -267,16 +266,12 @@ describe('lib/admin/conflict-feed.ts — listAdminConflicts', () => {
 })
 
 describe('lib/admin/conflict-feed.ts — countAdminConflicts', () => {
-  it('matches the list count and excludes cancelled-but-stamped rows', async () => {
+  it('matches the list count for booked-stamped rows', async () => {
     const teacherId = await makeTeacher('cf-count-1')
     await seedSlot({ teacherId, conflictAt: new Date() })
     await seedSlot({ teacherId, conflictAt: new Date() })
-    // Cancelled-stamped (zombie) — must be excluded.
-    await seedSlot({
-      teacherId,
-      status: 'cancelled',
-      conflictAt: new Date(),
-    })
+    // Note: cancelled+stamped seed removed — the DB CHECK
+    // `lesson_slots_cancelled_invariants` prevents it.
 
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
     const n = await countAdminConflicts({ since })
