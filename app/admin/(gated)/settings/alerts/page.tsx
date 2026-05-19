@@ -275,7 +275,7 @@ function ProbeBody({
         )}
       </Field>
 
-      <Field label="Последний алерт">
+      <Field label="Последнее уведомление">
         {lastAlert ? (
           <>
             <span>{formatDateTime(lastAlert.ranAt)}</span>
@@ -294,7 +294,7 @@ function ProbeBody({
           </>
         ) : (
           <span style={{ color: 'var(--secondary)' }}>
-            нет данных — алерт ещё не отправлялся
+            нет данных — уведомление ещё не отправлялось
           </span>
         )}
       </Field>
