@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { FormEvent, Suspense, useState } from 'react'
 
 import { AuthShell } from '@/components/auth-shell'
@@ -16,7 +16,6 @@ import { postAuthJson } from '@/lib/auth/client'
 export const dynamic = 'force-dynamic'
 
 function ResetContent() {
-  const router = useRouter()
   const params = useSearchParams()
   const token = params.get('token') ?? ''
 
