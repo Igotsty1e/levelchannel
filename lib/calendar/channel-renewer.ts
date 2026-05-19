@@ -34,8 +34,6 @@ import {
 } from '@/lib/calendar/google/config'
 import { getDbPool } from '@/lib/db/pool'
 
-const RENEWAL_WINDOW_MS = 24 * 60 * 60_000 // renew anything expiring in <24h
-
 export type SetupChannelOutcome =
   | {
       ok: true
