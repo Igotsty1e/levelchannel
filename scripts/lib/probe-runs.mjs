@@ -1,5 +1,6 @@
-// scripts/lib/probe-runs.mjs — shared helper for the three systemd
-// alert probes (auth-flow, calendar-pathology, webhook-flow) under
+// scripts/lib/probe-runs.mjs — shared helper for the systemd alert
+// probes (auth-flow, calendar-pathology, webhook-flow at ship; plus
+// conflict-unresolved added by BCS-DEF-1 Phase 1 2026-05-19) under
 // scripts/*-alert.mjs.
 //
 // Plan: docs/plans/alerts-obs.md (ALERTS-OBS epic, 2026-05-16).

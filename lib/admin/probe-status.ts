@@ -1,14 +1,17 @@
 import { isUndefinedTableError } from '@/lib/db/errors'
 import { getDbPool } from '@/lib/db/pool'
 
-// ALERTS-OBS (2026-05-16) — read-only observability for the three
-// systemd alert probes.
+// ALERTS-OBS (2026-05-16) — read-only observability for the systemd
+// alert probes (3 at ship; extended to 4 by BCS-DEF-1 Phase 4,
+// 2026-05-19 — see PROBE_NAMES below).
 //
-// Reads from `probe_runs` (migration 0053). Writes happen exclusively
-// from .mjs probes via scripts/lib/probe-runs.mjs + the test-send
-// endpoint at /api/admin/settings/alerts/[probe]/test-send.
+// Reads from `probe_runs` (migration 0053; CHECK extended by migration
+// 0058 for the 4th probe). Writes happen exclusively from .mjs probes
+// via scripts/lib/probe-runs.mjs + the test-send endpoint at
+// /api/admin/settings/alerts/[probe]/test-send.
 //
-// Plan: docs/plans/alerts-obs.md.
+// Plans: docs/plans/alerts-obs.md (initial 3-probe surface);
+// docs/plans/conflict-unresolved-alert.md (BCS-DEF-1, 4th probe).
 
 export type ProbeName =
   | 'auth-flow'
