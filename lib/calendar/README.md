@@ -9,7 +9,8 @@
 Owns the full Google Calendar surface:
 - **OAuth** — `google/oauth.ts` + `google/state.ts` + `google/config.ts` (HMAC-signed CSRF state, scope `calendar.events` + `calendar.calendarlist.readonly`).
 - **Encrypted token storage** — `integrations.ts`. Access/refresh tokens + (since AUDIT-SEC-4 2026-05-17) channel verification token are bytea-encrypted under `CALENDAR_ENCRYPTION_KEY` (separate from `AUDIT_ENCRYPTION_KEY` for blast-radius). Rotation via `pgp_sym_decrypt_either`.
-- **Pull worker** — `pull-runner.ts` does ONE teacher × ONE calendar tick: fetch busy intervals, compute F8 epoch-aware self-echo, full-rewrite `teacher_external_busy_intervals` in one TX, encrypt summaries. `pull-worker.ts` drains the job queue, dispatches per-job, wires the post-pull conflict detector (BCS-F.1 wire-up gap closed PR #251).
+- **Pull worker** — `pull-runner.ts` does ONE teacher × ONE calendar tick: fetch busy intervals, compute F8 epoch-aware self-echo, full-rewrite `teacher_external_busy_intervals` in one TX, encrypt summaries. `pull-worker.ts` drains the job queue, dispatches per-job, wires the post-pull conflict detector (BCS-F.1 wire-up gap closed PR #251 — `runConflictDetectionForTeacher` called inside `processOneJob()`).
+- **syncToken column** (BCS-DEF-7 Phase 1, 2026-05-18, PR #352, migration 0060) — `teacher_calendar_integrations.next_sync_token` is the additive scaffold for Google Calendar incremental pull. Currently NULL on all rows; the full-rewrite pull path is unchanged. Phase 2 (delta read path via syncToken) is plan-only (`docs/plans/bcs-def-7-synctoken-pull.md`, PR #337) and awaiting plan-paranoia per ENGINEERING_BACKLOG (PR #371).
 - **Push worker** — `push-worker.ts` mirrors our slot writes/cancels into Google. Best-effort with retry envelope.
 - **Channel renewer** — `channel-renewer.ts` `setupChannelForIntegration` + `renewExpiringChannels`. Both fail-closed at the top BEFORE any external Google `channels.watch` call if `CALENDAR_ENCRYPTION_KEY` is unset OR migration 0054 (`channel_token_enc` column) is missing — no orphan Google channels possible.
 - **Webhook** — `app/api/calendar/google/webhook/route.ts` (route, not in this folder) reads decrypt-aware via `coalesce(pgp_sym_decrypt_either(channel_token_enc, ...), channel_token)`.
@@ -36,6 +37,8 @@ Owns the full Google Calendar surface:
 | `hidden-slots.ts` | reconciliation: hide rows lacking corresponding Google event |
 | `view-model.ts` | DTO shape for cabinet + teacher calendar UI |
 | `drag-state.ts` + `paint-synth.ts` | UI helpers |
+| `grid-hit-test.ts` | pure pointer-to-cell math (SAAS-1 5.F seam, PR #313) |
+| `grid-keyboard.ts` | pure arrow/Home/End/PageUp-PgDn cell-nav reducers + slot-at-cell resolver (SAAS-1 keyboard followup, PR #354) |
 | `dates.ts` | UTC/MSK conversions used across calendar surface |
 | `types.ts` | public type surface |
 | `google/` | low-level Google API client (channels, events, oauth, config, state) |
@@ -55,6 +58,7 @@ Owns the full Google Calendar surface:
 - `ARCHITECTURE.md §Booking + calendar sync` — full BCS wave plan summary.
 - `docs/plans/booking-calendly-style.md` — main design doc.
 - `docs/plans/sec-4-channel-token-encryption.md` — channel_token at-rest encrypt.
+- `docs/plans/bcs-def-7-synctoken-pull.md` — incremental syncToken pull (Phase 1 column shipped; Phase 2 read path plan-only).
 - `SECURITY.md §At-rest encryption — Calendar key rotation` — 4-column rotation runbook.
 - `docs/critical-path.md §Calendar + scheduling integrity` — the 2 files in this module that are load-bearing.
 

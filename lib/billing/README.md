@@ -5,7 +5,7 @@
 ## Purpose
 
 Owns:
-- **Package grants** — `processPackageGrant` writes `package_purchases` + `payment_allocations` atomically under the `pg-stack:` advisory lock prefix. Idempotent on `payment_order_id`. Money-equivalent grants from a paid order.
+- **Package grants** — `processPackageGrant` writes `package_purchases` + `payment_allocations` atomically under the `pg-stack:` advisory lock prefix. Idempotent on `payment_order_id`. Money-equivalent grants from a paid order. Three call sites share the prefix: learner-buy widget (PKG-LEARNER-BUY, PRs #237-#241), admin operator-grant route (PKG-ADMIN-GRANT, PRs #243-#248), and the CloudPayments Pay-webhook handler.
 - **Package consumption** — `consumePackageUnit` debits a unit on slot booking; `restorePackageConsumption` restores on cancel. FIFO across active purchases; race-safe via consumption-row PK on `slot_id`.
 - **Refund reversals** — `payment_allocation_reversals` ledger. Binary all-or-nothing for derived `paid` state (`paid-state.ts`).
 - **Paid-not-granted reconciliation** — `paid-not-granted.ts` queries are the source of truth for the `/admin/reconciliation/package-grants` dashboard.
@@ -23,7 +23,7 @@ Owns:
 | `deletion-guard.ts` | account anonymize gate; SQL-mirrored in retention cleanup |
 | `refund-attempts.ts` | `payment_refund_attempts` write path |
 | `refund-reconcile.ts` | watchdog for stuck pending refunds (`DEFAULT_PENDING_TIMEOUT_MINUTES = 30`) |
-| `packages/` | catalog reads (`listAccountActivePackages`, `learnerHasActivePackageOfDuration`); sub-folder for catalog vs purchases vs eligibility |
+| `packages/` | catalog reads (`listAccountActivePackages`, `learnerHasActivePackageOfDuration`); sub-folder for catalog vs purchases vs eligibility vs debt |
 
 ## Invariants (must survive future changes)
 

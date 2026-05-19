@@ -7,7 +7,7 @@
 Server-side primitives backing the `/admin/*` surface — observability readers, operator-tunable settings, account-mutation helpers used by route handlers.
 
 - **Operator settings** (ALERTS-EDITOR 2026-05-18) — `operator-settings.ts` is the canonical TS schema + resolver chain (DB → env → default). The probe scripts read the mirror at `scripts/lib/operator-settings.mjs`. Writes are single-TX with the audit row landed inside the same transaction. Audit-log immutability enforced via `block_immutable_operator_settings_events_trg` (UPDATE always blocked; DELETE blocked for rows < 89 days).
-- **Probe status** (ALERTS-OBS 2026-05-16) — `probe-status.ts` reads `probe_runs` for the `/admin/settings/alerts` page. Migration-pending tolerance via `isUndefinedTableError` from `lib/db/errors`.
+- **Probe status** (ALERTS-OBS 2026-05-16; extended BCS-DEF-1 Phase 4 2026-05-19) — `probe-status.ts` reads `probe_runs` for the `/admin/settings/alerts` page. `PROBE_NAMES` iterates 4 probes — `auth-flow` + `calendar-pathology` + `webhook-flow` + `conflict-unresolved` (4th added by BCS-DEF-1; migration 0058 widened the CHECK). Migration-pending tolerance via `isUndefinedTableError` from `lib/db/errors`.
 
 ## Files
 
@@ -31,6 +31,7 @@ Server-side primitives backing the `/admin/*` surface — observability readers,
 - `ARCHITECTURE.md` — high-level mention.
 - `docs/plans/alerts-editor.md` — full epic plan (3 sub-PRs, 3-round paranoia, wave-mode SIGN-OFF round 2).
 - `docs/plans/alerts-obs.md` — sibling read-only surface.
+- `docs/plans/conflict-unresolved-alert.md` — BCS-DEF-1 (4th probe + per-key `CONFLICT_UNRESOLVED_*` settings).
 - `SECURITY.md §ALERTS-EDITOR trust boundary` — operator-tuning suppression-surface caveat + 89-day immutability rationale.
 - `docs/critical-path.md §Audit-log integrity` — the 1 file in this module that is load-bearing.
 
