@@ -7,7 +7,6 @@ import {
   CALENDAR_GRID_PX_PER_MIN,
 } from '@/lib/calendar/dates'
 import {
-  CELL_HEIGHT_PX as HIT_TEST_CELL_HEIGHT_PX,
   halfHourFromOffset as halfHourFromOffsetPure,
 } from '@/lib/calendar/grid-hit-test'
 import {

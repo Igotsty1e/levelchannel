@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 
-import { CALENDAR_GRID_PX_PER_MIN } from '@/lib/calendar/dates'
 import { findCellAt as pureFindCellAt } from '@/lib/calendar/grid-hit-test'
 import {
   type DragState,
@@ -62,8 +61,6 @@ export type SlotCalendarProps = {
   // them back to the current week.
   refreshTrigger?: number
 }
-
-const CELL_HEIGHT_PX = 30 * CALENDAR_GRID_PX_PER_MIN
 
 export function SlotCalendar({
   teacherId,
