@@ -268,6 +268,133 @@ describe('POST /api/admin/settings/alerts/[probe]/test-send', () => {
     }
   })
 
+  // BCS-DEF-1-TEST-FILLOUT item 5 (2026-05-19) — regression pin for
+  // the `pg_get_constraintdef` preflight branch added at
+  // app/api/admin/settings/alerts/[probe]/test-send/route.ts:119-149.
+  // After migration 0058 widens the CHECK to include
+  // 'conflict-unresolved', the preflight succeeds and the route lands
+  // a probe_runs row with the new probe name (instead of returning
+  // 503 migration_pending). We force the Resend hop to fail (poisoned
+  // RESEND_API_KEY) so we don't actually send mail; the probe_runs
+  // row is still written with is_test=true + verdict_kind=
+  // test_send_failed, proving the route walked past the preflight.
+  describe('conflict-unresolved probe (BCS-DEF-1 migration 0058 preflight)', () => {
+    it('anon → 401', async () => {
+      const res = await testSendHandler(
+        buildRequest(
+          '/api/admin/settings/alerts/conflict-unresolved/test-send',
+          {
+            body: { confirmReason: 'verifying conflict-unresolved transport' },
+            headers: { 'Idempotency-Key': `test-cu-anon-${Date.now()}` },
+          },
+        ),
+        { params: Promise.resolve({ probe: 'conflict-unresolved' }) },
+      )
+      expect(res.status).toBe(401)
+    })
+
+    it('learner (non-admin) → 403', async () => {
+      const email = `learner-cu-${Date.now()}@example.com`
+      await registerHandler(
+        buildRequest('/api/auth/register', {
+          body: {
+            email,
+            password: 'StrongPassword123',
+            personalDataConsentAccepted: true,
+          },
+        }),
+      )
+      const acc = await getAccountByEmail(email)
+      await markAccountVerified(acc!.id)
+      const login = await loginHandler(
+        buildRequest('/api/auth/login', {
+          body: { email, password: 'StrongPassword123' },
+        }),
+      )
+      const cookie = extractSessionCookie(login.headers.get('Set-Cookie'))!
+      const res = await testSendHandler(
+        buildRequest(
+          '/api/admin/settings/alerts/conflict-unresolved/test-send',
+          {
+            cookie,
+            body: { confirmReason: 'verifying conflict-unresolved transport' },
+            headers: { 'Idempotency-Key': `test-cu-learner-${Date.now()}` },
+          },
+        ),
+        { params: Promise.resolve({ probe: 'conflict-unresolved' }) },
+      )
+      expect(res.status).toBe(403)
+    })
+
+    it('admin: CHECK-extension preflight passes after migration 0058 → probe_runs row with probe_name=conflict-unresolved, is_test=true (no 503 migration_pending)', async () => {
+      const { cookie, accountId } = await makeAdmin('admin-cu-preflight')
+      const prevAlertEmailTo = process.env.ALERT_EMAIL_TO
+      const prevResendKey = process.env.RESEND_API_KEY
+      // Pre-existing env is honoured by the route's preflight
+      // (the env check sits AFTER both the probe_runs and the
+      // pg_get_constraintdef preflights). We set a real-looking
+      // recipient + a poisoned Resend key so the route is forced
+      // to walk past BOTH preflights, attempt a real Resend call,
+      // and land a probe_runs row with verdict_kind=test_send_failed.
+      // If the CHECK preflight rejected 'conflict-unresolved', we'd
+      // see a 503 with no probe_runs row at all.
+      process.env.ALERT_EMAIL_TO = 'ops-test@example.com'
+      process.env.RESEND_API_KEY = 're_invalid_key_for_test'
+      try {
+        const res = await testSendHandler(
+          buildRequest(
+            '/api/admin/settings/alerts/conflict-unresolved/test-send',
+            {
+              cookie,
+              body: {
+                confirmReason: 'verifying conflict-unresolved CHECK extension',
+              },
+              headers: {
+                'Idempotency-Key': `test-cu-preflight-${Date.now()}`,
+              },
+            },
+          ),
+          { params: Promise.resolve({ probe: 'conflict-unresolved' }) },
+        )
+        // Load-bearing: NOT 503 migration_pending (CHECK extension
+        // preflight passed) and NOT 400 invalid_probe (isProbeName
+        // accepts 'conflict-unresolved'). Resend hop fails → 502.
+        expect(res.status).not.toBe(503)
+        expect(res.status).not.toBe(400)
+        const json = await res.json()
+        // The migration_pending error code is what the preflight
+        // would have returned had it rejected the probe name.
+        expect(json.error).not.toBe('migration_pending')
+        expect(json.error).not.toBe('invalid_probe')
+
+        // probe_runs got a row with the new probe name. This is the
+        // strongest assertion: the INSERT executed against the
+        // post-migration CHECK without raising 23514, AND the route's
+        // CHECK preflight had to walk past the conflict-unresolved
+        // value verbatim in pg_get_constraintdef.
+        const probeRow = await getDbPool().query(
+          `select probe_name, verdict_kind, is_test, initiator_account_id
+             from probe_runs
+            where probe_name = 'conflict-unresolved'
+              and is_test = true
+            order by ran_at desc
+            limit 1`,
+        )
+        expect(probeRow.rows.length).toBe(1)
+        expect(probeRow.rows[0].probe_name).toBe('conflict-unresolved')
+        expect(probeRow.rows[0].is_test).toBe(true)
+        expect(probeRow.rows[0].initiator_account_id).toBe(accountId)
+      } finally {
+        if (prevAlertEmailTo !== undefined)
+          process.env.ALERT_EMAIL_TO = prevAlertEmailTo
+        else delete process.env.ALERT_EMAIL_TO
+        if (prevResendKey !== undefined)
+          process.env.RESEND_API_KEY = prevResendKey
+        else delete process.env.RESEND_API_KEY
+      }
+    })
+  })
+
   it('AUDIT-CODE-2: 422 missing-env path does NOT poison idempotency cache (retry with same key after env is set sends real email)', async () => {
     const { cookie } = await makeAdmin('admin-cache-poison')
     const prevAlertEmailTo = process.env.ALERT_EMAIL_TO
