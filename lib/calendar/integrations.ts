@@ -46,6 +46,12 @@ export type TeacherCalendarIntegrationRecord = {
   channelExpiresAt: string | null
   channelToken: string | null
   lastSeenMessageNumber: string | null
+  // BCS-DEF-7 Phase 2 — opaque Google Calendar incremental-sync token
+  // from the last successful pull. NULL means the next pull does a
+  // bounded full-rewrite (initial state, post-410-Gone reset, post-
+  // reconnect state, or inactive teacher). Phase 1 (migration 0060)
+  // added the column; this is the type-surface wire-up.
+  nextSyncToken: string | null
   createdAt: string
   updatedAt: string
 }
@@ -95,6 +101,10 @@ function rowToRecord(row: Record<string, unknown>): TeacherCalendarIntegrationRe
       row.last_seen_message_number === null
         ? null
         : String(row.last_seen_message_number),
+    nextSyncToken:
+      row.next_sync_token === null || row.next_sync_token === undefined
+        ? null
+        : String(row.next_sync_token),
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
   }
@@ -214,6 +224,14 @@ export async function upsertGoogleIntegration(
          channel_token = null,
          channel_token_enc = null,
          last_seen_message_number = null,
+         -- BCS-DEF-7 Phase 2 §0a BLOCKER#2 closure (2026-05-19):
+         -- clear next_sync_token on reconnect so the post-reconnect
+         -- pull goes full-rewrite first (rebuilds busy-cache under
+         -- the new epoch) and captures a fresh token. Leaving the
+         -- old token in place would race the freshness gate's
+         -- last_pulled_at reset and silently skip the mandatory
+         -- post-reconnect full resync.
+         next_sync_token = null,
          last_error = null,
          updated_at = now()
        returning *`,
