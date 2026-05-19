@@ -299,6 +299,22 @@ export function SlotCalendar({
                   coords: { ymd, halfHour },
                 })
             : undefined,
+        // SAAS-1-FOLLOWUP-KEYBOARD wave-paranoia round-1 BLOCKER#1
+        // closure (2026-05-19): keyboard-driven single-cell commit.
+        // Atomically dispatches cellMouseDown + mouseUp on a fresh
+        // tick of the reducer so `interactions.onPaintSpan` fires
+        // and opens PaintConfirmModal. Without this the calendar
+        // got stuck in `painting` state with no commit path.
+        onCellKeyboardCommit: interactions.onPaintSpan
+          ? (ymd: string, halfHour: number) => {
+              suppressClickRef.current = false
+              dispatch({
+                type: 'cellMouseDown',
+                coords: { ymd, halfHour },
+              })
+              dispatch({ type: 'mouseUp' })
+            }
+          : undefined,
         paintHighlight:
           dragState.kind === 'painting'
             ? {
@@ -381,8 +397,14 @@ function GridWithRefs(
   useEffect(() => {
     const root = wrapperRef.current
     if (!root) return
+    // SAAS-1-FOLLOWUP-KEYBOARD wave-paranoia round-1 BLOCKER#2 closure
+    // (2026-05-19): selector widened to match either `role="gridcell"`
+    // (legacy) OR `role="row"` (new ARIA-correct day-column role from
+    // PR #354). Without this widening, mouse drag hit-test silently
+    // breaks because root.querySelectorAll returns 0 cells under the
+    // post-#354 markup.
     const cells = root.querySelectorAll<HTMLElement>(
-      '[role="gridcell"][aria-label^="День "]',
+      '[aria-label^="День "]',
     )
     const ymds: string[] = []
     cells.forEach((el) => {

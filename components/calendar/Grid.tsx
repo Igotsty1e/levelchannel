@@ -46,6 +46,14 @@ export type GridDragHandlers = {
   onCellMouseEnter?: (ymd: string, halfHour: number) => void
   // Fired when an existing slot is mouse-downed (move start).
   onSlotMouseDown?: (row: CalendarRow, halfHour: number) => void
+  // SAAS-1-FOLLOWUP-KEYBOARD wave-paranoia round-1 BLOCKER#1 closure
+  // (2026-05-19): keyboard Enter/Space on an empty cell needs to BOTH
+  // start the paint AND commit it (open the PaintConfirmModal). With
+  // a mouse this happens via document-level mouseup; for keyboard
+  // there is no mouseup, so the parent gets a dedicated handler that
+  // atomically dispatches mouseDown + mouseUp via the reducer.
+  // Single-cell span (halfHour, halfHour+1).
+  onCellKeyboardCommit?: (ymd: string, halfHour: number) => void
   // Visual highlight during paint — parent passes the current span.
   paintHighlight?: {
     readonly ymd: string
@@ -178,8 +186,19 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
       const row = slotAtCell(grouped, ymd, focusedCell.halfHour, CELL_HEIGHT_PX)
       if (row && onSlotClick) {
         onSlotClick(row)
-      } else if (!row && drag?.onCellMouseDown) {
-        drag.onCellMouseDown(ymd, focusedCell.halfHour)
+      } else if (!row) {
+        // SAAS-1-FOLLOWUP-KEYBOARD wave-paranoia round-1 BLOCKER#1
+        // closure (2026-05-19): prefer the atomic keyboard-commit
+        // handler if the parent provides it; fall back to the old
+        // mouseDown-only path for backward compatibility. The new
+        // path opens PaintConfirmModal, the old path silently puts
+        // the calendar in `painting` state and leaks if no mouseup
+        // follows.
+        if (drag?.onCellKeyboardCommit) {
+          drag.onCellKeyboardCommit(ymd, focusedCell.halfHour)
+        } else if (drag?.onCellMouseDown) {
+          drag.onCellMouseDown(ymd, focusedCell.halfHour)
+        }
       }
     }
   }
