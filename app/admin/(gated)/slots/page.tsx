@@ -1,3 +1,6 @@
+import Link from 'next/link'
+
+import { countAdminConflicts } from '@/lib/admin/conflict-feed'
 import {
   listAccountsByRole,
   listLearnerCandidates,
@@ -10,19 +13,44 @@ import { SlotsViewSwitcher } from './slots-view-switcher'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
+
 export default async function AdminSlotsPage() {
-  const [teachers, slots, tariffs, learners] = await Promise.all([
+  const [teachers, slots, tariffs, learners, conflictCount] = await Promise.all([
     listAccountsByRole('teacher'),
     listAllSlotsForAdmin({ status: 'all', limit: 200 }),
     listActiveTariffs(),
     listLearnerCandidates(),
+    // BCS-DEF-2 — badge for /admin/slots/conflicts. Returns null on
+    // DB error so the link still renders without a count.
+    countAdminConflicts({ since: new Date(Date.now() - THIRTY_DAYS_MS) }),
   ])
 
   return (
     <>
-      <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 8 }}>
-        Занятия
-      </h1>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          marginBottom: 8,
+          gap: 12,
+        }}
+      >
+        <h1 style={{ fontSize: 24, fontWeight: 600 }}>Занятия</h1>
+        <Link
+          href="/admin/slots/conflicts"
+          style={{
+            fontSize: 13,
+            color: 'var(--accent)',
+            textDecoration: 'none',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Конфликты
+          {conflictCount !== null && conflictCount > 0 ? ` (${conflictCount})` : ''}
+        </Link>
+      </div>
       <p
         style={{
           color: 'var(--secondary)',
