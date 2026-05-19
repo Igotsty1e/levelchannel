@@ -22,7 +22,7 @@ Module-specific contracts + invariants + file inventory live next to each module
 - [`lib/admin/README.md`](lib/admin/README.md) — operator-tunable settings, probe-status (1 critical-path file).
 - [`lib/security/README.md`](lib/security/README.md) — idempotency, rate-limit, origin gate (2 critical-path files).
 
-The critical-path inventory (`docs/critical-path.md`) lists the 20 load-bearing files across these modules. PRs touching any of them MUST carry `Codex-Paranoia: SIGN-OFF`.
+The critical-path inventory (`docs/critical-path.md`) lists the 21 load-bearing files across these modules (refreshed 2026-05-19 PR #369; one addition since the 20-file baseline — `lib/auth/teacher-invites.ts` for SAAS-3+4). PRs touching any of them MUST carry `Codex-Paranoia: SIGN-OFF`.
 
 ## Layout
 
@@ -230,7 +230,12 @@ full migration files in `migrations/` are the source of truth.
 | `0051_payment_orders_admin_grant.sql` | PKG-ADMIN-GRANT (2026-05-16) | extends `payment_orders.provider` + `.status` + new `granted_by_operator_id uuid` | triple-CHECK invariant: `provider='admin_grant' iff granted_by_operator_id IS NOT NULL iff status='granted'`. Admin-grant route writes synthetic non-money rows with this signature. Refund route refuses `kind='package'` on these orders. |
 | `0052_payment_audit_events_admin_grant.sql` | PKG-ADMIN-GRANT | extends `payment_audit_events.event_type_check` | new event kind: `package.grant.operator-granted`. Actor `'admin:grant'` records the operator id. |
 | `0053_probe_runs.sql` | ALERTS-OBS (2026-05-17) | new table `probe_runs` | per-tick observability sink for the systemd cron alert probes. CHECK on `probe_name` (3 values at ship; extended to 4 by migration 0058) + `verdict_kind` (13 values). Two partial indexes: latest-real-run + latest-real-alert (`WHERE is_test = false`). `initiator_account_id` FK ON DELETE RESTRICT preserves operator-action provenance. |
+| `0054_calendar_channel_token_enc.sql` | AUDIT-SEC-4 (2026-05-17) | adds `channel_token_enc bytea` to `teacher_calendar_integrations` | encrypts the Google channel-token at rest. Dual-write in `lib/calendar/channel-renewer.ts setupChannelForIntegration`; decrypt-aware read in the webhook handler with plaintext fallback for legacy rows. Phase B null-out via `scripts/null-plaintext-channel-token.mjs`. |
+| `0055_operator_settings.sql` | ALERTS-EDITOR Sub-PR A (2026-05-17) | new tables `operator_settings` + `operator_settings_events` | operator-tunable alert thresholds (DB → env → hardcoded-default resolver chain in `lib/admin/operator-settings.ts` + `scripts/lib/operator-settings.mjs`). Immutability trigger blocks UPDATE on the audit log unconditionally and DELETE on rows <89 days. 90-day retention sweep in `scripts/db-retention-cleanup.mjs`. |
+| `0056_lesson_slots_zoom_url.sql` | BCS-DEF-3 (2026-05-18) | adds nullable `zoom_url text` to `lesson_slots` | optional Zoom link surfaced on a booked slot. Length-capped at 512 chars + CHECK `^https://` (no `http://` / `javascript:` schemes). Admin + teacher routes can set/clear it independently of the otherwise-locked schedule/tariff fields. |
+| `0057_teacher_invites.sql` | SAAS-3+4 TINV.1 (2026-05-18) | new table `teacher_invites` + extends `auth_audit_events.event_type` CHECK with 4 invite events | HMAC-SHA256 invite-link primitives + atomic redeem-and-bind via `lib/auth/teacher-invites.ts`. FK `teacher_account_id → accounts ON DELETE CASCADE`, `used_by_account_id → accounts ON DELETE SET NULL`. Partial active index for "is this token still redeemable". |
 | `0058_probe_runs_conflict_unresolved.sql` | BCS-DEF-1 Phase 1 (2026-05-19) | extends `probe_runs_probe_name_check` | adds `'conflict-unresolved'` to the CHECK so the new alert probe (scripts/conflict-unresolved-alert.mjs) can write rows. Additive — no existing values dropped. ACCESS EXCLUSIVE briefly on probe_runs; recorder swallows errors so the brief window is invisible. |
+| `0060_teacher_calendar_integrations_sync_token.sql` | BCS-DEF-7 Phase 1 (2026-05-18) | adds nullable `next_sync_token text` to `teacher_calendar_integrations` | foundation for incremental Google Calendar pull. Phase 1 lands the column NULL on all rows; Phase 2 ships the pull-runner delta path. Until then full-rewrite pull continues unchanged. Per-teacher key (MVP 1:1 `writeCalendarId = readCalendarIds[0] = 'primary'`); multi-calendar follow-up promotes this into a `teacher_calendar_sync_states` table. |
 
 90-day retention for `probe_runs` lives in `scripts/db-retention-cleanup.mjs`. Key rotations for the calendar-encrypted columns (separate from audit-encryption key) ship as `scripts/rotate-calendar-encryption.mjs` (AUDIT-SEC-2, 2026-05-17; covers four columns: access_token_enc, refresh_token_enc, channel_token_enc, summary_encrypted). AUDIT-SEC-4 (2026-05-17) Phase B null-out of legacy plaintext `channel_token` ships as `scripts/null-plaintext-channel-token.mjs` — operator-driven, gated behind preflight + snapshot + post-verify; see SECURITY.md §AUDIT-SEC-4 channel_token migration.
 
@@ -282,9 +287,9 @@ ALERTS-EDITOR (2026-05-18) ships `operator_settings` (migration 0055) — operat
 - [`app/api/payments/webhooks/cloudpayments/fail/route.ts`](app/api/payments/webhooks/cloudpayments/fail/route.ts)
 - [`app/api/checkout/package/[slug]/route.ts`](app/api/checkout/package/%5Bslug%5D/route.ts) - package-buy init. PKG-LEARNER-BUY LBL.0 (2026-05-16) refactor in place: guard via `requireLearnerArchetypeAndVerified` + post-guard `isLearnerArchetypeCandidate` (deletion-grace coverage; matches the cabinet page SoT), wrapped in `withIdempotency(scope = checkout:package:${slug}:${accountId})` to defeat replay across packages and accounts (Codex post-review HIGH closure). The body of the idempotency callback acquires a dedicated `PoolClient`, opens a TX, and takes a per-(accountId, durationMinutes) `pg_advisory_xact_lock(hashtextextended('pkg-stack:' || account || ':' || duration, 0))` on it. The `pkg-stack:` prefix is shared with the admin-grant route AND `lib/billing/package-grant.ts:processPackageGrant` (PKG-ADMIN-GRANT epic-end paranoia BLOCKER #1 closure, 2026-05-16) so a concurrent admin grant + learner buy + delayed webhook for the same `(account, duration)` all serialise against each other. The two gates — Gate 1 (`accountHasPendingPackageGrantForDuration` → 409 `pending_package_in_flight`) and Gate 2 (`learnerHasActivePackageOfDuration` → 409 `already_owns_active_package`) — read via the shared pool (NOT the lock client), which is correct because the lock blocks any other session from racing between their reads and the lock-holder's `INSERT INTO payment_orders` on the lock client, all inside the same TX. After the TX commits, the route calls `buildCloudPaymentsWidgetIntent(order, { receiptToken })` for `provider=cloudpayments` and returns the intent in the response body as `checkoutIntent` (mock provider returns `checkoutIntent: null`). Different-duration purchases from the same learner proceed concurrently.
 
-#### API surface map (all 81 routes, May 2026)
+#### API surface map (all 86 routes, May 2026)
 
-The route docstrings above lean toward "load-bearing context" rather than complete coverage. This table is the quick-reference for every route under `app/api/`: who guards it, what it does in one sentence. The 12 routes documented in detail above are linked there; the rest live as code comments.
+The route docstrings above lean toward "load-bearing context" rather than complete coverage. This table is the quick-reference for every route under `app/api/`: who guards it, what it does in one sentence. The 12 routes documented in detail above are linked there; the rest live as code comments. Count refreshed 2026-05-19 — 5 routes added since the 81-route baseline (ALERTS-EDITOR setting CRUD, BCS-DEF-3 zoom-url admin + teacher pair, SAAS-3+4 teacher invites create + revoke).
 
 ##### Public — auth + checkout (anonymous-eligible)
 
@@ -345,6 +350,9 @@ The route docstrings above lean toward "load-bearing context" rather than comple
 | `app/api/teacher/calendar/google/disconnect` | POST | teacher + verified | clear tokens + flip `sync_state='disconnected'` |
 | `app/api/teacher/calendar/orphan-slots` | GET | teacher + verified | post-disconnect drift list (slots with stale `external_event_id`) |
 | `app/api/teacher/calendar/orphan-slots/ignore` | POST | teacher + verified | suppress one orphan-self row |
+| `app/api/teacher/slots/[id]/zoom-url` | PATCH | teacher + verified | set/clear `lesson_slots.zoom_url` on a booked slot (BCS-DEF-3, migration 0056) |
+| `app/api/teacher/invites` | GET / POST | teacher + verified | list own active invites + mint a new HMAC-signed invite link (SAAS-3+4 TINV.4) |
+| `app/api/teacher/invites/[id]/revoke` | POST | teacher + verified | revoke an unused invite row (`withIdempotency`); audit `auth.invite.revoked` |
 
 ##### Admin — operator surface (admin role required, `requireAdminRole` + origin gate + rate limit)
 
@@ -364,6 +372,7 @@ The route docstrings above lean toward "load-bearing context" rather than comple
 | `app/api/admin/slots/[id]/move` | PATCH | move open slot (operator-side) |
 | `app/api/admin/slots/[id]/mark` | POST | operator lifecycle stamp (manual completed / no-show / refunded) |
 | `app/api/admin/slots/[id]/book-as-operator` | POST | book a slot on behalf of a learner |
+| `app/api/admin/slots/[id]/zoom-url` | PATCH | set/clear `lesson_slots.zoom_url` on a booked slot (BCS-DEF-3, migration 0056) |
 | `app/api/admin/payments/*` (page surfaces, not API) | — | payments list + detail (read-only admin page) |
 | `app/api/admin/refunds` | POST | record refund / package reversal (existing manual ledger) |
 | `app/api/admin/refunds/gateway-initiated` | POST | initiate CP-side refund via `payments/refund` API |
@@ -374,6 +383,7 @@ The route docstrings above lean toward "load-bearing context" rather than comple
 | `app/api/admin/reconciliation/package-grants/[invoiceId]/attach-account` | POST | rewrite metadata.accountId + re-run grant |
 | `app/api/admin/reconciliation/package-grants/[invoiceId]/mark-resolved` | POST | durable resolution row (refunded_offline / manual_grant / comped / other) |
 | `app/api/admin/settings/alerts/[probe]/test-send` | POST | ALERTS-OBS dry-run test email + `probe_runs` is_test row |
+| `app/api/admin/settings/alerts/setting/[key]` | PATCH | ALERTS-EDITOR Sub-PR C operator-tunable threshold update; optimistic concurrency via `expectedUpdatedAt`; single-TX config write + `operator_settings_events` audit row (migration 0055) |
 
 ##### Calendar webhook + cron surfaces
 
