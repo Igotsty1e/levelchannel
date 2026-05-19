@@ -269,9 +269,10 @@ async function main() {
           where reset_at < now() - interval '1 hour'`,
       ),
       // ALERTS-OBS (2026-05-16) — probe_runs is the observability
-      // sink for the three systemd alert probes. 90-day retention
-      // covers a full quarterly retro window; volume ~6 rows/h × 24
-      // × 90 = ~13k rows max.
+      // sink for the systemd alert probes (3 at ship; 4 after
+      // BCS-DEF-1 Phase 1, 2026-05-19, added 'conflict-unresolved'
+      // via migration 0058). 90-day retention covers a full quarterly
+      // retro window; volume ~8 rows/h × 24 × 90 = ~17k rows max.
       deleteWindow(
         pool,
         'probe_runs',

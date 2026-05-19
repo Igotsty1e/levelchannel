@@ -116,6 +116,49 @@ export async function POST(request: Request, { params }: RouteParams) {
     throw err
   }
 
+  // BCS-DEF-1 wave-paranoia round-1 BLOCKER#1 closure (2026-05-19):
+  // verify the probe_runs.probe_name CHECK actually enumerates the
+  // requested probe name BEFORE we trigger a Resend send. Without
+  // this check, the deploy-before-migrate window for a new probe
+  // (e.g. BCS-DEF-1 Phase 1 added 'conflict-unresolved' to the CHECK
+  // via migration 0058; pre-migration the route would Resend-send
+  // an email, then crash with SQLSTATE 23514 on the probe_runs
+  // INSERT — leaving the operator with a sent email but a 500
+  // response and no audit row).
+  //
+  // Read pg_get_constraintdef and look for the probe value verbatim.
+  // If absent, return 503 migration_pending mirroring the
+  // probe_runs-missing branch above. No false-negative concern: the
+  // CHECK is enumerated text in the constraint definition.
+  try {
+    const checkDefResult = await pool.query<{ check_def: string | null }>(
+      `select pg_get_constraintdef(c.oid) as check_def
+         from pg_constraint c
+         join pg_class t on t.oid = c.conrelid
+        where t.relname = 'probe_runs'
+          and c.conname = 'probe_runs_probe_name_check'`,
+    )
+    const checkDef = checkDefResult.rows[0]?.check_def ?? ''
+    if (!checkDef.includes(`'${probe}'`)) {
+      return NextResponse.json(
+        {
+          error: 'migration_pending',
+          message: `Миграция CHECK constraint для probe='${probe}' ещё не применена. Запустите npm run migrate:up на VPS.`,
+        },
+        { status: 503, headers: NO_STORE },
+      )
+    }
+  } catch (err) {
+    // pg_constraint lookup itself failed — best-effort; fall through
+    // and let the original INSERT handle the error. Don't return 500
+    // here because the probe_runs preflight above already proved the
+    // pool is up.
+    // eslint-disable-next-line no-console
+    console.warn('[test-send] CHECK-extension preflight failed; proceeding', {
+      err: err instanceof Error ? err.message : String(err),
+    })
+  }
+
   const recipient = process.env.ALERT_EMAIL_TO?.trim() || ''
   const apiKey = process.env.RESEND_API_KEY?.trim() || ''
   const emailFrom =
