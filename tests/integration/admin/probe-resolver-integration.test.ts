@@ -221,3 +221,56 @@ describe('webhook-flow probe reads operator_settings', () => {
     expect(sources.WEBHOOK_FLOW_MIN_VOLUME).toBe('db')
   }, 30_000)
 })
+
+describe('conflict-unresolved probe reads operator_settings', () => {
+  it('DB-sourced CONFLICT_UNRESOLVED_THRESHOLD_MINUTES lands in stats.thresholds + thresholds_source', async () => {
+    const admin = await makeAdmin('probe-cu-th')
+    await setOperatorSetting({
+      key: 'CONFLICT_UNRESOLVED_THRESHOLD_MINUTES',
+      value: '60',
+      expectedUpdatedAt: null,
+      byAccountId: admin,
+    })
+
+    await execFileP(
+      process.execPath,
+      ['scripts/conflict-unresolved-alert.mjs'],
+      { env: probeEnv(), cwd: process.cwd() },
+    )
+
+    const stats = (await readLatestProbeStats('conflict-unresolved')) ?? {}
+    const thresholds = stats.thresholds as Record<string, unknown>
+    const sources = stats.thresholds_source as Record<string, unknown>
+    expect(thresholds.CONFLICT_UNRESOLVED_THRESHOLD_MINUTES).toBe(60)
+    expect(sources.CONFLICT_UNRESOLVED_THRESHOLD_MINUTES).toBe('db')
+    // The other 3 keys still default since we didn't set DB rows.
+    expect(sources.CONFLICT_UNRESOLVED_REPORT_LIMIT).toBe('default')
+    expect(sources.CONFLICT_UNRESOLVED_PER_TEACHER_LIMIT).toBe('default')
+    expect(sources.CONFLICT_UNRESOLVED_DEDUP_WINDOW_MS).toBe('default')
+  }, 30_000)
+
+  it('mixed DB + env sources resolve correctly per-knob', async () => {
+    const admin = await makeAdmin('probe-cu-mix')
+    await setOperatorSetting({
+      key: 'CONFLICT_UNRESOLVED_REPORT_LIMIT',
+      value: '25',
+      expectedUpdatedAt: null,
+      byAccountId: admin,
+    })
+    await execFileP(
+      process.execPath,
+      ['scripts/conflict-unresolved-alert.mjs'],
+      {
+        env: probeEnv({ CONFLICT_UNRESOLVED_DEDUP_WINDOW_MS: '600000' }),
+        cwd: process.cwd(),
+      },
+    )
+    const stats = (await readLatestProbeStats('conflict-unresolved')) ?? {}
+    const thresholds = stats.thresholds as Record<string, unknown>
+    const sources = stats.thresholds_source as Record<string, unknown>
+    expect(thresholds.CONFLICT_UNRESOLVED_REPORT_LIMIT).toBe(25)
+    expect(sources.CONFLICT_UNRESOLVED_REPORT_LIMIT).toBe('db')
+    expect(thresholds.CONFLICT_UNRESOLVED_DEDUP_WINDOW_MS).toBe(600000)
+    expect(sources.CONFLICT_UNRESOLVED_DEDUP_WINDOW_MS).toBe('env')
+  }, 30_000)
+})
