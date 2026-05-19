@@ -82,6 +82,8 @@ describe('SETTING_SCHEMA invariants', () => {
       'webhook-flow',
       'conflict-unresolved',
       'telegram',
+      // BCS-DEF-5 (2026-05-19) — daily 08:00 teacher lesson digest.
+      'teacher-daily-digest',
     ])
     for (const [key, schema] of Object.entries(TS_SCHEMA)) {
       expect(validScopes.has(schema.scope), `${key}.scope is valid`).toBe(true)
@@ -94,6 +96,31 @@ describe('SETTING_SCHEMA invariants', () => {
     expect(probes).toContain('calendar-pathology')
     expect(probes).toContain('webhook-flow')
     expect(probes).toContain('conflict-unresolved')
+  })
+
+  it('teacher-daily-digest scope has the 3 expected keys', () => {
+    // BCS-DEF-5 (2026-05-19) regression pin — the digest cron's
+    // resolveOperatorSettingsForProbe('teacher-daily-digest') walks
+    // the schema by scope match. If a future refactor drops or
+    // renames any of these, the cron silently falls back to defaults
+    // (master switch OFF by default, so it stays safe — but
+    // observability would suffer). Pin them.
+    const digestKeys = Object.entries(TS_SCHEMA)
+      .filter(([, s]) => s.scope === 'teacher-daily-digest')
+      .map(([k]) => k)
+      .sort()
+    expect(digestKeys).toEqual([
+      'TEACHER_DIGEST_MASTER_SWITCH',
+      'TEACHER_DIGEST_MAX_ATTEMPTS',
+      'TEACHER_DIGEST_RATE_LIMIT_PER_TICK',
+    ])
+  })
+
+  it('TEACHER_DIGEST_MASTER_SWITCH defaults to OFF', () => {
+    // Round-1 BLOCKER 7 closure — operator must explicitly enable in
+    // /admin/settings/digest after activation; never auto-fire on
+    // first deploy.
+    expect(TS_SCHEMA.TEACHER_DIGEST_MASTER_SWITCH.default).toBe(0)
   })
 
   it('conflict-unresolved scope has the 4 expected threshold keys', () => {
