@@ -36,8 +36,10 @@ Server-side primitives backing the `/admin/*` surface — observability readers,
 
 ## Test surface
 
-- `tests/admin/operator-settings.test.ts` — drift test (TS schema ↔ MJS schema) + invariant checks.
+- `tests/admin/operator-settings.test.ts` — drift test (TS schema ↔ MJS schema) + invariant checks. Pins `validScopes` set + per-key conflict-unresolved regression (BCS-DEF-1 Phase 1, 2026-05-19).
 - `tests/integration/admin/operator-settings.test.ts` — write/delete lifecycle, optimistic concurrency, immutability trigger.
 - `tests/integration/admin/operator-settings-route.test.ts` — POST/DELETE route layer (auth, 400/409 paths).
 - `tests/integration/admin/probe-resolver-integration.test.ts` — probe scripts read operator_settings end-to-end.
-- `tests/integration/admin/alerts-obs.test.ts` — probe-status reader.
+- `tests/integration/admin/alerts-obs.test.ts` — probe-status reader (test-bootstrap CHECK widened to 4 probes for BCS-DEF-1, 2026-05-19).
+- `tests/integration/admin/conflict-unresolved-foundation.test.ts` — BCS-DEF-1 Phase 1 foundation: probe_runs CHECK accepts/rejects, 4 CONFLICT_UNRESOLVED_* knobs default + env override + out-of-bounds fallback.
+- `tests/scripts/conflict-unresolved-alert.test.ts` — BCS-DEF-1 Phase 2 probe pure helpers: fingerprint determinism + sensitivity, buildEmail body shape (15 cases).
