@@ -273,7 +273,14 @@ export { fingerprint, buildEmail, readOffenderRows, readOffenderCounts, readPerT
 
 ### 2.2 Offender query — single tick, single recipient (operator)
 
-The probe runs two queries against the same snapshot inside a `BEGIN; SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;` so the count + the rows agree.
+The probe runs **four** reads against the same snapshot inside a `BEGIN; SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;` on a dedicated `pool.connect()` client (re-paranoia plan-round-1 WARN#4 closure 2026-05-19 — original draft said "two queries" but the wave-paranoia round-1 BLOCKER#2 introduced a 3rd read `readPerTeacherOmittedCounts` and a 4th read `readFingerprintTuples` over the UNBOUNDED qualifying set). The four reads are:
+
+1. **`readOffenderCounts`** — `select count(*)`, `count(distinct teacher_account_id)` (unbounded) — drives header "Всего конфликтов: T у D".
+2. **`readOffenderRows`** — windowed `ROW_NUMBER() OVER (PARTITION BY teacher_account_id ...)` capped per-teacher and globally — populates the visible per-teacher slot blocks.
+3. **`readPerTeacherOmittedCounts`** — `count(*) where rn_per_teacher > $2` grouped by teacher — drives the per-teacher "и ещё N не показано" line.
+4. **`readFingerprintTuples`** — unbounded `(slot_id, teacher_account_id, conflict_source_calendar_id, conflict_source_event_id)` tuples — drives the dedup fingerprint (saturation-resistant per wave-paranoia BLOCKER#2 closure).
+
+All four reads share the snapshot so the email body, the omitted-counts tally, and the dedup decision are internally consistent within a single tick.
 
 **Round-2 BLOCKER#2 closure** — to prevent a single noisy teacher from monopolising the global LIMIT, the row-fetch query uses a window function `ROW_NUMBER() OVER (PARTITION BY teacher_account_id ORDER BY external_conflict_at ASC)` and caps per-teacher to `CONFLICT_UNRESOLVED_PER_TEACHER_LIMIT` (default 5).
 
@@ -744,7 +751,7 @@ The operator email lists per-conflict:
 
 ### 4.3 Rate-limit / abuse
 
-The probe runs every 30 minutes. With dedup window default 4h, the same offender set fires at most one operator email per 4 hours. **Operator misconfiguration** (dedup_window < threshold) would re-page on every tick; documented in `description` field of the operator-setting key and tested in §3.
+The probe runs every 30 minutes. With dedup window default 4h, the same offender set fires at most one operator email per 4 hours. **Operator misconfiguration** (dedup_window < threshold) would re-page on every tick; documented in `description` field of the operator-setting key. ⚠️ The original "tested in §3" claim was overstated — see RISK-2 below and §3 honesty block: runtime verdict-path coverage is in `BCS-DEF-1-TEST-FILLOUT` item 1, not yet authored. Operator-side `description` field is the only current safeguard.
 
 ### 4.4 SQL injection
 
@@ -760,7 +767,7 @@ Migration 0058 drops + re-adds the `probe_runs_probe_name_check` constraint, tak
 
 ### 4.7 Test-send 422 short-circuit doesn't leak side effects ~~(original design)~~
 
-> **⚠️ SUPERSEDED — see §10.3.** This safety property described the **original** deferred-422 branch. That branch was removed in BCS-DEF-1-TEST-SEND; the live test-send path now applies the same admin-auth / idempotency / rate-limit guards as the other 3 probes (single shared route handler in `app/api/admin/settings/alerts/[probe]/test-send/route.ts`). Side-effect containment is now contract-pinned by the same tests covering the 3 sibling probes, not by §3.5 (which is obsolete).
+> **⚠️ SUPERSEDED — see §10.3.** This safety property described the **original** deferred-422 branch. That branch was removed in BCS-DEF-1-TEST-SEND; the live test-send path now applies the same admin-auth / idempotency / rate-limit guards as the other 3 probes (single shared route handler in `app/api/admin/settings/alerts/[probe]/test-send/route.ts`). ⚠️ Side-effect containment is **partially** pinned — the shared route handler is exercised by `tests/integration/admin/alerts-obs.test.ts:49-156` for auth-flow + calendar-pathology, but `conflict-unresolved` specifically and the new `pg_get_constraintdef` preflight branch (route.ts:119-149) are **not** regression-pinned. Folded into `BCS-DEF-1-TEST-FILLOUT` item 5.
 
 ---
 
@@ -819,7 +826,7 @@ Prod may have accumulated `external_conflict_at` stamps. First tick paged operat
 
 ### RISK-2 — Dedup window < threshold
 
-Schema validation allows `dedup_window_ms = 60_000`; if operator sets it lower than threshold, the probe re-pages every tick. **Documented in `description`**: "keep >= threshold-minutes*60000 to avoid repeat pages".
+Schema validation allows `dedup_window_ms = 60_000`; if operator sets it lower than threshold, the probe re-pages every tick. **Documented in `description`**: "keep >= threshold-minutes*60000 to avoid repeat pages". ⚠️ The original claim that this misconfig is "tested in §3" does NOT hold — §3's honesty block records that runtime verdict-path coverage is in `BCS-DEF-1-TEST-FILLOUT`. Operator-side `description` field is the only current guard.
 
 ### RISK-3 — Conflict cleared between offender query and email send
 
@@ -829,7 +836,7 @@ Race: at T0 probe queries, at T0+50ms detector clears the stamp. Probe still sen
 
 ### RISK-5 — `operator_settings` ↔ `scripts/lib/operator-settings.mjs` drift
 
-Caught by the existing drift test (`tests/admin/operator-settings.test.ts` pins TS-side; `.mjs` mirror has a matching integration test).
+⚠️ **As shipped:** the only drift guard is the unit test `tests/admin/operator-settings.test.ts` (TS-side `SETTING_SCHEMA` shape). The original claim that the `.mjs` mirror has a matching integration test does **not** hold — `tests/integration/admin/probe-resolver-integration.test.ts` still only execFile's 3 probes (auth-flow / calendar-pathology / webhook-flow), and `tests/integration/admin/operator-settings-route.test.ts` still only exercises `CALENDAR_PATHOLOGY_THRESHOLD`. Integration parity for `conflict-unresolved` is folded into `BCS-DEF-1-TEST-FILLOUT` items 1, 4, 7.
 
 ### RISK-6 — Conflict detector wired-into-pull-worker silently regresses
 
@@ -843,9 +850,11 @@ If a future probe is added without updating the activator script, the new unit n
 
 Backlog says "operator + teacher". MVP ships operator-only. **Mitigation**: explicit "teacher fan-out deferred to BCS-DEF-1-FANOUT" note in §10 + a corresponding `ENGINEERING_BACKLOG.md` line ("BCS-DEF-1 (operator MVP) — Closed; teacher fan-out → BCS-DEF-1-FANOUT").
 
-### RISK-9 — Test-send button deferred-disabled state surprises operator
+### ~~RISK-9~~ — Test-send button deferred-disabled state surprises operator — **OBSOLETE**
 
-UX risk: operator sees the button and clicks it, expecting it to work. Tooltip explains. **Mitigation**: the deferred-state button has a distinct visual treatment (disabled grey) and an explicit tooltip "тестовая отправка добавлена в BCS-DEF-1-TEST-SEND follow-up". Acceptable for ~weeks gap until that follow-up ships.
+> **⚠️ SUPERSEDED — see §10.3.** The deferred-disabled button state was superseded by BCS-DEF-1-TEST-SEND. As-shipped: the `conflict-unresolved` test-send button renders the live path (same UX as the other 3 probes — confirm-reason prompt, real Resend dry-run). This risk no longer applies.
+
+~~UX risk: operator sees the button and clicks it, expecting it to work. Tooltip explains. **Mitigation**: the deferred-state button has a distinct visual treatment (disabled grey) and an explicit tooltip "тестовая отправка добавлена в BCS-DEF-1-TEST-SEND follow-up". Acceptable for ~weeks gap until that follow-up ships.~~
 
 ---
 
@@ -906,7 +915,7 @@ If round-2 paranoia surfaces any of these, here are the pre-canned answers:
 7. Operator confirms `probe_runs` row appears at `/admin/settings/alerts`.
 8. Operator tunes thresholds if needed.
 
-**No migration ordering hazard.** Migration 0058 is purely additive (CHECK extension on an already-existing table). The new probe doesn't write to `probe_runs` until both the migration applies AND the timer enables. *(Original draft also leaned on the 422-deferred test-send route as a pre-migration safety net; that branch was superseded by BCS-DEF-1-TEST-SEND — see §10.3. The migration is still safe because it's additive.)*
+**Migration ordering — refined claim.** Migration 0058 is purely additive (CHECK extension on an already-existing table). The **timer-driven** probe doesn't write to `probe_runs` until the timer enables. However, the **live `test-send` route** at `/api/admin/settings/alerts/conflict-unresolved/test-send` writes a row with `is_test=true` as soon as the route is deployed — see `app/api/admin/settings/alerts/[probe]/test-send/route.ts:119-149` for the probe-specific `pg_get_constraintdef` preflight that returns 503 `migration_pending` if migration 0058 hasn't applied yet. That preflight (wave-paranoia BLOCKER#1 closure) is the actual deploy-order safety net for the writer path — without it, an admin clicking the test-send button mid-deploy would crash on a CHECK violation. The original §1.7 / §2.7 / §3.5 draft language about deferred-422 was superseded by BCS-DEF-1-TEST-SEND (§10.3); the preflight is what now protects the writer path.
 
 ---
 
@@ -947,4 +956,4 @@ Skill-Used: /codex-paranoia plan + /codex-paranoia wave
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
 
-— END OF DRAFT (round 1 paranoia revised, awaiting round 2) —
+— END OF DOC (SHIPPED 2026-05-19; 3 pre-merge paranoia rounds + §0c mechanical closure; 4 post-merge re-paranoia rounds in §0d / §0e + WARN closures committed to PR #365; see §0d / §0e for closure ledger) —
