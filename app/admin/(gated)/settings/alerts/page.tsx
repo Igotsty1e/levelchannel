@@ -22,9 +22,11 @@ export const metadata = {
 }
 
 // ALERTS-OBS (2026-05-16) — read-only /admin/settings/alerts page.
-// Plan: docs/plans/alerts-obs.md.
+// Plan: docs/plans/alerts-obs.md (initial 3 probes); extended by
+// BCS-DEF-1 (2026-05-19) to 4 probes — see PROBE_NAMES in
+// lib/admin/probe-status.ts.
 //
-// Shows for each of the three systemd alert probes:
+// Shows for each of the systemd alert probes:
 //   • last run timestamp + verdict
 //   • last alert timestamp + recipient + fingerprint
 //   • effective thresholds (snapshot from probe_runs.stats.thresholds —

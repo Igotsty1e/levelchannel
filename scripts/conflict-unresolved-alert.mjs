@@ -179,6 +179,49 @@ export async function readOffenderRows(
   }))
 }
 
+// UNBOUNDED qualifying-set read for fingerprint. Wave-paranoia round-1
+// BLOCKER#2 closure (2026-05-19): the fingerprint MUST be computed over
+// the FULL qualifying offender set, not the truncated visible slice
+// returned by `readOffenderRows()`. Otherwise saturation (51st conflict
+// or 6th conflict at a teacher already capped at 5) doesn't change the
+// fingerprint and the probe dedup-skip-s for 4h even though the real
+// offender set has grown — defeating the entire >threshold alert
+// semantics.
+//
+// Returns the MINIMAL tuple set needed for fingerprint stability
+// (teacherAccountId, slotId, conflictSourceCalendarId, conflictSourceEventId)
+// across ALL qualifying rows. No LIMIT clause — at SaaS scale this might
+// be hundreds of rows; sha256 over a few KB of string is cheap (<1ms).
+export async function readFingerprintTuples(pool, thresholdMinutes) {
+  const r = await pool.query(
+    `select s.id                          as slot_id,
+            s.teacher_account_id,
+            s.conflict_source_calendar_id,
+            s.conflict_source_event_id
+       from lesson_slots s
+       join accounts a on a.id = s.teacher_account_id
+      where s.external_conflict_at is not null
+        and s.external_conflict_at <= now() - ($1::int || ' minutes')::interval
+        and s.status = 'booked'
+        and s.start_at > now()
+        and a.purged_at is null
+        and a.disabled_at is null
+        and a.email is not null
+        and a.email <> ''`,
+    [thresholdMinutes],
+  )
+  return r.rows.map((row) => ({
+    slotId: String(row.slot_id),
+    teacherAccountId: String(row.teacher_account_id),
+    conflictSourceCalendarId: row.conflict_source_calendar_id
+      ? String(row.conflict_source_calendar_id)
+      : null,
+    conflictSourceEventId: row.conflict_source_event_id
+      ? String(row.conflict_source_event_id)
+      : null,
+  }))
+}
+
 // Per-teacher omitted count — rows that exceeded per_teacher_limit.
 // Used for the "и ещё N конфликтов не показано у этого учителя" line.
 export async function readPerTeacherOmittedCounts(
@@ -449,7 +492,15 @@ async function main() {
       thresholds_source: capturedThresholdsSource,
     }
 
-    const fp = fingerprint(offenders)
+    // Wave-paranoia round-1 BLOCKER#2 closure (2026-05-19): fingerprint
+    // over the UNBOUNDED qualifying set, not the truncated visible slice.
+    // Otherwise saturation silently dedup-skip-s for 4h while the real
+    // offender set has grown — breaks >threshold alert semantics.
+    const fingerprintTuples = await readFingerprintTuples(
+      pool,
+      THRESHOLD_MINUTES,
+    )
+    const fp = fingerprint(fingerprintTuples)
     const state = await readState()
     const now = Date.now()
     if (
