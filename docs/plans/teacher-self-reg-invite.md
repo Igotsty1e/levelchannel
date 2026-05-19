@@ -1,6 +1,6 @@
 # SAAS-3 + SAAS-4 — Teacher self-registration + invite-link auto-bind
 
-**Status:** DRAFT 2026-05-18 — 3 paranoia rounds completed (5+2+2 BLOCKERs at rounds 1/2/3). User decision 2026-05-18: atomic single-CTE redeem + outbox-pattern email dispatch (option b). Round-3 substantive BLOCKERs closed below.
+**Status:** SHIPPED 2026-05-18 — 3 paranoia rounds completed (5+2+2 BLOCKERs at rounds 1/2/3); user decision 2026-05-18: atomic single-CTE redeem + outbox-pattern email dispatch (option b). All sub-PRs merged: #290 (SAAS-3 minimal slice), #291 (TINV.1 migration + HMAC), #292 (TINV.3+4 invite flow), #293 (TINV.1 prod auto-synth), #294 (TINV.7 doc-sweep), #302 (TINV.8 integration tests), #303 (TINV.4-followup enforceAccountRateLimit), #307 (TINV.8 HMAC-flip fix), #310 (TINV.6.10 register timing symmetry). Round-3 substantive BLOCKERs closure history retained below for audit.
 **Wave name:** `teacher-self-reg-invite` (combined SAAS-3 + SAAS-4 epic).
 **Trigger:** Product-owner decision 2026-05-18 — LevelChannel pivots from single-channel (operator-curated teachers + operator-assigned learners) to SaaS (any teacher signs up; teacher invites their own learners). No verification flag, no admin gate: a self-registered teacher is immediately active. Security relies on the invite-link being trusted by the learner who follows it, plus existing email-verification before the invite-generation surface unlocks.
 **Author:** Claude (autonomous).
