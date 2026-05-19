@@ -65,6 +65,16 @@ export type PullError =
   | { kind: 'http'; status: number; body: string }
   | { kind: 'shape'; message: string }
   | { kind: 'network'; message: string }
+  // BCS-DEF-7 Phase 2 (2026-05-19) — delta-mode failure variants.
+  // `sync_token_expired` covers both Google's HTTP 410 Gone response
+  // (server-side token retention exceeded) and the rarer HTTP 400
+  // "Invalid sync token" body. Caller treatment is identical:
+  // null-out the stored token + re-enqueue a priority-2 pull (which
+  // will run as a bounded full-rewrite and capture a fresh token).
+  // Kept as a distinct discriminant so the existing 410 semantics
+  // elsewhere (events.delete/get terminal-success-for-already-deleted)
+  // are untouched — only events.list-with-syncToken emits this.
+  | { kind: 'sync_token_expired' }
 
 const ALL_DAY_TZ_NOTE =
   'all-day event — interpreted as MSK day boundary per plan §4.4 (MSK-only teachers in MVP)'
@@ -144,41 +154,97 @@ export function shapeEvent(
 // docs string in code reviews without rebuilding it.
 export const PULL_DOC_NOTES = { ALL_DAY_TZ_NOTE }
 
-// Pulls every event in [now-1d, now+30d] for ONE calendar belonging
-// to the teacher whose accessToken we've been given. Caller is
-// responsible for fetching fresh tokens (refresh flow) before this.
+// Pulls events for ONE calendar belonging to the teacher whose
+// accessToken we've been given. Caller is responsible for fetching
+// fresh tokens (refresh flow) before this.
 //
-// Returns parsed busy intervals, paginated through all `pageToken`s
-// transparently. Page-cap = 10 to bound rogue paginations (~10 x 250
-// = 2500 events in the 31-day window — plenty for one teacher).
+// Two modes (BCS-DEF-7 Phase 2):
+//   - full-rewrite (default, syncToken omitted):
+//       bounded window [now-1d, now+30d], `showDeleted=false`,
+//       cancelled events are not in the response. Caller does
+//       DELETE-then-INSERT semantics in one TX (own tombstones).
+//   - delta (syncToken set):
+//       Google returns only events changed since the token was
+//       issued. `showDeleted=true` is mandatory — Google omits
+//       cancelled tombstones otherwise, and the caller MUST see
+//       cancelled rows in order to issue per-row DELETEs against
+//       the local busy-cache. timeMin/timeMax are forbidden by the
+//       Google API in this mode (they are mutually exclusive with
+//       syncToken) and rejected here.
+//
+// Returns parsed busy intervals + cancelled-event-ids + the next
+// sync token (when present on the final page). Page-cap = 10
+// bounds rogue paginations. In delta mode the token is captured
+// from the final page only — Google guarantees `nextSyncToken`
+// appears on the page where `nextPageToken` is absent; mid-page
+// `nextSyncToken` would indicate a Google bug and is ignored.
 export async function pullBusyIntervalsForCalendar(opts: {
   accessToken: string
   externalCalendarId: string
   // Override for tests / window experiments. Defaults to [now-1d, now+30d].
+  // Forbidden when `syncToken` is set (delta mode).
   timeMin?: Date
   timeMax?: Date
+  // BCS-DEF-7 Phase 2 (2026-05-19) — delta-mode opaque token from
+  // a previous full-rewrite or delta pull. When set: syncToken-only
+  // call, showDeleted=true, cancelled events surface in
+  // `cancelledEventIds`.
+  syncToken?: string
   fetchImpl?: typeof fetch
   maxPages?: number
 }): Promise<
-  | { ok: true; intervals: ParsedBusyInterval[] }
+  | {
+      ok: true
+      intervals: ParsedBusyInterval[]
+      // Delta-mode tombstones: caller DELETEs these from the local
+      // cache. Empty in full-rewrite mode (cancelled events were
+      // not requested via showDeleted=false).
+      cancelledEventIds: string[]
+      // Captured from the FINAL page (where `nextPageToken` is
+      // absent). null when Google did not return one — that means
+      // the caller should not persist anything (either a malformed
+      // Google response or a transient state); only persist the
+      // token when this is non-null.
+      nextSyncToken: string | null
+    }
   | { ok: false; error: PullError }
 > {
+  if (opts.syncToken && (opts.timeMin || opts.timeMax)) {
+    return {
+      ok: false,
+      error: {
+        kind: 'shape',
+        message:
+          'pullBusyIntervalsForCalendar: syncToken is mutually exclusive with timeMin/timeMax (Google rejects the combination)',
+      },
+    }
+  }
+
   const fetchImpl = opts.fetchImpl ?? fetch
   const maxPages = opts.maxPages ?? 10
+  const isDelta = typeof opts.syncToken === 'string' && opts.syncToken.length > 0
   const now = Date.now()
   const timeMin = (opts.timeMin ?? new Date(now - 24 * 60 * 60_000)).toISOString()
   const timeMax = (opts.timeMax ?? new Date(now + 30 * 24 * 60 * 60_000)).toISOString()
 
   const intervals: ParsedBusyInterval[] = []
+  const cancelledEventIds: string[] = []
   let pageToken: string | undefined = undefined
   for (let page = 0; page < maxPages; page++) {
     const url = new URL(
       `${GOOGLE_API_BASE}/calendars/${encodeURIComponent(opts.externalCalendarId)}/events`,
     )
-    url.searchParams.set('timeMin', timeMin)
-    url.searchParams.set('timeMax', timeMax)
-    url.searchParams.set('singleEvents', 'true')
-    url.searchParams.set('showDeleted', 'false')
+    if (isDelta) {
+      // Delta mode — Google forbids timeMin/timeMax + singleEvents.
+      // showDeleted=true is required so cancelled tombstones surface.
+      url.searchParams.set('syncToken', opts.syncToken!)
+      url.searchParams.set('showDeleted', 'true')
+    } else {
+      url.searchParams.set('timeMin', timeMin)
+      url.searchParams.set('timeMax', timeMax)
+      url.searchParams.set('singleEvents', 'true')
+      url.searchParams.set('showDeleted', 'false')
+    }
     url.searchParams.set('maxResults', '250')
     if (pageToken) url.searchParams.set('pageToken', pageToken)
 
@@ -206,6 +272,19 @@ export async function pullBusyIntervalsForCalendar(opts: {
       } catch {
         // ignore
       }
+      // BCS-DEF-7 Phase 2 — only events.list-with-syncToken treats
+      // 410 (sync_token retention exceeded) and 400 "Invalid sync
+      // token" as the recoverable `sync_token_expired` variant.
+      // Outside delta mode, those statuses keep their existing
+      // semantics (caller surfaces as kind:'http').
+      if (isDelta) {
+        if (res.status === 410) {
+          return { ok: false, error: { kind: 'sync_token_expired' } }
+        }
+        if (res.status === 400 && /invalid sync token/i.test(body)) {
+          return { ok: false, error: { kind: 'sync_token_expired' } }
+        }
+      }
       return { ok: false, error: { kind: 'http', status: res.status, body } }
     }
     let parsed: unknown
@@ -225,16 +304,32 @@ export async function pullBusyIntervalsForCalendar(opts: {
     const data = parsed as {
       items?: unknown[]
       nextPageToken?: string
+      nextSyncToken?: string
     }
     if (!Array.isArray(data.items)) {
       return { ok: false, error: { kind: 'shape', message: 'events.list response missing items' } }
     }
     for (const item of data.items) {
+      if (isDelta && isCancelledTombstone(item)) {
+        const id =
+          typeof (item as { id?: unknown }).id === 'string'
+            ? String((item as { id: string }).id)
+            : null
+        if (id) cancelledEventIds.push(id)
+        continue
+      }
       const shaped = shapeEvent(item, opts.externalCalendarId)
       if (shaped) intervals.push(shaped)
     }
     if (!data.nextPageToken) {
-      return { ok: true, intervals }
+      // Final page: capture the sync token (delta mode AND full-
+      // rewrite mode — full-rewrite captures the token to enter the
+      // delta track on the NEXT cycle, per plan §11 Q1).
+      const nextSyncToken =
+        typeof data.nextSyncToken === 'string' && data.nextSyncToken.length > 0
+          ? data.nextSyncToken
+          : null
+      return { ok: true, intervals, cancelledEventIds, nextSyncToken }
     }
     pageToken = data.nextPageToken
   }
@@ -249,6 +344,18 @@ export async function pullBusyIntervalsForCalendar(opts: {
       message: `events.list paginated past ${maxPages} pages; possible loop`,
     },
   }
+}
+
+// Delta-mode tombstone predicate. Google sends `{ id, status: 'cancelled' }`
+// rows in delta responses when showDeleted=true; the rest of the event
+// shape may be absent. We accept the row as a tombstone if it has an id
+// AND status==='cancelled'. Anything else falls through to shapeEvent
+// (which itself returns null for cancelled events as a defensive check
+// against showDeleted-mismatch).
+function isCancelledTombstone(raw: unknown): boolean {
+  if (typeof raw !== 'object' || raw === null) return false
+  const r = raw as { id?: unknown; status?: unknown }
+  return typeof r.id === 'string' && r.id.length > 0 && r.status === 'cancelled'
 }
 
 // Lists the teacher's calendars + accessRole. Used by:

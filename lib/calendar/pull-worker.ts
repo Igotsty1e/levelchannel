@@ -39,12 +39,19 @@ export type PullJobOutcome =
   // success). The cron route aggregates these for operator
   // dashboards; per-job breakdowns aren't logged here (the cron
   // route is the per-tick summary surface).
+  //
+  // BCS-DEF-7 Phase 2 (2026-05-19): `mode` distinguishes delta vs
+  // full-rewrite for per-tick cron counters. `intervalsAfter`
+  // semantics shift slightly in delta mode (rows merged via
+  // UPSERT + DELETE), documented on RunPullResult.
   | {
       kind: 'succeeded'
       jobId: string
       teacherAccountId: string
       intervalsAfter: number
       durationMs: number
+      mode: 'delta' | 'full'
+      deltaTokenRefreshed: boolean
     }
   | {
       kind: 'retried'
@@ -257,6 +264,8 @@ async function processOneJob(args: {
     teacherAccountId: args.teacherAccountId,
     intervalsAfter: pull.intervalsAfter,
     durationMs: Date.now() - jobStartedAtMs,
+    mode: pull.mode,
+    deltaTokenRefreshed: pull.deltaTokenRefreshed,
   }
 }
 
@@ -335,6 +344,10 @@ function isTransientHttpError(error: PullError): boolean {
   //     hints at rate-limit; permanent otherwise (true authz fail).
   //   - 4xx other than 429 / quota-403: permanent.
   //   - network + shape: transient.
+  //   - sync_token_expired (BCS-DEF-7 Phase 2 §0a R1#1): transient.
+  //     The pull-runner already null'd out the column under the
+  //     optimistic guard, so the re-run will be a bounded full-
+  //     rewrite that captures a fresh token.
   //
   // Codex D.complete v2 review closed: 403-as-quota was previously
   // dead-lettered.
@@ -343,6 +356,7 @@ function isTransientHttpError(error: PullError): boolean {
     if (error.status === 403 && isQuotaBody(error.body)) return true
     return false
   }
+  if (error.kind === 'sync_token_expired') return true
   return error.kind === 'network' || error.kind === 'shape'
 }
 

@@ -343,6 +343,226 @@ describe('pullBusyIntervalsForCalendar', () => {
   })
 })
 
+// BCS-DEF-7 Phase 2 (2026-05-19) — delta-mode unit coverage.
+//
+// Hermetic: every test mocks `fetch`. Covers:
+//   - happy path: parsed intervals + cancelled tombstones + token capture
+//   - 410 Gone → sync_token_expired variant
+//   - 400 Invalid sync token → sync_token_expired variant
+//   - non-delta 400 / 410 → preserved http variant (no false sync-token signal)
+//   - multi-page delta: nextSyncToken captured ONLY from final page
+//   - mid-page nextSyncToken ignored (Google-bug defense)
+//   - syncToken + timeMin/timeMax → shape error (mutually exclusive)
+//   - showDeleted=true is set in delta mode (URL inspection)
+//   - full-rewrite captures nextSyncToken when Google returns one (seeds delta track)
+describe('pullBusyIntervalsForCalendar — delta mode', () => {
+  it('happy path: parses 1 new + 1 cancelled + captures nextSyncToken', async () => {
+    const fetchMock = vi.fn(async (url: RequestInfo | URL) => {
+      const u = String(url)
+      expect(u).toContain('syncToken=PREV_TOKEN')
+      expect(u).toContain('showDeleted=true')
+      expect(u).not.toContain('timeMin=')
+      return mockJsonResponse({
+        items: [
+          {
+            id: 'NEW_EVT',
+            summary: 'New Meeting',
+            start: { dateTime: '2026-05-21T09:00:00Z' },
+            end: { dateTime: '2026-05-21T10:00:00Z' },
+          },
+          {
+            id: 'CANCELLED_EVT',
+            status: 'cancelled',
+          },
+        ],
+        nextSyncToken: 'FRESH_TOKEN',
+      })
+    }) as unknown as typeof fetch
+    const r = await pullBusyIntervalsForCalendar({
+      accessToken: 'AT',
+      externalCalendarId: 'primary',
+      syncToken: 'PREV_TOKEN',
+      fetchImpl: fetchMock,
+    })
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.intervals).toHaveLength(1)
+      expect(r.intervals[0].externalEventId).toBe('NEW_EVT')
+      expect(r.cancelledEventIds).toEqual(['CANCELLED_EVT'])
+      expect(r.nextSyncToken).toBe('FRESH_TOKEN')
+    }
+  })
+
+  it('returns sync_token_expired on HTTP 410', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        ({
+          ok: false,
+          status: 410,
+          json: async () => ({}),
+          text: async () =>
+            JSON.stringify({ error: { message: 'Sync token is no longer valid' } }),
+        }) as unknown as Response,
+    ) as unknown as typeof fetch
+    const r = await pullBusyIntervalsForCalendar({
+      accessToken: 'AT',
+      externalCalendarId: 'primary',
+      syncToken: 'OLD_TOKEN',
+      fetchImpl: fetchMock,
+    })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.kind).toBe('sync_token_expired')
+  })
+
+  it('returns sync_token_expired on 400 with "Invalid sync token" body', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        ({
+          ok: false,
+          status: 400,
+          json: async () => ({}),
+          text: async () =>
+            JSON.stringify({ error: { message: 'Invalid sync token value' } }),
+        }) as unknown as Response,
+    ) as unknown as typeof fetch
+    const r = await pullBusyIntervalsForCalendar({
+      accessToken: 'AT',
+      externalCalendarId: 'primary',
+      syncToken: 'OLD_TOKEN',
+      fetchImpl: fetchMock,
+    })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error.kind).toBe('sync_token_expired')
+  })
+
+  it('does NOT translate non-delta 400 / 410 into sync_token_expired (full-rewrite preserved)', async () => {
+    const fetchMock410 = vi.fn(
+      async () =>
+        ({
+          ok: false,
+          status: 410,
+          json: async () => ({}),
+          text: async () => 'gone',
+        }) as unknown as Response,
+    ) as unknown as typeof fetch
+    const r410 = await pullBusyIntervalsForCalendar({
+      accessToken: 'AT',
+      externalCalendarId: 'primary',
+      // no syncToken — this is full-rewrite mode
+      fetchImpl: fetchMock410,
+    })
+    expect(r410.ok).toBe(false)
+    if (!r410.ok && r410.error.kind === 'http') {
+      expect(r410.error.status).toBe(410)
+    } else {
+      expect.fail('expected http error variant in full-rewrite mode')
+    }
+  })
+
+  it('multi-page delta: nextSyncToken captured ONLY from final page (mid-page values ignored)', async () => {
+    let call = 0
+    const fetchMock = vi.fn(async () => {
+      call++
+      if (call === 1) {
+        return mockJsonResponse({
+          items: [
+            {
+              id: 'P1_EVT',
+              start: { dateTime: '2026-05-21T09:00:00Z' },
+              end: { dateTime: '2026-05-21T10:00:00Z' },
+            },
+          ],
+          nextPageToken: 'PAGE2',
+          // Google bug defense: even if nextSyncToken arrives mid-pagination
+          // (which it should NEVER do per their docs), we must IGNORE it
+          // and only trust the token from the final page.
+          nextSyncToken: 'WRONG_MID_TOKEN',
+        })
+      }
+      return mockJsonResponse({
+        items: [
+          {
+            id: 'P2_EVT',
+            start: { dateTime: '2026-05-21T11:00:00Z' },
+            end: { dateTime: '2026-05-21T12:00:00Z' },
+          },
+        ],
+        nextSyncToken: 'CORRECT_FINAL_TOKEN',
+      })
+    }) as unknown as typeof fetch
+    const r = await pullBusyIntervalsForCalendar({
+      accessToken: 'AT',
+      externalCalendarId: 'primary',
+      syncToken: 'START',
+      fetchImpl: fetchMock,
+    })
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.nextSyncToken).toBe('CORRECT_FINAL_TOKEN')
+      expect(r.intervals.map((i) => i.externalEventId)).toEqual(['P1_EVT', 'P2_EVT'])
+    }
+  })
+
+  it('returns shape error when syncToken + timeMin are both passed (Google rejects the combination)', async () => {
+    const r = await pullBusyIntervalsForCalendar({
+      accessToken: 'AT',
+      externalCalendarId: 'primary',
+      syncToken: 'TOK',
+      timeMin: new Date(),
+      fetchImpl: vi.fn() as unknown as typeof fetch,
+    })
+    expect(r.ok).toBe(false)
+    if (!r.ok && r.error.kind === 'shape') {
+      expect(r.error.message).toMatch(/syncToken.*mutually exclusive/)
+    }
+  })
+
+  it('full-rewrite mode also captures nextSyncToken when Google returns one (seeds delta track)', async () => {
+    const fetchMock = vi.fn(async () =>
+      mockJsonResponse({
+        items: [
+          {
+            id: 'X',
+            start: { dateTime: '2026-05-21T09:00:00Z' },
+            end: { dateTime: '2026-05-21T10:00:00Z' },
+          },
+        ],
+        nextSyncToken: 'SEEDED_TOKEN',
+      }),
+    ) as unknown as typeof fetch
+    const r = await pullBusyIntervalsForCalendar({
+      accessToken: 'AT',
+      externalCalendarId: 'primary',
+      // no syncToken — full-rewrite mode
+      fetchImpl: fetchMock,
+    })
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.nextSyncToken).toBe('SEEDED_TOKEN')
+      expect(r.cancelledEventIds).toEqual([])
+    }
+  })
+
+  it('delta-mode URL: showDeleted=true, no timeMin/timeMax, syncToken set', async () => {
+    let capturedUrl = ''
+    const fetchMock = vi.fn(async (url: RequestInfo | URL) => {
+      capturedUrl = String(url)
+      return mockJsonResponse({ items: [], nextSyncToken: 'T' })
+    }) as unknown as typeof fetch
+    await pullBusyIntervalsForCalendar({
+      accessToken: 'AT',
+      externalCalendarId: 'primary',
+      syncToken: 'PREV',
+      fetchImpl: fetchMock,
+    })
+    expect(capturedUrl).toContain('syncToken=PREV')
+    expect(capturedUrl).toContain('showDeleted=true')
+    expect(capturedUrl).not.toContain('timeMin=')
+    expect(capturedUrl).not.toContain('timeMax=')
+    expect(capturedUrl).not.toContain('singleEvents=')
+  })
+})
+
 describe('listCalendars', () => {
   it('parses items with accessRole + derives isWritable', async () => {
     const fetchMock = vi.fn(async () =>
