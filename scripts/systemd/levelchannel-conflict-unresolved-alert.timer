@@ -1,0 +1,21 @@
+# Reference systemd timer for scripts/conflict-unresolved-alert.mjs.
+# Copy to /etc/systemd/system/ on the VPS; activation lives in the
+# private operations runbook + scripts/activate-prod-ops.sh.
+#
+# BCS-DEF-1 Phase 2 (2026-05-19) — boot-relative scheduling matching
+# scripts/systemd/levelchannel-auth-flow-alert.timer (OnBootSec=7min)
+# and scripts/systemd/levelchannel-webhook-flow-alert.timer
+# (OnBootSec=5min). The 12-min boot offset staggers against both so
+# the three alert probes don't clump on the same minute.
+
+[Unit]
+Description=Run LevelChannel conflict-unresolved alert every 30 min
+
+[Timer]
+OnBootSec=12min
+OnUnitActiveSec=30min
+Persistent=true
+Unit=levelchannel-conflict-unresolved-alert.service
+
+[Install]
+WantedBy=timers.target
