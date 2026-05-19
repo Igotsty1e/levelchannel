@@ -491,7 +491,7 @@ function BookingCta({
       ) : null}
 
       <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0, marginBottom: 8 }}>
-        Записаться на урок
+        Записаться на занятие
       </h2>
 
       {!hasAssignedTeacher ? (

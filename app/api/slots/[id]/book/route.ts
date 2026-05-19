@@ -116,13 +116,13 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
   if (result.reason === 'in_past') {
     return NextResponse.json(
-      { error: 'Этот слот уже прошёл.' },
+      { error: 'Это время уже прошло.' },
       { status: 410, headers: NO_STORE },
     )
   }
   if (result.reason === 'self_booking_blocked') {
     return NextResponse.json(
-      { error: 'Нельзя забронировать слот, где вы числитесь преподавателем.' },
+      { error: 'Нельзя записаться на занятие, где вы числитесь преподавателем.' },
       { status: 403, headers: NO_STORE },
     )
   }
@@ -131,7 +131,7 @@ export async function POST(request: Request, { params }: RouteParams) {
     return NextResponse.json(
       {
         error: 'package_required',
-        message: 'Чтобы записаться, купите пакет уроков.',
+        message: 'Чтобы записаться, купите пакет занятий.',
         availablePackages: result.availablePackages ?? [],
       },
       { status: 402, headers: NO_STORE },
@@ -142,7 +142,7 @@ export async function POST(request: Request, { params }: RouteParams) {
       {
         error: 'tariff_required',
         message:
-          'У этого слота не указана цена. Свяжитесь с оператором.',
+          'У этого занятия не указана цена. Свяжитесь с оператором.',
       },
       { status: 402, headers: NO_STORE },
     )
@@ -162,14 +162,14 @@ export async function POST(request: Request, { params }: RouteParams) {
       {
         error: 'external_conflict',
         message:
-          'Этот слот занят у учителя в его внешнем календаре. Выберите другое время.',
+          'Это время занято у учителя в его внешнем календаре. Выберите другое время.',
       },
       { status: 409, headers: NO_STORE },
     )
   }
   // not_open — race with another booking or operator-side state change.
   return NextResponse.json(
-    { error: 'Этот слот только что забронировал кто-то другой. Обновите список.' },
+    { error: 'Это время только что забронировал кто-то другой. Обновите список.' },
     { status: 409, headers: NO_STORE },
   )
 }

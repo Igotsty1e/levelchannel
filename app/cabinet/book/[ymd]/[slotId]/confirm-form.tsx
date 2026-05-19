@@ -136,7 +136,7 @@ export function ConfirmForm({
           opacity: busy || overCap ? 0.6 : 1,
         }}
       >
-        {busy ? 'Записываем…' : 'Записаться на урок'}
+        {busy ? 'Записываем…' : 'Записаться на занятие'}
       </button>
     </form>
   )
