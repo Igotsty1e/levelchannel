@@ -1,7 +1,8 @@
 # Critical-path inventory
 
 **Status:** approved (2026-05-18; product-owner request).
-**Scope:** 20 files whose breakage = production incident (money, security, or scheduling integrity). PRs that touch any file in this list MUST land `Codex-Paranoia: SIGN-OFF` (full paranoia loop), NOT `SUB-WAVE self-reviewed`.
+**Last refresh:** 2026-05-19 — file-existence re-verified across all 21 entries; one addition (item 12, `lib/auth/teacher-invites.ts`) for the SAAS-3+4 teacher self-registration epic merged 2026-05-18. No removals.
+**Scope:** 21 files whose breakage = production incident (money, security, or scheduling integrity). PRs that touch any file in this list MUST land `Codex-Paranoia: SIGN-OFF` (full paranoia loop), NOT `SUB-WAVE self-reviewed`.
 
 ## Selection criteria
 
@@ -14,7 +15,7 @@ A file is on this list iff at least one is true:
 
 "Production incident" here means: requires operator action to make whole (manual SQL, refund, support contact). Not "a route returns 500" — those are routine.
 
-## The 20
+## The 21
 
 Grouped by failure mode. Each entry: path + the specific invariant it owns.
 
@@ -29,26 +30,27 @@ Grouped by failure mode. Each entry: path + the specific invariant it owns.
 7. **`lib/billing/consumption.ts`** — `consumePackageUnit` (slot booking debits a package). Owns: FIFO selection of active purchases, race-safe consumption row insert keyed on `slot_id`, restore-on-cancel path.
 8. **`lib/billing/reversals.ts`** — refund reversals on `payment_allocations`. Owns: full + partial refund accounting; the binary all-or-nothing contract for derived `paid` state.
 
-### Security gates (5 files)
+### Security gates (6 files)
 
 9. **`lib/auth/sessions.ts`** — session lookup + revoke. Owns: `lookupSession` is the predicate every authenticated route relies on; cache invalidation on revoke; cookie-name and TTL constants.
 10. **`lib/auth/guards.ts`** — `requireAdminRole` + `requireLearnerArchetypeAndVerified`. Owns: the predicate that gates every `/api/admin/*` route + every `/api/slots/*` write.
 11. **`lib/auth/learner-archetype.ts`** — `LEARNER_ARCHETYPE_CANDIDATE_WHERE_SQL` predicate. Owns: who can book; aligned with `deletion-guard.ts` and `requireLearnerArchetypeAndVerified` (AUDIT-SEC-3 closure).
-12. **`lib/security/idempotency.ts`** — `withIdempotency` middleware. Owns: sequential-only same-key dedup contract (post-merge paranoia rollback PR #258 fixed this — see commit body). Money-moving routes depend on this exact shape.
-13. **`lib/security/request.ts`** — `enforceRateLimit` + per-IP / per-account / per-Idempotency-Key buckets. Owns: defense-in-depth on every public endpoint.
+12. **`lib/auth/teacher-invites.ts`** (SAAS-3+4, 2026-05-18). Owns: HMAC-SHA256 sign/verify of teacher-issued invite tokens (`TEACHER_INVITE_SECRET`, per-call env read, `timingSafeEqual` compare); `redeemInviteAndBindLearnerAtomic` is a single-statement writable CTE that marks the invite used AND sets `accounts.assigned_teacher_id` only if the inviter still holds the `teacher` role at redeem (TINV.3 round-3 BLOCKER#1 race-window closure). A bug here mis-binds a learner to the wrong teacher — entitlement-equivalent exposure.
+13. **`lib/security/idempotency.ts`** — `withIdempotency` middleware. Owns: sequential-only same-key dedup contract (post-merge paranoia rollback PR #258 fixed this — see commit body). Money-moving routes depend on this exact shape.
+14. **`lib/security/request.ts`** — `enforceRateLimit` + per-IP / per-account / per-Idempotency-Key buckets. Owns: defense-in-depth on every public endpoint.
 
 ### Calendar + scheduling integrity (5 files)
 
-14. **`lib/scheduling/slots/mutations-cancel.ts`** — atomic `cancelLearnerSlot`. Owns: WHERE-clause-as-security-boundary (status='booked' AND start_at - now() >= window AND learner owns); the single-UPDATE TOCTOU-free shape. Plus operator/teacher cancel siblings.
-15. **`lib/scheduling/slots/booking.ts`** — `bookSlot`. Owns: atomic UPDATE-with-status='open' re-assert for concurrent-book races; the billing-fast-path / package/postpaid branch; consumption write in the same TX.
-16. **`lib/calendar/pull-runner.ts`** — Google Calendar pull. Owns: F8 epoch-aware self-echo detection (own vs foreign event); full-rewrite `teacher_external_busy_intervals` in one TX; `summary_encrypted` pgcrypto write.
-17. **`lib/calendar/pull-worker.ts`** — pull-jobs drainer. Owns: dispatches per-calendar pull-runner, wires the post-pull conflict detector (BCS-F.1 wire-up gap closed PR #251), best-effort failure semantics.
-18. **`app/api/calendar/google/webhook/route.ts`** — Google push-notification receiver. Owns: constant-time `channel_token` compare (decrypt-aware since AUDIT-SEC-4 PR #268), `channel_id`/`resource_id` match, monotonic `X-Goog-Message-Number` guard.
+15. **`lib/scheduling/slots/mutations-cancel.ts`** — atomic `cancelLearnerSlot`. Owns: WHERE-clause-as-security-boundary (status='booked' AND start_at - now() >= window AND learner owns); the single-UPDATE TOCTOU-free shape. Plus operator/teacher cancel siblings.
+16. **`lib/scheduling/slots/booking.ts`** — `bookSlot`. Owns: atomic UPDATE-with-status='open' re-assert for concurrent-book races; the billing-fast-path / package/postpaid branch; consumption write in the same TX.
+17. **`lib/calendar/pull-runner.ts`** — Google Calendar pull. Owns: F8 epoch-aware self-echo detection (own vs foreign event); full-rewrite `teacher_external_busy_intervals` in one TX; `summary_encrypted` pgcrypto write.
+18. **`lib/calendar/pull-worker.ts`** — pull-jobs drainer. Owns: dispatches per-calendar pull-runner, wires the post-pull conflict detector (BCS-F.1 wire-up gap closed PR #251), best-effort failure semantics.
+19. **`app/api/calendar/google/webhook/route.ts`** — Google push-notification receiver. Owns: constant-time `channel_token` compare (decrypt-aware since AUDIT-SEC-4 PR #268), `channel_id`/`resource_id` match, monotonic `X-Goog-Message-Number` guard.
 
 ### Audit-log integrity (2 files)
 
-19. **`lib/audit/payment-events.ts`** + the `levelchannel_audit_writer` INSERT-only role (migration 0029). Owns: every money-moving + 152-FZ-relevant event lands here; trigger blocks UPDATE on event rows (event_kind enum); 3-year retention per `scripts/db-retention-cleanup.mjs`.
-20. **`lib/admin/operator-settings.ts`** + `scripts/lib/operator-settings.mjs` (ALERTS-EDITOR PR #272). Owns: DB → env → default resolver chain for operator-tunable thresholds; single-TX write+audit atomicity (no split-pool failure mode); `operator_settings_events` immutability trigger blocks UPDATE but permits 90-day retention DELETE.
+20. **`lib/audit/payment-events.ts`** + the `levelchannel_audit_writer` INSERT-only role (migration 0029). Owns: every money-moving + 152-FZ-relevant event lands here; trigger blocks UPDATE on event rows (event_kind enum); 3-year retention per `scripts/db-retention-cleanup.mjs`.
+21. **`lib/admin/operator-settings.ts`** + `scripts/lib/operator-settings.mjs` (ALERTS-EDITOR PR #272). Owns: DB → env → default resolver chain for operator-tunable thresholds; single-TX write+audit atomicity (no split-pool failure mode); `operator_settings_events` immutability trigger blocks UPDATE but permits 90-day retention DELETE.
 
 ## Process gate
 
