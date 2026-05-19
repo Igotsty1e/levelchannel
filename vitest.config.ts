@@ -6,9 +6,9 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['tests/**/*.test.ts'],
+    include: ['tests/**/*.test.{ts,tsx}'],
     exclude: ['tests/integration/**', 'node_modules/**'],
-    setupFiles: ['tests/setup-env.ts'],
+    setupFiles: ['tests/setup-env.ts', 'tests/setup-rtl.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
