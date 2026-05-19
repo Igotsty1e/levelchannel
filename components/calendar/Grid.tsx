@@ -173,6 +173,26 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
   }, [focusedCell, days])
 
   function handleGridKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    // SAAS-1-FOLLOWUP-KEYBOARD wave-paranoia round-2 BLOCKER closure
+    // (2026-05-19): when focus is on a SlotBlock <button> (already
+    // tabbable with its own onClick), let the button's native
+    // Enter/Space handler fire — don't preventDefault + don't
+    // operate on stale `focusedCell` from the empty-cell roving
+    // model. Without this gate, Tab to a slot then Enter would
+    // either open the wrong slot or start a paint at the last
+    // roving-cell position.
+    //
+    // SlotBlock is the only <button> descendant inside the grid
+    // (day-cell overlays are <div role="gridcell">), so tag check
+    // is sufficient.
+    const target = e.target as HTMLElement | null
+    if (
+      target
+      && target.tagName === 'BUTTON'
+      && target !== e.currentTarget
+    ) {
+      return
+    }
     const navKey = navKeyFromEvent(e.key)
     if (navKey !== null) {
       e.preventDefault()
