@@ -90,6 +90,8 @@ export default async function AdminLayout({ children }: { children: ReactNode })
             <AdminNavLink href="/admin/debt-summary">Задолженности</AdminNavLink>
             <AdminNavLink href="/admin/legal">Документы и соглашения</AdminNavLink>
             <AdminNavLink href="/admin/settings/alerts">Уведомления оператора</AdminNavLink>
+            {/* BCS-DEF-5 (2026-05-19) — daily 08:00 teacher lesson digest. */}
+            <AdminNavLink href="/admin/settings/digest">Утренний дайджест</AdminNavLink>
             <AdminNavLink href="/admin/reconciliation">Сверка платежей</AdminNavLink>
           </nav>
           <p
