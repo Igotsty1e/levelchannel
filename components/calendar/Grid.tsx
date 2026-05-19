@@ -10,6 +10,13 @@ import {
   halfHourFromOffset as halfHourFromOffsetPure,
 } from '@/lib/calendar/grid-hit-test'
 import {
+  type ActiveCell,
+  HALF_HOUR_COUNT,
+  navKeyFromEvent,
+  nextActiveCell,
+  slotAtCell,
+} from '@/lib/calendar/grid-keyboard'
+import {
   type CalendarRow,
   currentTimeTopPx,
   groupSlotsByDay,
@@ -95,6 +102,88 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
     [],
   )
 
+  // SAAS-1-FOLLOWUP-KEYBOARD — roving-tabindex focus model.
+  // `focusedCell` is the single (dayIdx, halfHour) that owns `tabIndex={0}`
+  // among all overlay cells + SlotBlocks. Default = (0, 6) ≈ 09:00 (first
+  // half-hour after 06:00 + 6 × 30min). If today is in the visible week,
+  // we prefer (todayIdx, 6) on mount. See docs/plans/saas-1-followup-
+  // keyboard.md §2.1.
+  const [focusedCell, setFocusedCell] = useState<ActiveCell>({
+    dayIdx: 0,
+    halfHour: 6,
+  })
+  // After we mount and discover today, jump focus to today's column.
+  // Guarded so it only runs once per mount; user-driven nav after that
+  // is unaffected.
+  const initialFocusAppliedRef = useRef(false)
+  useEffect(() => {
+    if (initialFocusAppliedRef.current) return
+    if (todayYmd === null) return
+    const idx = days.indexOf(todayYmd)
+    if (idx >= 0) {
+      setFocusedCell({ dayIdx: idx, halfHour: 6 })
+    }
+    initialFocusAppliedRef.current = true
+  }, [todayYmd, days])
+
+  // Cell ref map keyed by `${ymd}#${halfHour}` so the focus effect can
+  // imperatively move DOM focus to whatever the current `focusedCell`
+  // resolves to. SlotBlock refs are NOT stored here (they own their own
+  // tabIndex via the existing <button>; see §4 of the plan-doc) — only
+  // empty-overlay cells live in this map.
+  const cellRefs = useRef<Map<string, HTMLDivElement | null>>(new Map())
+  const setCellRef = useCallback(
+    (key: string) => (el: HTMLDivElement | null) => {
+      if (el === null) {
+        cellRefs.current.delete(key)
+      } else {
+        cellRefs.current.set(key, el)
+      }
+    },
+    [],
+  )
+
+  // After focus state changes, move DOM focus to the newly-active cell.
+  // Skip on first render (don't steal focus from the page on mount —
+  // the user must Tab in first). `hasFocusInsideGridRef` tracks whether
+  // the grid currently contains document.activeElement; if not, we
+  // skip the imperative .focus() call so we don't yank focus away from
+  // some other surface the user is interacting with.
+  const hasFocusInsideGridRef = useRef(false)
+  useEffect(() => {
+    if (!hasFocusInsideGridRef.current) return
+    const ymd = days[focusedCell.dayIdx]
+    if (!ymd) return
+    const key = `${ymd}#${focusedCell.halfHour}`
+    const node = cellRefs.current.get(key)
+    if (node) {
+      node.focus()
+      if (typeof node.scrollIntoView === 'function') {
+        node.scrollIntoView({ block: 'nearest', behavior: 'auto' })
+      }
+    }
+  }, [focusedCell, days])
+
+  function handleGridKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const navKey = navKeyFromEvent(e.key)
+    if (navKey !== null) {
+      e.preventDefault()
+      setFocusedCell((cur) => nextActiveCell(cur, navKey))
+      return
+    }
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+      e.preventDefault()
+      const ymd = days[focusedCell.dayIdx]
+      if (!ymd) return
+      const row = slotAtCell(grouped, ymd, focusedCell.halfHour, CELL_HEIGHT_PX)
+      if (row && onSlotClick) {
+        onSlotClick(row)
+      } else if (!row && drag?.onCellMouseDown) {
+        drag.onCellMouseDown(ymd, focusedCell.halfHour)
+      }
+    }
+  }
+
   // SAAS-1 5.F (2026-05-18) — moved to lib/calendar/grid-hit-test.ts.
   // Local alias keeps the call-site below readable + matches the
   // SlotBlock-aligned slot-top math that uses CELL_HEIGHT_PX.
@@ -140,6 +229,19 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
     <div
       role="grid"
       aria-label="Календарь занятий на неделю"
+      onKeyDown={handleGridKeyDown}
+      onFocus={() => {
+        hasFocusInsideGridRef.current = true
+      }}
+      onBlur={(e) => {
+        // currentTarget is the grid container; relatedTarget is what's
+        // about to receive focus. If it's still inside the grid, keep
+        // the flag set (cell-to-cell nav). If it's outside (Tab away),
+        // clear it so the next state change doesn't yank focus back.
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          hasFocusInsideGridRef.current = false
+        }
+      }}
       style={{
         display: 'grid',
         gridTemplateColumns: '60px repeat(7, 1fr)',
@@ -214,15 +316,16 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
       </div>
 
       {/* Day columns */}
-      {days.map((ymd) => {
+      {days.map((ymd, dayIdx) => {
         const isToday = todayYmd === ymd
         return (
         <div
           key={ymd}
           ref={setDayRef(ymd)}
-          role="gridcell"
+          role="row"
           aria-label={`День ${ymd}`}
           data-today={isToday ? 'true' : undefined}
+          data-dayidx={dayIdx}
           onMouseDown={(e) => handleColumnMouseDown(e, ymd)}
           onMouseMove={(e) => handleColumnMouseMove(e, ymd)}
           style={{
@@ -308,6 +411,44 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
               durationMinutes={drag.moveGhost.durationMinutes}
             />
           ) : null}
+          {/* SAAS-1-FOLLOWUP-KEYBOARD — invisible half-hour cells for
+              roving-tabindex focus + keyboard activation. pointerEvents:
+              'none' so the parent column's mouse handlers still get
+              every click/drag; the cells are pure focus targets. The
+              active cell carries tabIndex={0}; all others tabIndex={-1}. */}
+          {Array.from({ length: HALF_HOUR_COUNT }, (_, halfHour) => {
+            const isActive =
+              focusedCell.dayIdx === dayIdx &&
+              focusedCell.halfHour === halfHour
+            const row = slotAtCell(grouped, ymd, halfHour, CELL_HEIGHT_PX)
+            const cellKey = `${ymd}#${halfHour}`
+            const hh = Math.floor(halfHour / 2) + 6
+            const mm = halfHour % 2 === 0 ? '00' : '30'
+            const status = row ? 'занят' : 'свободно'
+            return (
+              <div
+                key={cellKey}
+                ref={setCellRef(cellKey)}
+                role="gridcell"
+                tabIndex={isActive ? 0 : -1}
+                aria-label={`${ymd} ${String(hh).padStart(2, '0')}:${mm} ${status}`}
+                className="calendar-cell"
+                data-dayidx={dayIdx}
+                data-halfhour={halfHour}
+                data-ymd={ymd}
+                data-occupied={row ? 'true' : 'false'}
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  top: `${halfHour * CELL_HEIGHT_PX}px`,
+                  height: `${CELL_HEIGHT_PX}px`,
+                  pointerEvents: 'none',
+                  zIndex: 6,
+                }}
+              />
+            )
+          })}
         </div>
         )
       })}

@@ -438,6 +438,22 @@ html, body {
   cursor: pointer;
 }
 
+/* SAAS-1-FOLLOWUP-KEYBOARD (2026-05-18) — focus ring for the
+   keyboard-navigable calendar grid cells. Cells are invisible overlay
+   divs (Grid.tsx half-hour focus targets), so the ring is drawn as an
+   inset outline. Tokens come from .saas-chrome scope (design-system
+   §11). Uses :focus-visible (not :focus) so mouse clicks don't paint
+   the ring. */
+.calendar-cell:focus {
+  outline: none;
+}
+.calendar-cell:focus-visible {
+  outline: var(--focus-ring-width, 2px) solid
+    var(--focus-ring-color, rgba(216, 138, 130, 0.60));
+  outline-offset: calc(var(--focus-ring-offset, 2px) * -1);
+  border-radius: 2px;
+}
+
 /* Codex review 2026-05-09 — own 404 page styles so we don't depend on
    the framework default _not-found bundle (which inlines a <style>
    block that conflicts with our strict style-src 'self' CSP). */
