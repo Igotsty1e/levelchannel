@@ -44,6 +44,13 @@
   --text-tertiary: #6E6E76;
   --text-quaternary: #48484C;
   --text-on-accent: #FFFFFF;
+  /* SAAS-1 5.A wave-paranoia round-1 WARN (2026-05-19): legacy
+     consumers reference var(--accent-contrast, #fff). Without an
+     alias the fallback fires inside .saas-chrome — works
+     coincidentally because the design-system rose-accent's
+     contrast IS #FFFFFF, but the token contract is misleading.
+     Alias under both names so the consumer can use either. */
+  --accent-contrast: var(--text-on-accent);
 
   /* Accent */
   --accent: #D88A82;
