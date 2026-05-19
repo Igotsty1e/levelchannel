@@ -181,11 +181,16 @@ describe('POST /api/admin/settings/alerts/[probe]/test-send', () => {
       expect(json.error).toBe('migration_pending')
     } finally {
       // Restore the table so subsequent tests (and afterEach) work.
+      // BCS-DEF-1 Phase 1 (2026-05-19) — CHECK extended to include
+      // 'conflict-unresolved' to match migration 0058. Without this
+      // any subsequent integration test inserting that probe_name
+      // would fail CHECK on the recreated-table state.
       await pool.query(`
         create table if not exists probe_runs (
           id uuid primary key default gen_random_uuid(),
           probe_name text not null check (probe_name in (
-            'auth-flow', 'calendar-pathology', 'webhook-flow'
+            'auth-flow', 'calendar-pathology', 'webhook-flow',
+            'conflict-unresolved'
           )),
           ran_at timestamptz not null default now(),
           verdict_kind text not null check (verdict_kind in (
