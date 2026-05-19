@@ -82,7 +82,7 @@ Round 2 confirmed 6 of 7 round-1 closures (BLOCKER#1, #2, #4, #5, #6, #7 + WARN#
 |---|---|
 | **BLOCKER#1 (round-2)** — operator email claimed "use slot id against /admin/slots URL params" but `app/admin/(gated)/slots/page.tsx:13-18` takes ZERO `searchParams`; `app/api/admin/slots/route.ts:27-36` only accepts `status / from / to`; the underlying query has no slot-id predicate. Email is non-actionable. | §2.4 revised — email body now includes a **deep-link to `/admin/accounts/<teacher_account_id>`** (route exists per `app/admin/(gated)/accounts/[id]/page.tsx:27-30`) for each affected teacher. Deep-link surfaces status / roles / billing / assigned learners + contact email (per §0c BLOCKER#1 round-3 closure; the slot list is NOT on that page). Slot id is in the email body for forensic / psql lookup; `/admin/slots` is the place to operate on the slot. |
 | **BLOCKER#2 (round-2)** — global `LIMIT 50` lets one noisy teacher (50+ old conflicts) monopolize the whole report; teachers B/C/... become invisible. Operator-only scope didn't fix this; it just collapsed the fan-out. | §2.2 revised — query rewritten with window function `ROW_NUMBER() OVER (PARTITION BY teacher_account_id ORDER BY external_conflict_at ASC)` + new operator setting `CONFLICT_UNRESOLVED_PER_TEACHER_LIMIT` (default 5; min 1; max 50). Per-teacher cap × global cap ensures cross-teacher visibility. Plus a new test case (§3.3) — 100 conflicts seeded across 3 teachers (60/30/10), report includes ALL three with ≤5 each + correct "и ещё N не показано у этого учителя" tally. |
-| **WARN#3 (round-2)** — doc sweep narrow; 6 more files still encode "three probes": `lib/admin/probe-status.ts:4-11` (header comment), `app/admin/(gated)/settings/alerts/page.tsx:24-37` (block comment), `lib/admin/README.md:9-10,39-43`, `scripts/db-retention-cleanup.mjs:271-274`, `scripts/lib/probe-runs.mjs:1-5` (header comment), `migrations/0053_probe_runs.sql:1-17,64-70` (header + comment-on-table). | §6 (doc-sweep) revised — all 6 added to the touch list. The migration-comment update is a **plain `comment on table probe_runs is '...'` UPDATE** inside the new migration 0058 (alters the column-name comment to "four probes"); no schema change. |
+| **WARN#3 (round-2)** — doc sweep narrow; 6 more files still encode "three probes": `lib/admin/probe-status.ts:4-11` (header comment), `app/admin/(gated)/settings/alerts/page.tsx:24-37` (block comment), `lib/admin/README.md:9-10,39-43`, `scripts/db-retention-cleanup.mjs:271-274`, `scripts/lib/probe-runs.mjs:1-5` (header comment), `migrations/0053_probe_runs.sql:1-17,64-70` (header + comment-on-table). | §6 (doc-sweep) revised — all 6 added to the touch list. ~~The migration-comment update is a **plain `comment on table probe_runs is '...'` UPDATE** inside the new migration 0058 (alters the column-name comment to "four probes"); no schema change.~~ **⚠️ As shipped:** migration 0058 only carries the CHECK extension (`migrations/0058_probe_runs_conflict_unresolved.sql:19-26`); no `comment on table` update was authored. The original 3-probe comment in `migrations/0053_probe_runs.sql:64-70` lingers. Low runtime risk; will fold into a future migration sweep if `psql \d+ probe_runs` description drift becomes investigation-relevant. |
 | **WARN#4 (round-2)** — §1.5 and §5 inconsistent: §1.5 names `probe-resolver-integration.test.ts` + `operator-settings-route.test.ts` to update but §5 inventory omits both. | §5 file inventory updated — both files added explicitly. |
 | **WARN#5 (round-2)** — timer stagger reasoning wrong: existing auth-flow/webhook-flow timers use `OnBootSec` + `OnUnitActiveSec`, NOT `OnCalendar`. So the `OnCalendar=*:23/30:00` collision-avoidance argument is moot. | §2.9 revised — adopt the existing sibling pattern (`OnBootSec=2min` + `OnUnitActiveSec=30min`) for boot-relative scheduling. Same effective cadence (30 min), proper sibling-stagger by boot-relative offset. |
 
@@ -249,7 +249,7 @@ Per `docs/critical-path.md`:
 
 ### 2.1 New probe — `scripts/conflict-unresolved-alert.mjs`
 
-Mirrors `scripts/calendar-pathology-alert.mjs` shape, with the **export-helpers + `if (invokedDirectly) main()` guard pattern from `scripts/auth-flow-alert.mjs:478-488`**. Helpers (`fingerprint`, `buildEmail`, `readOffenderRows`, `readOffenderCountUnbounded`) are named exports so unit tests can import without side effects.
+Mirrors `scripts/calendar-pathology-alert.mjs` shape, with the **export-helpers + `if (invokedDirectly) main()` guard pattern from `scripts/auth-flow-alert.mjs:478-488`**. Helpers are named exports so unit tests can import without side effects. **As shipped** the exported set is `fingerprint`, `buildEmail`, `readOffenderRows`, `readOffenderCounts`, `readPerTeacherOmittedCounts`, `readFingerprintTuples` (per `scripts/conflict-unresolved-alert.mjs:97,124,195,225,654` — note original draft named the count helper `readOffenderCountUnbounded`; shipped name is `readOffenderCounts` and the unbounded fingerprint reader is its own separate `readFingerprintTuples` per wave-paranoia BLOCKER#2).
 
 Concretely the bottom of the file:
 
@@ -267,7 +267,8 @@ if (invokedDirectly) {
   })
 }
 
-export { fingerprint, buildEmail, readOffenderRows, readOffenderCountUnbounded }
+// As-shipped export (note: original draft named the count helper differently):
+export { fingerprint, buildEmail, readOffenderRows, readOffenderCounts, readPerTeacherOmittedCounts, readFingerprintTuples }
 ```
 
 ### 2.2 Offender query — single tick, single recipient (operator)
@@ -671,7 +672,7 @@ WantedBy=timers.target
 
 - `fingerprint(offenders)` — deterministic across input reorderings; stable hash over sorted full tuples; different fingerprint when `conflictSourceCalendarId` differs (BLOCKER#5 regression pin).
 - `buildEmail(offenders, total, thresholdsSnapshot)` — subject + text contain the required Russian copy verbatim; "и ещё N" line present when `total > offenders.length`, absent when `total === offenders.length`.
-- `readOffenderCountUnbounded` + `readOffenderRows` — exported for unit tests via mocked `pg.Pool`. Mocked `.query()` returns synthetic rows; the helpers map them to the expected shape.
+- ~~`readOffenderCountUnbounded` + `readOffenderRows` — exported for unit tests via mocked `pg.Pool`. Mocked `.query()` returns synthetic rows; the helpers map them to the expected shape.~~ **⚠️ As shipped:** unit tests in `tests/scripts/conflict-unresolved-alert.test.ts:1-260` exercise only the **pure** helpers (`fingerprint` + `buildEmail`). The DB-reading helpers (`readOffenderCounts`, `readOffenderRows`, `readPerTeacherOmittedCounts`, `readFingerprintTuples`) are exported but **not yet** unit-mocked — folded into **BCS-DEF-1-TEST-FILLOUT**.
 
 ### 3.3 Probe integration test
 
@@ -704,7 +705,7 @@ Also **update** `tests/integration/admin/alerts-obs.test.ts:183-217` — the man
 
 ### 3.5 Test-send route 422 short-circuit
 
-> **⚠️ SUPERSEDED — OBSOLETE.** The test below pinned the deferred-422 short-circuit which **no longer exists** in production (test-send is live — see §10.3). Do **not** author this test — it would either assert against non-existent code or, worse, lead someone to re-add the 422 branch and regress the live path. The valuable assertion that survives ("`/test-send` for `conflict-unresolved` does not crash and returns a structured response") is implicit in the existing 3-probe test-send route tests, which apply uniformly to all 4 probes via the shared route handler.
+> **⚠️ SUPERSEDED — OBSOLETE.** The test below pinned the deferred-422 short-circuit which **no longer exists** in production (test-send is live — see §10.3). Do **not** author this test — it would either assert against non-existent code or, worse, lead someone to re-add the 422 branch and regress the live path. ⚠️ **WARN: probe-specific preflight gap.** The remaining valuable assertion ("`/test-send` for `conflict-unresolved` does not crash and returns a structured response") is **only partially** covered by the existing 3-probe test-send route tests — those tests exercise `auth-flow` + `calendar-pathology` (`tests/integration/admin/alerts-obs.test.ts:49-156`), not `conflict-unresolved`. The probe-specific `pg_get_constraintdef` preflight branch in `app/api/admin/settings/alerts/[probe]/test-send/route.ts:119-149` (BCS-DEF-1 wave-paranoia BLOCKER#1 closure) is therefore not regression-pinned. Folded into **BCS-DEF-1-TEST-FILLOUT** backlog (item 5 added this round).
 
 ~~**NEW** `tests/integration/admin/test-send-route-conflict-unresolved-deferred.test.ts`:~~
 
@@ -797,9 +798,9 @@ lib/admin/probe-status.ts                    (modified — header comment "three
 app/admin/(gated)/settings/alerts/page.tsx   (modified — already counted; comment block at :24-37 updated alongside copy)
 scripts/lib/probe-runs.mjs                   (modified — header comment "three" → "four")
 scripts/db-retention-cleanup.mjs             (modified — "three" probe-name list extended)
-migrations/0058 (also)                       (carries `comment on table probe_runs is '...four probes...'` UPDATE)
-tests/integration/admin/probe-resolver-integration.test.ts  (modified — add 'conflict-unresolved' fixture)
-tests/integration/admin/operator-settings-route.test.ts     (modified — per-key POST/DELETE tests for the 4 new keys)
+migrations/0058 (also)                       (⚠️ As shipped: CHECK extension ONLY; no comment-on-table update — see §0d closure WARN#3 above)
+tests/integration/admin/probe-resolver-integration.test.ts  (⚠️ NOT modified — still 3-probe; logged as BCS-DEF-1-TEST-FILLOUT)
+tests/integration/admin/operator-settings-route.test.ts     (⚠️ NOT modified — still CALENDAR_PATHOLOGY_THRESHOLD only; per-key tests for the 4 new keys logged as BCS-DEF-1-TEST-FILLOUT)
 ENGINEERING_BACKLOG.md                       (modified — strikethrough BCS-DEF-1)
 docs/plans/conflict-feed.md                  (modified — one-line cross-ref)
 ```

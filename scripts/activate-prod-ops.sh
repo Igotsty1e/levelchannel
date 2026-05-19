@@ -386,7 +386,7 @@ step "Post-activation summary"
 echo
 echo "${B}Active timers:${N}"
 systemctl list-timers --no-pager 2>/dev/null \
-  | grep -E "levelchannel-(webhook-flow-alert|db-retention|stale-orders|auto-complete-slots|refund-reconcile|calendar-pathology-alert|calendar-(pull|push|intents|renew-channels|revive-blocked|reconcile))" \
+  | grep -E "levelchannel-(webhook-flow-alert|auth-flow-alert|conflict-unresolved-alert|db-retention|stale-orders|auto-complete-slots|refund-reconcile|calendar-pathology-alert|calendar-(pull|push|intents|renew-channels|revive-blocked|reconcile))" \
   || echo "  (timers not yet shown — they appear after first scheduled run)"
 
 echo
