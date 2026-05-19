@@ -11,7 +11,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
     <>
       <SiteHeader />
       <main
-        className="auth-shell-main"
+        className="auth-shell-main saas-chrome"
         style={{
           minHeight: 'calc(100vh - 56px)',
           display: 'flex',
