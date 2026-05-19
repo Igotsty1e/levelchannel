@@ -10,7 +10,7 @@ import { getDbPool } from '@/lib/db/pool'
 import '../setup'
 
 // BCS-DEF-4 (2026-05-19) — pin the CHECK constraints added by
-// migration 0063 (`accounts_learner_telegram_consistency` +
+// migration 0065 (`accounts_learner_telegram_consistency` +
 // `accounts_learner_telegram_chat_id_len`).
 //
 // Plan: docs/plans/bcs-def-4-learner-reminders.md §3.3.
@@ -25,7 +25,7 @@ async function makeLearner(prefix: string): Promise<string> {
   return id
 }
 
-describe('migration 0063 — accounts TG opt-in CHECK constraints', () => {
+describe('migration 0065 — accounts TG opt-in CHECK constraints', () => {
   it('default new-account row has enabled=false + chat_id=NULL', async () => {
     const id = await makeLearner('lrd-tg-def')
     const r = await getDbPool().query(
