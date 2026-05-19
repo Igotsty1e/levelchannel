@@ -140,7 +140,7 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
   return (
     <div
       role="grid"
-      aria-label="Календарь слотов на неделю"
+      aria-label="Календарь занятий на неделю"
       style={{
         display: 'grid',
         gridTemplateColumns: '60px repeat(7, 1fr)',

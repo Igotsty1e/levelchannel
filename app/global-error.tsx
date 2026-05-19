@@ -43,9 +43,9 @@ export default function GlobalError({
     <html lang="ru">
       <body className="global-error-body">
         <div className="global-error-card">
-          <h1 className="global-error-title">Что-то пошло не так</h1>
+          <h1 className="global-error-title">Страница не загрузилась</h1>
           <p className="global-error-text">
-            Мы уже знаем об ошибке и разбираемся. Попробуйте обновить страницу
+            Мы получили отчёт об ошибке и разбираемся. Обновите страницу
             через минуту. Если не поможет — напишите нам в Telegram.
           </p>
           <a href="/" className="global-error-back">

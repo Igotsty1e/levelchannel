@@ -21,7 +21,7 @@ const STATUSES: Array<PaymentStatus | 'all'> = [
 const STATUS_LABEL: Record<PaymentStatus | 'all', string> = {
   all: 'все',
   pending: 'ожидают',
-  '3ds_required': '3DS',
+  '3ds_required': 'подтверждение в банке',
   paid: 'оплачены',
   failed: 'отказ',
   cancelled: 'отменены',
@@ -70,8 +70,8 @@ export default async function AdminPaymentsPage({
         }}
       >
         Все заказы на оплату — и со страницы «Оплата произвольной суммы»,
-        и из чекаута тарифа. Колонка «Занятие» заполнена, если платёж
-        был привязан к записи.
+        и со страницы оплаты тарифа. Колонка «Занятие» заполнена, если
+        платёж был привязан к записи.
       </p>
 
       <form
@@ -178,7 +178,7 @@ export default async function AdminPaymentsPage({
                     color: 'var(--secondary)',
                   }}
                 >
-                  Ничего не найдено.
+                  Платежей с такими параметрами нет. Попробуйте сбросить фильтр или поиск.
                 </td>
               </tr>
             ) : null}
