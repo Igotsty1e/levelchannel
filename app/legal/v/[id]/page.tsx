@@ -52,14 +52,22 @@ export default async function LegalVersionPage({ params }: RouteParams) {
   const livePath = KIND_LIVE_PATH[version.docKind]
 
   return (
-    <main
-      style={{
-        maxWidth: 760,
-        margin: '0 auto',
-        padding: '40px 20px',
-        color: 'var(--text)',
-      }}
-    >
+    <>
+      {/* SAAS-6-A11Y-1 (2026-05-19) — skip-to-content link for the
+          legal viewer's bespoke shell. WCAG 2.4.1. */}
+      <a href="#main-content" className="skip-to-content">
+        Перейти к основному содержимому
+      </a>
+      <main
+        id="main-content"
+        tabIndex={-1}
+        style={{
+          maxWidth: 760,
+          margin: '0 auto',
+          padding: '40px 20px',
+          color: 'var(--text)',
+        }}
+      >
       <p style={{ fontSize: 13, marginBottom: 8 }}>
         <Link href="/" style={{ color: 'var(--secondary)' }}>
           ← На главную
@@ -100,7 +108,8 @@ export default async function LegalVersionPage({ params }: RouteParams) {
       </p>
 
       <BodyRenderer markdown={version.bodyMd} />
-    </main>
+      </main>
+    </>
   )
 }
 

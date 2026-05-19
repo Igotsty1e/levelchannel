@@ -57,8 +57,15 @@ export default async function TeacherLayout({
 
   return (
     <>
+      {/* SAAS-6-A11Y-1 (2026-05-19) — skip-to-content link as the
+          first focusable element in the teacher shell. WCAG 2.4.1. */}
+      <a href="#main-content" className="skip-to-content">
+        Перейти к основному содержимому
+      </a>
       <SiteHeader />
       <main
+        id="main-content"
+        tabIndex={-1}
         style={{
           minHeight: 'calc(100vh - 56px)',
           background: 'var(--bg)',

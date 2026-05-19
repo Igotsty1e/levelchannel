@@ -1086,8 +1086,15 @@ export function HomePageClient({
 
   return (
     <>
+      {/* SAAS-6-A11Y-1 (2026-05-19) — skip-to-content link as the
+          first focusable element on the marketing landing. The home
+          page has its own bespoke <Header> (not <SiteHeader>), so the
+          link lives here rather than in a global shell. WCAG 2.4.1. */}
+      <a href="#main-content" className="skip-to-content">
+        Перейти к основному содержимому
+      </a>
       <Header />
-      <main>
+      <main id="main-content" tabIndex={-1}>
         <Hero />
         <TrustStats />
         <UseCases />

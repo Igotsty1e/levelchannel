@@ -58,7 +58,19 @@ export default async function CabinetPackagesPage() {
   ])
 
   return (
-    <main className="saas-chrome" style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+    <>
+      {/* SAAS-6-A11Y-1 (2026-05-19) — skip-to-content link for the
+          outlier /cabinet/packages route that renders a bare <main>
+          outside AuthShell. WCAG 2.4.1. */}
+      <a href="#main-content" className="skip-to-content">
+        Перейти к основному содержимому
+      </a>
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="saas-chrome"
+        style={{ minHeight: '100vh', background: 'var(--bg)' }}
+      >
       <Script
         src="https://widget.cloudpayments.ru/bundles/cloudpayments.js"
         strategy="beforeInteractive"
@@ -239,6 +251,7 @@ export default async function CabinetPackagesPage() {
           )}
         </section>
       </div>
-    </main>
+      </main>
+    </>
   )
 }
