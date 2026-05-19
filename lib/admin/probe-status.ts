@@ -28,8 +28,13 @@ export const PROBE_NAMES: readonly ProbeName[] = [
   'auth-flow',
   'calendar-pathology',
   'webhook-flow',
-  // BCS-DEF-1 Phase 2 adds 'conflict-unresolved' here once the probe
-  // script + systemd unit ship.
+  // BCS-DEF-1 Phase 4 (2026-05-19) — Phase 2 shipped the probe
+  // script (scripts/conflict-unresolved-alert.mjs); PROBE_NAMES
+  // iteration is widened here so /admin/settings/alerts renders the
+  // 4th probe card (last-run / last-alert / settings editor). Until
+  // the probe starts writing probe_runs rows on prod, the card just
+  // shows "Данные недоступны" — same shape as migration-pending.
+  'conflict-unresolved',
 ]
 
 export function isProbeName(value: unknown): value is ProbeName {
