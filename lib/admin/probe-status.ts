@@ -1,4 +1,4 @@
-import { isUndefinedTableError } from '@/lib/db/errors'
+import { isUndefinedColumnError, isUndefinedTableError } from '@/lib/db/errors'
 import { getDbPool } from '@/lib/db/pool'
 
 // ALERTS-OBS (2026-05-16) — read-only observability for the systemd
@@ -80,11 +80,18 @@ export type ProbeStatus =
 export async function getProbeStatus(probeName: ProbeName): Promise<ProbeStatus> {
   const pool = getDbPool()
   try {
+    // BCS-DEF-1-TG R1 BLOCKER#6 closure (2026-05-19): per-probe "Last
+    // run" / "Last alert" cards stay email-channel-only after migration
+    // 0061 introduces Telegram rows. Without the recipient_kind filter
+    // a Telegram row would render as `Resend: <telegram message id>`
+    // with `(нет адреса)` — incoherent UI. Telegram rows surface
+    // exclusively via `getLatestTelegramRun()` below.
     const lastRunQ = pool.query(
       `select ran_at, verdict_kind, alert_sent, stats, error_message
          from probe_runs
         where probe_name = $1
           and is_test = false
+          and recipient_kind = 'email'
         order by ran_at desc
         limit 1`,
       [probeName],
@@ -95,6 +102,7 @@ export async function getProbeStatus(probeName: ProbeName): Promise<ProbeStatus>
         where probe_name = $1
           and is_test = false
           and alert_sent = true
+          and recipient_kind = 'email'
         order by ran_at desc
         limit 1`,
       [probeName],
@@ -131,7 +139,73 @@ export async function getProbeStatus(probeName: ProbeName): Promise<ProbeStatus>
         : null,
     }
   } catch (err) {
-    if (isUndefinedTableError(err)) {
+    // BCS-DEF-1-TG R1 BLOCKER#5 closure (2026-05-19): also surface
+    // `migrationPending` when the column itself is missing (42703 —
+    // deploy-recovery scenario where migration 0061 was rolled back
+    // AFTER NEW code swapped in). Belt-and-suspenders: the autodeploy
+    // contract makes this rare in normal operation.
+    if (isUndefinedTableError(err) || isUndefinedColumnError(err)) {
+      return { migrationPending: true }
+    }
+    throw err
+  }
+}
+
+// BCS-DEF-1-TG (2026-05-19) — Telegram channel observability. Renders
+// into the dedicated "Telegram канал" section above the per-probe
+// cards. Channel-wide (across all 4 probes); the partial index
+// `probe_runs_telegram_latest_idx` (migration 0061) supports the
+// ORDER BY clause. Same migration-pending guard as `getProbeStatus`.
+export type TelegramRunStatus =
+  | { migrationPending: true }
+  | {
+      migrationPending?: false
+      lastRun: {
+        probeName: string
+        ranAt: string
+        verdictKind: string
+        alertSent: boolean
+        chatId: string | null
+        messageId: string | null
+        fingerprint: string | null
+        errorMessage: string | null
+      } | null
+    }
+
+export async function getLatestTelegramRun(): Promise<TelegramRunStatus> {
+  const pool = getDbPool()
+  try {
+    const r = await pool.query(
+      `select probe_name, ran_at, verdict_kind, alert_sent,
+              recipient_email, alert_email_id, fingerprint, error_message
+         from probe_runs
+        where is_test = false
+          and recipient_kind = 'telegram'
+        order by ran_at desc
+        limit 1`,
+    )
+    const row = r.rows[0] ?? null
+    return {
+      lastRun: row
+        ? {
+            probeName: String(row.probe_name),
+            ranAt: new Date(String(row.ran_at)).toISOString(),
+            verdictKind: String(row.verdict_kind),
+            alertSent: Boolean(row.alert_sent),
+            // For Telegram rows, `recipient_email` stores the chat-id
+            // snapshot (or null), `alert_email_id` stores the Telegram
+            // message id — see migration 0061 column comments.
+            chatId: row.recipient_email ? String(row.recipient_email) : null,
+            messageId: row.alert_email_id ? String(row.alert_email_id) : null,
+            fingerprint: row.fingerprint ? String(row.fingerprint) : null,
+            errorMessage: row.error_message
+              ? String(row.error_message)
+              : null,
+          }
+        : null,
+    }
+  } catch (err) {
+    if (isUndefinedTableError(err) || isUndefinedColumnError(err)) {
       return { migrationPending: true }
     }
     throw err

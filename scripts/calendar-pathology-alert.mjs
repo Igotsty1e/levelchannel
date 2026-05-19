@@ -43,8 +43,21 @@ import pg from 'pg'
 import { Resend } from 'resend'
 
 import { resolveSslConfig } from './_pg-ssl.mjs'
-import { resolveOperatorSettingsForProbe } from './lib/operator-settings.mjs'
-import { recordProbeRun, PROBE_NAMES, VERDICT_KINDS } from './lib/probe-runs.mjs'
+import {
+  resolveChannelSettings,
+  resolveOperatorSettingsForProbe,
+} from './lib/operator-settings.mjs'
+import {
+  recordProbeRun,
+  PROBE_NAMES,
+  RECIPIENT_KINDS,
+  VERDICT_KINDS,
+} from './lib/probe-runs.mjs'
+import {
+  redactTelegramSecret,
+  sendTelegramMessage,
+  stringifyTelegramError,
+} from './lib/telegram-alerts.mjs'
 
 // ALERTS-EDITOR Sub-PR B (2026-05-18) — THRESHOLD / REPORT_LIMIT /
 // DEDUP_WINDOW_MS are resolved at tick start from operator_settings
@@ -64,6 +77,13 @@ const STATE_FILE = process.env.CALENDAR_PATHOLOGY_STATE_FILE
 const ALERT_EMAIL_TO = process.env.ALERT_EMAIL_TO?.trim() || ''
 const EMAIL_FROM =
   process.env.EMAIL_FROM?.trim() || 'LevelChannel <noreply@example.com>'
+
+// BCS-DEF-1-TG (2026-05-19) — Telegram channel env (plan §2.2).
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN?.trim() || ''
+const TELEGRAM_ALERT_CHAT_ID =
+  process.env.TELEGRAM_ALERT_CHAT_ID?.trim() || ''
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL?.trim() || 'https://levelchannel.ru'
 
 function logJson(level, msg, extra = {}) {
   console.log(
@@ -133,6 +153,18 @@ async function writeState(state) {
   await writeFile(STATE_FILE, JSON.stringify(state, null, 2), 'utf8')
 }
 
+// BCS-DEF-1-TG (2026-05-19) — Telegram body for calendar-pathology
+// (plan §2.3). 4-line digest + deep-link; no slot IDs, no calendar IDs,
+// no teacher IDs (PII guard §4.5).
+export function buildTelegramBody(offenders) {
+  const lines = [
+    'LevelChannel ops — calendar-pathology',
+    `${offenders.length} «воскресающих» слотов с cancel_repush_count ≥ ${THRESHOLD}`,
+    `Подробнее: ${SITE_URL}/admin/settings/alerts`,
+  ]
+  return lines.join('\n')
+}
+
 function buildEmail(offenders) {
   const lines = offenders
     .map(
@@ -162,6 +194,114 @@ function buildEmail(offenders) {
   return { subject, text }
 }
 
+// BCS-DEF-1-TG R2 BLOCKER#2 closure (2026-05-19) — calendar-pathology
+// was the one probe with inline email; extracted into per-probe
+// `tryEmailChannel` to match the gather-then-dispatch shape. Mirror of
+// webhook-flow's helper: `{ok, error, detail?, emailId?}` return.
+async function tryEmailChannel({ offenders }) {
+  if (!ALERT_EMAIL_TO || !process.env.RESEND_API_KEY) {
+    return {
+      ok: false,
+      error: !ALERT_EMAIL_TO
+        ? 'missing_alert_email_to'
+        : 'missing_resend_api_key',
+    }
+  }
+  const { subject, text } = buildEmail(offenders)
+  const resend = new Resend(process.env.RESEND_API_KEY)
+  let sent
+  try {
+    sent = await resend.emails.send({
+      from: EMAIL_FROM,
+      to: [ALERT_EMAIL_TO],
+      subject,
+      text,
+    })
+  } catch (transportErr) {
+    const detail =
+      transportErr instanceof Error ? transportErr.message : String(transportErr)
+    return { ok: false, error: 'resend_send_failed', detail }
+  }
+  if (sent.error) {
+    return {
+      ok: false,
+      error: 'resend_send_failed',
+      detail: String(sent.error),
+    }
+  }
+  return { ok: true, emailId: sent.data?.id ?? null }
+}
+
+// BCS-DEF-1-TG (2026-05-19) — Telegram channel dispatch. Never throws
+// to outer main(). Records its own probe_runs row.
+async function tryTelegramChannel({
+  pool,
+  telegramBody,
+  fingerprint,
+  enrichedStats,
+  retryMax,
+}) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_ALERT_CHAT_ID) {
+    const detail = !TELEGRAM_BOT_TOKEN
+      ? 'missing_telegram_bot_token'
+      : 'missing_telegram_alert_chat_id'
+    logJson('warn', 'Telegram channel: env missing; recording config_missing', {
+      detail,
+    })
+    await recordProbeRun(pool, {
+      probeName: PROBE_NAMES.CALENDAR_PATHOLOGY,
+      verdictKind: VERDICT_KINDS.CONFIG_MISSING,
+      recipientKind: RECIPIENT_KINDS.TELEGRAM,
+      recipientEmail: TELEGRAM_ALERT_CHAT_ID || null,
+      fingerprint,
+      stats: enrichedStats,
+      errorMessage: detail,
+    })
+    return false
+  }
+  const tgResult = await sendTelegramMessage({
+    botToken: TELEGRAM_BOT_TOKEN,
+    chatId: TELEGRAM_ALERT_CHAT_ID,
+    text: telegramBody,
+    retryMax,
+  })
+  if (tgResult.ok) {
+    logJson('info', 'Telegram alert sent', {
+      chatId: TELEGRAM_ALERT_CHAT_ID,
+      messageId: tgResult.messageId,
+    })
+    await recordProbeRun(pool, {
+      probeName: PROBE_NAMES.CALENDAR_PATHOLOGY,
+      verdictKind: VERDICT_KINDS.ALERT_SENT,
+      alertSent: true,
+      recipientKind: RECIPIENT_KINDS.TELEGRAM,
+      recipientEmail: TELEGRAM_ALERT_CHAT_ID,
+      alertEmailId: tgResult.messageId || null,
+      fingerprint,
+      stats: enrichedStats,
+    })
+    return true
+  }
+  const redactedDetail = redactTelegramSecret(
+    tgResult.detail ?? tgResult.error,
+    TELEGRAM_BOT_TOKEN,
+  )
+  logJson('warn', 'Telegram send failed', {
+    error: tgResult.error,
+    detail: redactedDetail,
+  })
+  await recordProbeRun(pool, {
+    probeName: PROBE_NAMES.CALENDAR_PATHOLOGY,
+    verdictKind: VERDICT_KINDS.ALERT_SEND_FAILED,
+    recipientKind: RECIPIENT_KINDS.TELEGRAM,
+    recipientEmail: TELEGRAM_ALERT_CHAT_ID,
+    fingerprint,
+    stats: enrichedStats,
+    errorMessage: redactedDetail || tgResult.error,
+  })
+  return false
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) {
     logJson('error', 'DATABASE_URL not set; aborting')
@@ -177,13 +317,19 @@ async function main() {
   // ALERTS-EDITOR Sub-PR B (2026-05-18) — snapshot read at tick
   // start. ONE round-trip; the resolved values + sources are the
   // immutable config for the rest of this tick.
-  const settings = await resolveOperatorSettingsForProbe(
+  // BCS-DEF-1-TG (2026-05-19): also resolve channel-scope Telegram
+  // settings.
+  const probeSettings = await resolveOperatorSettingsForProbe(
     pool,
     'calendar-pathology',
   )
+  const channelSettings = await resolveChannelSettings(pool, 'telegram')
+  const settings = { ...probeSettings, ...channelSettings }
   THRESHOLD = settings.CALENDAR_PATHOLOGY_THRESHOLD.value
   REPORT_LIMIT = settings.CALENDAR_PATHOLOGY_REPORT_LIMIT.value
   DEDUP_WINDOW_MS = settings.CALENDAR_PATHOLOGY_DEDUP_WINDOW_MS.value
+  const telegramEnabled = settings.TELEGRAM_ALERTS_MASTER_SWITCH.value === 1
+  const telegramRetryMax = settings.TELEGRAM_ALERTS_RETRY_MAX.value
 
   // R2 BLOCKER #4 closure — scalar `thresholds` for backwards
   // compatibility with /admin/settings/alerts rendering; new
@@ -238,96 +384,117 @@ async function main() {
         fingerprint: fp,
         windowMs: DEDUP_WINDOW_MS,
       })
+      // BCS-DEF-1-TG R2 WARN#2 closure (2026-05-19): dedup_skip emits
+      // one row per channel — Telegram row only if master switch on.
       await recordProbeRun(pool, {
         probeName: PROBE_NAMES.CALENDAR_PATHOLOGY,
         verdictKind: VERDICT_KINDS.DEDUP_SKIP,
+        recipientKind: RECIPIENT_KINDS.EMAIL,
         fingerprint: fp,
         stats: enrichedStats,
       })
+      if (telegramEnabled) {
+        await recordProbeRun(pool, {
+          probeName: PROBE_NAMES.CALENDAR_PATHOLOGY,
+          verdictKind: VERDICT_KINDS.DEDUP_SKIP,
+          recipientKind: RECIPIENT_KINDS.TELEGRAM,
+          fingerprint: fp,
+          stats: enrichedStats,
+        })
+      }
       return
     }
 
-    const { subject, text } = buildEmail(offenders)
-    if (!ALERT_EMAIL_TO || !process.env.RESEND_API_KEY) {
-      // BCS-G retro Codex round 1 WARN #3 — DO NOT advance dedup
-      // state when the operator hasn't actually been paged. The
-      // misconfig (missing ALERT_EMAIL_TO / RESEND_API_KEY) is a
-      // transient operator issue; on fix the next run should re-fire
-      // immediately, not wait out the 24h dedup window.
-      logJson('warn', 'alert would fire but email destination/key not set; state NOT advanced', {
-        offenderCount: offenders.length,
-      })
-      await recordProbeRun(pool, {
-        probeName: PROBE_NAMES.CALENDAR_PATHOLOGY,
-        verdictKind: VERDICT_KINDS.CONFIG_MISSING,
-        recipientEmail: recipientEmailSnapshot,
-        fingerprint: fp,
-        stats: enrichedStats,
-        errorMessage: !ALERT_EMAIL_TO ? 'missing_alert_email_to' : 'missing_resend_api_key',
-      })
-      return
-    }
+    // BCS-DEF-1-TG R1 BLOCKER#3 closure — gather-then-dispatch.
+    const telegramBody = buildTelegramBody(offenders)
 
-    const resend = new Resend(process.env.RESEND_API_KEY)
-    // ALERTS-OBS wave-mode WARN #1 closure (2026-05-17): wrap Resend
-    // call so transport exceptions (network/DNS/TLS) get classified
-    // as alert_send_failed too, not bubbled to the top-level `error`
-    // catch.
-    let sent
+    // CHANNEL 1 — email
+    let emailOk = false
     try {
-      sent = await resend.emails.send({
-        from: EMAIL_FROM,
-        to: [ALERT_EMAIL_TO],
-        subject,
-        text,
+      const sendResult = await tryEmailChannel({ offenders })
+      if (sendResult.ok) {
+        emailOk = true
+        logJson('info', 'pathology alert email sent', {
+          offenderCount: offenders.length,
+          fingerprint: fp,
+          emailId: sendResult.emailId,
+        })
+        await recordProbeRun(pool, {
+          probeName: PROBE_NAMES.CALENDAR_PATHOLOGY,
+          verdictKind: VERDICT_KINDS.ALERT_SENT,
+          alertSent: true,
+          recipientKind: RECIPIENT_KINDS.EMAIL,
+          recipientEmail: recipientEmailSnapshot,
+          alertEmailId: sendResult.emailId,
+          fingerprint: fp,
+          stats: enrichedStats,
+        })
+      } else {
+        const isConfigMissing =
+          sendResult.error === 'missing_resend_api_key'
+          || sendResult.error === 'missing_alert_email_to'
+        if (isConfigMissing) {
+          logJson(
+            'warn',
+            'alert would fire but email destination/key not set; state NOT advanced',
+            { offenderCount: offenders.length },
+          )
+        } else {
+          logJson('warn', 'resend send failed; state NOT advanced', {
+            error: sendResult.detail ?? sendResult.error,
+          })
+        }
+        await recordProbeRun(pool, {
+          probeName: PROBE_NAMES.CALENDAR_PATHOLOGY,
+          verdictKind: isConfigMissing
+            ? VERDICT_KINDS.CONFIG_MISSING
+            : VERDICT_KINDS.ALERT_SEND_FAILED,
+          recipientKind: RECIPIENT_KINDS.EMAIL,
+          recipientEmail: recipientEmailSnapshot,
+          fingerprint: fp,
+          stats: enrichedStats,
+          errorMessage: sendResult.detail ?? sendResult.error,
+        })
+      }
+    } catch (emailErr) {
+      logJson('error', 'tryEmailChannel threw unexpectedly', {
+        err: emailErr instanceof Error ? emailErr.message : String(emailErr),
       })
-    } catch (transportErr) {
-      const detail = transportErr instanceof Error ? transportErr.message : String(transportErr)
-      logJson('warn', 'resend send threw; state NOT advanced', { error: detail })
       await recordProbeRun(pool, {
         probeName: PROBE_NAMES.CALENDAR_PATHOLOGY,
         verdictKind: VERDICT_KINDS.ALERT_SEND_FAILED,
+        recipientKind: RECIPIENT_KINDS.EMAIL,
         recipientEmail: recipientEmailSnapshot,
         fingerprint: fp,
         stats: enrichedStats,
-        errorMessage: detail,
+        errorMessage:
+          emailErr instanceof Error ? emailErr.message : String(emailErr),
       })
-      return
-    }
-    if (sent.error) {
-      // BCS-G retro Codex round 1 WARN #3 — Resend outage / transient
-      // failure → state NOT advanced. The next run re-attempts the
-      // page instead of silencing the same offender set for the
-      // dedup window.
-      logJson('warn', 'resend email failed; state NOT advanced', {
-        error: String(sent.error),
-      })
-      await recordProbeRun(pool, {
-        probeName: PROBE_NAMES.CALENDAR_PATHOLOGY,
-        verdictKind: VERDICT_KINDS.ALERT_SEND_FAILED,
-        recipientEmail: recipientEmailSnapshot,
-        fingerprint: fp,
-        stats: enrichedStats,
-        errorMessage: String(sent.error),
-      })
-      return
     }
 
-    logJson('info', 'pathology alert email sent', {
-      offenderCount: offenders.length,
-      fingerprint: fp,
-      emailId: sent.data?.id ?? null,
-    })
-    await writeState({ lastAlertAt: now, lastFingerprint: fp })
-    await recordProbeRun(pool, {
-      probeName: PROBE_NAMES.CALENDAR_PATHOLOGY,
-      verdictKind: VERDICT_KINDS.ALERT_SENT,
-      alertSent: true,
-      recipientEmail: recipientEmailSnapshot,
-      alertEmailId: sent.data?.id ?? null,
-      fingerprint: fp,
-      stats: enrichedStats,
-    })
+    if (emailOk) {
+      // State file is EMAIL-controlled (RISK-3); Telegram outcome does
+      // NOT touch it.
+      await writeState({ lastAlertAt: now, lastFingerprint: fp })
+    }
+
+    // CHANNEL 2 — Telegram, runs regardless of email outcome.
+    if (telegramEnabled) {
+      try {
+        await tryTelegramChannel({
+          pool,
+          telegramBody,
+          fingerprint: fp,
+          enrichedStats,
+          retryMax: telegramRetryMax,
+        })
+      } catch (tgErr) {
+        const raw = stringifyTelegramError(tgErr)
+        logJson('error', 'tryTelegramChannel threw unexpectedly', {
+          err: redactTelegramSecret(raw, TELEGRAM_BOT_TOKEN),
+        })
+      }
+    }
   } catch (err) {
     // ALERTS-OBS round-3 WARN #5 closure: top-level catch writes
     // an `error` verdict row BEFORE re-throwing.

@@ -25,6 +25,15 @@ export type ProbeName =
   // others. (The original layered Phase-1→Phase-4 staging is closed.)
   | 'conflict-unresolved'
 
+// BCS-DEF-1-TG (2026-05-19) — channel-wide scopes for cross-probe
+// delivery channels (Telegram today; Slack/SMS deferred per plan
+// §10.5). Channel-scope keys MUST NOT collide with any probe-scope
+// key — invariant pinned by `tests/admin/operator-settings.test.ts`
+// (R3 INFO#6 closure: partition-by-membership, not name prefix).
+export type ChannelScope = 'telegram'
+
+export type SettingScope = ProbeName | ChannelScope
+
 type SettingSchemaInt = {
   kind: 'int'
   default: number
@@ -32,7 +41,7 @@ type SettingSchemaInt = {
   max: number
   envName: string
   description: string
-  scope: ProbeName
+  scope: SettingScope
 }
 
 type SettingSchemaDecimal = {
@@ -43,7 +52,7 @@ type SettingSchemaDecimal = {
   decimalPlaces: number
   envName: string
   description: string
-  scope: ProbeName
+  scope: SettingScope
 }
 
 type SettingSchema = SettingSchemaInt | SettingSchemaDecimal
@@ -188,6 +197,32 @@ export const SETTING_SCHEMA = {
       'suppress duplicate alerts within this window (ms); keep >= threshold-minutes*60000',
     scope: 'conflict-unresolved',
   },
+  // BCS-DEF-1-TG (2026-05-19) — channel-wide Telegram knobs. Plan
+  // §2.5: scope 'telegram' so `resolveChannelSettings(pool, 'telegram')`
+  // (below) returns these without the per-probe filter. Operator flips
+  // TELEGRAM_ALERTS_MASTER_SWITCH from 0 → 1 after BotFather setup
+  // (runbook §2.1). The mjs mirror in `scripts/lib/operator-settings.mjs`
+  // MUST stay in sync — drift test pins JSON.stringify equality.
+  TELEGRAM_ALERTS_MASTER_SWITCH: {
+    kind: 'int',
+    default: 0,
+    min: 0,
+    max: 1,
+    envName: 'TELEGRAM_ALERTS_MASTER_SWITCH',
+    description:
+      'master switch (1=on, 0=off) for the Telegram alert channel; requires TELEGRAM_BOT_TOKEN + TELEGRAM_ALERT_CHAT_ID env vars; OFF by default — flip after BotFather setup',
+    scope: 'telegram',
+  },
+  TELEGRAM_ALERTS_RETRY_MAX: {
+    kind: 'int',
+    default: 2,
+    min: 0,
+    max: 5,
+    envName: 'TELEGRAM_ALERTS_RETRY_MAX',
+    description:
+      'max retries (1s backoff) on transient Telegram API errors (5xx/network/429)',
+    scope: 'telegram',
+  },
 } as const satisfies Record<string, SettingSchema>
 
 export type SettingKey = keyof typeof SETTING_SCHEMA
@@ -296,6 +331,68 @@ export async function resolveOperatorSettingsForProbe(
       // eslint-disable-next-line no-console
       console.warn('[operator-settings] snapshot DB read failed', {
         probeName,
+        err: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+  const out: Record<string, ResolvedSetting> = {}
+  for (const k of keys) {
+    const schema = SETTING_SCHEMA[k]
+    const rawDb = dbValues.has(k) ? (dbValues.get(k) as string) : null
+    const envRaw = env[schema.envName]
+    const rawEnv = typeof envRaw === 'string' ? envRaw.trim() : null
+    if (rawDb !== null) {
+      const v = validate(schema, rawDb)
+      if (v !== null) {
+        out[k] = { value: v, source: 'db', rawDb, rawEnv }
+        continue
+      }
+    }
+    if (rawEnv && rawEnv.length > 0) {
+      const v = validate(schema, rawEnv)
+      if (v !== null) {
+        out[k] = { value: v, source: 'env', rawDb, rawEnv }
+        continue
+      }
+    }
+    out[k] = { value: schema.default, source: 'default', rawDb, rawEnv }
+  }
+  return out
+}
+
+// BCS-DEF-1-TG R1 BLOCKER#1 closure (2026-05-19) — channel-scope
+// resolver. Sibling of `resolveOperatorSettingsForProbe`: filters
+// `schema.scope === channel` instead of `=== probeName`. The two
+// snapshots are merged at the call site (`{...probeSettings,
+// ...channelSettings}`) and the partition invariant in
+// `tests/admin/operator-settings.test.ts` keeps them disjoint, so the
+// merge order is irrelevant for correctness.
+//
+// Uses `getDbPool()` like the rest of the TS resolvers; the .mjs twin
+// takes a pool argument because the probe scripts own their own
+// max:1 pool.
+export async function resolveChannelSettings(
+  channel: ChannelScope,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<Record<string, ResolvedSetting>> {
+  const keys = (Object.keys(SETTING_SCHEMA) as SettingKey[]).filter(
+    (k) => (SETTING_SCHEMA[k].scope as SettingScope) === channel,
+  )
+  const dbValues = new Map<string, string>()
+  try {
+    const pool = getDbPool()
+    const r = await pool.query(
+      `select key, value from operator_settings where key = any($1::text[])`,
+      [keys],
+    )
+    for (const row of r.rows) {
+      dbValues.set(String(row.key), String(row.value))
+    }
+  } catch (err) {
+    if (!isUndefinedTableError(err)) {
+      // eslint-disable-next-line no-console
+      console.warn('[operator-settings] channel snapshot DB read failed', {
+        channel,
         err: err instanceof Error ? err.message : String(err),
       })
     }

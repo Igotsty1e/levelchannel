@@ -1,0 +1,12 @@
+{
+  "_comment": "BCS-DEF-1-TG R2 BLOCKER#3 + R3 WARN#3 closures (2026-05-19). Frozen fixtures derived from Node 22 fetch() failure modes against an unreachable Telegram URL. Token in fixtures is a SYNTHETIC value '1234567890:ABCDEFGHijklmnopQRSTuvwxyz_-XYZ123' — NOT a real BotFather token. Regeneration: bot+token fragments in error strings depend on the platform's TCP stack; if you change Node major version, re-run scripts/regenerate-telegram-fetch-errors.mjs (not committed; lives in plan §3.1b runbook). Tests assert the redactor neutralises (a) full token, (b) bot<digits>:... URL form, (c) last-8 chars.",
+  "_token_used_to_capture": "1234567890:ABCDEFGHijklmnopQRSTuvwxyz_-XYZ123",
+  "fixtures": {
+    "typeError_unreachable_message": "fetch failed",
+    "typeError_unreachable_cause": "Error: connect ECONNREFUSED 127.0.0.255:1 at .../bot1234567890:ABCDEFGHijklmnopQRSTuvwxyz_-XYZ123/sendMessage",
+    "abortError_message": "This operation was aborted",
+    "abortError_cause": "TypeError: fetch failed at https://api.telegram.org/bot1234567890:ABCDEFGHijklmnopQRSTuvwxyz_-XYZ123/sendMessage",
+    "syntaxError_message": "Unexpected token 'n', \"not json\" is not valid JSON",
+    "jsonBody_with_token_echo": "{\"description\":\"Forbidden: bot was blocked, token suffix _-XYZ123\"}"
+  }
+}

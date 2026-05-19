@@ -14,6 +14,9 @@
 /** SQLSTATE for "relation does not exist" — missing table or view. */
 export const ERR_UNDEFINED_TABLE = '42P01'
 
+/** SQLSTATE for "column does not exist" — missing column on an existing table. */
+export const ERR_UNDEFINED_COLUMN = '42703'
+
 /** SQLSTATE for "unique violation" — duplicate key on UNIQUE / PRIMARY KEY. */
 export const ERR_UNIQUE_VIOLATION = '23505'
 
@@ -41,6 +44,22 @@ function hasPgErrorCode(err: unknown, code: string): boolean {
  */
 export function isUndefinedTableError(err: unknown): boolean {
   return hasPgErrorCode(err, ERR_UNDEFINED_TABLE)
+}
+
+/**
+ * True if the Postgres error indicates the referenced column does not
+ * exist (SQLSTATE 42703). Sibling of `isUndefinedTableError` — surfaces
+ * the same migration-pending degradation when an ADDITIVE column
+ * migration has not yet applied but NEW code is already running.
+ *
+ * Introduced by BCS-DEF-1-TG (2026-05-19) so the
+ * `/admin/settings/alerts` page can render `{ migrationPending: true }`
+ * during the brief deploy-recovery window where migration 0061
+ * (`probe_runs.recipient_kind`) was rolled back after NEW code
+ * swapped in. See `lib/admin/probe-status.ts` and the plan §2.7.2.
+ */
+export function isUndefinedColumnError(err: unknown): boolean {
+  return hasPgErrorCode(err, ERR_UNDEFINED_COLUMN)
 }
 
 /** True if the Postgres error is a unique-constraint violation. */

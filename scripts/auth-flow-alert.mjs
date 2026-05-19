@@ -56,8 +56,21 @@ import pg from 'pg'
 import { Resend } from 'resend'
 
 import { resolveSslConfig } from './_pg-ssl.mjs'
-import { resolveOperatorSettingsForProbe } from './lib/operator-settings.mjs'
-import { recordProbeRun, PROBE_NAMES, VERDICT_KINDS } from './lib/probe-runs.mjs'
+import {
+  resolveChannelSettings,
+  resolveOperatorSettingsForProbe,
+} from './lib/operator-settings.mjs'
+import {
+  recordProbeRun,
+  PROBE_NAMES,
+  RECIPIENT_KINDS,
+  VERDICT_KINDS,
+} from './lib/probe-runs.mjs'
+import {
+  redactTelegramSecret,
+  sendTelegramMessage,
+  stringifyTelegramError,
+} from './lib/telegram-alerts.mjs'
 
 // ALERTS-EDITOR Sub-PR B (2026-05-18) — WINDOW_MINUTES /
 // MAX_PER_IP / MAX_PER_EMAIL_HASH / DEDUP_WINDOW_MS are resolved
@@ -79,6 +92,13 @@ const ALERT_EMAIL_TO = process.env.ALERT_EMAIL_TO?.trim() || ''
 const EMAIL_FROM =
   process.env.EMAIL_FROM?.trim() || 'LevelChannel <noreply@example.com>'
 const SSH_COMMAND_HINT = process.env.SSH_COMMAND_HINT?.trim() || 'ssh <host>'
+
+// BCS-DEF-1-TG (2026-05-19) — Telegram channel env (plan §2.2).
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN?.trim() || ''
+const TELEGRAM_ALERT_CHAT_ID =
+  process.env.TELEGRAM_ALERT_CHAT_ID?.trim() || ''
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL?.trim() || 'https://levelchannel.ru'
 
 function logJson(level, msg, extra = {}) {
   console.log(
@@ -223,6 +243,23 @@ export function shouldSuppress({
   return nowMs - prevState.sentAtMs < windowMs
 }
 
+// BCS-DEF-1-TG (2026-05-19) — Telegram body for auth-flow probe (plan
+// §2.3). Headline + total + deep-link; NO email_hash bits, NO IPs.
+// Operator opens the admin page for the offender breakdown — email
+// inbox still carries the detail under TLS.
+export function buildTelegramBody(stats) {
+  const lines = [
+    'LevelChannel ops — auth-flow',
+    `${stats.totalFailed} попыток входа с ошибкой за последние ${WINDOW_MINUTES} мин (IP над порогом: ${stats.offendingIps.length}, email-хэш над порогом: ${stats.offendingEmailHashes.length})`,
+    `Подробнее: ${SITE_URL}/admin/settings/alerts`,
+  ]
+  return lines.join('\n')
+}
+
+// BCS-DEF-1-TG (2026-05-19) — renamed from `sendAlertEmail`, plan §2.6.1
+// R3 WARN#2 closure: auth-flow already had this helper so we keep the
+// shape and rename only.
+//
 // ALERTS-OBS (2026-05-16) — return contract refactor.
 // Caller distinguishes config_missing / send_failed / sent so it can
 // (a) advance dedup state ONLY on a real send and (b) record the
@@ -230,7 +267,7 @@ export function shouldSuppress({
 // undefined on every path, so the caller always advanced dedup
 // state — a real bug that silently masked retries on missing-key
 // or Resend-outage failures (paranoia round-1 BLOCKER #5).
-async function sendAlertEmail({ stats, verdict }) {
+async function tryEmailChannel({ stats, verdict }) {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) {
     logJson('warn', 'RESEND_API_KEY not set; would have alerted', {
@@ -332,6 +369,77 @@ async function sendAlertEmail({ stats, verdict }) {
   return { ok: true, emailId: result.data?.id ?? null }
 }
 
+// BCS-DEF-1-TG (2026-05-19) — Telegram channel dispatch (plan §2.6.1).
+// Never throws to outer main(). Records its own probe_runs row with
+// recipientKind='telegram'.
+async function tryTelegramChannel({
+  pool,
+  telegramBody,
+  fingerprint,
+  enrichedStats,
+  retryMax,
+}) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_ALERT_CHAT_ID) {
+    const detail = !TELEGRAM_BOT_TOKEN
+      ? 'missing_telegram_bot_token'
+      : 'missing_telegram_alert_chat_id'
+    logJson('warn', 'Telegram channel: env missing; recording config_missing', {
+      detail,
+    })
+    await recordProbeRun(pool, {
+      probeName: PROBE_NAMES.AUTH_FLOW,
+      verdictKind: VERDICT_KINDS.CONFIG_MISSING,
+      recipientKind: RECIPIENT_KINDS.TELEGRAM,
+      recipientEmail: TELEGRAM_ALERT_CHAT_ID || null,
+      fingerprint,
+      stats: enrichedStats,
+      errorMessage: detail,
+    })
+    return false
+  }
+  const tgResult = await sendTelegramMessage({
+    botToken: TELEGRAM_BOT_TOKEN,
+    chatId: TELEGRAM_ALERT_CHAT_ID,
+    text: telegramBody,
+    retryMax,
+  })
+  if (tgResult.ok) {
+    logJson('info', 'Telegram alert sent', {
+      chatId: TELEGRAM_ALERT_CHAT_ID,
+      messageId: tgResult.messageId,
+    })
+    await recordProbeRun(pool, {
+      probeName: PROBE_NAMES.AUTH_FLOW,
+      verdictKind: VERDICT_KINDS.ALERT_SENT,
+      alertSent: true,
+      recipientKind: RECIPIENT_KINDS.TELEGRAM,
+      recipientEmail: TELEGRAM_ALERT_CHAT_ID,
+      alertEmailId: tgResult.messageId || null,
+      fingerprint,
+      stats: enrichedStats,
+    })
+    return true
+  }
+  const redactedDetail = redactTelegramSecret(
+    tgResult.detail ?? tgResult.error,
+    TELEGRAM_BOT_TOKEN,
+  )
+  logJson('warn', 'Telegram send failed', {
+    error: tgResult.error,
+    detail: redactedDetail,
+  })
+  await recordProbeRun(pool, {
+    probeName: PROBE_NAMES.AUTH_FLOW,
+    verdictKind: VERDICT_KINDS.ALERT_SEND_FAILED,
+    recipientKind: RECIPIENT_KINDS.TELEGRAM,
+    recipientEmail: TELEGRAM_ALERT_CHAT_ID,
+    fingerprint,
+    stats: enrichedStats,
+    errorMessage: redactedDetail || tgResult.error,
+  })
+  return false
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) {
     logJson('error', 'DATABASE_URL not set; aborting')
@@ -345,14 +453,20 @@ async function main() {
   // ALERTS-EDITOR Sub-PR B (2026-05-18) — snapshot read at tick
   // start. ONE round-trip; assigns the module-scope `let` vars
   // before any helper that references them is called.
-  const settings = await resolveOperatorSettingsForProbe(
+  // BCS-DEF-1-TG (2026-05-19): also resolve channel-scope Telegram
+  // settings (R1 BLOCKER#1 closure).
+  const probeSettings = await resolveOperatorSettingsForProbe(
     pool,
     'auth-flow',
   )
+  const channelSettings = await resolveChannelSettings(pool, 'telegram')
+  const settings = { ...probeSettings, ...channelSettings }
   WINDOW_MINUTES = settings.AUTH_FLOW_WINDOW_MINUTES.value
   MAX_PER_IP = settings.AUTH_FLOW_MAX_PER_IP.value
   MAX_PER_EMAIL_HASH = settings.AUTH_FLOW_MAX_PER_EMAIL_HASH.value
   DEDUP_WINDOW_MS = settings.AUTH_FLOW_DEDUP_WINDOW_MS.value
+  const telegramEnabled = settings.TELEGRAM_ALERTS_MASTER_SWITCH.value === 1
+  const telegramRetryMax = settings.TELEGRAM_ALERTS_RETRY_MAX.value
 
   const capturedThresholds = {
     AUTH_FLOW_WINDOW_MINUTES: WINDOW_MINUTES,
@@ -413,48 +527,111 @@ async function main() {
         prevSentAt: new Date(prevState.sentAtMs).toISOString(),
         dedupWindowMs: DEDUP_WINDOW_MS,
       })
+      // BCS-DEF-1-TG R2 WARN#2 closure (2026-05-19): dedup_skip emits
+      // one row per channel — Telegram row only if master switch is on
+      // (plan §2.6 + §3.3b).
       await recordProbeRun(pool, {
         probeName: PROBE_NAMES.AUTH_FLOW,
         verdictKind: VERDICT_KINDS.DEDUP_SKIP,
+        recipientKind: RECIPIENT_KINDS.EMAIL,
         fingerprint,
         stats: enrichedStats,
       })
+      if (telegramEnabled) {
+        await recordProbeRun(pool, {
+          probeName: PROBE_NAMES.AUTH_FLOW,
+          verdictKind: VERDICT_KINDS.DEDUP_SKIP,
+          recipientKind: RECIPIENT_KINDS.TELEGRAM,
+          fingerprint,
+          stats: enrichedStats,
+        })
+      }
       return
     }
-    const sendResult = await sendAlertEmail({ stats, verdict })
-    if (sendResult.ok) {
+
+    // BCS-DEF-1-TG R1 BLOCKER#3 closure — gather-then-dispatch. Both
+    // bodies built BEFORE channel dispatch; each channel runs inside
+    // its own try-block, never returns from main(). State file remains
+    // email-controlled (RISK-3).
+    const telegramBody = buildTelegramBody(stats)
+
+    // CHANNEL 1 — email
+    let emailOk = false
+    try {
+      const sendResult = await tryEmailChannel({ stats, verdict })
+      if (sendResult.ok) {
+        emailOk = true
+        await recordProbeRun(pool, {
+          probeName: PROBE_NAMES.AUTH_FLOW,
+          verdictKind: VERDICT_KINDS.ALERT_SENT,
+          alertSent: true,
+          recipientKind: RECIPIENT_KINDS.EMAIL,
+          recipientEmail: recipientEmailSnapshot,
+          alertEmailId: sendResult.emailId,
+          fingerprint,
+          stats: enrichedStats,
+        })
+      } else {
+        const isConfigMissing =
+          sendResult.error === 'missing_resend_api_key' ||
+          sendResult.error === 'missing_alert_email_to'
+        await recordProbeRun(pool, {
+          probeName: PROBE_NAMES.AUTH_FLOW,
+          verdictKind: isConfigMissing
+            ? VERDICT_KINDS.CONFIG_MISSING
+            : VERDICT_KINDS.ALERT_SEND_FAILED,
+          alertSent: false,
+          recipientKind: RECIPIENT_KINDS.EMAIL,
+          recipientEmail: recipientEmailSnapshot,
+          fingerprint,
+          stats: enrichedStats,
+          errorMessage: sendResult.detail ?? sendResult.error,
+        })
+      }
+    } catch (emailErr) {
+      logJson('error', 'tryEmailChannel threw unexpectedly', {
+        err: emailErr instanceof Error ? emailErr.message : String(emailErr),
+      })
+      await recordProbeRun(pool, {
+        probeName: PROBE_NAMES.AUTH_FLOW,
+        verdictKind: VERDICT_KINDS.ALERT_SEND_FAILED,
+        recipientKind: RECIPIENT_KINDS.EMAIL,
+        recipientEmail: recipientEmailSnapshot,
+        fingerprint,
+        stats: enrichedStats,
+        errorMessage:
+          emailErr instanceof Error ? emailErr.message : String(emailErr),
+      })
+    }
+
+    if (emailOk) {
       // ALERTS-OBS — advance dedup state ONLY on real send success
       // (paranoia round-1 BLOCKER #5: previously this advanced on
       // missing-key / Resend-outage failures too, silently masking
-      // retries).
+      // retries). BCS-DEF-1-TG RISK-3: state file remains email-
+      // controlled regardless of Telegram outcome.
       await writeDedupState(STATE_FILE, {
         fingerprint,
         sentAtMs: nowMs,
       })
-      await recordProbeRun(pool, {
-        probeName: PROBE_NAMES.AUTH_FLOW,
-        verdictKind: VERDICT_KINDS.ALERT_SENT,
-        alertSent: true,
-        recipientEmail: recipientEmailSnapshot,
-        alertEmailId: sendResult.emailId,
-        fingerprint,
-        stats: enrichedStats,
-      })
-    } else {
-      const isConfigMissing =
-        sendResult.error === 'missing_resend_api_key' ||
-        sendResult.error === 'missing_alert_email_to'
-      await recordProbeRun(pool, {
-        probeName: PROBE_NAMES.AUTH_FLOW,
-        verdictKind: isConfigMissing
-          ? VERDICT_KINDS.CONFIG_MISSING
-          : VERDICT_KINDS.ALERT_SEND_FAILED,
-        alertSent: false,
-        recipientEmail: recipientEmailSnapshot,
-        fingerprint,
-        stats: enrichedStats,
-        errorMessage: sendResult.detail ?? sendResult.error,
-      })
+    }
+
+    // CHANNEL 2 — Telegram, runs regardless of email outcome.
+    if (telegramEnabled) {
+      try {
+        await tryTelegramChannel({
+          pool,
+          telegramBody,
+          fingerprint,
+          enrichedStats,
+          retryMax: telegramRetryMax,
+        })
+      } catch (tgErr) {
+        const raw = stringifyTelegramError(tgErr)
+        logJson('error', 'tryTelegramChannel threw unexpectedly', {
+          err: redactTelegramSecret(raw, TELEGRAM_BOT_TOKEN),
+        })
+      }
     }
   } catch (err) {
     // ALERTS-OBS round-3 WARN #5 closure: top-level catch writes

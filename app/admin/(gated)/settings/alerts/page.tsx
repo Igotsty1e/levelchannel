@@ -8,6 +8,8 @@ import {
   PROBE_NAMES,
   type ProbeName,
   type ProbeStatus,
+  type TelegramRunStatus,
+  getLatestTelegramRun,
   getProbeStatus,
 } from '@/lib/admin/probe-status'
 
@@ -50,16 +52,33 @@ const PROBE_TITLES: Record<ProbeName, string> = {
     'conflict-unresolved — нерешённые конфликты с Google-календарём',
 }
 
+// BCS-DEF-1-TG (2026-05-19) — Telegram channel-wide knobs render in a
+// dedicated section above the per-probe cards (plan §2.7).
+const TELEGRAM_CHANNEL_KEYS: ReadonlyArray<SettingKey> = [
+  'TELEGRAM_ALERTS_MASTER_SWITCH',
+  'TELEGRAM_ALERTS_RETRY_MAX',
+]
+
 export default async function AdminAlertsPage() {
-  const [statuses, settings] = await Promise.all([
+  const [statuses, settings, telegramRun] = await Promise.all([
     Promise.all(PROBE_NAMES.map(getProbeStatus)),
     listOperatorSettingsForAdmin(),
+    getLatestTelegramRun(),
   ])
   const probeMigrationPending = statuses.some(
     (s) => 'migrationPending' in s && s.migrationPending,
   )
   const settingsMigrationPending =
     'migrationPending' in settings && settings.migrationPending === true
+  // BCS-DEF-1-TG (2026-05-19) — env-presence indicators (server-only
+  // booleans; the actual values NEVER cross to the page).
+  const telegramTokenPresent = Boolean(
+    process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_BOT_TOKEN.trim() !== '',
+  )
+  const telegramChatPresent = Boolean(
+    process.env.TELEGRAM_ALERT_CHAT_ID
+      && process.env.TELEGRAM_ALERT_CHAT_ID.trim() !== '',
+  )
 
   return (
     <>
@@ -128,6 +147,12 @@ export default async function AdminAlertsPage() {
       ) : null}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <TelegramChannelCard
+          settings={settings}
+          telegramRun={telegramRun}
+          tokenPresent={telegramTokenPresent}
+          chatPresent={telegramChatPresent}
+        />
         {statuses.map((status, idx) => (
           <ProbeCard
             key={PROBE_NAMES[idx]}
@@ -139,6 +164,149 @@ export default async function AdminAlertsPage() {
         ))}
       </div>
     </>
+  )
+}
+
+// BCS-DEF-1-TG (2026-05-19) — channel-wide Telegram card (plan §2.7).
+// Shows master switch + retry knob, env-presence indicators, and the
+// latest Telegram delivery across all probes.
+function TelegramChannelCard({
+  settings,
+  telegramRun,
+  tokenPresent,
+  chatPresent,
+}: {
+  settings: AdminSettingView
+  telegramRun: TelegramRunStatus
+  tokenPresent: boolean
+  chatPresent: boolean
+}) {
+  const migrationPending =
+    'migrationPending' in telegramRun && telegramRun.migrationPending
+  const lastRun =
+    !('migrationPending' in telegramRun && telegramRun.migrationPending)
+      ? telegramRun.lastRun
+      : null
+  return (
+    <section
+      style={{
+        border: '1px solid var(--border)',
+        borderRadius: 8,
+        padding: '16px 20px',
+        background: 'var(--surface)',
+      }}
+    >
+      <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>
+        Telegram-канал
+      </h2>
+      <p
+        style={{
+          color: 'var(--secondary)',
+          fontSize: 12,
+          lineHeight: 1.6,
+          marginBottom: 12,
+          maxWidth: 720,
+        }}
+      >
+        Параллельный канал доставки для всех четырёх пробников. Включается
+        мастер-переключателем после настройки BotFather и записи{' '}
+        <code>TELEGRAM_BOT_TOKEN</code> + <code>TELEGRAM_ALERT_CHAT_ID</code>{' '}
+        в прод-окружение. Тело сообщения — короткая сводка со ссылкой на
+        эту страницу; PII в Telegram не уходит.
+      </p>
+
+      <div
+        style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+      >
+        <Field label="Переменные окружения">
+          <span style={{ fontSize: 12 }}>
+            <code>TELEGRAM_BOT_TOKEN</code>:{' '}
+            <strong>{tokenPresent ? 'задан' : 'не задан'}</strong>
+            {'   '}
+            <code>TELEGRAM_ALERT_CHAT_ID</code>:{' '}
+            <strong>{chatPresent ? 'задан' : 'не задан'}</strong>
+          </span>
+        </Field>
+
+        <Field label="Последняя отправка">
+          {migrationPending ? (
+            <span style={{ color: 'var(--secondary)' }}>
+              нет данных — миграция 0061 ещё не применена
+            </span>
+          ) : lastRun ? (
+            <>
+              <span>{formatDateTime(lastRun.ranAt)}</span>
+              {' — '}
+              <code style={{ fontSize: 12 }}>{lastRun.probeName}</code>
+              {' / '}
+              <code style={{ fontSize: 12 }}>{lastRun.verdictKind}</code>
+              {lastRun.messageId ? (
+                <code style={{ fontSize: 11, marginLeft: 8 }}>
+                  tg: {lastRun.messageId}
+                </code>
+              ) : null}
+              {lastRun.errorMessage ? (
+                <span style={{ color: '#b00020', fontSize: 12 }}>
+                  {' '}— {lastRun.errorMessage}
+                </span>
+              ) : null}
+            </>
+          ) : (
+            <span style={{ color: 'var(--secondary)' }}>
+              нет данных — Telegram-канал ещё не запускался
+            </span>
+          )}
+        </Field>
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <div
+          style={{
+            fontSize: 12,
+            color: 'var(--secondary)',
+            textTransform: 'uppercase',
+            letterSpacing: 0.4,
+            marginBottom: 4,
+          }}
+        >
+          Настройки канала
+        </div>
+        {TELEGRAM_CHANNEL_KEYS.map((k) => {
+          const meta = SETTING_SCHEMA[k]
+          const settingsAvailable =
+            !('migrationPending' in settings) || !settings.migrationPending
+          const entry =
+            settingsAvailable && 'keys' in settings ? settings.keys[k] : null
+          if (!entry) {
+            return (
+              <SettingEditor
+                key={k}
+                settingKey={k}
+                meta={meta}
+                value={meta.default}
+                source="default"
+                rawDb={null}
+                rawEnv={null}
+                updatedAt={null}
+                disabled
+              />
+            )
+          }
+          return (
+            <SettingEditor
+              key={k}
+              settingKey={k}
+              meta={meta}
+              value={entry.value}
+              source={entry.source}
+              rawDb={entry.rawDb}
+              rawEnv={entry.rawEnv}
+              updatedAt={entry.updatedAt}
+            />
+          )
+        })}
+      </div>
+    </section>
   )
 }
 

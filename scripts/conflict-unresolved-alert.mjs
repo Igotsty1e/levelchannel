@@ -54,8 +54,21 @@ import pg from 'pg'
 import { Resend } from 'resend'
 
 import { resolveSslConfig } from './_pg-ssl.mjs'
-import { resolveOperatorSettingsForProbe } from './lib/operator-settings.mjs'
-import { recordProbeRun, PROBE_NAMES, VERDICT_KINDS } from './lib/probe-runs.mjs'
+import {
+  resolveChannelSettings,
+  resolveOperatorSettingsForProbe,
+} from './lib/operator-settings.mjs'
+import {
+  recordProbeRun,
+  PROBE_NAMES,
+  RECIPIENT_KINDS,
+  VERDICT_KINDS,
+} from './lib/probe-runs.mjs'
+import {
+  redactTelegramSecret,
+  sendTelegramMessage,
+  stringifyTelegramError,
+} from './lib/telegram-alerts.mjs'
 
 // Module-scope `let` — resolved from operator_settings at tick start
 // so buildEmail() can reference the values for the "Внутрипробные
@@ -77,6 +90,11 @@ const EMAIL_FROM =
   process.env.EMAIL_FROM?.trim() || 'LevelChannel <noreply@example.com>'
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL?.trim() || 'https://levelchannel.ru'
+
+// BCS-DEF-1-TG (2026-05-19) — Telegram channel env (plan §2.2).
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN?.trim() || ''
+const TELEGRAM_ALERT_CHAT_ID =
+  process.env.TELEGRAM_ALERT_CHAT_ID?.trim() || ''
 
 function logJson(level, msg, extra = {}) {
   console.log(
@@ -387,6 +405,19 @@ function pluralRu(n, one, few, many) {
   return many
 }
 
+// BCS-DEF-1-TG (2026-05-19) — Telegram body (plan §2.3, §4.5).
+// 4-line digest + deep-link; no teacher emails, no slot IDs, no
+// calendar/event IDs (PII guard).
+export function buildTelegramBody(counts) {
+  const { totalConflicts, totalTeachers } = counts
+  const lines = [
+    'LevelChannel ops — conflict-unresolved',
+    `${totalConflicts} нерешённых конфликтов у ${totalTeachers} ${pluralRu(totalTeachers, 'учителя', 'учителей', 'учителей')} (старше ${formatHours(THRESHOLD_MINUTES)})`,
+    `Подробнее: ${SITE_URL}/admin/settings/alerts`,
+  ]
+  return lines.join('\n')
+}
+
 function formatHours(minutes) {
   if (minutes < 60) return `${minutes} мин`
   if (minutes % 60 === 0) return `${minutes / 60} ч`
@@ -413,6 +444,113 @@ async function writeState(state) {
 
 // --- Main --------------------------------------------------------------
 
+// BCS-DEF-1-TG R2 BLOCKER#2 closure (2026-05-19) — extract the inline
+// email block into a per-probe helper to fit the gather-then-dispatch
+// shape. Return contract `{ok, error, detail?, emailId?}` mirrors the
+// sibling probes.
+async function tryEmailChannel({ offenders, counts, perTeacherOmitted }) {
+  if (!ALERT_EMAIL_TO || !process.env.RESEND_API_KEY) {
+    return {
+      ok: false,
+      error: !ALERT_EMAIL_TO
+        ? 'missing_alert_email_to'
+        : 'missing_resend_api_key',
+    }
+  }
+  const { subject, text } = buildEmail(offenders, counts, perTeacherOmitted)
+  const resend = new Resend(process.env.RESEND_API_KEY)
+  let sent
+  try {
+    sent = await resend.emails.send({
+      from: EMAIL_FROM,
+      to: [ALERT_EMAIL_TO],
+      subject,
+      text,
+    })
+  } catch (transportErr) {
+    const detail =
+      transportErr instanceof Error ? transportErr.message : String(transportErr)
+    return { ok: false, error: 'resend_send_failed', detail }
+  }
+  if (sent.error) {
+    return {
+      ok: false,
+      error: 'resend_send_failed',
+      detail: String(sent.error),
+    }
+  }
+  return { ok: true, emailId: sent.data?.id ?? null }
+}
+
+// BCS-DEF-1-TG (2026-05-19) — Telegram channel dispatch (plan §2.6.1).
+async function tryTelegramChannel({
+  pool,
+  telegramBody,
+  fingerprint,
+  enrichedStats,
+  retryMax,
+}) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_ALERT_CHAT_ID) {
+    const detail = !TELEGRAM_BOT_TOKEN
+      ? 'missing_telegram_bot_token'
+      : 'missing_telegram_alert_chat_id'
+    logJson('warn', 'Telegram channel: env missing; recording config_missing', {
+      detail,
+    })
+    await recordProbeRun(pool, {
+      probeName: PROBE_NAMES.CONFLICT_UNRESOLVED,
+      verdictKind: VERDICT_KINDS.CONFIG_MISSING,
+      recipientKind: RECIPIENT_KINDS.TELEGRAM,
+      recipientEmail: TELEGRAM_ALERT_CHAT_ID || null,
+      fingerprint,
+      stats: enrichedStats,
+      errorMessage: detail,
+    })
+    return false
+  }
+  const tgResult = await sendTelegramMessage({
+    botToken: TELEGRAM_BOT_TOKEN,
+    chatId: TELEGRAM_ALERT_CHAT_ID,
+    text: telegramBody,
+    retryMax,
+  })
+  if (tgResult.ok) {
+    logJson('info', 'Telegram alert sent', {
+      chatId: TELEGRAM_ALERT_CHAT_ID,
+      messageId: tgResult.messageId,
+    })
+    await recordProbeRun(pool, {
+      probeName: PROBE_NAMES.CONFLICT_UNRESOLVED,
+      verdictKind: VERDICT_KINDS.ALERT_SENT,
+      alertSent: true,
+      recipientKind: RECIPIENT_KINDS.TELEGRAM,
+      recipientEmail: TELEGRAM_ALERT_CHAT_ID,
+      alertEmailId: tgResult.messageId || null,
+      fingerprint,
+      stats: enrichedStats,
+    })
+    return true
+  }
+  const redactedDetail = redactTelegramSecret(
+    tgResult.detail ?? tgResult.error,
+    TELEGRAM_BOT_TOKEN,
+  )
+  logJson('warn', 'Telegram send failed', {
+    error: tgResult.error,
+    detail: redactedDetail,
+  })
+  await recordProbeRun(pool, {
+    probeName: PROBE_NAMES.CONFLICT_UNRESOLVED,
+    verdictKind: VERDICT_KINDS.ALERT_SEND_FAILED,
+    recipientKind: RECIPIENT_KINDS.TELEGRAM,
+    recipientEmail: TELEGRAM_ALERT_CHAT_ID,
+    fingerprint,
+    stats: enrichedStats,
+    errorMessage: redactedDetail || tgResult.error,
+  })
+  return false
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) {
     logJson('error', 'DATABASE_URL not set; aborting')
@@ -433,17 +571,27 @@ async function main() {
   let capturedThresholds = null
   let capturedThresholdsSource = null
   let recipientEmailSnapshot = ALERT_EMAIL_TO || null
+  // BCS-DEF-1-TG (2026-05-19) — Telegram knobs declared up front so
+  // the catch block can reference them too.
+  let telegramEnabled = false
+  let telegramRetryMax = 2
 
   try {
     // Snapshot read of operator settings at tick start (DB → env → default).
-    const settings = await resolveOperatorSettingsForProbe(
+    // BCS-DEF-1-TG (2026-05-19): also resolve channel-scope Telegram
+    // settings.
+    const probeSettings = await resolveOperatorSettingsForProbe(
       pool,
       'conflict-unresolved',
     )
+    const channelSettings = await resolveChannelSettings(pool, 'telegram')
+    const settings = { ...probeSettings, ...channelSettings }
     THRESHOLD_MINUTES = settings.CONFLICT_UNRESOLVED_THRESHOLD_MINUTES.value
     REPORT_LIMIT = settings.CONFLICT_UNRESOLVED_REPORT_LIMIT.value
     PER_TEACHER_LIMIT = settings.CONFLICT_UNRESOLVED_PER_TEACHER_LIMIT.value
     DEDUP_WINDOW_MS = settings.CONFLICT_UNRESOLVED_DEDUP_WINDOW_MS.value
+    telegramEnabled = settings.TELEGRAM_ALERTS_MASTER_SWITCH.value === 1
+    telegramRetryMax = settings.TELEGRAM_ALERTS_RETRY_MAX.value
 
     capturedThresholds = {
       CONFLICT_UNRESOLVED_THRESHOLD_MINUTES: THRESHOLD_MINUTES,
@@ -547,94 +695,124 @@ async function main() {
         'offenders unchanged within dedup window; skipping email',
         { fingerprint: fp, windowMs: DEDUP_WINDOW_MS, shown: offenders.length },
       )
+      // BCS-DEF-1-TG R2 WARN#2 closure (2026-05-19): dedup_skip emits
+      // one row per channel — Telegram row only if master switch on.
       await recordProbeRun(pool, {
         probeName: PROBE_NAMES.CONFLICT_UNRESOLVED,
         verdictKind: VERDICT_KINDS.DEDUP_SKIP,
+        recipientKind: RECIPIENT_KINDS.EMAIL,
         fingerprint: fp,
         stats: enrichedStats,
       })
+      if (telegramEnabled) {
+        await recordProbeRun(pool, {
+          probeName: PROBE_NAMES.CONFLICT_UNRESOLVED,
+          verdictKind: VERDICT_KINDS.DEDUP_SKIP,
+          recipientKind: RECIPIENT_KINDS.TELEGRAM,
+          fingerprint: fp,
+          stats: enrichedStats,
+        })
+      }
       return
     }
 
-    const { subject, text } = buildEmail(offenders, counts, perTeacherOmitted)
-    if (!ALERT_EMAIL_TO || !process.env.RESEND_API_KEY) {
-      logJson(
-        'warn',
-        'alert would fire but email destination/key not set; state NOT advanced',
-        { shown: offenders.length },
-      )
-      await recordProbeRun(pool, {
-        probeName: PROBE_NAMES.CONFLICT_UNRESOLVED,
-        verdictKind: VERDICT_KINDS.CONFIG_MISSING,
-        recipientEmail: recipientEmailSnapshot,
-        fingerprint: fp,
-        stats: enrichedStats,
-        errorMessage: !ALERT_EMAIL_TO
-          ? 'missing_alert_email_to'
-          : 'missing_resend_api_key',
-      })
-      return
-    }
+    // BCS-DEF-1-TG R1 BLOCKER#3 closure — gather-then-dispatch. Both
+    // bodies built BEFORE entering channel dispatch; the REPEATABLE
+    // READ snapshot block above already committed (R2 BLOCKER#2: stays
+    // in main()). State file is EMAIL-controlled (RISK-3).
+    const telegramBody = buildTelegramBody(counts)
 
-    const resend = new Resend(process.env.RESEND_API_KEY)
-    let sent
+    // CHANNEL 1 — email
+    let emailOk = false
     try {
-      sent = await resend.emails.send({
-        from: EMAIL_FROM,
-        to: [ALERT_EMAIL_TO],
-        subject,
-        text,
+      const sendResult = await tryEmailChannel({
+        offenders,
+        counts,
+        perTeacherOmitted,
       })
-    } catch (transportErr) {
-      const detail =
-        transportErr instanceof Error
-          ? transportErr.message
-          : String(transportErr)
-      logJson('warn', 'resend send threw; state NOT advanced', {
-        error: detail,
+      if (sendResult.ok) {
+        emailOk = true
+        logJson('info', 'conflict-unresolved alert email sent', {
+          shown: offenders.length,
+          totalConflicts: counts.totalConflicts,
+          totalTeachers: counts.totalTeachers,
+          fingerprint: fp,
+          emailId: sendResult.emailId,
+        })
+        await recordProbeRun(pool, {
+          probeName: PROBE_NAMES.CONFLICT_UNRESOLVED,
+          verdictKind: VERDICT_KINDS.ALERT_SENT,
+          alertSent: true,
+          recipientKind: RECIPIENT_KINDS.EMAIL,
+          recipientEmail: recipientEmailSnapshot,
+          alertEmailId: sendResult.emailId,
+          fingerprint: fp,
+          stats: enrichedStats,
+        })
+      } else {
+        const isConfigMissing =
+          sendResult.error === 'missing_resend_api_key'
+          || sendResult.error === 'missing_alert_email_to'
+        if (isConfigMissing) {
+          logJson(
+            'warn',
+            'alert would fire but email destination/key not set; state NOT advanced',
+            { shown: offenders.length },
+          )
+        } else {
+          logJson('warn', 'resend send failed; state NOT advanced', {
+            error: sendResult.detail ?? sendResult.error,
+          })
+        }
+        await recordProbeRun(pool, {
+          probeName: PROBE_NAMES.CONFLICT_UNRESOLVED,
+          verdictKind: isConfigMissing
+            ? VERDICT_KINDS.CONFIG_MISSING
+            : VERDICT_KINDS.ALERT_SEND_FAILED,
+          recipientKind: RECIPIENT_KINDS.EMAIL,
+          recipientEmail: recipientEmailSnapshot,
+          fingerprint: fp,
+          stats: enrichedStats,
+          errorMessage: sendResult.detail ?? sendResult.error,
+        })
+      }
+    } catch (emailErr) {
+      logJson('error', 'tryEmailChannel threw unexpectedly', {
+        err: emailErr instanceof Error ? emailErr.message : String(emailErr),
       })
       await recordProbeRun(pool, {
         probeName: PROBE_NAMES.CONFLICT_UNRESOLVED,
         verdictKind: VERDICT_KINDS.ALERT_SEND_FAILED,
+        recipientKind: RECIPIENT_KINDS.EMAIL,
         recipientEmail: recipientEmailSnapshot,
         fingerprint: fp,
         stats: enrichedStats,
-        errorMessage: detail,
+        errorMessage:
+          emailErr instanceof Error ? emailErr.message : String(emailErr),
       })
-      return
-    }
-    if (sent.error) {
-      logJson('warn', 'resend email failed; state NOT advanced', {
-        error: String(sent.error),
-      })
-      await recordProbeRun(pool, {
-        probeName: PROBE_NAMES.CONFLICT_UNRESOLVED,
-        verdictKind: VERDICT_KINDS.ALERT_SEND_FAILED,
-        recipientEmail: recipientEmailSnapshot,
-        fingerprint: fp,
-        stats: enrichedStats,
-        errorMessage: String(sent.error),
-      })
-      return
     }
 
-    logJson('info', 'conflict-unresolved alert email sent', {
-      shown: offenders.length,
-      totalConflicts: counts.totalConflicts,
-      totalTeachers: counts.totalTeachers,
-      fingerprint: fp,
-      emailId: sent.data?.id ?? null,
-    })
-    await writeState({ lastAlertAt: now, lastFingerprint: fp })
-    await recordProbeRun(pool, {
-      probeName: PROBE_NAMES.CONFLICT_UNRESOLVED,
-      verdictKind: VERDICT_KINDS.ALERT_SENT,
-      alertSent: true,
-      recipientEmail: recipientEmailSnapshot,
-      alertEmailId: sent.data?.id ?? null,
-      fingerprint: fp,
-      stats: enrichedStats,
-    })
+    if (emailOk) {
+      await writeState({ lastAlertAt: now, lastFingerprint: fp })
+    }
+
+    // CHANNEL 2 — Telegram, runs regardless of email outcome.
+    if (telegramEnabled) {
+      try {
+        await tryTelegramChannel({
+          pool,
+          telegramBody,
+          fingerprint: fp,
+          enrichedStats,
+          retryMax: telegramRetryMax,
+        })
+      } catch (tgErr) {
+        const raw = stringifyTelegramError(tgErr)
+        logJson('error', 'tryTelegramChannel threw unexpectedly', {
+          err: redactTelegramSecret(raw, TELEGRAM_BOT_TOKEN),
+        })
+      }
+    }
   } catch (err) {
     await recordProbeRun(pool, {
       probeName: PROBE_NAMES.CONFLICT_UNRESOLVED,

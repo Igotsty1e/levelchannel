@@ -50,8 +50,22 @@ export const VERDICT_KINDS = Object.freeze({
   TEST_SEND_FAILED: 'test_send_failed',
 })
 
+// BCS-DEF-1-TG (2026-05-19) — per-channel discriminator on probe_runs.
+// Every channel emits its own row per tick; rows default to 'email'
+// for back-compat with pre-Telegram probes (one-row-per-tick semantics
+// preserved when the Telegram master switch is off).
+export const RECIPIENT_KINDS = Object.freeze({
+  EMAIL: 'email',
+  TELEGRAM: 'telegram',
+})
+
 /**
  * Insert one probe_runs row. Best-effort — swallows all errors.
+ *
+ * BCS-DEF-1-TG (2026-05-19): `recipientKind` defaults to 'email' so
+ * legacy callers keep their existing row shape; new Telegram-channel
+ * callers pass 'telegram'. The DB CHECK constraint
+ * (migration 0061) enforces the partition.
  *
  * @param {import('pg').Pool} pool — the probe's local pool (max:1).
  * @param {{
@@ -59,6 +73,8 @@ export const VERDICT_KINDS = Object.freeze({
  *   verdictKind: typeof VERDICT_KINDS[keyof typeof VERDICT_KINDS],
  *   alertSent?: boolean,
  *   recipientEmail?: string | null,
+ *   recipientKind?: typeof RECIPIENT_KINDS[keyof typeof RECIPIENT_KINDS],
+ *   recipientTelegramChatId?: string | null,
  *   alertEmailId?: string | null,
  *   fingerprint?: string | null,
  *   stats?: unknown,
@@ -69,12 +85,13 @@ export const VERDICT_KINDS = Object.freeze({
  */
 export async function recordProbeRun(pool, params) {
   try {
+    const recipientKind = params.recipientKind ?? RECIPIENT_KINDS.EMAIL
     await pool.query(
       `insert into probe_runs (
          probe_name, verdict_kind, alert_sent, recipient_email,
          alert_email_id, fingerprint, stats, error_message,
-         is_test, initiator_account_id
-       ) values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10)`,
+         is_test, initiator_account_id, recipient_kind
+       ) values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11)`,
       [
         params.probeName,
         params.verdictKind,
@@ -86,6 +103,7 @@ export async function recordProbeRun(pool, params) {
         params.errorMessage ?? null,
         params.isTest ?? false,
         params.initiatorAccountId ?? null,
+        recipientKind,
       ],
     )
   } catch (err) {
