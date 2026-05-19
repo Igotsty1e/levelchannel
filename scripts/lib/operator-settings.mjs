@@ -140,6 +140,31 @@ export const SETTING_SCHEMA = Object.freeze({
       'suppress duplicate alerts within this window (ms); keep >= threshold-minutes*60000',
     scope: 'conflict-unresolved',
   }),
+  // BCS-DEF-1-TG (2026-05-19) — channel-wide Telegram knobs. The scope
+  // discriminator 'telegram' is partitioned from probe scopes by the
+  // `tests/admin/operator-settings.test.ts` invariant test (R3 INFO#6
+  // closure). Resolution walks through `resolveChannelSettings(pool,
+  // 'telegram')`, not `resolveOperatorSettingsForProbe(...)`.
+  TELEGRAM_ALERTS_MASTER_SWITCH: Object.freeze({
+    kind: 'int',
+    default: 0,
+    min: 0,
+    max: 1,
+    envName: 'TELEGRAM_ALERTS_MASTER_SWITCH',
+    description:
+      'master switch (1=on, 0=off) for the Telegram alert channel; requires TELEGRAM_BOT_TOKEN + TELEGRAM_ALERT_CHAT_ID env vars; OFF by default — flip after BotFather setup',
+    scope: 'telegram',
+  }),
+  TELEGRAM_ALERTS_RETRY_MAX: Object.freeze({
+    kind: 'int',
+    default: 2,
+    min: 0,
+    max: 5,
+    envName: 'TELEGRAM_ALERTS_RETRY_MAX',
+    description:
+      'max retries (1s backoff) on transient Telegram API errors (5xx/network/429)',
+    scope: 'telegram',
+  }),
 })
 
 const INTEGER_PATTERN = /^\d+$/
@@ -201,6 +226,72 @@ export async function resolveOperatorSettingsForProbe(
           level: 'warn',
           probe: probeName,
           msg: 'operator-settings snapshot read failed (using env+default)',
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      )
+    }
+  }
+  const out = {}
+  for (const k of keys) {
+    const schema = SETTING_SCHEMA[k]
+    const rawDb = dbValues.has(k) ? dbValues.get(k) : null
+    const envRaw = env[schema.envName]
+    const rawEnv = typeof envRaw === 'string' ? envRaw.trim() : null
+    if (rawDb !== null) {
+      const v = validate(schema, rawDb)
+      if (v !== null) {
+        out[k] = { value: v, source: 'db', rawDb, rawEnv }
+        continue
+      }
+    }
+    if (rawEnv && rawEnv.length > 0) {
+      const v = validate(schema, rawEnv)
+      if (v !== null) {
+        out[k] = { value: v, source: 'env', rawDb, rawEnv }
+        continue
+      }
+    }
+    out[k] = { value: schema.default, source: 'default', rawDb, rawEnv }
+  }
+  return out
+}
+
+// BCS-DEF-1-TG R1 BLOCKER#1 closure (2026-05-19) — channel-scope
+// resolver. `resolveOperatorSettingsForProbe` filters by probe-name
+// scope; Telegram channel-wide keys (`scope: 'telegram'`) are
+// invisible to it. Each probe calls BOTH resolvers and merges the
+// snapshots.
+//
+// Contract mirrors the probe resolver: DB → env → default per key,
+// returning { value, source, rawDb, rawEnv }. No throws on DB errors
+// (best-effort; falls through to env/default with a warning log).
+//
+// `channel` is currently `'telegram'`; future channel scopes (slack,
+// sms) extend the same shape per plan §10.5.
+export async function resolveChannelSettings(
+  pool,
+  channel,
+  env = process.env,
+) {
+  const keys = Object.entries(SETTING_SCHEMA)
+    .filter(([, schema]) => schema.scope === channel)
+    .map(([k]) => k)
+  const dbValues = new Map()
+  try {
+    const r = await pool.query(
+      `select key, value from operator_settings where key = any($1::text[])`,
+      [keys],
+    )
+    for (const row of r.rows) {
+      dbValues.set(String(row.key), String(row.value))
+    }
+  } catch (err) {
+    if (!isUndefinedTableError(err)) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          channel,
+          msg: 'operator-settings channel snapshot read failed (using env+default)',
           error: err instanceof Error ? err.message : String(err),
         }),
       )

@@ -208,7 +208,14 @@ describe('POST /api/admin/settings/alerts/[probe]/test-send', () => {
           error_message text null,
           is_test boolean not null default false,
           initiator_account_id uuid null references accounts(id) on delete restrict,
-          created_at timestamptz not null default now()
+          created_at timestamptz not null default now(),
+          -- BCS-DEF-1-TG R1 WARN#1 closure (2026-05-19): schema shadow
+          -- mirrors migration 0061 — recipient_kind discriminator +
+          -- partial index. Without this the post-drop recreate diverges
+          -- from prod and a follow-up test seeding Telegram rows would
+          -- silently pass.
+          recipient_kind text not null default 'email'
+            check (recipient_kind in ('email', 'telegram'))
         )
       `)
       await pool.query(`
@@ -219,6 +226,11 @@ describe('POST /api/admin/settings/alerts/[probe]/test-send', () => {
         create index if not exists probe_runs_real_alerts_idx
           on probe_runs (probe_name, ran_at desc)
           where alert_sent = true and is_test = false
+      `)
+      await pool.query(`
+        create index if not exists probe_runs_telegram_latest_idx
+          on probe_runs (ran_at desc)
+          where recipient_kind = 'telegram' and is_test = false
       `)
       if (prevAlertEmailTo !== undefined) process.env.ALERT_EMAIL_TO = prevAlertEmailTo
       else delete process.env.ALERT_EMAIL_TO

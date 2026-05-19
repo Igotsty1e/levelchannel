@@ -56,8 +56,21 @@ import pg from 'pg'
 import { Resend } from 'resend'
 
 import { resolveSslConfig } from './_pg-ssl.mjs'
-import { resolveOperatorSettingsForProbe } from './lib/operator-settings.mjs'
-import { recordProbeRun, PROBE_NAMES, VERDICT_KINDS } from './lib/probe-runs.mjs'
+import {
+  resolveChannelSettings,
+  resolveOperatorSettingsForProbe,
+} from './lib/operator-settings.mjs'
+import {
+  recordProbeRun,
+  PROBE_NAMES,
+  RECIPIENT_KINDS,
+  VERDICT_KINDS,
+} from './lib/probe-runs.mjs'
+import {
+  redactTelegramSecret,
+  sendTelegramMessage,
+  stringifyTelegramError,
+} from './lib/telegram-alerts.mjs'
 
 // ALERTS-EDITOR Sub-PR B (2026-05-18) — module-scope `let` vars
 // assigned at tick start from operator_settings (DB → env →
@@ -71,6 +84,14 @@ let TERMINATED_RATIO_FLOOR = 0.3
 const ALERT_EMAIL_TO = process.env.ALERT_EMAIL_TO?.trim() || ''
 const EMAIL_FROM = process.env.EMAIL_FROM?.trim() || 'LevelChannel <noreply@example.com>'
 const SSH_COMMAND_HINT = process.env.SSH_COMMAND_HINT?.trim() || 'ssh <host>'
+
+// BCS-DEF-1-TG (2026-05-19) — Telegram channel env. Soft-skip on
+// missing values per plan §2.2 (no hard boot-fail; email keeps firing).
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN?.trim() || ''
+const TELEGRAM_ALERT_CHAT_ID =
+  process.env.TELEGRAM_ALERT_CHAT_ID?.trim() || ''
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL?.trim() || 'https://levelchannel.ru'
 
 function logJson(level, msg, extra = {}) {
   // Single-line JSON so journald can be parsed mechanically later.
@@ -130,10 +151,34 @@ function decide(stats) {
   return decideVerdict(stats)
 }
 
+// BCS-DEF-1-TG (2026-05-19) — Telegram body builder. 4-6 line digest
+// + deep-link to /admin/settings/alerts (plan §2.3). Plain text only —
+// no Markdown / parse_mode (escape-character footguns aren't worth
+// bold/links for a paging signal). Capped at 1024 chars; the 4096-char
+// Telegram limit is well above this.
+//
+// PII-free per plan §4.5: no webhook payloads, no order ids, no
+// customer emails. Headline numbers only; operator opens the
+// admin page for the full report.
+export function buildTelegramBody(stats, verdict) {
+  const terminated = stats.paidWebhooks + stats.failWebhooks
+  const ratio = typeof verdict.ratio === 'number' ? verdict.ratio.toFixed(2) : '—'
+  const lines = [
+    'LevelChannel ops — webhook-flow',
+    `Только ${terminated} из ${stats.created} закрыты за последние ${WINDOW_MINUTES} мин (доля ${ratio}, порог ${TERMINATED_RATIO_FLOOR})`,
+    `Подробнее: ${SITE_URL}/admin/settings/alerts`,
+  ]
+  return lines.join('\n')
+}
+
+// BCS-DEF-1-TG (2026-05-19) — renamed from `sendAlertEmail` to align
+// with the per-probe channel-dispatch shape (plan §2.6.1). Same return
+// contract {ok, error, emailId} as before.
+//
 // ALERTS-OBS (2026-05-16) — return contract refactor (mirrors
 // auth-flow-alert.mjs change). Caller distinguishes config_missing /
 // send_failed / sent.
-async function sendAlertEmail({ stats, verdict }) {
+async function tryEmailChannel({ stats, verdict }) {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) {
     logJson('warn', 'RESEND_API_KEY not set; would have alerted', {
@@ -216,6 +261,77 @@ async function sendAlertEmail({ stats, verdict }) {
   return { ok: true, emailId: result.data?.id ?? null }
 }
 
+// BCS-DEF-1-TG (2026-05-19) — Telegram channel dispatch. Sibling of
+// `tryEmailChannel`; never throws to outer `main()`. Records its own
+// `probe_runs` row with `recipientKind='telegram'`. Plan §2.6.1.
+async function tryTelegramChannel({
+  pool,
+  telegramBody,
+  enrichedStats,
+  fingerprint,
+  retryMax,
+}) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_ALERT_CHAT_ID) {
+    const detail = !TELEGRAM_BOT_TOKEN
+      ? 'missing_telegram_bot_token'
+      : 'missing_telegram_alert_chat_id'
+    logJson('warn', 'Telegram channel: env missing; recording config_missing', {
+      detail,
+    })
+    await recordProbeRun(pool, {
+      probeName: PROBE_NAMES.WEBHOOK_FLOW,
+      verdictKind: VERDICT_KINDS.CONFIG_MISSING,
+      recipientKind: RECIPIENT_KINDS.TELEGRAM,
+      recipientEmail: TELEGRAM_ALERT_CHAT_ID || null,
+      fingerprint,
+      stats: enrichedStats,
+      errorMessage: detail,
+    })
+    return false
+  }
+  const tgResult = await sendTelegramMessage({
+    botToken: TELEGRAM_BOT_TOKEN,
+    chatId: TELEGRAM_ALERT_CHAT_ID,
+    text: telegramBody,
+    retryMax,
+  })
+  if (tgResult.ok) {
+    logJson('info', 'Telegram alert sent', {
+      chatId: TELEGRAM_ALERT_CHAT_ID,
+      messageId: tgResult.messageId,
+    })
+    await recordProbeRun(pool, {
+      probeName: PROBE_NAMES.WEBHOOK_FLOW,
+      verdictKind: VERDICT_KINDS.ALERT_SENT,
+      alertSent: true,
+      recipientKind: RECIPIENT_KINDS.TELEGRAM,
+      recipientEmail: TELEGRAM_ALERT_CHAT_ID,
+      alertEmailId: tgResult.messageId || null,
+      fingerprint,
+      stats: enrichedStats,
+    })
+    return true
+  }
+  const redactedDetail = redactTelegramSecret(
+    tgResult.detail ?? tgResult.error,
+    TELEGRAM_BOT_TOKEN,
+  )
+  logJson('warn', 'Telegram send failed', {
+    error: tgResult.error,
+    detail: redactedDetail,
+  })
+  await recordProbeRun(pool, {
+    probeName: PROBE_NAMES.WEBHOOK_FLOW,
+    verdictKind: VERDICT_KINDS.ALERT_SEND_FAILED,
+    recipientKind: RECIPIENT_KINDS.TELEGRAM,
+    recipientEmail: TELEGRAM_ALERT_CHAT_ID,
+    fingerprint,
+    stats: enrichedStats,
+    errorMessage: redactedDetail || tgResult.error,
+  })
+  return false
+}
+
 async function main() {
   if (!process.env.DATABASE_URL) {
     logJson('error', 'DATABASE_URL not set; aborting')
@@ -229,13 +345,20 @@ async function main() {
   // ALERTS-EDITOR Sub-PR B (2026-05-18) — snapshot read at tick
   // start. Assigns module-scope `let` vars before any helper that
   // references them runs.
-  const settings = await resolveOperatorSettingsForProbe(
+  // BCS-DEF-1-TG (2026-05-19): also resolve channel-scope Telegram
+  // settings (R1 BLOCKER#1 closure — channel keys are invisible to the
+  // per-probe resolver).
+  const probeSettings = await resolveOperatorSettingsForProbe(
     pool,
     'webhook-flow',
   )
+  const channelSettings = await resolveChannelSettings(pool, 'telegram')
+  const settings = { ...probeSettings, ...channelSettings }
   WINDOW_MINUTES = settings.WEBHOOK_FLOW_WINDOW_MINUTES.value
   MIN_VOLUME = settings.WEBHOOK_FLOW_MIN_VOLUME.value
   TERMINATED_RATIO_FLOOR = settings.WEBHOOK_FLOW_TERMINATED_RATIO.value
+  const telegramEnabled = settings.TELEGRAM_ALERTS_MASTER_SWITCH.value === 1
+  const telegramRetryMax = settings.TELEGRAM_ALERTS_RETRY_MAX.value
 
   const capturedThresholds = {
     WEBHOOK_FLOW_WINDOW_MINUTES: WINDOW_MINUTES,
@@ -291,30 +414,73 @@ async function main() {
     }
     // verdict.kind === 'alert' (webhook-flow has NO dedup state by
     // design, so every alert run sends and writes a probe row).
-    const sendResult = await sendAlertEmail({ stats, verdict })
-    if (sendResult.ok) {
+    //
+    // BCS-DEF-1-TG R1 BLOCKER#3 closure (2026-05-19): gather-then-
+    // dispatch. Build both bodies BEFORE entering channel dispatch;
+    // each channel runs inside its own try-block and NEVER returns
+    // from main(). Email failure cannot kill the Telegram page.
+    const telegramBody = buildTelegramBody(stats, verdict)
+
+    // CHANNEL 1 — email
+    try {
+      const sendResult = await tryEmailChannel({ stats, verdict })
+      if (sendResult.ok) {
+        await recordProbeRun(pool, {
+          probeName: PROBE_NAMES.WEBHOOK_FLOW,
+          verdictKind: VERDICT_KINDS.ALERT_SENT,
+          alertSent: true,
+          recipientKind: RECIPIENT_KINDS.EMAIL,
+          recipientEmail: recipientEmailSnapshot,
+          alertEmailId: sendResult.emailId,
+          stats: enrichedStats,
+        })
+      } else {
+        const isConfigMissing =
+          sendResult.error === 'missing_resend_api_key' ||
+          sendResult.error === 'missing_alert_email_to'
+        await recordProbeRun(pool, {
+          probeName: PROBE_NAMES.WEBHOOK_FLOW,
+          verdictKind: isConfigMissing
+            ? VERDICT_KINDS.CONFIG_MISSING
+            : VERDICT_KINDS.ALERT_SEND_FAILED,
+          alertSent: false,
+          recipientKind: RECIPIENT_KINDS.EMAIL,
+          recipientEmail: recipientEmailSnapshot,
+          stats: enrichedStats,
+          errorMessage: sendResult.detail ?? sendResult.error,
+        })
+      }
+    } catch (emailErr) {
+      logJson('error', 'tryEmailChannel threw unexpectedly', {
+        err: emailErr instanceof Error ? emailErr.message : String(emailErr),
+      })
       await recordProbeRun(pool, {
         probeName: PROBE_NAMES.WEBHOOK_FLOW,
-        verdictKind: VERDICT_KINDS.ALERT_SENT,
-        alertSent: true,
-        recipientEmail: recipientEmailSnapshot,
-        alertEmailId: sendResult.emailId,
-        stats: enrichedStats,
-      })
-    } else {
-      const isConfigMissing =
-        sendResult.error === 'missing_resend_api_key' ||
-        sendResult.error === 'missing_alert_email_to'
-      await recordProbeRun(pool, {
-        probeName: PROBE_NAMES.WEBHOOK_FLOW,
-        verdictKind: isConfigMissing
-          ? VERDICT_KINDS.CONFIG_MISSING
-          : VERDICT_KINDS.ALERT_SEND_FAILED,
-        alertSent: false,
+        verdictKind: VERDICT_KINDS.ALERT_SEND_FAILED,
+        recipientKind: RECIPIENT_KINDS.EMAIL,
         recipientEmail: recipientEmailSnapshot,
         stats: enrichedStats,
-        errorMessage: sendResult.detail ?? sendResult.error,
+        errorMessage:
+          emailErr instanceof Error ? emailErr.message : String(emailErr),
       })
+    }
+
+    // CHANNEL 2 — Telegram, runs regardless of email outcome.
+    if (telegramEnabled) {
+      try {
+        await tryTelegramChannel({
+          pool,
+          telegramBody,
+          enrichedStats,
+          fingerprint: null,
+          retryMax: telegramRetryMax,
+        })
+      } catch (tgErr) {
+        const raw = stringifyTelegramError(tgErr)
+        logJson('error', 'tryTelegramChannel threw unexpectedly', {
+          err: redactTelegramSecret(raw, TELEGRAM_BOT_TOKEN),
+        })
+      }
     }
   } catch (err) {
     // ALERTS-OBS round-3 WARN #5 closure: top-level catch writes

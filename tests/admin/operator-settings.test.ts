@@ -66,16 +66,22 @@ describe('SETTING_SCHEMA invariants', () => {
     }
   })
 
-  it('every scope is a known probe name', () => {
+  it('every scope is a known probe name or channel scope', () => {
     // BCS-DEF-1 Phase 1 (2026-05-19) — 'conflict-unresolved' added
     // alongside the 3 already-shipped probes. The probe script itself
     // ships in Phase 2; the schema scope is widened first so the 4
     // CONFLICT_UNRESOLVED_* keys land cleanly.
+    //
+    // BCS-DEF-1-TG (2026-05-19) — 'telegram' added as a CHANNEL scope
+    // (not a probe). Per plan §2.5.1, channel-scope keys partition
+    // disjointly from probe-scope keys; the next test pins that
+    // invariant explicitly.
     const validScopes = new Set([
       'auth-flow',
       'calendar-pathology',
       'webhook-flow',
       'conflict-unresolved',
+      'telegram',
     ])
     for (const [key, schema] of Object.entries(TS_SCHEMA)) {
       expect(validScopes.has(schema.scope), `${key}.scope is valid`).toBe(true)
@@ -105,5 +111,49 @@ describe('SETTING_SCHEMA invariants', () => {
       'CONFLICT_UNRESOLVED_REPORT_LIMIT',
       'CONFLICT_UNRESOLVED_THRESHOLD_MINUTES',
     ])
+  })
+
+  // BCS-DEF-1-TG (2026-05-19) — plan §2.5.1 + §3.6b + R3 INFO#6 closure.
+  it('telegram scope has the 2 expected channel-wide keys', () => {
+    const telegramKeys = Object.entries(TS_SCHEMA)
+      .filter(([, s]) => s.scope === 'telegram')
+      .map(([k]) => k)
+      .sort()
+    expect(telegramKeys).toEqual([
+      'TELEGRAM_ALERTS_MASTER_SWITCH',
+      'TELEGRAM_ALERTS_RETRY_MAX',
+    ])
+  })
+
+  it('channel-scope keys are DISJOINT from probe-scope keys (scope-set-based partition)', () => {
+    // R3 INFO#6 closure: invariant via scope membership, NOT name
+    // prefix. Future channel scopes (slack, sms) inherit automatically.
+    const probeNames = new Set([
+      'auth-flow',
+      'calendar-pathology',
+      'webhook-flow',
+      'conflict-unresolved',
+    ])
+    const telegramKeys = new Set(
+      Object.entries(TS_SCHEMA)
+        .filter(([, s]) => s.scope === 'telegram')
+        .map(([k]) => k),
+    )
+    const probeKeys = new Set(
+      Object.entries(TS_SCHEMA)
+        .filter(([, s]) => probeNames.has(s.scope))
+        .map(([k]) => k),
+    )
+    // Empty intersection.
+    for (const k of telegramKeys) {
+      expect(probeKeys.has(k), `${k} must not be in any probe scope`).toBe(
+        false,
+      )
+    }
+    for (const k of probeKeys) {
+      expect(telegramKeys.has(k), `${k} must not be in telegram scope`).toBe(
+        false,
+      )
+    }
   })
 })
