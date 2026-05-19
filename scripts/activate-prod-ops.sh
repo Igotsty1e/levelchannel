@@ -261,6 +261,11 @@ declare -a units=(
   # detector). Sibling of the auth-flow + webhook-flow alert probes.
   "levelchannel-calendar-pathology-alert.service"
   "levelchannel-calendar-pathology-alert.timer"
+  # BCS-DEF-1 Phase 2 (2026-05-19) — conflict-unresolved alert probe
+  # (operator email on external_conflict_at >threshold). Fourth
+  # sibling of the alert-probe family.
+  "levelchannel-conflict-unresolved-alert.service"
+  "levelchannel-conflict-unresolved-alert.timer"
   # BCS-OP-ROLLOUT — 6 calendar worker cron units.
   "levelchannel-calendar-pull.service"
   "levelchannel-calendar-pull.timer"
@@ -314,6 +319,8 @@ declare -a timers=(
   "levelchannel-auto-complete-slots.timer"
   "levelchannel-refund-reconcile.timer"
   "levelchannel-calendar-pathology-alert.timer"
+  # BCS-DEF-1 Phase 2 (2026-05-19) — conflict-unresolved alert timer.
+  "levelchannel-conflict-unresolved-alert.timer"
   # BCS-OP-ROLLOUT — 6 calendar worker timers.
   "levelchannel-calendar-pull.timer"
   "levelchannel-calendar-push.timer"

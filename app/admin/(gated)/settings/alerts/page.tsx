@@ -40,6 +40,13 @@ const PROBE_TITLES: Record<ProbeName, string> = {
   'auth-flow': 'auth-flow — попытки входа',
   'calendar-pathology': 'calendar-pathology — патологичные слоты',
   'webhook-flow': 'webhook-flow — webhook-поток CloudPayments',
+  // BCS-DEF-1 Phase 1 (2026-05-19) — registered for Record<ProbeName>
+  // completeness, but the alerts page iterates `PROBE_NAMES` from
+  // `lib/admin/probe-status.ts` which excludes 'conflict-unresolved'
+  // until Phase 2 ships the probe script. The title doesn't surface
+  // in the UI until that PR adds the probe name to PROBE_NAMES.
+  'conflict-unresolved':
+    'conflict-unresolved — нерешённые конфликты с Google-календарём',
 }
 
 export default async function AdminAlertsPage() {
@@ -67,12 +74,14 @@ export default async function AdminAlertsPage() {
           maxWidth: 720,
         }}
       >
-        Три systemd-пробника шлют письма оператору при подозрительной
-        активности. Здесь видно когда они последний раз бежали, какой
-        был вердикт, какие пороги действуют сейчас, и можно отправить
-        тестовое письмо чтобы проверить транспорт. Пороги редактируются
-        прямо здесь: DB → env → default. Изменения подхватываются
-        следующим тиком systemd-пробника.
+        Четыре systemd-пробника шлют письма оператору при подозрительной
+        активности (попытки входа, патологичные слоты, webhook-поток
+        CloudPayments, нерешённые конфликты с Google-календарём). Здесь
+        видно когда они последний раз бежали, какой был вердикт, какие
+        пороги действуют сейчас, и можно отправить тестовое письмо
+        чтобы проверить транспорт. Пороги редактируются прямо здесь:
+        DB → env → default. Изменения подхватываются следующим тиком
+        systemd-пробника.
       </p>
 
       {probeMigrationPending ? (

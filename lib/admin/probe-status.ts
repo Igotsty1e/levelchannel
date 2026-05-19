@@ -1,21 +1,43 @@
 import { isUndefinedTableError } from '@/lib/db/errors'
 import { getDbPool } from '@/lib/db/pool'
 
-// ALERTS-OBS (2026-05-16) — read-only observability for the three
-// systemd alert probes.
+// ALERTS-OBS (2026-05-16) — read-only observability for the systemd
+// alert probes (3 at ship; extended to 4 by BCS-DEF-1 Phase 4,
+// 2026-05-19 — see PROBE_NAMES below).
 //
-// Reads from `probe_runs` (migration 0053). Writes happen exclusively
-// from .mjs probes via scripts/lib/probe-runs.mjs + the test-send
-// endpoint at /api/admin/settings/alerts/[probe]/test-send.
+// Reads from `probe_runs` (migration 0053; CHECK extended by migration
+// 0058 for the 4th probe). Writes happen exclusively from .mjs probes
+// via scripts/lib/probe-runs.mjs + the test-send endpoint at
+// /api/admin/settings/alerts/[probe]/test-send.
 //
-// Plan: docs/plans/alerts-obs.md.
+// Plans: docs/plans/alerts-obs.md (initial 3-probe surface);
+// docs/plans/conflict-unresolved-alert.md (BCS-DEF-1, 4th probe).
 
-export type ProbeName = 'auth-flow' | 'calendar-pathology' | 'webhook-flow'
+export type ProbeName =
+  | 'auth-flow'
+  | 'calendar-pathology'
+  | 'webhook-flow'
+  // BCS-DEF-1 Phase 1 (2026-05-19) — `'conflict-unresolved'` is now a
+  // valid value of the ProbeName union (used by SETTING_SCHEMA scope
+  // entries in `lib/admin/operator-settings.ts`). The probe is NOT yet
+  // shipped — Phase 2 lands `scripts/conflict-unresolved-alert.mjs` +
+  // the systemd unit + extends `PROBE_NAMES` below + the admin alerts
+  // page's PROBE_TITLES. Until then, `isProbeName('conflict-unresolved')`
+  // returns true (so the type union holds), but the array iteration
+  // (which drives the admin alerts UI render loop) excludes it.
+  | 'conflict-unresolved'
 
 export const PROBE_NAMES: readonly ProbeName[] = [
   'auth-flow',
   'calendar-pathology',
   'webhook-flow',
+  // BCS-DEF-1 Phase 4 (2026-05-19) — Phase 2 shipped the probe
+  // script (scripts/conflict-unresolved-alert.mjs); PROBE_NAMES
+  // iteration is widened here so /admin/settings/alerts renders the
+  // 4th probe card (last-run / last-alert / settings editor). Until
+  // the probe starts writing probe_runs rows on prod, the card just
+  // shows "Данные недоступны" — same shape as migration-pending.
+  'conflict-unresolved',
 ]
 
 export function isProbeName(value: unknown): value is ProbeName {
@@ -23,6 +45,7 @@ export function isProbeName(value: unknown): value is ProbeName {
     value === 'auth-flow'
     || value === 'calendar-pathology'
     || value === 'webhook-flow'
+    || value === 'conflict-unresolved'
   )
 }
 

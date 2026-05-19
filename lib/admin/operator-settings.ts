@@ -14,7 +14,21 @@
 import { isUndefinedTableError } from '@/lib/db/errors'
 import { getDbPool } from '@/lib/db/pool'
 
-export type ProbeName = 'auth-flow' | 'calendar-pathology' | 'webhook-flow'
+export type ProbeName =
+  | 'auth-flow'
+  | 'calendar-pathology'
+  | 'webhook-flow'
+  // BCS-DEF-1 Phase 1 (2026-05-19): widened to include the
+  // conflict-unresolved alert probe. The probe SCRIPT + systemd unit
+  // ship in Phase 2; for now the type widening lets us land the 4
+  // operator-tunable threshold keys (CONFLICT_UNRESOLVED_*) below
+  // without TypeScript errors. `/admin/settings/alerts` doesn't render
+  // a section for this probe yet (PROBE_NAMES in
+  // `lib/admin/probe-status.ts` still iterates only the three
+  // shipped probes); the keys exist in SETTING_SCHEMA but are
+  // invisible in the editor UI until Phase 2 adds the probe to
+  // PROBE_NAMES + PROBE_TITLES.
+  | 'conflict-unresolved'
 
 type SettingSchemaInt = {
   kind: 'int'
@@ -133,6 +147,51 @@ export const SETTING_SCHEMA = {
     envName: 'WEBHOOK_FLOW_TERMINATED_RATIO',
     description: 'terminated-vs-success ratio threshold (0.0 to 1.0)',
     scope: 'webhook-flow',
+  },
+  // BCS-DEF-1 Phase 1 (2026-05-19) — conflict-unresolved probe
+  // thresholds. The probe ships in Phase 2; these 4 keys land first
+  // so the operator-settings table has a known schema by the time the
+  // probe starts reading them. Defaults match
+  // docs/plans/conflict-unresolved-alert.md §2.3.
+  CONFLICT_UNRESOLVED_THRESHOLD_MINUTES: {
+    kind: 'int',
+    default: 120,
+    min: 5,
+    max: 1440,
+    envName: 'CONFLICT_UNRESOLVED_THRESHOLD_MINUTES',
+    description:
+      'minutes a slot must carry external_conflict_at before alerting',
+    scope: 'conflict-unresolved',
+  },
+  CONFLICT_UNRESOLVED_REPORT_LIMIT: {
+    kind: 'int',
+    default: 50,
+    min: 1,
+    max: 500,
+    envName: 'CONFLICT_UNRESOLVED_REPORT_LIMIT',
+    description:
+      'global max offenders enumerated in the alert email body (after per-teacher cap)',
+    scope: 'conflict-unresolved',
+  },
+  CONFLICT_UNRESOLVED_PER_TEACHER_LIMIT: {
+    kind: 'int',
+    default: 5,
+    min: 1,
+    max: 50,
+    envName: 'CONFLICT_UNRESOLVED_PER_TEACHER_LIMIT',
+    description:
+      'max conflicts shown per teacher (keeps a noisy teacher from monopolising the global LIMIT)',
+    scope: 'conflict-unresolved',
+  },
+  CONFLICT_UNRESOLVED_DEDUP_WINDOW_MS: {
+    kind: 'int',
+    default: 4 * 3600 * 1000,
+    min: 60_000,
+    max: 7 * 86_400_000,
+    envName: 'CONFLICT_UNRESOLVED_DEDUP_WINDOW_MS',
+    description:
+      'suppress duplicate alerts within this window (ms); keep >= threshold-minutes*60000',
+    scope: 'conflict-unresolved',
   },
 } as const satisfies Record<string, SettingSchema>
 
