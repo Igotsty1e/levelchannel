@@ -59,6 +59,18 @@ const TELEGRAM_CHANNEL_KEYS: ReadonlyArray<SettingKey> = [
   'TELEGRAM_ALERTS_RETRY_MAX',
 ]
 
+// BCS-DEF-4 (2026-05-19) — learner-reminders scheduler knobs.
+// Co-located with the alert probes (plan §1.4 REVISED: operator
+// already visits this page daily; standalone settings page deferred).
+// The scheduler is NOT in `PROBE_NAMES` iteration, so this card is
+// rendered separately above the alert-probe cards but after the
+// Telegram channel card.
+const LEARNER_REMINDER_KEYS: ReadonlyArray<SettingKey> = [
+  'LEARNER_REMINDERS_EMAIL_ENABLED',
+  'LEARNER_REMINDER_WINDOW_MINUTES',
+  'LEARNER_REMINDERS_RATE_LIMIT_PER_TICK',
+]
+
 export default async function AdminAlertsPage() {
   const [statuses, settings, telegramRun] = await Promise.all([
     Promise.all(PROBE_NAMES.map(getProbeStatus)),
@@ -97,12 +109,14 @@ export default async function AdminAlertsPage() {
         Четыре systemd-пробника настроены на отправку писем оператору
         при подозрительной активности (попытки входа, патологичные слоты,
         webhook-поток CloudPayments, нерешённые конфликты с
-        Google-календарём). Чтобы реальные тики и письма пошли, нужно
-        запустить <code>scripts/activate-prod-ops.sh</code> на VPS —
-        пробники, чьи systemd-таймеры ещё не установлены, покажут
-        «Данные недоступны» ниже. Тестовое письмо можно отправить
-        прямо отсюда (это уже работает до активации таймера). Пороги
-        редактируются прямо здесь: DB → env → default. Изменения
+        Google-календарём). Плюс отдельная служба напоминаний для
+        учащихся — она шлёт каждому одно письмо за окно (по умолчанию
+        60&nbsp;минут) до начала занятия. Чтобы реальные тики и письма
+        пошли, нужно запустить <code>scripts/activate-prod-ops.sh</code>{' '}
+        на VPS — пробники, чьи systemd-таймеры ещё не установлены,
+        покажут «Данные недоступны» ниже. Тестовое письмо можно
+        отправить прямо отсюда (это уже работает до активации таймера).
+        Пороги редактируются прямо здесь: DB → env → default. Изменения
         подхватываются следующим тиком systemd-пробника.
       </p>
 
@@ -147,6 +161,7 @@ export default async function AdminAlertsPage() {
       ) : null}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <LearnerRemindersCard settings={settings} />
         <TelegramChannelCard
           settings={settings}
           telegramRun={telegramRun}
@@ -164,6 +179,98 @@ export default async function AdminAlertsPage() {
         ))}
       </div>
     </>
+  )
+}
+
+// BCS-DEF-4 (2026-05-19) — learner-reminders scheduler card. Plan §2.6.
+// Co-located with the alert probes (operator already visits this page
+// daily; a standalone /admin/settings/reminders page is deferred until
+// channel growth makes the embedded section bloated).
+//
+// The scheduler is NOT a `PROBE_NAMES` entry (no dedup-fingerprint, no
+// last-alert surface) — so this card has no "last alert" field. We
+// expose the 3 SETTING_SCHEMA knobs only, with a short explainer about
+// what each one does.
+function LearnerRemindersCard({ settings }: { settings: AdminSettingView }) {
+  return (
+    <section
+      style={{
+        border: '1px solid var(--border)',
+        borderRadius: 8,
+        padding: '16px 20px',
+        background: 'var(--surface)',
+      }}
+    >
+      <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>
+        Напоминания учащимся
+      </h2>
+      <p
+        style={{
+          color: 'var(--secondary)',
+          fontSize: 12,
+          lineHeight: 1.6,
+          marginBottom: 12,
+          maxWidth: 720,
+        }}
+      >
+        Один раз в минуту служба{' '}
+        <code>levelchannel-learner-reminder-dispatch.timer</code> читает
+        будущие забронированные занятия и отправляет учащимся одно письмо
+        за <strong>окно напоминания</strong> до начала. По умолчанию — за
+        60&nbsp;минут. Идемпотентность гарантирует таблица{' '}
+        <code>learner_reminder_dispatches</code>: одна строка на пару
+        (занятие, канал). Изменения порогов подхватываются на следующем
+        тике.
+      </p>
+
+      <div style={{ marginTop: 8 }}>
+        <div
+          style={{
+            fontSize: 12,
+            color: 'var(--secondary)',
+            textTransform: 'uppercase',
+            letterSpacing: 0.4,
+            marginBottom: 4,
+          }}
+        >
+          Редактор порогов
+        </div>
+        {LEARNER_REMINDER_KEYS.map((k) => {
+          const meta = SETTING_SCHEMA[k]
+          const settingsAvailable =
+            !('migrationPending' in settings) || !settings.migrationPending
+          const entry =
+            settingsAvailable && 'keys' in settings ? settings.keys[k] : null
+          if (!entry) {
+            return (
+              <SettingEditor
+                key={k}
+                settingKey={k}
+                meta={meta}
+                value={meta.default}
+                source="default"
+                rawDb={null}
+                rawEnv={null}
+                updatedAt={null}
+                disabled
+              />
+            )
+          }
+          return (
+            <SettingEditor
+              key={k}
+              settingKey={k}
+              meta={meta}
+              value={entry.value}
+              source={entry.source}
+              rawDb={entry.rawDb}
+              rawEnv={entry.rawEnv}
+              updatedAt={entry.updatedAt}
+            />
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
