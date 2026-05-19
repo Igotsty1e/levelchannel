@@ -7,7 +7,8 @@
 Owns:
 - **CloudPayments wire protocol** — HMAC verification, replay-dedup, signed-body parsing. `cloudpayments-webhook.ts` is the single source of truth.
 - **Payment-orders CRUD** — `store-postgres.ts` is the only writer of `payment_orders`. Transitions `pending → paid → refunded` happen here, always inside an audit-emit-in-same-TX wrapper.
-- **CloudPayments API** — outgoing calls to `payments/cards/charge` + `payments/refund` (`cloudpayments-api.ts`). Basic-Auth via Public ID + API Secret. Retry semantics, decline classification, JSON-shape guards.
+- **`payment_method` discriminator** — top-level column on `payment_orders` (migration 0062). Three values: `'card'` (widget + saved-token flow), `'sbp'` (SBP QR via the CloudPayments server API, `app/api/payments/sbp/create-qr/route.ts`), `'admin_grant'` (non-money operator-driven package grant). Single source of truth — `metadata.payment_method` is NOT used anywhere. Webhook handler reads/writes the column via `detectPaymentMethod()` (positive-signal whitelist) + the `markOrderPaid({detectedPaymentMethod})` opt.
+- **CloudPayments API** — outgoing calls to `payments/cards/charge` + `payments/refund` + `payments/qr/sbp/create` (`cloudpayments-api.ts`). Basic-Auth via Public ID + API Secret. Retry semantics, decline classification, JSON-shape guards.
 - **Allocations** — `payment_allocations` writes from the Pay webhook. `allocations.ts` is the bookkeeping pair to `lib/billing/package-grant.ts`.
 - **Receipt-token gate** — dual-mode (token + session-fallback) for `/api/payments/[invoiceId]/{route,cancel,stream}`. See `lib/payments/receipt-token-gate.ts` + `receipt-gate-session.ts`.
 - **Status bus** — in-process `EventEmitter` for `markOrderPaid` / `Failed` / `Cancelled` transitions; SSE endpoint streams these.
@@ -18,7 +19,8 @@ Owns:
 |---|---|
 | `store-postgres.ts` | payment_orders CRUD; sole writer of `status` transitions |
 | `cloudpayments-webhook.ts` | HMAC verify + replay-dedup + parse |
-| `cloudpayments-api.ts` | outgoing charge/refund; Basic-Auth; decline classification |
+| `cloudpayments-api.ts` | outgoing charge/refund/sbp-qr; Basic-Auth; decline classification |
+| `order-account-resolver.ts` | SBP-PAY: writer-side session-account-id resolution for `metadata.accountId` (admin-only rejection, tighter than receipt-gate consumer) |
 | `cloudpayments-route.ts` | webhook route helpers (rate-limit, kind dispatch) |
 | `cloudpayments.ts` | provider shim |
 | `allocations.ts` | `payment_allocations` writes + read helpers (`listSlotPaidStatus`) |
@@ -40,6 +42,8 @@ Owns:
 5. **`status` writes always audit-emit in same TX.** `store-postgres.ts:markOrderPaid` etc. is the contract.
 6. **Receipt-token gate is constant-time string compare.** No early-return on length mismatch (would leak length).
 7. **`receipt-gate-session.ts` rejects elevated sessions** (admin/teacher) at the consumer layer, BEFORE threading account id into the gate. The gate itself is dumb equality.
+8. **SBP order is canonically `payment_method='sbp'` at create-qr time.** Webhook detection (`detectPaymentMethod` + `markOrderPaid({detectedPaymentMethod})`) is a legacy / migration-edge fallback ONLY — the lifecycle KEEPS an existing non-null column value. Webhook never overwrites the canonical value.
+9. **`maybePersistTokenFromWebhook` defensive guard** — early-exits when `order.paymentMethod === 'sbp'`. SBP webhooks never carry a saved-card token; even if CloudPayments ever sent one accidentally, an SBP order would not persist as a saved card.
 
 ## Cross-references
 
