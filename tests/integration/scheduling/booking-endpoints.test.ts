@@ -230,7 +230,7 @@ describe('BCS-B.2 — GET /api/slots/booking-days', () => {
   // valid IANA name. After the fix, the route sanitises the profile
   // default via safeTimezone() and the call succeeds (no tz param).
   //
-  // BCS-DEF-5 (2026-05-19) — migration 0064 added a DB-side CHECK
+  // BCS-DEF-5 (2026-05-19) — migration 0069 added a DB-side CHECK
   // constraint (account_profiles_timezone_iana_check) that REJECTS the
   // raw 'Moscow' insert. The application-level safeTimezone() defence
   // remains; we now exercise the same fallback by setting timezone =
@@ -262,10 +262,10 @@ describe('BCS-B.2 — GET /api/slots/booking-days', () => {
     expect(json.days).toEqual([]) // no slots, but the call succeeded
   })
 
-  // BCS-DEF-5 (2026-05-19) regression pin — migration 0064 prevents
+  // BCS-DEF-5 (2026-05-19) regression pin — migration 0069 prevents
   // non-IANA inserts from reaching account_profiles in the first place.
   // The application-level safeTimezone() defence is a backstop only.
-  it('DB CHECK rejects non-IANA timezone insert (migration 0064)', async () => {
+  it('DB CHECK rejects non-IANA timezone insert (migration 0069)', async () => {
     const learner = await registerAndCookie('l-tz-rejected@example.com', {
       verifyEmail: true,
     })

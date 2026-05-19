@@ -645,7 +645,7 @@ describe('processOneTeacher — verdict paths', () => {
   })
 })
 
-describe('migration 0064 — account_profiles_timezone_iana_check', () => {
+describe('migration 0069 — account_profiles_timezone_iana_check', () => {
   it('rejects non-IANA timezone insert', async () => {
     const pool = getDbPool()
     const teacherId = await makeTeacher({
@@ -697,7 +697,7 @@ describe('migration 0064 — account_profiles_timezone_iana_check', () => {
   })
 })
 
-describe('migration 0062 — teacher_account_daily_digests state-machine CHECK', () => {
+describe('migration 0067 — teacher_account_daily_digests state-machine CHECK', () => {
   it('rejects email_sent=true without sent_at', async () => {
     const pool = getDbPool()
     const teacherId = await makeTeacher({ emailPrefix: 'check-no-sent-at' })
@@ -809,7 +809,7 @@ describe('migration 0062 — teacher_account_daily_digests state-machine CHECK',
   })
 })
 
-describe('migration 0063 — probe_runs CHECK widening for teacher-daily-digest', () => {
+describe('migration 0068 — probe_runs CHECK widening for teacher-daily-digest', () => {
   it('accepts probe_name=teacher-daily-digest + digest_sent', async () => {
     await getDbPool().query(
       `insert into probe_runs (probe_name, verdict_kind, stats)
