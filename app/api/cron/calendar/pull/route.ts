@@ -51,6 +51,17 @@ export async function POST(request: Request) {
             jobDurations.reduce((a, b) => a + b, 0) / jobDurations.length,
           )
         : 0
+    // BCS-DEF-7 Phase 2 (2026-05-19) — per-tick delta vs full-rewrite
+    // breakdown for operator dashboards. `delta_410_reissued` counts
+    // retries triggered by sync_token_expired (Google rotated the
+    // token under us; the runner null'd the column and the job
+    // re-enqueued for a fresh full-rewrite).
+    const pullsDelta = succeededOutcomes.filter((o) => o.mode === 'delta').length
+    const pullsFull = succeededOutcomes.filter((o) => o.mode === 'full').length
+    const delta410Reissued = result.outcomes.filter(
+      (o) =>
+        o.kind === 'retried' && o.reason.includes('sync_token_expired'),
+    ).length
     const summary = {
       total: result.outcomes.length,
       succeeded: succeededOutcomes.length,
@@ -62,6 +73,9 @@ export async function POST(request: Request) {
       intervals_pulled_total: intervalsPulledTotal,
       max_job_duration_ms: maxJobDurationMs,
       avg_job_duration_ms: avgJobDurationMs,
+      pulls_delta: pullsDelta,
+      pulls_full: pullsFull,
+      delta_410_reissued: delta410Reissued,
     }
     console.log(
       JSON.stringify({

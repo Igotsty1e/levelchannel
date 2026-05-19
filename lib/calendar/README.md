@@ -9,8 +9,8 @@
 Owns the full Google Calendar surface:
 - **OAuth** — `google/oauth.ts` + `google/state.ts` + `google/config.ts` (HMAC-signed CSRF state, scope `calendar.events` + `calendar.calendarlist.readonly`).
 - **Encrypted token storage** — `integrations.ts`. Access/refresh tokens + (since AUDIT-SEC-4 2026-05-17) channel verification token are bytea-encrypted under `CALENDAR_ENCRYPTION_KEY` (separate from `AUDIT_ENCRYPTION_KEY` for blast-radius). Rotation via `pgp_sym_decrypt_either`.
-- **Pull worker** — `pull-runner.ts` does ONE teacher × ONE calendar tick: fetch busy intervals, compute F8 epoch-aware self-echo, full-rewrite `teacher_external_busy_intervals` in one TX, encrypt summaries. `pull-worker.ts` drains the job queue, dispatches per-job, wires the post-pull conflict detector (BCS-F.1 wire-up gap closed PR #251 — `runConflictDetectionForTeacher` called inside `processOneJob()`).
-- **syncToken column** (BCS-DEF-7 Phase 1, 2026-05-18, PR #352, migration 0060) — `teacher_calendar_integrations.next_sync_token` is the additive scaffold for Google Calendar incremental pull. Currently NULL on all rows; the full-rewrite pull path is unchanged. Phase 2 (delta read path via syncToken) is plan-only (`docs/plans/bcs-def-7-synctoken-pull.md`, PR #337) and awaiting plan-paranoia per ENGINEERING_BACKLOG (PR #371).
+- **Pull worker** — `pull-runner.ts` does ONE teacher × ONE calendar tick: fetch busy intervals, compute F8 epoch-aware self-echo, EITHER full-rewrite (token=NULL / inactive teacher / first cycle) OR delta merge (delete cancelled events + upsert active events; persist new `next_sync_token` in same TX under optimistic `IS NOT DISTINCT FROM … AND epoch =` guard) per BCS-DEF-7 §2, in one TX, encrypt summaries. `pull-worker.ts` drains the job queue, dispatches per-job, wires the post-pull conflict detector (BCS-F.1 wire-up gap closed PR #251 — `runConflictDetectionForTeacher` called inside `processOneJob()`).
+- **syncToken incremental pull** (BCS-DEF-7) — Phase 1 (PR #352, migration 0060) added the additive `teacher_calendar_integrations.next_sync_token` column; Phase 2 wires the read path. Active teachers (≥1 booked slot in the last 14d OR pulled within 24h) with a stored token run delta mode (Google `events.list?syncToken=…&showDeleted=true`, per-row delete+upsert in one TX). Cold teachers or token=NULL → full-rewrite + capture fresh token on the final page. 410-Gone or 400 "Invalid sync token" → null-out under guard + transient retry → next tick runs full-rewrite. Plan: `docs/plans/bcs-def-7-synctoken-pull.md`.
 - **Push worker** — `push-worker.ts` mirrors our slot writes/cancels into Google. Best-effort with retry envelope.
 - **Channel renewer** — `channel-renewer.ts` `setupChannelForIntegration` + `renewExpiringChannels`. Both fail-closed at the top BEFORE any external Google `channels.watch` call if `CALENDAR_ENCRYPTION_KEY` is unset OR migration 0054 (`channel_token_enc` column) is missing — no orphan Google channels possible.
 - **Webhook** — `app/api/calendar/google/webhook/route.ts` (route, not in this folder) reads decrypt-aware via `coalesce(pgp_sym_decrypt_either(channel_token_enc, ...), channel_token)`.
@@ -24,7 +24,7 @@ Owns the full Google Calendar surface:
 |---|---|
 | `integrations.ts` | teacher_calendar_integrations CRUD; dual-write encrypted tokens |
 | `encryption.ts` | CALENDAR_ENCRYPTION_KEY resolver (separate from AUDIT_ENCRYPTION_KEY); 4 encrypted columns |
-| `pull-runner.ts` | F8 epoch-aware self-echo; full-rewrite busy intervals in one TX |
+| `pull-runner.ts` | F8 epoch-aware self-echo; full-rewrite OR delta-merge busy intervals in one TX (BCS-DEF-7) |
 | `pull-worker.ts` | drainer; dispatches per-job; wires conflict detector |
 | `push-worker.ts` | mirror our writes to Google |
 | `channel-renewer.ts` | `setupChannelForIntegration`, `renewExpiringChannels`; top-of-fn key+schema preflight |
@@ -50,7 +50,7 @@ Owns the full Google Calendar surface:
 3. **Channel-renewer fails-closed BEFORE Google watchChannel call** if key or migration-0054 column is missing. Otherwise we'd hold a live Google channel pointing at our webhook with no local row — webhook silent-drops on no-match.
 4. **F8 self-echo guard.** `is_own_event` set when `extendedProperties.private.lc_slot_id` matches a row with the SAME `integration_epoch`. Cross-epoch matches are treated as foreign (post-disconnect re-creation by Google webhook stays foreign).
 5. **Decrypt-aware webhook.** Reads `coalesce(pgp_sym_decrypt_either(channel_token_enc), channel_token)`. Phase-A legacy rows match via plaintext; Phase-B nulled rows match via encrypted. `pgp_sym_decrypt_either` returns NULL on wrong key (never throws), so the constant-time compare path is timing-oracle-safe.
-6. **Pull writes are full-rewrite per (teacher, calendar) in one TX.** Partial updates would create transient gaps where booking could succeed against stale busy-cache.
+6. **Pull writes are atomic per (teacher, calendar) — full-rewrite OR delta-merge — in one TX with the `next_sync_token` write under an optimistic `IS NOT DISTINCT FROM ... AND epoch =` guard.** Partial updates would create transient gaps where booking could succeed against stale busy-cache; cross-mode atomicity preserves the invariant. BCS-DEF-7 Phase 2 transitioned the default for active teachers from full-rewrite to delta merge; full-rewrite remains the bootstrap path (token=NULL, first cycle, post-reconnect) and the 410-Gone fallback path.
 7. **BCS-F.1 wire-up gap.** `runConflictDetectionForTeacher` is best-effort post-pull; failure logs + does NOT fail the pull job (the detector is observational, the pull is authoritative for busy-cache).
 
 ## Cross-references
@@ -58,7 +58,7 @@ Owns the full Google Calendar surface:
 - `ARCHITECTURE.md §Booking + calendar sync` — full BCS wave plan summary.
 - `docs/plans/booking-calendly-style.md` — main design doc.
 - `docs/plans/sec-4-channel-token-encryption.md` — channel_token at-rest encrypt.
-- `docs/plans/bcs-def-7-synctoken-pull.md` — incremental syncToken pull (Phase 1 column shipped; Phase 2 read path plan-only).
+- `docs/plans/bcs-def-7-synctoken-pull.md` — incremental syncToken pull (Phase 1 column + Phase 2 delta read path shipped 2026-05-19).
 - `SECURITY.md §At-rest encryption — Calendar key rotation` — 4-column rotation runbook.
 - `docs/critical-path.md §Calendar + scheduling integrity` — the 2 files in this module that are load-bearing.
 
