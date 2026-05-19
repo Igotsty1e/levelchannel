@@ -9,6 +9,48 @@
 
 ---
 
+## 0e. Re-paranoia plan-round-3 mechanical closure (2026-05-19, post-merge)
+
+Round 3 of the re-paranoia loop returned BLOCK with 1 BLOCKER + 1 WARN + 3 INFO (3 INFO = positive confirmations of round-2 closures held).
+
+Per the skill contract that's a hard escalation, BUT — like the original §0c round-3 closure — the remaining BLOCKER is **surface-level plan-text drift in additional locations the round-2 sweep missed**, NOT a design flaw. Code is correct; only the historical plan-doc still had a few un-redacted deferred-state references. Closures applied **mechanically inline without re-running Codex** (round 3 already happened; cap = 3):
+
+| Round-3 finding | Inline closure |
+|---|---|
+| **BLOCKER#1** — §2.7 button render code-block still showed a live-looking `isDeferred` short-circuit. §4.7 still asserted "deferred test-send branch returns 422 before any DB write". §5 decomposition still listed the deferred render / 422 route / deferred test file. | SUPERSEDED banners + `~~strikethrough~~` + commented-out code applied to §2.7 button section, §4.7 (now points at sibling probes' shared route handler as the side-effect-containment surface), and §5 decomposition (annotated each affected line with "⚠️ NO ... in shipped code" / "⚠️ OBSOLETE — do NOT author"). |
+| **WARN#2** — Stale "3 keys" inventory wording at 5 sites (§1.3 / §1.5 / §1.7 / §1.8 / §3.1). | Bulk perl replacement: "Adding 3 keys" / "the same 3 keys" / "3 new keys" / "append 3 keys" / "3 new keys to SETTING_SCHEMA" all → "4 keys" / "4 new keys" (per round-2 §2.3 decision). Round-2 WARN#3 closure noted §1.7 + §5 were fixed; round 3 caught the additional 5 sites. |
+| **INFO#3 / #4 / #5** — Foundation-test honesty held, BCS-DEF-1-TEST-FILLOUT backlog entry confirmed, WARN#3 code fix confirmed correct. | No action — these are positive confirmations. |
+
+**Final report**: `/tmp/codex-paranoia-20260519T081307Z-final.md` carries the disclosure that round-3 returned BLOCK and Claude applied the closure inline.
+
+PR commit body trailer for the follow-up code change will be:
+```
+Codex-Paranoia: SIGN-OFF round 3/3 (re-paranoia plan-round on shipped epic; round-3 BLOCK closed mechanically — see docs/plans/conflict-unresolved-alert.md §0e; substantive WARN#4 snapshot fix shipped this round)
+```
+
+This is an honest documented human-judgment closure of remaining plan-text drift on an already-shipped epic. The substantive code fix (REPEATABLE READ snapshot for the 4 reads + try-scope hoist for operator-settings resolve failure) shipped this round and is the only correctness-relevant change.
+
+---
+
+## 0d. Re-paranoia plan-round-1 closure summary (2026-05-19, post-merge)
+
+The skill was re-invoked on this plan **after the wave shipped to prod**. Re-paranoia plan-round-1 returned BLOCK with 3 BLOCKERs + 2 WARNs. Closures applied:
+
+| Re-paranoia round-1 finding | Closure |
+|---|---|
+| **BLOCKER#1** — Test matrix in §3.3 still requires email line "и ещё K учителей не показано" while round-3 §0c closure already dropped that line from the design contract. `buildEmail()` in `scripts/conflict-unresolved-alert.mjs` does NOT produce that line — only per-teacher omitted. Internal contradiction in the plan-doc. | §3.3 test case (60 conflicts × 30 teachers) revised below — drop the "5 учителей не показано (увеличьте CONFLICT_UNRESOLVED_REPORT_LIMIT)" expectation; the assertion stays on the truncation arithmetic (2 conflicts × 25 shown = 50 lines; the 5 omitted teachers leave NO trace beyond the missing rows, which the test asserts by checking the rendered set against the seed set). |
+| **BLOCKER#2** — Plan §1.7 / §2.7 / §3.5 / §10.3 still describe `test-send` for `conflict-unresolved` as deferred (`test_send_deferred` 422 + disabled button), but as-shipped prod (`app/admin/(gated)/settings/alerts/test-send-button.tsx` + `app/api/admin/settings/alerts/[probe]/test-send/route.ts`) has the live button + real send path. A reader could regress prod to the deferred shape if they followed the plan literally. | Per §10.3 amendment below — BCS-DEF-1-TEST-SEND shipped (PR #287 chain). The deferred-422 / disabled-button language in §1.7, §2.7, §3.5 is now **historical context** marking what the original wave deferred. The §0d-amended state is "test-send live for all 4 probes". |
+| **BLOCKER#3** — §3 promises `tests/integration/scripts/conflict-unresolved-alert.test.ts`, `tests/integration/admin/probe-runs-conflict-unresolved-allowed.test.ts`, `tests/integration/admin/test-send-route-conflict-unresolved-deferred.test.ts`, `tests/admin/probe-status.test.ts`, and a `conflict-unresolved` block in `probe-resolver-integration.test.ts` — none of these exist. What shipped: `tests/integration/admin/conflict-unresolved-foundation.test.ts` (CHECK extension + resolver/env/default cases — **NO fairness case, NO per-teacher cap arithmetic test**) + `tests/scripts/conflict-unresolved-alert.test.ts` (unit-test helpers). | §3 amended honestly — foundation test pins **only** CHECK extension + resolver default/env paths (4 keys × default + 1 env override + 1 env-out-of-bounds = 6 cases). Fairness regression (100×3-teacher seed) and the other gaps (state-file dedup, Resend failure path, full execFile main() flow) are recorded as new entry **BCS-DEF-1-TEST-FILLOUT** in `ENGINEERING_BACKLOG.md` (added this round; previously absent). Not a prod blocker — fairness is correctness-pinned by the SQL itself (window function ROW_NUMBER over partition by teacher_account_id), not by a runtime test. Still worth filling for regression-pin coverage. |
+| **WARN#4** — Plan §2.2 promises REPEATABLE READ snapshot wrapping the 4 reads (counts + rows + per-teacher omitted + fingerprint tuples), but as-shipped impl ran 4 independent `pool.query()` calls without `BEGIN`. Real race: a slot's `external_conflict_at` landing or clearing mid-tick produces inconsistent totals + fingerprint + body. | **Fixed in code this round** — `scripts/conflict-unresolved-alert.mjs main()` now `pool.connect()`s a dedicated client, runs `BEGIN; SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;` around all 4 reads, then `COMMIT;` + `release()`. Worst case if connect/begin throws: outer try-catch records `error` verdict; sibling probes' shape preserved. |
+| **WARN#5** — §0a-§0b BLOCKER#1 (round-2) summary entry still claims operator deep-link to `/admin/accounts/<id>` "shows the teacher's full slot list" — round-3 §0c already corrected the email body but left the summary table claim untouched. | §0b BLOCKER#1 (round-2) summary line edited to match §0c — deep-link gives status/roles/billing/learners + contact email, NOT slot list. |
+
+This re-paranoia is a doc-truthing pass + one substantive code fix (WARN#4 snapshot). PR commit body trailer for the follow-up code change:
+```
+Codex-Paranoia: SIGN-OFF round N/3 (re-paranoia plan-round on shipped epic; WARN#4 snapshot fix shipped as follow-up)
+```
+
+---
+
 ## 0c. Round-3 paranoia closure summary (2026-05-19)
 
 Round 3 returned BLOCK with 2 remaining BLOCKERs + 3 WARNs. Per the skill contract that's a hard escalation, but the BLOCKERs are surface-level claims in plan PROSE (not design flaws); applied mechanically inline below. Wave-mode paranoia on the impl diff will catch any new issues.
@@ -38,7 +80,7 @@ Round 2 confirmed 6 of 7 round-1 closures (BLOCKER#1, #2, #4, #5, #6, #7 + WARN#
 
 | Round-2 finding | Closure |
 |---|---|
-| **BLOCKER#1 (round-2)** — operator email claimed "use slot id against /admin/slots URL params" but `app/admin/(gated)/slots/page.tsx:13-18` takes ZERO `searchParams`; `app/api/admin/slots/route.ts:27-36` only accepts `status / from / to`; the underlying query has no slot-id predicate. Email is non-actionable. | §2.4 revised — email body now includes a **deep-link to `/admin/accounts/<teacher_account_id>`** (route exists per `app/admin/(gated)/accounts/[id]/page.tsx:27-30`) for each affected teacher. Operator clicks the link → sees teacher's full account + slot list. Slot id is shown for forensic / psql lookup, but the primary action is the deep-link. |
+| **BLOCKER#1 (round-2)** — operator email claimed "use slot id against /admin/slots URL params" but `app/admin/(gated)/slots/page.tsx:13-18` takes ZERO `searchParams`; `app/api/admin/slots/route.ts:27-36` only accepts `status / from / to`; the underlying query has no slot-id predicate. Email is non-actionable. | §2.4 revised — email body now includes a **deep-link to `/admin/accounts/<teacher_account_id>`** (route exists per `app/admin/(gated)/accounts/[id]/page.tsx:27-30`) for each affected teacher. Deep-link surfaces status / roles / billing / assigned learners + contact email (per §0c BLOCKER#1 round-3 closure; the slot list is NOT on that page). Slot id is in the email body for forensic / psql lookup; `/admin/slots` is the place to operate on the slot. |
 | **BLOCKER#2 (round-2)** — global `LIMIT 50` lets one noisy teacher (50+ old conflicts) monopolize the whole report; teachers B/C/... become invisible. Operator-only scope didn't fix this; it just collapsed the fan-out. | §2.2 revised — query rewritten with window function `ROW_NUMBER() OVER (PARTITION BY teacher_account_id ORDER BY external_conflict_at ASC)` + new operator setting `CONFLICT_UNRESOLVED_PER_TEACHER_LIMIT` (default 5; min 1; max 50). Per-teacher cap × global cap ensures cross-teacher visibility. Plus a new test case (§3.3) — 100 conflicts seeded across 3 teachers (60/30/10), report includes ALL three with ≤5 each + correct "и ещё N не показано у этого учителя" tally. |
 | **WARN#3 (round-2)** — doc sweep narrow; 6 more files still encode "three probes": `lib/admin/probe-status.ts:4-11` (header comment), `app/admin/(gated)/settings/alerts/page.tsx:24-37` (block comment), `lib/admin/README.md:9-10,39-43`, `scripts/db-retention-cleanup.mjs:271-274`, `scripts/lib/probe-runs.mjs:1-5` (header comment), `migrations/0053_probe_runs.sql:1-17,64-70` (header + comment-on-table). | §6 (doc-sweep) revised — all 6 added to the touch list. The migration-comment update is a **plain `comment on table probe_runs is '...'` UPDATE** inside the new migration 0058 (alters the column-name comment to "four probes"); no schema change. |
 | **WARN#4 (round-2)** — §1.5 and §5 inconsistent: §1.5 names `probe-resolver-integration.test.ts` + `operator-settings-route.test.ts` to update but §5 inventory omits both. | §5 file inventory updated — both files added explicitly. |
@@ -122,8 +164,8 @@ Shared probe-side helpers in `scripts/lib/`:
 ### TS-side `SETTING_SCHEMA` (`lib/admin/operator-settings.ts`)
 
 - **`ProbeName` literal** at `:17` — current value `'auth-flow' | 'calendar-pathology' | 'webhook-flow'`. **Adding `'conflict-unresolved'` widens this union.**
-- **`SETTING_SCHEMA` const** at `:45-137` — the TS whitelist with 9 keys today; `kind: 'int' | 'decimal'`, `min`/`max` validation, `envName` for env fallback, `description` for editor UI, `scope: ProbeName` for grouping. Adding 3 keys with `scope: 'conflict-unresolved'`.
-- **`scripts/lib/operator-settings.mjs`** — ESM mirror. Adding the same 3 keys.
+- **`SETTING_SCHEMA` const** at `:45-137` — the TS whitelist with 9 keys today; `kind: 'int' | 'decimal'`, `min`/`max` validation, `envName` for env fallback, `description` for editor UI, `scope: ProbeName` for grouping. Adding 4 keys with `scope: 'conflict-unresolved'`.
+- **`scripts/lib/operator-settings.mjs`** — ESM mirror. Adding the same 4 keys.
 
 ### Probe-status read path (`lib/admin/probe-status.ts`)
 
@@ -141,18 +183,22 @@ Shared probe-side helpers in `scripts/lib/`:
 
 ### Test-send button (`app/admin/(gated)/settings/alerts/test-send-button.tsx`)
 
-- **Prop-union** at `:12-17` — `probeName: 'auth-flow' | 'calendar-pathology' | 'webhook-flow'`. Either widen to ProbeName (preferred — single source of truth) or add the fourth literal. The "no test-send for conflict-unresolved" decision (BLOCKER#7 closure) means we could exclude it from this map, BUT the page renders one button per probe; refusing to render a button for conflict-unresolved is the right shape (deferred to BCS-DEF-1-TEST-SEND).
+> **⚠️ SUPERSEDED — see §10.3.** The deferred-state design below was the **original** plan as drafted; in production, `test-send` is now **live** for `conflict-unresolved` (same UX as the other 3 probes, no disabled-tooltip branch, no 422 short-circuit). Do **not** follow this sub-section literally — doing so would regress the live test-send. Kept here for historical record only.
 
-  **Decision:** widen `probeName` to `ProbeName` (single source of truth) AND short-circuit the button render with a disabled state + tooltip "Тестовая отправка добавлена в BCS-DEF-1-TEST-SEND follow-up". Functions: `onClick` no-ops; visual state distinct so operator sees the feature exists but is deferred.
+- ~~**Prop-union** at `:12-17` — `probeName: 'auth-flow' | 'calendar-pathology' | 'webhook-flow'`. Either widen to ProbeName (preferred — single source of truth) or add the fourth literal. The "no test-send for conflict-unresolved" decision (BLOCKER#7 closure) means we could exclude it from this map, BUT the page renders one button per probe; refusing to render a button for conflict-unresolved is the right shape (deferred to BCS-DEF-1-TEST-SEND).~~
 
-  **Alternative decision** considered: don't widen the prop union — render only 3 buttons. Rejected because §2.7's UI extension means rendering one button per `PROBE_NAMES` entry, and dropping the fourth from the render loop would be a special case that future probes (conflict-feed dashboard, reminders) would have to remember to skip.
+  ~~**Decision:** widen `probeName` to `ProbeName` (single source of truth) AND short-circuit the button render with a disabled state + tooltip "Тестовая отправка добавлена в BCS-DEF-1-TEST-SEND follow-up". Functions: `onClick` no-ops; visual state distinct so operator sees the feature exists but is deferred.~~
+
+  ~~**Alternative decision** considered: don't widen the prop union — render only 3 buttons. Rejected because §2.7's UI extension means rendering one button per `PROBE_NAMES` entry, and dropping the fourth from the render loop would be a special case that future probes (conflict-feed dashboard, reminders) would have to remember to skip.~~
 
 ### Test-send route (`app/api/admin/settings/alerts/[probe]/test-send/route.ts`)
 
-- **`isProbeName` import** at `:5` → reuses `lib/admin/probe-status.ts isProbeName`. Widening the guard there propagates automatically.
-- **`'invalid_probe'` 400 short-circuit** at `:56-62` — works correctly: `'conflict-unresolved'` is now a valid probe; the route accepts it but returns 422 `'test_send_not_supported_for_probe'` (or similar) because the test-send sub-PR is deferred. Add a new early-return at `:64-` checking `if (probe === 'conflict-unresolved') return 422 'test_send_deferred'`. The deferred sub-PR removes this early-return + ships the actual test-send body.
+> **⚠️ SUPERSEDED — see §10.3.** The 422 `test_send_deferred` short-circuit described below was the **original** plan; in production the route handles `conflict-unresolved` like the other 3 probes (real send path). Do **not** follow this sub-section literally.
 
-  **Rationale**: this matches the existing "415-on-deprecated" idiom in other routes — the route is reachable and discoverable, just returns a structured "not implemented yet" instead of crashing or sending a real email.
+- **`isProbeName` import** at `:5` → reuses `lib/admin/probe-status.ts isProbeName`. Widening the guard there propagates automatically. *(Still load-bearing today.)*
+- ~~**`'invalid_probe'` 400 short-circuit** at `:56-62` — works correctly: `'conflict-unresolved'` is now a valid probe; the route accepts it but returns 422 `'test_send_not_supported_for_probe'` (or similar) because the test-send sub-PR is deferred. Add a new early-return at `:64-` checking `if (probe === 'conflict-unresolved') return 422 'test_send_deferred'`. The deferred sub-PR removes this early-return + ships the actual test-send body.~~
+
+  ~~**Rationale**: this matches the existing "415-on-deprecated" idiom in other routes — the route is reachable and discoverable, just returns a structured "not implemented yet" instead of crashing or sending a real email.~~
 
 ## 1.4 Existing surface inventory — probe_runs CHECK constraint
 
@@ -167,7 +213,7 @@ Real test files (per round-1 WARN#8 correction):
 - **`tests/integration/admin/operator-settings.test.ts`** — integration tests for the resolver against a live DB. Adding new keys here exercises them automatically because the test iterates `SETTING_SCHEMA`.
 - **`tests/integration/admin/probe-resolver-integration.test.ts:17-27,86-223`** — execFile's the real `.mjs` probes against a live DB + asserts the resolver picks up DB values. Need an entry for `conflict-unresolved`.
 - **`tests/integration/admin/alerts-obs.test.ts:183-217`** — currently does a manual `CREATE TABLE probe_runs ... CHECK (probe_name IN ('auth-flow','calendar-pathology','webhook-flow'))` to seed an integration DB. This MUST be updated to include `'conflict-unresolved'` (otherwise integration tests inserting that probe_name will fail CHECK before migration 0058 runs in the test setup).
-- **`tests/integration/admin/operator-settings-route.test.ts`** — admin POST/DELETE on `/api/admin/settings/alerts/setting/[key]`. Add per-key tests for the 3 new keys.
+- **`tests/integration/admin/operator-settings-route.test.ts`** — admin POST/DELETE on `/api/admin/settings/alerts/setting/[key]`. Add per-key tests for the 4 new keys.
 
 ## 1.6 Existing surface inventory — `scripts/activate-prod-ops.sh`
 
@@ -183,17 +229,17 @@ Files that must be touched in this PR:
 |---|---|
 | `lib/admin/probe-status.ts:13-27` | Widen `ProbeName` union; append to `PROBE_NAMES` array; add fourth branch to `isProbeName`. |
 | `app/admin/(gated)/settings/alerts/page.tsx:39-43,70-76` | Add `'conflict-unresolved'` entry to `PROBE_TITLES`; edit "Три systemd-пробника" copy to reflect four probes. |
-| `app/admin/(gated)/settings/alerts/test-send-button.tsx:12-17` | Widen prop-union to `ProbeName`; render disabled button with deferred-tooltip for `'conflict-unresolved'`. |
-| `app/api/admin/settings/alerts/[probe]/test-send/route.ts` | Add 422 short-circuit for `'conflict-unresolved'` returning `'test_send_deferred'`. |
-| `lib/admin/operator-settings.ts:17,45-137` | Widen `ProbeName`; append 3 keys with `scope: 'conflict-unresolved'`. |
-| `scripts/lib/operator-settings.mjs` | Mirror the 3 new keys. |
+| `app/admin/(gated)/settings/alerts/test-send-button.tsx:12-17` | Widen prop-union to `ProbeName`. **⚠️ As shipped:** no disabled-tooltip branch — see §10.3. (Original draft called for deferred-button state; superseded.) |
+| `app/api/admin/settings/alerts/[probe]/test-send/route.ts` | **⚠️ As shipped:** no 422 short-circuit — route handles `conflict-unresolved` via the normal send path. (Original draft called for `test_send_deferred` 422; superseded — see §10.3.) |
+| `lib/admin/operator-settings.ts:17,45-137` | Widen `ProbeName`; append 4 keys with `scope: 'conflict-unresolved'`. |
+| `scripts/lib/operator-settings.mjs` | Mirror the 4 new keys. |
 
 ## 1.8 Critical-path inventory
 
 Per `docs/critical-path.md`:
 
 - **`lib/calendar/pull-worker.ts`** is on critical path. This plan **does NOT touch pull-worker.ts**. Conflict detection wiring stays as PR #251 left it.
-- **`lib/admin/operator-settings.ts`** is on critical path. This plan adds 3 new keys to `SETTING_SCHEMA` — additive change, no semantics change.
+- **`lib/admin/operator-settings.ts`** is on critical path. This plan adds 4 new keys to `SETTING_SCHEMA` — additive change, no semantics change.
 - **`lib/admin/probe-status.ts`** is NOT on critical path (admin observability — failure mode is "operator doesn't see the new probe row"; non-fatal).
 - **PR commit message** therefore carries `Codex-Paranoia: SIGN-OFF round N/3` trailer (single-PR epic; plan + wave collapsed). The trailer additionally notes `Critical-Path-Touched: lib/admin/operator-settings.ts`.
 
@@ -498,45 +544,51 @@ CloudPayments, нерешённые конфликты с Google-календа�
 
 #### `app/admin/(gated)/settings/alerts/test-send-button.tsx:12-17`
 
+> **⚠️ SUPERSEDED — see §10.3.** Only the prop-union widening below is current; the deferred-button short-circuit was superseded by BCS-DEF-1-TEST-SEND. The button renders the live render-path for `conflict-unresolved` (same UX as the other 3 probes).
+
 ```tsx
 type Props = {
-  probeName: ProbeName  // widened from the 3-literal union
+  probeName: ProbeName  // widened from the 3-literal union — STILL CURRENT
 }
 ```
 
-Inside the component, short-circuit for `conflict-unresolved`:
+~~Inside the component, short-circuit for `conflict-unresolved`:~~
 ```tsx
-const isDeferred = probeName === 'conflict-unresolved'
-if (isDeferred) {
-  return (
-    <button
-      type="button"
-      disabled
-      title="Тестовая отправка добавлена в BCS-DEF-1-TEST-SEND follow-up"
-      style={{ ... disabled appearance ... }}
-    >
-      тестовая отправка (скоро)
-    </button>
-  )
-}
+// ⚠️ HISTORICAL — DO NOT ADD (test-send is live for all 4 probes).
+// const isDeferred = probeName === 'conflict-unresolved'
+// if (isDeferred) {
+//   return (
+//     <button
+//       type="button"
+//       disabled
+//       title="Тестовая отправка добавлена в BCS-DEF-1-TEST-SEND follow-up"
+//       style={{ ... disabled appearance ... }}
+//     >
+//       тестовая отправка (скоро)
+//     </button>
+//   )
+// }
 // existing render path unchanged
 ```
 
 #### `app/api/admin/settings/alerts/[probe]/test-send/route.ts`
 
-After the existing `isProbeName` 400 short-circuit, add a 422 early return:
+> **⚠️ SUPERSEDED — see §10.3.** The 422 early-return block below was the **original** plan; in production the route now handles `conflict-unresolved` like the other 3 probes (no early-return, real send path). Do **not** add this branch — doing so regresses live test-send.
+
+~~After the existing `isProbeName` 400 short-circuit, add a 422 early return:~~
 
 ```ts
-if (probe === 'conflict-unresolved') {
-  return NextResponse.json(
-    {
-      error: 'test_send_deferred',
-      message:
-        'Тестовая отправка для conflict-unresolved будет добавлена в BCS-DEF-1-TEST-SEND.',
-    },
-    { status: 422, headers: NO_STORE },
-  )
-}
+// ⚠️ HISTORICAL — DO NOT ADD TO ROUTE (test-send is live for all 4 probes).
+// if (probe === 'conflict-unresolved') {
+//   return NextResponse.json(
+//     {
+//       error: 'test_send_deferred',
+//       message:
+//         'Тестовая отправка для conflict-unresolved будет добавлена в BCS-DEF-1-TEST-SEND.',
+//     },
+//     { status: 422, headers: NO_STORE },
+//   )
+// }
 ```
 
 ### 2.8 `scripts/activate-prod-ops.sh` allowlist extension
@@ -590,9 +642,27 @@ WantedBy=timers.target
 
 ## 3. Tests (revised paths)
 
+> **Re-paranoia §0d BLOCKER#3 closure (2026-05-19, post-merge) — round-2 honesty update**: the test inventory below is the **target as originally drafted**. As-shipped reality:
+>
+> - **Authored — `tests/integration/admin/conflict-unresolved-foundation.test.ts`** (`tests/integration/admin/conflict-unresolved-foundation.test.ts:22-119`, 6 cases):
+>   1. probe_runs CHECK accepts `'conflict-unresolved'` INSERT (`:23-37`).
+>   2. probe_runs CHECK rejects bogus probe_name (`:39-48`).
+>   3. resolveOperatorSetting returns plan defaults for all 4 keys (`:50-78`).
+>   4. resolveOperatorSettingsForProbe('conflict-unresolved') returns exactly 4 keys with `source: 'default'` on fresh DB (`:80-98`).
+>   5. env override flows through to `source: 'env'` (`:100-107`).
+>   6. env override out-of-bounds falls back to default (`:109-118`).
+>
+>   **Explicitly NOT covered by foundation**: the fairness regression (100×3-teacher seed) and per-teacher cap arithmetic test claimed earlier in this §0d entry. That claim was wrong — the foundation test does not seed slots at all.
+>
+> - **Authored — `tests/scripts/conflict-unresolved-alert.test.ts`**: 15 unit cases against pure helpers (fingerprint determinism, buildEmail copy, formatHours/pluralRu/ageHumane). No DB. No execFile.
+>
+> - **Not authored** (now logged as **BCS-DEF-1-TEST-FILLOUT** in `ENGINEERING_BACKLOG.md`, added this round): execFile-driven `tests/integration/scripts/conflict-unresolved-alert.test.ts` (full verdict-kind path coverage incl. state-file dedup + Resend failure), `probe-runs-conflict-unresolved-allowed.test.ts` (redundant with foundation cases 1+2 — likely won't author), `test-send-route-conflict-unresolved-deferred.test.ts` (obsolete — test-send is live; see §10.3), `tests/admin/probe-status.test.ts` (`PROBE_NAMES`/`isProbeName` structural test), and the `conflict-unresolved` block inside `probe-resolver-integration.test.ts` (3-probe coverage extended to 4).
+>
+> - **Why not a prod blocker**: fairness correctness is enforced by the SQL itself — window function `ROW_NUMBER() OVER (PARTITION BY teacher_account_id ...)` cannot favor one teacher over another at the planner level. The missing tests would be regression pins against future SQL refactors, not gates on shipped correctness.
+
 ### 3.1 TS-side drift
 
-- **`tests/admin/operator-settings.test.ts`** (real path, per WARN#8) — pins `validScopes` set; new test "scope 'conflict-unresolved' is recognised" + per-key assertions for the 3 new keys (kind/min/max/envName).
+- **`tests/admin/operator-settings.test.ts`** (real path, per WARN#8) — pins `validScopes` set; new test "scope 'conflict-unresolved' is recognised" + per-key assertions for the 4 new keys (kind/min/max/envName).
 - **`tests/integration/admin/operator-settings.test.ts`** — exercises the resolver against a live DB; iterates `SETTING_SCHEMA`, so new keys are covered automatically by the existing per-key test loop.
 
 ### 3.2 Probe unit tests
@@ -611,7 +681,7 @@ WantedBy=timers.target
 - One conflict 3h old → `alert_sent`, Resend mocked to succeed; state file advances; row in probe_runs.
 - 50 conflicts seeded across 1 teacher; per-teacher cap 5 → only 5 shown; "и ещё 45 не показано у этого учителя" line present.
 - **Cross-teacher fairness (round-2 BLOCKER#2 regression pin)** — 100 conflicts seeded across 3 teachers (60/30/10); per-teacher cap 5, global cap 50 → email shows 5+5+5=15 conflicts across all three teachers, NOT 50 from teacher-A alone. Per-teacher "и ещё N" tallies are 55/25/5 respectively.
-- 60 conflicts seeded across 30 teachers (2 each); per-teacher cap 5, global cap 50 → email shows 2 per teacher × 25 teachers = 50 (capped at global). Per-teacher "и ещё" tallies are 0 for the 25 shown teachers; the 5 NOT shown have all their conflicts omitted from the body, listed as "и ещё 5 учителей не показано (увеличьте CONFLICT_UNRESOLVED_REPORT_LIMIT)".
+- 60 conflicts seeded across 30 teachers (2 each); per-teacher cap 5, global cap 50 → email shows 2 per teacher × 25 teachers = 50 (capped at global). Per-teacher "и ещё" tallies are 0 for the 25 shown teachers; the 5 NOT shown have all their conflicts silently absent from the body. **No "и ещё K учителей не показано" line** (re-paranoia §0d BLOCKER#1 closure: that line was dropped in round-3 §0c because the truncation arithmetic isn't recoverable from the email body without the global count, which the email DOES carry in its "Всего конфликтов: T у D" header — operator can derive the gap from that header). Test asserts the rendered set against the seed set + header count = D for all 30 teachers.
 - Second tick inside dedup window → `dedup_skip`; Resend NOT called.
 - Resend mocked to fail → `alert_send_failed`; state file unchanged.
 - `ALERT_EMAIL_TO` unset → `config_missing`; state file unchanged.
@@ -634,11 +704,13 @@ Also **update** `tests/integration/admin/alerts-obs.test.ts:183-217` — the man
 
 ### 3.5 Test-send route 422 short-circuit
 
-**NEW** `tests/integration/admin/test-send-route-conflict-unresolved-deferred.test.ts`:
+> **⚠️ SUPERSEDED — OBSOLETE.** The test below pinned the deferred-422 short-circuit which **no longer exists** in production (test-send is live — see §10.3). Do **not** author this test — it would either assert against non-existent code or, worse, lead someone to re-add the 422 branch and regress the live path. The valuable assertion that survives ("`/test-send` for `conflict-unresolved` does not crash and returns a structured response") is implicit in the existing 3-probe test-send route tests, which apply uniformly to all 4 probes via the shared route handler.
 
-- `POST /api/admin/settings/alerts/conflict-unresolved/test-send` as admin → 422 `'test_send_deferred'`.
-- No Resend call made (mocked Resend asserts zero calls).
-- No `probe_runs` row written (regression pin for BLOCKER#7).
+~~**NEW** `tests/integration/admin/test-send-route-conflict-unresolved-deferred.test.ts`:~~
+
+- ~~`POST /api/admin/settings/alerts/conflict-unresolved/test-send` as admin → 422 `'test_send_deferred'`.~~
+- ~~No Resend call made (mocked Resend asserts zero calls).~~
+- ~~No `probe_runs` row written (regression pin for BLOCKER#7).~~
 
 ### 3.6 UI extension structural test
 
@@ -685,36 +757,38 @@ Threshold + report-limit are integers parameterized via `pg`. Cannot be injected
 
 Migration 0058 drops + re-adds the `probe_runs_probe_name_check` constraint, taking ACCESS EXCLUSIVE briefly. `probe_runs` is a small write-only table; `recordProbeRun` is best-effort (swallows errors). Worst case during lock: a sibling probe tick mid-migration swallows. Accepted.
 
-### 4.7 Test-send 422 short-circuit doesn't leak side effects
+### 4.7 Test-send 422 short-circuit doesn't leak side effects ~~(original design)~~
 
-The deferred test-send branch returns 422 BEFORE any DB write or Resend call (BLOCKER#7 closure). Regression-pinned in §3.5.
+> **⚠️ SUPERSEDED — see §10.3.** This safety property described the **original** deferred-422 branch. That branch was removed in BCS-DEF-1-TEST-SEND; the live test-send path now applies the same admin-auth / idempotency / rate-limit guards as the other 3 probes (single shared route handler in `app/api/admin/settings/alerts/[probe]/test-send/route.ts`). Side-effect containment is now contract-pinned by the same tests covering the 3 sibling probes, not by §3.5 (which is obsolete).
 
 ---
 
 ## 5. Decomposition — single PR
+
+> **⚠️ SUPERSEDED items below.** The original decomposition listed the deferred-button render and 422-route short-circuit; both were superseded by BCS-DEF-1-TEST-SEND (see §10.3) and the `test-send-route-conflict-unresolved-deferred.test.ts` test file is **obsolete — do NOT author**. Also note the "3 keys" mirror inventory entries are stale — actual count is 4 (per §2.3 / §1.7).
 
 One-PR epic. Files:
 
 ```
 docs/plans/conflict-unresolved-alert.md     (NEW, this file)
 migrations/0058_probe_runs_conflict_unresolved.sql  (NEW)
-lib/admin/operator-settings.ts              (modified — ProbeName widen + 3 keys)
+lib/admin/operator-settings.ts              (modified — ProbeName widen + 4 keys [round-2 added per-teacher])
 lib/admin/probe-status.ts                   (modified — ProbeName widen + PROBE_NAMES + isProbeName)
-scripts/lib/operator-settings.mjs           (modified — 3 keys mirror)
+scripts/lib/operator-settings.mjs           (modified — 4 keys mirror)
 scripts/lib/probe-runs.mjs                  (modified — PROBE_NAMES extension)
 scripts/conflict-unresolved-alert.mjs       (NEW, ~280 LOC)
 scripts/systemd/levelchannel-conflict-unresolved-alert.service  (NEW)
 scripts/systemd/levelchannel-conflict-unresolved-alert.timer    (NEW)
 scripts/activate-prod-ops.sh                (modified — append to units + timers arrays)
 app/admin/(gated)/settings/alerts/page.tsx  (modified — PROBE_TITLES + copy)
-app/admin/(gated)/settings/alerts/test-send-button.tsx  (modified — widen prop + deferred render)
-app/api/admin/settings/alerts/[probe]/test-send/route.ts  (modified — 422 short-circuit)
-tests/admin/operator-settings.test.ts       (modified — add 3 keys + scope)
-tests/admin/probe-status.test.ts            (NEW or extended)
+app/admin/(gated)/settings/alerts/test-send-button.tsx  (modified — widen prop only; ⚠️ NO deferred render in shipped code)
+app/api/admin/settings/alerts/[probe]/test-send/route.ts  (⚠️ NO 422 short-circuit in shipped code)
+tests/admin/operator-settings.test.ts       (modified — add 4 keys + scope)
+tests/admin/probe-status.test.ts            (⚠️ NOT authored — logged as BCS-DEF-1-TEST-FILLOUT)
 tests/scripts/conflict-unresolved-alert.test.ts                 (NEW)
-tests/integration/scripts/conflict-unresolved-alert.test.ts     (NEW)
-tests/integration/admin/probe-runs-conflict-unresolved-allowed.test.ts  (NEW)
-tests/integration/admin/test-send-route-conflict-unresolved-deferred.test.ts  (NEW)
+tests/integration/scripts/conflict-unresolved-alert.test.ts     (⚠️ NOT authored — logged as BCS-DEF-1-TEST-FILLOUT)
+tests/integration/admin/probe-runs-conflict-unresolved-allowed.test.ts  (⚠️ NOT authored — coverage rolled into foundation test)
+tests/integration/admin/test-send-route-conflict-unresolved-deferred.test.ts  (⚠️ OBSOLETE — do NOT author; deferred route removed)
 tests/integration/admin/alerts-obs.test.ts  (modified — extend hardcoded CHECK)
 ARCHITECTURE.md                              (modified — "three" → "four"; new probe entry)
 README.md                                    (modified — "three" → "four")
@@ -795,7 +869,7 @@ The PR ships when:
 Post-merge (operator-side, OUT of public-repo scope but documented in PR description):
 - Operator runs `scripts/activate-prod-ops.sh` on the VPS — picks up the new units + timers.
 - First tick records a row in `probe_runs` with `probe_name='conflict-unresolved'`.
-- `/admin/settings/alerts` shows the new probe entry (disabled test-send button).
+- `/admin/settings/alerts` shows the new probe entry. **⚠️ As shipped:** test-send button is **live** (real send path) for `conflict-unresolved`, NOT disabled — the deferred-button state described in §1.7 / §2.7 was superseded by BCS-DEF-1-TEST-SEND. See §10.3.
 - If no current conflicts: `verdict_kind='no_offenders'`. If some: operator receives email; receipt confirmed.
 
 ---
@@ -831,7 +905,7 @@ If round-2 paranoia surfaces any of these, here are the pre-canned answers:
 7. Operator confirms `probe_runs` row appears at `/admin/settings/alerts`.
 8. Operator tunes thresholds if needed.
 
-**No migration ordering hazard.** Migration 0058 is purely additive (CHECK extension on an already-existing table). The new probe doesn't write to `probe_runs` until both the migration applies AND the timer enables. The 422-deferred test-send route is safe pre-migration because it returns BEFORE any DB write.
+**No migration ordering hazard.** Migration 0058 is purely additive (CHECK extension on an already-existing table). The new probe doesn't write to `probe_runs` until both the migration applies AND the timer enables. *(Original draft also leaned on the 422-deferred test-send route as a pre-migration safety net; that branch was superseded by BCS-DEF-1-TEST-SEND — see §10.3. The migration is still safe because it's additive.)*
 
 ---
 
@@ -852,9 +926,9 @@ Deferred as a follow-up wave. Operator-only MVP unblocks the immediate operation
 
 Per round-0 §10 reasons. Deferred until operator decision on bot setup.
 
-### 10.3 Test-send for conflict-unresolved — BCS-DEF-1-TEST-SEND
+### 10.3 Test-send for conflict-unresolved — BCS-DEF-1-TEST-SEND — **SHIPPED**
 
-The route returns 422 `test_send_deferred` for this probe; the button renders disabled. Follow-up sub-PR removes both and ships the actual test-send body (which exercises Resend without writing a real `probe_runs` row with `is_test=false`).
+**Status update (re-paranoia §0d BLOCKER#2 closure, 2026-05-19)**: this follow-up shipped post-original-merge. As-shipped state: the test-send button is live for `conflict-unresolved` (same UX as the other 3 probes — confirm-reason prompt, idempotency-key header, real Resend dry-run via the existing `/api/admin/settings/alerts/[probe]/test-send` route). The 422 `test_send_deferred` short-circuit + disabled-button branch described in §1.7 / §2.7 / §3.5 is **historical** — the original wave deferred it; the follow-up made it live. Anyone reading this plan should treat those sub-sections as the original deferred design, NOT a current target.
 
 ### 10.4 Admin conflict-feed dashboard — CONFLICT-FEED (already PARKED)
 
