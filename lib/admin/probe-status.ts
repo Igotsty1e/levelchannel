@@ -17,14 +17,14 @@ export type ProbeName =
   | 'auth-flow'
   | 'calendar-pathology'
   | 'webhook-flow'
-  // BCS-DEF-1 Phase 1 (2026-05-19) — `'conflict-unresolved'` is now a
-  // valid value of the ProbeName union (used by SETTING_SCHEMA scope
-  // entries in `lib/admin/operator-settings.ts`). The probe is NOT yet
-  // shipped — Phase 2 lands `scripts/conflict-unresolved-alert.mjs` +
-  // the systemd unit + extends `PROBE_NAMES` below + the admin alerts
-  // page's PROBE_TITLES. Until then, `isProbeName('conflict-unresolved')`
-  // returns true (so the type union holds), but the array iteration
-  // (which drives the admin alerts UI render loop) excludes it.
+  // BCS-DEF-1 (2026-05-19) — `'conflict-unresolved'` is a valid value
+  // of the ProbeName union. The probe script
+  // (`scripts/conflict-unresolved-alert.mjs`), its systemd unit, the
+  // PROBE_NAMES extension below, and the admin alerts page's
+  // PROBE_TITLES all shipped in subsequent sub-PRs of the BCS-DEF-1
+  // epic. `isProbeName('conflict-unresolved')` returns true and the
+  // /admin/settings/alerts UI iterates this probe alongside the other
+  // three.
   | 'conflict-unresolved'
 
 export const PROBE_NAMES: readonly ProbeName[] = [
