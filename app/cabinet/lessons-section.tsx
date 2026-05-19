@@ -4,9 +4,6 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
-import { BookConfirmModal } from '@/components/calendar/BookConfirmModal'
-import { SlotCalendar } from '@/components/calendar/SlotCalendar'
-import type { CalendarRow } from '@/lib/calendar/view-model'
 import type { LessonSlot } from '@/lib/scheduling/slots'
 
 // Wave 18 — billing-preview banner inside BookConfirmModal needs to
