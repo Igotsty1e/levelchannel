@@ -26,8 +26,26 @@ import { NO_STORE } from '@/lib/api/http-headers'
 import { requireAdminRole } from '@/lib/auth/guards'
 import { isUndefinedTableError } from '@/lib/db/errors'
 import { getDbPool } from '@/lib/db/pool'
-import { appendEventSql } from '@/lib/scheduling/slots/internal'
 import { withIdempotency } from '@/lib/security/idempotency'
+
+// Mirror of `appendEventSql` from `lib/scheduling/slots/internal` —
+// the internal module is sibling-only per the module-boundaries
+// guardrail, so this admin route reconstructs the event shape inline
+// (~6 lines). The shape MUST stay aligned with the canonical helper
+// since `lesson_slots.events` is read by `/admin/slots/[id]` history.
+function buildSlotEventJson(
+  eventType: string,
+  actor: string | null,
+  payload?: Record<string, unknown>,
+): string {
+  const event = {
+    type: eventType,
+    at: new Date().toISOString(),
+    actor,
+    ...(payload ? { payload } : {}),
+  }
+  return JSON.stringify([event])
+}
 import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
@@ -155,7 +173,7 @@ async function runDismissConflict(opts: {
     // Atomic UPDATE — the WHERE is the security boundary. Two
     // operators racing each see their own idempotency-cache row,
     // but only ONE UPDATE matches the non-null stamp.
-    const event = appendEventSql('slot.conflict_dismissed', 'admin', {
+    const event = buildSlotEventJson('slot.conflict_dismissed', 'admin', {
       operatorAccountId: opts.operatorAccountId,
       reason: opts.reason,
     })
