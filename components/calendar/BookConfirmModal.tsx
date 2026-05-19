@@ -8,7 +8,7 @@ import type { CalendarRow } from '@/lib/calendar/view-model'
 // calendar. Reuses the existing POST /api/slots/[id]/book endpoint;
 // the modal only renders details + a Book button when the slot kind
 // is `open`. Other kinds (booked-self / booked-other / past-redacted)
-// render read-only details with a hint pointing to «Мои уроки» for
+// render read-only details with a hint pointing to «Мои занятия» for
 // cancellation (Codex 2026-05-08 Wave B design: NO cancel surface
 // inside the calendar — keeps 24h-rule ownership in one place).
 //

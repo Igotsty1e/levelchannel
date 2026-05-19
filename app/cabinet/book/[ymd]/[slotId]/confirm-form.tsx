@@ -38,7 +38,7 @@ export function ConfirmForm({
         body: JSON.stringify({ agenda: agenda || undefined }),
       })
       if (res.ok) {
-        // Success — go to cabinet, "Мои уроки" surfaces the new booking.
+        // Success — go to cabinet, "Мои занятия" surfaces the new booking.
         router.push('/cabinet?booked=1')
         return
       }

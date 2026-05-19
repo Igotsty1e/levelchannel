@@ -71,7 +71,7 @@ export default async function CabinetPage() {
   // A user is rendered as a learner if they hold the explicit student
   // role OR they have no role at all (the default-learner contract).
   // Wave 14 #2 — a teacher-only account no longer sees learner-flow
-  // blocks (Мои уроки / Записаться / Мои пакеты / К оплате) which
+  // blocks (Мои занятия / Записаться / Мои пакеты / К оплате) which
   // had nothing to do with their workflow.
   const isLearner = isStudent || roles.length === 0
 
