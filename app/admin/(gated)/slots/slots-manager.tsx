@@ -35,6 +35,57 @@ function fmt(iso: string): string {
   })
 }
 
+// BCS-DEF-1-COPY-STYLE-SWEEP item 1 (2026-05-19) — operator forensic
+// helper. The conflict-unresolved alert email (scripts/conflict-
+// unresolved-alert.mjs) lists slot UUIDs in its body so the on-call
+// operator can match a probe finding to a row on this page. Without
+// an ID column they had to psql their way in. We surface a short
+// prefix (visually scannable against the email's `слот <uuid>` line)
+// plus a copy button that puts the full UUID on the clipboard for
+// `psql ... where id = '<paste>'` follow-ups.
+function shortId(id: string): string {
+  // First UUID segment (8 hex chars before the first dash). Matches
+  // how the email body opens the line and keeps the column narrow.
+  const dash = id.indexOf('-')
+  return dash > 0 ? id.slice(0, dash) : id.slice(0, 8)
+}
+
+function CopySlotIdButton({ id }: { id: string }) {
+  const [copied, setCopied] = useState(false)
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(id)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // Clipboard API can fail in non-secure contexts or when the
+      // operator denied permission. Silently no-op: the full UUID
+      // is still in the `title` tooltip on the <code>, so the
+      // operator can select-and-copy manually.
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      aria-label="Скопировать ID слота"
+      title="Скопировать ID слота"
+      style={{
+        padding: '2px 6px',
+        background: 'transparent',
+        color: 'var(--secondary)',
+        border: '1px solid var(--border)',
+        borderRadius: 4,
+        fontSize: 10,
+        cursor: 'pointer',
+        lineHeight: 1,
+      }}
+    >
+      {copied ? 'OK' : 'copy'}
+    </button>
+  )
+}
+
 function statusLabel(s: string): string {
   switch (s) {
     case 'open':
@@ -718,6 +769,7 @@ function SlotList({
                   textAlign: 'left',
                 }}
               >
+                <th style={{ padding: '8px 10px' }}>ID</th>
                 <th style={{ padding: '8px 10px' }}>Когда</th>
                 <th style={{ padding: '8px 10px' }}>Учитель</th>
                 <th style={{ padding: '8px 10px' }}>Учащийся</th>
@@ -729,6 +781,34 @@ function SlotList({
             <tbody>
               {filtered.map((s) => (
                 <tr key={s.id} style={{ borderTop: '1px solid var(--border)' }}>
+                  <td
+                    style={{
+                      padding: '8px 10px',
+                      whiteSpace: 'nowrap',
+                      color: 'var(--secondary)',
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      <code
+                        data-testid="slot-id-short"
+                        title={s.id}
+                        style={{
+                          fontFamily:
+                            'ui-monospace, SFMono-Regular, Menlo, monospace',
+                          fontSize: 11,
+                        }}
+                      >
+                        {shortId(s.id)}
+                      </code>
+                      <CopySlotIdButton id={s.id} />
+                    </span>
+                  </td>
                   <td style={{ padding: '8px 10px' }}>{fmt(s.startAt)}</td>
                   <td style={{ padding: '8px 10px', color: 'var(--secondary)' }}>
                     {s.teacherEmail ?? '—'}
