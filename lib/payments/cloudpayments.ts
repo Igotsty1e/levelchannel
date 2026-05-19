@@ -7,6 +7,7 @@ import { isCloudPaymentsConfigured, paymentConfig } from '@/lib/payments/config'
 import type { PersonalDataConsentSnapshot } from '@/lib/legal/personal-data'
 import type {
   CloudPaymentsWidgetIntent,
+  PaymentMethod,
   PaymentOrder,
   PaymentReceipt,
 } from '@/lib/payments/types'
@@ -50,6 +51,12 @@ export function createCloudPaymentsOrder(
     // reads metadata.slotId on `paid` and writes a row in
     // payment_allocations linking this order to the slot.
     slotId?: string | null
+    // SBP-PAY (2026-05-19) — canonical method discriminator. Defaults
+    // to 'card' for existing call-sites (provider/checkout.ts). SBP
+    // route at app/api/payments/sbp/create-qr passes 'sbp' explicitly.
+    // §0a BLOCKER#7 closure: additive change does not break existing
+    // call-sites (§0b INFO#1 confirmation).
+    paymentMethod?: PaymentMethod
   } = {},
 ): PaymentOrder {
   if (!isCloudPaymentsConfigured()) {
@@ -75,6 +82,10 @@ export function createCloudPaymentsOrder(
     receipt,
     providerMessage: 'Ожидаем завершения оплаты в CloudPayments.',
     customerComment,
+    // SBP-PAY (2026-05-19) — top-level column write. Single source of
+    // truth (§0a BLOCKER#6 + §0b BLOCKER#2 closures). metadata.payment_method
+    // is intentionally NOT set anywhere.
+    paymentMethod: options.paymentMethod ?? 'card',
     metadata: {
       source: options.source || 'widget',
       rememberCard: Boolean(options.rememberCard),

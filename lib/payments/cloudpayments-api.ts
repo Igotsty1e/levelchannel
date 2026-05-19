@@ -9,6 +9,11 @@ const POST3DS_URL = 'https://api.cloudpayments.ru/payments/cards/post3ds'
 // https://developers.cloudpayments.ru/#vozvrat-deneg
 const REFUND_URL = 'https://api.cloudpayments.ru/payments/refund'
 
+// SBP-PAY (2026-05-19) — server-to-server SBP QR creation endpoint.
+// https://developers.cloudpayments.ru/#sozdanie-platezha-cherez-sbp
+const SBP_QR_CREATE_URL =
+  'https://api.cloudpayments.ru/payments/qr/sbp/create'
+
 export type CloudPaymentsTokenChargeRequest = {
   amount: number
   token: string
@@ -470,6 +475,160 @@ export async function refundTransaction(
   return {
     kind: 'declined',
     message: pickString(model.CardHolderMessage) || message || 'Возврат отклонён.',
+    reasonCode,
+    raw: payload,
+  }
+}
+
+// SBP-PAY (2026-05-19) — server-to-server SBP QR creation. §0a WARN#4
+// closure: SBP route does NOT do raw fetch + Authorization; it goes
+// through this centralised client so timeout policy + Basic Auth +
+// JSON-error handling stays consistent with chargeWithSavedToken /
+// confirmThreeDs / refundTransaction.
+
+export type CloudPaymentsSbpQrRequest = {
+  amount: number
+  invoiceId: string
+  accountId: string
+  description: string
+  // Free-form JSON string the CP gateway echoes back on the Pay
+  // webhook (echoed in payload.Data / payload.JsonData). We use it to
+  // surface invoiceId + customerEmail in webhook payloads for
+  // operator forensics.
+  jsonData?: string
+}
+
+export type CloudPaymentsSbpQrResult =
+  | {
+      kind: 'success'
+      transactionId: string
+      qrUrl: string
+      // Some CP terminals also return a base64-encoded PNG (`Image`)
+      // alongside the QrUrl. We surface both; the modal prefers the
+      // URL for cache-friendliness (browsers cache the PNG) and only
+      // falls back to the base64 image if the URL is missing.
+      image?: string
+      raw: unknown
+    }
+  | {
+      kind: 'declined'
+      message: string
+      reasonCode?: string
+      raw: unknown
+    }
+  | {
+      kind: 'error'
+      message: string
+      raw: unknown
+    }
+
+export async function createSbpQr(
+  request: CloudPaymentsSbpQrRequest,
+): Promise<CloudPaymentsSbpQrResult> {
+  if (
+    !paymentConfig.cloudpayments.publicId ||
+    !paymentConfig.cloudpayments.apiSecret
+  ) {
+    return {
+      kind: 'error',
+      message: 'CloudPayments credentials are not configured.',
+      raw: null,
+    }
+  }
+
+  // Wire body matches CP docs. Amount is integer ruble (existing CP
+  // helpers like chargeWithSavedToken also pass integer; CP accepts
+  // integer for the QR endpoint). Currency is hard-coded RUB matching
+  // the rest of the product.
+  const body: Record<string, unknown> = {
+    Amount: request.amount,
+    Currency: 'RUB',
+    InvoiceId: request.invoiceId,
+    AccountId: request.accountId,
+    Description: request.description,
+  }
+  if (request.jsonData) {
+    body.JsonData = request.jsonData
+  }
+
+  let response: Response
+
+  try {
+    response = await fetchWithTimeout(SBP_QR_CREATE_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: basicAuthHeader(),
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(body),
+      cache: 'no-store',
+    })
+  } catch (error) {
+    return {
+      kind: 'error',
+      message: error instanceof Error ? error.message : 'Network error.',
+      raw: null,
+    }
+  }
+
+  if (!response.ok) {
+    return {
+      kind: 'error',
+      message: `CloudPayments responded with HTTP ${response.status}.`,
+      raw: null,
+    }
+  }
+
+  let payload: Record<string, unknown>
+
+  try {
+    payload = (await response.json()) as Record<string, unknown>
+  } catch (error) {
+    return {
+      kind: 'error',
+      message:
+        error instanceof Error ? error.message : 'Invalid JSON response.',
+      raw: null,
+    }
+  }
+
+  const success = payload.Success === true
+  const message = pickString(payload.Message) || ''
+  const model = (payload.Model as Record<string, unknown> | undefined) || {}
+
+  const transactionId = pickString(model.TransactionId)
+  const qrUrl = pickString(model.QrUrl)
+  const image = pickString(model.Image)
+  const reasonCode =
+    pickString(model.ReasonCode) || pickString(payload.ReasonCode)
+
+  if (success && transactionId && qrUrl) {
+    return {
+      kind: 'success',
+      transactionId,
+      qrUrl,
+      image,
+      raw: payload,
+    }
+  }
+
+  // Success=true with no TransactionId / QrUrl is a malformed-gateway
+  // response — treat as 'error' so the caller leaves the order
+  // pending and the user can retry with a fresh Idempotency-Key.
+  // Mirrors refundTransaction's MEDIUM #3 defensive parse.
+  if (success && (!transactionId || !qrUrl)) {
+    return {
+      kind: 'error',
+      message:
+        'CloudPayments returned Success=true without a Model.TransactionId or Model.QrUrl on the SBP QR response.',
+      raw: payload,
+    }
+  }
+
+  return {
+    kind: 'declined',
+    message: pickString(model.CardHolderMessage) || message || 'СБП-платёж отклонён.',
     reasonCode,
     raw: payload,
   }

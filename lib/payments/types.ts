@@ -4,6 +4,14 @@
 // filter on provider/status to exclude these from revenue aggregations.
 export type PaymentProvider = 'mock' | 'cloudpayments' | 'admin_grant'
 
+// SBP-PAY (2026-05-19): canonical method discriminator. ''card''
+// (default for the widget + saved-token flow), ''sbp'' (SBP QR via
+// CloudPayments server API), ''admin_grant'' (non-money operator-
+// driven package grant). Top-level column on payment_orders is the
+// single source of truth; metadata.payment_method is NOT used (see
+// §0a BLOCKER#6 + §0b BLOCKER#2 closures in docs/plans/sbp-payments.md).
+export type PaymentMethod = 'card' | 'sbp' | 'admin_grant'
+
 // PKG-ADMIN-GRANT (2026-05-16): 'granted' is a terminal status for
 // admin grants — distinct from 'paid' so existing money-side recovery
 // paths (paid_not_granted, deletion-guard) don't see admin grants.
@@ -82,6 +90,12 @@ export type PaymentOrder = {
   // enforces provider='admin_grant' iff this is NOT NULL iff
   // status='granted'.
   grantedByOperatorId?: string | null
+  // SBP-PAY (2026-05-19): canonical method discriminator (top-level
+  // column on payment_orders). NULL for legacy pre-migration-0062
+  // rows that haven't been backfilled; every new row written through
+  // `createCloudPaymentsOrder` / `createMockOrder` carries a value.
+  // Webhook handler reads/writes this — NOT metadata.payment_method.
+  paymentMethod?: PaymentMethod | null
 }
 
 export type PublicPaymentOrder = Pick<

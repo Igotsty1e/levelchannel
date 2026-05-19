@@ -274,14 +274,16 @@ export async function POST(request: Request, { params }: RouteParams) {
              created_at, updated_at, paid_at,
              customer_email, receipt_email,
              receipt, metadata,
-             granted_by_operator_id
+             granted_by_operator_id,
+             payment_method
            ) values (
              $1, $2, 'RUB', $3,
              'admin_grant', 'granted',
              now(), now(), null,
              $4, $4,
              $5::jsonb, $6::jsonb,
-             $7::uuid
+             $7::uuid,
+             'admin_grant'
            )`,
           [
             invoiceId,

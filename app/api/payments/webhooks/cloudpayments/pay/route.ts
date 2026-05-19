@@ -4,7 +4,10 @@ import { processPackageGrant } from '@/lib/billing/package-grant'
 import { sendOperatorPaymentNotification } from '@/lib/email/dispatch'
 import { recordAllocation } from '@/lib/payments/allocations'
 import { handleCloudPaymentsWebhook } from '@/lib/payments/cloudpayments-route'
-import { getCloudPaymentsInvoiceId } from '@/lib/payments/cloudpayments-webhook'
+import {
+  detectPaymentMethod,
+  getCloudPaymentsInvoiceId,
+} from '@/lib/payments/cloudpayments-webhook'
 import { validatePaymentSlotBinding } from '@/lib/payments/slot-binding'
 import { getOrder } from '@/lib/payments/store'
 import { markOrderPaid } from '@/lib/payments/provider'
@@ -15,16 +18,29 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
   return handleCloudPaymentsWebhook(request, { kind: 'pay', handler: async (payload) => {
-    const order = await markOrderPaid(getCloudPaymentsInvoiceId(payload), {
-      transactionId: payload.TransactionId,
-      paymentMethod: payload.PaymentMethod,
-      status: payload.Status,
-    })
+    // SBP-PAY (2026-05-19) — detect payment_method from positive
+    // signals BEFORE markOrderPaid so the lifecycle can fill in a
+    // legacy NULL column without overwriting the canonical value an
+    // SBP create-qr already wrote. See detectPaymentMethod() contract
+    // + lifecycle.markOrderPaid `detectedPaymentMethod` option.
+    const detectedMethod = detectPaymentMethod(payload)
+    const order = await markOrderPaid(
+      getCloudPaymentsInvoiceId(payload),
+      {
+        transactionId: payload.TransactionId,
+        paymentMethod: payload.PaymentMethod,
+        status: payload.Status,
+      },
+      { detectedPaymentMethod: detectedMethod },
+    )
 
     if (order?.customerEmail) {
       // Сохраняем токен только если пользователь явно согласился на чекбоксе
       // и terminal вернул Token. Согласие читаем из metadata ордера (наш
       // source of truth) с fallback на Data/JsonData в payload.
+      // SBP-PAY (2026-05-19) — maybePersistTokenFromWebhook has a
+      // defensive early-exit on order.paymentMethod==='sbp'; this call
+      // remains safe to fire unconditionally.
       await maybePersistTokenFromWebhook(payload, order.customerEmail, order)
     }
 
@@ -40,6 +56,12 @@ export async function POST(request: Request) {
           transactionId: payload.TransactionId,
           paymentMethod: payload.PaymentMethod,
           providerStatus: payload.Status,
+          // SBP-PAY — keep the raw provider string in audit forensics
+          // alongside our detector's classification, so an 'unknown'
+          // classification surfaces the actual provider value for
+          // operator-side whitelist extension.
+          detectedPaymentMethod: detectedMethod,
+          rawPaymentMethod: payload.PaymentMethod ?? null,
         },
       })
 

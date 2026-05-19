@@ -4,6 +4,7 @@ import type { CSSProperties, FormEvent, ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
+import { SbpQrModal } from '@/components/payments/sbp-qr-modal'
 import { logCheckoutEvent } from '@/lib/analytics/client'
 import {
   PERSONAL_DATA_CONSENT_LABEL,
@@ -262,6 +263,18 @@ export function PricingSection() {
   const [rememberCard, setRememberCard] = useState(false)
   const [personalDataConsentAccepted, setPersonalDataConsentAccepted] = useState(false)
   const [personalDataConsentTouched, setPersonalDataConsentTouched] = useState(false)
+  // SBP-PAY (2026-05-19) — modal-state for the second CTA. The modal
+  // mounts when sbpModal !== null and renders the QR + status-poll.
+  // The server-issued accountIdAttached boolean pins isGuest at order-
+  // create time (§0b WARN#3 closure).
+  const [sbpModal, setSbpModal] = useState<{
+    invoiceId: string
+    qrUrl: string
+    image: string | null
+    receiptToken: string
+    isGuest: boolean
+  } | null>(null)
+  const [sbpPending, setSbpPending] = useState(false)
 
   const activeOrder = checkout.order
   const normalizedEmail = normalizeCustomerEmail(email)
@@ -967,6 +980,126 @@ export function PricingSection() {
     }
   }
 
+  // SBP-PAY (2026-05-19) — second CTA. POSTs to /api/payments/sbp/create-qr
+  // with an Idempotency-Key generated per click (§0a BLOCKER#1 closure —
+  // header is REQUIRED, the server 400s without it). On success the
+  // modal mounts with the qrUrl + receiptToken + isGuest pin.
+  async function handleSbpClick() {
+    setAmountTouched(true)
+    setEmailTouched(true)
+    setPersonalDataConsentTouched(true)
+
+    if (!amountIsValid || !emailValidation.ok) {
+      setCheckout((current) => ({
+        ...current,
+        error: !amountIsValid
+          ? `Введите сумму от ${formatRubles(MIN_PAYMENT_AMOUNT_RUB)} до ${formatRubles(MAX_PAYMENT_AMOUNT_RUB)} ₽.`
+          : emailValidation.message || 'Укажите корректный e-mail.',
+      }))
+      return
+    }
+    if (!personalDataConsentAccepted) {
+      setCheckout((current) => ({
+        ...current,
+        error: 'Подтвердите согласие на обработку персональных данных.',
+      }))
+      return
+    }
+
+    setSbpPending(true)
+    setCheckout((current) => ({ ...current, error: null }))
+
+    try {
+      const entropy =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+      const idempotencyKey = `lc-sbp-${entropy}`
+      const response = await fetch('/api/payments/sbp/create-qr', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify({
+          amountRub: Number(amountRub),
+          customerEmail: emailValidation.email,
+          customerComment: commentValidation.ok ? commentValidation.comment : null,
+          personalDataConsentAccepted: true,
+        }),
+        cache: 'no-store',
+      })
+
+      const payload = (await response.json()) as {
+        invoiceId?: string
+        qrUrl?: string
+        image?: string | null
+        receiptToken?: string
+        accountIdAttached?: boolean
+        error?: string
+        message?: string
+      }
+
+      if (!response.ok || !payload.invoiceId || !payload.qrUrl || !payload.receiptToken) {
+        throw new Error(
+          payload.message ||
+            payload.error ||
+            'Не удалось создать СБП-платёж. Попробуйте ещё раз.',
+        )
+      }
+
+      setSbpModal({
+        invoiceId: payload.invoiceId,
+        qrUrl: payload.qrUrl,
+        image: payload.image ?? null,
+        receiptToken: payload.receiptToken,
+        isGuest: payload.accountIdAttached === false,
+      })
+    } catch (error) {
+      setCheckout((current) => ({
+        ...current,
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Не удалось создать СБП-платёж. Попробуйте ещё раз.',
+      }))
+    } finally {
+      setSbpPending(false)
+    }
+  }
+
+  function closeSbpModal() {
+    setSbpModal(null)
+  }
+
+  function onSbpPaid() {
+    if (!sbpModal) return
+    const tokenParam = sbpModal.receiptToken
+      ? `&token=${encodeURIComponent(sbpModal.receiptToken)}`
+      : ''
+    router.push(
+      `/thank-you?invoiceId=${encodeURIComponent(sbpModal.invoiceId)}${tokenParam}`,
+    )
+  }
+
+  function onSbpFailed(reason?: string) {
+    setCheckout((current) => ({
+      ...current,
+      error:
+        reason && reason !== 'cancelled' && reason !== 'receipt_token_mismatch'
+          ? reason
+          : 'Оплата через СБП не прошла. Попробуйте ещё раз.',
+    }))
+  }
+
+  function onSbpTimeout() {
+    setCheckout((current) => ({
+      ...current,
+      error:
+        'Истёк лимит ожидания СБП-оплаты. Если деньги списались — придёт чек на e-mail. Иначе попробуйте ещё раз.',
+    }))
+  }
+
   const isLoading = checkout.phase === 'creating'
   const isPending = activeOrder?.status === 'pending'
   const isPaid = activeOrder?.status === 'paid'
@@ -1259,6 +1392,24 @@ export function PricingSection() {
                       ? 'Оплатить другой картой'
                       : 'Перейти к оплате'}
               </button>
+              <button
+                type="button"
+                onClick={handleSbpClick}
+                disabled={
+                  isLoading ||
+                  hasLockedPendingOrder ||
+                  oneClickPending ||
+                  sbpPending
+                }
+                style={secondaryCtaButtonStyle(
+                  isLoading ||
+                    hasLockedPendingOrder ||
+                    oneClickPending ||
+                    sbpPending,
+                )}
+              >
+                {sbpPending ? 'Готовим QR-код…' : 'Оплатить через СБП'}
+              </button>
               <div style={legalTextStyle}>
                 Нажимая кнопку, вы подтверждаете согласие с{' '}
                 <a href={PERSONAL_DATA_CONSENT_PATH} style={inlineLinkStyle}>
@@ -1388,6 +1539,20 @@ export function PricingSection() {
           </aside>
         )}
       </div>
+
+      {sbpModal ? (
+        <SbpQrModal
+          invoiceId={sbpModal.invoiceId}
+          qrUrl={sbpModal.qrUrl}
+          image={sbpModal.image}
+          receiptToken={sbpModal.receiptToken}
+          isGuest={sbpModal.isGuest}
+          onClose={closeSbpModal}
+          onPaid={onSbpPaid}
+          onFailed={onSbpFailed}
+          onTimeout={onSbpTimeout}
+        />
+      ) : null}
     </section>
   )
 }
@@ -1497,6 +1662,28 @@ function buttonStyle(disabled: boolean): CSSProperties {
     borderRadius: 14,
     border: 'none',
     background: 'linear-gradient(135deg, #C87878 0%, #E8A890 100%)',
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: 700,
+    cursor: disabled ? 'wait' : 'pointer',
+    opacity: disabled ? 0.75 : 1,
+  }
+}
+
+// SBP-PAY (2026-05-19) — secondary CTA next to the primary card-flow
+// "Перейти к оплате" button. Visually distinct (outlined, not solid)
+// so the card flow remains the primary path until learner uptake
+// data shifts the default.
+function secondaryCtaButtonStyle(disabled: boolean): CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 52,
+    padding: '0 22px',
+    borderRadius: 14,
+    border: '1px solid rgba(232,168,144,0.55)',
+    background: 'rgba(232,168,144,0.08)',
     color: '#fff',
     fontSize: 15,
     fontWeight: 700,
