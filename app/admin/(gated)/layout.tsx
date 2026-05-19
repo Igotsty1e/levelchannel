@@ -44,6 +44,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     <>
       <SiteHeader />
       <div
+        className="saas-chrome"
         style={{
           display: 'flex',
           minHeight: 'calc(100vh - 56px)',

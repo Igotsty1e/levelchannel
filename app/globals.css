@@ -13,6 +13,125 @@
   --accent-gradient: linear-gradient(135deg, #C87878 0%, #E8A890 100%);
 }
 
+/* ──────────────────────────────────────────────────────────────────
+   SaaS design tokens v1.0 (per docs/design-system.md §2-§11).
+   Scoped to .saas-chrome so they don't leak to /pay, /, /offer,
+   /privacy, /consent — those keep the marketing palette.
+
+   Attached in three places:
+   - app/admin/(gated)/layout.tsx outer <div>
+   - components/auth-shell.tsx <main>
+   - cabinet inherits via AuthShell (except /cabinet/packages which
+     attaches the class on its own <main> — that route renders its
+     own outer container, see plan §6 R2 / §9 OQ #1).
+   ────────────────────────────────────────────────────────────────── */
+.saas-chrome {
+  /* Surfaces (design-system §3) */
+  --bg: #0B0B0D;
+  --surface-1: #141416;
+  --surface-2: #1C1C1F;
+  --surface-3: #26262A;
+  --overlay-scrim: rgba(0, 0, 0, 0.55);
+
+  /* Separators */
+  --separator-faint: rgba(255, 255, 255, 0.04);
+  --separator-default: rgba(255, 255, 255, 0.08);
+  --separator-strong: rgba(255, 255, 255, 0.14);
+
+  /* Text */
+  --text-primary: #F5F5F7;
+  --text-secondary: #A1A1AA;
+  --text-tertiary: #6E6E76;
+  --text-quaternary: #48484C;
+  --text-on-accent: #FFFFFF;
+
+  /* Accent */
+  --accent: #D88A82;
+  --accent-hover: #E29B92;
+  --accent-pressed: #C47B72;
+  --accent-bg: rgba(216, 138, 130, 0.10);
+  --accent-bg-strong: rgba(216, 138, 130, 0.18);
+
+  /* Semantic (design-system §3 Semantic colors) */
+  --success: #4ADE80;
+  --success-bg: rgba(74, 222, 128, 0.10);
+  --warning: #F5C26B;
+  --warning-bg: rgba(245, 194, 107, 0.10);
+  --danger: #FF6E6E;
+  --danger-bg: rgba(255, 110, 110, 0.12);
+  --info: #7AB8FF;
+  --info-bg: rgba(122, 184, 255, 0.10);
+
+  /* Font (design-system §4) */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text',
+               'SF Pro Display', 'Inter', system-ui, 'Segoe UI', Roboto,
+               'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+               'Liberation Mono', monospace;
+
+  /* Type scale */
+  --text-12: 12px;
+  --text-13: 13px;
+  --text-15: 15px;
+  --text-17: 17px;
+  --text-22: 22px;
+  --text-28: 28px;
+  --text-34: 34px;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-bold: 700;
+
+  /* Spacing (design-system §5) */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+
+  /* Radii (design-system §6) */
+  --radius-1: 4px;
+  --radius-2: 8px;
+  --radius-3: 12px;
+  --radius-4: 16px;
+  --radius-5: 24px;
+  --radius-full: 9999px;
+
+  /* Shadows (design-system §7) */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.30);
+  --shadow-2: 0 2px 4px rgba(0, 0, 0, 0.30), 0 8px 16px rgba(0, 0, 0, 0.24);
+  --shadow-3: 0 4px 8px rgba(0, 0, 0, 0.32), 0 16px 32px rgba(0, 0, 0, 0.28);
+  --shadow-modal: 0 8px 16px rgba(0, 0, 0, 0.36), 0 32px 64px rgba(0, 0, 0, 0.40);
+
+  /* Motion (design-system §8) */
+  --duration-fast: 150ms;
+  --duration-base: 250ms;
+  --duration-slow: 400ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-linear: linear;
+
+  /* Focus ring (design-system §11) */
+  --focus-ring-color: rgba(216, 138, 130, 0.60);
+  --focus-ring-width: 4px;
+  --focus-ring-offset: 2px;
+}
+
+/* Mobile-collapse override for --space-7..--space-9 per
+   docs/design-system.md §5. */
+@media (max-width: 480px) {
+  .saas-chrome {
+    --space-7: 32px;   /* 48 → 32 */
+    --space-8: 48px;   /* 64 → 48 */
+    --space-9: 64px;   /* 96 → 64 */
+  }
+}
+
 * {
   box-sizing: border-box;
   margin: 0;

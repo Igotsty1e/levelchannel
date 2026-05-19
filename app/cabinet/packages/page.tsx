@@ -58,7 +58,7 @@ export default async function CabinetPackagesPage() {
   ])
 
   return (
-    <main style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+    <main className="saas-chrome" style={{ minHeight: '100vh', background: 'var(--bg)' }}>
       <Script
         src="https://widget.cloudpayments.ru/bundles/cloudpayments.js"
         strategy="beforeInteractive"
