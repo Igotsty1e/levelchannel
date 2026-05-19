@@ -261,6 +261,13 @@ declare -a units=(
   # detector). Sibling of the auth-flow + webhook-flow alert probes.
   "levelchannel-calendar-pathology-alert.service"
   "levelchannel-calendar-pathology-alert.timer"
+  # Wave 5 Phase 3 — auth-flow alert probe (slow brute-force detection).
+  # Predates the activator's allowlist refactor; added 2026-05-19 after
+  # re-paranoia round-1 surfaced the install-vs-summary asymmetry (filter
+  # mentioned auth-flow; install arrays didn't). Now DR-rebuilds pick it
+  # up alongside the other 3 probes.
+  "levelchannel-auth-flow-alert.service"
+  "levelchannel-auth-flow-alert.timer"
   # BCS-DEF-1 Phase 2 (2026-05-19) — conflict-unresolved alert probe
   # (operator email on external_conflict_at >threshold). Fourth
   # sibling of the alert-probe family.
@@ -319,6 +326,9 @@ declare -a timers=(
   "levelchannel-auto-complete-slots.timer"
   "levelchannel-refund-reconcile.timer"
   "levelchannel-calendar-pathology-alert.timer"
+  # Wave 5 Phase 3 — auth-flow alert timer (slow brute-force detection).
+  # Added 2026-05-19 re-paranoia closure (install-vs-summary asymmetry).
+  "levelchannel-auth-flow-alert.timer"
   # BCS-DEF-1 Phase 2 (2026-05-19) — conflict-unresolved alert timer.
   "levelchannel-conflict-unresolved-alert.timer"
   # BCS-OP-ROLLOUT — 6 calendar worker timers.
@@ -386,7 +396,7 @@ step "Post-activation summary"
 echo
 echo "${B}Active timers:${N}"
 systemctl list-timers --no-pager 2>/dev/null \
-  | grep -E "levelchannel-(webhook-flow-alert|db-retention|stale-orders|auto-complete-slots|refund-reconcile|calendar-pathology-alert|calendar-(pull|push|intents|renew-channels|revive-blocked|reconcile))" \
+  | grep -E "levelchannel-(webhook-flow-alert|auth-flow-alert|conflict-unresolved-alert|db-retention|stale-orders|auto-complete-slots|refund-reconcile|calendar-pathology-alert|calendar-(pull|push|intents|renew-channels|revive-blocked|reconcile))" \
   || echo "  (timers not yet shown — they appear after first scheduled run)"
 
 echo

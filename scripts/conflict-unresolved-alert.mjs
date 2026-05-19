@@ -425,36 +425,90 @@ async function main() {
     ssl: resolveSslConfig(process.env.DATABASE_URL),
   })
 
-  // Snapshot read of operator settings at tick start (DB → env → default).
-  const settings = await resolveOperatorSettingsForProbe(
-    pool,
-    'conflict-unresolved',
-  )
-  THRESHOLD_MINUTES = settings.CONFLICT_UNRESOLVED_THRESHOLD_MINUTES.value
-  REPORT_LIMIT = settings.CONFLICT_UNRESOLVED_REPORT_LIMIT.value
-  PER_TEACHER_LIMIT = settings.CONFLICT_UNRESOLVED_PER_TEACHER_LIMIT.value
-  DEDUP_WINDOW_MS = settings.CONFLICT_UNRESOLVED_DEDUP_WINDOW_MS.value
-
-  const capturedThresholds = {
-    CONFLICT_UNRESOLVED_THRESHOLD_MINUTES: THRESHOLD_MINUTES,
-    CONFLICT_UNRESOLVED_REPORT_LIMIT: REPORT_LIMIT,
-    CONFLICT_UNRESOLVED_PER_TEACHER_LIMIT: PER_TEACHER_LIMIT,
-    CONFLICT_UNRESOLVED_DEDUP_WINDOW_MS: DEDUP_WINDOW_MS,
-  }
-  const capturedThresholdsSource = {
-    CONFLICT_UNRESOLVED_THRESHOLD_MINUTES:
-      settings.CONFLICT_UNRESOLVED_THRESHOLD_MINUTES.source,
-    CONFLICT_UNRESOLVED_REPORT_LIMIT:
-      settings.CONFLICT_UNRESOLVED_REPORT_LIMIT.source,
-    CONFLICT_UNRESOLVED_PER_TEACHER_LIMIT:
-      settings.CONFLICT_UNRESOLVED_PER_TEACHER_LIMIT.source,
-    CONFLICT_UNRESOLVED_DEDUP_WINDOW_MS:
-      settings.CONFLICT_UNRESOLVED_DEDUP_WINDOW_MS.source,
-  }
-  const recipientEmailSnapshot = ALERT_EMAIL_TO || null
+  // Declared up front so the catch + finally blocks can reference them
+  // even if resolveOperatorSettingsForProbe() throws (re-paranoia
+  // plan-round-2 WARN#3 closure 2026-05-19): the operator-settings
+  // read was previously outside the outer try, so a transient DB hiccup
+  // there bypassed both `recordProbeRun(error)` and `pool.end()`.
+  let capturedThresholds = null
+  let capturedThresholdsSource = null
+  let recipientEmailSnapshot = ALERT_EMAIL_TO || null
 
   try {
-    const counts = await readOffenderCounts(pool, THRESHOLD_MINUTES)
+    // Snapshot read of operator settings at tick start (DB → env → default).
+    const settings = await resolveOperatorSettingsForProbe(
+      pool,
+      'conflict-unresolved',
+    )
+    THRESHOLD_MINUTES = settings.CONFLICT_UNRESOLVED_THRESHOLD_MINUTES.value
+    REPORT_LIMIT = settings.CONFLICT_UNRESOLVED_REPORT_LIMIT.value
+    PER_TEACHER_LIMIT = settings.CONFLICT_UNRESOLVED_PER_TEACHER_LIMIT.value
+    DEDUP_WINDOW_MS = settings.CONFLICT_UNRESOLVED_DEDUP_WINDOW_MS.value
+
+    capturedThresholds = {
+      CONFLICT_UNRESOLVED_THRESHOLD_MINUTES: THRESHOLD_MINUTES,
+      CONFLICT_UNRESOLVED_REPORT_LIMIT: REPORT_LIMIT,
+      CONFLICT_UNRESOLVED_PER_TEACHER_LIMIT: PER_TEACHER_LIMIT,
+      CONFLICT_UNRESOLVED_DEDUP_WINDOW_MS: DEDUP_WINDOW_MS,
+    }
+    capturedThresholdsSource = {
+      CONFLICT_UNRESOLVED_THRESHOLD_MINUTES:
+        settings.CONFLICT_UNRESOLVED_THRESHOLD_MINUTES.source,
+      CONFLICT_UNRESOLVED_REPORT_LIMIT:
+        settings.CONFLICT_UNRESOLVED_REPORT_LIMIT.source,
+      CONFLICT_UNRESOLVED_PER_TEACHER_LIMIT:
+        settings.CONFLICT_UNRESOLVED_PER_TEACHER_LIMIT.source,
+      CONFLICT_UNRESOLVED_DEDUP_WINDOW_MS:
+        settings.CONFLICT_UNRESOLVED_DEDUP_WINDOW_MS.source,
+    }
+
+    // Re-paranoia plan-round-1 WARN#4 closure (2026-05-19): the four
+    // offender reads (counts, rows, per-teacher omitted, fingerprint
+    // tuples) MUST share one snapshot so the email body, the "и ещё N"
+    // tally, and the dedup fingerprint are internally consistent within
+    // a single tick. A new row landing between read 1 and read 4 would
+    // otherwise leave totals out of sync with the fingerprint and the
+    // displayed slice.
+    const snapshotClient = await pool.connect()
+    let counts
+    let offenders = []
+    let perTeacherOmitted = new Map()
+    let fingerprintTuples = []
+    try {
+      await snapshotClient.query('begin')
+      await snapshotClient.query(
+        'set transaction isolation level repeatable read read only',
+      )
+      counts = await readOffenderCounts(snapshotClient, THRESHOLD_MINUTES)
+      if (counts.totalConflicts > 0) {
+        offenders = await readOffenderRows(
+          snapshotClient,
+          THRESHOLD_MINUTES,
+          PER_TEACHER_LIMIT,
+          REPORT_LIMIT,
+        )
+        perTeacherOmitted = await readPerTeacherOmittedCounts(
+          snapshotClient,
+          THRESHOLD_MINUTES,
+          PER_TEACHER_LIMIT,
+        )
+        // Wave-paranoia round-1 BLOCKER#2 closure (2026-05-19): fingerprint
+        // over the UNBOUNDED qualifying set, not the truncated visible
+        // slice. Inside the same snapshot so the dedup decision agrees
+        // with the email body.
+        fingerprintTuples = await readFingerprintTuples(
+          snapshotClient,
+          THRESHOLD_MINUTES,
+        )
+      }
+      await snapshotClient.query('commit')
+    } catch (snapshotErr) {
+      await snapshotClient.query('rollback').catch(() => {})
+      throw snapshotErr
+    } finally {
+      snapshotClient.release()
+    }
+
     if (counts.totalConflicts === 0) {
       logJson('info', 'no offenders above threshold', {
         thresholdMinutes: THRESHOLD_MINUTES,
@@ -472,18 +526,6 @@ async function main() {
       return
     }
 
-    const offenders = await readOffenderRows(
-      pool,
-      THRESHOLD_MINUTES,
-      PER_TEACHER_LIMIT,
-      REPORT_LIMIT,
-    )
-    const perTeacherOmitted = await readPerTeacherOmittedCounts(
-      pool,
-      THRESHOLD_MINUTES,
-      PER_TEACHER_LIMIT,
-    )
-
     const enrichedStats = {
       totalConflicts: counts.totalConflicts,
       totalTeachers: counts.totalTeachers,
@@ -492,14 +534,6 @@ async function main() {
       thresholds_source: capturedThresholdsSource,
     }
 
-    // Wave-paranoia round-1 BLOCKER#2 closure (2026-05-19): fingerprint
-    // over the UNBOUNDED qualifying set, not the truncated visible slice.
-    // Otherwise saturation silently dedup-skip-s for 4h while the real
-    // offender set has grown — breaks >threshold alert semantics.
-    const fingerprintTuples = await readFingerprintTuples(
-      pool,
-      THRESHOLD_MINUTES,
-    )
     const fp = fingerprint(fingerprintTuples)
     const state = await readState()
     const now = Date.now()

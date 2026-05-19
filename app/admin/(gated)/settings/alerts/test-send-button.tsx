@@ -31,7 +31,7 @@ export function TestSendButton({ probeName, disabled }: Props) {
     setError(null)
     setResult(null)
     const reason = prompt(
-      `Тестовый алерт для ${probeName}. Опишите причину (логируется в audit):`,
+      `Тестовое уведомление для ${probeName}. Опишите причину (логируется в audit):`,
     )?.trim()
     if (!reason || reason.length < 3) {
       if (reason !== null && reason !== undefined && reason !== '') {
@@ -85,7 +85,7 @@ export function TestSendButton({ probeName, disabled }: Props) {
           opacity: busy || disabled ? 0.5 : 1,
         }}
       >
-        {busy ? 'Отправляю…' : 'Тестовый алерт'}
+        {busy ? 'Отправляю…' : 'Тестовое уведомление'}
       </button>
       {result ? (
         <span style={{ color: '#5cb85c', fontSize: 12 }}>{result}</span>
