@@ -23,15 +23,6 @@ export const metadata = {
 
 type RouteParams = { params: Promise<{ ymd: string; slotId: string }> }
 
-const MONTH_NAMES_GEN = [
-  'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
-]
-const WEEKDAY_NAMES = [
-  'воскресенье', 'понедельник', 'вторник', 'среда',
-  'четверг', 'пятница', 'суббота',
-]
-
 export default async function BookConfirmPage({ params }: RouteParams) {
   const { ymd, slotId } = await params
 

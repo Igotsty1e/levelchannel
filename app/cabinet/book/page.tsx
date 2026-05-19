@@ -3,7 +3,6 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { AuthShell } from '@/components/auth-shell'
-import { getAccountByEmail } from '@/lib/auth/accounts'
 import { getAccountProfile } from '@/lib/auth/profiles'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { TIMEZONE_OPTIONS, safeTimezone } from '@/lib/auth/timezones'
@@ -53,8 +52,8 @@ export default async function BookPage() {
 
   let teacherDisplayName: string | null = null
   if (teacherId) {
-    // Resolve teacher email → display name. Tiny lookup; reusing
-    // getAccountByEmail keeps us out of cross-cabinet queries.
+    // Resolve teacher account id → display name. Tiny direct query;
+    // keeps us out of cross-cabinet queries.
     const pool = await import('@/lib/db/pool').then((m) => m.getDbPool())
     const r = await pool.query(
       `select coalesce(p.display_name, a.email) as name
