@@ -96,7 +96,7 @@ export default async function CabinetPackagesPage() {
             color: 'var(--text)',
           }}
         >
-          Пакеты уроков
+          Пакеты занятий
         </h1>
         <p
           style={{
@@ -216,7 +216,7 @@ export default async function CabinetPackagesPage() {
                         fontSize: 12,
                       }}
                     >
-                      {pkg.count} уроков · {pkg.durationMinutes} мин каждый
+                      {pkg.count} занятий · {pkg.durationMinutes} мин каждое
                     </div>
                   </header>
                   {pkg.descriptionRu ? (

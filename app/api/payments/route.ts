@@ -165,7 +165,7 @@ export async function POST(request: Request) {
         return {
           status: 403,
           body: {
-            error: 'Этот слот недоступен для оплаты с этого аккаунта.',
+            error: 'Это занятие недоступно для оплаты с этого профиля.',
           },
         }
       }

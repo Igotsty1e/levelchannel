@@ -75,7 +75,7 @@ export function CheckoutForm({
           customerEmail: email.trim(),
           personalDataConsentAccepted: true,
           customerComment: slotId
-            ? `Слот ${slotId.slice(0, 8)} — тариф ${tariffSlug}`
+            ? `Занятие ${slotId.slice(0, 8)} — тариф ${tariffSlug}`
             : `Тариф ${tariffSlug}`,
           ...(slotId ? { slotId } : {}),
         }),

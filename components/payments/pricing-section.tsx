@@ -1132,7 +1132,7 @@ export function PricingSection() {
                 onChange={(event) => setComment(event.target.value)}
                 disabled={isLoading || hasLockedPendingOrder}
                 maxLength={PAYMENT_COMMENT_MAX_LENGTH}
-                placeholder="например: за урок 26 апреля"
+                placeholder="например: за занятие 26 апреля"
                 style={inputStyle(Boolean(commentError))}
                 aria-invalid={commentError ? true : undefined}
               />
@@ -1163,7 +1163,7 @@ export function PricingSection() {
                   disabled={isLoading || hasLockedPendingOrder}
                 />
                 <span>
-                  Запомнить карту, чтобы в следующий раз заплатить в один клик.
+                  Запомнить карту, чтобы в следующий раз оплатить в один клик.
                   Карту сохраняет CloudPayments, у нас — только токен.
                 </span>
               </label>

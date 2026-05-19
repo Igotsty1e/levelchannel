@@ -44,7 +44,7 @@ export function renderOperatorPackageGrantFailureEmail(
 
   const lines = [
     `Платёж прошёл, но пакет не материализован.`,
-    `Клиент уже заплатил, package_purchases пустой — это требует ручного разбора.`,
+    `Клиент уже оплатил, package_purchases пустой — это требует ручного разбора.`,
     '',
     `Reason: ${params.reason}`,
     ...(params.reasonHint ? [`Detail: ${params.reasonHint}`] : []),
@@ -61,7 +61,7 @@ export function renderOperatorPackageGrantFailureEmail(
   ].join('\n')
 
   const html = `<p><strong>Платёж прошёл, но пакет не выдан.</strong></p>
-<p style="color:#a33;">Клиент уже заплатил, <code>package_purchases</code> пустой — требуется ручной разбор.</p>
+<p style="color:#a33;">Клиент уже оплатил, <code>package_purchases</code> пустой — требуется ручной разбор.</p>
 <ul>
   <li>Reason: <code>${escapeHtml(params.reason)}</code></li>
   ${params.reasonHint ? `<li>Detail: ${escapeHtml(params.reasonHint)}</li>` : ''}

@@ -102,7 +102,7 @@ export default async function BookPage() {
               color: 'var(--text-strong, #1a1a2e)',
             }}
           >
-            Урок английского
+            Занятие по английскому
           </h1>
           <div
             style={{
