@@ -67,20 +67,43 @@ describe('SETTING_SCHEMA invariants', () => {
   })
 
   it('every scope is a known probe name', () => {
+    // BCS-DEF-1 Phase 1 (2026-05-19) — 'conflict-unresolved' added
+    // alongside the 3 already-shipped probes. The probe script itself
+    // ships in Phase 2; the schema scope is widened first so the 4
+    // CONFLICT_UNRESOLVED_* keys land cleanly.
     const validScopes = new Set([
       'auth-flow',
       'calendar-pathology',
       'webhook-flow',
+      'conflict-unresolved',
     ])
     for (const [key, schema] of Object.entries(TS_SCHEMA)) {
       expect(validScopes.has(schema.scope), `${key}.scope is valid`).toBe(true)
     }
   })
 
-  it('all three probes have at least one knob', () => {
+  it('all four probes have at least one knob', () => {
     const probes = new Set(Object.values(TS_SCHEMA).map((s) => s.scope))
     expect(probes).toContain('auth-flow')
     expect(probes).toContain('calendar-pathology')
     expect(probes).toContain('webhook-flow')
+    expect(probes).toContain('conflict-unresolved')
+  })
+
+  it('conflict-unresolved scope has the 4 expected threshold keys', () => {
+    // BCS-DEF-1 Phase 1 regression pin — if a future refactor drops
+    // any of these, the probe script in Phase 2 will silently fall
+    // back to defaults / env, which is harder to debug than a failing
+    // test here.
+    const conflictKeys = Object.entries(TS_SCHEMA)
+      .filter(([, s]) => s.scope === 'conflict-unresolved')
+      .map(([k]) => k)
+      .sort()
+    expect(conflictKeys).toEqual([
+      'CONFLICT_UNRESOLVED_DEDUP_WINDOW_MS',
+      'CONFLICT_UNRESOLVED_PER_TEACHER_LIMIT',
+      'CONFLICT_UNRESOLVED_REPORT_LIMIT',
+      'CONFLICT_UNRESOLVED_THRESHOLD_MINUTES',
+    ])
   })
 })

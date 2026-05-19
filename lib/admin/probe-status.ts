@@ -10,12 +10,26 @@ import { getDbPool } from '@/lib/db/pool'
 //
 // Plan: docs/plans/alerts-obs.md.
 
-export type ProbeName = 'auth-flow' | 'calendar-pathology' | 'webhook-flow'
+export type ProbeName =
+  | 'auth-flow'
+  | 'calendar-pathology'
+  | 'webhook-flow'
+  // BCS-DEF-1 Phase 1 (2026-05-19) — `'conflict-unresolved'` is now a
+  // valid value of the ProbeName union (used by SETTING_SCHEMA scope
+  // entries in `lib/admin/operator-settings.ts`). The probe is NOT yet
+  // shipped — Phase 2 lands `scripts/conflict-unresolved-alert.mjs` +
+  // the systemd unit + extends `PROBE_NAMES` below + the admin alerts
+  // page's PROBE_TITLES. Until then, `isProbeName('conflict-unresolved')`
+  // returns true (so the type union holds), but the array iteration
+  // (which drives the admin alerts UI render loop) excludes it.
+  | 'conflict-unresolved'
 
 export const PROBE_NAMES: readonly ProbeName[] = [
   'auth-flow',
   'calendar-pathology',
   'webhook-flow',
+  // BCS-DEF-1 Phase 2 adds 'conflict-unresolved' here once the probe
+  // script + systemd unit ship.
 ]
 
 export function isProbeName(value: unknown): value is ProbeName {
@@ -23,6 +37,7 @@ export function isProbeName(value: unknown): value is ProbeName {
     value === 'auth-flow'
     || value === 'calendar-pathology'
     || value === 'webhook-flow'
+    || value === 'conflict-unresolved'
   )
 }
 

@@ -22,6 +22,12 @@ export const PROBE_NAMES = Object.freeze({
   AUTH_FLOW: 'auth-flow',
   CALENDAR_PATHOLOGY: 'calendar-pathology',
   WEBHOOK_FLOW: 'webhook-flow',
+  // BCS-DEF-1 Phase 1 (2026-05-19) — the conflict-unresolved alert
+  // probe ships in Phase 2; the CHECK on probe_runs.probe_name was
+  // extended in migration 0058 so this name is already valid for
+  // INSERT. recordProbeRun() will accept rows with this value once
+  // the Phase 2 probe starts writing them.
+  CONFLICT_UNRESOLVED: 'conflict-unresolved',
 })
 
 // Every value here MUST appear verbatim in migration 0053's

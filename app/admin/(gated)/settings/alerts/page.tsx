@@ -40,6 +40,13 @@ const PROBE_TITLES: Record<ProbeName, string> = {
   'auth-flow': 'auth-flow — попытки входа',
   'calendar-pathology': 'calendar-pathology — патологичные слоты',
   'webhook-flow': 'webhook-flow — webhook-поток CloudPayments',
+  // BCS-DEF-1 Phase 1 (2026-05-19) — registered for Record<ProbeName>
+  // completeness, but the alerts page iterates `PROBE_NAMES` from
+  // `lib/admin/probe-status.ts` which excludes 'conflict-unresolved'
+  // until Phase 2 ships the probe script. The title doesn't surface
+  // in the UI until that PR adds the probe name to PROBE_NAMES.
+  'conflict-unresolved':
+    'conflict-unresolved — нерешённые конфликты с Google-календарём',
 }
 
 export default async function AdminAlertsPage() {
