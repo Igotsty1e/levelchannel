@@ -41,7 +41,18 @@ export default async function PayPage() {
   const backLabel = hasSession ? '← В кабинет' : '← На главную'
 
   return (
-    <main style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+    <>
+      {/* SAAS-6-A11Y-1 (2026-05-19) — skip-to-content link as the
+          first focusable element on /pay. This route has bespoke
+          chrome (no SiteHeader), so the link lives inline. WCAG 2.4.1. */}
+      <a href="#main-content" className="skip-to-content">
+        Перейти к основному содержимому
+      </a>
+      <main
+        id="main-content"
+        tabIndex={-1}
+        style={{ minHeight: '100vh', background: 'var(--bg)' }}
+      >
       {/* Codex 2026-05-08 (Wave 10 #5) — CloudPayments widget script
           loads only on this payment page (and on /checkout/[tariffSlug]),
           not globally from app/layout.tsx. Privacy text frames the
@@ -93,6 +104,7 @@ export default async function PayPage() {
       </header>
 
       <PricingSection />
-    </main>
+      </main>
+    </>
   )
 }
