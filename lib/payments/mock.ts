@@ -61,6 +61,8 @@ export function createMockOrder(
     mockAutoConfirmAt: autoConfirmAt,
     providerMessage: 'Mock-режим: оплата будет автоматически подтверждена.',
     customerComment,
+    // SBP-PAY (2026-05-19) — mock orders are always card-flow stand-ins.
+    paymentMethod: 'card',
     metadata: {
       mockBankSessionId: randomUUID(),
       personalDataConsent: options.personalDataConsent,

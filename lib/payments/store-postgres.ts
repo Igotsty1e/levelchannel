@@ -39,7 +39,10 @@ async function ensureSchema() {
           metadata jsonb null,
           mock_auto_confirm_at timestamptz null,
           events jsonb not null default '[]'::jsonb,
-          customer_comment text null
+          customer_comment text null,
+          payment_method text null
+            check (payment_method is null
+                   or payment_method in ('card', 'sbp', 'admin_grant'))
         )
       `)
       // Legacy safety net for DBs that ran the older ensureSchema before
@@ -47,6 +50,12 @@ async function ensureSchema() {
       // no-op on freshly-migrated databases.
       await pool.query(
         `alter table payment_orders add column if not exists customer_comment text null`,
+      )
+      // SBP-PAY (2026-05-19) — same legacy-safety pattern. Bootstrapped
+      // dev DBs that ran ensureSchema BEFORE migration 0062 landed
+      // need the column added here too. No-op on freshly-migrated DBs.
+      await pool.query(
+        `alter table payment_orders add column if not exists payment_method text null`,
       )
       await pool.query(`
         create table if not exists payment_card_tokens (
@@ -89,6 +98,16 @@ const KNOWN_STATUSES = new Set<PaymentOrder['status']>([
   'failed',
   'cancelled',
   'granted',
+])
+
+// SBP-PAY (2026-05-19) — loud-fail accept-list for payment_method,
+// mirrors KNOWN_PROVIDERS / KNOWN_STATUSES (PKG-ADMIN-GRANT 2026-05-16
+// coercion-removal pattern). Unknown column value = data corruption,
+// not a recoverable condition.
+const KNOWN_PAYMENT_METHODS = new Set<NonNullable<PaymentOrder['paymentMethod']>>([
+  'card',
+  'sbp',
+  'admin_grant',
 ])
 
 function mapRowToOrder(row: Record<string, unknown>): PaymentOrder {
@@ -140,6 +159,16 @@ function mapRowToOrder(row: Record<string, unknown>): PaymentOrder {
       row.receipt_token_hash == null ? null : String(row.receipt_token_hash),
     grantedByOperatorId:
       row.granted_by_operator_id == null ? null : String(row.granted_by_operator_id),
+    paymentMethod: ((): PaymentOrder['paymentMethod'] => {
+      if (row.payment_method == null) return null
+      const value = String(row.payment_method) as NonNullable<PaymentOrder['paymentMethod']>
+      if (!KNOWN_PAYMENT_METHODS.has(value)) {
+        throw new Error(
+          `Unexpected payment_method in payment_orders row: ${String(row.payment_method)}`,
+        )
+      }
+      return value
+    })(),
   }
 }
 
@@ -166,6 +195,7 @@ function toInsertValues(order: PaymentOrder) {
     order.customerComment ?? null,
     order.receiptTokenHash ?? null,
     order.grantedByOperatorId ?? null,
+    order.paymentMethod ?? null,
   ]
 }
 
@@ -211,9 +241,10 @@ export async function createOrderPostgres(order: PaymentOrder) {
       events,
       customer_comment,
       receipt_token_hash,
-      granted_by_operator_id
+      granted_by_operator_id,
+      payment_method
     ) values (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18::jsonb,$19,$20,$21::uuid
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18::jsonb,$19,$20,$21::uuid,$22
     )`,
     toInsertValues(order),
   )
@@ -266,7 +297,8 @@ export async function updateOrderPostgres(
         events = $18::jsonb,
         customer_comment = $19,
         receipt_token_hash = $20,
-        granted_by_operator_id = $21::uuid
+        granted_by_operator_id = $21::uuid,
+        payment_method = $22
       where invoice_id = $1`,
       toInsertValues(next),
     )
