@@ -125,11 +125,26 @@ export async function syncMockOrderState(invoiceId: string) {
 export async function markOrderPaid(
   invoiceId: string,
   payload?: Record<string, unknown>,
+  // SBP-PAY (2026-05-19, §0b BLOCKER#3 closure) — optional detected
+  // payment_method from the webhook handler's positive-signal
+  // detector. The lifecycle KEEPS an existing non-null
+  // order.paymentMethod (canonical at create-qr time); fills in only
+  // when the column is NULL (legacy / migration-edge rows). 'unknown'
+  // never overwrites — column stays NULL until operator reconciliation.
+  opts: { detectedPaymentMethod?: 'card' | 'sbp' | 'unknown' } = {},
 ) {
   const order = await updateOrder(invoiceId, (order) => {
     if (order.status === 'paid') {
       return appendEvent(order, 'payment.paid_duplicate', payload)
     }
+
+    const nextPaymentMethod =
+      order.paymentMethod != null
+        ? order.paymentMethod
+        : opts.detectedPaymentMethod === 'card' ||
+            opts.detectedPaymentMethod === 'sbp'
+          ? opts.detectedPaymentMethod
+          : null
 
     return appendEvent(
       {
@@ -139,6 +154,7 @@ export async function markOrderPaid(
         providerTransactionId:
           getPayloadString(payload, 'transactionId') || order.providerTransactionId,
         providerMessage: 'Платёж подтверждён.',
+        paymentMethod: nextPaymentMethod,
       },
       'payment.paid',
       payload,

@@ -92,6 +92,59 @@ export function parseCloudPaymentsPayload(
   return payload
 }
 
+// SBP-PAY (2026-05-19) — strict-whitelist exact-match (case-insensitive)
+// detector. Round-2 WARN#4 closure: prefer `===` over `includes()` so
+// a future "SbpAndCardHybrid" or "MySbpAndOtherThing" string from
+// CloudPayments doesn't falsely classify as 'sbp'. Round-1 BLOCKER#6
+// closure: POSITIVE signal — never default to 'sbp' on absence (which
+// would mis-classify future non-card methods like Apple Pay).
+//
+// Behaviour:
+//   - Card-positive (CardType / CardLastFour non-empty) → 'card'.
+//   - PaymentMethod present + matches whitelist → 'sbp'.
+//   - Neither → 'unknown'. Webhook handler records the raw
+//     PaymentMethod into payment_audit_events so operator
+//     reconciliation can manually classify legacy / future methods.
+//
+// The SBP order is canonically `payment_method='sbp'` from create-qr
+// time (§2.1 step 5). This detector is the fallback for legacy /
+// migration-edge rows where the column write didn't fire.
+const SBP_METHOD_TOKENS: ReadonlySet<string> = new Set([
+  'sbp',
+  'sbpqr',
+  'sbp_qr',
+  'fps',
+  'sbp_pay',
+  'сбп',
+  'сбп qr',
+])
+
+export function detectPaymentMethod(
+  payload: CloudPaymentsWebhookPayload,
+): 'card' | 'sbp' | 'unknown' {
+  const cardType =
+    typeof payload.CardType === 'string' ? payload.CardType.trim() : ''
+  const cardLastFour =
+    typeof payload.CardLastFour === 'string'
+      ? payload.CardLastFour.trim()
+      : ''
+  if (cardType.length > 0 || cardLastFour.length > 0) {
+    return 'card'
+  }
+
+  const methodRaw =
+    typeof payload.PaymentMethod === 'string'
+      ? payload.PaymentMethod.trim().toLowerCase()
+      : ''
+  if (methodRaw && SBP_METHOD_TOKENS.has(methodRaw)) {
+    return 'sbp'
+  }
+
+  // No positive signal — leave column NULL, raw value persisted in
+  // payment_audit_events for operator forensics.
+  return 'unknown'
+}
+
 export async function validateCloudPaymentsOrder(
   payload: CloudPaymentsWebhookPayload,
 ) {

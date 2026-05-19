@@ -81,6 +81,15 @@ export async function maybePersistTokenFromWebhook(
   customerEmail: string,
   order: PaymentOrder | null,
 ) {
+  // SBP-PAY (2026-05-19, §0b BLOCKER#3 closure) — defensive early-exit.
+  // SBP webhooks never carry a saved-card token, and even if
+  // CloudPayments ever started sending one accidentally, an SBP order
+  // must never persist as a saved card. The receipt-token consent
+  // checkbox is wired to card-flow only.
+  if (order?.paymentMethod === 'sbp') {
+    return null
+  }
+
   const consented = readRememberCardConsent(payload, order)
 
   if (!consented) {
