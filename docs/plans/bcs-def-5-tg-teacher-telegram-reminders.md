@@ -1,10 +1,10 @@
 # BCS-DEF-5-TG — Telegram channel for teacher lesson-start reminders
 
-**Status:** DRAFT 2026-05-19 (plan-doc only; awaiting `/codex-paranoia plan`).
+**Status:** DRAFT 2026-05-19 (plan-doc only; awaiting `/codex-paranoia plan`). Scope-adjusted 2026-05-19 — BCS-DEF-5 parent rewritten as daily 08:00 digest (was per-slot reminders); this TG plan now stacks on the digest schema/cron once the email MVP ships. See the rewritten parent `docs/plans/bcs-def-5-teacher-reminders.md` for the new email contract; this TG plan-doc itself will need its own follow-up rewrite to align its tick/scheduler references with the digest model (not done in this PR — doc-only sibling note).
 **Wave name:** `bcs-def-5-tg-teacher-telegram-reminders` (independent
 single-PR epic — see §5).
 **Trigger:** Telegram channel deferred from BCS-DEF-5
-(`docs/plans/bcs-def-5-teacher-reminders.md:474` §10).
+(`docs/plans/bcs-def-5-teacher-reminders.md` §10 — Telegram deferral row).
 **Author:** Claude (autonomous).
 
 > **READ FIRST: `docs/plans/bcs-def-4-tg-telegram-reminders.md`.** This is a
