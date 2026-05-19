@@ -317,23 +317,3 @@ function Highlight({ children }: { children: React.ReactNode }) {
   )
 }
 
-function PricingTable() {
-  const rows = [
-    { label: '50 минут', desc: 'Обычные уроки', price: '3 500 ₽' },
-    { label: '50 минут', desc: 'Подготовка к экзаменам', price: '5 000 ₽' },
-    { label: '90 минут', desc: 'Экстренная подготовка к экзаменам', price: '10 000 ₽' },
-  ]
-  return (
-    <div style={{ borderRadius: 10, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)' }}>
-      {rows.map((row, i) => (
-        <div key={`${row.label}-${i}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '13px 18px', background: i % 2 === 0 ? 'rgba(255,255,255,0.03)' : 'transparent', borderBottom: i < rows.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none', gap: 12 }}>
-          <div>
-            <span style={{ fontSize: 13, color: '#A1A1AA' }}>{row.label} · </span>
-            <span style={{ fontSize: 14, color: '#E4E4E7' }}>{row.desc}</span>
-          </div>
-          <span style={{ fontSize: 15, fontWeight: 700, background: 'linear-gradient(135deg, #C87878, #E8A890)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', flexShrink: 0 }}>{row.price}</span>
-        </div>
-      ))}
-    </div>
-  )
-}

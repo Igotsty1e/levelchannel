@@ -106,10 +106,6 @@ export function LessonsSection({
   initialPaidSlotIds,
   initialRefundedSlotIds,
   hasAssignedTeacher,
-  assignedTeacherId,
-  activePackages,
-  postpaidAllowed,
-  billingWaveActive,
   cancelWindowHours,
 }: Props) {
   const effectiveCancelWindowHours =

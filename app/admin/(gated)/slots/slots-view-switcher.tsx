@@ -337,7 +337,6 @@ function halfHourToUtcIso(ymd: string, halfHour: number): string | null {
   const totalMin = 6 * 60 + halfHour * 30
   const h = Math.floor(totalMin / 60)
   const m = totalMin % 60
-  const hhmm = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`
   // Inline MSK→UTC: MSK is UTC+3 year-round.
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd)
   if (!match) return null

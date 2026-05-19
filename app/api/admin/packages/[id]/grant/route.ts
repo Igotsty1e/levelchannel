@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID } from 'crypto'
+import { createHash, randomBytes } from 'crypto'
 
 import { NextResponse } from 'next/server'
 
