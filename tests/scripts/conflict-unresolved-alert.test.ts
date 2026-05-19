@@ -3,13 +3,16 @@ import { describe, expect, it } from 'vitest'
 // BCS-DEF-1 Phase 2 (2026-05-19) — unit tests for the probe's pure
 // helpers. `scripts/conflict-unresolved-alert.mjs` exports
 // `fingerprint`, `buildEmail`, `readOffenderRows`, `readOffenderCounts`,
-// `readPerTeacherOmittedCounts` as named exports so this test can
-// import them without invoking `main()` (the `if (invokedDirectly)
-// { main() }` guard at the bottom keeps the file safe to import).
+// `readPerTeacherOmittedCounts`, `readFingerprintTuples` as named
+// exports so this test can import them without invoking `main()` (the
+// `if (invokedDirectly) { main() }` guard at the bottom keeps the file
+// safe to import).
 //
-// The DB-touching readers are covered by an integration test (next
-// sub-PR). This file pins the pure-function contracts: fingerprint
-// determinism + sensitivity, plus the email body shape.
+// The DB-touching readers (readOffenderRows / readOffenderCounts /
+// readPerTeacherOmittedCounts / readFingerprintTuples) are NOT covered
+// here — folded into BCS-DEF-1-TEST-FILLOUT (item 6) per
+// ENGINEERING_BACKLOG.md. This file pins the pure-function contracts:
+// fingerprint determinism + sensitivity, plus the email body shape.
 
 // Dynamic import keeps vitest's TypeScript transform from choking on
 // the .mjs module before runtime — same pattern used by the existing

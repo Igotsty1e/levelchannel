@@ -209,7 +209,7 @@ Shared probe-side helpers in `scripts/lib/`:
 
 Real test files (per round-1 WARN#8 correction):
 
-- **`tests/admin/operator-settings.test.ts:18-30,69-85`** — unit tests around `SETTING_SCHEMA`; pins `validScopes` set + "all three probes" expectation. Test must update to include `'conflict-unresolved'`.
+- **`tests/admin/operator-settings.test.ts:18-30,69-85`** — unit tests around `SETTING_SCHEMA`; original draft said this pinned an "all three probes" expectation. ⚠️ **As shipped:** the test already asserts all 4 probes (including `'conflict-unresolved'`); the wave landed the test update alongside the schema extension.
 - **`tests/integration/admin/operator-settings.test.ts`** — integration tests for the resolver against a live DB. Adding new keys here exercises them automatically because the test iterates `SETTING_SCHEMA`.
 - **`tests/integration/admin/probe-resolver-integration.test.ts:17-27,86-223`** — execFile's the real `.mjs` probes against a live DB + asserts the resolver picks up DB values. Need an entry for `conflict-unresolved`.
 - **`tests/integration/admin/alerts-obs.test.ts:183-217`** — currently does a manual `CREATE TABLE probe_runs ... CHECK (probe_name IN ('auth-flow','calendar-pathology','webhook-flow'))` to seed an integration DB. This MUST be updated to include `'conflict-unresolved'` (otherwise integration tests inserting that probe_name will fail CHECK before migration 0058 runs in the test setup).

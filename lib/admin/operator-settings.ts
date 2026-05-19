@@ -18,16 +18,11 @@ export type ProbeName =
   | 'auth-flow'
   | 'calendar-pathology'
   | 'webhook-flow'
-  // BCS-DEF-1 Phase 1 (2026-05-19): widened to include the
-  // conflict-unresolved alert probe. The probe SCRIPT + systemd unit
-  // ship in Phase 2; for now the type widening lets us land the 4
-  // operator-tunable threshold keys (CONFLICT_UNRESOLVED_*) below
-  // without TypeScript errors. `/admin/settings/alerts` doesn't render
-  // a section for this probe yet (PROBE_NAMES in
-  // `lib/admin/probe-status.ts` still iterates only the three
-  // shipped probes); the keys exist in SETTING_SCHEMA but are
-  // invisible in the editor UI until Phase 2 adds the probe to
-  // PROBE_NAMES + PROBE_TITLES.
+  // BCS-DEF-1 (2026-05-19): widened to include the conflict-unresolved
+  // alert probe. As-shipped: PROBE_NAMES in `lib/admin/probe-status.ts`
+  // iterates all 4 probes and `/admin/settings/alerts` renders the
+  // editor section for the 4 CONFLICT_UNRESOLVED_* keys alongside the
+  // others. (The original layered Phase-1→Phase-4 staging is closed.)
   | 'conflict-unresolved'
 
 type SettingSchemaInt = {
