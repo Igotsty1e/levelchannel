@@ -185,12 +185,18 @@ describe('POST /api/admin/settings/alerts/[probe]/test-send', () => {
       // 'conflict-unresolved' to match migration 0058. Without this
       // any subsequent integration test inserting that probe_name
       // would fail CHECK on the recreated-table state.
+      // BCS-DEF-4 (2026-05-19) — CHECK extended further to include
+      // 'learner-reminders' (probe_name) and 'channel_disabled_by_operator'
+      // (verdict_kind) to match migration 0066. Without this the post-drop
+      // recreate diverges from prod and any subsequent test invoking the
+      // learner-reminder-dispatch scheduler silently loses its probe_runs
+      // row to a swallowed CHECK violation inside recordProbeRun().
       await pool.query(`
         create table if not exists probe_runs (
           id uuid primary key default gen_random_uuid(),
           probe_name text not null check (probe_name in (
             'auth-flow', 'calendar-pathology', 'webhook-flow',
-            'conflict-unresolved'
+            'conflict-unresolved', 'learner-reminders'
           )),
           ran_at timestamptz not null default now(),
           verdict_kind text not null check (verdict_kind in (
@@ -198,7 +204,8 @@ describe('POST /api/admin/settings/alerts/[probe]/test-send', () => {
             'no_failures', 'within_thresholds', 'no_offenders',
             'low_volume_skip', 'all_resolved', 'ok',
             'config_missing', 'error',
-            'test_send_succeeded', 'test_send_failed'
+            'test_send_succeeded', 'test_send_failed',
+            'channel_disabled_by_operator'
           )),
           alert_sent boolean not null default false,
           recipient_email text null,
