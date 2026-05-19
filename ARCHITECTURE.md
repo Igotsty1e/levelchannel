@@ -21,6 +21,7 @@ Module-specific contracts + invariants + file inventory live next to each module
 - [`lib/calendar/README.md`](lib/calendar/README.md) — Google OAuth, pull/push workers, channel renewer, conflict detector (2 critical-path files).
 - [`lib/admin/README.md`](lib/admin/README.md) — operator-tunable settings, probe-status (1 critical-path file).
 - [`lib/security/README.md`](lib/security/README.md) — idempotency, rate-limit, origin gate (2 critical-path files).
+- [`lib/db/README.md`](lib/db/README.md) — single shared `pg.Pool`, TLS policy resolver, SQLSTATE predicates (infrastructure; every other module reaches Postgres through here).
 
 The critical-path inventory (`docs/critical-path.md`) lists the 20 load-bearing files across these modules. PRs touching any of them MUST carry `Codex-Paranoia: SIGN-OFF`.
 
@@ -164,7 +165,7 @@ e-mail and full IP for incident investigation. Admin-only access; see
 - [`scripts/backfill-audit-encryption.mjs`](scripts/backfill-audit-encryption.mjs) - one-shot operator-driven backfill that encrypts pre-Wave-2.1 rows. Idempotent, batched (1000 default), uses `FOR UPDATE SKIP LOCKED` so re-runs are safe under concurrent app traffic. Run with `AUDIT_ENCRYPTION_KEY=... DATABASE_URL=... node scripts/backfill-audit-encryption.mjs`. Exits 0 on full sweep, 1 if any rows remain after the run (re-run).
 - [`scripts/rotate-audit-encryption.mjs`](scripts/rotate-audit-encryption.mjs) - Wave 3.1 operator-driven key rotation. Re-encrypts every row from `AUDIT_ENCRYPTION_KEY_OLD` to `AUDIT_ENCRYPTION_KEY`. Idempotent (rows already on PRIMARY are skipped via the try-decrypt-either predicate), batched, `FOR UPDATE SKIP LOCKED`. See `SECURITY.md § At-rest encryption — Key rotation` for the full runbook.
 - [`lib/audit/pool.ts`](lib/audit/pool.ts) - thin re-export → `getDbPoolOrNull()` from the common `lib/db/pool.ts`. The `OrNull` shape is needed because the recorder is best-effort (silent skip without DATABASE_URL).
-- [`lib/db/pool.ts`](lib/db/pool.ts) - the single pg Pool for the project (5 domain pools were consolidated 2026-04-29). `getDbPool()` throws when `DATABASE_URL` is missing; `getDbPoolOrNull()` does a silent skip. Cap via `DATABASE_POOL_MAX` env (default 10). Wave 1.1 added `resolveSslConfig(url, env)` which auto-detects `localhost` / `127.0.0.1` / `::1` / `*.local` as no-TLS (loopback — single-server deploys with Postgres on the same VPS are a valid topology) and forces `ssl: { rejectUnauthorized: true }` on every non-local host. Production refuses `DB_SSL=disable` and `DB_SSL_REJECT_UNAUTHORIZED=false` ONLY for non-local hosts (the threat is "TLS off for a REMOTE Postgres in prod", not "TLS off on the loopback path"). The JS-side `ssl` option overrides any `?sslmode=...` URL hint, so the policy is owned in code.
+- [`lib/db/pool.ts`](lib/db/pool.ts) - the single pg Pool for the project (5 domain pools were consolidated 2026-04-29). Full invariants — TLS policy, loopback allowlist, `DB_SSL` overrides, health-probe pool isolation — live next to the code (see [`lib/db/README.md`](lib/db/README.md)). `getDbPool()` throws when `DATABASE_URL` is missing; `getDbPoolOrNull()` does a silent skip; `getHealthProbePool()` runs `/api/health` on a dedicated tiny pool.
 
 Write points (route handlers):
 
