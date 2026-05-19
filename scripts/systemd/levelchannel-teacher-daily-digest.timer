@@ -1,0 +1,27 @@
+# Reference systemd timer for scripts/teacher-daily-digest.mjs.
+# Copy to /etc/systemd/system/ on the VPS; activation lives in
+# scripts/activate-prod-ops.sh.
+#
+# BCS-DEF-5 (2026-05-19) — calendar-aligned every-minute cron. Round-3
+# BLOCKER 5 closure (plan §0e): we use `OnCalendar=` (NOT
+# `OnUnitActiveSec=`) because:
+#   1. Calendar-aligned ticks land on `:00` of every minute, which is
+#      the firing-band reference (08:00:00 in the teacher's TZ).
+#   2. `OnCalendar=` + `Persistent=true` lets systemd recover a missed
+#      tick on the NEXT calendar minute — but the ±60sec firing-band
+#      gate naturally skips a missed-tick recovery, so no spurious
+#      late sends.
+#   3. `OnUnitActiveSec=` is monotonic and drifts relative to the wall
+#      clock — fine for alert probes but wrong for a wall-clock-
+#      sensitive feature like "08:00 local digest".
+
+[Unit]
+Description=Run LevelChannel teacher daily digest every minute (08:00 local fire)
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=true
+Unit=levelchannel-teacher-daily-digest.service
+
+[Install]
+WantedBy=timers.target

@@ -58,6 +58,7 @@ import {
   resolveChannelSettings,
   resolveOperatorSettingsForProbe,
 } from './lib/operator-settings.mjs'
+import { pluralRu } from './lib/plural-ru.mjs'
 import {
   recordProbeRun,
   PROBE_NAMES,
@@ -397,13 +398,10 @@ export function buildEmail(offenders, counts, perTeacherOmitted) {
   return { subject, text }
 }
 
-function pluralRu(n, one, few, many) {
-  const mod10 = n % 10
-  const mod100 = n % 100
-  if (mod10 === 1 && mod100 !== 11) return one
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few
-  return many
-}
+// pluralRu was inlined here pre-BCS-DEF-5 (2026-05-19); extracted to
+// scripts/lib/plural-ru.mjs so the daily-digest cron + this probe share
+// the helper. Drift test (tests/scripts/plural-ru.test.ts) pins TS ↔
+// mjs equality.
 
 // BCS-DEF-1-TG (2026-05-19) — Telegram body (plan §2.3, §4.5).
 // 4-line digest + deep-link; no teacher emails, no slot IDs, no

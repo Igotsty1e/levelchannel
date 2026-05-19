@@ -286,6 +286,12 @@ declare -a units=(
   "levelchannel-calendar-revive-blocked.timer"
   "levelchannel-calendar-reconcile.service"
   "levelchannel-calendar-reconcile.timer"
+  # BCS-DEF-5 (2026-05-19) — daily 08:00 teacher lesson digest. Plan
+  # §2.9. User-facing digest (not an operator alert), but rides on the
+  # same systemd-cron rails. Master switch defaults to OFF — operator
+  # enables in /admin/settings/digest after first deploy.
+  "levelchannel-teacher-daily-digest.service"
+  "levelchannel-teacher-daily-digest.timer"
 )
 
 UNITS_CHANGED=0
@@ -338,6 +344,8 @@ declare -a timers=(
   "levelchannel-calendar-renew-channels.timer"
   "levelchannel-calendar-revive-blocked.timer"
   "levelchannel-calendar-reconcile.timer"
+  # BCS-DEF-5 (2026-05-19) — daily 08:00 teacher lesson digest timer.
+  "levelchannel-teacher-daily-digest.timer"
 )
 
 # BCS-OP-ROLLOUT plan §7 canonical sequence — restart the app BEFORE
@@ -396,7 +404,7 @@ step "Post-activation summary"
 echo
 echo "${B}Active timers:${N}"
 systemctl list-timers --no-pager 2>/dev/null \
-  | grep -E "levelchannel-(webhook-flow-alert|auth-flow-alert|conflict-unresolved-alert|db-retention|stale-orders|auto-complete-slots|refund-reconcile|calendar-pathology-alert|calendar-(pull|push|intents|renew-channels|revive-blocked|reconcile))" \
+  | grep -E "levelchannel-(webhook-flow-alert|auth-flow-alert|conflict-unresolved-alert|db-retention|stale-orders|auto-complete-slots|refund-reconcile|calendar-pathology-alert|teacher-daily-digest|calendar-(pull|push|intents|renew-channels|revive-blocked|reconcile))" \
   || echo "  (timers not yet shown — they appear after first scheduled run)"
 
 echo

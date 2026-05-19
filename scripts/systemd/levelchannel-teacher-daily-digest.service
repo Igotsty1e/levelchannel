@@ -1,0 +1,50 @@
+# Reference systemd unit for scripts/teacher-daily-digest.mjs.
+# `scripts/activate-prod-ops.sh` renders the placeholders below during
+# installation from the private runbook.
+#
+# BCS-DEF-5 (2026-05-19) — daily 08:00 teacher lesson digest (plan
+# §2.9). Sibling of the 4 alert probes but USER-facing (not operator-
+# facing). Runs every minute; fires per-teacher only when the teacher's
+# local clock is within `[07:59:00, 08:01:00]`.
+#
+# All env (DATABASE_URL, RESEND_API_KEY, EMAIL_FROM,
+# NEXT_PUBLIC_SITE_URL, plus the 3 TEACHER_DIGEST_* knobs) is read from
+# the production env file.
+
+[Unit]
+Description=LevelChannel teacher daily digest (per-teacher 08:00 local lesson summary)
+After=network.target
+
+[Service]
+Type=oneshot
+User=levelchannel
+Group=levelchannel
+WorkingDirectory=__LEVELCHANNEL_APP_DIR__
+EnvironmentFile=__LEVELCHANNEL_ENV_FILE__
+ExecStart=/usr/bin/node scripts/teacher-daily-digest.mjs
+StandardOutput=journal
+StandardError=journal
+
+# Sandboxing — same 12-directive set as the 4 alert probes
+# (auth-flow-alert / calendar-pathology-alert / webhook-flow-alert /
+# conflict-unresolved-alert). The digest cron does no FS state writes
+# (state lives in `teacher_account_daily_digests`), so no
+# ReadWritePaths= override needed.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+# MemoryDenyWriteExecute intentionally NOT set — V8 JIT requires W+X.
+# SystemCallFilter restored with explicit `pkey_*` allowlist for V8
+# JIT-cache hardening (Intel MPK), matching the alert probe units.
+SystemCallFilter=@system-service pkey_alloc pkey_mprotect pkey_free
+SystemCallFilter=~@privileged @resources @debug @mount @cpu-emulation @obsolete
