@@ -24,6 +24,14 @@ export type ProbeName =
   // editor section for the 4 CONFLICT_UNRESOLVED_* keys alongside the
   // others. (The original layered Phase-1→Phase-4 staging is closed.)
   | 'conflict-unresolved'
+  // BCS-DEF-5 (2026-05-19) — daily 08:00 teacher lesson digest.
+  // Scope discriminator for the 3 TEACHER_DIGEST_* operator keys
+  // (master switch, rate-limit-per-tick, max-attempts). The probe
+  // itself is a user-facing digest, NOT an operator alert — it does
+  // not iterate via PROBE_NAMES in lib/admin/probe-status.ts and is
+  // not rendered on /admin/settings/alerts; it has its own admin
+  // page at /admin/settings/digest (plan §2.7).
+  | 'teacher-daily-digest'
 
 // BCS-DEF-1-TG (2026-05-19) — channel-wide scopes for cross-probe
 // delivery channels (Telegram today; Slack/SMS deferred per plan
@@ -222,6 +230,41 @@ export const SETTING_SCHEMA = {
     description:
       'max retries (1s backoff) on transient Telegram API errors (5xx/network/429)',
     scope: 'telegram',
+  },
+  // BCS-DEF-5 (2026-05-19) — daily 08:00 teacher lesson digest. Plan
+  // §2.4. Default master switch is OFF so the operator must explicitly
+  // enable after deploy via /admin/settings/digest (Round-1 BLOCKER 7
+  // closure: avoids the "first sends fire before operator reaches UI"
+  // race).
+  TEACHER_DIGEST_MASTER_SWITCH: {
+    kind: 'int',
+    default: 0,
+    min: 0,
+    max: 1,
+    envName: 'TEACHER_DIGEST_MASTER_SWITCH',
+    description:
+      'master switch (1=on/0=off) for the daily 08:00 teacher lesson digest. Default off; operator enables after deploy.',
+    scope: 'teacher-daily-digest',
+  },
+  TEACHER_DIGEST_RATE_LIMIT_PER_TICK: {
+    kind: 'int',
+    default: 200,
+    min: 1,
+    max: 5000,
+    envName: 'TEACHER_DIGEST_RATE_LIMIT_PER_TICK',
+    description:
+      'max teachers processed per tick; remainder defers to subsequent ticks within the firing window.',
+    scope: 'teacher-daily-digest',
+  },
+  TEACHER_DIGEST_MAX_ATTEMPTS: {
+    kind: 'int',
+    default: 3,
+    min: 1,
+    max: 10,
+    envName: 'TEACHER_DIGEST_MAX_ATTEMPTS',
+    description:
+      'max retries for a single teacher digest within the firing window before terminal send_failed.',
+    scope: 'teacher-daily-digest',
   },
 } as const satisfies Record<string, SettingSchema>
 

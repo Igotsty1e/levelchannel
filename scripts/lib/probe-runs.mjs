@@ -29,6 +29,10 @@ export const PROBE_NAMES = Object.freeze({
   // is valid for INSERT, and recordProbeRun() accepts rows with this
   // value.
   CONFLICT_UNRESOLVED: 'conflict-unresolved',
+  // BCS-DEF-5 (2026-05-19) — daily 08:00 teacher lesson digest. Probe
+  // script: scripts/teacher-daily-digest.mjs. CHECK extended in
+  // migration 0063.
+  TEACHER_DAILY_DIGEST: 'teacher-daily-digest',
 })
 
 // Every value here MUST appear verbatim in migration 0053's
@@ -48,6 +52,11 @@ export const VERDICT_KINDS = Object.freeze({
   ERROR: 'error',
   TEST_SEND_SUCCEEDED: 'test_send_succeeded',
   TEST_SEND_FAILED: 'test_send_failed',
+  // BCS-DEF-5 (2026-05-19) — daily teacher digest probe verdicts.
+  // CHECK extended in migration 0063.
+  DIGEST_SENT: 'digest_sent',
+  DIGEST_SKIPPED_DISABLED: 'digest_skipped_disabled',
+  DIGEST_NO_TEACHERS: 'digest_no_teachers',
 })
 
 // BCS-DEF-1-TG (2026-05-19) — per-channel discriminator on probe_runs.

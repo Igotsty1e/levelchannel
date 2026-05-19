@@ -165,6 +165,39 @@ export const SETTING_SCHEMA = Object.freeze({
       'max retries (1s backoff) on transient Telegram API errors (5xx/network/429)',
     scope: 'telegram',
   }),
+  // BCS-DEF-5 (2026-05-19) — daily 08:00 teacher lesson digest. Plan
+  // §2.4. The mjs mirror MUST stay structurally identical to the TS
+  // schema — the drift test pins JSON.stringify equality.
+  TEACHER_DIGEST_MASTER_SWITCH: Object.freeze({
+    kind: 'int',
+    default: 0,
+    min: 0,
+    max: 1,
+    envName: 'TEACHER_DIGEST_MASTER_SWITCH',
+    description:
+      'master switch (1=on/0=off) for the daily 08:00 teacher lesson digest. Default off; operator enables after deploy.',
+    scope: 'teacher-daily-digest',
+  }),
+  TEACHER_DIGEST_RATE_LIMIT_PER_TICK: Object.freeze({
+    kind: 'int',
+    default: 200,
+    min: 1,
+    max: 5000,
+    envName: 'TEACHER_DIGEST_RATE_LIMIT_PER_TICK',
+    description:
+      'max teachers processed per tick; remainder defers to subsequent ticks within the firing window.',
+    scope: 'teacher-daily-digest',
+  }),
+  TEACHER_DIGEST_MAX_ATTEMPTS: Object.freeze({
+    kind: 'int',
+    default: 3,
+    min: 1,
+    max: 10,
+    envName: 'TEACHER_DIGEST_MAX_ATTEMPTS',
+    description:
+      'max retries for a single teacher digest within the firing window before terminal send_failed.',
+    scope: 'teacher-daily-digest',
+  }),
 })
 
 const INTEGER_PATTERN = /^\d+$/
