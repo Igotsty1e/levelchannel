@@ -32,6 +32,15 @@ export type ProbeName =
   // not rendered on /admin/settings/alerts; it has its own admin
   // page at /admin/settings/digest (plan §2.7).
   | 'teacher-daily-digest'
+  // BCS-DEF-4 (2026-05-19): widened to include the learner-reminders
+  // scheduler. Structurally NOT an alert probe (no dedup-fingerprint,
+  // no operator-storm semantics) — but co-located on /admin/settings/alerts
+  // because the operator already visits that page daily and the
+  // single-knob LEARNER_REMINDER_WINDOW_MINUTES fits the existing
+  // SETTING_SCHEMA shape. `PROBE_NAMES` in `lib/admin/probe-status.ts`
+  // intentionally EXCLUDES 'learner-reminders' so probe iteration
+  // doesn't try to render a "last alert" card for the scheduler.
+  | 'learner-reminders'
 
 // BCS-DEF-1-TG (2026-05-19) — channel-wide scopes for cross-probe
 // delivery channels (Telegram today; Slack/SMS deferred per plan
@@ -265,6 +274,43 @@ export const SETTING_SCHEMA = {
     description:
       'max retries for a single teacher digest within the firing window before terminal send_failed.',
     scope: 'teacher-daily-digest',
+  },
+  // BCS-DEF-4 (2026-05-19) — learner lesson reminder scheduler.
+  // Three keys: email master switch + window + per-tick send cap.
+  // No CSV-offsets, no late-tolerance, no max-attempts (one-shot
+  // send per slot per channel; failures land as status='skipped'
+  // skipped_reason='send_failed').
+  //
+  // Plan: docs/plans/bcs-def-4-learner-reminders.md §2.3.
+  LEARNER_REMINDERS_EMAIL_ENABLED: {
+    kind: 'int',
+    default: 1,
+    min: 0,
+    max: 1,
+    envName: 'LEARNER_REMINDERS_EMAIL_ENABLED',
+    description:
+      'master switch (1=on/0=off) for learner email reminders sent by scripts/learner-reminder-dispatch.mjs',
+    scope: 'learner-reminders',
+  },
+  LEARNER_REMINDER_WINDOW_MINUTES: {
+    kind: 'int',
+    default: 60,
+    min: 5,
+    max: 360,
+    envName: 'LEARNER_REMINDER_WINDOW_MINUTES',
+    description:
+      'single window (in minutes before slot start) at which a learner reminder is dispatched',
+    scope: 'learner-reminders',
+  },
+  LEARNER_REMINDERS_RATE_LIMIT_PER_TICK: {
+    kind: 'int',
+    default: 200,
+    min: 1,
+    max: 5000,
+    envName: 'LEARNER_REMINDERS_RATE_LIMIT_PER_TICK',
+    description:
+      'max reminder sends dispatched per scheduler tick (defends Resend / Telegram quota; counts email + telegram together)',
+    scope: 'learner-reminders',
   },
 } as const satisfies Record<string, SettingSchema>
 
