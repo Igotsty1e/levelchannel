@@ -6,15 +6,19 @@
 
 Server-side primitives backing the `/admin/*` surface — observability readers, operator-tunable settings, account-mutation helpers used by route handlers.
 
-- **Operator settings** (ALERTS-EDITOR 2026-05-18) — `operator-settings.ts` is the canonical TS schema + resolver chain (DB → env → default). The probe scripts read the mirror at `scripts/lib/operator-settings.mjs`. Writes are single-TX with the audit row landed inside the same transaction. Audit-log immutability enforced via `block_immutable_operator_settings_events_trg` (UPDATE always blocked; DELETE blocked for rows < 89 days).
-- **Probe status** (ALERTS-OBS 2026-05-16; extended BCS-DEF-1 Phase 4 2026-05-19) — `probe-status.ts` reads `probe_runs` for the `/admin/settings/alerts` page. `PROBE_NAMES` iterates 4 probes — `auth-flow` + `calendar-pathology` + `webhook-flow` + `conflict-unresolved` (4th added by BCS-DEF-1; migration 0058 widened the CHECK). Migration-pending tolerance via `isUndefinedTableError` from `lib/db/errors`.
+- **Operator settings** (ALERTS-EDITOR 2026-05-18; extended BCS-DEF-1-TG + BCS-DEF-5 2026-05-19) — `operator-settings.ts` is the canonical TS schema + resolver chain (DB → env → default). The probe scripts read the mirror at `scripts/lib/operator-settings.mjs`. Writes are single-TX with the audit row landed inside the same transaction. Audit-log immutability enforced via `block_immutable_operator_settings_events_trg` (UPDATE always blocked; DELETE blocked for rows < 89 days). Scopes: 4 alert probes + `telegram` (BCS-DEF-1-TG channel master switch + retry max) + `teacher-daily-digest` (BCS-DEF-5 master switch + per-tick rate-limit + max attempts).
+- **Probe status** (ALERTS-OBS 2026-05-16; extended BCS-DEF-1 Phase 4 + BCS-DEF-1-TG 2026-05-19) — `probe-status.ts` reads `probe_runs` for the `/admin/settings/alerts` page. `PROBE_NAMES` iterates 4 probes — `auth-flow` + `calendar-pathology` + `webhook-flow` + `conflict-unresolved` (4th added by BCS-DEF-1; migration 0058 widened the CHECK). `getLatestTelegramRun(probeName)` (BCS-DEF-1-TG) reads the latest `recipient_kind='telegram'` row via `probe_runs_telegram_latest_idx` (migration 0061). Migration-pending tolerance via `isUndefinedTableError` from `lib/db/errors`.
+- **Digest summary** (BCS-DEF-5 2026-05-19) — `digest-summary.ts` reads the daily 08:00 teacher-digest's `probe_runs` ticks (`probe_name='teacher-daily-digest'`, migration 0068) for the per-tick last-run card on `/admin/settings/digest`, and reads `teacher_account_daily_digests` (migration 0067) for the 7-day operator widget. The digest probe is a SIBLING surface — not iterated in `PROBE_NAMES` because the digest is user-facing copy on its own dedicated page, not an operator alert.
+- **Conflict feed** (BCS-DEF-2 2026-05-19) — `conflict-feed.ts` backs the `/admin/slots/conflicts` 30-day operator dashboard. Four exports: `listAdminConflicts` + `countAdminConflicts` (`status='booked'` filter + 30-day window, via partial index `lesson_slots_external_conflict_admin_idx` from migration 0062), `isAuditTablePresent()` (migration-pending probe — NO caching per R2-WARN#4), `runCancelFromConflictCleanup` (post-commit cleanup TX with SAVEPOINT-wrapped `slot_admin_actions` INSERT; 42P01 swallowed inside the helper).
 
 ## Files
 
 | File | Role |
 |---|---|
 | `operator-settings.ts` | SETTING_SCHEMA whitelist + resolver chain + single-TX write/delete + listOperatorSettingsForAdmin |
-| `probe-status.ts` | `getProbeStatus(probeName)` for `/admin/settings/alerts` |
+| `probe-status.ts` | `getProbeStatus(probeName)` for `/admin/settings/alerts`; `getLatestTelegramRun` (BCS-DEF-1-TG) |
+| `digest-summary.ts` | BCS-DEF-5: `getDigestLastRun` + `getDigestSevenDaySummary` for `/admin/settings/digest` |
+| `conflict-feed.ts` | BCS-DEF-2: `listAdminConflicts` + `countAdminConflicts` + `isAuditTablePresent` + `runCancelFromConflictCleanup` for `/admin/slots/conflicts` |
 
 ## Invariants
 

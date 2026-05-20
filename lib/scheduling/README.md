@@ -11,6 +11,7 @@ Owns:
 - **Lifecycle marks** — operator stamps `completed` / `no_show_*` post-`start_at`. Cron sweep auto-flips `booked` → `completed` after `start_at + duration_minutes`.
 - **Zoom URL on booked slot** (BCS-DEF-3, 2026-05-18) — `setSlotZoomUrl(slotId, zoomUrl, byAccountId, kind)` atomically writes `lesson_slots.zoom_url` on a booked slot. Admin path bypasses ownership; teacher path enforces it via SQL `teacher_account_id = $4` clause. URL validator (`validateZoomUrl` in `validation.ts`) gates: https-only, length ≤ 512, URL() parse. Migration 0056 adds the column + a CHECK constraint as last-line safety. Cabinet renders the "▶ Войти на занятие" link on booked slots; admin + teacher edit via `/api/{admin,teacher}/slots/[id]/zoom-url`.
 - **Teacher-learners view** — `teacher-learners.ts` query for the operator's per-teacher dashboard.
+- **Admin conflict-feed surface** (BCS-DEF-2, 2026-05-19) — the `/admin/slots/conflicts` 30-day dashboard reads via `lib/admin/conflict-feed.ts:listAdminConflicts` (`status='booked'` + `external_conflict_at <= since`, served by partial index `lesson_slots_external_conflict_admin_idx` from migration 0062). Cross-action audit ledger `slot_admin_actions` (migration 0062) records `dismiss-conflict` + `cancel-from-conflict` operator actions; canonical audit stays in `lesson_slots.events` jsonb (this table is a cross-action index for operator queries). 42P01 in the deploy-before-migrate window is recovered via SAVEPOINT in `app/api/admin/slots/[id]/dismiss-conflict/route.ts` + post-commit log+swallow inside `runCancelFromConflictCleanup` (called by `cancelSlot` when `fromConflict=true`).
 - **External-busy integration** — see `lib/calendar/README.md` for the Google-side surface; this module owns the SLOT side of booking only.
 
 ## Files
@@ -47,6 +48,7 @@ Owns:
 - `docs/plans/phase-5-lifecycle-24h-rule.md` — 24h rule design (amended by POLICY-KNOBS).
 - `docs/plans/prepay-postpay-billing.md` — billing integration boundary.
 - `docs/plans/policy-knobs.md` — env-tunable cancel window.
+- `docs/plans/conflict-feed.md` — BCS-DEF-2 admin `/admin/slots/conflicts` dashboard (paranoia round-3 SIGN-OFF; migration 0062 + slot_admin_actions).
 - `docs/critical-path.md §Calendar + scheduling integrity` — the 2 files in this module that are load-bearing.
 
 ## Test surface
