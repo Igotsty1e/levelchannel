@@ -1,6 +1,6 @@
 # BCS-DEF-4-TG — Telegram bot-handshake for learner lesson-start reminders
 
-**Status:** DRAFT 2026-05-20 — **8 paranoia rounds done** (initial 3 + 5 user-approved overrides; all returned BLOCK; all findings closed in-doc; user-requested «до полного согласия»). Cumulative: 30 BLOCKERs + 16 WARNs + 4 INFOs across 8 codex calls. Round-8 confirmed 3 round-7 closures (INFOs) + surfaced 1 BLOCKER + 1 WARN: (a) webhook rate-limit pseudocode used object-form `enforceRateLimit({key, ...})` which doesn't exist — real signature `enforceRateLimit(request, scope, limit, windowMs)` keys by IP only; rewrote to use `takeRateLimit` primitive directly with `tg-webhook:${fromId}` composite key; (b) RISK-6 said "serializes via select_for_share" — actual code uses plain SELECT for read + FOR UPDATE for write; rewritten to be source-honest. Transcripts in `/tmp/codex-paranoia-20260520T*-bcs-def-4-tg*` directories.
+**Status:** PLAN SIGN-OFF round 9/9 (2026-05-20) — **9 paranoia rounds done** (initial 3 + 6 user-approved overrides; user explicitly requested «до полного согласия»). Round 9 returned **SIGN-OFF** with 0 BLOCKERs: 2 INFOs confirmed round-8 closures + 1 minor WARN (stale §4.6 line referencing `enforceRateLimit` for webhook — closed inline). Cumulative across all 9 rounds: 30 BLOCKERs + 17 WARNs + 6 INFOs closed in-doc. Trend: 11 → 7 → 2 → 2 → 2 → 4 → 1 → 1 → 0 BLOCKERs. **Plan unblocked for implementation.** Transcripts in `/tmp/codex-paranoia-20260520T*-bcs-def-4-tg*` directories.
 **Wave name:** `bcs-def-4-tg-telegram-reminders` (single-PR epic — see §5).
 **Trigger:** Telegram handshake deferred from BCS-DEF-4 parent (`docs/plans/bcs-def-4-learner-reminders.md:188` — "BCS-DEF-4-TG continues to own the bot-handshake flow + the `LEARNER_REMINDERS_TELEGRAM_ENABLED` operator master switch").
 **Author:** Claude (autonomous).
@@ -846,7 +846,7 @@ Every egress point that touches a Telegram-derived string passes through
 
 ### 4.6 Rate-limit / abuse
 
-- Webhook route: 20 req/min/from-id via `enforceRateLimit`.
+- Webhook route: 20 req/min/from-id via `takeRateLimit(`tg-webhook:${fromId}`, 20, 60_000)` (NOT `enforceRateLimit` — that helper is IP-keyed; see §2.4 step 6 + Round-8 BLOCKER #1 closure).
 - Cabinet `requestLearnerTelegramBindCode` Server Action: 5 req/hour/account.
 - Scheduler tick: existing `LEARNER_REMINDERS_RATE_LIMIT_PER_TICK` already caps both channels together (no separate Telegram limit).
 
