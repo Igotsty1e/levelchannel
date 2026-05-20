@@ -1,6 +1,6 @@
 # BCS-DEF-4-TG — Telegram bot-handshake for learner lesson-start reminders
 
-**Status:** DRAFT 2026-05-20 — **6 paranoia rounds done** (initial 3 + 3 user-approved overrides at rounds 4, 5, 6; all returned BLOCK; all findings closed in-doc). Cumulative: 28 BLOCKERs + 13 WARNs + 1 INFO closed across 6 codex calls. Round-6 (this iteration) surfaced 4 new BLOCKERs: (a) async `cookies()` in Next.js 16 — pseudocode now `await cookies()`; (b) `enforceAccountRateLimit` returns `NextResponse | null`, not throws — Server Action variant unwraps the JSON body; rate-limit now wired into `unbindLearnerTelegram()` too; (c) §2.9 internal contradiction between "defer admin observability" and re-adding env-presence + active-sub count — split into IN SCOPE vs DEFERRED lists, removed teacher-digest terminology bleed; (d) `TELEGRAM_ALERT_CHAT_ID` operator chat-id has no semantics in learner channel — dropped from §3.5 test plan. Transcripts: `/tmp/codex-paranoia-20260520T081634Z-bcs-def-4-tg/round-{1,2,3}.md` + `/tmp/codex-paranoia-20260520T090205Z-bcs-def-4-tg-reconfirm/round.md` + `/tmp/codex-paranoia-20260520T114942Z-bcs-def-4-tg-round-5/round.md` + `/tmp/codex-paranoia-20260520T120245Z-bcs-def-4-tg-round-6/round.md`.
+**Status:** DRAFT 2026-05-20 — **7 paranoia rounds done** (initial 3 + 4 user-approved overrides at rounds 4-7; all returned BLOCK; all findings closed in-doc; user-requested «до полного согласия»). Cumulative: 29 BLOCKERs + 15 WARNs + 1 INFO closed across 7 codex calls. Round-7 surfaced 1 BLOCKER + 2 WARNs: (a) rate-limit `retryAfterSeconds` lives in the `Retry-After` HEADER not JSON body — pseudocode now reads `rl.headers.get('Retry-After')`; (b) §2.9 IN-SCOPE active-subscription count had no §3.7 test pin — added explicit count regression pin; (c) residual "cache invalidation works" wording from before R2-WARN-#8 closure — rewritten to "no operator-settings caching; each read fresh from DB". Transcripts in `/tmp/codex-paranoia-20260520T*-bcs-def-4-tg*` directories.
 **Wave name:** `bcs-def-4-tg-telegram-reminders` (single-PR epic — see §5).
 **Trigger:** Telegram handshake deferred from BCS-DEF-4 parent (`docs/plans/bcs-def-4-learner-reminders.md:188` — "BCS-DEF-4-TG continues to own the bot-handshake flow + the `LEARNER_REMINDERS_TELEGRAM_ENABLED` operator master switch").
 **Author:** Claude (autonomous).
@@ -578,9 +578,12 @@ placeholder with a 4-state component:
     ```ts
     const rl = await enforceAccountRateLimit(accountId, 'cabinet-tg-bind-code', 5, 3_600_000)
     if (rl) {
-      // rl is a NextResponse with status 429 + JSON body { error: 'rate_limited', ...}
-      const body = await rl.json().catch(() => ({}))
-      return { ok: false, error: 'rate_limited' as const, retryAfterSeconds: body?.retryAfterSeconds ?? 3600 }
+      // rl is a NextResponse with status 429. The retry-after lives
+      // in the `Retry-After` HEADER (string seconds), NOT the body.
+      // JSON body is just `{ error: 'Too many requests. Please try
+      // again later.' }`. See lib/security/account-rate-limit.ts:37-46.
+      const retryAfterSeconds = Number(rl.headers.get('Retry-After')) || 3600
+      return { ok: false, error: 'rate_limited' as const, retryAfterSeconds }
     }
     ```
     The caller in the cabinet page reads the `{ok:false, error:'rate_limited'}` shape and renders "Слишком частые запросы, попробуйте через час."
@@ -737,8 +740,9 @@ shape already supports the canonical state per migration 0065).
 
 `tests/integration/admin/alerts-learner-reminders-telegram-row.test.ts`:
 - GET as admin → `LEARNER_REMINDERS_TELEGRAM_ENABLED` row rendered alongside existing keys.
-- POST flip master switch → next scheduler tick + next webhook call sees the new value (operator-settings cache invalidation works).
+- POST flip master switch → next scheduler tick + next webhook call sees the new value (no operator-settings caching — each read calls `resolveOperatorSettingsForProbe(pool, ...)` fresh, hitting Postgres directly per `lib/admin/operator-settings.ts:401-449`; **Round-7 WARN #3 closure** — prior wording said "cache invalidation works" which was misleading since there's no cache to invalidate; the test pin is fresh-read DOES pick up flipped value, period).
 - Env-presence indicators reflect mocked env state.
+- **Round-7 WARN #2 closure** — **active-subscription count regression pin**: Seed N learners with `learner_telegram_enabled=true` + M with `false`. GET as admin → the new admin card SHOWS "Активных подписок: N" (not N+M). Pins the `SELECT count(*) WHERE learner_telegram_enabled=true` query shape. Without this pin the §2.9 IN-SCOPE active-sub-count promise could silently break.
 - **Regression pin** — `TELEGRAM_BOT_TOKEN` value never appears in rendered HTML.
 
 ### 3.8 Migration
@@ -1013,7 +1017,7 @@ Post-merge (operator-side activation):
 **A:** Telegram retries 5xx with exponential backoff (~24h). Updates recover after restart. If outage exceeds the retry window, learners re-send `/start`.
 
 **Q11.** Why is the master switch in operator-settings (not just an env var)?
-**A:** Operator-tunable without a re-deploy + cache invalidation pulls from DB on each tick → instant flip. Same precedent as `LEARNER_REMINDERS_EMAIL_ENABLED`.
+**A:** Operator-tunable without a re-deploy. Each scheduler tick + each webhook call reads `operator_settings` fresh from DB (NO cache layer — see R2-WARN-#8 + Round-7 WARN #3 closure). Flip is effectively instant. Same precedent as `LEARNER_REMINDERS_EMAIL_ENABLED`.
 
 **Q12.** What if `TELEGRAM_BOT_USERNAME` env var is missing but master is on?
 **A:** Cabinet renders only the raw 8-char code, hides the deep-link button. Learner can still type `/start <code>` manually. Admin card shows a yellow warning.
