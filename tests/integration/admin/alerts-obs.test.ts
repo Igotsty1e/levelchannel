@@ -191,12 +191,22 @@ describe('POST /api/admin/settings/alerts/[probe]/test-send', () => {
       // recreate diverges from prod and any subsequent test invoking the
       // learner-reminder-dispatch scheduler silently loses its probe_runs
       // row to a swallowed CHECK violation inside recordProbeRun().
+      // BCS-DEF-1-TG-TESTSEND (2026-05-20) — UNION extension: also
+      // include 'teacher-daily-digest' + the 3 BCS-DEF-5 digest verdict
+      // kinds (migration 0068). Without this, parallel-running
+      // tests/integration/scripts/teacher-daily-digest.test.ts races on
+      // this shared DB after the drop-recreate fires and starts seeing
+      // CHECK violations on its own seed rows. We track the UNION of
+      // all live CHECKs (prod end-state = max(migrations) but the test
+      // fixture intentionally accepts ALL historical values so cross-
+      // file insertions don't break order-dependent.
       await pool.query(`
         create table if not exists probe_runs (
           id uuid primary key default gen_random_uuid(),
           probe_name text not null check (probe_name in (
             'auth-flow', 'calendar-pathology', 'webhook-flow',
-            'conflict-unresolved', 'learner-reminders'
+            'conflict-unresolved', 'learner-reminders',
+            'teacher-daily-digest'
           )),
           ran_at timestamptz not null default now(),
           verdict_kind text not null check (verdict_kind in (
@@ -205,7 +215,8 @@ describe('POST /api/admin/settings/alerts/[probe]/test-send', () => {
             'low_volume_skip', 'all_resolved', 'ok',
             'config_missing', 'error',
             'test_send_succeeded', 'test_send_failed',
-            'channel_disabled_by_operator'
+            'channel_disabled_by_operator',
+            'digest_sent', 'digest_skipped_disabled', 'digest_no_teachers'
           )),
           alert_sent boolean not null default false,
           recipient_email text null,
