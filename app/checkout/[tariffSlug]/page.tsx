@@ -79,16 +79,7 @@ export default async function CheckoutPage({
 
   return (
     <>
-      {/* SAAS-6-A11Y-1 (2026-05-19) — skip-to-content link as the
-          first focusable element on /checkout. WCAG 2.4.1. */}
-      <a href="#main-content" className="skip-to-content">
-        Перейти к основному содержимому
-      </a>
-      <main
-        id="main-content"
-        tabIndex={-1}
-        style={{ minHeight: '100vh', background: 'var(--bg)' }}
-      >
+      <main style={{ minHeight: '100vh', background: 'var(--bg)' }}>
       {/* Codex 2026-05-08 (Wave 10 #5) — CloudPayments widget script
           loads here (and on /pay), not globally from layout. */}
       <Script

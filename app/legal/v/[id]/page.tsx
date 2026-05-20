@@ -53,14 +53,7 @@ export default async function LegalVersionPage({ params }: RouteParams) {
 
   return (
     <>
-      {/* SAAS-6-A11Y-1 (2026-05-19) — skip-to-content link for the
-          legal viewer's bespoke shell. WCAG 2.4.1. */}
-      <a href="#main-content" className="skip-to-content">
-        Перейти к основному содержимому
-      </a>
       <main
-        id="main-content"
-        tabIndex={-1}
         style={{
           maxWidth: 760,
           margin: '0 auto',

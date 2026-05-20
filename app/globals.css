@@ -461,46 +461,6 @@ html, body {
   border-radius: 2px;
 }
 
-/* SAAS-6-A11Y-1 (2026-05-19) — skip-to-content link. WCAG 2.4.1
-   Bypass Blocks (Level A). Visually hidden by default, snaps into
-   view on keyboard focus. Rendered as the first focusable element
-   inside every shell that mounts a header (AuthShell, admin (gated)
-   layout, teacher layout, marketing home, /pay, /checkout, etc.) so
-   the very first Tab press on a fresh page surfaces it.
-
-   Focus ring tokens come from .saas-chrome (design-system §11). On
-   surfaces without .saas-chrome (e.g. home page, legal viewer) the
-   fallback constants kick in so the ring stays visible. */
-.skip-to-content {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 100; /* above SiteHeader's z-index: 40 sticky header */
-  padding: 12px 16px;
-  background: var(--accent, #D88A82);
-  color: #fff;
-  font-weight: 500;
-  font-size: 14px;
-  text-decoration: none;
-  border-radius: 0 0 8px 0;
-  transform: translateY(-110%);
-  transition: transform 120ms ease-out;
-}
-
-.skip-to-content:focus,
-.skip-to-content:focus-visible {
-  transform: translateY(0);
-  outline: var(--focus-ring-width, 4px) solid
-    var(--focus-ring-color, rgba(216, 138, 130, 0.60));
-  outline-offset: var(--focus-ring-offset, 2px);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .skip-to-content {
-    transition: none;
-  }
-}
-
 /* Codex review 2026-05-09 — own 404 page styles so we don't depend on
    the framework default _not-found bundle (which inlines a <style>
    block that conflicts with our strict style-src 'self' CSP). */
