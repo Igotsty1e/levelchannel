@@ -1051,7 +1051,7 @@ The two new columns (`learner_telegram_enabled`, `learner_telegram_chat_id`) are
 - Tests: §3.3.
 - **Docs sweep (NEW post-Codex round 1 WARN #11):**
   - `ENGINEERING_BACKLOG.md` strikethrough BCS-DEF-4 (single-window MVP); add follow-up rows for BCS-DEF-4-TG-LINK (handshake), BCS-DEF-4-PER-USER-WIN, BCS-DEF-4-PUSH, BCS-DEF-4-UNSUB, BCS-DEF-4-VOL-ALERT.
-  - `ARCHITECTURE.md` — add row for the `learner-reminders` probe + migrations 0061/0062/0063 reference (~5 lines).
+  - `ARCHITECTURE.md` — add row for the `learner-reminders` probe + migrations 0064/0065/0066 reference (~5 lines).
   - `lib/admin/README.md` — add 3 new SETTING_SCHEMA keys to the inventory table.
   - `lib/scheduling/README.md` — add a paragraph describing the scheduler tick + reference §2.4.
   - `lib/email/README.md` — note the new `sendLearnerLessonReminder` + `SendEmailResult.id` widening.
@@ -1122,7 +1122,7 @@ Body uses «занятие» / «учитель» / «перенести» per `
 
 ## 7. Acceptance criteria (per sub-PR + epic) (REVISED)
 
-- **A**: migrations 0061/0062/0063 apply; 3 new SETTING_SCHEMA keys validate; `accounts` TG columns + 2 CHECKs survive round-trip; `test:run` + `test:integration` + `build` green.
+- **A**: migrations 0064/0065/0066 apply; 3 new SETTING_SCHEMA keys validate; `accounts` TG columns + 2 CHECKs survive round-trip; `test:run` + `test:integration` + `build` green.
 - **B**: scheduler against no-booked-slot state → `recordProbeRun({verdict_kind:'ok', stats:{selected_due:0, sent_email:0}})`. Against a seeded slot due-in-window → 1 row, 1 email. Master-switch off → no sends. Resend-mock failure → row finalized `skipped`/`send_failed`.
 - **C**: `/admin/settings/alerts` renders the new section, reads/writes 3 keys with optimistic concurrency, recent-dispatch-summary shows last 5 probe_runs rows.
 - **D (epic close)**: `/cabinet/profile` shows the read-only "Напоминания в Telegram" placeholder section (no toggle, no Server Action — REVISED post-Codex round 3 BLOCKER #3 — active flow lives in BCS-DEF-4-TG); backlog strikethrough; `/codex-paranoia wave` SIGN-OFF round N/3.

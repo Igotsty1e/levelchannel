@@ -1,0 +1,26 @@
+# Reference systemd timer for scripts/learner-reminder-dispatch.mjs.
+# Copy to /etc/systemd/system/ on the VPS via
+# scripts/activate-prod-ops.sh (rendered from the placeholders in
+# the sibling .service file).
+#
+# BCS-DEF-4 (2026-05-19) — boot-relative scheduling with 3-min offset
+# to stagger against the 4 alert probes (5/7/12 + the calendar-
+# pathology fixed-time timer). 1-min cadence per plan §2.1 — fine
+# enough that the operator-tunable MIN window of 5 minutes still
+# works precisely.
+#
+# Persistent=true so a missed tick (during a deploy / reboot) fires
+# on the next wake; the §2.4 step 7 catch-up gate finalizes overdue
+# slots as skipped/past_send_by rather than firing a late reminder.
+
+[Unit]
+Description=Run LevelChannel learner reminder dispatcher every minute
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=1min
+Persistent=true
+Unit=levelchannel-learner-reminder-dispatch.service
+
+[Install]
+WantedBy=timers.target

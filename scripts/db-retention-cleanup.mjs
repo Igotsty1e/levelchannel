@@ -168,6 +168,17 @@ async function purgeAccounts(pool) {
           `update accounts
               set email = 'deleted-' || id::text || '@example.invalid',
                   password_hash = 'PURGED',
+                  -- BCS-DEF-4 (2026-05-19) — zero learner Telegram opt-in
+                  -- on purge so chat-id doesn't survive as residual PII
+                  -- (152-FZ defense-in-depth). The accounts_learner_telegram_consistency
+                  -- CHECK accepts (enabled=false AND chat_id=NULL), so the
+                  -- scrub is self-consistent. The primary protection is
+                  -- still the scheduler SELECT gate (§2.4 step 4 filters
+                  -- disabled_at / scheduled_purge_at / purged_at IS NOT
+                  -- NULL); this is purely defense-in-depth against future
+                  -- code paths that might join accounts directly.
+                  learner_telegram_enabled = false,
+                  learner_telegram_chat_id = null,
                   purged_at = now(),
                   updated_at = now()
             where id = $1

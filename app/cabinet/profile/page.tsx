@@ -52,6 +52,13 @@ export default async function CabinetProfilePage() {
 
   const profile = await getAccountProfile(account.id)
 
+  // BCS-DEF-4 (2026-05-19) — learner Telegram opt-in is a learner-only
+  // feature; teachers' notifications surface ships separately in
+  // BCS-DEF-5 (sibling plan, parallel scheduler). Per the BCS-DEF-4
+  // plan §1.7 REVISED, this wave renders a READ-ONLY placeholder.
+  // Active toggle + 8-char-code handshake ships in BCS-DEF-4-TG.
+  const isTeacher = roles.includes('teacher')
+
   return (
     <AuthShell>
       <div
@@ -89,7 +96,48 @@ export default async function CabinetProfilePage() {
 
       <ProfileEditor initialProfile={profile} fallbackEmail={account.email} />
 
+      {!isTeacher ? <LearnerTelegramPlaceholder /> : null}
+
       <DangerZone />
     </AuthShell>
+  )
+}
+
+// BCS-DEF-4 (2026-05-19) — read-only placeholder section for the
+// learner Telegram opt-in. Plan §1.7 REVISED (post-Codex round-3
+// BLOCKER #3): the active toggle, deep-link, and 8-char-code
+// handshake live in BCS-DEF-4-TG; this wave only reserves the slot
+// so the BCS-DEF-4-TG follow-up has a known placement target.
+//
+// Learner-only: teachers see their own notifications surface in
+// BCS-DEF-5; the parent `CabinetProfilePage` gates by role.
+function LearnerTelegramPlaceholder() {
+  return (
+    <section
+      data-testid="learner-telegram-placeholder"
+      style={{
+        marginTop: 24,
+        padding: '16px 20px',
+        border: '1px solid var(--border)',
+        borderRadius: 8,
+        background: 'var(--surface)',
+      }}
+    >
+      <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
+        Напоминания в&nbsp;Telegram
+      </h2>
+      <p
+        style={{
+          color: 'var(--secondary)',
+          fontSize: 14,
+          lineHeight: 1.6,
+          margin: 0,
+        }}
+      >
+        Напоминания о&nbsp;начале занятия будут приходить в&nbsp;Telegram,
+        когда мы запустим бота. Пока что мы присылаем напоминания только
+        на&nbsp;e-mail.
+      </p>
+    </section>
   )
 }

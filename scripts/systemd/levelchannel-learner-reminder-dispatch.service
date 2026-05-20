@@ -1,0 +1,48 @@
+# Reference systemd unit for scripts/learner-reminder-dispatch.mjs.
+# `scripts/activate-prod-ops.sh` renders the placeholders below during
+# installation.
+#
+# BCS-DEF-4 (2026-05-19) — once-per-minute scheduler that sends learner
+# lesson reminders for the operator-tunable window
+# (LEARNER_REMINDER_WINDOW_MINUTES, default 60). Plan:
+# docs/plans/bcs-def-4-learner-reminders.md §2.9.
+#
+# Same 12-directive sandbox profile as the 4 alert probes. No state
+# file is written today (idempotency lives in learner_reminder_dispatches
+# rows), but ReadWritePaths is kept symmetric with sibling units in
+# case a future state file is added.
+
+[Unit]
+Description=LevelChannel learner lesson reminder dispatcher (operator-tunable window)
+After=network.target
+
+[Service]
+Type=oneshot
+User=levelchannel
+Group=levelchannel
+WorkingDirectory=__LEVELCHANNEL_APP_DIR__
+EnvironmentFile=__LEVELCHANNEL_ENV_FILE__
+ExecStart=/usr/bin/node scripts/learner-reminder-dispatch.mjs
+StandardOutput=journal
+StandardError=journal
+
+ReadWritePaths=__LEVELCHANNEL_APP_DIR__/var
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+# MemoryDenyWriteExecute intentionally NOT set — V8 JIT requires W+X.
+# SystemCallFilter restored with explicit `pkey_*` allowlist for V8
+# JIT-cache hardening (Intel MPK), matching sibling alert-probe units.
+SystemCallFilter=@system-service pkey_alloc pkey_mprotect pkey_free
+SystemCallFilter=~@privileged @resources @debug @mount @cpu-emulation @obsolete

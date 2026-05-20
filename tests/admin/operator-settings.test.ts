@@ -76,6 +76,12 @@ describe('SETTING_SCHEMA invariants', () => {
     // (not a probe). Per plan §2.5.1, channel-scope keys partition
     // disjointly from probe-scope keys; the next test pins that
     // invariant explicitly.
+    //
+    // BCS-DEF-4 (2026-05-19) — 'learner-reminders' added as a
+    // PROBE-SHAPED scope for the lesson reminder scheduler. NOT in
+    // `PROBE_NAMES` iteration (the scheduler isn't an alert probe;
+    // it has no "last alert" surface), but reuses SETTING_SCHEMA for
+    // the operator-tunable window + master switch + rate limit.
     const validScopes = new Set([
       'auth-flow',
       'calendar-pathology',
@@ -84,6 +90,8 @@ describe('SETTING_SCHEMA invariants', () => {
       'telegram',
       // BCS-DEF-5 (2026-05-19) — daily 08:00 teacher lesson digest.
       'teacher-daily-digest',
+      // BCS-DEF-4 (2026-05-19) — learner lesson reminder scheduler.
+      'learner-reminders',
     ])
     for (const [key, schema] of Object.entries(TS_SCHEMA)) {
       expect(validScopes.has(schema.scope), `${key}.scope is valid`).toBe(true)
@@ -152,14 +160,30 @@ describe('SETTING_SCHEMA invariants', () => {
     ])
   })
 
+  // BCS-DEF-4 (2026-05-19) — learner-reminders scope has 3 keys.
+  it('learner-reminders scope has the 3 expected scheduler keys', () => {
+    const reminderKeys = Object.entries(TS_SCHEMA)
+      .filter(([, s]) => s.scope === 'learner-reminders')
+      .map(([k]) => k)
+      .sort()
+    expect(reminderKeys).toEqual([
+      'LEARNER_REMINDERS_EMAIL_ENABLED',
+      'LEARNER_REMINDERS_RATE_LIMIT_PER_TICK',
+      'LEARNER_REMINDER_WINDOW_MINUTES',
+    ])
+  })
+
   it('channel-scope keys are DISJOINT from probe-scope keys (scope-set-based partition)', () => {
     // R3 INFO#6 closure: invariant via scope membership, NOT name
     // prefix. Future channel scopes (slack, sms) inherit automatically.
+    // BCS-DEF-4: 'learner-reminders' counts as a probe-shaped scope
+    // here even though it's not in the runtime `PROBE_NAMES` iteration.
     const probeNames = new Set([
       'auth-flow',
       'calendar-pathology',
       'webhook-flow',
       'conflict-unresolved',
+      'learner-reminders',
     ])
     const telegramKeys = new Set(
       Object.entries(TS_SCHEMA)

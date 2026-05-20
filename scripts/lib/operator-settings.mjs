@@ -198,6 +198,39 @@ export const SETTING_SCHEMA = Object.freeze({
       'max retries for a single teacher digest within the firing window before terminal send_failed.',
     scope: 'teacher-daily-digest',
   }),
+  // BCS-DEF-4 (2026-05-19) — learner reminder scheduler. Mirror of
+  // lib/admin/operator-settings.ts; drift test pins JSON.stringify
+  // equality.
+  LEARNER_REMINDERS_EMAIL_ENABLED: Object.freeze({
+    kind: 'int',
+    default: 1,
+    min: 0,
+    max: 1,
+    envName: 'LEARNER_REMINDERS_EMAIL_ENABLED',
+    description:
+      'master switch (1=on/0=off) for learner email reminders sent by scripts/learner-reminder-dispatch.mjs',
+    scope: 'learner-reminders',
+  }),
+  LEARNER_REMINDER_WINDOW_MINUTES: Object.freeze({
+    kind: 'int',
+    default: 60,
+    min: 5,
+    max: 360,
+    envName: 'LEARNER_REMINDER_WINDOW_MINUTES',
+    description:
+      'single window (in minutes before slot start) at which a learner reminder is dispatched',
+    scope: 'learner-reminders',
+  }),
+  LEARNER_REMINDERS_RATE_LIMIT_PER_TICK: Object.freeze({
+    kind: 'int',
+    default: 200,
+    min: 1,
+    max: 5000,
+    envName: 'LEARNER_REMINDERS_RATE_LIMIT_PER_TICK',
+    description:
+      'max reminder sends dispatched per scheduler tick (defends Resend / Telegram quota; counts email + telegram together)',
+    scope: 'learner-reminders',
+  }),
 })
 
 const INTEGER_PATTERN = /^\d+$/

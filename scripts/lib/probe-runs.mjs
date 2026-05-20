@@ -33,6 +33,13 @@ export const PROBE_NAMES = Object.freeze({
   // script: scripts/teacher-daily-digest.mjs. CHECK extended in
   // migration 0063.
   TEACHER_DAILY_DIGEST: 'teacher-daily-digest',
+  // BCS-DEF-4 (2026-05-19) — the learner-reminders scheduler ships via
+  // `scripts/learner-reminder-dispatch.mjs`. Structurally NOT an alert
+  // probe (no dedup-fingerprint, no operator-storm semantics) — but
+  // emits per-tick observability rows so /admin/settings/alerts can
+  // surface the latest-run / verdict signal. Migration 0064 extends
+  // the probe_runs.probe_name CHECK to accept this value.
+  LEARNER_REMINDERS: 'learner-reminders',
 })
 
 // Every value here MUST appear verbatim in migration 0053's
@@ -57,6 +64,11 @@ export const VERDICT_KINDS = Object.freeze({
   DIGEST_SENT: 'digest_sent',
   DIGEST_SKIPPED_DISABLED: 'digest_skipped_disabled',
   DIGEST_NO_TEACHERS: 'digest_no_teachers',
+  // BCS-DEF-4 (2026-05-19) — learner reminder scheduler verdict when
+  // both email + telegram master switches are off (early exit, no
+  // due-row SELECT). Migration 0064 widens the probe_runs.verdict_kind
+  // CHECK to accept this value.
+  CHANNEL_DISABLED_BY_OPERATOR: 'channel_disabled_by_operator',
 })
 
 // BCS-DEF-1-TG (2026-05-19) — per-channel discriminator on probe_runs.
