@@ -1,6 +1,6 @@
 # SBP-PAY — СБП-платежи через CloudPayments API (`/pay` only)
 
-**Status:** SIGN-OFF 2026-05-19 — plan-paranoia round-3 returned **BLOCK** with **3 BLOCKERs + 3 WARNs + 1 INFO** (all mechanical textual drift from §0a/§0b closure language); round-3 mechanical closures applied inline (see §0c). Hard cap reached but BLOCKERs were unambiguous doc-edits — pragmatic SIGN-OFF, impl unblocked.
+**Status:** SHIPPED 2026-05-19 — PR #391 merged. Migration 0063 (`payment_orders.payment_method` text + CHECK over `('card','sbp','admin_grant')` + backfill + partial index). New route `POST /api/payments/sbp/create-qr` writes `payment_method='sbp'` at create-qr time; webhook handler classifies via `detectPaymentMethod()` positive-signal whitelist + `markOrderPaid({detectedPaymentMethod})`. Components: `SbpQrModal` + `usePaymentStatusPoll` + extended `PricingSection`. New `lib/payments/order-account-resolver.ts` for writer-side session-account-id resolution. SBP orders never persist saved-card tokens. Paranoia history: plan-paranoia round-3 returned BLOCK with 3 BLOCKERs + 3 WARNs + 1 INFO (mechanical textual drift only); round-3 mechanical closures applied inline (see §0c); epic-end wave SIGN-OFF on the impl diff. Pragmatic SIGN-OFF.
 **Wave name:** `sbp-payments` (one-PR epic; UI + server + migration + tests in one PR per §5).
 **Trigger:** Product-owner request 2026-05-19 — CloudPayments enabled СБП on the merchant terminal; LevelChannel needs to surface it as a payment option.
 **Author:** Claude (autonomous).

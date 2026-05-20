@@ -1,6 +1,6 @@
 # BCS-DEF-5 — Daily 08:00 lesson digest for teacher (email)
 
-**Status:** REVISED 2026-05-19 (scope changed by product-owner from per-slot reminders → daily 08:00 digest; awaiting `/codex-paranoia plan` round 3). Round 1 closed 7 BLOCKERs + 3 WARNs. Round 2 closed 3 NEW BLOCKERs + 3 NEW WARNs — see §0c (round 1) and §0d (round 2) for fix logs.
+**Status:** SHIPPED 2026-05-19 — PR #393 merged. Migrations 0067 (`teacher_account_daily_digests` + 7-day operator-widget partial index) + 0068 (`probe_runs.probe_name` CHECK extends to `'teacher-daily-digest'`) + 0069 (`account_profiles.timezone` IANA NOT VALID + VALIDATE CHECK). Cron driver `scripts/teacher-daily-digest.mjs` + admin `/admin/settings/digest` page + 3 operator-tunable settings under scope `teacher-daily-digest`. Paranoia history: Round 1 closed 7 BLOCKERs + 3 WARNs; Round 2 closed 3 NEW BLOCKERs + 3 NEW WARNs; round-3 mechanical SIGN-OFF in §0e. Master switch defaults OFF — production activation = operator runs `scripts/activate-prod-ops.sh` + flips `TEACHER_DIGEST_MASTER_SWITCH=1`.
 **Wave name:** `bcs-def-5-teacher-reminders` (digest MVP — single PR per §5).
 **Trigger:** Backlog item "BCS-DEF-5" (`ENGINEERING_BACKLOG.md:45`) — "Lesson-start reminders for teacher". Scope re-cut by product owner 2026-05-19 as a daily morning digest, not per-slot pings (see §0a).
 **Author:** Claude (autonomous).

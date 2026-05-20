@@ -1,6 +1,6 @@
 # CONFLICT-FEED — `/admin/slots/conflicts` operator dashboard
 
-**Status:** REVIVED 2026-05-19. Re-paranoia in progress (plan-mode). Was PARKED v1 (2026-05-17, post-paranoia round 1).
+**Status:** SHIPPED 2026-05-19 — PR #389 merged. Admin "Conflict feed" dashboard at `/admin/slots/conflicts` with default 30-day view; migration 0062 (`slot_admin_actions` secondary audit ledger + partial index `lesson_slots_external_conflict_admin_idx`); `lib/admin/conflict-feed.ts` exports `listAdminConflicts` + `countAdminConflicts` + `isAuditTablePresent` + `runCancelFromConflictCleanup`; `POST /api/admin/slots/[id]/dismiss-conflict` clears the stamp + writes audit row + jsonb event in `lesson_slots.events`, SAVEPOINT-wrapped for 42P01 recovery. Plan revival + 3-round paranoia plan SIGN-OFF + epic-end wave SIGN-OFF. Was PARKED v1 (2026-05-17, post-paranoia round 1); REVIVED 2026-05-19 after product-owner decision.
 
 ---
 

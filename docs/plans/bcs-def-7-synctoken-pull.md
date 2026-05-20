@@ -1,6 +1,6 @@
 # BCS-DEF-7 — syncToken-based incremental Google Calendar pull
 
-Status: PLAN — round-1 paranoia SIGN-OFF (retroactive, Phase 1 already shipped) · Owner: calendar contour · Last touched: 2026-05-19
+Status: SHIPPED 2026-05-19 — Phase 1 (PR #352, migration 0060 + `next_sync_token` column) + Phase 2 (PR #390, pull-runner delta-merge under optimistic CAS guard + 410-Gone fallback). Round-1 paranoia plan SIGN-OFF retroactive (PR #379) + epic-end wave SIGN-OFF on Phase-2 diff · Owner: calendar contour · Last touched: 2026-05-19
 
 ## §0a. Paranoia closure (plan checkpoint, retroactive — 2026-05-19)
 
