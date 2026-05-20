@@ -231,6 +231,17 @@ export const SETTING_SCHEMA = Object.freeze({
       'max reminder sends dispatched per scheduler tick (defends Resend / Telegram quota; counts email + telegram together)',
     scope: 'learner-reminders',
   }),
+  // BCS-DEF-4-TG (2026-05-20) — mirror of the TS twin.
+  LEARNER_REMINDERS_TELEGRAM_ENABLED: Object.freeze({
+    kind: 'int',
+    default: 0,
+    min: 0,
+    max: 1,
+    envName: 'LEARNER_REMINDERS_TELEGRAM_ENABLED',
+    description:
+      'master switch (1=on/0=off) for the learner Telegram channel; OFF by default — flip after BotFather setup + webhook registration. Per-learner opt-in still required (accounts.learner_telegram_enabled=true after /start <code> handshake).',
+    scope: 'learner-reminders',
+  }),
 })
 
 const INTEGER_PATTERN = /^\d+$/

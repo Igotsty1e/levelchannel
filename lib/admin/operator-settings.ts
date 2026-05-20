@@ -312,6 +312,20 @@ export const SETTING_SCHEMA = {
       'max reminder sends dispatched per scheduler tick (defends Resend / Telegram quota; counts email + telegram together)',
     scope: 'learner-reminders',
   },
+  // BCS-DEF-4-TG (2026-05-20) — master switch for the learner Telegram
+  // channel. Default OFF; operator flips to 1 after BotFather setup
+  // (TELEGRAM_BOT_TOKEN env + setWebhook with secret token).
+  // Plan: docs/plans/bcs-def-4-tg-telegram-reminders.md §2.2.
+  LEARNER_REMINDERS_TELEGRAM_ENABLED: {
+    kind: 'int',
+    default: 0,
+    min: 0,
+    max: 1,
+    envName: 'LEARNER_REMINDERS_TELEGRAM_ENABLED',
+    description:
+      'master switch (1=on/0=off) for the learner Telegram channel; OFF by default — flip after BotFather setup + webhook registration. Per-learner opt-in still required (accounts.learner_telegram_enabled=true after /start <code> handshake).',
+    scope: 'learner-reminders',
+  },
 } as const satisfies Record<string, SettingSchema>
 
 export type SettingKey = keyof typeof SETTING_SCHEMA

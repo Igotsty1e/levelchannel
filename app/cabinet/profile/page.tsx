@@ -4,8 +4,11 @@ import { redirect } from 'next/navigation'
 
 import { AuthShell } from '@/components/auth-shell'
 import { AuthInfoBox } from '@/components/auth-form-bits'
+import { LearnerTelegramBinding } from '@/components/cabinet/learner-telegram-binding'
+import { resolveOperatorSettingsForProbe } from '@/lib/admin/operator-settings'
 import { listAccountRoles } from '@/lib/auth/accounts'
 import { getAccountProfile } from '@/lib/auth/profiles'
+import { getAuthPool } from '@/lib/auth/pool'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 
 import { DangerZone } from '../danger-zone'
@@ -54,10 +57,35 @@ export default async function CabinetProfilePage() {
 
   // BCS-DEF-4 (2026-05-19) — learner Telegram opt-in is a learner-only
   // feature; teachers' notifications surface ships separately in
-  // BCS-DEF-5 (sibling plan, parallel scheduler). Per the BCS-DEF-4
-  // plan §1.7 REVISED, this wave renders a READ-ONLY placeholder.
-  // Active toggle + 8-char-code handshake ships in BCS-DEF-4-TG.
+  // BCS-DEF-5 (sibling plan, parallel scheduler).
+  //
+  // BCS-DEF-4-TG (2026-05-20) — replaces the BCS-DEF-4 placeholder
+  // with the active bind workflow. Master switch state + current
+  // binding status are server-side reads here; the client component
+  // owns the Server Action invocations.
   const isTeacher = roles.includes('teacher')
+
+  let learnerTgBound = false
+  let learnerTgChatId: string | null = null
+  let learnerTgMasterSwitch = false
+  if (!isTeacher) {
+    const pool = getAuthPool()
+    const bindRow = await pool.query<{
+      learner_telegram_enabled: boolean
+      learner_telegram_chat_id: string | null
+    }>(
+      `select learner_telegram_enabled, learner_telegram_chat_id
+         from accounts where id = $1::uuid`,
+      [account.id],
+    )
+    if (bindRow.rows[0]) {
+      learnerTgBound = bindRow.rows[0].learner_telegram_enabled === true
+      learnerTgChatId = bindRow.rows[0].learner_telegram_chat_id ?? null
+    }
+    const settings = await resolveOperatorSettingsForProbe('learner-reminders')
+    learnerTgMasterSwitch =
+      settings.LEARNER_REMINDERS_TELEGRAM_ENABLED?.value === 1
+  }
 
   return (
     <AuthShell>
@@ -96,48 +124,16 @@ export default async function CabinetProfilePage() {
 
       <ProfileEditor initialProfile={profile} fallbackEmail={account.email} />
 
-      {!isTeacher ? <LearnerTelegramPlaceholder /> : null}
+      {!isTeacher ? (
+        <LearnerTelegramBinding
+          initialBound={learnerTgBound}
+          initialChatId={learnerTgChatId}
+          masterSwitchOn={learnerTgMasterSwitch}
+        />
+      ) : null}
 
       <DangerZone />
     </AuthShell>
   )
 }
 
-// BCS-DEF-4 (2026-05-19) — read-only placeholder section for the
-// learner Telegram opt-in. Plan §1.7 REVISED (post-Codex round-3
-// BLOCKER #3): the active toggle, deep-link, and 8-char-code
-// handshake live in BCS-DEF-4-TG; this wave only reserves the slot
-// so the BCS-DEF-4-TG follow-up has a known placement target.
-//
-// Learner-only: teachers see their own notifications surface in
-// BCS-DEF-5; the parent `CabinetProfilePage` gates by role.
-function LearnerTelegramPlaceholder() {
-  return (
-    <section
-      data-testid="learner-telegram-placeholder"
-      style={{
-        marginTop: 24,
-        padding: '16px 20px',
-        border: '1px solid var(--border)',
-        borderRadius: 8,
-        background: 'var(--surface)',
-      }}
-    >
-      <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
-        Напоминания в&nbsp;Telegram
-      </h2>
-      <p
-        style={{
-          color: 'var(--secondary)',
-          fontSize: 14,
-          lineHeight: 1.6,
-          margin: 0,
-        }}
-      >
-        Напоминания о&nbsp;начале занятия будут приходить в&nbsp;Telegram,
-        когда мы запустим бота. Пока что мы присылаем напоминания только
-        на&nbsp;e-mail.
-      </p>
-    </section>
-  )
-}

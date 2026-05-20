@@ -313,18 +313,33 @@ async function tick(pool) {
   // the first call).
   const tgHelper = await resolveTelegramHelper()
   const telegramHelperShipped = tgHelper !== null
-  // Telegram is gated by:
+  // Telegram is gated by ALL of:
   //   - helper shipped on `main` (BCS-DEF-1-TG)
-  //   - per-user learner_telegram_enabled (checked per-row below)
-  // There is no separate operator master switch THIS wave; the
-  // helper-shipped check is the effective master gate.
-  const telegramChannelActive = telegramHelperShipped
+  //   - operator master switch LEARNER_REMINDERS_TELEGRAM_ENABLED=1
+  //     (BCS-DEF-4-TG, default 0)
+  //   - TELEGRAM_BOT_TOKEN env present (pre-flight gate, see below)
+  //   - per-user accounts.learner_telegram_enabled = true
+  //   - per-user accounts.learner_telegram_chat_id IS NOT NULL
+  const telegramMasterSwitch =
+    probeSettings.LEARNER_REMINDERS_TELEGRAM_ENABLED?.value === 1
+  // BCS-DEF-4-TG (2026-05-20) — config-missing burn prevention. When
+  // master switch is ON but TELEGRAM_BOT_TOKEN env is empty, the
+  // helper would return terminal `telegram_missing_token` on every
+  // attempted send, burning the (slot_id, channel='telegram') rows
+  // until manual cleanup. Pre-flight check: drop the channel-active
+  // bit so we don't enqueue Telegram rows in this state. The
+  // config_missing probe_runs row records the diagnosis.
+  const telegramTokenPresent = (process.env.TELEGRAM_BOT_TOKEN?.trim() || '') !== ''
+  const telegramChannelActive =
+    telegramHelperShipped && telegramMasterSwitch && telegramTokenPresent
 
   const capturedThresholds = {
     LEARNER_REMINDERS_EMAIL_ENABLED:
       probeSettings.LEARNER_REMINDERS_EMAIL_ENABLED.value,
     LEARNER_REMINDER_WINDOW_MINUTES: windowMinutes,
     LEARNER_REMINDERS_RATE_LIMIT_PER_TICK: rateLimitPerTick,
+    LEARNER_REMINDERS_TELEGRAM_ENABLED:
+      probeSettings.LEARNER_REMINDERS_TELEGRAM_ENABLED?.value ?? 0,
   }
   const capturedThresholdsSource = {
     LEARNER_REMINDERS_EMAIL_ENABLED:
@@ -333,6 +348,27 @@ async function tick(pool) {
       probeSettings.LEARNER_REMINDER_WINDOW_MINUTES.source,
     LEARNER_REMINDERS_RATE_LIMIT_PER_TICK:
       probeSettings.LEARNER_REMINDERS_RATE_LIMIT_PER_TICK.source,
+    LEARNER_REMINDERS_TELEGRAM_ENABLED:
+      probeSettings.LEARNER_REMINDERS_TELEGRAM_ENABLED?.source ?? 'default',
+  }
+
+  // BCS-DEF-4-TG (2026-05-20) — emit config_missing diagnostic row
+  // when master switch is on but bot token env is unset. Helps the
+  // operator notice the env-file gap from the alerts page (the
+  // probe_runs.verdict_kind='config_missing' row is queryable by
+  // admin).
+  if (telegramMasterSwitch && telegramHelperShipped && !telegramTokenPresent) {
+    await recordProbeRun(pool, {
+      probeName: PROBE_NAME,
+      verdictKind: VERDICT_KINDS.CONFIG_MISSING,
+      recipientKind: RECIPIENT_KINDS.TELEGRAM,
+      errorMessage: 'telegram_bot_token_unset',
+      stats: { thresholds: capturedThresholds, thresholds_source: capturedThresholdsSource },
+    })
+    logJson(
+      'warn',
+      'telegram master switch on but TELEGRAM_BOT_TOKEN unset — channel inactive',
+    )
   }
 
   // Both channels off → early-exit with a single audit row.

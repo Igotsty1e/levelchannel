@@ -69,6 +69,8 @@ const LEARNER_REMINDER_KEYS: ReadonlyArray<SettingKey> = [
   'LEARNER_REMINDERS_EMAIL_ENABLED',
   'LEARNER_REMINDER_WINDOW_MINUTES',
   'LEARNER_REMINDERS_RATE_LIMIT_PER_TICK',
+  // BCS-DEF-4-TG (2026-05-20) — master switch for learner Telegram channel.
+  'LEARNER_REMINDERS_TELEGRAM_ENABLED',
 ]
 
 export default async function AdminAlertsPage() {
