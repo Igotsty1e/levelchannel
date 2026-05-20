@@ -1,6 +1,6 @@
 # BCS-DEF-4-TG — Telegram bot-handshake for learner lesson-start reminders
 
-**Status:** DRAFT 2026-05-20 — **7 paranoia rounds done** (initial 3 + 4 user-approved overrides at rounds 4-7; all returned BLOCK; all findings closed in-doc; user-requested «до полного согласия»). Cumulative: 29 BLOCKERs + 15 WARNs + 1 INFO closed across 7 codex calls. Round-7 surfaced 1 BLOCKER + 2 WARNs: (a) rate-limit `retryAfterSeconds` lives in the `Retry-After` HEADER not JSON body — pseudocode now reads `rl.headers.get('Retry-After')`; (b) §2.9 IN-SCOPE active-subscription count had no §3.7 test pin — added explicit count regression pin; (c) residual "cache invalidation works" wording from before R2-WARN-#8 closure — rewritten to "no operator-settings caching; each read fresh from DB". Transcripts in `/tmp/codex-paranoia-20260520T*-bcs-def-4-tg*` directories.
+**Status:** DRAFT 2026-05-20 — **8 paranoia rounds done** (initial 3 + 5 user-approved overrides; all returned BLOCK; all findings closed in-doc; user-requested «до полного согласия»). Cumulative: 30 BLOCKERs + 16 WARNs + 4 INFOs across 8 codex calls. Round-8 confirmed 3 round-7 closures (INFOs) + surfaced 1 BLOCKER + 1 WARN: (a) webhook rate-limit pseudocode used object-form `enforceRateLimit({key, ...})` which doesn't exist — real signature `enforceRateLimit(request, scope, limit, windowMs)` keys by IP only; rewrote to use `takeRateLimit` primitive directly with `tg-webhook:${fromId}` composite key; (b) RISK-6 said "serializes via select_for_share" — actual code uses plain SELECT for read + FOR UPDATE for write; rewritten to be source-honest. Transcripts in `/tmp/codex-paranoia-20260520T*-bcs-def-4-tg*` directories.
 **Wave name:** `bcs-def-4-tg-telegram-reminders` (single-PR epic — see §5).
 **Trigger:** Telegram handshake deferred from BCS-DEF-4 parent (`docs/plans/bcs-def-4-learner-reminders.md:188` — "BCS-DEF-4-TG continues to own the bot-handshake flow + the `LEARNER_REMINDERS_TELEGRAM_ENABLED` operator master switch").
 **Author:** Claude (autonomous).
@@ -300,11 +300,25 @@ export async function POST(req: Request) {
   //    → reply "Привязка работает только в личном чате с ботом."
   //    NO code consumed. NO accounts write. NO chat_id logged.
   //    Return 200.
-  // 6. Rate-limit via enforceRateLimit({
-  //      scope: 'telegram-webhook',
-  //      key: String(message.from.id),
-  //      max: 20, windowMs: 60_000,
-  //    }). Over-limit → 200 + log "rate_limited", reply nothing.
+  // 6. Rate-limit (Round-8 BLOCKER #1 closure) — the in-repo
+  //    `enforceRateLimit(request, scope, limit, windowMs)` keys by
+  //    CLIENT IP (`lib/security/request.ts:65-72`) which for a
+  //    Telegram webhook is always Telegram's own server IP. To get
+  //    per-`from.id` bucketing we call the lower-level primitive
+  //    `takeRateLimit(key, limit, windowMs)` (`lib/security/rate-limit.ts`)
+  //    directly with a composite key:
+  //    ```ts
+  //    import { takeRateLimit } from '@/lib/security/rate-limit'
+  //    const fromId = String(message.from.id)
+  //    const rl = await takeRateLimit(`tg-webhook:${fromId}`, 20, 60_000)
+  //    if (!rl.allowed) {
+  //      logJson('warn', 'tg webhook rate-limited', { fromId })
+  //      return new Response(null, { status: 200 })  // 2xx so TG stops retrying
+  //    }
+  //    ```
+  //    The IP-keyed `enforceRateLimit` is NOT used here — it would
+  //    rate-limit ALL Telegram-sourced webhooks together (single
+  //    bucket per Telegram IP), defeating per-user fairness.
   // 7. Token-route by first whitespace token:
   //    - "/start <code>" → handleStart(code, chatId, fromId)
   //    - "/start"        → reply "Чтобы привязать аккаунт, получите код в личном кабинете на levelchannel.ru → Профиль → Telegram → Получить код. Затем отправьте сюда /start <код>."
@@ -929,7 +943,7 @@ A token rotation affects both flows.
 
 The operator-settings readers do NOT cache (`lib/admin/operator-settings.ts:401-449`, `scripts/lib/operator-settings.mjs:271-389` — each call hits the DB). A flip propagates on the very next webhook request / scheduler tick. The "stale-window" risk I previously described does not exist.
 
-What CAN still happen: a webhook POST and an admin flip arrive within the same millisecond. Postgres serializes via `select_for_share` on the row; the worst case is a single update processed under one or the other value. The failure mode is bounded (one update, easily corrected via cabinet UI).
+What CAN still happen: a webhook POST and an admin flip arrive within the same millisecond. Postgres MVCC serializes naturally — the read path uses a plain `SELECT` (`lib/admin/operator-settings.ts:411`) and the admin write path takes `FOR UPDATE` (`lib/admin/operator-settings.ts:542`). The worst case is a single update processed under either the pre-flip OR post-flip value depending on whose transaction commits first; the failure mode is bounded (one update, easily corrected via cabinet UI). **Round-8 WARN #1 closure** — prior wording said "serializes via `select_for_share`" which was inaccurate; the actual mechanism is plain MVCC read vs `FOR UPDATE` on the write path. Either way the bounded-risk conclusion stands.
 **Mitigation**: accepted; no code change.
 
 ### RISK-7 — Non-private chat learner mistake
