@@ -1,6 +1,6 @@
 # BCS-DEF-4-TG — Telegram bot-handshake for learner lesson-start reminders
 
-**Status:** DRAFT 2026-05-20 — **5 paranoia rounds done** (initial 3 + user-approved override at round 4 + second user-approved override at round 5; all returned BLOCK; all findings closed in-doc). Cumulative: 24 BLOCKERs + 13 WARNs + 1 INFO closed across 5 codex calls. Round-5 (this iteration) surfaced 2 new BLOCKERs + 2 WARNs against the round-4 closures: (a) `requireAuthenticated` is a route-only helper expecting `Request`, NOT for Server Actions — corrected to the `cookies()→lookupSession()` SSR pattern with `enforceAccountRateLimit` (positional args, not the object-form route helper); (b) the config-missing burn-prevention from round-4 had no regression-test pin — added §3.5 test case asserting `sendTelegramMessage` is NEVER called + no `(slot_id, channel='telegram')` row allocated when `TELEGRAM_BOT_TOKEN` is empty. WARNs: admin observability scope explicitly DEFERRED to `BCS-DEF-4-TG-ADMIN-OBS` follow-up; parent BCS-DEF-4 doc-drift to be removed in the impl PR's files-changed list. Transcripts: `/tmp/codex-paranoia-20260520T081634Z-bcs-def-4-tg/round-{1,2,3}.md` + `/tmp/codex-paranoia-20260520T090205Z-bcs-def-4-tg-reconfirm/round.md` + `/tmp/codex-paranoia-20260520T114942Z-bcs-def-4-tg-round-5/round.md`.
+**Status:** DRAFT 2026-05-20 — **6 paranoia rounds done** (initial 3 + 3 user-approved overrides at rounds 4, 5, 6; all returned BLOCK; all findings closed in-doc). Cumulative: 28 BLOCKERs + 13 WARNs + 1 INFO closed across 6 codex calls. Round-6 (this iteration) surfaced 4 new BLOCKERs: (a) async `cookies()` in Next.js 16 — pseudocode now `await cookies()`; (b) `enforceAccountRateLimit` returns `NextResponse | null`, not throws — Server Action variant unwraps the JSON body; rate-limit now wired into `unbindLearnerTelegram()` too; (c) §2.9 internal contradiction between "defer admin observability" and re-adding env-presence + active-sub count — split into IN SCOPE vs DEFERRED lists, removed teacher-digest terminology bleed; (d) `TELEGRAM_ALERT_CHAT_ID` operator chat-id has no semantics in learner channel — dropped from §3.5 test plan. Transcripts: `/tmp/codex-paranoia-20260520T081634Z-bcs-def-4-tg/round-{1,2,3}.md` + `/tmp/codex-paranoia-20260520T090205Z-bcs-def-4-tg-reconfirm/round.md` + `/tmp/codex-paranoia-20260520T114942Z-bcs-def-4-tg-round-5/round.md` + `/tmp/codex-paranoia-20260520T120245Z-bcs-def-4-tg-round-6/round.md`.
 **Wave name:** `bcs-def-4-tg-telegram-reminders` (single-PR epic — see §5).
 **Trigger:** Telegram handshake deferred from BCS-DEF-4 parent (`docs/plans/bcs-def-4-learner-reminders.md:188` — "BCS-DEF-4-TG continues to own the bot-handshake flow + the `LEARNER_REMINDERS_TELEGRAM_ENABLED` operator master switch").
 **Author:** Claude (autonomous).
@@ -557,23 +557,34 @@ placeholder with a 4-state component:
 **Server Actions** (NEW file `app/cabinet/profile/telegram-actions.ts`):
 
 - `requestLearnerTelegramBindCode()`:
-  - **Round-5 BLOCKER #1 closure** — Server Actions in this codebase do NOT use a `requireAuthenticatedAccount()` helper (it doesn't exist) NOR `requireAuthenticated(request)` (that's a route-only helper at `lib/auth/guards.ts:16-30` expecting a `Request` arg, not a Server Action context). The cabinet SSR pattern is `cookies() → lookupSession(token) → if !session redirect('/login')`, mirroring `app/cabinet/profile/page.tsx:33`. Apply that pattern at every Server Action call-site in this plan. Pseudocode:
+  - **Round-5 BLOCKER #1 closure (revised in round 6)** — Server Actions in this codebase do NOT use a `requireAuthenticatedAccount()` helper (it doesn't exist) NOR `requireAuthenticated(request)` (that's a route-only helper at `lib/auth/guards.ts:16-30` expecting a `Request` arg). The cabinet SSR pattern is **`await cookies() → lookupSession(token) → if !session redirect('/login')`**, mirroring `app/cabinet/profile/page.tsx:33-43` line-for-line. In Next.js 16 `cookies()` returns a `Promise<ReadonlyRequestCookies>` and MUST be awaited. Apply that pattern at every Server Action call-site:
     ```ts
     'use server'
     import { cookies } from 'next/headers'
     import { lookupSession, SESSION_COOKIE_NAME } from '@/lib/auth/sessions'
     import { redirect } from 'next/navigation'
 
-    async function requestLearnerTelegramBindCode() {
-      const token = cookies().get(SESSION_COOKIE_NAME)?.value
-      const session = token ? await lookupSession(token) : null
+    export async function requestLearnerTelegramBindCode() {
+      const cookieStore = await cookies()
+      const cookieValue = cookieStore.get(SESSION_COOKIE_NAME)?.value ?? null
+      if (!cookieValue) redirect('/login')
+      const session = await lookupSession(cookieValue)
       if (!session) redirect('/login')
       const accountId = session.account.id
-      // … rest of the Server Action body
+      // … rate-limit check (see below) + bind-code issue body
     }
     ```
-  - **Round-5 BLOCKER #1 closure (cont.)** — Rate-limit uses `enforceAccountRateLimit(accountId, scope, max, windowMs)` from `lib/security/account-rate-limit.ts:24` (positional args, NOT the object-form `enforceRateLimit(...)` which is the IP-bucket helper at `lib/security/request.ts:65`). For per-account flows (bind-code issue, unbind), always `enforceAccountRateLimit`. For webhook (which has no session — Telegram is the caller), the IP-bucket / from-id-bucket `enforceRateLimit` is correct.
-  - Account-rate-limit example: `await enforceAccountRateLimit(accountId, 'cabinet-tg-bind-code', 5, 3_600_000)`. Throws `RateLimitedError` → Server Action catches and surfaces "Слишком частые запросы, попробуйте через час".
+  - **Round-5 BLOCKER #1 closure (cont., revised in round 6)** — Rate-limit uses `enforceAccountRateLimit(accountId, scope, max, windowMs)` from `lib/security/account-rate-limit.ts:24-46`. The helper returns `NextResponse | null` (NOT throws). The route-handler precedent at `app/api/teacher/invites/route.ts:44-50` is `const rl = await enforceAccountRateLimit(...); if (rl) return rl`. **Server Actions don't return `NextResponse`**, they return data. So the Server Action variant is:
+    ```ts
+    const rl = await enforceAccountRateLimit(accountId, 'cabinet-tg-bind-code', 5, 3_600_000)
+    if (rl) {
+      // rl is a NextResponse with status 429 + JSON body { error: 'rate_limited', ...}
+      const body = await rl.json().catch(() => ({}))
+      return { ok: false, error: 'rate_limited' as const, retryAfterSeconds: body?.retryAfterSeconds ?? 3600 }
+    }
+    ```
+    The caller in the cabinet page reads the `{ok:false, error:'rate_limited'}` shape and renders "Слишком частые запросы, попробуйте через час."
+  - **Apply at BOTH Server Actions** — `requestLearnerTelegramBindCode()` AND `unbindLearnerTelegram()`. Each issues its own scope (`cabinet-tg-bind-code` 5/hour; `cabinet-tg-unbind` 5/hour). Round-6 BLOCKER #2 closure: previously `unbindLearnerTelegram()` was missing the rate-limit call — now wired in.
   - Begin TX.
   - **CANONICAL LOCK ORDER (R2-#1)**: advisory FIRST, row-level locks AFTER.
     - `pg_advisory_xact_lock(hashtext('ltbc:' || accountId::text))`.
@@ -595,7 +606,20 @@ placeholder with a 4-state component:
 
 ## 2.9 Admin UI — `/admin/settings/alerts` (extend existing card)
 
-**Round-5 WARN #3 closure** — Scope on admin observability is intentionally minimal in this wave. The plan ships ONE new operator-tunable setting key (`LEARNER_REMINDERS_TELEGRAM_ENABLED`) rendered through the existing `SettingEditor` (`app/admin/(gated)/settings/alerts/setting-editor.tsx`). The richer surface (per-probe history for `learner-reminders`, env-presence subtext, active-subscription counts) is **explicitly DEFERRED** to a follow-up `BCS-DEF-4-TG-ADMIN-OBS` epic. Rationale: `lib/admin/probe-status.ts:16-30` currently enumerates only the four alert probes; adding `learner-reminders` requires changing the probe-status reader contract + DB partial-index reuse + UI templating — a substantial refactor that doesn't gate the binding-flow MVP. Operator visibility on `TELEGRAM_BOT_TOKEN` missing in this wave: the `probe_runs.verdict_kind='config_missing'` rows written by the dispatcher pre-flight (Round-5 BLOCKER #2 regression pin) WILL be queryable via raw admin SQL OR via the `getProbeStatus()` call IF a follow-up adds `learner-reminders` to the iteration. Until then operators learn from the absence of `digest_sent` rows + the explicit `config_missing` rows in raw SQL.
+**Round-5 WARN #3 closure (revised round 6 — internal contradiction fixed)** — Scope on admin observability splits as follows:
+
+**IN SCOPE this wave** (low-cost; reuse existing primitives):
+- ONE new operator-tunable setting key (`LEARNER_REMINDERS_TELEGRAM_ENABLED`) rendered through existing `SettingEditor` (`app/admin/(gated)/settings/alerts/setting-editor.tsx`).
+- Env-presence indicators (`TELEGRAM_BOT_TOKEN` present / absent + `LEARNER_REMINDERS_TELEGRAM_ENABLED` value) rendered as sub-text under the new row. Just a `Boolean(env)` server-render — no new helper needed. Pinned by §3.7 test "env-presence indicators reflect mocked env state".
+- Active-subscription count rendered in the same card (`SELECT count(*) FROM accounts WHERE learner_telegram_enabled=true`). Single query, no new lib code.
+
+**DEFERRED to `BCS-DEF-4-TG-ADMIN-OBS` follow-up epic**:
+- Per-probe history for `learner-reminders` (would require widening `lib/admin/probe-status.ts:16-30` `PROBE_NAMES` iteration + DB partial-index changes + UI templating).
+- Rich "last run" / "last alert" cards for the learner-reminders surface (BCS-DEF-4 ships only the basic key-editor cards).
+
+**How operators currently observe a config-missing event in this wave** (round 6 follow-up — the prior "digest_sent" reference was a teacher-digest terminology bleed-through):
+- `probe_runs.verdict_kind='config_missing'` rows written by the dispatcher pre-flight (Round-5 BLOCKER #2 regression pin) are queryable via raw admin SQL or the operator runbook.
+- The new admin card's env-presence indicator shows "Telegram токен задан: нет" when `TELEGRAM_BOT_TOKEN` is empty, surfacing the gate state at-a-glance.
 
 `app/admin/(gated)/settings/alerts/page.tsx:62-72` defines
 `LEARNER_REMINDER_KEYS`. THIS plan adds `LEARNER_REMINDERS_TELEGRAM_ENABLED` to that array:
@@ -686,8 +710,8 @@ shape already supports the canonical state per migration 0065).
 
 `tests/integration/scripts/learner-reminder-dispatch-telegram.test.ts`:
 - Master switch off → no Telegram rows enqueued/sent even with `learner_telegram_enabled=true`.
-- **Round-5 BLOCKER #2 closure — config-missing regression pin**: Master switch ON + `TELEGRAM_BOT_TOKEN` env empty/missing + learner enabled + chat_id present → dispatcher pre-flight `if (!process.env.TELEGRAM_BOT_TOKEN?.trim())` fires BEFORE the `(slot_id, channel='telegram')` row is allocated. Writes ONE `probe_runs` row with `verdict_kind='config_missing'` + `error_message='telegram_bot_token_unset'`. **Assertion**: no row in `learner_reminder_dispatches` for that slot+channel='telegram'. **Assertion**: the helper `sendTelegramMessage` is NEVER called (vi.spyOn pin). This pins the round-4 closure so the bug cannot silently regress on a future refactor that moves the gate position.
-- Master switch ON + `TELEGRAM_ALERT_CHAT_ID` env empty → same shape but `error_message='telegram_chat_id_unset'`. (Operator gate visibility — admin sees this in the per-probe history.)
+- **Round-5 BLOCKER #2 closure — config-missing regression pin (revised round 6)**: Master switch ON + `TELEGRAM_BOT_TOKEN` env empty/missing + learner enabled + chat_id present → dispatcher pre-flight `if (!process.env.TELEGRAM_BOT_TOKEN?.trim())` fires BEFORE the `(slot_id, channel='telegram')` row is allocated. Writes ONE `probe_runs` row with `verdict_kind='config_missing'` + `error_message='telegram_bot_token_unset'`. **Assertion**: no row in `learner_reminder_dispatches` for that slot+channel='telegram'. **Assertion**: the helper `sendTelegramMessage` is NEVER called (vi.spyOn pin). This pins the round-4 closure so the bug cannot silently regress on a future refactor that moves the gate position.
+- **Round-6 BLOCKER #4 closure** — DROPPED the `TELEGRAM_ALERT_CHAT_ID` case from this test. That env var is the operator-side single chat-id (`scripts/auth-flow-alert.mjs:98-99`) and has no semantics in the learner-reminders channel — the dispatcher reads per-row `row.learnerTelegramChatId` at `scripts/learner-reminder-dispatch.mjs:526-531`, NOT `process.env.TELEGRAM_ALERT_CHAT_ID`. The relevant "no chat" path (learner enabled = true but `learner_telegram_chat_id IS NULL`) is already pinned by the existing test case at this section (existing line: "Master ON + learner enabled + chat_id NULL → per-row pre-check skips silently; no claim row"). The helper itself returns `telegram_missing_chat_id` on empty chat-id arg per `scripts/lib/telegram-alerts.mjs:287-292`, but this branch is unreachable because the dispatcher pre-check on `row.learnerTelegramChatId` short-circuits first.
 - Master ON + helper present + learner enabled + chat_id present → 1 row per slot with `channel='telegram'`; tgResult.ok → row marked `sent`.
 - Master ON + learner enabled + chat_id NULL → per-row pre-check at `scripts/learner-reminder-dispatch.mjs:466` skips silently; no claim row (existing behavior; we DON'T change it).
 - Master ON + tgResult `{ok:false, error:'telegram_403'}` → row marked `skipped` AND accounts row updated to `enabled=false, chat_id=null` (R2-#3 closure: classifier reads `error` not the human description).
