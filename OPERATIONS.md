@@ -33,6 +33,18 @@ Public repository readers should use:
   POLICY-KNOBS (2026-05-17). See the private runbook for the
   operator procedure (env-file edit + systemctl restart).
 
+- `SBP_ENABLED` — operator gate for the SBP QR endpoint
+  `POST /api/payments/sbp/create-qr`. Default off (route responds
+  503 `sbp_disabled`). Set to literal `'true'` to revive once the
+  CloudPayments-side merchant terminal has SBP activated — flip
+  this BEFORE testing the route, NOT after. Exact-match guard
+  rejects truthy strings other than `'true'`. Operator procedure:
+  (1) confirm SBP live in the CloudPayments dashboard, (2) edit
+  `$ENV_FILE` → `SBP_ENABLED=true`, (3) `systemctl restart
+  levelchannel`. The `/pay` UI does not need a re-ship — SBP
+  surfaces as a payment method inside the standard CloudPayments
+  widget. Added by PAY-SBP-REMOVAL (2026-05-20).
+
 ## Maintenance rule
 
 Do not reintroduce production hostnames, server IPs, private SSH commands,

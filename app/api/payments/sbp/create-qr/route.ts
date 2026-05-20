@@ -66,6 +66,30 @@ export async function POST(request: Request) {
     return rateLimitResponse
   }
 
+  // PAY-SBP-REMOVAL (2026-05-20) — operator-disabled gate. The SBP UI
+  // button was removed because the CloudPayments merchant terminal
+  // doesn't have SBP activated. Setting SBP_ENABLED=true revives the
+  // route without re-shipping (when CP-side activation lands).
+  // Exact-match guard: truthy strings other than 'true' are rejected.
+  // Placed between rate-limit and origin-check so cross-site no-Origin
+  // probes get a semantic 503 instead of leaking a 403 (operator-
+  // disabled state shouldn't depend on browser origin).
+  if (process.env.SBP_ENABLED !== 'true') {
+    return NextResponse.json(
+      {
+        error: 'sbp_disabled',
+        message: 'СБП-оплата временно недоступна.',
+      },
+      {
+        status: 503,
+        headers: {
+          'Cache-Control': 'no-store, max-age=0',
+          'Retry-After': '3600',
+        },
+      },
+    )
+  }
+
   const originResponse = enforceTrustedBrowserOrigin(request)
   if (originResponse) {
     return originResponse
