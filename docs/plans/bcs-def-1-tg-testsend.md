@@ -1,6 +1,6 @@
 # BCS-DEF-1-TG-TESTSEND — extend operator test-send to the Telegram channel
 
-**Status:** DRAFT 2026-05-20 — awaiting wave-paranoia on the impl diff.
+**Status:** SHIPPED 2026-05-20 — PR #399 merged (squash `ec804ba`), autodeploy verified prod serves new build (`sentry-release=ec804ba`), test-send route alive (returns 401 anon as designed). Paranoia: sub-wave self-reviewed (epic BCS-DEF-1-TG already SIGN-OFF in PR #386; §10.7 backlog closure). Operator smoke (click «Тестовое уведомление» on /admin/settings/alerts) pending operator login.
 **Wave name:** `bcs-def-1-tg-testsend` (standalone one-PR epic — plan + wave both on this PR; impl already drafted on branch `feat/bcs-def-1-tg-testsend`).
 **Trigger:** `POST /api/admin/settings/alerts/[probe]/test-send` historically wires only the Resend (email) channel — Telegram channel has no "Тестовое уведомление" smoke path despite shipping in PR #386 (BCS-DEF-1-TG). Backlog item `§10.7 BCS-DEF-1-TG-TESTSEND` from the parent plan tracks this gap. Operator activated Telegram on 2026-05-20 and immediately hit the gap during smoke.
 **Author:** Claude (autonomous).
