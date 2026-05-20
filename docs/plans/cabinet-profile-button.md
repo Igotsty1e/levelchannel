@@ -1,6 +1,6 @@
 # SAAS-5 — Cabinet "Профиль" button + dedicated /cabinet/profile page
 
-**Status:** DRAFT 2026-05-18 (pre-`/codex-paranoia plan`)
+**Status:** SHIPPED 2026-05-18 — PR #287 merged (3 rounds of `/codex-paranoia plan` completed; user accepted option (a) ship-as-is on 4 doc-prose BLOCKERs; escalation report at `/tmp/codex-paranoia-20260518T034727Z-final.md`).
 **Wave name:** `cabinet-profile-button`
 **Trigger:** Product-owner request 2026-05-18 — declutter the main /cabinet surface so lessons dominate. Move ProfileEditor + DangerZone behind a header button to a dedicated sub-route.
 **Predecessor:** none (pure UI refactor; no DB / no API change).
