@@ -30,6 +30,7 @@ checklist for a new or repeated production environment.
    - `CLOUDPAYMENTS_API_SECRET=...`
    - `AUTH_RATE_LIMIT_SECRET=...` (32+ random chars; mandatory in prod)
    - `AUDIT_ENCRYPTION_KEY=...` (32+ random chars; mandatory in prod. Generate with `openssl rand -base64 48`. Encrypts `payment_audit_events.customer_email` + `client_ip` via pgcrypto. Losing this key loses every encrypted audit row — back it up alongside `CLOUDPAYMENTS_API_SECRET`)
+   - `SBP_ENABLED=false` (PAY-SBP-REMOVAL 2026-05-20. Operator gate for `POST /api/payments/sbp/create-qr`. Default off — route returns 503 `sbp_disabled` until the CloudPayments-side merchant terminal has SBP activated. To enable: 1) confirm SBP is live in the CloudPayments dashboard (Telegram bot support → send ИНН), 2) flip `SBP_ENABLED=true` in `$ENV_FILE`, 3) restart the app process. The `/pay` UI has no in-page SBP CTA — SBP appears as a payment method inside the standard CloudPayments widget once the terminal is active.)
 3. In the CloudPayments cabinet, verify that the needed payment methods are enabled in the form (`bank card`, optionally `T-Pay`, others).
 4. In the CloudPayments / CloudKassir cabinet, make sure the cash register is in live mode and chek e-mails are sent.
 5. In the CloudPayments cabinet, set the webhooks:

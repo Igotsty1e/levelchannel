@@ -1,6 +1,6 @@
 # SBP-PAY — СБП-платежи через CloudPayments API (`/pay` only)
 
-**Status:** SHIPPED 2026-05-19 — PR #391 merged. Migration 0063 (`payment_orders.payment_method` text + CHECK over `('card','sbp','admin_grant')` + backfill + partial index). New route `POST /api/payments/sbp/create-qr` writes `payment_method='sbp'` at create-qr time; webhook handler classifies via `detectPaymentMethod()` positive-signal whitelist + `markOrderPaid({detectedPaymentMethod})`. Components: `SbpQrModal` + `usePaymentStatusPoll` + extended `PricingSection`. New `lib/payments/order-account-resolver.ts` for writer-side session-account-id resolution. SBP orders never persist saved-card tokens. Paranoia history: plan-paranoia round-3 returned BLOCK with 3 BLOCKERs + 3 WARNs + 1 INFO (mechanical textual drift only); round-3 mechanical closures applied inline (see §0c); epic-end wave SIGN-OFF on the impl diff. Pragmatic SIGN-OFF.
+**Status:** SHIPPED 2026-05-19 — PR #391 merged. **UI button + route gated 2026-05-20 (PAY-SBP-REMOVAL):** in-page «Оплатить через СБП» CTA removed because the CloudPayments-side merchant terminal hasn't activated SBP (live probe returns CP `Success=false, Message="404 - not found"`). Route now operator-gated by `SBP_ENABLED=true` env (default off → 503 `sbp_disabled`). Revive via env-flip when CP-side activation lands; no re-ship required. See `docs/plans/pay-sbp-removal-and-cp-ready-gate.md` for the removal plan + paranoia closures. Migration 0063 (`payment_orders.payment_method` text + CHECK over `('card','sbp','admin_grant')` + backfill + partial index). New route `POST /api/payments/sbp/create-qr` writes `payment_method='sbp'` at create-qr time; webhook handler classifies via `detectPaymentMethod()` positive-signal whitelist + `markOrderPaid({detectedPaymentMethod})`. Components: `SbpQrModal` + `usePaymentStatusPoll` + extended `PricingSection`. New `lib/payments/order-account-resolver.ts` for writer-side session-account-id resolution. SBP orders never persist saved-card tokens. Paranoia history: plan-paranoia round-3 returned BLOCK with 3 BLOCKERs + 3 WARNs + 1 INFO (mechanical textual drift only); round-3 mechanical closures applied inline (see §0c); epic-end wave SIGN-OFF on the impl diff. Pragmatic SIGN-OFF.
 **Wave name:** `sbp-payments` (one-PR epic; UI + server + migration + tests in one PR per §5).
 **Trigger:** Product-owner request 2026-05-19 — CloudPayments enabled СБП on the merchant terminal; LevelChannel needs to surface it as a payment option.
 **Author:** Claude (autonomous).
@@ -124,7 +124,7 @@ Add a dedicated "Оплатить через СБП" CTA on `/pay`. Clicking it:
 - `paymentConfig.cloudpayments.apiSecret` — Basic Auth secret for server-to-server API calls.
 - `paymentConfig.siteUrl` — used for `successRedirectUrl` / `failRedirectUrl` in widget intent.
 
-No new env vars are required — the existing CloudPayments credentials cover the SBP API.
+No new env vars are required — the existing CloudPayments credentials cover the SBP API. **PAY-SBP-REMOVAL 2026-05-20 follow-up:** `SBP_ENABLED=false` env was later added as an operator gate on the route (see `docs/plans/pay-sbp-removal-and-cp-ready-gate.md` §1.2).
 
 ## 1.2 Existing surface inventory — webhook handler
 
@@ -651,7 +651,7 @@ components/payments/use-payment-status-poll.ts         (NEW — status-poll hook
 components/payments/pricing-section.tsx                (modified — second CTA + modal mount + Idempotency-Key generation; reads accountIdAttached from response)
 lib/payments/README.md                                 (modified — document SBP path + single-source-of-truth for paymentMethod)
 ARCHITECTURE.md                                        (modified — note SBP path in §payment flow)
-.env.example                                           (no change — no new env vars)
+.env.example                                           (PAY-SBP-REMOVAL 2026-05-20 follow-up: SBP_ENABLED=false added)
 tests/payments/sbp-create-qr.test.ts                                       (NEW)
 tests/payments/detect-payment-method.test.ts                               (NEW)
 tests/payments/sbp-qr-modal.test.tsx                                       (NEW)
@@ -727,9 +727,11 @@ Their docs imply per-terminal rate limits but don't publish the exact threshold.
   ```
 
 Post-merge (operator-side):
-- Hit `/pay` in a browser; verify "Оплатить через СБП" CTA visible alongside "Оплатить картой".
-- Click it → modal opens with QR + status indicator.
-- Pay a small amount via real bank app; verify `/thank-you` lands correctly + email receipt arrives.
+
+**SUPERSEDED 2026-05-20 by PAY-SBP-REMOVAL** — in-page «Оплатить через СБП» CTA was removed and the route is now operator-gated by `SBP_ENABLED=true` env (default off → 503 `sbp_disabled`). The post-merge smoke ladder below applies ONLY after CloudPayments-side terminal activation lands AND `SBP_ENABLED=true` is flipped in the production env-file:
+
+- Hit `/pay` in a browser; verify the standard CloudPayments widget exposes SBP as a payment method inside the modal (no in-page SBP button — that surface is intentionally absent).
+- Pay a small amount via real bank app from the widget's SBP option; verify `/thank-you` lands correctly + email receipt arrives.
 - Repeat the test paying via the CARD path; verify nothing regressed.
 
 ---

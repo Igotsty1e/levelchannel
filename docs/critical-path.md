@@ -54,7 +54,7 @@ Grouped by failure mode. Each entry: path + the specific invariant it owns.
 
 ### Money-moving — burst additions (1 file)
 
-22. **`app/api/payments/sbp/create-qr/route.ts`** (SBP-PAY, 2026-05-19). Owns: server-side CloudPayments-hosted SBP QR creation. Writer-side resolves the session account id via `lib/payments/order-account-resolver.ts` (admin/teacher rejected, tighter than the receipt-gate consumer); stamps `payment_orders.payment_method='sbp'` at create-qr time (single source of truth; webhook `detectPaymentMethod` is the migration-edge fallback only). A bug here either creates orphan QRs charged on the wrong account, or mis-discriminates the canonical method column and corrupts admin reconciliation views.
+22. **`app/api/payments/sbp/create-qr/route.ts`** (SBP-PAY, 2026-05-19; PAY-SBP-REMOVAL 2026-05-20 operator-gated). Owns: server-side CloudPayments-hosted SBP QR creation. Writer-side resolves the session account id via `lib/payments/order-account-resolver.ts` (admin rejected; teacher + learner-with-teacher hybrid accepted — writer is strictly less privileged than the receipt-gate reader which rejects BOTH admin AND teacher). Stamps `payment_orders.payment_method='sbp'` at create-qr time (single source of truth; webhook `detectPaymentMethod` is the migration-edge fallback only). Operator-gated by `SBP_ENABLED=true` env (default off → 503 `sbp_disabled`); revive procedure documented in OPERATIONS.md + PAYMENTS_SETUP.md. A bug here either creates orphan QRs charged on the wrong account, mis-discriminates the canonical method column and corrupts admin reconciliation views, or — if the gate is mis-wired — silently reactivates a route the operator believed was off.
 
 ### Calendar + scheduling integrity — burst additions (1 file)
 
