@@ -1,6 +1,6 @@
 # BCS-DEF-4 — Lesson-start reminders for learner
 
-**Status:** REVISED 2026-05-19 (product-owner decisions + 3-round Codex paranoia applied; round-3 BLOCK on textual-drift only; impl gated on user acceptance of the textual-drift outcome).
+**Status:** SHIPPED 2026-05-19 — PR #392 merged 2026-05-20 00:04:27Z (4 sub-PRs + 3 migrations 0064/0065/0066 + cron driver `scripts/learner-reminder-dispatch.mjs` + systemd timer + admin "Напоминания учащимся" card + cabinet/profile placeholder + 5 new test files / 14 cases). Paranoia outcome: 3-round plan SIGN-OFF + epic-end wave SIGN-OFF; round-3 BLOCK was textual-drift-only, user-accepted ship-as-is. Master switch defaults OFF — production activation = operator's first `scripts/activate-prod-ops.sh` run after merge + flipping `LEARNER_REMINDERS_EMAIL_ENABLED=1` on `/admin/settings/alerts`.
 
 ---
 
