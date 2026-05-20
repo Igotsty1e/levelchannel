@@ -1,6 +1,6 @@
 # PAY-SBP-REMOVAL + CP-RESCUE — Two production fixes on `/pay`
 
-**Status:** PLAN SIGN-OFF round 3/3 (Codex-Paranoia plan checkpoint; 4 BLOCKERs + 8 WARNs across 3 rounds closed; impl unblocked). See `/tmp/codex-paranoia-20260520T050900Z/round-{1,2,3}.md` for the full Codex transcripts.
+**Status:** SHIPPED 2026-05-20 — PR #398 merged (squash `ae720e5`), autodeploy verified prod serves new build, smoke confirmed SBP CTA absent + `POST /api/payments/sbp/create-qr` returns 503 `sbp_disabled` + Retry-After 3600 + Cache-Control no-store. Paranoia history: plan SIGN-OFF round 3/3 (4 BLOCKERs + 8 WARNs across 3 rounds) + wave SIGN-OFF round 3/3 (2 BLOCKERs + 11 WARNs across 3 rounds; impl-diff review caught stuck-pending receiptToken loss + prod-IP leak in plan + doc drifts). Transcripts: `/tmp/codex-paranoia-20260520T050900Z/{round-{1,2,3}.md,wave-round-{1,2,3}.md}`.
 **Wave name:** `pay-sbp-removal-and-cp-rescue` (two-PR epic; PR1 surgical UI removal + server gate, PR2 stuck-pending rollback).
 **Trigger:** Live `/pay` test 2026-05-20 revealed two issues:
   1. «Оплатить через СБП» button returns 422 `sbp_api_rejected` with CloudPayments message `"404 - not found"` — terminal-side SBP not activated. Product-owner decision: remove the in-page SBP button entirely.

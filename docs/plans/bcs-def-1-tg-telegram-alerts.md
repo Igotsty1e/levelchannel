@@ -1017,15 +1017,17 @@ after env rotation.
   channel = separate plan + new helper + new CHECK value.
 - **10.6 BCS-DEF-1-TG-UX** — red badge in `/admin/settings/alerts` after
   N consecutive Telegram failures.
-- **10.7 BCS-DEF-1-TG-TESTSEND (R1 WARN#2 closure)** — extend
-  `/api/admin/settings/alerts/[probe]/test-send/route.ts` and the
-  test-send UI button with a parallel Telegram dry-run path. Today's
-  route is hard-coded Resend-only; operator has no out-of-band
-  BotFather verification until a real incident fires. Deferred to keep
-  THIS PR scoped; on the to-do list IMMEDIATELY after BCS-DEF-1-TG
-  merges. Future PR also widens the route's preflight catch with
-  `isUndefinedColumnError` so it gracefully handles the
-  before-migration-applies window.
+- ~~**10.7 BCS-DEF-1-TG-TESTSEND**~~ — **SHIPPED 2026-05-20** (PR #399,
+  squash `ec804ba`). `/api/admin/settings/alerts/[probe]/test-send/route.ts`
+  now exercises the Telegram channel after the email INSERT. Gates:
+  `TELEGRAM_ALERTS_MASTER_SWITCH=1` (DB) + `TELEGRAM_BOT_TOKEN` env +
+  `TELEGRAM_ALERT_CHAT_ID` env. Writes a second `probe_runs` row with
+  `recipient_kind='telegram'`. Redaction contract pinned end-to-end
+  by RTL/jsdom test. UI button surfaces both channel outcomes
+  (`email id: ... · telegram id: ...` or per-branch gate reason).
+  See `docs/plans/bcs-def-1-tg-testsend.md`. Note: `isUndefinedColumnError`
+  preflight widening NOT done (test-send doesn't write columns added
+  after migration 0061; not needed for §10.7 closure).
 
 ---
 
