@@ -60,7 +60,26 @@ export function TestSendButton({ probeName, disabled }: Props) {
         setBusy(false)
         return
       }
-      setResult(`Отправлено. email id: ${data?.emailId ?? '(нет)'}`)
+      // BCS-DEF-1-TG-TESTSEND (2026-05-20) — surface both channel
+      // outcomes. email id when present + telegram message id (or the
+      // gate reason if TG was skipped/failed). Operator sees in one
+      // line whether each channel landed without digging into probe_runs.
+      const parts: string[] = []
+      parts.push(`email id: ${data?.emailId ?? '(нет)'}`)
+      if (data?.telegramAttempted) {
+        if (data?.telegramMessageId) {
+          parts.push(`telegram id: ${data.telegramMessageId}`)
+        } else if (data?.telegramError) {
+          parts.push(`telegram: ошибка (${data.telegramError})`)
+        } else {
+          parts.push('telegram: отправлено')
+        }
+      } else if (data?.telegramError) {
+        // Master switch off or env missing — not an error per se, but
+        // worth showing so operator knows the test didn't cover TG.
+        parts.push(`telegram: пропущен (${data.telegramError})`)
+      }
+      setResult(`Отправлено. ${parts.join(' · ')}`)
       setBusy(false)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'unknown error')

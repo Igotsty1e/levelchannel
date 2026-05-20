@@ -4,12 +4,18 @@ import { NO_STORE } from '@/lib/api/http-headers'
 import { requireAdminRole } from '@/lib/auth/guards'
 import { isUndefinedTableError } from '@/lib/db/errors'
 import { getDbPool } from '@/lib/db/pool'
+import { resolveChannelSettings } from '@/lib/admin/operator-settings'
 import { withIdempotency } from '@/lib/security/idempotency'
 import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
 } from '@/lib/security/request'
 import { isProbeName } from '@/lib/admin/probe-status'
+import {
+  redactTelegramSecret,
+  sendTelegramMessage,
+  stringifyTelegramError,
+} from '@/scripts/lib/telegram-alerts.mjs'
 
 // ALERTS-OBS (2026-05-16) — POST /api/admin/settings/alerts/[probe]/test-send.
 // Plan: docs/plans/alerts-obs.md §4.6.
@@ -179,8 +185,8 @@ export async function POST(request: Request, { params }: RouteParams) {
       `insert into probe_runs (
          probe_name, verdict_kind, alert_sent,
          recipient_email, fingerprint, stats, error_message,
-         is_test, initiator_account_id
-       ) values ($1, 'test_send_failed', false, $2, $3, $4::jsonb, $5, true, $6::uuid)`,
+         is_test, initiator_account_id, recipient_kind
+       ) values ($1, 'test_send_failed', false, $2, $3, $4::jsonb, $5, true, $6::uuid, 'email')`,
       [
         probe,
         recipient || null,
@@ -258,8 +264,9 @@ export async function POST(request: Request, { params }: RouteParams) {
            probe_name, verdict_kind, alert_sent,
            recipient_email, alert_email_id, fingerprint,
            stats, error_message,
-           is_test, initiator_account_id
-         ) values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, true, $9::uuid)`,
+           is_test, initiator_account_id,
+           recipient_kind
+         ) values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, true, $9::uuid, 'email')`,
         [
           probe,
           sendError ? 'test_send_failed' : 'test_send_succeeded',
@@ -273,12 +280,126 @@ export async function POST(request: Request, { params }: RouteParams) {
         ],
       )
 
-      if (sendError) {
+      // BCS-DEF-1-TG-TESTSEND (2026-05-20) — extend the test-send to
+      // the Telegram channel. Mirrors the email branch: writes a SECOND
+      // probe_runs row keyed on recipient_kind='telegram' so both
+      // channel-status cards on /admin/settings/alerts show the test
+      // outcome. Independent of the email branch — TG failure does NOT
+      // mask email success or vice versa.
+      //
+      // Gating order:
+      //   1. Master switch from DB (TELEGRAM_ALERTS_MASTER_SWITCH=1).
+      //   2. Env presence (TELEGRAM_BOT_TOKEN + TELEGRAM_ALERT_CHAT_ID).
+      // If either gate is closed, write a 'test_send_failed' row with
+      // a config-missing error_message so the operator's UI surfaces
+      // the exact gap. NO Telegram API call in that case.
+      //
+      // SAME redaction contract as the live probes (plan §4.1 + §2.6):
+      // every string derived from a Telegram error funnels through
+      // redactTelegramSecret(stringifyTelegramError(...), token).
+      const tgToken = process.env.TELEGRAM_BOT_TOKEN?.trim() || ''
+      const tgChatId = process.env.TELEGRAM_ALERT_CHAT_ID?.trim() || ''
+      let tgChannelSettings
+      try {
+        tgChannelSettings = await resolveChannelSettings('telegram')
+      } catch (err) {
+        // resolveChannelSettings catches its own DB errors and falls
+        // back to defaults; an unexpected throw here would mean a
+        // programming error. Log + skip the TG branch defensively.
+        // eslint-disable-next-line no-console
+        console.warn('[test-send] resolveChannelSettings threw — skipping TG', {
+          err: err instanceof Error ? err.message : String(err),
+        })
+        tgChannelSettings = null
+      }
+      const tgMasterSwitch =
+        tgChannelSettings &&
+        typeof tgChannelSettings.TELEGRAM_ALERTS_MASTER_SWITCH?.value === 'number'
+          ? (tgChannelSettings.TELEGRAM_ALERTS_MASTER_SWITCH.value as number)
+          : 0
+      const tgRetryMax =
+        tgChannelSettings &&
+        typeof tgChannelSettings.TELEGRAM_ALERTS_RETRY_MAX?.value === 'number'
+          ? (tgChannelSettings.TELEGRAM_ALERTS_RETRY_MAX.value as number)
+          : 2
+
+      let tgMessageId: string | null = null
+      let tgError: string | null = null
+      let tgAttempted = false
+
+      if (tgMasterSwitch !== 1) {
+        tgError = 'telegram_master_switch_off'
+      } else if (!tgToken) {
+        tgError = 'telegram_missing_token'
+      } else if (!tgChatId) {
+        tgError = 'telegram_missing_chat_id'
+      } else {
+        tgAttempted = true
+        try {
+          const result = await sendTelegramMessage({
+            botToken: tgToken,
+            chatId: tgChatId,
+            text,
+            retryMax: tgRetryMax,
+          })
+          if (result.ok) {
+            tgMessageId = result.messageId || null
+          } else {
+            const detail = result.detail || ''
+            tgError = detail
+              ? `${result.error}: ${detail}`
+              : result.error
+            // Defense-in-depth: sendTelegramMessage already redacts
+            // detail, but we re-redact on the route boundary too in
+            // case a future refactor breaks the inner pass.
+            tgError = redactTelegramSecret(tgError, tgToken)
+          }
+        } catch (err) {
+          // The helper traps fetch errors internally and returns
+          // {ok:false,...}, so reaching catch means a TypeError from
+          // the helper itself (bad args, etc). Redact defensively.
+          tgError = redactTelegramSecret(
+            stringifyTelegramError(err),
+            tgToken,
+          )
+        }
+      }
+
+      await pool.query(
+        `insert into probe_runs (
+           probe_name, verdict_kind, alert_sent,
+           recipient_email, alert_email_id, fingerprint,
+           stats, error_message,
+           is_test, initiator_account_id,
+           recipient_kind
+         ) values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, true, $9::uuid, 'telegram')`,
+        [
+          probe,
+          tgError ? 'test_send_failed' : 'test_send_succeeded',
+          tgError ? false : true,
+          tgChatId || null,
+          tgMessageId,
+          fingerprint,
+          JSON.stringify(initiatorStats),
+          tgError,
+          operatorId,
+        ],
+      )
+
+      // Response semantics: 200 if EITHER channel landed; 502 if BOTH
+      // failed (or email failed with no TG attempt). Operator sees the
+      // full picture in body fields.
+      if (sendError && (tgError || !tgAttempted)) {
         return {
           status: 502,
           body: {
             error: 'send_failed',
             message: `Resend вернул ошибку: ${sendError}`,
+            emailId: sentEmailId,
+            emailError: sendError,
+            telegramAttempted: tgAttempted,
+            telegramMessageId: tgMessageId,
+            telegramError: tgError,
           },
         }
       }
@@ -288,6 +409,10 @@ export async function POST(request: Request, { params }: RouteParams) {
         body: {
           ok: true,
           emailId: sentEmailId,
+          emailError: sendError,
+          telegramAttempted: tgAttempted,
+          telegramMessageId: tgMessageId,
+          telegramError: tgError,
           sentAt: new Date().toISOString(),
           fingerprint,
         },

@@ -191,12 +191,22 @@ describe('POST /api/admin/settings/alerts/[probe]/test-send', () => {
       // recreate diverges from prod and any subsequent test invoking the
       // learner-reminder-dispatch scheduler silently loses its probe_runs
       // row to a swallowed CHECK violation inside recordProbeRun().
+      // BCS-DEF-1-TG-TESTSEND (2026-05-20) — UNION extension: also
+      // include 'teacher-daily-digest' + the 3 BCS-DEF-5 digest verdict
+      // kinds (migration 0068). Without this, parallel-running
+      // tests/integration/scripts/teacher-daily-digest.test.ts races on
+      // this shared DB after the drop-recreate fires and starts seeing
+      // CHECK violations on its own seed rows. We track the UNION of
+      // all live CHECKs (prod end-state = max(migrations) but the test
+      // fixture intentionally accepts ALL historical values so cross-
+      // file insertions don't break order-dependent.
       await pool.query(`
         create table if not exists probe_runs (
           id uuid primary key default gen_random_uuid(),
           probe_name text not null check (probe_name in (
             'auth-flow', 'calendar-pathology', 'webhook-flow',
-            'conflict-unresolved', 'learner-reminders'
+            'conflict-unresolved', 'learner-reminders',
+            'teacher-daily-digest'
           )),
           ran_at timestamptz not null default now(),
           verdict_kind text not null check (verdict_kind in (
@@ -205,7 +215,8 @@ describe('POST /api/admin/settings/alerts/[probe]/test-send', () => {
             'low_volume_skip', 'all_resolved', 'ok',
             'config_missing', 'error',
             'test_send_succeeded', 'test_send_failed',
-            'channel_disabled_by_operator'
+            'channel_disabled_by_operator',
+            'digest_sent', 'digest_skipped_disabled', 'digest_no_teachers'
           )),
           alert_sent boolean not null default false,
           recipient_email text null,
@@ -244,6 +255,205 @@ describe('POST /api/admin/settings/alerts/[probe]/test-send', () => {
       if (prevResendKey !== undefined) process.env.RESEND_API_KEY = prevResendKey
       else delete process.env.RESEND_API_KEY
     }
+  })
+
+  // BCS-DEF-1-TG-TESTSEND (2026-05-20) — test-send route now ALSO
+  // exercises the Telegram channel when master switch + env are set.
+  // Email channel path tested above; the cases below pin the new
+  // TG branch + its config-missing semantics. Mirror the live-probe
+  // gather-then-dispatch pattern from
+  // tests/integration/scripts/auth-flow-alert-telegram-block.test.ts.
+  describe('Telegram channel branch', () => {
+    it('master switch off → only email row, no TG attempt', async () => {
+      const { cookie, accountId } = await makeAdmin('admin-tg-off')
+      // Set master switch to 0 via DB (existing channel-scope key).
+      await (
+        await import('@/lib/admin/operator-settings')
+      ).setOperatorSetting({
+        key: 'TELEGRAM_ALERTS_MASTER_SWITCH',
+        value: '0',
+        expectedUpdatedAt: null,
+        byAccountId: accountId,
+      })
+      const prevAlertEmailTo = process.env.ALERT_EMAIL_TO
+      const prevResendKey = process.env.RESEND_API_KEY
+      const prevTgToken = process.env.TELEGRAM_BOT_TOKEN
+      const prevTgChat = process.env.TELEGRAM_ALERT_CHAT_ID
+      process.env.ALERT_EMAIL_TO = 'ops-tg-off@example.com'
+      process.env.RESEND_API_KEY = 're_invalid_key_for_test'
+      process.env.TELEGRAM_BOT_TOKEN = '1:fake-token'
+      process.env.TELEGRAM_ALERT_CHAT_ID = '123456'
+      try {
+        const res = await testSendHandler(
+          buildRequest('/api/admin/settings/alerts/auth-flow/test-send', {
+            cookie,
+            body: { confirmReason: 'tg-off smoke' },
+            headers: { 'Idempotency-Key': `test-${Date.now()}-tg-off` },
+          }),
+          { params: Promise.resolve({ probe: 'auth-flow' }) },
+        )
+        const json = await res.json()
+        expect(json.telegramAttempted).toBe(false)
+        expect(json.telegramError).toBe('telegram_master_switch_off')
+
+        // TG row was still written (test_send_failed for config) so the
+        // operator UI shows the gate state.
+        const tgRow = await getDbPool().query(
+          `select verdict_kind, error_message, recipient_kind
+             from probe_runs
+            where probe_name = 'auth-flow'
+              and is_test = true
+              and recipient_kind = 'telegram'
+            order by ran_at desc
+            limit 1`,
+        )
+        expect(tgRow.rows.length).toBe(1)
+        expect(tgRow.rows[0].verdict_kind).toBe('test_send_failed')
+        expect(tgRow.rows[0].error_message).toBe(
+          'telegram_master_switch_off',
+        )
+
+        // Email row is also present, separately keyed.
+        const emailRow = await getDbPool().query(
+          `select recipient_kind from probe_runs
+            where probe_name = 'auth-flow'
+              and is_test = true
+              and recipient_kind = 'email'
+            order by ran_at desc
+            limit 1`,
+        )
+        expect(emailRow.rows.length).toBe(1)
+      } finally {
+        if (prevAlertEmailTo !== undefined) process.env.ALERT_EMAIL_TO = prevAlertEmailTo
+        else delete process.env.ALERT_EMAIL_TO
+        if (prevResendKey !== undefined) process.env.RESEND_API_KEY = prevResendKey
+        else delete process.env.RESEND_API_KEY
+        if (prevTgToken !== undefined) process.env.TELEGRAM_BOT_TOKEN = prevTgToken
+        else delete process.env.TELEGRAM_BOT_TOKEN
+        if (prevTgChat !== undefined) process.env.TELEGRAM_ALERT_CHAT_ID = prevTgChat
+        else delete process.env.TELEGRAM_ALERT_CHAT_ID
+      }
+    })
+
+    it('master switch on + no TELEGRAM_BOT_TOKEN → TG row with telegram_missing_token', async () => {
+      const { cookie, accountId } = await makeAdmin('admin-tg-no-token')
+      await (
+        await import('@/lib/admin/operator-settings')
+      ).setOperatorSetting({
+        key: 'TELEGRAM_ALERTS_MASTER_SWITCH',
+        value: '1',
+        expectedUpdatedAt: null,
+        byAccountId: accountId,
+      })
+      const prevAlertEmailTo = process.env.ALERT_EMAIL_TO
+      const prevResendKey = process.env.RESEND_API_KEY
+      const prevTgToken = process.env.TELEGRAM_BOT_TOKEN
+      const prevTgChat = process.env.TELEGRAM_ALERT_CHAT_ID
+      process.env.ALERT_EMAIL_TO = 'ops-tg-no-token@example.com'
+      process.env.RESEND_API_KEY = 're_invalid_key_for_test'
+      delete process.env.TELEGRAM_BOT_TOKEN
+      process.env.TELEGRAM_ALERT_CHAT_ID = '123456'
+      try {
+        const res = await testSendHandler(
+          buildRequest('/api/admin/settings/alerts/auth-flow/test-send', {
+            cookie,
+            body: { confirmReason: 'tg-no-token smoke' },
+            headers: {
+              'Idempotency-Key': `test-${Date.now()}-tg-no-token`,
+            },
+          }),
+          { params: Promise.resolve({ probe: 'auth-flow' }) },
+        )
+        const json = await res.json()
+        expect(json.telegramAttempted).toBe(false)
+        expect(json.telegramError).toBe('telegram_missing_token')
+
+        const tgRow = await getDbPool().query(
+          `select error_message from probe_runs
+            where probe_name = 'auth-flow'
+              and is_test = true
+              and recipient_kind = 'telegram'
+            order by ran_at desc
+            limit 1`,
+        )
+        expect(tgRow.rows.length).toBe(1)
+        expect(tgRow.rows[0].error_message).toBe('telegram_missing_token')
+      } finally {
+        if (prevAlertEmailTo !== undefined) process.env.ALERT_EMAIL_TO = prevAlertEmailTo
+        else delete process.env.ALERT_EMAIL_TO
+        if (prevResendKey !== undefined) process.env.RESEND_API_KEY = prevResendKey
+        else delete process.env.RESEND_API_KEY
+        if (prevTgToken !== undefined) process.env.TELEGRAM_BOT_TOKEN = prevTgToken
+        else delete process.env.TELEGRAM_BOT_TOKEN
+        if (prevTgChat !== undefined) process.env.TELEGRAM_ALERT_CHAT_ID = prevTgChat
+        else delete process.env.TELEGRAM_ALERT_CHAT_ID
+      }
+    })
+
+    it('master switch on + bogus token → real Telegram API returns 4xx → TG row with redacted error', async () => {
+      const { cookie, accountId } = await makeAdmin('admin-tg-bad-token')
+      await (
+        await import('@/lib/admin/operator-settings')
+      ).setOperatorSetting({
+        key: 'TELEGRAM_ALERTS_MASTER_SWITCH',
+        value: '1',
+        expectedUpdatedAt: null,
+        byAccountId: accountId,
+      })
+      const prevAlertEmailTo = process.env.ALERT_EMAIL_TO
+      const prevResendKey = process.env.RESEND_API_KEY
+      const prevTgToken = process.env.TELEGRAM_BOT_TOKEN
+      const prevTgChat = process.env.TELEGRAM_ALERT_CHAT_ID
+      process.env.ALERT_EMAIL_TO = 'ops-tg-bad-token@example.com'
+      process.env.RESEND_API_KEY = 're_invalid_key_for_test'
+      // Syntactically valid bot token shape, real Telegram API will
+      // 401. The route MUST redact the token from the error string
+      // before writing it to probe_runs.error_message.
+      const FAKE_TOKEN = '1234567890:ABCDefGHIjklMNOpqrSTUvwxYZ1234567890'
+      process.env.TELEGRAM_BOT_TOKEN = FAKE_TOKEN
+      process.env.TELEGRAM_ALERT_CHAT_ID = '123456'
+      try {
+        const res = await testSendHandler(
+          buildRequest('/api/admin/settings/alerts/auth-flow/test-send', {
+            cookie,
+            body: { confirmReason: 'tg-bad-token smoke' },
+            headers: {
+              'Idempotency-Key': `test-${Date.now()}-tg-bad-token`,
+            },
+          }),
+          { params: Promise.resolve({ probe: 'auth-flow' }) },
+        )
+        const json = await res.json()
+        expect(json.telegramAttempted).toBe(true)
+        expect(json.telegramMessageId).toBeNull()
+        expect(typeof json.telegramError).toBe('string')
+        // Redaction contract: the raw token MUST NOT appear in the
+        // response body, even though Telegram's error came from a
+        // request URL containing the token.
+        expect(json.telegramError).not.toContain(FAKE_TOKEN)
+
+        const tgRow = await getDbPool().query(
+          `select error_message from probe_runs
+            where probe_name = 'auth-flow'
+              and is_test = true
+              and recipient_kind = 'telegram'
+            order by ran_at desc
+            limit 1`,
+        )
+        expect(tgRow.rows.length).toBe(1)
+        // Same redaction contract on the DB write.
+        expect(String(tgRow.rows[0].error_message)).not.toContain(FAKE_TOKEN)
+      } finally {
+        if (prevAlertEmailTo !== undefined) process.env.ALERT_EMAIL_TO = prevAlertEmailTo
+        else delete process.env.ALERT_EMAIL_TO
+        if (prevResendKey !== undefined) process.env.RESEND_API_KEY = prevResendKey
+        else delete process.env.RESEND_API_KEY
+        if (prevTgToken !== undefined) process.env.TELEGRAM_BOT_TOKEN = prevTgToken
+        else delete process.env.TELEGRAM_BOT_TOKEN
+        if (prevTgChat !== undefined) process.env.TELEGRAM_ALERT_CHAT_ID = prevTgChat
+        else delete process.env.TELEGRAM_ALERT_CHAT_ID
+      }
+    })
   })
 
   it('admin + missing ALERT_EMAIL_TO → 422 + probe_runs row with verdict_kind=test_send_failed', async () => {
@@ -471,10 +681,16 @@ describe('POST /api/admin/settings/alerts/[probe]/test-send', () => {
           order by ran_at asc`,
       )
       expect(probeRows.rows.length).toBeGreaterThanOrEqual(2)
+      // BCS-DEF-1-TG-TESTSEND (2026-05-20) — a successful attempt now
+      // writes BOTH an email row and a Telegram row sharing the SAME
+      // fingerprint (mirrors the live probe's tryEmailChannel +
+      // tryTelegramChannel pattern). Uniqueness invariant: there must
+      // be ≥2 DISTINCT fingerprints across the rows (one per attempt),
+      // not ≥2 rows. Pre-TG this happened to be the same number.
       const fingerprints = new Set(
         probeRows.rows.map((r) => String(r.fingerprint)),
       )
-      expect(fingerprints.size).toBe(probeRows.rows.length)
+      expect(fingerprints.size).toBeGreaterThanOrEqual(2)
       const recipients = probeRows.rows.map((r) => r.recipient_email)
       expect(recipients).toContain(null) // first attempt: env missing
       expect(recipients).toContain('ops-cache-poison@example.com') // second
