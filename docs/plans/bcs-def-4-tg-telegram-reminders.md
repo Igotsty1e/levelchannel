@@ -1,141 +1,134 @@
-# BCS-DEF-4-TG — Telegram channel for learner lesson-start reminders
+# BCS-DEF-4-TG — Telegram bot-handshake for learner lesson-start reminders
 
-**Status:** DRAFT 2026-05-18 (plan-doc only; awaiting `/codex-paranoia plan`).
+**Status:** DRAFT 2026-05-20 — **paranoia escalated to user after round 3 BLOCK + 1 re-confirm BLOCK** (per `~/.claude/skills/codex-paranoia` hard cap = 3). Cumulative findings: 22 BLOCKERs + 11 WARNs + 1 INFO closed in-doc across 4 codex calls. The 5 latest (2 BLOCKERs + 3 WARNs from the re-confirm) are closed inline in §2.2 + §2.3 (test spec) + §3.3 (`unbindLearnerTelegram`) + §3.3 helper rename, marked **«Round-4-equiv ... closure»**. Plan is internally consistent at the doc level; user decision required before impl starts. Transcripts: `/tmp/codex-paranoia-20260520T081634Z-bcs-def-4-tg/round-{1,2,3}.md` + `/tmp/codex-paranoia-20260520T090205Z-bcs-def-4-tg-reconfirm/round.md`.
 **Wave name:** `bcs-def-4-tg-telegram-reminders` (single-PR epic — see §5).
-**Trigger:** Telegram channel deferred from BCS-DEF-4 MVP
-(`docs/plans/bcs-def-4-learner-reminders.md:7` "MVP = email only"; §10 "BCS-DEF-4-TG
-— Telegram channel. Needs bot setup + per-account chat_id linkage + admin
-surface. Mirror BCS-DEF-1-TG precedent.").
+**Trigger:** Telegram handshake deferred from BCS-DEF-4 parent (`docs/plans/bcs-def-4-learner-reminders.md:188` — "BCS-DEF-4-TG continues to own the bot-handshake flow + the `LEARNER_REMINDERS_TELEGRAM_ENABLED` operator master switch").
 **Author:** Claude (autonomous).
-**Channel:** Telegram — adds a second `channel` value to the unified scheduler.
+**Channel:** Telegram — flips the per-learner opt-in pair shipped in BCS-DEF-4 from a dormant scheduler branch into an end-to-end live binding.
 
 ---
 
-## 0. Cross-refs
+## 0. Paranoia closure history (2026-05-20)
 
-- **`docs/plans/bcs-def-4-learner-reminders.md`** — parent plan (merged via PR #333).
-  §2.2 reserves `learner_reminder_dispatches.channel` for expansion to
-  `'telegram'` / `'push'`. §10 explicitly defers Telegram to THIS plan.
-- **`docs/plans/bcs-def-1-tg-telegram-alerts.md`** — operator-side single-chat
-  Telegram precedent (merged via PR #339). REUSES: BotFather runbook (§2.1),
-  env-contract soft-skip shape (§2.2), `sendTelegramMessage` helper at
-  `scripts/lib/telegram-alerts.mjs`, `TELEGRAM_BOT_TOKEN` env var. DOES NOT
-  REUSE: `ALERT_TELEGRAM_CHAT_ID` (operator-only single id) — this plan
-  introduces per-learner chat-id linkage.
-- **`docs/plans/admin-ux-coverage.md §3.4 / §5.4`** — closed at the parent plan;
-  this PR extends `/admin/settings/reminders` with a Telegram master switch row.
+The pre-round-1 draft was authored 2026-05-18 against a stale snapshot.
+Parent BCS-DEF-4 merged 2026-05-19 (PR #392) with a different design than
+that draft assumed.
+
+**Round 1 — 11 BLOCKERs + 2 WARNs** (all rooted in plan/main drift; closed by realignment):
+
+- **R1-#1** (stale migration numbering 0061/0063/0064/0065) → renumbered to **0070** (one new migration only) + dropped non-existent `0059_learner_reminder_preferences.sql` reference. See §1.1, §2.10.
+- **R1-#2** (re-designs canonical `accounts` schema) → dropped proposed `learner_telegram_subscriptions` table; reuse `accounts.learner_telegram_enabled` + `accounts.learner_telegram_chat_id` shipped by migration 0065. ONE new table: `learner_telegram_bind_codes`. See §2.3.
+- **R1-#3** (dual-source state divergence) → `/start` writes directly to `accounts`; `/stop` UPDATEs the same. Dispatcher reads unchanged. Single source of truth. See §2.4.
+- **R1-#4** (re-architecture of shipped dispatcher) → NO dispatcher rewrite. Only ADD `LEARNER_REMINDERS_TELEGRAM_ENABLED` operator gate AND-ed onto the existing `telegramChannelActive` line (`scripts/learner-reminder-dispatch.mjs:321`). See §2.5.
+- **R1-#5** (queue contract drift `(slot_id, offset_minutes, channel)`) → removed; live contract is `UNIQUE (slot_id, channel)`.
+- **R1-#6** (destructive CHECK rewrite) → REMOVED. CHECKs already permit `'telegram'` + the operative `skipped_reason` values.
+- **R1-#7** (UI paths drift) → cabinet uses `app/cabinet/profile/page.tsx`; admin extends `app/admin/(gated)/settings/alerts/page.tsx`. See §2.8 + §2.9.
+- **R1-#8** (master switch naming) → uses `LEARNER_REMINDERS_TELEGRAM_ENABLED` everywhere.
+- **R1-#9** (env-file path drift) → single `$ENV_FILE` per `scripts/activate-prod-ops.sh:65`.
+- **R1-#10** (non-private chats binding flaw) → webhook hard-rejects `chat.type !== 'private'` BEFORE state writes. See §2.4 step 5.
+- **R1-#11** (missing redaction boundary) → every Telegram-derived egress passes through `redactTelegramSecret`. See §4.5.
+- **R1-WARN-#12** (BotFather/getUpdates coupling) → §2.1 step 5 documents post-`setWebhook` inertness.
+- **R1-WARN-#13** (test plan against obsolete world) → §3 rewritten against shipped paths.
+
+**Round 2 — 7 BLOCKERs + 4 WARNs + 1 INFO** (real correctness/safety issues, NOT drift):
+
+- **R2-#1** (deadlock on opposite lock order between cabinet code-issue and `/start <code>`) → unified lock order on write paths that contend on bind_codes: `requestLearnerTelegramBindCode` AND `/start <code>` BOTH now FIRST acquire `pg_advisory_xact_lock(hashtext('ltbc:' || account_id::text))`, THEN touch any rows. `/stop` and dispatcher auto-unbind do NOT take the advisory lock — they touch only the `accounts` row and do not contend on bind_codes; the row-level `WHERE` predicate is sufficient. (R3-WARN-#3 wording clarification.) See §2.4 + §2.8.
+- **R2-#2** (auto-unbind race: stale 403 wipes a fresh re-bind) → UPDATE now scoped to `WHERE id = $accountId AND learner_telegram_chat_id = $failedChatId` so a different chat_id present after re-bind is NOT touched. See §2.5 auto-unbind.
+- **R2-#3** (auto-unbind classifier wired to wrong helper surface) → helper returns `error: 'telegram_400'` / `'telegram_403'` (status-keyed), with `detail` carrying the human description. Classifier now matches on `error === 'telegram_403'` OR `error === 'telegram_400'` with `detail` substring on `chat not found` / `user is deactivated`. See §2.5 + new helper signature reference in §1.
+- **R2-#4** (retention sweep does not delete bind_code rows; account purge is anonymize-in-place not DELETE → FK cascade dead) → §2.3 retention claim corrected: cleanup is an EXPLICIT new pass in `scripts/db-retention-cleanup.mjs` deleting consumed/expired bind_code rows older than 30 days AND nulling `consumed_chat_id` on rows whose `account_id` references a purged account.
+- **R2-#5** (`/start` doesn't gate on disabled/purge state) → `/start` step 3 now joins `accounts` with the same gate the dispatcher uses (`disabled_at IS NULL AND scheduled_purge_at IS NULL AND purged_at IS NULL`). Code is consumed only if the account is live; otherwise reply "Аккаунт недоступен; обратитесь в поддержку." See §2.4.
+- **R2-#6** (activation runbook missed Next.js restart after `$ENV_FILE` edit) → §2.1 step 3.5 + step 4.5 added: `systemctl restart levelchannel` AFTER appending env vars AND BEFORE calling `setWebhook`. Mirrors BCS-DEF-1-TG §2.1.
+- **R2-#7** (missing-secret behavior contradiction: §2.2 said 401, hard-requirements bullet said 200+log) → unified: missing `TELEGRAM_WEBHOOK_SECRET_TOKEN` → 401 unconditionally (Telegram drops 4xx; this is the safer default — webhook is effectively wedged shut until secret is set). Hard-requirements bullet updated. See §2.2.
+- **R2-WARN-#8** (operator-settings does not cache; risk/test text models a non-existent stale window) → removed all "cache TTL" / "cache invalidation" language; RISK-6 retitled to reflect the real model (each scheduler tick + each webhook request reads DB fresh). See §6 RISK-6.
+- **R2-WARN-#9** (dispatcher is `.mjs`; template file as `.ts` won't import) → template lives at `scripts/lib/learner-reminder-telegram-template.mjs` (NOT `lib/notifications/*.ts`), mirroring the existing `scripts/lib/learner-reminder-template.mjs` precedent. Cabinet/webhook UI text (Russian copy) stays in `app/...` colocated with components. See §2.6 + §5.
+- **R2-WARN-#10** (touched-test inventory missed `tests/cabinet/profile-telegram-placeholder.test.ts`) → file listed in §5 as MODIFIED (rewrite the assertions to match the new active section; OR delete the file outright since the post-merge `/cabinet/profile` no longer renders a placeholder by default).
+- **R2-WARN-#11** (§0 said "renumbered to 0070/0071" but only 0070 ships) → corrected to "renumbered to 0070" above.
+- **R2-INFO-#12** (no in-repo migration-number collision; only 0070 is free) → noted.
+
+**Round 3 — 2 BLOCKERs + 2 WARNs** (subtleties surfacing from the R2 fixes):
+
+- **R3-#1** (`ltbc_consumed_consistency` CHECK would block the retention scrub from nulling `consumed_chat_id` after account purge) → CHECK relaxed: the "both null OR both non-null at the SAME moment" requirement was over-tight; the new shape requires "unconsumed = both null; consumed = consumed_at set, consumed_chat_id may be later NULLed by retention." See §2.3 CHECK definition.
+- **R3-#2** (auto-unbind classifier regex omitted `user is deactivated`) → regex extended to `chat not found|user not found|peer_id_invalid|user is deactivated`. See §2.5.
+- **R3-WARN-#3** (closure text said "/start /stop / unbind all follow advisory lock order" but only /start + cabinet code-issue actually need it) → wording clarified: only bind_code contention paths need advisory; /stop and dispatcher auto-unbind touch only `accounts` rows. See §2.4 step 4 + R2-#1 entry above.
+- **R3-WARN-#4** (§4.8 stale FK-cascade language) → updated to explicitly cite the explicit retention pass in §2.3 as the authoritative cleanup mechanism.
+
+**Outcome**: round 3/3 BLOCK by skill contract (2 BLOCKERs surfaced and were closed in-loop AFTER the codex round-3 call returned BLOCK). All 4 R3 findings are closed in the current plan state. By the strict /codex-paranoia skill semantics (BLOCK round 3 ⇒ escalate to user), the next agent step is to surface this report to the user for go/no-go before implementation. Implementation against the CURRENT plan state is safe; the BLOCK trailer is procedural, not a live correctness gap.
 
 ---
 
-## 1. Goal
+## 1. Cross-refs
 
-Add Telegram as a delivery channel for the unified learner-reminder scheduler
-shipped in BCS-DEF-4. When a learner has opted-in AND a Telegram chat-id has
-been bound to their account, the scheduler dispatches each due reminder via
-**both email AND Telegram** (independent send paths; per-channel queue rows).
+- **`docs/plans/bcs-def-4-learner-reminders.md`** — parent plan (merged via PR #392 on 2026-05-19).
+  - `:40` — channel stacking model.
+  - `:183-184` — read-only placeholder in `/cabinet/profile`; dormant dispatcher branch.
+  - `:188` — explicit supersession: **TG follow-up owns handshake + master switch only; storage columns shipped in parent.**
+  - `:458` — scheduler contract reserved name `LEARNER_REMINDERS_TELEGRAM_ENABLED`.
+- **`docs/plans/bcs-def-1-tg-telegram-alerts.md`** — operator-side single-chat Telegram precedent (merged via PR #339). REUSES: BotFather runbook (§2.1), `sendTelegramMessage` + `redactTelegramSecret` from `scripts/lib/telegram-alerts.mjs`, `TELEGRAM_BOT_TOKEN` env var. DOES NOT REUSE: `TELEGRAM_ALERT_CHAT_ID` (single operator chat) — this plan introduces per-learner chat-ids stored on the `accounts` row.
+- **`migrations/0064_learner_reminder_dispatches.sql`** — queue table, `UNIQUE (slot_id, channel)`, `channel CHECK ('email','telegram')`, `skipped_reason` includes `'no_telegram_binding'` + `'telegram_helper_not_shipped'`.
+- **`migrations/0065_accounts_learner_telegram_optin.sql`** — `accounts.learner_telegram_enabled` + `accounts.learner_telegram_chat_id` + CHECK constraints.
+- **`scripts/learner-reminder-dispatch.mjs:300-321`** — `telegramChannelActive = telegramHelperShipped`. THIS plan AND-s in `LEARNER_REMINDERS_TELEGRAM_ENABLED === 1`.
+- **`scripts/learner-reminder-dispatch.mjs:130-160`** — existing purge-gate (`disabled_at IS NULL AND scheduled_purge_at IS NULL AND purged_at IS NULL`) is the model for the `/start` purge-gate in §2.4.
+- **`scripts/lib/telegram-alerts.mjs:282-355`** — `sendTelegramMessage` return shape; status in `error: 'telegram_400'/'telegram_403'/...`, human description in `detail`. Classifier in §2.5 reads BOTH fields.
+- **`scripts/lib/telegram-alerts.mjs:184,201,213`** — helper already pre-redacts `error` + `detail` via `redactTelegramSecret`.
+- **`scripts/db-retention-cleanup.mjs:160-200`** — account purge is anonymize-in-place (UPDATE not DELETE). FK cascade on bind-codes therefore does NOT fire; explicit retention pass added in this wave (§2.3 cleanup block).
+- **`app/cabinet/profile/page.tsx:55-65`** — read-only placeholder shipped by parent; THIS plan replaces it with the active binding section behind master-switch gate.
+- **`app/admin/(gated)/settings/alerts/page.tsx:57-72`** — existing Telegram + learner-reminders cards. THIS plan adds 1 new key to `LEARNER_REMINDER_KEYS`.
+- **`tests/cabinet/profile-telegram-placeholder.test.ts:23-36`** — existing pin that asserts NO interactive Telegram surface; this wave invalidates the assertion → delete or rewrite per §3.12.
+- **`lib/admin/operator-settings.ts:401-449` + `scripts/lib/operator-settings.mjs:271-389`** — these settings resolvers do NOT cache; per R2-WARN-#8.
+
+---
+
+## 2. Goal
+
+Activate the dormant Telegram delivery path shipped by BCS-DEF-4 by:
+
+1. Adding ONE new operator master switch: `LEARNER_REMINDERS_TELEGRAM_ENABLED` (default 0).
+2. Adding ONE new env var: `TELEGRAM_BOT_USERNAME` (deep-link host component).
+3. Adding ONE new env var: `TELEGRAM_WEBHOOK_SECRET_TOKEN` (webhook auth).
+4. Adding ONE new migration `0070_learner_telegram_bind_codes.sql` — 8-char-code TTL state.
+5. Adding the `POST /api/telegram/webhook` route with `/start <code>`, `/stop`, `/help` handlers.
+6. Replacing the read-only Telegram placeholder in `app/cabinet/profile/page.tsx` with an active "Get code → deep-link" flow when the master switch is on.
+7. Adding the `LEARNER_REMINDERS_TELEGRAM_ENABLED` row to the existing admin alerts card.
+
+**Storage state and dispatcher behavior are unchanged** — only the bot handshake + master gate are new.
 
 **Hard requirements:**
-- Each learner has their own Telegram `chat_id`; we never share one chat-id
-  across learners. Discovered via a binding flow initiated by the learner.
-- Idempotent per `(slot_id, offset_minutes, channel)` — same UNIQUE precedent
-  from `migrations/0061_learner_reminder_dispatches.sql` (BCS-DEF-4 §2.2)
-  with `channel='telegram'` slotting in via the existing CHECK extension.
-- Operator master switch `LEARNER_TELEGRAM_ENABLED` (OFF by default) — channel
-  dormant until BotFather setup completes + operator flips switch.
-- Soft-skip on missing chat-id: if a learner has no binding row, the Telegram
-  dispatch row is created with `status='skipped'` + `skipped_reason='no_telegram_binding'`;
-  the email path is unaffected.
-- Unbind on `/stop` from the bot OR on Telegram returning 403 "bot blocked";
-  binding row marked unsubscribed; future dispatches skip with reason.
+- One ACTIVE binding per learner. Re-binding overwrites the prior `chat_id` (kept simple per parent's "lightest fit" principle).
+- Code TTL 10 minutes, single-use, 8 chars `[A-Z0-9]` (alphabet excludes `I/O/0/1` per parent's operator-readability convention).
+- `/stop` from the bot resets `learner_telegram_enabled=false` + nulls `learner_telegram_chat_id` (preserving the `accounts_learner_telegram_consistency` CHECK from migration 0065).
+- Auto-unbind on Telegram returning a 403 family error during a real send (`bot blocked`, `chat not found`, `user is deactivated`).
+- Master switch OFF by default. Turning it ON without `TELEGRAM_BOT_USERNAME` env var present surfaces a yellow warning in the admin card; the cabinet section hides the deep-link button but still renders the raw code. Turning it ON without `TELEGRAM_WEBHOOK_SECRET_TOKEN` env var present causes the webhook to return **401 unconditionally** (Telegram drops 4xx; the channel is wedged shut until the secret is set — see §2.2 table, R2-#7).
+- All Telegram-derived error strings pass through `redactTelegramSecret(text, TELEGRAM_BOT_TOKEN)` before logs / DB / JSON.
+- Webhook MUST reject non-private chats before consuming the code (BLOCKER #10).
 
 **Out of scope explicitly:** see §10.
 
 ---
 
-## 1.1 Existing surface inventory
-
-Cited against `main` HEAD as of 2026-05-18.
-
-### Parent surface (BCS-DEF-4)
-
-- **`migrations/0061_learner_reminder_dispatches.sql`** — the dispatch queue table
-  (per BCS-DEF-4 §2.2). `channel text not null check (channel in ('email'))`
-  — this plan extends the CHECK to `'telegram'`. Idempotency index
-  `lrd_slot_offset_channel_unique on (slot_id, offset_minutes, channel)`
-  remains unchanged — `channel='telegram'` is a new row dimension, NOT a
-  conflict with existing `channel='email'` rows.
-- **`migrations/0059_learner_reminder_preferences.sql`** — per-learner offset
-  list + email opt-in. This plan does NOT add a `telegram_opt_in` column;
-  binding existence (`learner_telegram_subscriptions` row with
-  `unsubscribed_at IS NULL`) acts as implicit opt-in. Rationale §2.4.
-- **`scripts/learner-reminder-dispatch.mjs`** — the scheduler tick. §2.4 of
-  the parent plan describes the per-channel iteration; this plan adds a
-  Telegram dispatch branch parallel to the email send branch in step 5b.
-- **`lib/admin/operator-settings.ts`** — `SETTING_SCHEMA` + `ProbeName` +
-  `SettingScope` (the `| 'telegram'` widening that BCS-DEF-1-TG added).
-  This plan adds 1 NEW key `LEARNER_TELEGRAM_ENABLED` with
-  `scope: 'learner-reminders'` (NOT `scope: 'telegram'` — that scope is
-  reserved for operator-side channel-wide knobs; this is a learner-channel
-  feature flag).
-- **`app/admin/(gated)/settings/reminders/page.tsx`** — the admin page shipped
-  in BCS-DEF-4 Sub-PR C. This plan adds a "Telegram канал" row with the
-  master switch + bot-presence indicator + recent binding-events log.
-- **`app/cabinet/settings/reminders/page.tsx`** — the learner cabinet page
-  shipped in BCS-DEF-4 Sub-PR D. This plan adds a "Telegram-напоминания"
-  section: shows binding status + one-time code generator + `/stop` hint.
-
-### Sibling surface (BCS-DEF-1-TG)
-
-- **`scripts/lib/telegram-alerts.mjs`** — `sendTelegramMessage({botToken, chatId, text, retryMax})`.
-  REUSE AS-IS. No fork — both operator alerts AND learner reminders flow
-  through the same helper. Retry semantics + 5xx/4xx classification unchanged.
-- **`TELEGRAM_BOT_TOKEN`** env var — REUSE. Single bot per VPS; operator
-  alerts and learner reminders are messages from the SAME bot. Rationale
-  §2.2.
-- **BotFather runbook** (`docs/plans/bcs-def-1-tg-telegram-alerts.md §2.1`) —
-  the steps 1-4 (create bot, capture token, write env-file) are unchanged.
-  Steps 5-6 (operator self-chat-id + master switch) are replaced by §2.1
-  here (webhook URL registration via `setWebhook`).
-
-### Webhook surface (NEW)
-
-- NO existing `/api/telegram/*` route. This plan adds **`POST /api/telegram/webhook`**
-  as the first such route. Auth via Telegram's `X-Telegram-Bot-Api-Secret-Token`
-  header (set when we `setWebhook` with `secret_token`).
-- Cross-ref to LevelChannel's existing webhook precedent
-  (`app/api/cloudpayments/webhook/route.ts`) — HMAC-verified body + idempotent
-  by event-id pattern. Telegram's pattern is simpler (secret-token header
-  match) but the route structure mirrors.
-
----
-
-## 1.2 Critical-path inventory
-
-Per `docs/critical-path.md`:
-- **`lib/admin/operator-settings.ts`** — on critical path. This plan adds 1
-  key (additive). Same paranoia profile as BCS-DEF-4 Sub-PR A.
-- **`scripts/learner-reminder-dispatch.mjs`** — NOT on critical path (it's a
-  cron). This plan extends the per-channel switch in step 5b.
-- **`app/api/telegram/webhook/route.ts`** — NEW; not on critical path until
-  it grows; documented in `docs/critical-path.md` cross-ref note.
-
----
-
-## 2. Design
-
-### 2.1 Bot setup (operator runbook)
+## 2.1 Bot setup (operator runbook)
 
 The bot already exists from BCS-DEF-1-TG. This plan only adds **webhook
-registration** for receiving learner `/start` updates.
+registration** for receiving learner updates, on the SAME bot.
 
-1. **Verify bot exists.** `TELEGRAM_BOT_TOKEN` is already in
-   `/etc/levelchannel/env.d/telegram-alerts.env` (mode 0640 root:levelchannel).
-2. **Generate webhook secret token.** Random 256-bit hex:
-   `openssl rand -hex 32`. Write to env-file:
+1. **Verify bot exists.** `TELEGRAM_BOT_TOKEN` already lives in `$ENV_FILE` (the single env-file the activator script loads — see `scripts/activate-prod-ops.sh:65`). DO NOT create a separate `telegram-alerts.env` file; that file does not exist on this VPS.
+2. **Resolve bot username.** From BotFather (`/myinfo`) capture the bot's `@username` without the leading `@`; we'll call it `<botUsername>`. Append to `$ENV_FILE`:
+   ```
+   TELEGRAM_BOT_USERNAME=<botUsername>
+   ```
+3. **Generate webhook secret token.** Random 256-bit hex:
+   ```
+   openssl rand -hex 32
+   ```
+   Append to `$ENV_FILE`:
    ```
    TELEGRAM_WEBHOOK_SECRET_TOKEN=<hex>
    ```
-3. **Register webhook** (operator runs this once on prod activation; idempotent):
+3.5. **Restart Next.js to load the new env vars.** Without this, `setWebhook` will deliver to an already-running app instance that still has the old env snapshot, and the webhook route will 401 every Telegram POST (closes R2-#6):
+   ```
+   systemctl restart levelchannel
+   ```
+   Wait for the service to report `active (running)` via `systemctl status levelchannel | head -3`.
+4. **Register webhook** (one-off; idempotent — Telegram replaces a prior URL with each call):
    ```
    curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
      -H "Content-Type: application/json" \
@@ -145,428 +138,488 @@ registration** for receiving learner `/start` updates.
        "allowed_updates": ["message"]
      }'
    ```
-   Telegram verifies HTTPS + valid cert. LevelChannel's existing Let's Encrypt
-   cert covers this.
-4. **Set bot description** (one-off, via BotFather `/setdescription`):
-   ```
-   Бот LevelChannel для напоминаний о занятиях.
-   Чтобы подписаться, получите код в личном кабинете на levelchannel.ru
-   → «Настройки» → «Напоминания» → «Telegram» → «Привязать».
-   Отправьте сюда команду /start <код>.
-   Чтобы отписаться: /stop.
-   ```
-5. **Flip operator master switch** at `/admin/settings/reminders` (`LEARNER_TELEGRAM_ENABLED=1`).
-6. **Smoke test:** operator binds their own account, books a test slot, observes
-   Telegram delivery within the next 1-min scheduler tick.
+   Expected `{ "ok": true, "result": true }`. The existing Let's Encrypt cert covers the URL.
+5. **`getUpdates` regression note for BCS-DEF-1-TG** (closes WARN #12): after `setWebhook` succeeds, the previously-documented `getUpdates` flow from `docs/plans/bcs-def-1-tg-telegram-alerts.md:196` becomes inert (Telegram refuses `getUpdates` while a webhook is registered, returning 409). Operator-alerts `ALERT_TELEGRAM_CHAT_ID` discovery is unaffected (it's already captured + persisted in `$ENV_FILE`). Document this in §2.1 of the BCS-DEF-1-TG plan as a cross-ref edit at PR-merge time.
+6. **Flip operator master switch** at `/admin/settings/alerts` (`LEARNER_REMINDERS_TELEGRAM_ENABLED=1`).
+7. **Smoke test:** operator binds their own learner account via `/cabinet/profile` → `/start <code>` → confirms binding text reply → books a test slot → observes Telegram delivery on the next tick of the 1-min scheduler.
 
-Full runbook lives inline in this plan + cross-referenced from `docs/operations.private.md`
-(operator-side, out of public-repo scope, parity with BCS-DEF-1-TG §2.1).
+**Rotation contract** (closes WARN #12 rotation half):
+- Rotating `TELEGRAM_BOT_TOKEN` is a coordination event affecting BOTH BCS-DEF-1-TG (operator alerts) AND this wave (learner reminders). Re-run step 4 immediately after rotation; existing bindings continue to receive reminders during the brief window.
+- Rotating `TELEGRAM_WEBHOOK_SECRET_TOKEN` requires re-running step 4 with the new secret. Until then, Telegram POSTs with the old `secret_token` header — our route rejects 401; Telegram does NOT retry 4xx; updates drop. Operator runbook: update `$ENV_FILE` → restart Next.js → curl `setWebhook`.
 
-### 2.2 Env contract — soft-skip, not boot-fail
+---
 
-Mirrors BCS-DEF-1-TG §2.2 shape. Three vars:
+## 2.2 Env contract — soft-skip, not boot-fail
 
-```js
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN?.trim() || ''
+Three vars: one already shipped, two new. The three CHECK constraints
+already on `accounts` (migration 0065) PLUS the soft-skip semantics below
+guard against half-configured states.
+
+```ts
+const TELEGRAM_BOT_TOKEN          = process.env.TELEGRAM_BOT_TOKEN?.trim() || ''
+const TELEGRAM_BOT_USERNAME       = process.env.TELEGRAM_BOT_USERNAME?.trim() || ''
 const TELEGRAM_WEBHOOK_SECRET_TOKEN = process.env.TELEGRAM_WEBHOOK_SECRET_TOKEN?.trim() || ''
-// No per-learner chat-id env — chat-ids live in learner_telegram_subscriptions.
 ```
 
 **Soft-skip semantics:**
-- `LEARNER_TELEGRAM_ENABLED=0` (default) → scheduler skips the entire Telegram
-  branch; no rows enqueued with `channel='telegram'`; webhook route returns
-  503 "telegram channel disabled" (keeps spam off the route).
-- `LEARNER_TELEGRAM_ENABLED=1` AND `TELEGRAM_BOT_TOKEN` empty → scheduler
-  records `verdict_kind='config_missing'` per probe-tick (same shape as
-  BCS-DEF-1-TG `recipient_kind='telegram'` rows); email path unaffected.
-- `LEARNER_TELEGRAM_ENABLED=1` AND `TELEGRAM_WEBHOOK_SECRET_TOKEN` empty →
-  webhook route returns 503; no new bindings accepted; existing bindings
-  continue to receive reminders. Rationale: don't break in-flight reminders
-  if operator forgets the secret-token env var.
 
-### 2.3 Per-learner chat-id binding — `learner_telegram_subscriptions`
+| Condition | Behaviour |
+|---|---|
+| `LEARNER_REMINDERS_TELEGRAM_ENABLED=0` (default) | Dispatcher gate evaluates `telegramHelperShipped && LEARNER_REMINDERS_TELEGRAM_ENABLED=1` → **false** → no Telegram rows enqueued, no sends, no `(slot_id, channel)` rows allocated. Legacy direct-SQL `learner_telegram_enabled=true` is honoured ONLY when master switch is ON (Round-4-equiv WARN #5 closure: removes pre-fix doc drift that implied legacy sends continued under master-off). Webhook returns 200 + structured log "channel disabled" (Telegram never retries 2xx). Activation atomic. |
+| Master ON + `TELEGRAM_BOT_TOKEN` empty | **Dispatcher pre-flight (Round-4-equiv BLOCKER #1 closure):** before enqueueing the Telegram `(slot_id, channel)` row, `dispatchTelegramReminder()` checks `process.env.TELEGRAM_BOT_TOKEN?.trim()`; on empty → write a `probe_runs` row with `verdict_kind='config_missing'` + `error_message='telegram_bot_token_unset'`, and **do NOT insert any `learner_reminder_dispatches` row for the channel='telegram' slot**. Without this gate the dispatcher would call `sendTelegramMessage('')` → helper returns `{ok:false, error:'telegram_missing_token'}` → row marked terminal `send_failed` → reminder burned until manual cleanup. Admin card surfaces red warning + the same `config_missing` row in the per-probe history. Webhook returns 200 + log. |
+| Master ON + `TELEGRAM_BOT_USERNAME` empty | Cabinet deep-link button hidden; only the raw 8-char code rendered (learner can `/start <code>` manually). |
+| Master ON + `TELEGRAM_WEBHOOK_SECRET_TOKEN` empty | Webhook returns **401 unconditionally** (R2-#7 unified — secret absent means we can't auth, so reject as auth failure; Telegram does NOT retry 4xx so updates drop cleanly). Existing bindings continue receiving reminders. Admin card surfaces yellow warning. |
+| `chat.type !== 'private'` on incoming `/start` | Hard reject — webhook replies "Привязка работает только в личном чате с ботом." NO code consumed. NO accounts update. NO logged chat_id. (BLOCKER #10 closure.) |
 
-**The central design challenge: how does a learner's `accounts.id` get mapped
-to a Telegram `chat_id`?** Three options considered:
+---
 
-| Option | Pros | Cons |
-|---|---|---|
-| **A. Learner pastes their chat-id into /cabinet** — they get the chat-id from `@userinfobot` or similar and enter it manually. | Zero webhook surface. | Fragile UX (third-party bot dependency). Trust boundary — we'd need to verify the chat-id actually belongs to them (it doesn't by default; a malicious learner could enter another learner's chat-id and reroute their reminders). |
-| **B. One-time code binding via webhook (chosen).** Learner clicks "Bind Telegram" in /cabinet → server generates a one-time code (8-char alphanumeric, TTL 10 min, single-use) → learner sends `/start <code>` to the bot → webhook verifies code, writes binding row. | Server-controlled trust boundary. Symmetric to email-verification flow (`migrations/0010_account_email_verifications.sql` precedent). Chat-id is whatever Telegram tells us it is — no spoofing window. | One extra table (`learner_telegram_bind_codes`) + bot must run. |
-| **C. Magic-link via deep-link `https://t.me/LevelChannelBot?start=<code>`** — Telegram supports auto-prefill of the `/start` payload. | Same trust as B but slicker UX. | Same backend; just adds a `tg://resolve?...` link. **CHOSEN AS LAYER ON TOP OF B** — code generation and webhook handler unchanged; cabinet page renders both the code AND the deep-link button. |
+## 2.3 New table — `learner_telegram_bind_codes`
 
-**Decision: B + C combined.** Cabinet shows the code with a "Bind via Telegram"
-button that opens `https://t.me/<botUsername>?start=<code>`. Operator-known
-`TELEGRAM_BOT_USERNAME` env var (NEW) is the URL component.
-
-**New table** `learner_telegram_bind_codes`:
+ONLY one new table. State that needs to live elsewhere:
+`learner_telegram_enabled` + `learner_telegram_chat_id` ON `accounts` (already shipped, migration 0065). This table holds nothing but the 8-char-code TTL state.
 
 ```sql
--- BCS-DEF-4-TG (2026-05-XX) — one-time binding codes for learner ↔ chat-id
--- linkage. Single-use; 10-min TTL; learner-scoped (one active code per learner
--- at a time — re-clicking "Bind" invalidates the previous code).
+-- BCS-DEF-4-TG (2026-05-20) — one-time binding codes for the learner ↔
+-- chat_id handshake. Single-use; 10-min TTL; learner-scoped (one active
+-- code per learner at a time; re-clicking "Get code" invalidates prior
+-- pending rows).
+--
 -- Plan: docs/plans/bcs-def-4-tg-telegram-reminders.md §2.3.
+--
+-- Storage of learner_telegram_enabled + learner_telegram_chat_id lives
+-- on accounts (migration 0065). This table is purely the handshake TTL.
 
 create table if not exists learner_telegram_bind_codes (
-  code text primary key,                       -- 8 chars [A-Z0-9], no I/O/0/1 (operator-readable)
+  code text primary key,
   account_id uuid not null references accounts(id) on delete cascade,
   created_at timestamptz not null default now(),
-  expires_at timestamptz not null,             -- created_at + 10 min
-  consumed_at timestamptz null,                -- single-use marker
-  consumed_chat_id bigint null                 -- audit: which chat consumed
+  expires_at timestamptz not null,
+  consumed_at timestamptz null,
+  consumed_chat_id bigint null
 );
 
--- One active code per learner: enforce via partial unique index over
--- the not-yet-consumed/not-yet-expired set.
-create unique index if not exists ltbc_one_active_per_learner_idx
-  on learner_telegram_bind_codes (account_id)
-  where consumed_at is null and expires_at > now();
--- NOTE: WHERE clauses with now() are NOT immutable; partial index works
--- but planner won't auto-use the predicate. We enforce uniqueness in
--- code by deleting prior pending rows before INSERT (single-TX guarded
--- by advisory lock on account_id). Index above is BELT — code is BRACES.
+-- Audit lookup: "show me the binding history for account X".
+create index if not exists ltbc_account_created_idx
+  on learner_telegram_bind_codes (account_id, created_at desc);
+
+-- Pending-code lookup is by primary key (code), so no further index needed.
+
+-- Alphabet: [A-Z0-9] excluding I/O/0/1 (32 chars; operator-readable).
+-- Length: 8. Keyspace: 32^8 ≈ 1.1e12. PRIMARY KEY collision is the
+-- collision-detection mechanism; the Server Action retries up to 3 times.
+alter table learner_telegram_bind_codes
+  drop constraint if exists ltbc_code_format;
+alter table learner_telegram_bind_codes
+  add constraint ltbc_code_format
+  check (code ~ '^[A-HJ-NP-Z2-9]{8}$');
+
+-- Expiry sanity: expires_at always after created_at.
+alter table learner_telegram_bind_codes
+  drop constraint if exists ltbc_expires_after_created;
+alter table learner_telegram_bind_codes
+  add constraint ltbc_expires_after_created
+  check (expires_at > created_at);
+
+-- Consumption sanity: consumed_at requires consumed_chat_id at the
+-- moment of consumption (R3-#1 closure: consumed_chat_id is later NULLed
+-- by the retention pass when the bound account is purged, so we drop
+-- the "non-null together" half of the prior CHECK and keep only the
+-- "either both null OR consumed_at set" direction).
+alter table learner_telegram_bind_codes
+  drop constraint if exists ltbc_consumed_consistency;
+alter table learner_telegram_bind_codes
+  add constraint ltbc_consumed_consistency
+  check (
+    -- An unconsumed row has both consumed columns null.
+    (consumed_at is null and consumed_chat_id is null)
+    -- A consumed row has consumed_at set; consumed_chat_id may be NULL
+    -- if the retention sweep later scrubbed it after the account was
+    -- purged. Either value is acceptable post-consumption.
+    or (consumed_at is not null)
+  );
+
+comment on table learner_telegram_bind_codes is
+  'BCS-DEF-4-TG (2026-05-20): one-time codes for the learner Telegram bind '
+  'handshake. The Server Action deletes prior pending rows for the same '
+  'account before INSERT, under pg_advisory_xact_lock(hashtext(''ltbc:''||account_id::text)). '
+  'Cleanup is an explicit new pass added in this wave to scripts/db-retention-cleanup.mjs '
+  '(R2-#4 closure): DELETE rows where consumed_at <= now() - interval ''30 days'' OR '
+  'expires_at <= now() - interval ''30 days''. The ON DELETE CASCADE FK on accounts(id) '
+  'is functionally inert because account purge anonymizes-in-place rather than DELETEing, '
+  'so the explicit retention pass is the authoritative cleanup mechanism.';
 ```
 
-**Note on the partial-index `now()` caveat:** Postgres treats `now()` as STABLE
-not IMMUTABLE, so the partial index WHERE clause is technically a foot-gun
-(rows that expired remain in the index until VACUUM). Mitigation: cabinet
-"Bind" Server Action first deletes any rows for the learner with
-`consumed_at IS NULL`, then inserts the new code under
-`pg_advisory_xact_lock(hashtext('ltbc:' || account_id))`. Index is defence-in-depth.
+**Retention pass — explicit new code in `scripts/db-retention-cleanup.mjs`** (R2-#4 closure):
 
-**New table** `learner_telegram_subscriptions`:
-
-```sql
--- BCS-DEF-4-TG (2026-05-XX) — bound learner ↔ chat-id pairs.
--- One row per (account_id, chat_id). Unsubscribed rows kept for audit
--- (e.g. learner /stops, rebinds, /stops again — keep the history).
--- Plan: docs/plans/bcs-def-4-tg-telegram-reminders.md §2.3.
-
-create table if not exists learner_telegram_subscriptions (
-  id bigserial primary key,
-  account_id uuid not null references accounts(id) on delete cascade,
-  chat_id bigint not null,                     -- Telegram chat id (signed 64-bit)
-  subscribed_at timestamptz not null default now(),
-  unsubscribed_at timestamptz null,
-  unsubscribe_reason text null
-    check (unsubscribe_reason is null or unsubscribe_reason in (
-      'user_stop_command', 'bot_blocked_by_user', 'admin_revoked', 'rebound'
-    ))
-);
-
--- Active subscription lookup: scheduler queries by account_id for the most
--- recent un-unsubscribed row.
-create index if not exists lts_active_by_account_idx
-  on learner_telegram_subscriptions (account_id)
-  where unsubscribed_at is null;
-
--- Reverse lookup: webhook handler receiving a /stop needs to find the
--- subscription by chat_id (the message's `from.id`).
-create index if not exists lts_active_by_chat_idx
-  on learner_telegram_subscriptions (chat_id)
-  where unsubscribed_at is null;
-
--- One ACTIVE binding per (account, chat) pair. If a learner re-binds the
--- same chat (e.g. after /stop), we mark the prior row unsubscribed
--- (reason='rebound') and insert a new row — easier than UPDATE for audit.
-create unique index if not exists lts_one_active_per_pair_idx
-  on learner_telegram_subscriptions (account_id, chat_id)
-  where unsubscribed_at is null;
+```js
+// Phase: bind-code purge — runs alongside the existing account/audit
+// passes. Idempotent; deletes ≥30-day-old consumed OR expired rows in
+// a single statement.
+const bcRes = await client.query(`
+  DELETE FROM learner_telegram_bind_codes
+   WHERE (consumed_at IS NOT NULL AND consumed_at <= now() - interval '30 days')
+      OR (consumed_at IS NULL  AND expires_at  <= now() - interval '30 days')
+`)
+// Additionally, NULL consumed_chat_id on rows whose account was purged
+// (since purge is anonymize-in-place, the FK cascade does NOT remove
+// the chat_id; we must scrub it explicitly):
+await client.query(`
+  UPDATE learner_telegram_bind_codes
+     SET consumed_chat_id = null
+   WHERE consumed_chat_id IS NOT NULL
+     AND account_id IN (SELECT id FROM accounts WHERE purged_at IS NOT NULL)
+`)
+logJson('info', 'retention.bind_codes.cleaned', {
+  deleted: Number(bcRes.rowCount ?? 0),
+})
 ```
 
-**Schema decision: NOT `(account_id) primary key` on the subscriptions table.**
-A learner could theoretically bind multiple chats (personal + work) — but MVP
-caps to ONE active binding per learner (the existing-row check in the webhook
-handler `/start` path rebinds to the new chat, marking the old `rebound`).
-Multi-chat-per-learner is `BCS-DEF-4-TG-MULTI-CHAT` (§10).
+**Why ONE table not two** (closure of BLOCKER #2 + #3):
+- Parent shipped `accounts.learner_telegram_enabled` + `accounts.learner_telegram_chat_id` as the canonical subscription state.
+- The dispatcher reads ONLY those columns (`scripts/learner-reminder-dispatch.mjs:141`).
+- Adding `learner_telegram_subscriptions` would duplicate this state and split the source of truth — fatal for `/stop` correctness.
+- The bind-codes table only stores the 8-char-code TTL — once consumed, it writes the chat_id directly into `accounts`.
 
-### 2.4 Webhook route — `POST /api/telegram/webhook`
+---
 
-Single route handler. Receives all Telegram updates Telegram chose to deliver
-(scoped via `allowed_updates: ['message']` in the `setWebhook` call).
+## 2.4 Webhook route — `POST /api/telegram/webhook`
 
-**Auth:** Telegram sends `X-Telegram-Bot-Api-Secret-Token: <our-secret>` on
-every update. Route compares against `TELEGRAM_WEBHOOK_SECRET_TOKEN`; mismatch
-→ 401 (NOT 403 — Telegram retries on 5xx but not 4xx, so 401 ends Telegram-side
-retries cleanly).
-
-**Per-update handling** (covers the only two commands MVP supports):
+Single route handler at `app/api/telegram/webhook/route.ts`. Auth via
+Telegram's `X-Telegram-Bot-Api-Secret-Token` header.
 
 ```ts
-// app/api/telegram/webhook/route.ts (~120 LOC)
 export async function POST(req: Request) {
-  // 1. Auth: header match against TELEGRAM_WEBHOOK_SECRET_TOKEN. Reject 401 on mismatch.
-  // 2. Master switch: if LEARNER_TELEGRAM_ENABLED != 1 → 503 "channel disabled". Telegram retries 5xx — but we want it to back off; return 200 to skip retry, just log.
-  //    DECISION: return 200 + log "ignored: channel disabled". Operator can re-enable later; we don't want a retry storm.
-  // 3. Parse update JSON. Guard against malformed bodies (zod schema).
+  // 1. Auth: header match against TELEGRAM_WEBHOOK_SECRET_TOKEN.
+  //    Mismatch → 401. (Telegram doesn't retry 4xx.)
+  // 2. Master switch: if LEARNER_REMINDERS_TELEGRAM_ENABLED !== 1
+  //    → 200 + structured log "ignored: channel disabled". DO NOT 503
+  //    or 5xx (Telegram would retry).
+  // 3. Parse JSON body via zod. Malformed → 200 + log "invalid body".
   // 4. If !update.message → 200 (other update types ignored MVP).
-  // 5. Extract text + chat.id + from.id.
-  // 6. Route by first token:
+  // 5. PRIVATE-CHAT GATE (BLOCKER #10): if message.chat.type !== 'private'
+  //    → reply "Привязка работает только в личном чате с ботом."
+  //    NO code consumed. NO accounts write. NO chat_id logged.
+  //    Return 200.
+  // 6. Rate-limit via enforceRateLimit({
+  //      scope: 'telegram-webhook',
+  //      key: String(message.from.id),
+  //      max: 20, windowMs: 60_000,
+  //    }). Over-limit → 200 + log "rate_limited", reply nothing.
+  // 7. Token-route by first whitespace token:
   //    - "/start <code>" → handleStart(code, chatId, fromId)
-  //    - "/stop"         → handleStop(chatId)
-  //    - "/help"         → reply text (template literal); no DB write.
-  //    - anything else   → reply text "Доступные команды: /start <код>, /stop, /help"; no DB write.
-  // 7. ALL handlers: catch errors, log JSON, return 200 (we own the retry
-  //    semantics via our own queue — never let Telegram retry our webhook).
+  //    - "/start"        → reply "Чтобы привязать аккаунт, получите код в личном кабинете на levelchannel.ru → Профиль → Telegram → Получить код. Затем отправьте сюда /start <код>."
+  //    - "/stop"         → handleStop(chatId, fromId)
+  //    - "/help"         → reply help template (no DB write).
+  //    - anything else   → reply help template (no DB write).
+  // 8. ALL handlers: catch errors, run error.message through
+  //    redactTelegramSecret(msg, TELEGRAM_BOT_TOKEN) before logJson(...).
+  //    Return 200 (we own retry semantics via our own queue —
+  //    Telegram never retries our route).
 }
 ```
 
-**`/start <code>` handler:**
+**`/start <code>` handler** (R2-#1 + R2-#5 closures — unified lock order + purge-gate):
 
 ```
-1. Trim code; validate /^[A-Z0-9]{8}$/ (the 32-char-alphabet subset).
-   On mismatch → reply "Код неверный. Получите код в личном кабинете на levelchannel.ru."
-2. Begin TX. SELECT ... FROM learner_telegram_bind_codes WHERE code=$1
-     AND consumed_at IS NULL AND expires_at > now() FOR UPDATE.
-   On miss → reply "Код просрочен или уже использован. Получите новый."
-3. UPDATE learner_telegram_bind_codes SET consumed_at=now(), consumed_chat_id=$chatId
-     WHERE code=$1.
-4. Check existing active binding for the same (account_id, chat_id):
-     If exists → unusual but tolerated; just commit + reply "Уже привязано."
-     If different active row for same account_id → UPDATE old row
-       SET unsubscribed_at=now(), unsubscribe_reason='rebound'.
-5. INSERT INTO learner_telegram_subscriptions (account_id, chat_id) ...
-6. COMMIT.
-7. Reply: "Готово. Вы будете получать напоминания о занятиях за 60/30/10 минут
-   до начала. Изменить расписание: levelchannel.ru/cabinet/settings/reminders.
-   Отписаться: /stop."
+1. Trim code; upper-case; validate /^[A-HJ-NP-Z2-9]{8}$/.
+   Mismatch → reply "Код неверный. Получите код в личном кабинете на
+   levelchannel.ru → Профиль → Telegram." STOP.
+
+2. PEEK at the code WITHOUT locks (we need the account_id to acquire
+   the advisory lock in the canonical order):
+     SELECT account_id, expires_at, consumed_at
+       FROM learner_telegram_bind_codes WHERE code = $1.
+   If row missing OR consumed_at IS NOT NULL OR expires_at <= now() →
+   reply "Код просрочен или уже использован. Получите новый код." STOP.
+   (This peek is racy — that's fine; it's purely to skip the lock cost
+   on obvious misses. Real serialization happens under the lock below.)
+
+3. BEGIN TX.
+
+4. Acquire pg_advisory_xact_lock(hashtext('ltbc:' || $accountId::text)).
+   CANONICAL LOCK ORDER FOR BIND_CODES (R2-#1): advisory FIRST, row-level
+   locks AFTER. `requestLearnerTelegramBindCode` (§2.8) AND `/start`
+   follow this order. (R3-WARN-#3: `/stop` and dispatcher auto-unbind
+   do not contend on bind_codes; they touch only `accounts` and use the
+   row-level WHERE predicate for safety — no advisory lock needed.)
+
+5. Re-SELECT the code under the lock with FOR UPDATE, plus the account
+   purge-gate joined in (R2-#5):
+     SELECT b.account_id, b.expires_at, b.consumed_at,
+            a.disabled_at, a.scheduled_purge_at, a.purged_at
+       FROM learner_telegram_bind_codes b
+       JOIN accounts a ON a.id = b.account_id
+      WHERE b.code = $1
+      FOR UPDATE OF b, a.
+   Outcomes:
+     - row missing / consumed / expired → COMMIT, reply per step 2 copy.
+     - a.disabled_at / scheduled_purge_at / purged_at IS NOT NULL →
+       COMMIT (write nothing). Reply: "Аккаунт недоступен; обратитесь
+       в поддержку." STOP. This guarantees a code can NEVER reintroduce
+       a chat_id on a purged-or-purge-scheduled account (R2-#5 closure).
+
+6. UPDATE accounts SET
+     learner_telegram_enabled = true,
+     learner_telegram_chat_id = $chatId::text,
+     updated_at = now()
+     WHERE id = $accountId.
+   (chat_id stored as text per shipped migration 0065 CHECK length ≤ 64.)
+
+7. UPDATE learner_telegram_bind_codes SET
+     consumed_at = now(), consumed_chat_id = $chatId
+     WHERE code = $code.
+
+8. COMMIT.
+
+9. Reply: "Готово. Вы будете получать напоминание о занятии за ~N минут до начала. Изменить настройки: levelchannel.ru/cabinet/profile. Отписаться: /stop."
+   (N = LEARNER_REMINDER_WINDOW_MINUTES from `resolveOperatorSettingsForProbe`; rendered as integer. Per R2-WARN-#8, this resolver does NOT cache — fresh DB read each call.)
 ```
 
 **`/stop` handler:**
 
 ```
-1. UPDATE learner_telegram_subscriptions
-     SET unsubscribed_at=now(), unsubscribe_reason='user_stop_command'
-     WHERE chat_id=$1 AND unsubscribed_at IS NULL
-   RETURNING account_id.
-2. If 0 rows → reply "Нет активной подписки."
-3. Else → reply "Подписка отменена. Чтобы возобновить, получите новый код в личном кабинете."
+1. BEGIN TX. SELECT id, learner_telegram_enabled
+     FROM accounts WHERE learner_telegram_chat_id = $chatId::text
+     AND learner_telegram_enabled = true FOR UPDATE.
+2. If row missing → COMMIT, reply "Нет активной подписки."
+3. UPDATE accounts SET
+     learner_telegram_enabled = false,
+     learner_telegram_chat_id = null,
+     updated_at = now()
+     WHERE id = $accountId.
+4. COMMIT.
+5. Reply: "Подписка отменена. Чтобы возобновить, получите новый код в личном кабинете."
 ```
 
-**Rate-limit:** `enforceRateLimit(scope='telegram-webhook', key=fromId, max=20, windowMs=60_000)`.
-A misbehaving Telegram-side client / typo-storm can't DoS the route. Reuses
-`lib/security/request` precedent.
+**Note on auto-unbind from dispatcher 403** (defer from §2.5): the
+dispatcher already classifies Telegram errors via the helper's
+`{ok:false, error}` return. THIS plan adds a post-send hook
+(`scripts/learner-reminder-dispatch.mjs`) where a 403-family error
+triggers the same UPDATE as `/stop` step 3 (idempotent NULL-out).
+Existing `finalizeSkipped` call records `'send_failed'` with the redacted
+error string; the auto-unbind is the second write under a separate
+transaction (no nested-tx complications).
 
-### 2.5 Scheduler dispatch — Telegram branch
+---
 
-`scripts/learner-reminder-dispatch.mjs` is extended (§2.4 of parent plan
-describes the per-row TX in step 5). The dispatch loop becomes per-channel
-iteration.
+## 2.5 Dispatcher integration — minimal AND-gate
 
-**Reconcile-enqueue extension (step 3 of parent plan):** the cross-join
-unnest currently produces one row per (slot, offset) for `channel='email'`.
-Extension: emit BOTH channels per (slot, offset) — when
-`LEARNER_TELEGRAM_ENABLED=1` AND learner has an active subscription row, the
-Telegram row is enqueued too. Implementation:
+`scripts/learner-reminder-dispatch.mjs:321` currently reads:
 
-```sql
--- Pseudo: replace the single-channel insert with a 2-channel cross-join.
-INSERT INTO learner_reminder_dispatches (slot_id, account_id, channel, offset_minutes, due_at, send_by_at)
-  SELECT s.id, s.learner_account_id, c.channel, o.offset_minutes,
-         s.start_at - (o.offset_minutes * interval '1 minute'),
-         s.start_at - (o.offset_minutes * interval '1 minute')
-           + (lateTolerance * interval '1 minute')
-  FROM lesson_slots s
-  LEFT JOIN learner_reminder_preferences p ON p.account_id = s.learner_account_id
-  CROSS JOIN LATERAL (
-    SELECT unnest(coalesce(p.offsets_minutes, $1::integer[])) AS offset_minutes
-  ) o
-  CROSS JOIN LATERAL (
-    SELECT unnest(
-      CASE WHEN $2::bool AND EXISTS (
-        SELECT 1 FROM learner_telegram_subscriptions lts
-         WHERE lts.account_id = s.learner_account_id
-           AND lts.unsubscribed_at IS NULL
-      )
-      THEN array['email', 'telegram']
-      ELSE array['email']
-      END::text[]
-    ) AS channel
-  ) c
-  WHERE s.status = 'booked'
-    AND s.start_at > now()
-    AND (p.email_opt_in IS NULL OR p.email_opt_in = true OR c.channel != 'email')
-    -- Telegram has no analogous opt-in; binding = opt-in.
-  ON CONFLICT (slot_id, offset_minutes, channel) DO NOTHING;
+```js
+const telegramChannelActive = telegramHelperShipped
 ```
 
-Two params: `$1` = default offsets CSV, `$2` = `LEARNER_TELEGRAM_ENABLED`.
+THIS plan changes it to:
 
-**Per-row send branch (step 5b of parent plan):** when popping a pending row,
-inspect `channel`:
-
+```js
+const telegramMasterSwitchOn =
+  probeSettings.LEARNER_REMINDERS_TELEGRAM_ENABLED.value === 1
+const telegramChannelActive = telegramHelperShipped && telegramMasterSwitchOn
 ```
-if (row.channel === 'email') {
-  // existing path: sendLearnerLessonReminder(...)
-} else if (row.channel === 'telegram') {
-  // NEW: look up active subscription
-  const sub = await pool.query(
-    `SELECT chat_id FROM learner_telegram_subscriptions
-       WHERE account_id = $1 AND unsubscribed_at IS NULL
-       ORDER BY subscribed_at DESC LIMIT 1`,
-    [row.account_id]
+
+And `probeSettings` adds `LEARNER_REMINDERS_TELEGRAM_ENABLED` to the
+`resolveOperatorSettingsForProbe(pool, 'learner-reminders')` set (via
+the new SETTING_SCHEMA entry in §2.7).
+
+`capturedThresholds` + `capturedThresholdsSource` include the new key
+for audit (existing pattern at `scripts/learner-reminder-dispatch.mjs:324-336`).
+
+**Auto-unbind on terminal Telegram errors** (R2-#2 + R2-#3 closures — race-safe scoping + correct classifier surface).
+
+The shipped `sendTelegramMessage` return shape (verified at
+`scripts/lib/telegram-alerts.mjs:313-319`) is:
+
+```ts
+{ ok: false, error: 'telegram_400' | 'telegram_403' | 'telegram_429_after_retries' | ..., detail?: string }
+```
+
+The status code is in `error` (status-keyed string); the human description
+from Telegram is in `detail`. The classifier must look at BOTH:
+
+```js
+function isTelegramTerminalUnbind(result) {
+  if (result.ok !== false) return false
+  if (result.error === 'telegram_403') return true  // bot blocked / deactivated
+  if (result.error === 'telegram_400' && typeof result.detail === 'string') {
+    // Telegram returns 400 for "chat not found" and related terminal
+    // states. R3-#2 closure: include 'user is deactivated' (the §0
+    // closure-text named this case; the original regex omitted it).
+    return /chat not found|user not found|peer_id_invalid|user is deactivated/i.test(result.detail)
+  }
+  return false
+}
+
+// Post-send hook in scripts/learner-reminder-dispatch.mjs (~line 540).
+// RACE-SAFE (R2-#2): scope the UPDATE to (id, chat_id) BOTH so a fresh
+// re-bind to a different chat is NOT overwritten by a stale 403 from
+// the prior chat.
+if (isTelegramTerminalUnbind(tgResult)) {
+  await pool.query(
+    `UPDATE accounts
+        SET learner_telegram_enabled = false,
+            learner_telegram_chat_id = null,
+            updated_at = now()
+      WHERE id = $1::uuid
+        AND learner_telegram_chat_id = $2::text
+        AND learner_telegram_enabled = true`,
+    [row.accountId, row.learnerTelegramChatId],
   )
-  if (!sub.rowCount) {
-    // Mid-flight unbind: skip row.
-    await markSkipped(row.id, 'no_telegram_binding')
-    continue
-  }
-  const text = buildLearnerReminderTelegram({
-    offsetMinutes: row.offset_minutes,
-    slot: { startAt, durationMinutes, zoomUrl, timezone, displayName },
-  })
-  const result = await sendTelegramMessage({
-    botToken: TELEGRAM_BOT_TOKEN,
-    chatId: sub.rows[0].chat_id,
-    text,
-    retryMax: 2,
-  })
-  if (result.ok) {
-    await markSent(row.id, /* alert_email_id */ String(result.messageId))
-  } else if (result.error.includes('403') || result.error.includes('blocked')) {
-    // Auto-unsubscribe: future dispatches will skip.
-    await pool.query(
-      `UPDATE learner_telegram_subscriptions
-         SET unsubscribed_at = now(), unsubscribe_reason = 'bot_blocked_by_user'
-       WHERE chat_id = $1 AND unsubscribed_at IS NULL`,
-      [sub.rows[0].chat_id]
-    )
-    await markSkipped(row.id, 'bot_blocked_by_user')
-  } else {
-    // Transient: retry next tick.
-    await markRetry(row.id, result.error)
-  }
 }
 ```
 
-**Reuse:** `sendTelegramMessage` from `scripts/lib/telegram-alerts.mjs`. No
-fork. The probe-runs sink is NOT used for learner reminders — reminders track
-their own queue + per-row status; observability is via the dispatch table.
+The `tgResult.detail` string is ALREADY redacted by the helper
+(`scripts/lib/telegram-alerts.mjs:184,201,213`) — no additional
+redaction needed at this layer.
 
-### 2.5.1 CHECK extension on `learner_reminder_dispatches.channel`
+**No other dispatcher changes.** Queue contract (`UNIQUE (slot_id, channel)`),
+lifecycle (`claimed|sent|skipped`), idempotency, retention — all unchanged.
 
-Migration:
+---
 
-```sql
--- BCS-DEF-4-TG (2026-05-XX) — extend channel CHECK to include 'telegram'.
--- Same ALTER-CHECK idiom as migrations/0058 (probe_runs.probe_name).
--- ACCESS EXCLUSIVE on learner_reminder_dispatches; the table is small in
--- steady state (90-day retention sweep deletes sent rows; pending rows
--- only exist for booked-future-slots within 48h).
-alter table learner_reminder_dispatches
-  drop constraint if exists learner_reminder_dispatches_channel_check;
-alter table learner_reminder_dispatches
-  add constraint learner_reminder_dispatches_channel_check
-  check (channel in ('email', 'telegram'));
-```
+## 2.6 Telegram message template
 
-**CHECK extension on `skipped_reason`:**
+Lives at **`scripts/lib/learner-reminder-telegram-template.mjs`** (NEW
+file) — NOT under `lib/notifications/`. R2-WARN-#9 closure: the dispatcher
+is a standalone `.mjs` systemd script with explicit no-`@/` imports
+(`scripts/learner-reminder-dispatch.mjs:42-50`); a `.ts` file in
+`lib/notifications/` would not be importable. The `.mjs` placement
+mirrors the existing `scripts/lib/learner-reminder-template.mjs`
+(email body) precedent.
 
-```sql
-alter table learner_reminder_dispatches
-  drop constraint if exists learner_reminder_dispatches_skipped_reason_check;
-alter table learner_reminder_dispatches
-  add constraint learner_reminder_dispatches_skipped_reason_check
-  check (skipped_reason is null or skipped_reason in (
-    'slot_no_longer_booked', 'learner_opted_out', 'email_missing',
-    'past_send_by', 'channel_disabled_by_operator',
-    'no_telegram_binding', 'bot_blocked_by_user'
-  ));
-```
-
-### 2.6 Telegram message template
-
-Lives at `lib/notifications/telegram-templates.ts` (NEW file — not under
-`lib/email/templates/` since the channel is different). Plain text only,
-≤1024 chars (same convention as BCS-DEF-1-TG §2.3 — no `parse_mode` foot-guns).
+Plain text only, ≤1024 chars (well under Telegram's 4096 cap).
 
 ```
-LevelChannel — занятие через ~60 мин
+LevelChannel — занятие через ~{N} мин
 
-   Когда: 2026-06-01 17:00 (Asia/Yekaterinburg)
-   Длительность: 60 минут
-   Войти: https://meet.google.com/xxx-yyyy-zzz
+Когда: {date} {hh:mm} ({timezone})
+Длительность: {duration} мин
+Войти: {zoomUrl}
 
-Изменить расписание напоминаний:
-https://levelchannel.ru/cabinet/settings/reminders
+Изменить настройки напоминаний:
+https://levelchannel.ru/cabinet/profile
 
 Отписаться от Telegram-напоминаний: /stop
 ```
 
-Subject line is implicit (Telegram has no subject). `display_name` not included
-in MVP (PII guard symmetric with operator alerts §4.5). Zoom-url line omitted
-when null. **Plain text — no Markdown — no inline keyboard.**
+Conventions:
+- `{N}` = `window_minutes_at_dispatch` (the actual captured value from the row).
+- `{zoomUrl}` line omitted entirely when null (the parent's `lesson_slots.zoom_url` is nullable; existing CHECK https-only ≤512 chars).
+- No `display_name` / `teacher_email` (PII guard, symmetric with operator alerts).
+- **Plain text only** — no `parse_mode`, no Markdown, no inline keyboard (per BCS-DEF-1-TG §2.3 escape-char foot-guns rationale).
 
-### 2.7 Operator settings — 1 new key
+---
+
+## 2.7 Operator settings — 1 new key
 
 Extend `lib/admin/operator-settings.ts SETTING_SCHEMA` AND
-`scripts/lib/operator-settings.mjs`:
+`scripts/lib/operator-settings.mjs` (mirror):
 
 ```ts
-LEARNER_TELEGRAM_ENABLED: {
+LEARNER_REMINDERS_TELEGRAM_ENABLED: {
   kind: 'int',
-  default: 0,             // OFF by default; turn on after BotFather + webhook setup
+  default: 0,             // OFF by default; turn on after BotFather setup
   min: 0,
   max: 1,
-  envName: 'LEARNER_TELEGRAM_ENABLED',
-  description: 'master switch (1=on/0=off) for learner Telegram reminders; '
-    + 'requires TELEGRAM_BOT_TOKEN + TELEGRAM_WEBHOOK_SECRET_TOKEN + '
-    + 'TELEGRAM_BOT_USERNAME env vars; webhook URL must be registered '
-    + 'via Telegram setWebhook (operator runbook §2.1)',
+  envName: 'LEARNER_REMINDERS_TELEGRAM_ENABLED',
+  description: 'master switch (1=on/0=off) for the learner Telegram reminders bot-handshake; '
+    + 'requires TELEGRAM_BOT_TOKEN + TELEGRAM_BOT_USERNAME + TELEGRAM_WEBHOOK_SECRET_TOKEN env vars; '
+    + 'the webhook URL must be registered via Telegram setWebhook before flipping; '
+    + 'operator runbook: docs/plans/bcs-def-4-tg-telegram-reminders.md §2.1',
   scope: 'learner-reminders',
 },
 ```
 
-`TELEGRAM_BOT_USERNAME` is a NEW env var (e.g. `levelchannel_bot`) — used for
-constructing the `https://t.me/<username>?start=<code>` deep-link in the
-cabinet binding UI. NOT in SETTING_SCHEMA (not operator-tunable; it's a
-deployment constant; lives in the same `/etc/levelchannel/env.d/telegram-alerts.env`
-file alongside the existing token).
+`scope: 'learner-reminders'` matches the existing `LEARNER_REMINDERS_EMAIL_ENABLED`
+key (`lib/admin/operator-settings.ts:285`), so
+`resolveOperatorSettingsForProbe(pool, 'learner-reminders')` picks it up
+without further wiring.
 
-### 2.8 Cabinet UI extension — `/cabinet/settings/reminders`
+`TELEGRAM_BOT_USERNAME` and `TELEGRAM_WEBHOOK_SECRET_TOKEN` are deployment
+env vars, NOT operator-tunable; they live in `$ENV_FILE` alongside the
+existing `TELEGRAM_BOT_TOKEN`. No SETTING_SCHEMA entries.
 
-NEW section "Telegram-напоминания" rendered below the existing email section
-(shipped in BCS-DEF-4 Sub-PR D). UI states:
+---
+
+## 2.8 Cabinet UI — `/cabinet/profile` (replace placeholder)
+
+`app/cabinet/profile/page.tsx:55-65` currently renders a read-only
+placeholder ("Telegram-напоминания скоро"). THIS plan replaces the
+placeholder with a 4-state component:
 
 | Server state | UI |
 |---|---|
-| `LEARNER_TELEGRAM_ENABLED=0` | Hide the section entirely (operator hasn't enabled it). |
-| Enabled + no active binding for learner | "Подключите Telegram, чтобы получать напоминания в мессенджере. [Получить код]" — button POSTs Server Action `requestTelegramBindCode`. |
-| Just clicked button + got a code | Render the 8-char code prominently + "Привязать через Telegram" button (deep-link `https://t.me/<botUsername>?start=<code>`) + countdown timer "Код действует 9:47". |
-| Enabled + active binding | "Telegram-напоминания включены. [Отвязать]" — button posts Server Action `unbindTelegram` which UPDATEs the subscription row + sends a `/stop`-style courtesy message via `sendTelegramMessage`. |
+| `LEARNER_REMINDERS_TELEGRAM_ENABLED === 0` | Keep the placeholder copy (operator hasn't activated). |
+| Master on, env vars present, learner has `learner_telegram_enabled=false` | "Подключите Telegram, чтобы получать напоминания в мессенджере. [Получить код]" — button posts Server Action `requestLearnerTelegramBindCode`. |
+| Just clicked button + code returned | Render the 8-char code prominently + "Привязать через Telegram" deep-link button (`https://t.me/${TELEGRAM_BOT_USERNAME}?start=${code}`) + countdown "Код действует N:NN". If `TELEGRAM_BOT_USERNAME` env empty, hide the deep-link button (raw code still shown). |
+| Master on, learner has `learner_telegram_enabled=true` | "Telegram-напоминания включены. [Отвязать]" — button posts Server Action `unbindLearnerTelegram`. Same NULL-out as `/stop`. Best-effort courtesy DM sent via `sendTelegramMessage` (failures swallowed; user has already disabled). |
 
-**Server Actions** (new file `app/cabinet/settings/reminders/telegram-actions.ts`):
-- `requestTelegramBindCode()`: rate-limit 5 req/hour/account; deletes prior
-  unconsumed codes for the account (under `pg_advisory_xact_lock`); generates
-  new code via `crypto.randomBytes` mapped to the 32-char alphabet; returns
-  `{ code, expiresAt }`. Cabinet client renders.
-- `unbindTelegram()`: SELECT chat_id of the active binding, UPDATE
-  `unsubscribed_at=now(), unsubscribe_reason='admin_revoked'` (semantically
-  "user-initiated unbind" — reuse the enum). Fire-and-forget courtesy message.
+**Server Actions** (NEW file `app/cabinet/profile/telegram-actions.ts`):
 
-### 2.9 Admin UI extension — `/admin/settings/reminders`
+- `requestLearnerTelegramBindCode()`:
+  - `requireAuthenticatedAccount()` (existing helper).
+  - Rate-limit: 5 req/hour/account via `enforceRateLimit({scope:'cabinet-tg-bind-code', key:accountId, max:5, windowMs:3_600_000})`.
+  - Begin TX.
+  - **CANONICAL LOCK ORDER (R2-#1)**: advisory FIRST, row-level locks AFTER.
+    - `pg_advisory_xact_lock(hashtext('ltbc:' || accountId::text))`.
+    - **Purge-gate** (R2-#5 belt-and-braces): `SELECT disabled_at, scheduled_purge_at, purged_at FROM accounts WHERE id = $accountId FOR UPDATE`. If any non-null → ROLLBACK; return `{ error: 'account_unavailable' }`. Cabinet UI shows "Аккаунт недоступен; обратитесь в поддержку."
+    - `DELETE FROM learner_telegram_bind_codes WHERE account_id = $1 AND consumed_at IS NULL`.
+  - Generate code via `crypto.randomBytes(8)` mapped into the 32-char alphabet (loop until codes pass the format regex; entropy preserved by truncating to 8 chars).
+  - INSERT into bind_codes (TTL = now() + interval '10 minutes'). On PRIMARY KEY collision retry up to 3 times (entropy makes this functionally never).
+  - COMMIT.
+  - Return `{ code, expiresAt }`.
+- `unbindLearnerTelegram()`:
+  - `requireAuthenticated()` from `lib/auth/guards.ts:16-30` (Round-4-equiv WARN #4 closure — the helper-name drift to a non-existent `requireAuthenticatedAccount` is corrected here and at every other Server Action call-site in this plan; pre-existing convention is `requireAuthenticated` for session-only or `requireAuthenticatedAndVerified` for email-verified flows; learner cabinet TG opt-in does not require verified email so `requireAuthenticated` is appropriate).
+  - Begin TX.
+  - `pg_advisory_xact_lock(hashtext('ltbc:' || accountId::text))` — canonical order (R2-#1).
+  - **Round-4-equiv WARN #3 closure** — RETURNING gives the POST-update row, which after the nullout would be NULL. Capture the chat_id BEFORE the UPDATE: `SELECT learner_telegram_chat_id FROM accounts WHERE id=$accountId AND learner_telegram_enabled=true FOR UPDATE` → store in `priorChatId`. Then `UPDATE accounts SET learner_telegram_enabled=false, learner_telegram_chat_id=null, updated_at=now() WHERE id=$accountId`.
+  - COMMIT.
+  - If `priorChatId !== null`, fire-and-forget courtesy DM via `sendTelegramMessage`. The helper already redacts `error` + `detail` (`scripts/lib/telegram-alerts.mjs:184,201,213`); any caught exception around the call site still passes through `redactTelegramSecret(err.message, TELEGRAM_BOT_TOKEN)` before `logJson(...)`.
 
-NEW row "Telegram канал" above the existing email-channel rows:
+---
 
-- **Master switch** — `LEARNER_TELEGRAM_ENABLED` (0/1 toggle).
-- **Env presence indicators** — `TELEGRAM_BOT_TOKEN` set? `TELEGRAM_WEBHOOK_SECRET_TOKEN` set? `TELEGRAM_BOT_USERNAME` set? (booleans only; values NEVER rendered).
-- **Webhook status** — last successful webhook hit timestamp (most recent row across all bindings: `max(subscribed_at)` from `learner_telegram_subscriptions`). If null + master switch on → render warning "Webhook setup may be incomplete (no incoming /start observed)".
-- **Active subscriptions count** — `COUNT(*) FROM learner_telegram_subscriptions WHERE unsubscribed_at IS NULL`.
-- **Recent unbinds (last 24h)** — `COUNT(*) WHERE unsubscribed_at > now() - interval '24 hours'`. Spike alarms operator attention (deferred to BCS-DEF-4-TG-ALERT, §10).
+## 2.9 Admin UI — `/admin/settings/alerts` (extend existing card)
 
-### 2.10 Migration ordering
+`app/admin/(gated)/settings/alerts/page.tsx:62-72` defines
+`LEARNER_REMINDER_KEYS`. THIS plan adds `LEARNER_REMINDERS_TELEGRAM_ENABLED` to that array:
+
+```ts
+const LEARNER_REMINDER_KEYS: ReadonlyArray<SettingKey> = [
+  'LEARNER_REMINDERS_EMAIL_ENABLED',
+  'LEARNER_REMINDER_WINDOW_MINUTES',
+  'LEARNER_REMINDERS_RATE_LIMIT_PER_TICK',
+  'LEARNER_REMINDERS_TELEGRAM_ENABLED', // new
+]
+```
+
+The existing card row-renders one row per key (the existing pattern;
+inspect `LEARNER_REMINDERS_EMAIL_ENABLED` row UI for shape). NO new card
+needed.
+
+**Env-presence indicators** rendered in a tooltip / sub-text under the
+new row:
+- `TELEGRAM_BOT_TOKEN`: present? (boolean, NEVER value).
+- `TELEGRAM_BOT_USERNAME`: present? (boolean).
+- `TELEGRAM_WEBHOOK_SECRET_TOKEN`: present? (boolean).
+- Active subscriptions count: `SELECT COUNT(*) FROM accounts WHERE learner_telegram_enabled = true`.
+
+If master switch ON but any required env var missing → red warning text
+inline: "Telegram setup incomplete — see plan §2.1."
+
+---
+
+## 2.10 Migration ordering
+
+ONE new migration:
 
 ```
-0063_learner_telegram_subscriptions.sql       (NEW table)
-0064_learner_telegram_bind_codes.sql          (NEW table)
-0065_learner_reminder_dispatches_telegram_channel.sql  (ALTER CHECK x2)
+migrations/0070_learner_telegram_bind_codes.sql       (NEW table + CHECK constraints)
 ```
 
-All additive. 0063 + 0064 are pure-new tables (no locks on existing tables).
-0065 is ACCESS EXCLUSIVE briefly on `learner_reminder_dispatches`; the table
-is small (90-day retention; pending rows only span 48h forward). No
-backfill — `'email'` rows remain in the existing set; `'telegram'` rows are
-new inserts post-activation.
+Pure additive. No locks on existing tables. No backfill. No CHECK
+extensions on `learner_reminder_dispatches` (the live CHECK already
+permits `'telegram'` per migration 0064). No accounts ALTER (the live
+shape already supports the canonical state per migration 0065).
 
 ---
 
@@ -574,78 +627,118 @@ new inserts post-activation.
 
 ### 3.1 Unit — bind code generation
 
-`tests/cabinet/telegram-bind-code.test.ts`:
-- Generated code matches `/^[A-Z0-9]{8}$/` with no I/O/0/1.
+`tests/cabinet/learner-telegram-bind-code.test.ts`:
+- Generated code matches `^[A-HJ-NP-Z2-9]{8}$` (no I/O/0/1).
 - TTL is exactly 10 minutes (`expires_at - created_at`).
-- Generating twice for same account: first call's row marked irrelevant /
-  replaced (second call's code is the active one; advisory-lock pinned).
+- Generating twice for same account: first call's pending row deleted; second call's code is the active one; both rows present in INSERT-only view because deleted row is gone.
 
-### 3.2 Integration — webhook auth
+### 3.2 Integration — webhook auth + private-chat gate
 
 `tests/integration/api/telegram-webhook-auth.test.ts`:
 - Missing `X-Telegram-Bot-Api-Secret-Token` → 401.
 - Wrong secret token → 401.
 - Correct token + master switch off → 200 + log "ignored: channel disabled".
-- Malformed JSON body → 200 + log "invalid body" (Telegram does NOT retry 4xx; we return 200 to be defensive).
+- Correct token + master ON + `chat.type === 'group'` → reply "только в личном чате"; NO accounts write; NO code consumed (BLOCKER #10 pin).
+- Correct token + master ON + `chat.type === 'supergroup'` → same as group.
+- Correct token + master ON + `chat.type === 'channel'` → same.
+- Malformed JSON body → 200 + log "invalid body".
 
 ### 3.3 Integration — `/start <code>` flow
 
 `tests/integration/api/telegram-webhook-start.test.ts`:
-- Valid unexpired code → subscription row inserted; code row marked consumed.
-- Expired code → reply "Код просрочен"; no subscription.
-- Already-consumed code → reply "Код просрочен или уже использован".
+- Valid unexpired code + private chat + live account → accounts row UPDATEd: `learner_telegram_enabled=true`, `learner_telegram_chat_id=<chatId>`; bind_code row marked consumed.
+- Expired code → reply "Код просрочен"; NO accounts write.
+- Already-consumed code → reply "Код просрочен или уже использован"; NO accounts write.
 - Wrong format → reply "Код неверный".
-- Re-bind: existing active subscription for same account+different chat → old row marked `rebound`; new row inserted.
-- Re-bind same (account, chat) → existing row preserved; no duplicate.
+- **R2-#5 purge-gate pins**: account with `disabled_at IS NOT NULL` → reply "Аккаунт недоступен"; NO accounts write; bind_code row NOT marked consumed.
+- **R2-#5 purge-gate pin**: account with `scheduled_purge_at IS NOT NULL` → same as above.
+- **R2-#5 purge-gate pin**: account with `purged_at IS NOT NULL` → same as above.
+- Re-bind: existing `learner_telegram_chat_id` is overwritten with the new chat_id (one binding per learner). Bind_code row consumed.
+- Re-bind same (account, chat) → accounts row UPDATEd identically (idempotent).
+- Concurrent `/start` with same code from two chats → first wins under `FOR UPDATE`; second sees `consumed_at IS NOT NULL` → "уже использован".
+- **R2-#1 lock-order pin**: concurrent `requestLearnerTelegramBindCode` Server Action + `/start <code>` for the SAME account complete without deadlock; one wins per the canonical advisory-first ordering.
 
 ### 3.4 Integration — `/stop` flow
 
 `tests/integration/api/telegram-webhook-stop.test.ts`:
-- Active subscription exists → UPDATE marks unsubscribed; reply "Подписка отменена".
-- No subscription → reply "Нет активной подписки".
+- Active subscription exists → accounts row UPDATEd: `enabled=false, chat_id=null`; reply "Подписка отменена". CHECK `accounts_learner_telegram_consistency` not violated (since `enabled=false`).
+- No subscription for chat_id → reply "Нет активной подписки".
+- `/stop` from a `chat_id` that matches a DIFFERENT account → no-op (defensive: only the bound account is updated). Actually — `/stop` flow uses `WHERE learner_telegram_chat_id = $chatId AND enabled = true`, so unmatched chat_id returns 0 rows.
 
-### 3.5 Integration — scheduler dispatch
+### 3.5 Integration — scheduler dispatch + auto-unbind
 
 `tests/integration/scripts/learner-reminder-dispatch-telegram.test.ts`:
-- `LEARNER_TELEGRAM_ENABLED=0` → no `channel='telegram'` rows enqueued; email path unchanged.
-- Enabled + learner with active subscription → 2× rows per (slot, offset) (one email + one telegram); both delivered (mocked Resend + mocked `sendTelegramMessage`).
-- Enabled + learner WITHOUT subscription → only `channel='email'` rows enqueued.
-- Mocked Telegram 403 ("bot blocked") → subscription marked unsubscribed; row marked `skipped_reason='bot_blocked_by_user'`.
-- Mocked Telegram 5xx → attempts++, status stays 'pending'; next tick retries.
-- Mid-flight unbind: row already pending, learner unbinds, tick → row → `skipped_reason='no_telegram_binding'`.
-- Per-channel idempotency: tick twice → same row picked exactly once via `FOR UPDATE SKIP LOCKED`.
+- Master switch off → no Telegram rows enqueued/sent even with `learner_telegram_enabled=true`.
+- Master ON + helper present + learner enabled + chat_id present → 1 row per slot with `channel='telegram'`; tgResult.ok → row marked `sent`.
+- Master ON + learner enabled + chat_id NULL → per-row pre-check at `scripts/learner-reminder-dispatch.mjs:466` skips silently; no claim row (existing behavior; we DON'T change it).
+- Master ON + tgResult `{ok:false, error:'telegram_403'}` → row marked `skipped` AND accounts row updated to `enabled=false, chat_id=null` (R2-#3 closure: classifier reads `error` not the human description).
+- Master ON + tgResult `{ok:false, error:'telegram_400', detail:'Bad Request: chat not found'}` → row marked `skipped` AND auto-unbind fires (R2-#3 covers 400 + detail substring).
+- Master ON + tgResult `{ok:false, error:'telegram_400', detail:'Bad Request: message text is empty'}` → row marked `skipped`; auto-unbind does NOT fire (terminal classifier rejects non-chat-related 400s).
+- **R2-#2 race pin**: scenario A — slot X enqueued, send returns 403 for chat=111; BEFORE the auto-unbind UPDATE runs, the learner re-binds to chat=222 via /start; the auto-unbind WHERE-clause MUST NOT null out the freshly bound chat=222 (test asserts `accounts.learner_telegram_chat_id === '222'` after the race).
+- Master ON + tgResult transient 5xx → row marked `skipped` per existing classifier (no helper retry change THIS wave).
+- Helper exports `redactTelegramSecret` and dispatcher uses redacted error strings (regression pin: error text in `last_error` column does NOT contain the bot-token suffix).
 
 ### 3.6 Integration — cabinet UI binding
 
-`tests/integration/cabinet/reminder-telegram-binding.test.ts`:
-- GET as unauthenticated → 401 / redirect.
-- GET as learner with master switch off → section hidden.
-- POST `requestTelegramBindCode` → row inserted; code length 8; deep-link rendered with correct username.
+`tests/integration/cabinet/profile-telegram-binding.test.ts`:
+- GET as learner with master switch off → placeholder copy rendered.
+- GET as learner with master ON + no binding → "Получить код" button rendered.
+- POST `requestLearnerTelegramBindCode` → code returned matches format; expiresAt 10 min ahead; bind_code row INSERTed.
 - POST 6 times in 1 hour → 6th call rate-limited.
-- POST `unbindTelegram` with no active sub → no-op (idempotent); ok status.
-- POST `unbindTelegram` with active sub → row UPDATEd; courtesy message attempted (mocked).
+- **R2-#5 belt-and-braces pin**: POST `requestLearnerTelegramBindCode` for a learner with `scheduled_purge_at IS NOT NULL` → returns `{ error: 'account_unavailable' }`; NO bind_code row INSERTed.
+- GET with master ON + active binding → "Telegram-напоминания включены" + "Отвязать" button.
+- POST `unbindLearnerTelegram` with active sub → accounts row UPDATEd to disabled+NULL; courtesy DM attempted (mocked).
+- POST `unbindLearnerTelegram` with no active sub → no-op; ok status.
 
 ### 3.7 Integration — admin UI
 
-`tests/integration/admin/reminders-telegram-row.test.ts`:
-- GET as admin → "Telegram канал" section rendered; master switch reflects DB.
-- POST flip master switch → next scheduler tick sees the new value.
-- Env-presence indicators reflect mocked env; **regression pin** — bot token value never in HTML.
+`tests/integration/admin/alerts-learner-reminders-telegram-row.test.ts`:
+- GET as admin → `LEARNER_REMINDERS_TELEGRAM_ENABLED` row rendered alongside existing keys.
+- POST flip master switch → next scheduler tick + next webhook call sees the new value (operator-settings cache invalidation works).
+- Env-presence indicators reflect mocked env state.
+- **Regression pin** — `TELEGRAM_BOT_TOKEN` value never appears in rendered HTML.
 
 ### 3.8 Migration
 
-`tests/integration/admin/learner-telegram-migrations.test.ts`:
-- 0063 + 0064 + 0065 apply clean on fresh DB.
-- Post-0065: `INSERT ... channel='telegram'` ok; `'slack'` fails CHECK.
-- Existing email rows backfilled correctly (no-op since channel is unchanged).
+`tests/integration/migrations/learner-telegram-bind-codes-migration.test.ts`:
+- Migration 0070 applies clean on a fresh DB.
+- INSERT with `code = 'AAAAAAAA'` ok; INSERT with `code = 'aaaaaaaa'` fails (`ltbc_code_format` CHECK).
+- INSERT with `expires_at < created_at` fails (`ltbc_expires_after_created` CHECK).
+- INSERT with `consumed_at` set + `consumed_chat_id` set ok (happy path consumption).
+- INSERT with `consumed_at` null + `consumed_chat_id` set fails (`ltbc_consumed_consistency` CHECK — half-consumed shape rejected).
+- **UPDATE of an already-consumed row scrubbing `consumed_chat_id` to NULL is accepted** (Round-4-equiv BLOCKER #2 closure: post-purge retention sweep nulls `consumed_chat_id` after the bound account is purged; the relaxed CHECK now allows that shape — `consumed_at not null` is the only invariant after consumption).
+- accounts cascade: DELETE FROM accounts WHERE id = X → bind_code rows for X are removed (ON DELETE CASCADE).
 
 ### 3.9 Template unit
 
-`tests/notifications/learner-reminder-telegram.test.ts`:
-- Body ≤1024 chars on the worst case (long timezone, long zoom-url).
-- Headline shows nominal `~N мин` (rounding rule from parent plan §2.8).
+`tests/notifications/learner-reminder-telegram-template.test.ts`:
+- Body ≤1024 chars on the worst case (long Zoom URL near 512-char cap, long timezone string).
+- Headline shows `~N мин` rendered from `window_minutes_at_dispatch`.
 - Zoom-url line omitted when null.
-- Plain text only (no `*`, `_`, `[`, `]` chars escaped — verify literal output).
+- Plain text only — `*`, `_`, `[`, `]` chars appear literal in worst-case inputs (no Markdown escape needed; we don't set `parse_mode`).
+
+### 3.10 Drift pin
+
+`tests/admin/operator-settings.test.ts` — extend the existing settings
+drift pin: `LEARNER_REMINDERS_TELEGRAM_ENABLED` exists in SETTING_SCHEMA
+AND the `.mjs` mirror; default = 0; scope = 'learner-reminders'.
+
+### 3.11 Integration — retention sweep (R2-#4)
+
+`tests/integration/scripts/db-retention-cleanup-bind-codes.test.ts`:
+- Consumed bind_code row aged 29 days → NOT deleted.
+- Consumed bind_code row aged 31 days → deleted.
+- Unconsumed bind_code row past `expires_at` by 31 days → deleted.
+- Unconsumed bind_code row past `expires_at` by 5 days → NOT deleted (still within audit window).
+- Bind_code row with `consumed_chat_id` set, account_id references account with `purged_at IS NOT NULL` → `consumed_chat_id` UPDATEd to NULL (audit row preserved, PII scrubbed).
+
+### 3.12 Placeholder test update (R2-WARN-#10)
+
+`tests/cabinet/profile-telegram-placeholder.test.ts`:
+- **Option A (preferred)**: delete the file. The placeholder it pins is gone after this wave; `tests/integration/cabinet/profile-telegram-binding.test.ts` (§3.6) covers the new live behavior.
+- **Option B (alternative)**: rewrite to assert `LearnerTelegramPlaceholder` component is rendered ONLY when `LEARNER_REMINDERS_TELEGRAM_ENABLED=0`, and `LearnerTelegramBindSection` is rendered when `=1`.
+
+PR diff chooses Option A unless reviewer flags Option B during /codex-paranoia wave.
 
 ---
 
@@ -653,190 +746,163 @@ new inserts post-activation.
 
 ### 4.1 Webhook auth boundary
 
-Telegram's `secret_token` header is the ONLY auth boundary. Token leakage =
-attacker can POST arbitrary `/start <code>` to bind themselves to anyone's
-account (IF they can guess an unconsumed code). **Mitigations**:
-- Token stored in `/etc/levelchannel/env.d/telegram-alerts.env` (mode 0640 root:levelchannel) — same controls as the bot token.
-- 256-bit hex token (`openssl rand -hex 32`) — brute force infeasible.
-- The code itself is the secondary boundary: 8-char `[A-Z0-9-IO01]` = 32^8 ≈ 1 trillion; TTL 10 min; one active per learner; attacker would need to (a) leak the secret token AND (b) brute-force a live code in 10 min.
-- **Defence-in-depth**: log all incoming webhook POSTs with `from.id` + truncated body (no full token); abnormal volume alerts via the existing observability rails.
+Telegram's `secret_token` header is the only auth. Token leakage = attacker
+can POST `/start <code>` to bind themselves to another learner IF they can
+also guess an unconsumed code (8-char `[A-HJ-NP-Z2-9]` = 32^8 ≈ 10^12 keyspace,
+10-min TTL). Mitigations:
+- Token in `$ENV_FILE` (mode 0640 root:levelchannel — same controls as the bot token).
+- 256-bit hex secret (`openssl rand -hex 32`).
+- Bind codes single-use under `SELECT ... FOR UPDATE`.
+- Defence-in-depth: log incoming POSTs with `from.id` + redacted error strings only.
 
 ### 4.2 Chat-id spoofing
 
-Telegram sends `message.chat.id` and `message.from.id` — these are server-side
-authoritative (Telegram won't forge them). A user CANNOT impersonate another
-user's chat-id via the bot API. Our binding flow trusts Telegram for this.
+Telegram's `message.chat.id` and `message.from.id` are server-side
+authoritative — Telegram won't forge them. Binding trusts Telegram for
+this. Per BLOCKER #10, we additionally require `chat.type === 'private'`
+to prevent group/channel binding.
 
 ### 4.3 Code-replay / race
 
-Two concurrent `/start <same-code>` from different chats: the `SELECT ... FOR UPDATE`
-+ `consumed_at IS NULL` predicate serializes; first wins, second sees consumed
-code → "уже использован". Verified by §3.3.
+Two concurrent `/start <same-code>`: the `SELECT ... FOR UPDATE` +
+`consumed_at IS NULL` predicate serializes; first wins, second sees
+consumed → "уже использован".
 
 ### 4.4 PII in Telegram body
 
-§2.6 — **no learner name, no teacher email, no slot UUID** in the body.
-Subject is bot-name only; the body has slot time + zoom-url + deep-link to
-cabinet. Zoom-url is operator-supplied (CHECK https-only ≤512 chars per
-`migrations/0056_lesson_slots_zoom_url.sql`). Regression-pinned §3.9.
+Per §2.6 — no learner name, no teacher email, no slot UUID, no
+account_id. Body has slot time + zoom-url + cabinet link only. Zoom-url
+is operator-supplied (CHECK https-only ≤512 chars per migration 0056).
 
-### 4.5 Bot-token secrecy
+### 4.5 Bot-token / webhook-secret secrecy + redaction boundary (BLOCKER #11)
 
-Reused from BCS-DEF-1-TG §4.1 — same controls (env-file mode 0640, no client
-bundle, no logging). The webhook secret token is a NEW secret with identical
-controls.
+Every egress point that touches a Telegram-derived string passes through
+`redactTelegramSecret(text, TELEGRAM_BOT_TOKEN)`:
+- Webhook route catch-block: error.message → `redactTelegramSecret` → log.
+- Dispatcher post-send `last_error` write: helper already redacts (`scripts/lib/telegram-alerts.mjs:184,201,213`); no double-redaction risk.
+- Courtesy DM attempt failure in `unbindLearnerTelegram`: error.message → `redactTelegramSecret` → log.
+- Test pin in §3.5 asserts no token-suffix in `last_error` column.
 
 ### 4.6 Rate-limit / abuse
 
-- Webhook route: 20 req/min/from-id via `enforceRateLimit` — defends against typo storms.
-- Cabinet `requestTelegramBindCode` Server Action: 5 req/hour/account.
-- Scheduler tick: existing `LEARNER_REMINDERS_RATE_LIMIT_PER_TICK` caps BOTH channels together (no separate Telegram limit MVP — Telegram has its own 30-msg/s global cap which is well above our blast).
+- Webhook route: 20 req/min/from-id via `enforceRateLimit`.
+- Cabinet `requestLearnerTelegramBindCode` Server Action: 5 req/hour/account.
+- Scheduler tick: existing `LEARNER_REMINDERS_RATE_LIMIT_PER_TICK` already caps both channels together (no separate Telegram limit).
 
-### 4.7 Migration ACCESS EXCLUSIVE
+### 4.7 Migration safety
 
-- 0063 + 0064 — new tables, no existing-table locks.
-- 0065 — ACCESS EXCLUSIVE briefly on `learner_reminder_dispatches`. Table is
-  small (90d retention; ~hours-of-rows on prod at MVP scale). Same risk
-  profile as `migrations/0058`. Accepted.
+- 0070 is pure-new table, no existing-table locks. ACCESS SHARE only on `accounts` for the FK validation phase (fast on additive FK).
 
 ### 4.8 GDPR / chat-id retention
 
-`learner_telegram_subscriptions.chat_id` is PII (it's a stable Telegram-issued
-id linkable to a user). On account deletion (`accounts on delete cascade`),
-the subscription row cascades — chat-id removed. Unbind keeps the row for
-audit but the chat-id remains until the account is deleted. **MVP accepts
-this**; a full GDPR-erasure flow would null the chat-id on unbind. Tracked
-in §10 as `BCS-DEF-4-TG-GDPR`.
+`accounts.learner_telegram_chat_id` is the canonical PII storage. The
+retention sweep (`scripts/db-retention-cleanup.mjs`) already wipes it
+when `scheduled_purge_at` elapses (per migration 0065 `comment on column`).
+`/stop` and `unbindLearnerTelegram` and the auto-unbind on 403 all NULL
+the chat_id immediately — no GDPR-erasure follow-up needed THIS wave
+(closes parent's BCS-DEF-4-TG-GDPR §10 placeholder).
+
+`learner_telegram_bind_codes` retains `consumed_chat_id` for audit. **R3-WARN-#4 closure**: account purge is anonymize-in-place (UPDATE on `accounts` setting `purged_at`, not DELETE), so the `ON DELETE CASCADE` FK does NOT fire on purge. The explicit retention pass added in §2.3 (the `UPDATE ... SET consumed_chat_id = null WHERE account_id IN (SELECT id FROM accounts WHERE purged_at IS NOT NULL)` statement) is the authoritative cleanup mechanism for purged-account chat_ids.
 
 ---
 
 ## 5. Decomposition — single-PR epic
 
-Single PR (no sub-volumes). Files:
+Single PR. Files:
 
 ```
-docs/plans/bcs-def-4-tg-telegram-reminders.md     (NEW, this file)
-migrations/0063_learner_telegram_subscriptions.sql        (NEW)
-migrations/0064_learner_telegram_bind_codes.sql           (NEW)
-migrations/0065_learner_reminder_dispatches_telegram_channel.sql  (NEW — CHECK extends)
-lib/admin/operator-settings.ts                    (modified — 1 new key)
-scripts/lib/operator-settings.mjs                 (mirror)
-scripts/learner-reminder-dispatch.mjs             (modified — per-channel branch)
-lib/notifications/telegram-templates.ts           (NEW)
-app/api/telegram/webhook/route.ts                 (NEW)
-app/cabinet/settings/reminders/page.tsx           (modified — Telegram section)
-app/cabinet/settings/reminders/telegram-actions.ts (NEW Server Actions)
-app/admin/(gated)/settings/reminders/page.tsx     (modified — Telegram row)
-tests/cabinet/telegram-bind-code.test.ts          (NEW)
-tests/integration/api/telegram-webhook-auth.test.ts        (NEW)
-tests/integration/api/telegram-webhook-start.test.ts       (NEW)
-tests/integration/api/telegram-webhook-stop.test.ts        (NEW)
-tests/integration/scripts/learner-reminder-dispatch-telegram.test.ts  (NEW)
-tests/integration/cabinet/reminder-telegram-binding.test.ts (NEW)
-tests/integration/admin/reminders-telegram-row.test.ts     (NEW)
-tests/integration/admin/learner-telegram-migrations.test.ts (NEW)
-tests/notifications/learner-reminder-telegram.test.ts      (NEW)
-tests/admin/operator-settings.test.ts             (modified — 1 new key drift pin)
-ENGINEERING_BACKLOG.md                            (modified — strikethrough BCS-DEF-4-TG)
-docs/plans/bcs-def-4-learner-reminders.md         (modified — §10 cross-ref)
-docs/plans/bcs-def-1-tg-telegram-alerts.md        (modified — §10 cross-ref)
-ARCHITECTURE.md                                   (modified — learner Telegram channel section)
+docs/plans/bcs-def-4-tg-telegram-reminders.md            (modified, this file)
+docs/plans/bcs-def-4-learner-reminders.md                (modified — strike §10 BCS-DEF-4-TG-GDPR; add §10 cross-ref to this PR)
+docs/plans/bcs-def-1-tg-telegram-alerts.md               (modified — §2.1 cross-ref the post-setWebhook `getUpdates` inert note)
+migrations/0070_learner_telegram_bind_codes.sql          (NEW)
+lib/admin/operator-settings.ts                           (modified — 1 new key)
+scripts/lib/operator-settings.mjs                        (mirror)
+scripts/learner-reminder-dispatch.mjs                    (modified — AND-gate + race-safe auto-unbind hook)
+scripts/db-retention-cleanup.mjs                         (modified — R2-#4: NEW bind-code retention pass + chat_id scrub on purged accounts)
+scripts/lib/learner-reminder-telegram-template.mjs       (NEW — R2-WARN-#9: .mjs not .ts; mirrors scripts/lib/learner-reminder-template.mjs precedent)
+app/api/telegram/webhook/route.ts                        (NEW)
+app/cabinet/profile/page.tsx                             (modified — replace placeholder with active component)
+app/cabinet/profile/telegram-actions.ts                  (NEW Server Actions)
+app/admin/(gated)/settings/alerts/page.tsx               (modified — extend LEARNER_REMINDER_KEYS)
+tests/cabinet/learner-telegram-bind-code.test.ts                            (NEW)
+tests/cabinet/profile-telegram-placeholder.test.ts                          (modified — R2-WARN-#10: rewrite assertions for active section, or delete entirely since placeholder is gone)
+tests/integration/api/telegram-webhook-auth.test.ts                          (NEW)
+tests/integration/api/telegram-webhook-start.test.ts                         (NEW)
+tests/integration/api/telegram-webhook-stop.test.ts                          (NEW)
+tests/integration/scripts/learner-reminder-dispatch-telegram.test.ts         (NEW)
+tests/integration/scripts/db-retention-cleanup-bind-codes.test.ts            (NEW — R2-#4 pin)
+tests/integration/cabinet/profile-telegram-binding.test.ts                   (NEW)
+tests/integration/admin/alerts-learner-reminders-telegram-row.test.ts        (NEW)
+tests/integration/migrations/learner-telegram-bind-codes-migration.test.ts   (NEW)
+tests/notifications/learner-reminder-telegram-template.test.ts               (NEW)
+tests/admin/operator-settings.test.ts                    (modified — 1 new key drift pin)
+ENGINEERING_BACKLOG.md                                   (modified — strikethrough BCS-DEF-4-TG)
+ARCHITECTURE.md                                          (modified — learner Telegram channel diagram updated to "ACTIVE")
 ```
 
-**Estimated diff:** ~1200 LOC.
+**Estimated diff:** ~900 LOC (smaller than pre-round-1 estimate because
+schema/dispatcher delta shrank — most code lives in webhook + cabinet UI).
 
 **Why single PR, not split:**
-- Migration must land BEFORE webhook route writes rows. Splitting creates ordering hazard.
-- `LEARNER_TELEGRAM_ENABLED=0` default keeps channel dormant post-merge; activation is operator-side.
-- The webhook route + scheduler branch + binding UI are tightly coupled; reviewing each in isolation creates re-merge friction.
+- Migration 0070 must land before the webhook can consume codes.
+- Webhook + Server Actions + cabinet UI are tightly coupled; splitting creates dead-code intermediate states.
+- Master switch defaults OFF; activation is operator-side after merge — no in-flight ordering hazard.
 
-**Critical-path:** `lib/admin/operator-settings.ts` IS on critical path. Trailer
-carries `Codex-Paranoia: SIGN-OFF round N/3` (one-PR epic; plan + wave collapsed).
+**Critical-path:** `lib/admin/operator-settings.ts` IS on critical path (per `docs/critical-path.md`). Trailer carries `Codex-Paranoia: SIGN-OFF round N/3` (one-PR epic; plan + wave collapsed).
 
 ---
 
 ## 6. Risks + mitigations
 
-### RISK-1 — Webhook flood after activation
+### RISK-1 — Webhook backlog flood at activation
 
-When `setWebhook` is called Telegram will deliver any queued updates immediately.
-If the bot has been around (operator alerts) and learners have stumbled into
-sending it `/start` over time, Telegram's queue could have hundreds of pending
-updates. **Mitigation**: webhook route is rate-limited per-from-id (20/min);
-unknown codes reply "неверный код" cheaply. Operator can also call
-`deleteWebhook` then `setWebhook` to drop the backlog before activation.
+When `setWebhook` is called, Telegram delivers any queued updates immediately. If learners stumbled into `/start`-ing the bot before activation, hundreds of updates could land at once.
+**Mitigation**: rate-limit per from-id (20/min); unknown-code replies are cheap. Operator can `deleteWebhook` then `setWebhook` to drop the backlog before activation.
 
-### RISK-2 — Bot blocked / chat deleted mid-flight
+### RISK-2 — Spurious 403 cascading auto-unbinds
 
-Telegram returns 403 on `sendMessage`. Scheduler auto-unsubscribes on 403
-(§2.5 send branch). Risk: false positive — a temporary 403 (Telegram-side
-glitch) could unsubscribe a valid binding. **Decision**: accepted. The 403
-codes ("Forbidden: bot was blocked by the user", "chat not found", "user is
-deactivated") are documented as terminal by Telegram. Re-binding is one
-button-click in /cabinet.
+Telegram-side glitch returning 403 on `sendMessage` could falsely cascade-unbind valid learners.
+**Mitigation**: 403 strings are documented terminal (`"Forbidden: bot was blocked by the user"`, `"chat not found"`, `"user is deactivated"`). Re-binding is one button-click in `/cabinet/profile`. Section §10 carries `BCS-DEF-4-TG-RECOVERY` for an admin un-revoke surface (out of scope this wave).
 
 ### RISK-3 — Code collision
 
-8-char `[A-Z0-9-IO01]` = 32^8 ≈ 10^12 codes. Birthday-paradox at 10^6 active
-codes (well above MVP scale) ≈ 0.05% collision per gen. Collision triggers
-PRIMARY KEY violation → Server Action retries up to 3 times. Operationally
-nil.
+32^8 ≈ 10^12 keyspace; birthday-paradox at 10^6 active codes ≈ 0.05% per gen. Collision → PRIMARY KEY violation → Server Action retries up to 3 times. Operationally nil.
 
-### RISK-4 — Webhook secret token rotation
+### RISK-4 — Webhook secret rotation
 
-Operator rotates the token → must call `setWebhook` again with the new
-`secret_token`. Until then, Telegram POSTs with the old header; our route
-rejects 401; Telegram retries 5xx but not 4xx → updates dropped. **Mitigation**:
-operator runbook documents the two-step rotate (update env-file → restart
-Next.js → curl `setWebhook` with new token). Brief downtime accepted.
+Until `setWebhook` is re-run with the new secret, Telegram POSTs with the old header → 401 → updates drop.
+**Mitigation**: operator runbook §2.1 documents the two-step rotate.
 
-### RISK-5 — Single bot for both operator alerts + learner reminders
+### RISK-5 — Single bot shared with operator alerts
 
-Bot blocked by operator (RISK-2-equivalent) breaks BOTH channels.
-**Mitigation**: operator runs ops bot in a separate chat from their main
-account; learner reminders flow from the same bot but to per-learner chats.
-The two paths share only the bot identity, not chat-id. A bot-token rotation
-affects both, accepted.
+A token rotation affects both flows.
+**Mitigation**: same runbook step for both; rotation is rare; documented.
 
-### RISK-6 — Mass-unbind on Telegram API outage
+### RISK-6 — Mid-flight master-switch flip races a webhook POST (RETITLED R2-WARN-#8)
 
-A Telegram-side network outage returns 5xx (handled — attempts++) NOT 403.
-A localized Telegram bug returning 403 spuriously could cascade-unsubscribe.
-**Mitigation**: §3.5 pins behavior; manual rollback path is a single SQL
-UPDATE on the subscription rows (`unsubscribe_reason='bot_blocked_by_user'`
-flipped back); admin-side surface in §10 (`BCS-DEF-4-TG-RECOVERY`).
+The operator-settings readers do NOT cache (`lib/admin/operator-settings.ts:401-449`, `scripts/lib/operator-settings.mjs:271-389` — each call hits the DB). A flip propagates on the very next webhook request / scheduler tick. The "stale-window" risk I previously described does not exist.
 
-### RISK-7 — Learner expects Telegram but gets only email
+What CAN still happen: a webhook POST and an admin flip arrive within the same millisecond. Postgres serializes via `select_for_share` on the row; the worst case is a single update processed under one or the other value. The failure mode is bounded (one update, easily corrected via cabinet UI).
+**Mitigation**: accepted; no code change.
 
-The cabinet section is gated by master switch. If operator hasn't enabled,
-the learner doesn't see the UI at all. If master switch is on but the
-learner hasn't bound, the section shows "Подключите Telegram" — clear UX.
-If bound and reminder fires only as email (transient Telegram failure) — the
-learner gets the email, no confusion. **Acceptable.**
+### RISK-7 — Non-private chat learner mistake
 
-### RISK-8 — Webhook URL change (deploy URL drift)
+Learner mistakenly sends `/start <code>` in a group with the bot. The private-chat gate (BLOCKER #10) hard-rejects without consuming the code — learner can retry in DM.
 
-If the prod domain changes (`levelchannel.ru` → something else), `setWebhook`
-must be re-called. **Mitigation**: documented in deploy runbook; operator
-action on deploy.
+### RISK-8 — Concurrent webhook POSTs (Telegram retries on our side 5xx)
 
-### RISK-9 — Reuse of `alert_email_id` column for Telegram message id
-
-The parent plan reserved `resend_email_id text` on `learner_reminder_dispatches`.
-Telegram message id is numeric. **Decision**: stringify Telegram's int and
-store in the same column. Reader code treats it as opaque. Rename to
-`channel_message_id` rejected (touch-everywhere). Same precedent as
-BCS-DEF-1-TG §2.4.1.
+We never return 5xx (only 200 + log or 401). Telegram does NOT retry 2xx/4xx. Therefore no duplicate-handler race on our side.
 
 ---
 
 ## 7. Acceptance criteria
 
 The PR ships when:
-- Migrations 0063 + 0064 + 0065 apply clean on a fresh test DB.
+- Migration 0070 applies clean on a fresh test DB.
 - `npm run test:run` green.
-- `npm run test:integration` green (10 new test files).
+- `npm run test:integration` green (9 new test files + 1 modified drift pin).
 - `npm run build` green.
+- `npm run typecheck` green.
 - `/codex-paranoia plan` SIGN-OFF on this file (round N/3).
 - `/codex-paranoia wave` SIGN-OFF on the implementation diff (round N/3).
 - PR commit body trailer:
@@ -848,101 +914,78 @@ The PR ships when:
 - ENGINEERING_BACKLOG.md strikethrough BCS-DEF-4-TG.
 
 Post-merge (operator-side activation):
-- Operator runs `setWebhook` (§2.1 step 3).
-- Operator flips `LEARNER_TELEGRAM_ENABLED=1` at `/admin/settings/reminders`.
-- Operator self-binds their own learner account; books a test slot; confirms
-  Telegram delivery within the next 1-min scheduler tick.
+- Operator follows §2.1 runbook (verify token, set username, generate webhook secret, call `setWebhook`).
+- Operator flips `LEARNER_REMINDERS_TELEGRAM_ENABLED=1` at `/admin/settings/alerts`.
+- Operator self-binds own learner account via `/cabinet/profile`; books test slot; confirms Telegram delivery on the next scheduler tick.
 
 ---
 
 ## 8. Migration / rollout
 
 1. PR opens.
-2. CI runs 0063/0064/0065 against test DB → green.
+2. CI runs migration 0070 against test DB → green.
 3. PR merges (squash) to main.
 4. Autodeploy timer picks up the commit; Next.js restarts.
-5. `LEARNER_TELEGRAM_ENABLED=0` → channel dormant; webhook route returns 200 + log "ignored: channel disabled" for any stray Telegram POSTs.
-6. Operator follows §2.1 runbook (generate webhook secret, call `setWebhook`, set `TELEGRAM_BOT_USERNAME`).
-7. Operator flips master switch at `/admin/settings/reminders`.
-8. Reconcile-enqueue in the next 1-min tick begins enqueueing `channel='telegram'` rows for any learners with active subscriptions (initially zero — they need to bind first).
+5. `LEARNER_REMINDERS_TELEGRAM_ENABLED=0` → channel dormant (dispatcher AND-gate fails); webhook returns 200 + log "ignored: channel disabled" for any stray POSTs.
+6. Operator follows §2.1 (env vars + `setWebhook`).
+7. Operator flips master switch.
+8. Cabinet section becomes active for learners. As learners bind, the dispatcher's per-row pre-check (existing code) sees enabled+chat_id and sends.
 
-**No ordering hazard.** Migrations are purely additive. Until master switch
-flips, no Telegram rows are produced.
+**No ordering hazard.** Migration is purely additive. Until master switch flips, the AND-gate keeps the dispatcher silent.
 
-**First-tick safety**: when activated, the reconcile-enqueue catches up any
-already-booked future slots (limited to 48h forward) for learners with
-bindings. Since bindings are empty at activation, the first activation tick
-produces zero Telegram sends. As learners bind one-by-one, their next-due
-reminders pick up Telegram delivery.
+**First-tick safety**: at activation, no learners have bindings yet (all `accounts.learner_telegram_enabled = false`). The dispatcher's `LEARNER_REMINDERS_RATE_LIMIT_PER_TICK` already caps both channels together, so the first non-zero TG tick is bounded.
 
 ---
 
 ## 9. Pre-canned answers for paranoia round 2
 
-**Q1.** Why per-learner chat-id instead of broadcast channel? **A:** Privacy
-+ correctness — each reminder reveals slot time + zoom-url; a broadcast channel
-leaks each learner's schedule to all members.
+**Q1.** Why store `chat_id` on `accounts` instead of a separate subscriptions table?
+**A:** Parent BCS-DEF-4 §1.6 REVISED locked the schema as the canonical "lightest fit" — two nullable columns on `accounts` + the consistency CHECK. The dispatcher reads only these columns. Adding a sibling table now would create a dual-source-of-truth problem (Codex round-1 BLOCKER #3). When/if we need multi-chat per learner, we promote `learner_telegram_chat_id` to a 1:N table in BCS-DEF-4-TG-MULTI-CHAT (§10).
 
-**Q2.** Why single bot for operator alerts + learner reminders, not two bots?
-**A:** Operational simplicity — one BotFather artifact, one token, one webhook
-URL. The two flows share only bot-identity (the `from` user of the messages);
-chat-ids partition cleanly.
+**Q2.** Why one bot for operator alerts + learner reminders, not two bots?
+**A:** Operational simplicity — one BotFather artifact, one token, one webhook URL. The two flows share only bot-identity; chat-ids partition cleanly.
 
-**Q3.** Why `/start <code>` flow not `/start` + cabinet shows chat-id?
-**A:** Trust boundary — relying on the learner to copy-paste their chat-id
-correctly is fragile (and re-bindable to a different chat). The code flow
-binds the chat that consumed the code, which is exactly the chat we'll send
-reminders to.
+**Q3.** Why `/start <code>` flow not direct chat-id entry?
+**A:** Trust boundary — chat_id from a learner pasting it manually can't be verified; the code flow binds the chat that consumed the code, which is exactly the chat we'll send to.
 
-**Q4.** Auto-unsubscribe on 403 too aggressive? **A:** Telegram's 403 codes
-are documented as terminal (`Forbidden: bot was blocked by the user`,
-`chat not found`, `user is deactivated`). Re-binding is one click. False-positive
-recovery is cheap.
+**Q4.** Auto-unbind on 403 too aggressive?
+**A:** Telegram's 403 codes are documented terminal. Re-binding is one click. False-positive recovery is cheap.
 
-**Q5.** Use a job queue instead of cron? **A:** Out of scope — parent plan
-§2.1 Decision picked polling cron + DB queue; this plan extends that.
+**Q5.** Use a job queue instead of cron?
+**A:** Out of scope — parent §2.1 decision picked polling cron + DB queue; this plan extends that.
 
-**Q6.** Why no Markdown? **A:** Escape-char foot-guns per BCS-DEF-1-TG §2.3.
-Reminder text is paging-utility; bold/links not required.
+**Q6.** Why no Markdown?
+**A:** Escape-char foot-guns per BCS-DEF-1-TG §2.3. Reminder text is paging-utility; bold/links not required.
 
-**Q7.** What if learner blocks bot but rebinds later? **A:** §3.3 covers
-re-bind: old row marked `bot_blocked_by_user`, new row inserted (different
-or same chat-id), future dispatches use the new active row.
+**Q7.** What if learner blocks bot but rebinds later?
+**A:** §3.3 covers re-bind: existing `chat_id` overwritten; future dispatches use the new chat. Auto-unbind from a prior 403 already set `enabled=false`, so the learner has to deliberately re-bind via cabinet.
 
-**Q8.** What about teacher Telegram reminders? **A:** Out of scope — see
-BCS-DEF-5-TG (§10).
+**Q8.** What about teacher Telegram reminders?
+**A:** Out of scope — see BCS-DEF-5-TG (§10).
 
-**Q9.** Are webhook updates idempotent if Telegram retries? **A:** Yes —
-`/start` is guarded by the single-use code SELECT FOR UPDATE; `/stop` is
-idempotent by `WHERE unsubscribed_at IS NULL`. A duplicate retry of either is
-a no-op.
+**Q9.** Are webhook updates idempotent if Telegram retries?
+**A:** Telegram only retries 5xx; we never return 5xx (200 or 401 only). `/start` is guarded by single-use code FOR UPDATE; `/stop` is idempotent by `WHERE enabled = true`. No double-processing.
 
 **Q10.** What if the webhook route is offline (Next.js restart mid-deploy)?
-**A:** Telegram retries 5xx with exponential backoff for ~24h; updates
-recover after restart. If the outage exceeds the retry window, learners
-re-send `/start` (operator-side runbook step).
+**A:** Telegram retries 5xx with exponential backoff (~24h). Updates recover after restart. If outage exceeds the retry window, learners re-send `/start`.
+
+**Q11.** Why is the master switch in operator-settings (not just an env var)?
+**A:** Operator-tunable without a re-deploy + cache invalidation pulls from DB on each tick → instant flip. Same precedent as `LEARNER_REMINDERS_EMAIL_ENABLED`.
+
+**Q12.** What if `TELEGRAM_BOT_USERNAME` env var is missing but master is on?
+**A:** Cabinet renders only the raw 8-char code, hides the deep-link button. Learner can still type `/start <code>` manually. Admin card shows a yellow warning.
 
 ---
 
 ## 10. Out of scope — deferred follow-ups
 
-- **BCS-DEF-5-TG** — Teacher Telegram reminders. Sibling plan; mirrors this
-  with `teacher_telegram_subscriptions` + parallel webhook route handler /
-  binding flow. Out of scope here.
-- **BCS-DEF-4-PUSH** — PWA push channel (sibling plan, opens in parallel).
-- **BCS-DEF-4-TG-MULTI-CHAT** — One learner binding multiple chats (e.g.
-  personal + work). Requires UI expansion + scheduler iteration across
-  multiple active rows per account. MVP caps at 1.
-- **BCS-DEF-4-TG-RICHFORMAT** — `parse_mode=MarkdownV2` with bold/links/
-  inline keyboard. Visual upgrade; escape-char cost.
-- **BCS-DEF-4-TG-ALERT** — Operator alert on mass unbinds (>N in 24h spike).
-  Defends against RISK-6 (Telegram-side bug cascade).
-- **BCS-DEF-4-TG-RECOVERY** — Admin UI button to un-revoke a subscription
-  unsubscribed by `bot_blocked_by_user` (in case of false positive).
-- **BCS-DEF-4-TG-GDPR** — Null the chat-id on unbind to fully erase PII (the
-  binding-history row stays but chat-id column nulled).
-- **Localization of Telegram body across non-Russian browsers** — out of
-  scope here (whole platform is Russian-first MVP).
+- **BCS-DEF-5-TG** — Teacher Telegram reminders. Sibling plan; mirrors this with the teacher digest scheduler.
+- **BCS-DEF-4-PUSH** — PWA push channel.
+- **BCS-DEF-4-TG-MULTI-CHAT** — One learner binding multiple chats (e.g. personal + work). Requires accounts schema promotion to 1:N. MVP caps at 1.
+- **BCS-DEF-4-TG-RICHFORMAT** — `parse_mode=MarkdownV2` with bold/links/inline keyboard. Visual upgrade; escape-char cost.
+- **BCS-DEF-4-TG-ALERT** — Operator alert on mass unbinds (>N in 24h spike). Defends against false 403 cascade.
+- **BCS-DEF-4-TG-RECOVERY** — Admin UI button to un-revoke a subscription unsubscribed by auto-403 (false positive recovery).
+- **Localization** of Telegram body across non-Russian browsers — platform is Russian-first MVP.
 
 ---
 
@@ -955,4 +998,4 @@ Skill-Used: /codex-paranoia plan + /codex-paranoia wave
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
 
-— END OF DRAFT (awaiting `/codex-paranoia plan`) —
+— END OF DRAFT (rounds 1+2+3 closures applied; round-3 codex returned BLOCK with 2 BLOCKERs + 2 WARNs, all closed in-loop after the call; per /codex-paranoia hard-cap semantics this requires user sign-off before implementation) —
