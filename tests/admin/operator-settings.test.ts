@@ -106,13 +106,11 @@ describe('SETTING_SCHEMA invariants', () => {
     expect(probes).toContain('conflict-unresolved')
   })
 
-  it('teacher-daily-digest scope has the 3 expected keys', () => {
-    // BCS-DEF-5 (2026-05-19) regression pin — the digest cron's
+  it('teacher-daily-digest scope has the 4 expected keys', () => {
+    // BCS-DEF-5 + BCS-DEF-5-TG regression pin — the digest cron's
     // resolveOperatorSettingsForProbe('teacher-daily-digest') walks
-    // the schema by scope match. If a future refactor drops or
-    // renames any of these, the cron silently falls back to defaults
-    // (master switch OFF by default, so it stays safe — but
-    // observability would suffer). Pin them.
+    // the schema by scope match. Includes the BCS-DEF-5-TG Telegram
+    // master switch.
     const digestKeys = Object.entries(TS_SCHEMA)
       .filter(([, s]) => s.scope === 'teacher-daily-digest')
       .map(([k]) => k)
@@ -121,7 +119,14 @@ describe('SETTING_SCHEMA invariants', () => {
       'TEACHER_DIGEST_MASTER_SWITCH',
       'TEACHER_DIGEST_MAX_ATTEMPTS',
       'TEACHER_DIGEST_RATE_LIMIT_PER_TICK',
+      'TEACHER_DIGEST_TELEGRAM_ENABLED',
     ])
+  })
+
+  it('TEACHER_DIGEST_TELEGRAM_ENABLED defaults to OFF', () => {
+    // BCS-DEF-5-TG (2026-05-21) — operator must explicitly enable in
+    // /admin/settings/digest after activation.
+    expect(TS_SCHEMA.TEACHER_DIGEST_TELEGRAM_ENABLED.default).toBe(0)
   })
 
   it('TEACHER_DIGEST_MASTER_SWITCH defaults to OFF', () => {

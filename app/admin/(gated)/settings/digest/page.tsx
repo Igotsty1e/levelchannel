@@ -8,6 +8,7 @@ import {
   SETTING_SCHEMA,
   type SettingKey,
 } from '@/lib/admin/operator-settings'
+import { getTeacherTelegramSummary } from '@/lib/admin/teacher-telegram-summary'
 
 import { SettingEditor } from '../alerts/setting-editor'
 
@@ -33,13 +34,15 @@ const DIGEST_KEYS: ReadonlyArray<SettingKey> = [
   'TEACHER_DIGEST_MASTER_SWITCH',
   'TEACHER_DIGEST_RATE_LIMIT_PER_TICK',
   'TEACHER_DIGEST_MAX_ATTEMPTS',
+  'TEACHER_DIGEST_TELEGRAM_ENABLED',
 ]
 
 export default async function AdminDigestPage() {
-  const [settings, lastRun, sevenDay] = await Promise.all([
+  const [settings, lastRun, sevenDay, telegramSummary] = await Promise.all([
     listOperatorSettingsForAdmin(),
     getDigestLastRun(),
     getDigestSevenDaySummary(),
+    getTeacherTelegramSummary(),
   ])
 
   const settingsMigrationPending =
@@ -205,8 +208,73 @@ export default async function AdminDigestPage() {
             </p>
           )}
         </section>
+
+        <section
+          style={{
+            border: '1px solid var(--border)',
+            borderRadius: 8,
+            padding: '16px 20px',
+            background: 'var(--surface)',
+          }}
+        >
+          <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
+            Telegram-канал
+          </h2>
+          <p
+            style={{
+              color: 'var(--secondary)',
+              fontSize: 12,
+              lineHeight: 1.6,
+              margin: '0 0 12px 0',
+              maxWidth: 720,
+            }}
+          >
+            Канал по&nbsp;умолчанию выключен. Перед включением убедитесь, что
+            хотя&nbsp;бы один учитель привязал Telegram через{' '}
+            <code>/teacher/settings/digest</code>. Telegram-канал использует тот
+            же бот, что и&nbsp;напоминания учащимся (BCS-DEF-4-TG).
+          </p>
+          <TeacherTelegramSummaryBody summary={telegramSummary} />
+        </section>
       </div>
     </>
+  )
+}
+
+function TeacherTelegramSummaryBody({
+  summary,
+}: {
+  summary: Awaited<ReturnType<typeof getTeacherTelegramSummary>>
+}) {
+  if (summary.kind === 'migration_pending') {
+    return (
+      <p style={{ color: 'var(--secondary)', fontSize: 13 }}>
+        Данные недоступны до&nbsp;применения миграции <code>0071</code>.
+      </p>
+    )
+  }
+  return (
+    <ul
+      style={{
+        listStyle: 'none',
+        padding: 0,
+        margin: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 4,
+      }}
+    >
+      <li style={{ fontSize: 13 }}>
+        Активных привязок учителей:{' '}
+        <strong data-testid="teacher-tg-active-bindings">
+          {summary.activeBindings}
+        </strong>
+      </li>
+      <li style={{ fontSize: 13 }}>
+        <code>TELEGRAM_BOT_TOKEN</code>:{' '}
+        <strong>{summary.botTokenPresent ? 'задан' : 'не задан'}</strong>
+      </li>
+    </ul>
   )
 }
 
