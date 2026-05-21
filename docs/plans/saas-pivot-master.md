@@ -1,6 +1,6 @@
 # SaaS-pivot master plan (2026-05-21)
 
-**Status:** DRAFT — awaiting plan-paranoia + 4 final clarifications from product owner.
+**Status:** DRAFT — plan-paranoia rounds 1-5 closed (off-protocol per owner authorization).
 **Author:** Claude (orchestrator-mode).
 **Decision context:** chat session 2026-05-21 with product owner.
 
@@ -105,7 +105,7 @@ the same name → minimum churn on the 20+ read-sites surfaced by schema-survey.
 
 | # | Migration | Adds |
 |---|---|---|
-| `0073` | teacher_subscription_plans | Hardcoded reference table (4 rows: free / mid / pro / operator). Plan limits + features. |
+| `0073` | teacher_subscription_plans | Hardcoded reference table (4 rows: `free` / `mid` / `pro` / `operator-managed`). Plan limits + features. The slug `operator-managed` is canonical across schema + body + closures; never `operator`. |
 | `0074` | teacher_subscriptions | Per-teacher current plan + renewal_at + state. |
 | `0075` | pricing_tariffs.teacher_id + deleted_at | Step A: `add column teacher_id uuid` nullable. Step B (in same migration): mig 0083 fills the value. Step C: `alter ... set not null` once 0083 ran. Step D: `add column deleted_at timestamptz`. |
 | `0076a` | lesson_packages.teacher_id (column add, nullable) | `alter table add column teacher_id uuid` nullable. Cannot enforce NOT NULL yet — bootstrap account from 0083 hasn't been created. |
@@ -236,19 +236,27 @@ Two-step un-mark-then-cancel is by design. Documentation in `/teacher` cabinet U
 this: a "completed" lesson shows two buttons "Не было занятия (отменить отметку)" → reverts
 to booked + a separate "Отменить занятие".
 
+**no_show_* states.** Existing slot status enum includes `no_show_learner` and
+`no_show_teacher`. These are NOT completions for billing purposes — they're alternative
+terminal states. The pivot keeps them on `lesson_slots.status` (no lesson_completions row
+inserted for no-show). Backfill in mig 0079 covers ONLY `status='completed'`. Debt + summary
+reads after Day 5B treat no-show as "not-completed-yet" (does not bump learner balance);
+operator can mark a no-show as billable via a separate operator-only path (deferred epic).
+Cancel-after-no-show is allowed (slot returns to status='cancelled' via existing mutation).
+
 **Migration sequence:**
 
 1. Mig 0079 creates `lesson_completions` + both triggers + `immutable_at` column.
 2. Backfill: for every `lesson_slots WHERE status='completed'` insert a row with
    `amount` snapshot from current tariff price + `completed_at = end_at` +
    `immutable_at = now()` (historical rows are immutable immediately).
-   `marked_by_account_id = NULL` (synthetic).
+   `marked_by_account_id = NULL` (synthetic). `status='no_show_*'` rows are NOT backfilled.
 3. Auto-complete cron DISABLED in the same epic (per Owner Q-2 decision).
 4. Debt read at `lib/billing/packages/debt.ts:41` switches to LEFT JOIN `lesson_completions`.
 5. `teacher-learners.ts:29` similarly.
 6. `mutations-cancel.ts` extended with the `'completed'` rejection rules.
-7. `lesson_slots.status` enum keeps `'completed'` value but route handlers stop writing it
-   directly — the trigger is the SoT.
+7. `lesson_slots.status` enum keeps `'completed'` + `'no_show_*'` values; route handlers
+   stop writing `'completed'` directly (trigger is the SoT). `no_show_*` writes stay as-is.
 
 Epic 5 implementation note: split into 5A (schema 0079/0080 + triggers + 48h immutability
 + teacher UI to mark complete + cabinet read) and 5B (auto-cron removal + debt-reader
@@ -267,7 +275,7 @@ rewrite + cancel-after-complete interaction + reverse trigger end-to-end test).
 **Balance formula:** `SUM(amount_net) GROUP BY teacher_account_id`. Always derivable from
 the ledger. Negative balance = operator overpaid (needs recovery — UI surfaces it).
 
-**Migration 0081 schema:**
+**Migration 0081 schema (two tables — ledger + payout coverage):**
 
 ```sql
 create table teacher_earnings (
@@ -277,26 +285,31 @@ create table teacher_earnings (
   amount_net numeric(10,2) not null,
   -- For accrued: positive amount. For paid_out / clawback: negative.
   payment_order_id text references payment_orders(invoice_id),
-  -- Linked source row: accrued links to the payment; paid_out has NULL (linked via payout_batch_id);
-  -- clawback links to the refunded payment_order_id.
+  -- Set on accrued + clawback (links to the source payment).
   refund_id uuid references refund_records(id),
-  -- Only set on clawback rows.
-  payout_batch_id uuid,
-  -- Only set on paid_out rows; groups multiple accrued rows that this payout covers.
+  -- Set on clawback rows only.
   related_completion_id uuid references lesson_completions(id),
   related_accrued_id uuid references teacher_earnings(id),
   -- Clawback rows link to the original accrued row they reverse.
   created_at timestamptz not null default now(),
-  -- Sign invariant: positive for accrued, negative for paid_out/clawback
   check (
     (kind = 'accrued' and amount_net > 0)
     or (kind in ('paid_out','clawback') and amount_net < 0)
   )
 );
+
+-- A payout row aggregates N accrued rows. Many-to-many join.
+create table teacher_earnings_payout_coverage (
+  payout_id uuid not null references teacher_earnings(id) on delete cascade,
+  accrued_id uuid not null references teacher_earnings(id) on delete cascade,
+  primary key (payout_id, accrued_id)
+);
+
 create index teacher_earnings_balance_idx on teacher_earnings (teacher_account_id, created_at desc);
-create index teacher_earnings_payout_idx on teacher_earnings (payout_batch_id) where payout_batch_id is not null;
 create index teacher_earnings_accrued_unpaid_idx on teacher_earnings (teacher_account_id) where kind = 'accrued';
 ```
+
+When operator pays out: INSERT one `paid_out` row (negative amount_net = sum of selected accrued); INSERT N rows in `teacher_earnings_payout_coverage` pairing the payout row's id with each covered accrued's id.
 
 **Canonical queries:**
 
@@ -306,16 +319,15 @@ select coalesce(sum(amount_net), 0)
   from teacher_earnings
  where teacher_account_id = $1;
 
--- rows eligible for the next payout batch (accrued rows NOT already covered by a paid_out
--- row in any prior payout_batch). Uses the related_accrued_id trail.
+-- accrued rows eligible for the next payout batch
+-- (not yet in any payout_coverage AND not yet clawback'd)
 select e.id, e.amount_net, e.payment_order_id
   from teacher_earnings e
  where e.teacher_account_id = $1
    and e.kind = 'accrued'
    and not exists (
-     select 1 from teacher_earnings p
-      where p.kind = 'paid_out'
-        and p.related_accrued_id = e.id
+     select 1 from teacher_earnings_payout_coverage cov
+      where cov.accrued_id = e.id
    )
    and not exists (
      select 1 from teacher_earnings c
@@ -361,7 +373,7 @@ bootstrap plan-4 teacher account (logged in audit history).
 `teacher_subscriptions` — only plan-4 teachers' orders accepted. Mid/Pro/Free teachers do
 NOT get a `/pay` surface; their learners pay them out-of-band.
 
-### 2.9 Bootstrap teacher account — 2-step row migration (R2-1 closure)
+### 2.9 Bootstrap teacher account — 7-step row migration (R2-1 closure)
 
 The current production account (let's call it `OLD`) has BOTH admin role AND has been the
 implicit teacher for every slot/integration/Telegram binding. The role model forbids
@@ -420,7 +432,8 @@ Subscription state per teacher impacts both teacher-side and learner-side routes
 | Mid/Pro active | ✅ (cap) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | past_due (≤3 days) | ❌ | ❌ | ✅ | ✅ | ✅ existing | ✅ | ✅ |
 | past_due (>3 days) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
-| cancelled (period ended) | ❌ | ❌ (downgrades to Free over-cap) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| cancelled — within Free cap | ✅ (cap=1) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| cancelled — over Free cap | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | suspended | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
 
 **Scope helpers:** `requireActiveSubscription(scope, teacherAccountId)` wraps every write
@@ -641,13 +654,25 @@ flows for both roles.
 Round-2 WARN 8 closure: Day 5 split into 5A/5B.
 
 **Day 1 — Schema + bootstrap** (Epic 1A)
-- Migrations 0073, 0074, 0075, 0076a, 0078, 0083 (in that order). Then 0076b runs AFTER 0083 fills bootstrap teacher_id. Then 0076c. Then 0077.
-- Bootstrap teacher account migration (§2.9): mint NEW pure-teacher account inheriting
-  prod email + password; swap OLD admin email to synthetic; revoke OLD sessions; move
-  teacher-side rows + learner links.
-- `learner_teacher_links` backfilled from `assigned_teacher_id` (single link per learner).
-- ZERO route changes — schema-only PR.
 
+Canonical migration order (single source of truth — overrides any other ordering hint):
+
+1. `0073` — teacher_subscription_plans reference rows.
+2. `0074` — teacher_subscriptions per-teacher state.
+3. `0075` — `pricing_tariffs.teacher_id` (nullable) + `deleted_at`.
+4. `0076a` — `lesson_packages.teacher_id` (nullable).
+5. `0078` — teacher_invites.
+6. `0079` — lesson_completions + triggers + `immutable_at`.
+7. `0083` — bootstrap row-MOVE migration (§2.9). REQUIRES 0073-0078 + 0076a + 0079 done.
+8. `0076b` — `lesson_packages` drop global UNIQUE(slug), add UNIQUE(teacher_id, slug), set NOT NULL. RUNS AFTER 0083.
+9. `0076c` — `package_purchases.teacher_id` NOT NULL backfilled from lesson_packages.
+10. `0077` — learner_teacher_links; backfilled from `assigned_teacher_id` (single link per learner).
+11. `0081` — teacher_earnings ledger (initialized empty; populated by Plan-4 webhook in Epic 5).
+12. `0085` — payment_orders.teacher_account_id (nullable add, backfill via slot/package chain, then NOT NULL).
+
+Day 1 ships all 12 migrations + the bootstrap account migration (§2.9 — mint NEW pure-teacher inheriting prod email + password; swap OLD admin email to synthetic; revoke OLD sessions; move teacher-side rows + learner links).
+
+ZERO route changes on Day 1 — schema-only PR.
 **Day 2 — Teacher self-reg + invite + current-teacher context** (Epic 1B)
 - `/register?role=teacher` route landed (plan-doc PR #339 already drafted).
 - HMAC invite-token primitive.
