@@ -164,6 +164,13 @@ Affected read-sites (per schema-survey 2026-05-21):
 - `app/cabinet/book/[ymd]/[slotId]/page.tsx:38`
 - `app/cabinet/settings/calendar/page.tsx:39`
 - `lib/auth/accounts.ts:368` (assignTeacher mutation — re-purposed to write `learner_teacher_links`)
+- `lib/auth/teacher-invites.ts:322-367` (invite redeem — currently a writable-CTE atomic
+  statement that sets `assigned_teacher_id` + re-checks the teacher role in the same
+  snapshot). Pivot **rewrites this single statement** to additionally INSERT a row into
+  `learner_teacher_links` in the same writable CTE, so the race-free atomic guarantee
+  (BLOCKER#1 from `teacher-self-reg-invite.md` round-3) is preserved. The
+  `assigned_teacher_id` write stays during the dual-write release cycle; mig 0084 drops
+  the column once all reads are switched.
 - Migration 0023 column stays for one release cycle then dropped in mig 0084.
 
 These ALL change atomically in Epic 1 (NOT deferred to Epic 7). Backfill from
@@ -236,13 +243,27 @@ Two-step un-mark-then-cancel is by design. Documentation in `/teacher` cabinet U
 this: a "completed" lesson shows two buttons "Не было занятия (отменить отметку)" → reverts
 to booked + a separate "Отменить занятие".
 
-**no_show_* states.** Existing slot status enum includes `no_show_learner` and
-`no_show_teacher`. These are NOT completions for billing purposes — they're alternative
-terminal states. The pivot keeps them on `lesson_slots.status` (no lesson_completions row
-inserted for no-show). Backfill in mig 0079 covers ONLY `status='completed'`. Debt + summary
-reads after Day 5B treat no-show as "not-completed-yet" (does not bump learner balance);
-operator can mark a no-show as billable via a separate operator-only path (deferred epic).
-Cancel-after-no-show is allowed (slot returns to status='cancelled' via existing mutation).
+**no_show_* states + debt bridge.** Existing slot status enum includes `no_show_learner`
+and `no_show_teacher`. Current prod billing semantics:
+- `no_show_learner` → IS BILLABLE (learner skipped — they still owe). Current debt query
+  at `lib/billing/packages/debt.ts:49,133` counts `status IN ('completed','no_show_learner')`.
+- `no_show_teacher` → NOT billable (teacher's fault).
+
+Pivot preserves this contract:
+- Mig 0079 backfills BOTH `status='completed'` AND `status='no_show_learner'` rows into
+  `lesson_completions` with `amount` snapshot from the tariff. The new row has a
+  `was_no_show` boolean column (default false; true for backfilled no_show_learner rows
+  and for any future "marked as no-show but billable" path). Schema:
+  ```sql
+  alter table lesson_completions
+    add column was_no_show boolean not null default false;
+  ```
+- `no_show_teacher` rows stay on `lesson_slots.status` only — no completion row, no debt.
+- Debt query at Day 5B rewrites to read `lesson_completions` directly (covers both
+  completed-on-time + no-show-billable via the unified table).
+- Teacher's "проведено" UI can also offer "был но не пришёл" toggle that inserts
+  completion with `was_no_show=true` (out-of-scope for MVP — toggle deferred; backfill
+  handles the existing data).
 
 **Migration sequence:**
 
@@ -528,7 +549,7 @@ erDiagram
 
 ### Epic 1: schema + teacher self-registration (SAAS-3-IMPL)
 
-- Migrations: 0073, 0074, 0075, 0076a, 0077, 0078, 0079, 0083 (bootstrap), 0076b, 0076c, 0081, 0085. See §2.1 for the exact ordering.
+- Migrations: 0073, 0074, 0075, 0076a, 0078, 0083 (bootstrap), 0076b, 0076c, 0077, 0081, 0085. See §5 Day 1 for the exact 11-step order. Mig 0079 NOT in Epic 1 — lands in Epic 5 Day 5A.
 - `/register?role=teacher` route activated. Plan-doc PR #339-area already drafted.
 - HMAC invite-token primitive: `lib/auth/teacher-invites.ts` (TEACHER_INVITE_SECRET env already shipped).
 - Backfill: the SOLE existing teacher (the operator-team account being row-migrated in mig 0083) gets `teacher_subscriptions(plan='operator-managed', state='active')` — per §2.9 + §4.C. No other "existing teachers" on prod.
@@ -662,15 +683,14 @@ Canonical migration order (single source of truth — overrides any other orderi
 3. `0075` — `pricing_tariffs.teacher_id` (nullable) + `deleted_at`.
 4. `0076a` — `lesson_packages.teacher_id` (nullable).
 5. `0078` — teacher_invites.
-6. `0079` — lesson_completions + triggers + `immutable_at`.
-7. `0083` — bootstrap row-MOVE migration (§2.9). REQUIRES 0073-0078 + 0076a + 0079 done.
-8. `0076b` — `lesson_packages` drop global UNIQUE(slug), add UNIQUE(teacher_id, slug), set NOT NULL. RUNS AFTER 0083.
-9. `0076c` — `package_purchases.teacher_id` NOT NULL backfilled from lesson_packages.
-10. `0077` — learner_teacher_links; backfilled from `assigned_teacher_id` (single link per learner).
-11. `0081` — teacher_earnings ledger (initialized empty; populated by Plan-4 webhook in Epic 5).
-12. `0085` — payment_orders.teacher_account_id (nullable add, backfill via slot/package chain, then NOT NULL).
+6. `0083` — bootstrap row-MOVE migration (§2.9). REQUIRES 0073-0078 + 0076a done. **Mig 0079 NOT in Day 1 — deferred to Day 5A (Epic 5).**
+7. `0076b` — `lesson_packages` drop global UNIQUE(slug), add UNIQUE(teacher_id, slug), set NOT NULL. RUNS AFTER 0083.
+8. `0076c` — `package_purchases.teacher_id` NOT NULL backfilled from lesson_packages.
+9. `0077` — learner_teacher_links; backfilled from `assigned_teacher_id` (single link per learner).
+10. `0081` — teacher_earnings ledger (initialized empty; populated by Plan-4 webhook in Epic 5).
+11. `0085` — payment_orders.teacher_account_id (nullable add, backfill via slot/package chain, then NOT NULL).
 
-Day 1 ships all 12 migrations + the bootstrap account migration (§2.9 — mint NEW pure-teacher inheriting prod email + password; swap OLD admin email to synthetic; revoke OLD sessions; move teacher-side rows + learner links).
+Day 1 ships 11 migrations + the bootstrap account migration (§2.9 — mint NEW pure-teacher inheriting prod email + password; swap OLD admin email to synthetic; revoke OLD sessions; move teacher-side rows + learner links). Mig 0079 (lesson_completions) lands on Day 5A.
 
 ZERO route changes on Day 1 — schema-only PR.
 **Day 2 — Teacher self-reg + invite + current-teacher context** (Epic 1B)
