@@ -312,12 +312,32 @@ create table lesson_completions (
 );
 ```
 
-`markLessonCompleted({slotId, teacherId, wasNoShow})` writes with **`INSERT ... ON
-CONFLICT (slot_id) DO NOTHING RETURNING id`**. Caller checks the RETURNING shape:
-- 1 row → fresh completion (forward trigger flipped status).
-- 0 rows → row already exists. Caller does NOT raise; idempotent semantics. Caller MAY
-  read back the existing row to confirm `was_no_show` matches; mismatch is logged as a
-  WARN (concurrent admin override) but not raised — last writer loses, first writer wins.
+`markLessonCompleted({slotId, teacherId, wasNoShow})` writes with a single TX that performs
+THREE steps (round-26 BLOCKER #2 closure — was previously only step 3):
+
+1. **Lock the slot row**: `select id, status, end_at, teacher_account_id from lesson_slots
+   where id = $slotId for update`. Without the row lock, a concurrent cancel could flip
+   status between the eligibility-check and the insert.
+2. **Eligibility gate** (raises 409, no insert):
+   - `lesson_slots.teacher_account_id = $teacherId` — anti-spoof, helper does NOT trust
+     the caller's `teacherId` against the slot.
+   - `lesson_slots.status = 'booked'` — completed/cancelled/open slots are rejected.
+   - `lesson_slots.end_at <= now()` — future slots are rejected (state machine in §2.3:
+     "end_at passes → eligible for проведено mark"). Without this gate, a teacher (or
+     admin tooling) could insert a `lesson_completions` row for a future slot; the
+     forward trigger would no-op (because status is `booked` but the slot has not yet
+     ended), yet debt/settlement queries would still find the completion row and treat
+     it as real money owed. Closes the silent-row failure mode that round-26 surfaced.
+3. **Insert with conflict semantics**: `INSERT ... ON CONFLICT (slot_id) DO NOTHING
+   RETURNING id`. Caller checks the RETURNING shape:
+   - 1 row → fresh completion (forward trigger flipped status to `completed` / `no_show_learner`).
+   - 0 rows → row already exists. Caller does NOT raise; idempotent semantics. Caller MAY
+     read back the existing row to confirm `was_no_show` matches; mismatch is logged as a
+     WARN (concurrent admin override) but not raised — last writer loses, first writer wins.
+
+The 3-step contract is enforced in the helper, NOT scattered across callers. All four
+billable-event writers (teacher self-mark UI, admin route, automation if/when re-enabled,
+plan-4 webhook auto-settle path) go through this single helper.
 
 **Triggers (Postgres):**
 
@@ -358,25 +378,36 @@ trigger does. `status='no_show_teacher'` remains a direct write (no completion
 row, not billable, separate path through existing `mark-no-show-teacher`
 mutation).
 
-**48h immutability — application-side guard (NOT a CHECK).** Postgres CHECK does not fire
-on DELETE, so the 48h immutability is enforced in the un-mark route:
+**48h immutability + financial-link guard (round-26 BLOCKER #1 closure).** Postgres CHECK
+does not fire on DELETE, so un-mark is gated app-side AND DB-side. The route now blocks
+a delete if ANY of three conditions hold (was previously 48h only):
 
 ```ts
 // app/api/teacher/lessons/[id]/uncomplete/route.ts
 async function POST(req) {
-  // gate: lookup completion row, validate teacher ownership,
-  // validate created_at > now() - 48h
-  // if older → 409 immutable
-  // else → DELETE lesson_completions WHERE id = $1 (trigger flips slot back to booked)
+  // Gate (under FOR UPDATE row lock on the completion row):
+  // (1) validate teacher ownership.
+  // (2) validate created_at > now() - 48h → if older 409 immutable.
+  // (3) check any lesson_settlement_completions row exists for this completion → if yes,
+  //     409 settled (settlement already counted this completion; un-mark would lose the
+  //     financial trail or FK-fail).
+  // (4) check any teacher_earnings.related_completion_id = $id → if yes, 409 accrued
+  //     (plan-4 path: ledger row exists; un-mark would orphan it).
+  // If all gates pass → DELETE lesson_completions WHERE id = $1 (trigger flips slot back
+  // to booked). Compensating reversal flow is NOT implemented in MVP — once money has
+  // moved, the un-mark window is closed even if still < 48h.
 }
 ```
 
-Additionally, daily retention sweep `scripts/db-retention-cleanup.mjs` is updated to mark
-`lesson_completions.immutable_at = created_at + 48h` once that timestamp passes. DB-level
-defense-in-depth against direct SQL DELETEs comes from a `BEFORE DELETE` trigger that
-RAISEs an exception when `OLD.immutable_at IS NOT NULL` — the trigger blocks the DELETE,
-not an index. The application-side un-complete route also rejects 409 on immutable rows;
-the trigger is the second line of defense.
+**DB-side defense-in-depth (mig 0079).** BEFORE DELETE trigger raises an exception when
+ANY of: `OLD.immutable_at IS NOT NULL` (48h elapsed), `EXISTS(select 1 from
+lesson_settlement_completions where completion_id = OLD.id)`, or
+`EXISTS(select 1 from teacher_earnings where related_completion_id = OLD.id)`. Three
+independent guards; the application-side route is the friendly-error layer, the trigger
+is the safety net against direct SQL DELETE.
+
+Daily retention sweep `scripts/db-retention-cleanup.mjs` is updated to mark
+`lesson_completions.immutable_at = created_at + 48h` once that timestamp passes.
 
 **Cancel-after-completion contract:**
 
@@ -1146,4 +1177,4 @@ Master plan-doc itself goes through `/codex-paranoia plan` rounds 1-3 before Epi
 
 ---
 
-— END OF DRAFT, plan-paranoia rounds 1-25 closed (off-protocol per owner authorization) —
+— END OF DRAFT, plan-paranoia rounds 1-26 closed (off-protocol per owner authorization) —
