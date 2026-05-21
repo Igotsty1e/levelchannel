@@ -164,12 +164,24 @@ export async function runTeacherTelegramBlock({
     // is IMMEDIATELY terminal — there is NO across-tick retry budget
     // (candidate-set filter excludes email_sent=true on subsequent
     // ticks; §6 RISK-2).
+    // BCS-DEF-5-TG-WAVE-PARANOIA round-2 WARN 2 closure: track
+    // post-send success state in a local boolean. If the helper crashes
+    // AFTER tgSend returned ok=true (e.g. during the success UPDATE),
+    // the outer catch MUST NOT overwrite the row to 'send_failed' —
+    // the message was actually delivered. Instead we log a phantom
+    // discrepancy (operator-debug only) and leave the dedup row in
+    // its current state. The candidate-set filter will exclude on
+    // next tick regardless.
+    let postSendSucceeded = false
     const result = await tgSend({
       botToken: tgToken,
       chatId,
       text: body,
       retryMax: 2,
     })
+    if (result.ok) {
+      postSendSucceeded = true
+    }
 
     // Step 6 — success.
     if (result.ok) {
@@ -297,7 +309,26 @@ export async function runTeacherTelegramBlock({
       accountId,
       ymd,
       err: redactedCrash,
+      postSendSucceeded,
     })
+    // BCS-DEF-5-TG-WAVE-PARANOIA round-2 WARN 2 closure: if tgSend
+    // ALREADY reported ok=true before the crash, the message was
+    // delivered. Writing 'send_failed' would be a false-positive
+    // (operator stats say failed; user actually received it). Log
+    // at error level + leave the dedup row in its current (pending)
+    // state. The candidate-set filter excludes email_sent=true rows
+    // so we won't re-send a duplicate. The phantom-pending row is
+    // detectable via a future operator probe: "rows with
+    // postSendSucceeded log line but telegram_sent=false". Acceptable
+    // trade-off vs. recording a false failure.
+    if (postSendSucceeded) {
+      logJson(
+        'error',
+        'post-send crash — Telegram delivered but commit failed; leaving row in pending state',
+        { accountId, ymd },
+      )
+      return { tg: 'terminal_send_failed', error: 'post_send_crash_pending' }
+    }
     try {
       await client.query('begin')
       // attempts may be 0 (crash before step 4) or 1 (crash after
