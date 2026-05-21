@@ -75,6 +75,31 @@ If the third command shows a DIFFERENT lock key (e.g. `'tgbind:'`) OR the fourth
 
 Until both items above happen AND the four grep commands return expected output, this plan stays DRAFT and `BCS-DEF-5-TG` in `ENGINEERING_BACKLOG.md:57` keeps its annotation. The PR for this plan opens AFTER all four are confirmed.
 
+## 0b'. Wave-paranoia round-2 BLOCKER 1 (2026-05-21)
+
+Wave-paranoia round 2 surfaced: the current production "teacher" identity is hybrid
+`admin+teacher`, and `/teacher` SSR + Server Actions reject hybrid accounts (`lib/auth/
+guards.ts:160` + `lib/auth/accounts.ts:259`). That means the BCS-DEF-5-TG bind surface
+at `/teacher/settings/digest` is unreachable for the only "teacher" the platform has on
+production today.
+
+**Closure (deferred-activation gate, not code change):**
+
+BCS-DEF-5-TG ships its code path correctly. Activation in production requires one of:
+
+1. **SaaS-pivot Epic 1 ships first** (`docs/plans/saas-pivot-master.md` §2.9 — bootstrap
+   teacher account migration). After that, the new teacher-only account binds Telegram
+   via `/teacher/settings/digest`, operator flips `TEACHER_DIGEST_TELEGRAM_ENABLED=1`.
+
+2. **Operator manually creates a teacher-only account** for testing (no admin role),
+   binds, operator flips master switch. This account becomes the bootstrap teacher.
+
+Until either path lands, `TEACHER_DIGEST_TELEGRAM_ENABLED` stays at 0 (the default).
+The Code path is **shipped but dormant** — same posture as BCS-DEF-1-TG and BCS-DEF-4-TG
+between their merge and their activation.
+
+This is recorded as a SHIPPED-WITH-DOCUMENTED-DEFERRAL on the wave-paranoia trailer.
+
 ## 0c. Likely re-paranoia trigger
 
 The handshake-table shape, retention contract, and webhook route shape are **inherited from BCS-DEF-4-TG-LINK**. If that wave's shape changes mid-flight (likely — it's been through 3+ paranoia rounds and an escalation), this plan must be **re-paranoia-reviewed** before implementation. The §2.2.1 + §2.2.2 + §2.5 sections explicitly call out which primitives are inherited and from where.

@@ -179,6 +179,12 @@ async function purgeAccounts(pool) {
                   -- code paths that might join accounts directly.
                   learner_telegram_enabled = false,
                   learner_telegram_chat_id = null,
+                  -- BCS-DEF-5-TG (2026-05-21) — mirror retention scrub
+                  -- for the teacher Telegram opt-in. Migration 0071
+                  -- promises this; without the UPDATE teacher chat_id
+                  -- would survive as residual PII (152-FZ defence).
+                  teacher_telegram_enabled = false,
+                  teacher_telegram_chat_id = null,
                   purged_at = now(),
                   updated_at = now()
             where id = $1

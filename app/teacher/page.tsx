@@ -159,6 +159,17 @@ export default async function TeacherPage() {
         >
           {isCalendarConnected ? 'Настройки →' : 'Подключить →'}
         </Link>
+        <Link
+          href="/teacher/settings/digest"
+          style={{
+            color: 'var(--secondary)',
+            textDecoration: 'none',
+            fontSize: 13,
+            marginLeft: 16,
+          }}
+        >
+          Дайджест занятий →
+        </Link>
       </div>
       <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 8 }}>
         Мой календарь

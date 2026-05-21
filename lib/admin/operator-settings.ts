@@ -275,6 +275,21 @@ export const SETTING_SCHEMA = {
       'max retries for a single teacher digest within the firing window before terminal send_failed.',
     scope: 'teacher-daily-digest',
   },
+  // BCS-DEF-5-TG (2026-05-21) — Telegram channel for the daily teacher
+  // digest. Plan: docs/plans/bcs-def-5-tg-teacher-telegram-reminders.md §2.3.
+  // Default OFF — operator flips after at least one teacher has bound
+  // via /teacher/settings/digest. Reuses TELEGRAM_BOT_TOKEN +
+  // webhook from BCS-DEF-4-TG (no setWebhook re-call).
+  TEACHER_DIGEST_TELEGRAM_ENABLED: {
+    kind: 'int',
+    default: 0,
+    min: 0,
+    max: 1,
+    envName: 'TEACHER_DIGEST_TELEGRAM_ENABLED',
+    description:
+      'master switch (1=on/0=off) for sending the daily teacher digest via Telegram (in addition to email); reuses TELEGRAM_BOT_TOKEN and the webhook from BCS-DEF-4-TG. Per-teacher opt-in still required (accounts.teacher_telegram_enabled=true after /start <code> handshake).',
+    scope: 'teacher-daily-digest',
+  },
   // BCS-DEF-4 (2026-05-19) — learner lesson reminder scheduler.
   // Three keys: email master switch + window + per-tick send cap.
   // No CSV-offsets, no late-tolerance, no max-attempts (one-shot
