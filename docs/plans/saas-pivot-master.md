@@ -236,9 +236,11 @@ async function POST(req) {
 ```
 
 Additionally, daily retention sweep `scripts/db-retention-cleanup.mjs` is updated to mark
-`lesson_completions.immutable_at = created_at + 48h` once that timestamp passes; a partial
-unique index `WHERE immutable_at IS NULL` lets the reverse trigger fire only on rows that
-are still un-mark-eligible (defense-in-depth in case of direct SQL access).
+`lesson_completions.immutable_at = created_at + 48h` once that timestamp passes. DB-level
+defense-in-depth against direct SQL DELETEs comes from a `BEFORE DELETE` trigger that
+RAISEs an exception when `OLD.immutable_at IS NOT NULL` — the trigger blocks the DELETE,
+not an index. The application-side un-complete route also rejects 409 on immutable rows;
+the trigger is the second line of defense.
 
 **Cancel-after-completion contract:**
 
@@ -631,7 +633,7 @@ teacher sees "учитель добавил вам пакет" — no payment UI
 - Migrations 0079, 0080.
 - `/teacher/learners/[id]` page: list of completions + balance + settle button.
 - `lib/teacher-ledger/` module:
-  - `markLessonCompleted(slotId, teacherId)` — TX, idempotent, 48h un-mark window.
+  - `markLessonCompleted({slotId, teacherId, wasNoShow})` — TX, idempotent, 48h un-mark window. Helper inserts the `lesson_completions` row; the forward trigger derives `lesson_slots.status` from `wasNoShow`.
   - `settleLessons(learnerId, teacherId, amount, completionIds?)` — partial or full.
 - `/cabinet/[teacher-tab]` learner view: balance owed + history per teacher.
 - Plan-4 path: completion still recorded BUT settlement is automatic via Plan-4 webhook
@@ -744,7 +746,7 @@ ZERO route changes on Day 1 — schema-only PR.
 - **All four lifecycle writers refactored to go through a single `markLessonCompleted()` helper that inserts `lesson_completions` first, then lets the trigger flip `lesson_slots.status`. NO direct status writer remains after Day 5A:**
   1. Teacher self-mark in `/teacher/learners/[id]` (new UI in this day).
   2. `lib/scheduling/slots/mutations-no-show.ts` no_show_learner branch.
-  3. Admin mark route `/api/admin/slots/[id]/mark` via `lib/scheduling/slots/lifecycle.ts:markSlotLifecycle` — rewritten to call the helper.
+  3. Admin mark route `/api/admin/slots/[id]/mark` via `lib/scheduling/slots/lifecycle.ts:markSlotLifecycle` — rewritten with explicit dispatch on the payload's `kind` field: `kind in ('completed','no_show_learner')` → call `markLessonCompleted({slotId, teacherId, wasNoShow: kind==='no_show_learner'})`; `kind='no_show_teacher'` → direct-write path (unchanged from current). The route signature stays the same.
   4. Daily auto-complete cron in `scripts/auto-complete-slots.mjs` — rewritten to INSERT lesson_completions (not direct UPDATE status). Cron stays alive for Day 5A; its disable lands in Day 5B once teacher UI is ready.
 - `no_show_teacher` mutation stays as direct status write (not billable, no completion row).
 - `/teacher/learners/[id]` page basic shape — list completions + mark/un-mark button.
