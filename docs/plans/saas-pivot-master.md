@@ -186,11 +186,13 @@ New world: `lesson_completions` is the source of truth. `slot.status` is DERIVED
 **Triggers (Postgres):**
 
 ```sql
--- Forward: insert completion → flip status
+-- Forward: insert completion → flip status to derived target.
+-- was_no_show=false → status='completed'; was_no_show=true → status='no_show_learner'.
 create or replace function lesson_completion_apply() returns trigger as $$
 begin
   update lesson_slots
-     set status = 'completed', updated_at = now()
+     set status = case when new.was_no_show then 'no_show_learner' else 'completed' end,
+         updated_at = now()
    where id = new.slot_id and status = 'booked';
   return new;
 end$$ language plpgsql;
@@ -198,18 +200,27 @@ create trigger lesson_completion_apply_t
   after insert on lesson_completions
   for each row execute procedure lesson_completion_apply();
 
--- Reverse: delete completion → flip status back
+-- Reverse: delete completion → flip status back to 'booked' from either terminal state.
 create or replace function lesson_completion_revert() returns trigger as $$
 begin
   update lesson_slots
      set status = 'booked', updated_at = now()
-   where id = old.slot_id and status = 'completed';
+   where id = old.slot_id and status in ('completed', 'no_show_learner');
   return old;
 end$$ language plpgsql;
 create trigger lesson_completion_revert_t
   after delete on lesson_completions
   for each row execute procedure lesson_completion_revert();
 ```
+
+`markLessonCompleted({slotId, teacherId, wasNoShow})` helper signature accepts a
+`wasNoShow` boolean. All four writers pass this kind through; the trigger uses
+`was_no_show` to derive the target status. `no_show_learner` is therefore set
+indirectly via the trigger, NOT by direct status write. After Day 5A: no writer
+sets `status='completed'` or `status='no_show_learner'` directly — only the
+trigger does. `status='no_show_teacher'` remains a direct write (no completion
+row, not billable, separate path through existing `mark-no-show-teacher`
+mutation).
 
 **48h immutability — application-side guard (NOT a CHECK).** Postgres CHECK does not fire
 on DELETE, so the 48h immutability is enforced in the un-mark route:
@@ -261,15 +272,13 @@ for debt, BOTH historical backfill AND runtime status-flips funnel into completi
   insert a row with `was_no_show=false`. For every `lesson_slots WHERE status='no_show_learner'`
   insert a row with `was_no_show=true`. `amount` snapshot from current tariff price.
   `no_show_teacher` rows are NOT backfilled (still not billable).
-- **Runtime status-flip trigger (mig 0079):** the existing `mark-no-show-learner` mutation
-  in `lib/scheduling/slots/mutations-no-show.ts` is updated atomically: in the same TX as
-  the `UPDATE lesson_slots SET status='no_show_learner'`, also INSERT a row into
-  `lesson_completions(slot_id, was_no_show=true, amount=tariff_snapshot, completed_at=end_at,
-  marked_by_account_id=$teacher)`. The forward trigger sets status — but here we're already
-  flipping status manually; the trigger short-circuits if the row already has the target
-  status. (Alternative: a separate ON UPDATE trigger on lesson_slots that fires when
-  status flips to no_show_learner — same effect, less coupling. Chosen approach: trigger.)
-- **`no_show_teacher` UPDATE** does NOT trigger a completion insert (not billable).
+- **Runtime status-flip via the unified helper.** The existing `mark-no-show-learner`
+  mutation in `lib/scheduling/slots/mutations-no-show.ts` is refactored to call
+  `markLessonCompleted({slotId, teacherId, wasNoShow: true})`. Helper only INSERTs the
+  completion row; the forward trigger derives the status from `was_no_show` (→
+  `'no_show_learner'`). No direct status write in this path after Day 5A.
+- **`no_show_teacher` UPDATE** still goes through `mark-no-show-teacher` mutation,
+  writes `status='no_show_teacher'` directly, no completion row (not billable).
 - Debt query at Day 5B rewrites to read `lesson_completions` directly — covers both
   completed-on-time + no-show-billable via the unified table.
 
