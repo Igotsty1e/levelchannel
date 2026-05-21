@@ -48,6 +48,57 @@ BLOCKER was finally resolved. Body wins on any drift.
 | 9 | §2.11 | Phase-1 app-query discipline + CI grep guard. RLS deferred to phase-2 hardening epic. |
 | 10 | §5 | Day 5 split into 5A/5B → 8-day MVP. Recurrent billing + public upgrades + payout tooling deferred to post-MVP epics. |
 
+## 0z. Existing surface inventory (company-layer rule)
+
+Grep commands run during plan drafting to discover the existing surfaces the pivot
+touches (per company-layer `Survey-before-plan` rule). Companion docs have the full
+breakdown:
+
+- `docs/plans/saas-pivot-schema-survey.md` — `pricing_tariffs` / `lesson_packages` /
+  `accounts.assigned_teacher_id` / `lesson_slots` consumer inventory.
+- `docs/plans/saas-pivot-landing-research-inventory.md` — landing copy assets.
+
+**Per-surface disposition** (NEW = create; EXTEND = touch existing module; KEEP = unchanged):
+
+| Surface | Disposition | Rationale |
+|---|---|---|
+| `pricing_tariffs` table | EXTEND | Add `teacher_id` + `deleted_at`. No rename, no shadow table (R2-6). |
+| `lesson_packages` table | EXTEND | Add `teacher_id`. Slug UNIQUE flips to composite (R2-5). |
+| `package_purchases` | EXTEND | Add `teacher_id` (mig 0076c). |
+| `payment_orders` | EXTEND | Add `teacher_account_id` (mig 0085). |
+| `accounts` | EXTEND | Add `audit_email_history` + `teacher_account_migration_marker` (mig 0083). |
+| `lesson_slots` | KEEP | Status enum unchanged; `teacher_account_id` re-pointed in mig 0083. |
+| `teacher_subscription_plans` | NEW (mig 0073) | Reference table for plan-tier slugs. |
+| `teacher_subscriptions` | NEW (mig 0074) | Per-teacher state. |
+| `learner_teacher_links` | NEW (mig 0077) | n:m link backfilled from `assigned_teacher_id`. |
+| `teacher_invites` | NEW (mig 0078) | HMAC token persistence. |
+| `lesson_completions` | NEW (mig 0079) | Unified billable-event SoT. Triggers flip slot status. |
+| `lesson_settlements` + `lesson_settlement_completions` | NEW (mig 0080) | M:N partial-pay support. |
+| `teacher_earnings` + `teacher_earnings_payout_coverage` | NEW (mig 0081) | Append-only ledger + payout coverage join. |
+| `/register?role=teacher` route | NEW | Plan-doc PR #339 drafted. |
+| `/teacher/tariffs` page | NEW | Epic 2. |
+| `/teacher/packages` page | NEW | Epic 3. |
+| `/teacher/learners/[id]` page | NEW | Epic 5. |
+| `/admin/teachers` + `/admin/teachers/[id]` | NEW | Epic 6. |
+| `/admin/learners` | NEW | Epic 6. |
+| `/admin/teachers/[id]/plan` | NEW | Plan-4 toggle UI (Epic 4-MVP). |
+| `/admin/slots/[id]/mark` | EXTEND | Add dispatch on `kind` (Day 5A). |
+| `lib/scheduling/slots/lifecycle.ts:markSlotLifecycle` | EXTEND | Dispatch billable kinds to `markLessonCompleted()`. |
+| `scripts/auto-complete-slots.mjs` (`autoCompletePastBookedSlots`) | KEEP-then-DISABLE | Disabled in same deploy as mig 0079 (Day 5A). |
+| `lib/billing/packages/debt.ts` | EXTEND | Switch to LEFT JOIN `lesson_completions` (Day 5B). |
+| `lib/scheduling/teacher-learners.ts` | EXTEND | Same (Day 5B). |
+| `lib/scheduling/slots/mutations-cancel.ts` | EXTEND | Reject cancel from `completed`/`no_show_learner` until un-mark (Day 5B). |
+| `lib/auth/teacher-invites.ts` redeem CTE | EXTEND | Add `INSERT learner_teacher_links` to the atomic writable CTE. |
+| `app/api/admin/refunds/route.ts` | EXTEND | Append clawback row on refund (Epic 5/6). |
+| `app/checkout/package/[slug]/route.ts` | EXTEND | Add teacher-disambiguation (Epic 3). |
+| `/` landing (current learner-targeted) | REPLACE | Becomes teacher-targeted in Epic 8. Old content moves to `/old` or deletes. |
+| `/pay` route | KEEP | Legacy direct-link compat preserved; bootstrap teacher receives unattributed. |
+| `/t/<teacher-slug>/pay` | NEW | New plan-4 teachers' direct-pay surface (Epic 6). |
+| `/teacher/billing` | NEW (DEFERRED) | Epic 4-DEFERRED, post-MVP. |
+
+No surface is silently extended. Every consumer listed above is named in §3 Epics + §5
+Day-by-day plan.
+
 ## 1. Product context
 
 ### 1.1 The pivot in one sentence
@@ -116,7 +167,7 @@ the same name → minimum churn on the 20+ read-sites surfaced by schema-survey.
 | `0079` | lesson_completions + trigger pair + immutable_at | One row per "проведено" mark. FK to `lesson_slots(id)` + `pricing_tariffs(id)`. Forward trigger (insert→status=completed) + reverse trigger (delete→status=booked). `immutable_at` column for the 48h un-mark window. **REPLACES** the daily auto-complete cron. |
 | `0080` | lesson_settlements + lesson_settlement_completions M:N | One row per "оплачено" mark. M:N join allows a single settlement to cover multiple partial-pay completions. |
 | `0081` | teacher_earnings — append-only ledger | `accrued / paid_out / clawback` rows. Sign-invariant CHECK. Refund handler always inserts new `clawback` row (never UPDATEs). |
-| `0083` | bootstrap teacher account + email swap + row migration | Mints NEW account inheriting prod email + password; renames OLD admin email to synthetic; revokes OLD sessions; re-points teacher-side data + learner links. See §2.9 for the full 7-step TX. **Order-dependent: must run AFTER 0073-0078 + 0076a, before 0076b. Mig 0079 is independent — lands later on Day 5A.** |
+| `0083` | bootstrap teacher account + email swap + row migration | Mints NEW account inheriting prod email + password; renames OLD admin email to synthetic; revokes OLD sessions; re-points teacher-side data + learner links. **Also adds two columns to `accounts`: `audit_email_history jsonb DEFAULT '[]'` (records the email swap) + `teacher_account_migration_marker text NULL` (idempotency).** See §2.9 for the full 7-step TX. **Order-dependent: must run AFTER 0073-0078 + 0076a + 0077, before 0076b/0076c. Mig 0079 is independent — lands later on Day 5A.** |
 | `0084` | (post-MVP) accounts.assigned_teacher_id retire | Drop the legacy column AFTER all read-sites are migrated to use `learner_teacher_links` or `getActiveTeacherForLearner()`. Deferred to a separate epic (not in 7-day MVP). |
 | `0085` | payment_orders.teacher_account_id | (R4 BLOCKER 1 closure) `alter table payment_orders add column teacher_account_id uuid references accounts(id)`. Backfill via slot/package linkage chain (§2.8 paths 1-2); orders with no linkage → bootstrap teacher (path 3). Then `alter ... set not null`. Index `(teacher_account_id, created_at desc)` for admin filters. |
 
@@ -459,13 +510,20 @@ The migration is **a row-move, not a synthetic-account split**:
 
 5. **Re-point teacher-side data from OLD to NEW**:
    - `lesson_slots.teacher_account_id = OLD.id` → `NEW.id`.
+   - `pricing_tariffs.teacher_id = NULL` → `NEW.id` (column from mig 0075 backfills here;
+     this is what makes Epic 2 statement "bootstrap teacher owns all legacy tariffs" hold).
+   - `lesson_packages.teacher_id = NULL` → `NEW.id` (column from mig 0076a; later 0076b
+     drops the global UNIQUE and adds the composite).
+   - `package_purchases.teacher_id` filled from `lesson_packages.teacher_id` (mig 0076c
+     runs after this).
    - `teacher_calendar_integrations.teacher_account_id` → repoint.
    - `accounts.teacher_telegram_*` columns: copy `OLD`'s values to `NEW`, NULL on `OLD`.
    - `teacher_account_daily_digests.account_id` → repoint (history preserved).
    - `learner_reminder_dispatches.*` rows linked via teacher_id → repoint.
 
-6. **Re-point learner links**: every `assigned_teacher_id = OLD.id` → `NEW.id`. Same
-   for any `learner_teacher_links` rows (zero in v1 since the table is new).
+6. **Re-point learner links**: every `assigned_teacher_id = OLD.id` → `NEW.id`. Insert
+   `learner_teacher_links(learner_account_id, teacher_account_id=NEW.id, linked_at=now())`
+   for each such learner. (Mig 0077 created the table empty; this is its initial backfill.)
 
 7. **Mark migration done**: `accounts.teacher_account_migration_marker = 'bootstrap-2026-05-22'`
    on `NEW`. Idempotency: re-running 0083 finds the marker and exits no-op.
@@ -682,7 +740,7 @@ preserved (everything still works without teacher-filter).
 ### Epic 8: teacher landing (SAAS-LANDING)
 
 - Replaces current `/` (which was learner-targeted).
-- Sections: value prop, how it works (3 steps), pricing (3 visible plans + "связаться" for
+- Sections: value prop, how it works (3 steps), pricing — **Free shown as "Начать бесплатно" CTA**; Mid/Pro shown as "Скоро" / "Запросить ранний доступ" (form to ops). The public Mid/Pro self-serve upgrade lives in Epic 4-DEFERRED and is NOT in MVP. Operator can manually upgrade a teacher via `/admin/teachers/[id]/plan` (plan-4 toggle covers all paid tiers in MVP). Plus "связаться" for
   agency-style plan-4), social proof (research-based, see inventory doc), CTA → `/register?role=teacher`.
 - Source material: `~/Obsidian/Brain/Research/Level Channel/Competitors/2026-05-20 - Booking SaaS for Tutors - RU CIS Competitive Research.md` (497-line deep-research doc with
   9-block landing structure, differentiation, pricing tiers, MVP phasing, GTM channels).
@@ -726,11 +784,11 @@ Canonical migration order (single source of truth — overrides any other orderi
 2. `0074` — teacher_subscriptions per-teacher state.
 3. `0075` — `pricing_tariffs.teacher_id` (nullable) + `deleted_at`.
 4. `0076a` — `lesson_packages.teacher_id` (nullable).
-5. `0078` — teacher_invites.
-6. `0083` — bootstrap row-MOVE migration (§2.9). REQUIRES 0073-0078 + 0076a done. **Mig 0079 NOT in Day 1 — deferred to Day 5A (Epic 5).**
-7. `0076b` — `lesson_packages` drop global UNIQUE(slug), add UNIQUE(teacher_id, slug), set NOT NULL. RUNS AFTER 0083.
-8. `0076c` — `package_purchases.teacher_id` NOT NULL backfilled from lesson_packages.
-9. `0077` — learner_teacher_links; backfilled from `assigned_teacher_id` (single link per learner).
+5. `0077` — `learner_teacher_links` empty table (no backfill yet).
+6. `0078` — teacher_invites.
+7. `0083` — bootstrap row-MOVE migration (§2.9). Also adds `accounts.audit_email_history` + `accounts.teacher_account_migration_marker` columns. Backfills `pricing_tariffs.teacher_id`, `lesson_packages.teacher_id`, `learner_teacher_links` rows (from `assigned_teacher_id`). REQUIRES 0073-0078 + 0076a + 0077 done. **Mig 0079 NOT in Day 1 — deferred to Day 5A (Epic 5).**
+8. `0076b` — `lesson_packages` drop global UNIQUE(slug), add UNIQUE(teacher_id, slug), set NOT NULL. RUNS AFTER 0083.
+9. `0076c` — `package_purchases.teacher_id` NOT NULL backfilled from lesson_packages.
 10. `0081` — teacher_earnings ledger (initialized empty; populated by Plan-4 webhook in Epic 5).
 11. `0085` — payment_orders.teacher_account_id (nullable add, backfill via slot/package chain, then NOT NULL).
 
