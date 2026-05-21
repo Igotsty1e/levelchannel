@@ -300,19 +300,22 @@ End state: every billable lesson event (whether "проведено" or "no_show
 4. Debt read at `lib/billing/packages/debt.ts:41` switches to LEFT JOIN `lesson_completions`.
 5. `teacher-learners.ts:29` similarly.
 6. `mutations-cancel.ts` extended with the `'completed'` rejection rules.
-7. `lesson_slots.status` enum keeps `'completed'` + `'no_show_*'` values. ALL FOUR
+7. `lesson_slots.status` enum keeps `'completed'` + `'no_show_*'` values. THREE
    billable-event writers go through a unified `markLessonCompleted()` helper that
    inserts the completion row first, then the forward trigger flips the slot's status.
-   Writers: (a) teacher mark UI, (b) `mutations-no-show.ts` no_show_learner branch,
-   (c) admin mark route at `app/api/admin/slots/[id]/mark` via
-   `lib/scheduling/slots/lifecycle.ts:markSlotLifecycle`, (d) daily auto-complete cron at
-   `scripts/auto-complete-slots.mjs` (rewritten to INSERT completions instead of direct
-   status UPDATE; cron itself disabled on Day 5B). `no_show_teacher` mutation stays as
-   a direct status write — not billable, no completion row.
+   Writers: (a) teacher mark UI, (b) admin mark route `/api/admin/slots/[id]/mark`
+   via `lib/scheduling/slots/lifecycle.ts:markSlotLifecycle` with dispatch:
+   `kind in ('completed','no_show_learner')` → helper, `kind='no_show_teacher'` →
+   direct write. (c) daily auto-complete cron `scripts/auto-complete-slots.mjs`
+   (`autoCompletePastBookedSlots` in `lib/scheduling/slots/lifecycle.ts:55`) is
+   DISABLED in the same deploy that ships mig 0079 — per owner Q-2 "manual only in
+   MVP", consistent with Day 5A. `no_show_teacher` mutation in `markSlotLifecycle`
+   stays as a direct status write — not billable, no completion row.
 
-Epic 5 implementation note: split into 5A (schema 0079/0080 + triggers + 48h immutability
-+ teacher UI to mark complete + cabinet read) and 5B (auto-cron removal + debt-reader
-rewrite + cancel-after-complete interaction + reverse trigger end-to-end test).
+Epic 5 implementation note: split into 5A (schema 0079/0080 + triggers + 48h
+immutability + teacher UI to mark complete + cabinet read + ALL writer refactor
++ cron disable in same deploy) and 5B (debt-reader rewrite + cancel-after-complete
+interaction + reverse-trigger end-to-end test). Cron-disable is NOT in 5B.
 
 ### 2.7 teacher_earnings — append-only ledger (R2-4 closure)
 
@@ -417,9 +420,11 @@ creation time. Four derivation paths:
 4. **direct top-up at a non-bootstrap teacher** — requires `/t/<teacher-slug>/pay` route
    so the teacher_account_id is unambiguous at order creation.
 
-Backfill (mig 0083): every existing `payment_orders` row gets `teacher_account_id`
-populated by the slot/package linkage chain. Orders without linkage → assigned to the
-bootstrap plan-4 teacher account (logged in audit history).
+Backfill is in **mig 0085** (NOT 0083): mig 0085 adds `payment_orders.teacher_account_id`
+as nullable, backfills via the slot/package linkage chain, then `SET NOT NULL`. Orders
+without linkage → assigned to the bootstrap plan-4 teacher account (logged in audit
+history). Mig 0083 (bootstrap row-MOVE) runs first; 0085 depends on the bootstrap
+account being in place. Order: 0083 → 0085.
 
 `/api/payments` validates the inferred `teacher_account_id` against
 `teacher_subscriptions` — only plan-4 teachers' orders accepted. Mid/Pro/Free teachers do
@@ -614,19 +619,27 @@ referencing their own tariff. Cross-teacher leakage gated by `WHERE teacher_id =
 teacher sees "учитель добавил вам пакет" — no payment UI. Learner of a Plan-4 teacher sees
 "купить" button — goes through `/pay`.
 
-### Epic 4: subscription billing (SAAS-BILLING)
+### Epic 4: subscription billing (SAAS-BILLING) — SPLIT into 4-MVP + 4-DEFERRED
 
-- Migrations 0073, 0074, 0081.
-- `/teacher/billing` page: current plan, upgrade button, cancel button.
-- Free is default; upgrade lands learner on CloudPayments recurrent.
-- Operator-managed flag (plan-4) — `/admin/teachers/[id]/plan` UI toggle. Hidden from teacher.
-- Downgrade-gate: blocks change while `active_learners > new_plan.limit`. Helper:
-  `lib/teacher-subscriptions/can-change-plan.ts`.
+**Epic 4-MVP (lands in Day 6, part of the 8-day cut):**
+- Migrations 0073, 0074, 0081 (already in Day 1 schema block — see §5).
+- Plan-4 (operator-managed) admin toggle at `/admin/teachers/[id]/plan`.
+- `lib/teacher-subscriptions/` module (read-only helpers: get current plan, check cap).
+- Downgrade-gate helper `can-change-plan.ts` — defines policy but no UI to trigger it yet.
 - `teacher_earnings` ledger initialised for plan-4 teachers — populated by Plan-4 payment
-  webhook handler in Epic 5.
+  webhook handler (started in Epic 5; finished in Epic 6 admin UI).
 
-**Deliverable:** Teacher signs up (Free auto), invites 1 learner, sees "limit reached" trying
-2nd. Upgrades to Mid via CloudPayments, second learner ok.
+**Deliverable (Epic 4-MVP):** Operator can flip plan-4 on/off via admin UI. New teachers
+default to Free. Cap-enforcement at write routes works. No public upgrade UI yet.
+
+**Epic 4-DEFERRED (post-day-8, separate epic — NOT in MVP):**
+- `/teacher/billing` public page: current plan, upgrade button, cancel button.
+- CloudPayments recurrent integration for Mid/Pro upgrades.
+- Payout tooling for plan-4 (operator → teacher transfers).
+- Public Mid/Pro upgrade UX.
+
+**Deliverable (Epic 4-DEFERRED):** Teacher self-serves upgrade Free→Mid→Pro via
+CloudPayments recurrent. Operator runs payout batch via admin UI. Ships post-MVP.
 
 ### Epic 5: postpaid lesson completion + settlement (SAAS-LESSON-LEDGER)
 
@@ -827,4 +840,4 @@ Master plan-doc itself goes through `/codex-paranoia plan` rounds 1-3 before Epi
 
 ---
 
-— END OF DRAFT, awaiting 4 final Q-clarifications + plan-paranoia rounds —
+— END OF DRAFT, plan-paranoia rounds 1-12 closed (off-protocol per owner authorization) —
