@@ -158,10 +158,10 @@ the same name → minimum churn on the 20+ read-sites surfaced by schema-survey.
 |---|---|---|
 | `0073` | teacher_subscription_plans | Hardcoded reference table (4 rows: `free` / `mid` / `pro` / `operator-managed`). Plan limits + features. The slug `operator-managed` is canonical across schema + body + closures; never `operator`. |
 | `0074` | teacher_subscriptions | Per-teacher current plan + renewal_at + state. |
-| `0075` | pricing_tariffs.teacher_id + deleted_at | Step A: `add column teacher_id uuid` nullable. Step B (in same migration): mig 0083 fills the value. Step C: `alter ... set not null` once 0083 ran. Step D: `add column deleted_at timestamptz`. |
-| `0076a` | lesson_packages.teacher_id (column add, nullable) | `alter table add column teacher_id uuid` nullable. Cannot enforce NOT NULL yet — bootstrap account from 0083 hasn't been created. |
-| `0076b` | lesson_packages.teacher_id (set + unique flip) | Runs AFTER 0083: backfill `teacher_id` from bootstrap account for legacy rows; `alter ... set not null`; **drop the global `UNIQUE (slug)` index**; **add `UNIQUE (teacher_id, slug)`**. Three-statement DDL, single TX. |
-| `0076c` | package_purchases.teacher_id | Add column; backfill from `lesson_packages.teacher_id`; NOT NULL. |
+| `0075` | pricing_tariffs.teacher_id + deleted_at | `add column teacher_id uuid NULL` + `add column deleted_at timestamptz`. **NOT NULL is deferred** to Epic 2 (Day 3), when the tariff-write surface is updated to pass `teacher_id`. Keeps Day 1 non-blocking for legacy writers. |
+| `0076a` | lesson_packages.teacher_id (column add, nullable) | `alter table add column teacher_id uuid NULL`. NOT NULL deferred to mig 0076b which lands with Epic 3 writers. |
+| `0076b` | lesson_packages.teacher_id (set + unique flip) | Runs in **Epic 3 (Day 4)**, after the catalog/purchases writers are teacher-aware. Drops the global `UNIQUE (slug)`; adds `UNIQUE (teacher_id, slug)`; sets NOT NULL. Three-statement DDL, single TX. |
+| `0076c` | package_purchases.teacher_id | Add column NULL in Day 1 (column add only); backfill in mig 0083; set NOT NULL **in Epic 3 (Day 4)** alongside 0076b. |
 | `0077` | learner_teacher_links | n:m link; `(learner_account_id, teacher_account_id) PK`, `linked_at`, `unlinked_at`, `via_invite_id`. Backfill from `accounts.assigned_teacher_id` (mig 0083). |
 | `0078` | teacher_invites | HMAC-signed invite tokens (SAAS-3+4 plan-doc already drafted). |
 | `0079` | lesson_completions + trigger pair + immutable_at | One row per "проведено" mark. FK to `lesson_slots(id)` + `pricing_tariffs(id)`. Forward trigger (insert→status=completed) + reverse trigger (delete→status=booked). `immutable_at` column for the 48h un-mark window. **REPLACES** the daily auto-complete cron. |
@@ -169,7 +169,7 @@ the same name → minimum churn on the 20+ read-sites surfaced by schema-survey.
 | `0081` | teacher_earnings — append-only ledger | `accrued / paid_out / clawback` rows. Sign-invariant CHECK. Refund handler always inserts new `clawback` row (never UPDATEs). |
 | `0083` | bootstrap teacher account + email swap + row migration | Mints NEW account inheriting prod email + password; renames OLD admin email to synthetic; revokes OLD sessions; re-points teacher-side data + learner links. **Also adds two columns to `accounts`: `audit_email_history jsonb DEFAULT '[]'` (records the email swap) + `teacher_account_migration_marker text NULL` (idempotency).** See §2.9 for the full 7-step TX. **Order-dependent: must run AFTER 0073-0078 + 0076a + 0077, before 0076b/0076c. Mig 0079 is independent — lands later on Day 5A.** |
 | `0084` | (post-MVP) accounts.assigned_teacher_id retire | Drop the legacy column AFTER all read-sites are migrated to use `learner_teacher_links` or `getActiveTeacherForLearner()`. Deferred to a separate epic (not in 7-day MVP). |
-| `0085` | payment_orders.teacher_account_id | (R4 BLOCKER 1 closure) `alter table payment_orders add column teacher_account_id uuid references accounts(id)`. Backfill via slot/package linkage chain (§2.8 paths 1-2); orders with no linkage → bootstrap teacher (path 3). Then `alter ... set not null`. Index `(teacher_account_id, created_at desc)` for admin filters. |
+| `0085` | payment_orders.teacher_account_id | `alter table payment_orders add column teacher_account_id uuid references accounts(id) NULL` in Day 1; backfill via slot/package linkage chain. **NOT NULL flip deferred to Epic 6 (Day 6)** when `/api/payments` is updated to pass `teacher_account_id` at order creation. Index `(teacher_account_id, created_at desc)` for admin filters created in 0085 immediately. |
 
 ### 2.4 Soft-delete semantics for tariffs (BLOCKER 2 closure)
 
@@ -489,17 +489,19 @@ hybrid admin+teacher.
 
 The migration is **a row-move, not a synthetic-account split**:
 
-**Migration 0083 (single TX):**
+**Migration 0083 (single TX, order matters because `accounts.email` is UNIQUE):**
 
-1. **Mint NEW account** `NEW`:
-   - Email: take the REAL email currently on `OLD` (Анастасия's real working email).
+1. **Rename OLD's email FIRST** to a synthetic `admin-2026-05-21@levelchannel.internal`.
+   This frees up the real email for the NEW account. The OLD account stays as admin-only;
+   its old email is preserved in `accounts.audit_email_history` (new jsonb column added
+   in 0083 for traceability). UNIQUE index allows the swap because OLD's row updates
+   before NEW's INSERT.
+
+2. **Mint NEW account** `NEW`:
+   - Email: the now-freed REAL email (Анастасия's working email).
    - Role: `teacher` only.
    - `password_hash`: copy from `OLD` (so the teacher can log in with the same password).
    - Subscription: `plan='operator-managed'` immediately (the only plan-4 holder at boot).
-
-2. **Rename OLD's email** to a synthetic `admin-2026-05-21@levelchannel.internal`. The
-   `OLD` account stays as admin-only; its old email is preserved in
-   `accounts.audit_email_history` (new column added in 0083 for traceability).
 
 3. **Revoke OLD's teacher role grant** (if present in `account_roles`). OLD is now
    admin-only.
@@ -793,6 +795,16 @@ Canonical migration order (single source of truth — overrides any other orderi
 11. `0085` — payment_orders.teacher_account_id (nullable add, backfill via slot/package chain, then NOT NULL).
 
 Day 1 ships 11 migrations + the bootstrap account migration (§2.9 — mint NEW pure-teacher inheriting prod email + password; swap OLD admin email to synthetic; revoke OLD sessions; move teacher-side rows + learner links). Mig 0079 (lesson_completions) lands on Day 5A.
+
+**All NEW columns added on Day 1 are NULLABLE.** Legacy writers continue to insert
+without passing the new fields; mig 0083 backfills via the bootstrap teacher. NOT NULL
+flips + composite UNIQUE flips land in the epic that owns the writer:
+- `pricing_tariffs.teacher_id NOT NULL` → Day 3 (Epic 2), after `/teacher/tariffs` CRUD ships.
+- `lesson_packages.teacher_id NOT NULL` + slug UNIQUE flip (mig 0076b) → Day 4 (Epic 3),
+  after `/teacher/packages` CRUD ships.
+- `package_purchases.teacher_id NOT NULL` → Day 4 (Epic 3), alongside 0076b.
+- `payment_orders.teacher_account_id NOT NULL` → Day 6 (Epic 6), after `/api/payments`
+  is updated to pass the teacher.
 
 ZERO route changes on Day 1 — schema-only PR.
 **Day 2 — Teacher self-reg + invite + current-teacher context** (Epic 1B)
