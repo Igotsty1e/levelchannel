@@ -104,15 +104,16 @@ the same name → minimum churn on the 20+ read-sites surfaced by schema-survey.
 |---|---|---|
 | `0073` | teacher_subscription_plans | Hardcoded reference table (4 rows: free / mid / pro / operator). Plan limits + features. |
 | `0074` | teacher_subscriptions | Per-teacher current plan + renewal_at + state. |
-| `0075` | pricing_tariffs.teacher_id + deleted_at | EXTEND existing table — no rename. NULL teacher_id = legacy operator-owned rows. After backfill (mig 0083), all rows have teacher_id set. |
-| `0076` | lesson_packages.teacher_id + package_purchases.teacher_id | Same — extend existing tables. Backfill via mig 0083. |
+| `0075` | pricing_tariffs.teacher_id + deleted_at | Step A: `add column teacher_id uuid` nullable. Step B (in same migration): mig 0083 fills the value. Step C: `alter ... set not null` once 0083 ran. Step D: `add column deleted_at timestamptz`. |
+| `0076a` | lesson_packages.teacher_id (column add, nullable) | `alter table add column teacher_id uuid` nullable. Cannot enforce NOT NULL yet — bootstrap account from 0083 hasn't been created. |
+| `0076b` | lesson_packages.teacher_id (set + unique flip) | Runs AFTER 0083: backfill `teacher_id` from bootstrap account for legacy rows; `alter ... set not null`; **drop the global `UNIQUE (slug)` index**; **add `UNIQUE (teacher_id, slug)`**. Three-statement DDL, single TX. |
+| `0076c` | package_purchases.teacher_id | Add column; backfill from `lesson_packages.teacher_id`; NOT NULL. |
 | `0077` | learner_teacher_links | n:m link; `(learner_account_id, teacher_account_id) PK`, `linked_at`, `unlinked_at`, `via_invite_id`. Backfill from `accounts.assigned_teacher_id` (mig 0083). |
 | `0078` | teacher_invites | HMAC-signed invite tokens (SAAS-3+4 plan-doc already drafted). |
-| `0079` | lesson_completions | One row per "проведено" mark. FK to `lesson_slots(id)` + `pricing_tariffs(id)`. **REPLACES** the daily auto-complete cron (round-1 BLOCKER 4 closure). |
-| `0080` | lesson_settlements | One row per "оплачено" mark. Refs N completions via M:N join `lesson_settlement_completions`. Partial sums supported. |
-| `0081` | teacher_earnings — 3-state ledger | `accrued / paid_out / clawback` rows. Refund-after-payout writes `clawback`. |
-| `0082` | (skipped — no FK rename in revised plan) | Reserved. |
-| `0083` | bootstrap teacher account + backfill | (round-1 BLOCKER 7 closure) — mints a new `teacher`-role account ("LevelChannel Tutor Team"), reassigns historical `lesson_slots.teacher_account_id` + sets `pricing_tariffs.teacher_id` + `lesson_packages.teacher_id` + `learner_teacher_links` rows from `accounts.assigned_teacher_id`. Idempotent — re-run-safe. |
+| `0079` | lesson_completions + trigger pair + immutable_at | One row per "проведено" mark. FK to `lesson_slots(id)` + `pricing_tariffs(id)`. Forward trigger (insert→status=completed) + reverse trigger (delete→status=booked). `immutable_at` column for the 48h un-mark window. **REPLACES** the daily auto-complete cron. |
+| `0080` | lesson_settlements + lesson_settlement_completions M:N | One row per "оплачено" mark. M:N join allows a single settlement to cover multiple partial-pay completions. |
+| `0081` | teacher_earnings — append-only ledger | `accrued / paid_out / clawback` rows. Sign-invariant CHECK. Refund handler always inserts new `clawback` row (never UPDATEs). |
+| `0083` | bootstrap teacher account + email swap + row migration | Mints NEW account inheriting prod email + password; renames OLD admin email to synthetic; revokes OLD sessions; re-points teacher-side data + learner links. See §2.9 for the full 7-step TX. **Order-dependent: must run AFTER 0073-0078 + 0076a + 0079, before 0076b.** |
 | `0084` | (post-MVP) accounts.assigned_teacher_id retire | Drop the legacy column AFTER all read-sites are migrated to use `learner_teacher_links` or `getActiveTeacherForLearner()`. Deferred to a separate epic (not in 7-day MVP). |
 
 ### 2.4 Soft-delete semantics for tariffs (BLOCKER 2 closure)
@@ -164,122 +165,283 @@ Affected read-sites (per schema-survey 2026-05-21):
 These ALL change atomically in Epic 1 (NOT deferred to Epic 7). Backfill from
 `assigned_teacher_id` → `learner_teacher_links` is one-to-one for v1.
 
-### 2.6 lesson_completions vs slot.status='completed' (BLOCKER 4 closure)
+### 2.6 lesson_completions vs slot.status — full bi-directional contract (R2-3 closure)
 
 Existing world: `lesson_slots.status` includes `'completed'`. A daily auto-complete cron
 flips `'booked'` → `'completed'` after end_at. Debt + teacher-learner summaries read this.
 
-New world: `lesson_completions` is the source of truth. `slot.status='completed'` is
-DERIVED — a `lesson_completions` row exists for this slot ⇒ status reads as completed.
+New world: `lesson_completions` is the source of truth. `slot.status` is DERIVED.
 
-Migration sequence:
-1. Migration 0079 creates `lesson_completions`. Backfill: for every
-   `lesson_slots WHERE status='completed'` insert a row with `amount` snapshot from current
-   tariff price + `completed_at = end_at` + `marked_by_account_id = NULL` (synthetic).
-2. Auto-complete cron — DISABLED in the same epic. Teacher must mark manually.
-   Owner Q-2 decision: auto-mark is a separate epic (later — teacher self-configures).
-3. Debt read at `lib/billing/packages/debt.ts:41` switches to LEFT JOIN
-   `lesson_completions` (not `slot.status`).
-4. `teacher-learners.ts:29` similarly.
-5. `lesson_slots.status` enum keeps `'completed'` value but route handlers stop writing it
-   (writes happen through `lesson_completions` insert + trigger that flips status). Trigger
-   is the ATOMICITY guarantee: every completion-row insert flips status; every status
-   manually-set to 'completed' inserts a synthetic completion (for any code paths we miss).
+**Triggers (Postgres):**
 
-This means: Epic 5 SHIPS the new completion stack AND removes the auto-cron in the same PR.
-Realistic — both changes are in `scripts/` (cron) + `app/api/teacher/lessons/*` (new) +
-`lib/scheduling/slots/lifecycle.ts` (refactor).
+```sql
+-- Forward: insert completion → flip status
+create or replace function lesson_completion_apply() returns trigger as $$
+begin
+  update lesson_slots
+     set status = 'completed', updated_at = now()
+   where id = new.slot_id and status = 'booked';
+  return new;
+end$$ language plpgsql;
+create trigger lesson_completion_apply_t
+  after insert on lesson_completions
+  for each row execute procedure lesson_completion_apply();
 
-### 2.7 teacher_earnings state machine (BLOCKER 5 closure)
+-- Reverse: delete completion → flip status back
+create or replace function lesson_completion_revert() returns trigger as $$
+begin
+  update lesson_slots
+     set status = 'booked', updated_at = now()
+   where id = old.slot_id and status = 'completed';
+  return old;
+end$$ language plpgsql;
+create trigger lesson_completion_revert_t
+  after delete on lesson_completions
+  for each row execute procedure lesson_completion_revert();
+```
 
-Three states per ledger row:
+**48h immutability — application-side guard (NOT a CHECK).** Postgres CHECK does not fire
+on DELETE, so the 48h immutability is enforced in the un-mark route:
 
-| State | Meaning | Transition |
+```ts
+// app/api/teacher/lessons/[id]/uncomplete/route.ts
+async function POST(req) {
+  // gate: lookup completion row, validate teacher ownership,
+  // validate created_at > now() - 48h
+  // if older → 409 immutable
+  // else → DELETE lesson_completions WHERE id = $1 (trigger flips slot back to booked)
+}
+```
+
+Additionally, daily retention sweep `scripts/db-retention-cleanup.mjs` is updated to mark
+`lesson_completions.immutable_at = created_at + 48h` once that timestamp passes; a partial
+unique index `WHERE immutable_at IS NULL` lets the reverse trigger fire only on rows that
+are still un-mark-eligible (defense-in-depth in case of direct SQL access).
+
+**Cancel-after-completion contract:**
+
+`lib/scheduling/slots/mutations-cancel.ts` currently allows learner cancel on
+`status='booked'` and teacher cancel on `status in ('open','booked')`. The pivot extends:
+
+- Teacher cancel from `status='completed'` is REJECTED with 409 — they must un-mark first
+  (within 48h window). After 48h, the slot is settled; cancel is no longer meaningful.
+- Learner cancel from `status='completed'` is REJECTED with 409 — same reason.
+- Un-mark → reverse trigger sets `status='booked'` → cancel then works normally.
+
+Two-step un-mark-then-cancel is by design. Documentation in `/teacher` cabinet UI surfaces
+this: a "completed" lesson shows two buttons "Не было занятия (отменить отметку)" → reverts
+to booked + a separate "Отменить занятие".
+
+**Migration sequence:**
+
+1. Mig 0079 creates `lesson_completions` + both triggers + `immutable_at` column.
+2. Backfill: for every `lesson_slots WHERE status='completed'` insert a row with
+   `amount` snapshot from current tariff price + `completed_at = end_at` +
+   `immutable_at = now()` (historical rows are immutable immediately).
+   `marked_by_account_id = NULL` (synthetic).
+3. Auto-complete cron DISABLED in the same epic (per Owner Q-2 decision).
+4. Debt read at `lib/billing/packages/debt.ts:41` switches to LEFT JOIN `lesson_completions`.
+5. `teacher-learners.ts:29` similarly.
+6. `mutations-cancel.ts` extended with the `'completed'` rejection rules.
+7. `lesson_slots.status` enum keeps `'completed'` value but route handlers stop writing it
+   directly — the trigger is the SoT.
+
+Epic 5 implementation note: split into 5A (schema 0079/0080 + triggers + 48h immutability
++ teacher UI to mark complete + cabinet read) and 5B (auto-cron removal + debt-reader
+rewrite + cancel-after-complete interaction + reverse trigger end-to-end test).
+
+### 2.7 teacher_earnings — append-only ledger (R2-4 closure)
+
+**Append-only, never UPDATE.** Three row kinds:
+
+| Kind | `amount_net` sign | Meaning |
 |---|---|---|
-| `accrued` | Learner paid; teacher's share booked; not yet paid out | → `paid_out` on operator payout; → cleared by `clawback` row if refund hits same payment |
-| `paid_out` | Operator paid the teacher | → cannot revert; refund after payout writes `clawback` row, balance goes negative |
-| `clawback` | Refund of an already-paid-out payment | Operator notified; teacher balance may go negative; operator decides recovery (deduct from next payout / write off) |
+| `accrued` | positive | Learner paid; teacher's share booked. |
+| `paid_out` | negative | Operator paid the teacher; reduces balance. |
+| `clawback` | negative | Refund of a learner payment (refund of an `accrued` or `paid_out` row); reduces balance. May make total balance go negative if payout already happened. |
 
-Migration 0081 schema:
+**Balance formula:** `SUM(amount_net) GROUP BY teacher_account_id`. Always derivable from
+the ledger. Negative balance = operator overpaid (needs recovery — UI surfaces it).
+
+**Migration 0081 schema:**
+
 ```sql
 create table teacher_earnings (
   id uuid primary key default gen_random_uuid(),
   teacher_account_id uuid not null references accounts(id),
-  state text not null check (state in ('accrued','paid_out','clawback')),
-  amount_net numeric(10,2) not null,         -- positive for accrued/paid_out, negative for clawback
+  kind text not null check (kind in ('accrued','paid_out','clawback')),
+  amount_net numeric(10,2) not null,
+  -- For accrued: positive amount. For paid_out / clawback: negative.
   payment_order_id text references payment_orders(invoice_id),
+  -- Linked source row: accrued links to the payment; paid_out has NULL (linked via payout_batch_id);
+  -- clawback links to the refunded payment_order_id.
   refund_id uuid references refund_records(id),
-  payout_batch_id uuid,                      -- groups paid_out rows
+  -- Only set on clawback rows.
+  payout_batch_id uuid,
+  -- Only set on paid_out rows; groups multiple accrued rows that this payout covers.
   related_completion_id uuid references lesson_completions(id),
-  created_at timestamptz not null default now()
+  related_accrued_id uuid references teacher_earnings(id),
+  -- Clawback rows link to the original accrued row they reverse.
+  created_at timestamptz not null default now(),
+  -- Sign invariant: positive for accrued, negative for paid_out/clawback
+  check (
+    (kind = 'accrued' and amount_net > 0)
+    or (kind in ('paid_out','clawback') and amount_net < 0)
+  )
 );
-create index on teacher_earnings (teacher_account_id, created_at desc);
+create index teacher_earnings_balance_idx on teacher_earnings (teacher_account_id, created_at desc);
+create index teacher_earnings_payout_idx on teacher_earnings (payout_batch_id) where payout_batch_id is not null;
+create index teacher_earnings_accrued_unpaid_idx on teacher_earnings (teacher_account_id) where kind = 'accrued';
 ```
 
-Refund handler in `app/api/admin/refunds/route.ts:22` adds: after writing the refund,
-look up `teacher_earnings` rows linked via `payment_order_id`. If found AND state is
-`accrued` → flip to clawback (zero out). If state is `paid_out` → INSERT new `clawback`
-row with negative `amount_net`, operator gets alert email "teacher X has negative balance:
-clawback after payout".
+**Canonical queries:**
 
-### 2.8 /pay surface for plan-4 (BLOCKER 6 closure)
+```sql
+-- current_balance for a teacher
+select coalesce(sum(amount_net), 0)
+  from teacher_earnings
+ where teacher_account_id = $1;
+
+-- rows eligible for the next payout batch (accrued rows NOT already covered by a paid_out
+-- row in any prior payout_batch). Uses the related_accrued_id trail.
+select e.id, e.amount_net, e.payment_order_id
+  from teacher_earnings e
+ where e.teacher_account_id = $1
+   and e.kind = 'accrued'
+   and not exists (
+     select 1 from teacher_earnings p
+      where p.kind = 'paid_out'
+        and p.related_accrued_id = e.id
+   )
+   and not exists (
+     select 1 from teacher_earnings c
+      where c.kind = 'clawback'
+        and c.related_accrued_id = e.id
+   );
+```
+
+**Refund handler (`app/api/admin/refunds/route.ts:22`):** after writing the refund row,
+ALWAYS insert a new `kind='clawback'` row with `amount_net = -original_accrued.amount_net`,
+`refund_id = $newRefundId`, `related_accrued_id = $originalAccruedId`. **Never UPDATE the
+original accrued row.** If balance goes negative, operator gets an alert email.
+
+**Day 6 ledger UI:** uses the canonical queries above. "Current balance" = SUM; "Eligible
+for payout" = filtered list; "Negative balance teachers" = SUM < 0 group.
+
+### 2.8 /pay surface for plan-4 + legacy direct-link compat (R2-2 closure)
 
 `/pay` stays generic at the surface; the **teacher inference** happens at order
-creation time. Three derivation paths:
+creation time. Four derivation paths:
 
 1. **slot-paid via `metadata.slotId`** (current) — derive teacher from
    `lesson_slots.teacher_account_id` already on the slot. Already shipped.
 2. **package-paid via `metadata.packageSlug`** — derive teacher from
-   `lesson_packages.teacher_id` (column added in mig 0076). The slug is
-   teacher-scoped post-pivot — no global slugs.
-3. **direct top-up** (no slot/package) — REJECTED in plan-4 v1. Customer service path
-   only. `/pay` UI hides the direct-amount option for non-operator teachers.
+   `lesson_packages.teacher_id` (column added in mig 0076). Slug becomes teacher-scoped
+   (UNIQUE per teacher_id). Checkout route at `app/api/checkout/package/[slug]/route.ts`
+   updated to also accept `?teacher=` query param OR to derive from the current learner's
+   single-active link if unambiguous; if ambiguous (multi-link), 400 with reason.
+3. **legacy direct-link top-up** (no slot/package, just `amount + email`) — **PRESERVED**
+   for backward compat. These orders are credited to the bootstrap plan-4 teacher account
+   (the only plan-4 holder at v1 launch). When a NEW teacher gets plan-4, their direct-link
+   form lives at `/t/<teacher-slug>/pay` (new route in Epic 6); the global `/pay` form
+   continues to credit the bootstrap teacher unless a teacher slug query is present.
+   No backward break for shared invoice links already in the wild.
+4. **direct top-up at a non-bootstrap teacher** — requires `/t/<teacher-slug>/pay` route
+   so the teacher_account_id is unambiguous at order creation.
 
 Backfill (mig 0083): every existing `payment_orders` row gets `teacher_account_id`
 populated by the slot/package linkage chain. Orders without linkage → assigned to the
-operator's bootstrap teacher account (audit log).
+bootstrap plan-4 teacher account (logged in audit history).
 
-`/api/payments` validates the inferred `teacher_account_id` against `teacher_subscriptions`
-— only plan-4 teachers' orders accepted. Mid/Pro/Free attempting `/pay` flow returns
-`403 payment_not_supported_on_this_plan`.
+`/api/payments` validates the inferred `teacher_account_id` against
+`teacher_subscriptions` — only plan-4 teachers' orders accepted. Mid/Pro/Free teachers do
+NOT get a `/pay` surface; their learners pay them out-of-band.
 
-### 2.9 Bootstrap teacher account (BLOCKER 7 closure)
+### 2.9 Bootstrap teacher account — 2-step row migration (R2-1 closure)
 
-The current operator-team account in production has BOTH operator-side admin powers AND
-historically has been the implicit "teacher" for every slot. The role model forbids hybrid
-admin+teacher.
+The current production account (let's call it `OLD`) has BOTH admin role AND has been the
+implicit teacher for every slot/integration/Telegram binding. The role model forbids
+hybrid admin+teacher.
 
-Migration 0083 mints a new account:
-- Email: a synthetic, e.g. `teacher-team-2026-05-21@levelchannel.internal` (audit-only,
-  never used for login; we anonymize the local-part with the migration date).
-- Role: `teacher` only.
-- Subscription: `plan='operator-managed'` immediately (the only plan-4 holder at boot).
-- Reassign: every `lesson_slots.teacher_account_id` currently pointing at the operator
-  admin account → repoint at this new account.
-- Reassign: every learner with `assigned_teacher_id = operator_admin_id` → switch the link
-  to the new teacher account.
-- Existing operator admin account: stays admin-only. No teacher data attached.
+The migration is **a row-move, not a synthetic-account split**:
 
-This account never logs in via `/login`. Operator manages it via `/admin/teachers/[id]`
-just like any other teacher (set plan-4, edit tariffs, see ledger).
+**Migration 0083 (single TX):**
 
-### 2.10 past_due / cancelled gates (WARN 8 closure)
+1. **Mint NEW account** `NEW`:
+   - Email: take the REAL email currently on `OLD` (Анастасия's real working email).
+   - Role: `teacher` only.
+   - `password_hash`: copy from `OLD` (so the teacher can log in with the same password).
+   - Subscription: `plan='operator-managed'` immediately (the only plan-4 holder at boot).
 
-Subscription state per teacher impacts WHICH routes they can hit:
+2. **Rename OLD's email** to a synthetic `admin-2026-05-21@levelchannel.internal`. The
+   `OLD` account stays as admin-only; its old email is preserved in
+   `accounts.audit_email_history` (new column added in 0083 for traceability).
 
-| State | Read teacher cabinet | Invite new learners | Bulk-create slots | Mark "проведено" | Edit tariffs |
-|---|:---:|:---:|:---:|:---:|:---:|
-| Free + within cap | ✅ | ✅ (until cap=1) | ✅ | ✅ | ✅ |
-| Free + over cap | ✅ | ❌ | ✅ | ✅ | ✅ |
-| Mid/Pro active | ✅ | ✅ (until cap) | ✅ | ✅ | ✅ |
-| past_due (≤3 days) | ✅ | ❌ | ❌ | ✅ | ✅ |
-| past_due (>3 days) | ✅ read-only | ❌ | ❌ | ❌ | ❌ |
-| cancelled (period ended) | downgrades to Free + over cap | ❌ | ✅ | ✅ | ✅ |
-| suspended | ❌ | ❌ | ❌ | ❌ | ❌ |
+3. **Revoke OLD's teacher role grant** (if present in `account_roles`). OLD is now
+   admin-only.
 
-Gates: a new helper `requireActiveSubscription(scope)` wraps each write route. Scopes:
-`invite`, `slot-write`, `completion`, `tariff-write`. The helper reads subscription state
-+ scope-allowed mapping and returns 403 with reason.
+4. **Revoke ALL active sessions on OLD** — write to `account_sessions` setting
+   `revoked_at = now()`. The teacher will need to re-log on the new email.
+   (Acceptable — one-time inconvenience for clean migration.)
+
+5. **Re-point teacher-side data from OLD to NEW**:
+   - `lesson_slots.teacher_account_id = OLD.id` → `NEW.id`.
+   - `teacher_calendar_integrations.teacher_account_id` → repoint.
+   - `accounts.teacher_telegram_*` columns: copy `OLD`'s values to `NEW`, NULL on `OLD`.
+   - `teacher_account_daily_digests.account_id` → repoint (history preserved).
+   - `learner_reminder_dispatches.*` rows linked via teacher_id → repoint.
+
+6. **Re-point learner links**: every `assigned_teacher_id = OLD.id` → `NEW.id`. Same
+   for any `learner_teacher_links` rows (zero in v1 since the table is new).
+
+7. **Mark migration done**: `accounts.teacher_account_migration_marker = 'bootstrap-2026-05-22'`
+   on `NEW`. Idempotency: re-running 0083 finds the marker and exits no-op.
+
+**Result:** Анастасия logs in with her real email + password — gets routed to `/teacher`
+because her account is teacher-only now. The OLD admin login (different email after step 2)
+is used ONLY by Иван to administer the platform. Sessions need re-login (one-time cost).
+
+**Caveat:** there's a small window between mig 0083 START and END where existing OLD
+sessions are still valid but route gates may flip. Mitigation: run migration in
+maintenance mode (5-minute downtime banner on `/`) — this is a one-shot, not recurring.
+
+### 2.10 past_due / cancelled gates — full scope matrix (R2-7 closure)
+
+Subscription state per teacher impacts both teacher-side and learner-side routes:
+
+| State | invite | slot-write | tariff-write | completion-write | learner-book | learner-cancel | teacher-cancel |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Free + within cap | ✅ (cap=1) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Free + over cap | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Mid/Pro active | ✅ (cap) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| past_due (≤3 days) | ❌ | ❌ | ✅ | ✅ | ✅ existing | ✅ | ✅ |
+| past_due (>3 days) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
+| cancelled (period ended) | ❌ | ❌ (downgrades to Free over-cap) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| suspended | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+
+**Scope helpers:** `requireActiveSubscription(scope, teacherAccountId)` wraps every write
+route. Scopes:
+
+- `invite` — `app/api/teacher/invites/route.ts:20`.
+- `slot-write` — `app/api/teacher/slots/route.ts:20`, `app/api/teacher/slots/bulk-create/route.ts:20`.
+- `tariff-write` — `/api/teacher/tariffs/*` CRUD (new in Epic 2).
+- `completion-write` — `/api/teacher/lessons/[id]/complete` + `/uncomplete` (Epic 5).
+- `learner-book` — `app/api/slots/available/route.ts:17`, `app/api/slots/booking-days/route.ts:26`,
+  `app/api/slots/booking-times/route.ts:21`, `app/api/slots/[id]/book/route.ts:62`. Helper
+  receives the slot's `teacher_account_id` and checks if that teacher's plan supports new
+  bookings.
+- `learner-cancel` — `app/api/slots/[id]/cancel/route.ts` learner branch. ALWAYS allowed
+  (even if teacher is suspended) — learner can always rescue their commitment.
+- `teacher-cancel` — `app/api/teacher/slots/[id]/route.ts` cancel branch. Suspended teachers
+  cannot cancel; operator must do it via admin.
+
+Cancel-while-past-due: existing booked slots remain cancellable by both sides. Completion-
+write disabled means the teacher can't accrue NEW debt against a learner whose teacher is
+in arrears. Net effect: a past_due teacher is "frozen in place" — their schedule keeps
+running, but no new commitments form.
+
+Suspended (operator action) is harder — `teacher-cancel` is blocked because suspension is
+typically used after a terms violation; we want operator-only resolution.
 
 ### 2.11 Multi-tenant query discipline (WARN 9 closure)
 
@@ -293,22 +455,29 @@ Phase-1 (this epic): app-query discipline + CI grep guard.
 - CI workflow `.github/workflows/teacher-scope.yml` runs the check.
 - Phase-2 (post-MVP): convert to Postgres RLS policies. Out of scope for the 7-day push.
 
-### 2.2 ER snippet (mermaid)
+### 2.2 ER snippet (mermaid) — uses canonical table names (R2-6 closure)
+
+No shadow tables. `pricing_tariffs` and `lesson_packages` keep their names and get
+`teacher_id` columns. `teacher_*` prefix is reserved for NEW tables only.
 
 ```mermaid
 erDiagram
   accounts ||--o{ teacher_subscriptions : "1:1 (teacher only)"
   teacher_subscriptions }o--|| teacher_subscription_plans : "current plan"
-  accounts ||--o{ teacher_tariffs : "teacher owns"
-  accounts ||--o{ teacher_packages : "teacher owns"
+  accounts ||--o{ pricing_tariffs : "teacher owns (via teacher_id)"
+  accounts ||--o{ lesson_packages : "teacher owns (via teacher_id)"
   accounts ||--o{ learner_teacher_links : "as learner"
   accounts ||--o{ learner_teacher_links : "as teacher"
   accounts ||--o{ teacher_invites : "teacher generates"
-  lesson_slots }o--|| teacher_tariffs : "tariff_id"
-  lesson_slots ||--o{ lesson_completions : "1:1 (after end_at)"
-  lesson_completions }o--|| lesson_settlements : "N:1"
-  lesson_completions }o--|| teacher_packages : "if consumed_from_package"
-  teacher_earnings }o--|| accounts : "operator → teacher debt"
+  lesson_slots }o--|| pricing_tariffs : "tariff_id (existing FK, unchanged)"
+  lesson_slots ||--o| lesson_completions : "0..1 (after end_at)"
+  lesson_settlement_completions }o--|| lesson_completions : "many-to-1 (partial pay)"
+  lesson_settlement_completions }o--|| lesson_settlements : "many-to-1"
+  package_consumptions }o--|| lesson_completions : "if consumed_from_package"
+  package_consumptions }o--|| package_purchases : "FK"
+  package_purchases }o--|| lesson_packages : "FK"
+  teacher_earnings }o--|| accounts : "ledger row → teacher"
+  teacher_earnings }o--|| payment_orders : "linked payment"
 ```
 
 ### 2.3 State machines
@@ -466,15 +635,15 @@ flows for both roles.
 | C. Existing teachers grandfathering | N/A — there are no other teachers on prod besides the operator account (which becomes plan-4). | Owner 2026-05-21 |
 | D. Landing research data | Available in Obsidian — landing-research agent inventories the artefacts. | Owner 2026-05-21 |
 
-## 5. MVP sequence — REVISED after round-1 (WARN 10 closure)
+## 5. MVP sequence — REVISED after round-1 + round-2 (8-day cut)
 
-Round-1 review correctly observed the Day-5 recurrent-billing item is too heavy. Revised
-7-day cut:
+Round-2 WARN 8 closure: Day 5 split into 5A/5B.
 
 **Day 1 — Schema + bootstrap** (Epic 1A)
-- Migrations 0073-0078, 0081, 0083 (no 0084 — column drop deferred).
-- Bootstrap teacher account minted; all historical slots/learners/tariffs/packages
-  carry `teacher_id`/`teacher_account_id` set to the bootstrap account.
+- Migrations 0073, 0074, 0075, 0076a, 0078, 0083 (in that order). Then 0076b runs AFTER 0083 fills bootstrap teacher_id. Then 0076c. Then 0077.
+- Bootstrap teacher account migration (§2.9): mint NEW pure-teacher account inheriting
+  prod email + password; swap OLD admin email to synthetic; revoke OLD sessions; move
+  teacher-side rows + learner links.
 - `learner_teacher_links` backfilled from `assigned_teacher_id` (single link per learner).
 - ZERO route changes — schema-only PR.
 
@@ -494,11 +663,21 @@ Round-1 review correctly observed the Day-5 recurrent-billing item is too heavy.
 - Grant/recon/debt all teacher-aware.
 - `/teacher/packages` CRUD.
 
-**Day 5 — Lesson completion + settlement** (Epic 5)
-- Migrations 0079, 0080.
-- `lesson_completions` replaces auto-cron (BLOCKER 4 closure).
-- 48h un-mark window.
-- `/teacher/learners/[id]` page + settle UI.
+**Day 5A — Lesson completion schema + UI mark/un-mark** (Epic 5A)
+- Migrations 0079 (lesson_completions + triggers + immutable_at) + 0080 (settlements + M:N).
+- Backfill historical completed slots into lesson_completions.
+- `/teacher/learners/[id]` page basic shape — list completions + mark/un-mark button.
+- Forward + reverse trigger end-to-end test (insert→status flip, delete→status flip back).
+- 48h immutability gate (application-side) — see §2.6.
+- NO auto-cron removal yet; coexists temporarily.
+
+**Day 5B — Auto-cron removal + debt/summary rewrites + cancel interaction** (Epic 5B)
+- DISABLE the daily auto-complete cron.
+- Rewrite `lib/billing/packages/debt.ts` to read from `lesson_completions` (not slot.status).
+- Rewrite `lib/scheduling/teacher-learners.ts` similarly.
+- `mutations-cancel.ts`: cancel-after-complete rejection rule (§2.6).
+- `/teacher/learners/[id]/settle` page + settle UI (partial sum support).
+- `lesson_completions.immutable_at` daily backfill in retention sweep.
 
 **Day 6 — Admin multi-teacher overhaul + plan-4 toggle** (Epic 6 — partial)
 - `/admin/teachers` list + `/admin/teachers/[id]` drill-down.
@@ -540,13 +719,11 @@ Round-1 review correctly observed the Day-5 recurrent-billing item is too heavy.
 
 7. **Admin + teacher hybrid is currently FORBIDDEN** — `lib/auth/accounts.ts:259-296`
    enforces mutual exclusion + `lib/auth/guards.ts:174-185` blocks `admin_precedence`
-   with 403. Per schema-survey 2026-05-21. **Impact:** the operator team's existing
-   `admin` account CANNOT also be a `teacher` account in the new model. Options:
-   - (a) Create a separate teacher-only account for "Anastasia teaching" and link it to
-     the operator's billing identity via a new column.
-   - (b) Redesign guards to allow the hybrid (separate epic, blocks SaaS-pivot).
-   Decision pending — proposal: (a) — keep admin/teacher disjoint, mint a second account
-   for plan-4 "operator team teacher".
+   with 403. Per schema-survey 2026-05-21. **Resolution:** per §2.9 — mig 0083 mints a
+   NEW pure-teacher account inheriting prod email + password, renames the old admin
+   email to a synthetic, revokes old sessions, re-points teacher-side data + learner
+   links. One-time downtime banner during the migration. Анастасия then logs in with
+   her real email and lands on `/teacher`; Иван logs in on a separate admin email.
 
 8. **`assigned_teacher_id` session-cache atomicity** — `session.account.assignedTeacherId`
    is read as single-value in 10+ places (lesson queries, payment-grant, cron filters,
