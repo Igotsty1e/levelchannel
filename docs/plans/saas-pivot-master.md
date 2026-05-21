@@ -25,10 +25,10 @@ from body, body wins.
 | R2-2 | §2.5 | Invite-redeem is the SOLE link-creation path. Booking surfaces return 403 if learner has no link. (Owner Q-7 confirmed.) |
 | R2-3 | §2.6 | Forward+reverse Postgres triggers. 48h immutability enforced at the application layer (un-complete route), NOT CHECK — CHECK does not run on DELETE. |
 | R2-4 | §2.7 | Immutable append-only ledger. Refund handler ALWAYS INSERTs `kind='clawback'` row. Sign-invariant CHECK. |
-| R2-5 | §2.1 | Mig 0076 split into 0076a / 0083 (backfill) / 0076b (drop global UNIQUE + add UNIQUE(teacher_id, slug) + NOT NULL) / 0076c (purchases column). DDL order explicit. |
+| R2-5 | §2.1 | Mig 0076 split into 0076a (Day 1 column add) → 0076c (Day 1 column add) → 0083 (Day 1 bootstrap backfill) → 0076b (Day 4 / Epic 3: drop global UNIQUE + add UNIQUE(teacher_id,slug) + NOT NULL). DDL order explicit; NOT-NULL/UNIQUE flips deferred out of Day 1 per round 14/15. |
 | R2-6 | §2.2 ER + §3 Epic 2 + §3 Epic 3 | Canonical `pricing_tariffs` + `lesson_packages` extended with `teacher_id`. No `teacher_tariffs` / `teacher_packages` shadow tables anywhere. No FK rename. |
 | R2-7 | §2.10 | Full scope matrix incl. `learner-book`, `learner-cancel`, `teacher-cancel`. Suspended teachers cannot cancel; learners can always rescue. |
-| R2-8 | §5 | Day 5 → Day 5A (schema + UI) + Day 5B (cron removal + debt rewrite + cancel interaction). 8-day MVP total. |
+| R2-8 | §5 | Day 5 → Day 5A (schema + UI + ALL writer refactor + cron-disable in same deploy) + Day 5B (debt-reader rewrite + cancel-after-complete interaction + reverse-trigger e2e test; cron is already disabled on 5A). 8-day MVP total. |
 
 ### 0a. Round-1 closure pointer table — body is SoT
 
