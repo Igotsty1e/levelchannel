@@ -181,7 +181,7 @@ the same name → minimum churn on the 20+ read-sites surfaced by schema-survey.
 | `0078` | teacher_invites | HMAC-signed invite tokens (SAAS-3+4 plan-doc already drafted). |
 | `0079` | lesson_completions + trigger pair + immutable_at | One row per "проведено" mark. FK to `lesson_slots(id)` + `pricing_tariffs(id)`. Forward trigger (insert→status=completed) + reverse trigger (delete→status=booked). `immutable_at` column for the 48h un-mark window. **REPLACES** the daily auto-complete cron. |
 | `0080` | lesson_settlements + lesson_settlement_completions M:N | One row per "оплачено" mark. M:N join allows a single settlement to cover multiple partial-pay completions. |
-| `0081` | teacher_earnings — append-only ledger | `accrued / paid_out / clawback` rows. Sign-invariant CHECK. Refund handler always inserts new `clawback` row (never UPDATEs). |
+| `0081` | teacher_earnings — append-only ledger | `accrued / paid_out / clawback` rows. Sign-invariant CHECK. Refund handler always inserts new `clawback` row (never UPDATEs). `related_completion_id` is a plain `uuid` on Day 1 (mig 0079 / Day 5A later adds the FK via ALTER TABLE — round-25 closure). `refund_reversal_id` FK → `payment_allocation_reversals(id)` (NOT `refund_records`, which does not exist in this repo). |
 | `0083` | bootstrap teacher account + email swap + row migration | Mints NEW account inheriting prod email + password; renames OLD admin email to synthetic; revokes OLD sessions; re-points teacher-side data + learner links. **Also adds two columns to `accounts`: `audit_email_history jsonb DEFAULT '[]'` (records the email swap) + `teacher_account_migration_marker text NULL` (idempotency).** See §2.9 for the full 7-step TX. **Order-dependent: must run AFTER 0073-0078 + 0076a + 0076c + 0077 (all column-add migs), before 0076b (UNIQUE flip). Mig 0079 is independent — lands later on Day 5A.** |
 | `0084` | (post-MVP) accounts.assigned_teacher_id retire | Drop the legacy column AFTER all read-sites are migrated to use `learner_teacher_links` or `getActiveTeacherForLearner()`. Deferred to a separate epic (not in 8-day MVP). |
 | `0085` | payment_orders.teacher_account_id | `alter table payment_orders add column teacher_account_id uuid references accounts(id) NULL` in Day 1; backfill via slot/package linkage chain. **NOT NULL flip deferred to Epic 6 (Day 6)** when ALL FIVE payment_orders writers (§2.8 table) pass `teacher_account_id` at order creation. Index `(teacher_account_id, created_at desc)` for admin filters created in 0085 immediately. |
@@ -477,9 +477,15 @@ create table teacher_earnings (
   -- For accrued: positive amount. For paid_out / clawback: negative.
   payment_order_id text references payment_orders(invoice_id),
   -- Set on accrued + clawback (links to the source payment).
-  refund_id uuid references refund_records(id),
+  -- Round-25 BLOCKER #1 closure: `refund_records` does NOT exist in this repo. The
+  -- canonical refund SoT is `payment_allocation_reversals` (migration 0036).
+  refund_reversal_id uuid references payment_allocation_reversals(id),
   -- Set on clawback rows only.
-  related_completion_id uuid references lesson_completions(id),
+  -- Round-25 BLOCKER #1 closure: `lesson_completions(id)` does NOT exist on Day 1
+  -- (mig 0079 lands on Day 5A). The FK is added by ALTER TABLE in mig 0079, not here.
+  -- This column is plain UUID on Day 1; mig 0079 (Day 5A) runs
+  -- `alter table teacher_earnings add constraint teacher_earnings_completion_fk foreign key (related_completion_id) references lesson_completions(id)`.
+  related_completion_id uuid,
   related_accrued_id uuid references teacher_earnings(id),
   -- Clawback rows link to the original accrued row they reverse.
   created_at timestamptz not null default now(),
@@ -539,7 +545,7 @@ ALWAYS insert a new `kind='clawback'` row with **`amount_net = -refund.amount_ko
 (the actual refunded amount, NOT the full accrued amount — round-22 BLOCKER #2 closure:
 the existing refund route at `:178-207` supports partial refunds gated by
 `prior + this <= allocation`; clawback'ing the full accrued on a partial refund would
-over-debit the teacher). `refund_id = $newRefundId`, `related_accrued_id = $originalAccruedId`.
+over-debit the teacher). `refund_reversal_id = $newReversalId` (FK to `payment_allocation_reversals(id)` — round-25 closure: not `refund_records`, which does not exist in this repo), `related_accrued_id = $originalAccruedId`.
 A single accrued row CAN have N clawback rows from N partial refunds; the eligible-for-payout
 query already handles this (`select e where not exists clawback c.related_accrued_id = e.id`)
 needs an update: it currently treats ANY clawback as full reversal. Updated query in §2.7:
@@ -1013,7 +1019,14 @@ ZERO route changes on Day 1 — schema-only PR.
 **Day 1 fixture/test sweep (round-19 WARN #7 closure).** The Day-1 PR MUST include a
 sweep of the integration test scaffolding to keep the suite honest during the n:m + new-writer
 window. **Each fixture/test below is explicitly named, NOT discovered ad-hoc:**
-- `tests/integration/setup.ts:28-43` — `truncate ... restart identity cascade` list extends to include `payment_orders`, `pricing_tariffs`, `lesson_packages`, `learner_teacher_links`, `lesson_completions` (added in Day 5A), `lesson_settlements`, `teacher_earnings`, `teacher_subscriptions`, `teacher_invites`, `account_profiles`. Without this the per-test isolation breaks; truncates that miss the new tables will leak state.
+- `tests/integration/setup.ts:28-43` — `truncate ... restart identity cascade` list extends.
+  **Day 1 adds ONLY Day-1 tables** (round-25 BLOCKER #2 closure — `TRUNCATE table` without
+  `IF EXISTS` would fail on tables not yet created): `payment_orders`, `pricing_tariffs`
+  (already present in baseline), `lesson_packages`, `learner_teacher_links`,
+  `teacher_earnings`, `teacher_earnings_payout_coverage`, `teacher_subscriptions`,
+  `teacher_invites`, `account_profiles`. **Day 5A extends** the list with
+  `lesson_completions`, `lesson_settlements`, `lesson_settlement_completions` (added at
+  that point because the tables only exist after mig 0079 + 0080).
 - `tests/integration/auth/teacher-invite-flow.test.ts:87-123` — `expect(learner.assignedTeacherId).toBe(teacherId)` switches to `expect(learner.assignedTeacherIds).toEqual([teacherId])` (or asserts the link row directly via `learner_teacher_links`). Keep the back-compat alias check until Day 6.
 - `tests/integration/scheduling/booking-endpoints.test.ts:50-57` — `assignTeacher()` helper rewritten to INSERT into `learner_teacher_links` (in addition to the legacy `assigned_teacher_id` write during the dual-write window).
 - `tests/integration/billing/checkout-package.test.ts:103-118` — assertion that the order row carries `teacher_account_id` populated by the new derivation path. Without this the BLOCKER #1 writer-sweep is silently green.
@@ -1040,7 +1053,9 @@ window. **Each fixture/test below is explicitly named, NOT discovered ad-hoc:**
 - `/teacher/packages` CRUD.
 
 **Day 5A — Lesson completion schema + ALL writers unified + cron disabled** (Epic 5A)
-- Migrations 0079 (lesson_completions + `was_no_show` boolean + triggers + immutable_at) + 0080 (settlements + M:N).
+- Migrations 0079 (lesson_completions + `was_no_show` boolean + UNIQUE(slot_id) + triggers + immutable_at) + 0080 (settlements + M:N).
+- **Mig 0079 also runs `alter table teacher_earnings add constraint teacher_earnings_completion_fk foreign key (related_completion_id) references lesson_completions(id)`** — round-25 BLOCKER #1 closure: this FK could not exist in Day-1 mig 0081 because `lesson_completions` table did not yet exist.
+- **Test setup sweep extends** to include `lesson_completions`, `lesson_settlements`, `lesson_settlement_completions` (Day-1 sweep deferred these — round-25 BLOCKER #2 closure).
 - Backfill BOTH historical `status='completed'` (was_no_show=false) AND `status='no_show_learner'` (was_no_show=true) slots into lesson_completions. `no_show_teacher` not backfilled.
 - **All three lifecycle writers refactored to go through `markLessonCompleted()` helper that inserts `lesson_completions` first, then lets the trigger flip `lesson_slots.status`. NO direct status writer for billable events remains after Day 5A:**
   1. Teacher self-mark in `/teacher/learners/[id]` (new UI in this day).
@@ -1131,4 +1146,4 @@ Master plan-doc itself goes through `/codex-paranoia plan` rounds 1-3 before Epi
 
 ---
 
-— END OF DRAFT, plan-paranoia rounds 1-24 closed (off-protocol per owner authorization) —
+— END OF DRAFT, plan-paranoia rounds 1-25 closed (off-protocol per owner authorization) —
