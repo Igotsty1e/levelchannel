@@ -605,11 +605,19 @@ creation time. Four derivation paths:
 
 1. **slot-paid via `metadata.slotId`** (current) — derive teacher from
    `lesson_slots.teacher_account_id` already on the slot. Already shipped.
-2. **package-paid via `metadata.packageSlug`** — derive teacher from
-   `lesson_packages.teacher_id` (column added in mig 0076a; UNIQUE flip to
-   `(teacher_id, slug)` happens later in mig 0076b on Day 4 / Epic 3). Checkout route at `app/api/checkout/package/[slug]/route.ts`
-   updated to also accept `?teacher=` query param OR to derive from the current learner's
-   single-active link if unambiguous; if ambiguous (multi-link), 400 with reason.
+2. **package-paid via `metadata.packageId`** — derive teacher from `lesson_packages.teacher_id`
+   (column added in mig 0076a; UNIQUE flip to `(teacher_id, slug)` happens later in mig 0076b
+   on Day 4 / Epic 3). **Canonical identifier is `metadata.packageId`, NOT `metadata.packageSlug`**
+   — round-28 BLOCKER #1 closure: post-mig-0076b a slug is only unique within a teacher,
+   so the existing webhook path (`app/api/payments/webhooks/cloudpayments/pay/route.ts:156`)
+   + grant path (`lib/billing/package-grant.ts:160` → `lib/billing/packages/catalog.ts:71`
+   `where slug = $1`) would become non-deterministic. Checkout already writes both
+   `packageSlug` AND `packageId` (`app/api/checkout/package/[slug]/route.ts:113`). Day-4
+   sweep: every fulfillment site MUST switch to `getPackageById(metadata.packageId)`;
+   `getPackageBySlug` callers either pass a teacher_id discriminator or get deprecated.
+   Checkout route also updated to accept `?teacher=` query param OR to derive from the
+   current learner's single-active link if unambiguous; if ambiguous (multi-link), 400
+   with reason.
 3. **legacy direct-link top-up** (no slot/package, just `amount + email`) — **PRESERVED**
    for backward compat. These orders are credited to the bootstrap plan-4 teacher account
    (the only plan-4 holder at v1 launch). When a NEW teacher gets plan-4, their direct-link
@@ -1094,6 +1102,26 @@ window. **Each fixture/test below is explicitly named, NOT discovered ad-hoc:**
 - Grant/recon/debt all teacher-aware.
 - `/teacher/packages` CRUD.
 - **Mig 0087** ships — `provider='teacher_grant'` + `granted_by_teacher_id` (round-27 BLOCKER #2 closure).
+- **Runtime contract sweep ATOMIC with mig 0087** (round-28 BLOCKER #2 closure — mig
+  0087's new enum values would otherwise be unreadable by the existing TS unions and
+  would crash `store-postgres` mapping on the first SELECT):
+  - `lib/payments/types.ts:5` — extend `PaymentProvider` union with `'teacher_grant'`
+    and `PaymentStatus` union with `'teacher_granted'`.
+  - `lib/payments/store-postgres.ts:89` — extend the row→object mapper to accept the
+    new enum values (currently throws on anything outside the allow-list).
+  - `app/admin/(gated)/payments/page.tsx:11-30` — add `'teacher_granted'` to the status
+    filter `STATUSES` + `STATUS_LABEL` (Russian label: "выдан учителем").
+  - `lib/payments/admin-list.ts` — if it has a hardcoded status filter for admin list
+    sourcing, add `'teacher_granted'` there too.
+  - `lib/payments/cloudpayments.ts` / webhook routes — verify they only branch on the
+    money-flow statuses (`pending`/`paid`/`failed`/`3ds_required`/`cancelled`); the
+    `'teacher_granted'` status MUST NOT flow into webhook processing.
+- **Fulfillment sweep** (round-28 BLOCKER #1 closure): every package fulfillment site
+  switched from slug-lookup to id-lookup:
+  - `app/api/payments/webhooks/cloudpayments/pay/route.ts:156` — use `metadata.packageId`.
+  - `lib/billing/package-grant.ts:160` — call `getPackageById(metadata.packageId)`.
+  - `lib/billing/packages/catalog.ts` — add `getPackageById(id)` if it doesn't exist;
+    `getPackageBySlug` callers either accept a teacher_id discriminator or are deprecated.
 - `/teacher/packages/[id]/issue` route: teacher writes a synthetic `payment_orders` row with `provider='teacher_grant'` + `status='teacher_granted'` + `granted_by_teacher_id` in same TX as the `package_purchases` insert. Reuses the existing admin-grant transactional pattern but with the teacher's account_id (not an operator). No money flow; no CloudPayments call.
 
 **Day 5A — Lesson completion schema + ALL writers unified + cron disabled** (Epic 5A)
@@ -1190,4 +1218,4 @@ Master plan-doc itself goes through `/codex-paranoia plan` rounds 1-3 before Epi
 
 ---
 
-— END OF DRAFT, plan-paranoia rounds 1-27 closed (off-protocol per owner authorization) —
+— END OF DRAFT, plan-paranoia rounds 1-28 closed (off-protocol per owner authorization) —
