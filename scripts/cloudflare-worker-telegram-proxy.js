@@ -80,22 +80,25 @@ export default {
 // Operator setup script — served at /setup. Kept in sync with
 // scripts/setup-tg-webhook.sh manually; if you edit the .sh, mirror
 // the change here. Backticks are escaped via `\``.
-const SETUP_SCRIPT = `#!/bin/bash
-set -e
-ENV_FILE="\${ENV_FILE:?ENV_FILE not set — invoke as: ENV_FILE=/path curl -s URL | bash}"
-if [ ! -f "\$ENV_FILE" ]; then echo "ERR: \$ENV_FILE not found" >&2; exit 2; fi
-set -a; . "\$ENV_FILE"; set +a
-: "\${TELEGRAM_API_BASE_URL:?missing in env}"
-: "\${TELEGRAM_BOT_TOKEN:?missing in env}"
-: "\${TELEGRAM_WEBHOOK_SECRET_TOKEN:?missing in env}"
-WEBHOOK_URL="\${WEBHOOK_URL:-\${TELEGRAM_API_BASE_URL%/}/tg-in}"
-echo "Registering webhook → \$WEBHOOK_URL"
-curl -s -X POST "\$TELEGRAM_API_BASE_URL/bot\$TELEGRAM_BOT_TOKEN/setWebhook" \\
-  -d "url=\$WEBHOOK_URL" \\
-  -d "secret_token=\$TELEGRAM_WEBHOOK_SECRET_TOKEN" \\
-  -d 'allowed_updates=["message"]'
-echo ""
-`
+const SETUP_SCRIPT = [
+  '#!/bin/bash',
+  'set -e',
+  'ENV_FILE="${ENV_FILE:?ENV_FILE not set — invoke as: ENV_FILE=/path curl -s URL | bash}"',
+  'if [ ! -f "$ENV_FILE" ]; then echo "ERR: $ENV_FILE not found" >&2; exit 2; fi',
+  'set -a; . "$ENV_FILE"; set +a',
+  ': "${TELEGRAM_API_BASE_URL:?missing in env}"',
+  ': "${TELEGRAM_BOT_TOKEN:?missing in env}"',
+  ': "${TELEGRAM_WEBHOOK_SECRET_TOKEN:?missing in env}"',
+  'BASE="${TELEGRAM_API_BASE_URL%/}"',
+  'WEBHOOK_URL="${WEBHOOK_URL:-${BASE}/tg-in}"',
+  'echo "Registering webhook → $WEBHOOK_URL"',
+  'curl -s -X POST "$BASE/bot$TELEGRAM_BOT_TOKEN/setWebhook" \\',
+  '  -d "url=$WEBHOOK_URL" \\',
+  '  -d "secret_token=$TELEGRAM_WEBHOOK_SECRET_TOKEN" \\',
+  '  -d \'allowed_updates=["message"]\'',
+  'echo ""',
+  '',
+].join('\n')
 
 async function forwardOutbound(request, inUrl) {
   const targetUrl = new URL(
