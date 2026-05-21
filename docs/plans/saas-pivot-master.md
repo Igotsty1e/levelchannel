@@ -1242,4 +1242,4 @@ Master plan-doc itself goes through `/codex-paranoia plan` rounds 1-3 before Epi
 
 ---
 
-— END OF DRAFT, plan-paranoia rounds 1-31 closed (off-protocol per owner authorization) —
+— END OF DRAFT — plan-paranoia **SIGN-OFF on round 32/32** (off-protocol per owner authorization "Делай до сайн оф"). 24 BLOCKERs + 14+ WARNs/INFOs closed across rounds 19-32. Plan-doc is implementation-ready. —
