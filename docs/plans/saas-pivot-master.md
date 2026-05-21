@@ -116,7 +116,7 @@ the same name → minimum churn on the 20+ read-sites surfaced by schema-survey.
 | `0079` | lesson_completions + trigger pair + immutable_at | One row per "проведено" mark. FK to `lesson_slots(id)` + `pricing_tariffs(id)`. Forward trigger (insert→status=completed) + reverse trigger (delete→status=booked). `immutable_at` column for the 48h un-mark window. **REPLACES** the daily auto-complete cron. |
 | `0080` | lesson_settlements + lesson_settlement_completions M:N | One row per "оплачено" mark. M:N join allows a single settlement to cover multiple partial-pay completions. |
 | `0081` | teacher_earnings — append-only ledger | `accrued / paid_out / clawback` rows. Sign-invariant CHECK. Refund handler always inserts new `clawback` row (never UPDATEs). |
-| `0083` | bootstrap teacher account + email swap + row migration | Mints NEW account inheriting prod email + password; renames OLD admin email to synthetic; revokes OLD sessions; re-points teacher-side data + learner links. See §2.9 for the full 7-step TX. **Order-dependent: must run AFTER 0073-0078 + 0076a + 0079, before 0076b.** |
+| `0083` | bootstrap teacher account + email swap + row migration | Mints NEW account inheriting prod email + password; renames OLD admin email to synthetic; revokes OLD sessions; re-points teacher-side data + learner links. See §2.9 for the full 7-step TX. **Order-dependent: must run AFTER 0073-0078 + 0076a, before 0076b. Mig 0079 is independent — lands later on Day 5A.** |
 | `0084` | (post-MVP) accounts.assigned_teacher_id retire | Drop the legacy column AFTER all read-sites are migrated to use `learner_teacher_links` or `getActiveTeacherForLearner()`. Deferred to a separate epic (not in 7-day MVP). |
 | `0085` | payment_orders.teacher_account_id | (R4 BLOCKER 1 closure) `alter table payment_orders add column teacher_account_id uuid references accounts(id)`. Backfill via slot/package linkage chain (§2.8 paths 1-2); orders with no linkage → bootstrap teacher (path 3). Then `alter ... set not null`. Index `(teacher_account_id, created_at desc)` for admin filters. |
 
@@ -249,35 +249,51 @@ and `no_show_teacher`. Current prod billing semantics:
   at `lib/billing/packages/debt.ts:49,133` counts `status IN ('completed','no_show_learner')`.
 - `no_show_teacher` → NOT billable (teacher's fault).
 
-Pivot preserves this contract:
-- Mig 0079 backfills BOTH `status='completed'` AND `status='no_show_learner'` rows into
-  `lesson_completions` with `amount` snapshot from the tariff. The new row has a
-  `was_no_show` boolean column (default false; true for backfilled no_show_learner rows
-  and for any future "marked as no-show but billable" path). Schema:
+Pivot preserves this contract. To keep `lesson_completions` as a single source of truth
+for debt, BOTH historical backfill AND runtime status-flips funnel into completion rows:
+
+- Mig 0079 schema adds `was_no_show` boolean column (default false) on `lesson_completions`.
   ```sql
   alter table lesson_completions
     add column was_no_show boolean not null default false;
   ```
-- `no_show_teacher` rows stay on `lesson_slots.status` only — no completion row, no debt.
-- Debt query at Day 5B rewrites to read `lesson_completions` directly (covers both
-  completed-on-time + no-show-billable via the unified table).
-- Teacher's "проведено" UI can also offer "был но не пришёл" toggle that inserts
-  completion with `was_no_show=true` (out-of-scope for MVP — toggle deferred; backfill
-  handles the existing data).
+- **Historical backfill (mig 0079, runs once):** for every `lesson_slots WHERE status='completed'`
+  insert a row with `was_no_show=false`. For every `lesson_slots WHERE status='no_show_learner'`
+  insert a row with `was_no_show=true`. `amount` snapshot from current tariff price.
+  `no_show_teacher` rows are NOT backfilled (still not billable).
+- **Runtime status-flip trigger (mig 0079):** the existing `mark-no-show-learner` mutation
+  in `lib/scheduling/slots/mutations-no-show.ts` is updated atomically: in the same TX as
+  the `UPDATE lesson_slots SET status='no_show_learner'`, also INSERT a row into
+  `lesson_completions(slot_id, was_no_show=true, amount=tariff_snapshot, completed_at=end_at,
+  marked_by_account_id=$teacher)`. The forward trigger sets status — but here we're already
+  flipping status manually; the trigger short-circuits if the row already has the target
+  status. (Alternative: a separate ON UPDATE trigger on lesson_slots that fires when
+  status flips to no_show_learner — same effect, less coupling. Chosen approach: trigger.)
+- **`no_show_teacher` UPDATE** does NOT trigger a completion insert (not billable).
+- Debt query at Day 5B rewrites to read `lesson_completions` directly — covers both
+  completed-on-time + no-show-billable via the unified table.
+
+End state: every billable lesson event (whether "проведено" or "no_show_learner") writes a
+`lesson_completions` row. The SoT is unified.
 
 **Migration sequence:**
 
 1. Mig 0079 creates `lesson_completions` + both triggers + `immutable_at` column.
 2. Backfill: for every `lesson_slots WHERE status='completed'` insert a row with
    `amount` snapshot from current tariff price + `completed_at = end_at` +
-   `immutable_at = now()` (historical rows are immutable immediately).
-   `marked_by_account_id = NULL` (synthetic). `status='no_show_*'` rows are NOT backfilled.
+   `immutable_at = now()` + `was_no_show=false`. For every `status='no_show_learner'`
+   insert a row with the same amount/timestamp + `was_no_show=true`.
+   `marked_by_account_id = NULL` (synthetic). `status='no_show_teacher'` rows NOT backfilled
+   (not billable).
 3. Auto-complete cron DISABLED in the same epic (per Owner Q-2 decision).
 4. Debt read at `lib/billing/packages/debt.ts:41` switches to LEFT JOIN `lesson_completions`.
 5. `teacher-learners.ts:29` similarly.
 6. `mutations-cancel.ts` extended with the `'completed'` rejection rules.
-7. `lesson_slots.status` enum keeps `'completed'` + `'no_show_*'` values; route handlers
-   stop writing `'completed'` directly (trigger is the SoT). `no_show_*` writes stay as-is.
+7. `lesson_slots.status` enum keeps `'completed'` + `'no_show_*'` values. Route handlers
+   stop writing `'completed'` directly (forward trigger is the SoT). The `no_show_learner`
+   mutation in `mutations-no-show.ts` is updated to ALSO insert a `lesson_completions`
+   row with `was_no_show=true` atomically in the same TX — preserves the unified-SoT
+   invariant. `no_show_teacher` mutation stays as-is (no completion row, not billable).
 
 Epic 5 implementation note: split into 5A (schema 0079/0080 + triggers + 48h immutability
 + teacher UI to mark complete + cabinet read) and 5B (auto-cron removal + debt-reader
@@ -710,8 +726,9 @@ ZERO route changes on Day 1 — schema-only PR.
 - `/teacher/packages` CRUD.
 
 **Day 5A — Lesson completion schema + UI mark/un-mark** (Epic 5A)
-- Migrations 0079 (lesson_completions + triggers + immutable_at) + 0080 (settlements + M:N).
-- Backfill historical completed slots into lesson_completions.
+- Migrations 0079 (lesson_completions + `was_no_show` boolean + triggers + immutable_at) + 0080 (settlements + M:N).
+- Backfill BOTH historical `status='completed'` (was_no_show=false) AND `status='no_show_learner'` (was_no_show=true) slots into lesson_completions. `no_show_teacher` not backfilled.
+- Update `lib/scheduling/slots/mutations-no-show.ts` so `no_show_learner` write also inserts a completion row atomically. `no_show_teacher` mutation unchanged.
 - `/teacher/learners/[id]` page basic shape — list completions + mark/un-mark button.
 - Forward + reverse trigger end-to-end test (insert→status flip, delete→status flip back).
 - 48h immutability gate (application-side) — see §2.6.
