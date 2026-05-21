@@ -1,6 +1,6 @@
 # SaaS-pivot master plan (2026-05-21)
 
-**Status:** DRAFT — plan-paranoia rounds 1-5 closed (off-protocol per owner authorization).
+**Status:** DRAFT — plan-paranoia rounds 1-16 closed (off-protocol per owner authorization).
 **Author:** Claude (orchestrator-mode).
 **Decision context:** chat session 2026-05-21 with product owner.
 
@@ -167,7 +167,7 @@ the same name → minimum churn on the 20+ read-sites surfaced by schema-survey.
 | `0079` | lesson_completions + trigger pair + immutable_at | One row per "проведено" mark. FK to `lesson_slots(id)` + `pricing_tariffs(id)`. Forward trigger (insert→status=completed) + reverse trigger (delete→status=booked). `immutable_at` column for the 48h un-mark window. **REPLACES** the daily auto-complete cron. |
 | `0080` | lesson_settlements + lesson_settlement_completions M:N | One row per "оплачено" mark. M:N join allows a single settlement to cover multiple partial-pay completions. |
 | `0081` | teacher_earnings — append-only ledger | `accrued / paid_out / clawback` rows. Sign-invariant CHECK. Refund handler always inserts new `clawback` row (never UPDATEs). |
-| `0083` | bootstrap teacher account + email swap + row migration | Mints NEW account inheriting prod email + password; renames OLD admin email to synthetic; revokes OLD sessions; re-points teacher-side data + learner links. **Also adds two columns to `accounts`: `audit_email_history jsonb DEFAULT '[]'` (records the email swap) + `teacher_account_migration_marker text NULL` (idempotency).** See §2.9 for the full 7-step TX. **Order-dependent: must run AFTER 0073-0078 + 0076a + 0077, before 0076b/0076c. Mig 0079 is independent — lands later on Day 5A.** |
+| `0083` | bootstrap teacher account + email swap + row migration | Mints NEW account inheriting prod email + password; renames OLD admin email to synthetic; revokes OLD sessions; re-points teacher-side data + learner links. **Also adds two columns to `accounts`: `audit_email_history jsonb DEFAULT '[]'` (records the email swap) + `teacher_account_migration_marker text NULL` (idempotency).** See §2.9 for the full 7-step TX. **Order-dependent: must run AFTER 0073-0078 + 0076a + 0076c + 0077 (all column-add migs), before 0076b (UNIQUE flip). Mig 0079 is independent — lands later on Day 5A.** |
 | `0084` | (post-MVP) accounts.assigned_teacher_id retire | Drop the legacy column AFTER all read-sites are migrated to use `learner_teacher_links` or `getActiveTeacherForLearner()`. Deferred to a separate epic (not in 8-day MVP). |
 | `0085` | payment_orders.teacher_account_id | `alter table payment_orders add column teacher_account_id uuid references accounts(id) NULL` in Day 1; backfill via slot/package linkage chain. **NOT NULL flip deferred to Epic 6 (Day 6)** when `/api/payments` is updated to pass `teacher_account_id` at order creation. Index `(teacher_account_id, created_at desc)` for admin filters created in 0085 immediately. |
 
@@ -645,7 +645,7 @@ erDiagram
 
 ### Epic 1: schema + teacher self-registration (SAAS-3-IMPL)
 
-- Migrations: 0073, 0074, 0075, 0076a, 0078, 0083 (bootstrap), 0076b, 0076c, 0077, 0081, 0085. See §5 Day 1 for the exact 11-step order. Mig 0079 NOT in Epic 1 — lands in Epic 5 Day 5A.
+- Migrations: 0073, 0074, 0075, 0076a, 0076c, 0077, 0078, 0083 (bootstrap), 0081, 0085. See §5 Day 1 for the exact 10-step order. Mig 0076b (UNIQUE flip + NOT NULL on lesson_packages.teacher_id) NOT in Epic 1 — lands in Epic 3 (Day 4). Mig 0079 (lesson_completions) NOT in Epic 1 — lands in Epic 5 (Day 5A).
 - `/register?role=teacher` route activated. Plan-doc PR #339-area already drafted.
 - HMAC invite-token primitive: `lib/auth/teacher-invites.ts` (TEACHER_INVITE_SECRET env already shipped).
 - Backfill: the SOLE existing teacher (the operator-team account being row-migrated in mig 0083) gets `teacher_subscriptions(plan='operator-managed', state='active')` — per §2.9 + §4.C. No other "existing teachers" on prod.
@@ -914,4 +914,4 @@ Master plan-doc itself goes through `/codex-paranoia plan` rounds 1-3 before Epi
 
 ---
 
-— END OF DRAFT, plan-paranoia rounds 1-12 closed (off-protocol per owner authorization) —
+— END OF DRAFT, plan-paranoia rounds 1-16 closed (off-protocol per owner authorization) —
