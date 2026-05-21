@@ -627,6 +627,11 @@ The migration is **a row-move, not a synthetic-account split**:
    - Email: the now-freed REAL email (Анастасия's working email).
    - Role: `teacher` only.
    - `password_hash`: copy from `OLD` (so the teacher can log in with the same password).
+   - **`email_verified_at`: copy from OLD** (round-23 BLOCKER #1 closure — `/teacher`
+     layout at `app/teacher/layout.tsx:46-47` redirects unverified accounts to `/cabinet`.
+     If `email_verified_at = NULL` on NEW, Анастасия logs in and lands on the learner
+     cabinet, not `/teacher`. OLD was verified, so the email itself is verified — copy
+     the timestamp to preserve that.).
    - Subscription: `plan='operator-managed'` immediately (the only plan-4 holder at boot).
 
 3. **Revoke OLD's teacher role grant** (if present in `account_roles`). OLD is now
@@ -676,8 +681,11 @@ The migration is **a row-move, not a synthetic-account split**:
    - `update account_profiles set account_id = NEW.id, teacher_public_slug = 'level' where account_id = OLD.id`
      — moves Анастасия's existing display_name/timezone/locale to the NEW teacher row.
    - `insert into account_profiles (account_id, display_name, timezone, locale)
-        values (OLD.id, 'admin', 'Europe/Moscow', 'ru-RU')
+        values (OLD.id, 'admin', 'Europe/Moscow', 'ru')
         on conflict (account_id) do nothing` — backfills a minimal admin profile on OLD
+     (round-23 BLOCKER #2 closure: `account_profiles.locale` CHECK constraint at
+     `migrations/0017_account_profiles.sql:33-34` allows only `'ru'` or NULL — was
+     previously `'ru-RU'` which would fail the constraint and abort mig 0083)
      (OLD is admin-only now and has no teacher-facing surface, so display_name/timezone
      are nominal). The `on conflict` is defensive: if mig 0017's FK + cascade behaviour
      ever leaves a half-state on OLD, the INSERT no-ops.
@@ -1045,7 +1053,7 @@ After Day 5A: `lesson_completions` is the SoT for billable lesson events. `lesso
 - Earnings ledger read-only UI.
 - **`payment_orders.teacher_account_id` writer sweep + NOT NULL flip** (round-19 BLOCKER #1 closure):
   1. Update `PaymentOrder` type + `store.create()` signature in `lib/payments/types.ts:57-99` + `lib/payments/store-postgres.ts:223-247` + `lib/payments/provider/checkout.ts:46-95` to carry `teacherAccountId`.
-  2. Update each of the FIVE writers (`/api/payments`, `/api/checkout/package/[slug]`, `/api/admin/packages/[id]/grant`, `/api/payments/sbp/create-qr`) to derive + pass it. See §2.8 writer table.
+  2. Update each of the SIX writers (`/api/payments`, `/api/checkout/package/[slug]`, `/api/admin/packages/[id]/grant`, `/api/payments/sbp/create-qr`, **`/api/payments/charge-token` (saved-card one-click — round-22 BLOCKER #1 + round-23 BLOCKER #3 reconciliation)**, shared `store.create` + `createOrder`) to derive + pass it. See §2.8 writer table.
   3. ONLY THEN ship the NOT NULL flip on `payment_orders.teacher_account_id` (as a separate mig in this deploy — keep it idempotent with `where teacher_account_id is null` guard rollback path).
 - `/t/<teacher-slug>/pay` route shipped — looks up account via `account_profiles.teacher_public_slug`.
 - **Excluded from this day:** recurrent billing / public Mid/Pro upgrades / payout flow.
@@ -1109,4 +1117,4 @@ Master plan-doc itself goes through `/codex-paranoia plan` rounds 1-3 before Epi
 
 ---
 
-— END OF DRAFT, plan-paranoia rounds 1-22 closed (off-protocol per owner authorization) —
+— END OF DRAFT, plan-paranoia rounds 1-23 closed (off-protocol per owner authorization) —
