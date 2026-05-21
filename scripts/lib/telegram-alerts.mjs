@@ -45,7 +45,17 @@
 // arguments. The helper has no globals so unit tests can pin
 // behaviour without env shimming.
 
-const TELEGRAM_API_BASE = 'https://api.telegram.org'
+// BCS-DEF-4-TG-PROXY (2026-05-21) — allow overriding the Telegram
+// API base URL via env. Mandatory for VPS-locations where
+// api.telegram.org is blocked (Roskomnadzor on RU hosting). Set to a
+// Cloudflare-Worker reverse proxy URL such as
+// `https://tg-proxy.<user>.workers.dev` — the worker forwards
+// /bot<TOKEN>/<method> verbatim to api.telegram.org. The trailing
+// slash, if any, is stripped at read time. Default keeps the
+// direct path so existing dev / non-RU deployments are unaffected.
+const TELEGRAM_API_BASE = (
+  process.env.TELEGRAM_API_BASE_URL?.trim() || 'https://api.telegram.org'
+).replace(/\/+$/, '')
 
 const MAX_BODY_CHARS = 4096
 const FETCH_TIMEOUT_MS = 5_000
