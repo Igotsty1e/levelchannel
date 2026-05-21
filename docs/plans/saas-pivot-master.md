@@ -161,14 +161,14 @@ the same name → minimum churn on the 20+ read-sites surfaced by schema-survey.
 | `0075` | pricing_tariffs.teacher_id + deleted_at | `add column teacher_id uuid NULL` + `add column deleted_at timestamptz`. **NOT NULL is deferred** to Epic 2 (Day 3), when the tariff-write surface is updated to pass `teacher_id`. Keeps Day 1 non-blocking for legacy writers. |
 | `0076a` | lesson_packages.teacher_id (column add, nullable) | `alter table add column teacher_id uuid NULL`. NOT NULL deferred to mig 0076b which lands with Epic 3 writers. |
 | `0076b` | lesson_packages.teacher_id (set + unique flip) | Runs in **Epic 3 (Day 4)**, after the catalog/purchases writers are teacher-aware. Drops the global `UNIQUE (slug)`; adds `UNIQUE (teacher_id, slug)`; sets NOT NULL. Three-statement DDL, single TX. |
-| `0076c` | package_purchases.teacher_id | Add column NULL in Day 1 (column add only); backfill in mig 0083; set NOT NULL **in Epic 3 (Day 4)** alongside 0076b. |
+| `0076c` | package_purchases.teacher_id (column add nullable) | Day 1. Backfill by mig 0083. Set NOT NULL in **Epic 3 / Day 4** alongside 0076b. Order: 0076c (Day 1) → 0083 (Day 1) → NOT NULL flip (Day 4, as part of 0076b deploy). |
 | `0077` | learner_teacher_links | n:m link; `(learner_account_id, teacher_account_id) PK`, `linked_at`, `unlinked_at`, `via_invite_id`. Backfill from `accounts.assigned_teacher_id` (mig 0083). |
 | `0078` | teacher_invites | HMAC-signed invite tokens (SAAS-3+4 plan-doc already drafted). |
 | `0079` | lesson_completions + trigger pair + immutable_at | One row per "проведено" mark. FK to `lesson_slots(id)` + `pricing_tariffs(id)`. Forward trigger (insert→status=completed) + reverse trigger (delete→status=booked). `immutable_at` column for the 48h un-mark window. **REPLACES** the daily auto-complete cron. |
 | `0080` | lesson_settlements + lesson_settlement_completions M:N | One row per "оплачено" mark. M:N join allows a single settlement to cover multiple partial-pay completions. |
 | `0081` | teacher_earnings — append-only ledger | `accrued / paid_out / clawback` rows. Sign-invariant CHECK. Refund handler always inserts new `clawback` row (never UPDATEs). |
 | `0083` | bootstrap teacher account + email swap + row migration | Mints NEW account inheriting prod email + password; renames OLD admin email to synthetic; revokes OLD sessions; re-points teacher-side data + learner links. **Also adds two columns to `accounts`: `audit_email_history jsonb DEFAULT '[]'` (records the email swap) + `teacher_account_migration_marker text NULL` (idempotency).** See §2.9 for the full 7-step TX. **Order-dependent: must run AFTER 0073-0078 + 0076a + 0077, before 0076b/0076c. Mig 0079 is independent — lands later on Day 5A.** |
-| `0084` | (post-MVP) accounts.assigned_teacher_id retire | Drop the legacy column AFTER all read-sites are migrated to use `learner_teacher_links` or `getActiveTeacherForLearner()`. Deferred to a separate epic (not in 7-day MVP). |
+| `0084` | (post-MVP) accounts.assigned_teacher_id retire | Drop the legacy column AFTER all read-sites are migrated to use `learner_teacher_links` or `getActiveTeacherForLearner()`. Deferred to a separate epic (not in 8-day MVP). |
 | `0085` | payment_orders.teacher_account_id | `alter table payment_orders add column teacher_account_id uuid references accounts(id) NULL` in Day 1; backfill via slot/package linkage chain. **NOT NULL flip deferred to Epic 6 (Day 6)** when `/api/payments` is updated to pass `teacher_account_id` at order creation. Index `(teacher_account_id, created_at desc)` for admin filters created in 0085 immediately. |
 
 ### 2.4 Soft-delete semantics for tariffs (BLOCKER 2 closure)
@@ -516,8 +516,8 @@ The migration is **a row-move, not a synthetic-account split**:
      this is what makes Epic 2 statement "bootstrap teacher owns all legacy tariffs" hold).
    - `lesson_packages.teacher_id = NULL` → `NEW.id` (column from mig 0076a; later 0076b
      drops the global UNIQUE and adds the composite).
-   - `package_purchases.teacher_id` filled from `lesson_packages.teacher_id` (mig 0076c
-     runs after this).
+   - `package_purchases.teacher_id` filled from `lesson_packages.teacher_id`. Column already
+     added by mig 0076c (Day 1, before 0083); NOT NULL flip lands later in Epic 3 (Day 4).
    - `teacher_calendar_integrations.teacher_account_id` → repoint.
    - `accounts.teacher_telegram_*` columns: copy `OLD`'s values to `NEW`, NULL on `OLD`.
    - `teacher_account_daily_digests.account_id` → repoint (history preserved).
@@ -587,7 +587,7 @@ Phase-1 (this epic): app-query discipline + CI grep guard.
   from learner_teacher_links` and refuses if the surrounding query doesn't reference
   the scope helper or has an `-- teacher-scope: <reason>` annotation.
 - CI workflow `.github/workflows/teacher-scope.yml` runs the check.
-- Phase-2 (post-MVP): convert to Postgres RLS policies. Out of scope for the 7-day push.
+- Phase-2 (post-MVP): convert to Postgres RLS policies. Out of scope for the 8-day push.
 
 ### 2.2 ER snippet (mermaid) — uses canonical table names (R2-6 closure)
 
@@ -782,19 +782,23 @@ Round-2 WARN 8 closure: Day 5 split into 5A/5B.
 
 Canonical migration order (single source of truth — overrides any other ordering hint):
 
+**Day 1 ships ONLY column-add + bootstrap-backfill migrations. NO `SET NOT NULL` and NO composite UNIQUE flips here** — those land in writer-owning epics (Day 3/4/6) per the deferred-flip note below.
+
 1. `0073` — teacher_subscription_plans reference rows.
 2. `0074` — teacher_subscriptions per-teacher state.
 3. `0075` — `pricing_tariffs.teacher_id` (nullable) + `deleted_at`.
 4. `0076a` — `lesson_packages.teacher_id` (nullable).
-5. `0077` — `learner_teacher_links` empty table (no backfill yet).
-6. `0078` — teacher_invites.
-7. `0083` — bootstrap row-MOVE migration (§2.9). Also adds `accounts.audit_email_history` + `accounts.teacher_account_migration_marker` columns. Backfills `pricing_tariffs.teacher_id`, `lesson_packages.teacher_id`, `learner_teacher_links` rows (from `assigned_teacher_id`). REQUIRES 0073-0078 + 0076a + 0077 done. **Mig 0079 NOT in Day 1 — deferred to Day 5A (Epic 5).**
-8. `0076b` — `lesson_packages` drop global UNIQUE(slug), add UNIQUE(teacher_id, slug), set NOT NULL. RUNS AFTER 0083.
-9. `0076c` — `package_purchases.teacher_id` NOT NULL backfilled from lesson_packages.
-10. `0081` — teacher_earnings ledger (initialized empty; populated by Plan-4 webhook in Epic 5).
-11. `0085` — payment_orders.teacher_account_id (nullable add, backfill via slot/package chain, then NOT NULL).
+5. `0076c` — `package_purchases.teacher_id` (nullable column-add). NOT NULL flip lives in Epic 3.
+6. `0077` — `learner_teacher_links` empty table (no backfill yet).
+7. `0078` — teacher_invites.
+8. `0083` — bootstrap row-MOVE migration (§2.9). Also adds `accounts.audit_email_history` + `accounts.teacher_account_migration_marker` columns. Backfills `pricing_tariffs.teacher_id`, `lesson_packages.teacher_id`, `package_purchases.teacher_id`, `learner_teacher_links` rows (from `assigned_teacher_id`). REQUIRES 0073-0078 + 0076a + 0076c + 0077 done. **Mig 0079 NOT in Day 1 — deferred to Day 5A (Epic 5).**
+9. `0081` — teacher_earnings + payout_coverage tables (initialised empty; populated by Plan-4 webhook in Epic 5).
+10. `0085` — `payment_orders.teacher_account_id` (nullable column-add + backfill via slot/package chain). NOT NULL flip lives in Epic 6.
 
-Day 1 ships 11 migrations + the bootstrap account migration (§2.9 — mint NEW pure-teacher inheriting prod email + password; swap OLD admin email to synthetic; revoke OLD sessions; move teacher-side rows + learner links). Mig 0079 (lesson_completions) lands on Day 5A.
+Day 1 ships 10 migrations + the bootstrap account migration (§2.9). NO migrations 0076b
+(UNIQUE flip / NOT NULL) on Day 1 — that's Epic 3 / Day 4.
+
+Mig 0079 (lesson_completions) lands on Day 5A. Mig 0076b lands on Day 4 (Epic 3). NOT NULL flips on `pricing_tariffs.teacher_id` (Day 3), `package_purchases.teacher_id` (Day 4 alongside 0076b), `payment_orders.teacher_account_id` (Day 6).
 
 **All NEW columns added on Day 1 are NULLABLE.** Legacy writers continue to insert
 without passing the new fields; mig 0083 backfills via the bootstrap teacher. NOT NULL
