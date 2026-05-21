@@ -632,6 +632,22 @@ The migration is **a row-move, not a synthetic-account split**:
    - `teacher_account_daily_digests.account_id` → repoint (history preserved).
    - `learner_reminder_dispatches.*` rows linked via teacher_id → repoint.
 
+5a. **Re-point `account_profiles` row from OLD to NEW + set `teacher_public_slug='level'`**
+   (round-21 BLOCKER closure — was previously missing; `account_profiles` is a separate
+   table keyed by `account_id`, not auto-created by `createAccount`, so the bootstrap row
+   needs explicit handling). Mig 0017 created `account_profiles` 1:1 with accounts but
+   profile rows are NOT auto-minted on `createAccount`. Two sub-steps:
+   - `update account_profiles set account_id = NEW.id, teacher_public_slug = 'level' where account_id = OLD.id`
+     — moves Анастасия's existing display_name/timezone/locale to the NEW teacher row.
+   - `insert into account_profiles (account_id, display_name, timezone, locale)
+        values (OLD.id, 'admin', 'Europe/Moscow', 'ru-RU')
+        on conflict (account_id) do nothing` — backfills a minimal admin profile on OLD
+     (OLD is admin-only now and has no teacher-facing surface, so display_name/timezone
+     are nominal). The `on conflict` is defensive: if mig 0017's FK + cascade behaviour
+     ever leaves a half-state on OLD, the INSERT no-ops.
+   After step 5a: the bootstrap NEW has the teacher's real display_name + locale + tz +
+   the canonical `teacher_public_slug='level'`. OLD has a synthetic admin profile.
+
 6. **Re-point learner links**: every `assigned_teacher_id = OLD.id` → `NEW.id`. Insert
    `learner_teacher_links(learner_account_id, teacher_account_id=NEW.id, linked_at=now())`
    for each such learner. (Mig 0077 created the table empty; this is its initial backfill.)
@@ -1057,4 +1073,4 @@ Master plan-doc itself goes through `/codex-paranoia plan` rounds 1-3 before Epi
 
 ---
 
-— END OF DRAFT, plan-paranoia rounds 1-20 closed (off-protocol per owner authorization) —
+— END OF DRAFT, plan-paranoia rounds 1-21 closed (off-protocol per owner authorization) —
