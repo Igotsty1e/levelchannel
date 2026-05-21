@@ -185,7 +185,7 @@ the same name → minimum churn on the 20+ read-sites surfaced by schema-survey.
 | `0083` | bootstrap teacher account + email swap + row migration | Mints NEW account inheriting prod email + password; renames OLD admin email to synthetic; revokes OLD sessions; re-points teacher-side data + learner links. **Also adds two columns to `accounts`: `audit_email_history jsonb DEFAULT '[]'` (records the email swap) + `teacher_account_migration_marker text NULL` (idempotency).** See §2.9 for the full 7-step TX. **Order-dependent: must run AFTER 0073-0078 + 0076a + 0076c + 0077 (all column-add migs), before 0076b (UNIQUE flip). Mig 0079 is independent — lands later on Day 5A.** |
 | `0084` | (post-MVP) accounts.assigned_teacher_id retire | Drop the legacy column AFTER all read-sites are migrated to use `learner_teacher_links` or `getActiveTeacherForLearner()`. Deferred to a separate epic (not in 8-day MVP). |
 | `0085` | payment_orders.teacher_account_id | `alter table payment_orders add column teacher_account_id uuid references accounts(id) NULL` in Day 1; backfill via slot/package linkage chain. **NOT NULL flip deferred to Epic 6 (Day 6)** when ALL FIVE payment_orders writers (§2.8 table) pass `teacher_account_id` at order creation. Index `(teacher_account_id, created_at desc)` for admin filters created in 0085 immediately. |
-| `0086` | account_profiles.teacher_public_slug | `add column teacher_public_slug text null` + `unique` + `check (teacher_public_slug ~ '^[a-z0-9][a-z0-9-]{2,30}$')`. Source-of-truth for `/t/<teacher-slug>/pay` route (round-19 BLOCKER #3 closure — was previously absent from schema). Bootstrap teacher backfilled to `'level'` by mig 0083; new plan-4 teachers pick their slug in `/admin/teachers/[id]/plan` toggle (Epic 6). Nullable for Free/Mid/Pro teachers (they have no /pay surface). |
+| `0086` | account_profiles.teacher_public_slug | `add column teacher_public_slug text null` + `unique` + `check (teacher_public_slug ~ '^[a-z0-9][a-z0-9-]{2,30}$')`. Source-of-truth for `/t/<teacher-slug>/pay` route (round-19 BLOCKER #3 closure — was previously absent from schema). **Runs BEFORE 0083** (round-20 BLOCKER #1 closure — Day-1 canonical order is 0086 → 0083). Bootstrap teacher backfilled to `'level'` by mig 0083 step 4; new plan-4 teachers pick their slug in `/admin/teachers/[id]/plan` toggle (Epic 6). Nullable for Free/Mid/Pro teachers (they have no /pay surface). |
 
 ### 2.4 Soft-delete semantics for tariffs (BLOCKER 2 closure)
 
@@ -238,16 +238,30 @@ audit, NOT just the 9 booking-flow consumers; original list was incomplete).
 - `app/cabinet/page.tsx:95-103,193-203` — cabinet shell + per-teacher block (Day 2 must
   render the n:m timeline shape from the start, even if v0 lists only one teacher when
   link-count = 1).
+- `app/cabinet/lessons-section.tsx:34` — cabinet lessons section (round-20 WARN #3 closure
+  — was missing from §2.5 inventory). Reads `account.assignedTeacherId` from the session
+  account. **Covered by Day-2 back-compat alias** (`assignedTeacherIds[0]`); deeper rewrite
+  to a per-teacher tab is part of Epic 7 cabinet n:m polish.
 - `app/cabinet/settings/calendar/page.tsx:39-47` — learner-side calendar settings (already
   in original list as `:39`; re-confirmed `:39-47` is the full read window).
 - `app/admin/(gated)/accounts/[id]/page.tsx:193-199` — admin learner drill-down.
 - `lib/auth/sessions.ts:51-56,93-94` — **session hydration**. `assignedTeacherId` is read
   once at login + cached on the session row. Day-2 switch: replace single-value cache with
-  `assignedTeacherIds: string[]` (`getActiveTeacherIdsForLearner()`), back-compat alias
-  `assignedTeacherId = assignedTeacherIds[0] ?? null` retained ONLY until §2.5-A.3 drops
-  it on Day 6 along with mig 0084 (column drop).
+  `assignedTeacherIds: string[]` (`getActiveTeacherIdsForLearner()`). **Back-compat alias
+  `assignedTeacherId = assignedTeacherIds[0] ?? null` is retained THROUGH the entire MVP**
+  (Day 2 → post-MVP) so any single-value reader that gets missed during the Day-2 sweep
+  still receives the first teacher's id. The alias + the `accounts.assigned_teacher_id`
+  column itself are both dropped in mig 0084, which is **post-MVP** (round-20 WARN #2
+  closure — was previously inconsistent: §2.1 says 0084 is post-MVP, §2.5 said alias drops
+  on Day 6. Canonical: alias survives through MVP, drop with mig 0084 post-MVP.).
 - `lib/scheduling/teacher-learners.ts:45-53` — teacher-learner summary query (currently
   joins on `assigned_teacher_id = $teacherId`; switches to join on `learner_teacher_links`).
+- `lib/auth/accounts.ts:6` — **`Account` type definition** (`assignedTeacherId: string | null`).
+  Type stays for the back-compat alias defined in `lib/auth/sessions.ts`. Round-20 WARN #3
+  closure: the type-shape itself is intentionally preserved, not rewritten, to keep the
+  single-value alias readable by any not-yet-rewritten consumer. New type-shape side-by-side:
+  `assignedTeacherIds: string[]` added to `Account` in the Day-2 PR; both coexist until
+  mig 0084 (post-MVP).
 
 **Writers (separate from reads):**
 - `lib/auth/accounts.ts:368` (assignTeacher mutation — re-purposed to write `learner_teacher_links`).
@@ -263,9 +277,10 @@ audit, NOT just the 9 booking-flow consumers; original list was incomplete).
   `learner_teacher_links` (canonical).
 - All readers query `learner_teacher_links` via `getActiveTeacherForLearner()` /
   `getActiveTeacherIdsForLearner()`.
-- Mig 0084 drops `accounts.assigned_teacher_id` on Day 6 (post Epic-6) after writers no
-  longer need the dual-write — column-drop is deferred but **session-cache shape change
-  is Day 2 atomic**.
+- Mig 0084 (drop of `accounts.assigned_teacher_id` + back-compat alias) is **post-MVP**
+  per §2.1 deferred row — NOT in the 8-day cut. Session-cache shape change to
+  `assignedTeacherIds[]` IS Day-2 atomic; the column itself + the back-compat alias both
+  outlive MVP until a follow-up epic.
 
 These ALL change atomically in Epic 1 (NOT deferred to Epic 7). Backfill from
 `assigned_teacher_id` → `learner_teacher_links` is one-to-one for v1.
@@ -541,8 +556,9 @@ creation time. Four derivation paths:
 4. **direct top-up at a non-bootstrap teacher** — requires `/t/<teacher-slug>/pay` route
    so the teacher_account_id is unambiguous at order creation. **Slug source-of-truth**:
    mig 0086 adds `account_profiles.teacher_public_slug TEXT UNIQUE` (nullable, allowlist
-   `/^[a-z0-9][a-z0-9-]{2,30}$/`) on Day 1; bootstrap teacher gets `'level'` in mig 0083
-   (so existing direct-link `/pay` becomes equivalent to `/t/level/pay`). Lookup path:
+   `/^[a-z0-9][a-z0-9-]{2,30}$/`) on Day 1 — runs BEFORE mig 0083 in the canonical order;
+   bootstrap teacher gets `'level'` in mig 0083 step 4 (so existing direct-link `/pay`
+   becomes equivalent to `/t/level/pay`). Lookup path:
    `select id from accounts join account_profiles using(id) where account_profiles.teacher_public_slug = $1`,
    then validate the account holds a `teacher` role + plan-4 `teacher_subscriptions` row.
    Public-collision risk: slug uniqueness + allowlist prevents spoofing; no slug → 404.
@@ -897,13 +913,14 @@ Canonical migration order (single source of truth — overrides any other orderi
 5. `0076c` — `package_purchases.teacher_id` (nullable column-add). NOT NULL flip lives in Epic 3.
 6. `0077` — `learner_teacher_links` empty table (no backfill yet).
 7. `0078` — teacher_invites.
-8. `0083` — bootstrap row-MOVE migration (§2.9). Also adds `accounts.audit_email_history` + `accounts.teacher_account_migration_marker` columns. Backfills `pricing_tariffs.teacher_id`, `lesson_packages.teacher_id`, `package_purchases.teacher_id`, `learner_teacher_links` rows (from `assigned_teacher_id`). REQUIRES 0073-0078 + 0076a + 0076c + 0077 done. **Mig 0079 NOT in Day 1 — deferred to Day 5A (Epic 5).**
-9. `0081` — teacher_earnings + payout_coverage tables (initialised empty; populated by Plan-4 webhook in Epic 5).
-10. `0085` — `payment_orders.teacher_account_id` (nullable column-add + backfill via slot/package chain). NOT NULL flip lives in Epic 6.
-11. `0086` — `account_profiles.teacher_public_slug` (nullable UNIQUE + allowlist check). Bootstrap teacher backfilled to `'level'` inside mig 0083.
+8. `0081` — teacher_earnings + payout_coverage tables (initialised empty; populated by Plan-4 webhook in Epic 5).
+9. `0086` — `account_profiles.teacher_public_slug` (nullable UNIQUE + allowlist check). **Must precede 0083** because step 4 of mig 0083 writes `teacher_public_slug = 'level'` on the bootstrap account; the column has to exist first (round-20 BLOCKER #1 closure — pre-fix sequence had 0086 AFTER 0083, which would fail).
+10. `0083` — bootstrap row-MOVE migration (§2.9). Also adds `accounts.audit_email_history` + `accounts.teacher_account_migration_marker` columns. Backfills `pricing_tariffs.teacher_id`, `lesson_packages.teacher_id`, `package_purchases.teacher_id`, `learner_teacher_links` rows (from `assigned_teacher_id`), AND sets `account_profiles.teacher_public_slug='level'` on the bootstrap teacher. REQUIRES 0073-0078 + 0076a + 0076c + 0077 + 0081 + **0086** done. **Mig 0079 NOT in Day 1 — deferred to Day 5A (Epic 5).**
+11. `0085` — `payment_orders.teacher_account_id` (nullable column-add + backfill via slot/package chain). NOT NULL flip lives in Epic 6. Runs AFTER 0083 (depends on bootstrap account being in place).
 
-Day 1 ships 11 migrations + the bootstrap account migration (§2.9). NO migrations 0076b
-(UNIQUE flip / NOT NULL) on Day 1 — that's Epic 3 / Day 4.
+Day 1 ships 11 migrations. Canonical order: **0073 → 0074 → 0075 → 0076a → 0076c → 0077
+→ 0078 → 0081 → 0086 → 0083 → 0085**. NO migrations 0076b (UNIQUE flip / NOT NULL) on
+Day 1 — that's Epic 3 / Day 4.
 
 Mig 0079 (lesson_completions) lands on Day 5A. Mig 0076b lands on Day 4 (Epic 3). NOT NULL flips on `pricing_tariffs.teacher_id` (Day 3), `package_purchases.teacher_id` (Day 4 alongside 0076b), `payment_orders.teacher_account_id` (Day 6).
 
@@ -932,8 +949,11 @@ window. **Each fixture/test below is explicitly named, NOT discovered ad-hoc:**
 - HMAC invite-token primitive.
 - Migration 0077 wired into the n:m read-sites (BLOCKER 3 closure §2.5).
 - `getActiveTeacherForLearner()` helper added; ALL read-sites switched atomically (full
-  inventory in §2.5 — booking-flow 6 + additional 7 = 13 sites; **not 9**). Session-cache
-  shape change to `assignedTeacherIds: string[]` ships in this PR.
+  inventory in §2.5 — booking-flow 6 + additional 8 = 14 sites; **not 9**, **not 13** —
+  round-20 WARN #3 added `app/cabinet/lessons-section.tsx`). Session-cache shape change
+  to `assignedTeacherIds: string[]` ships in this PR. Back-compat alias
+  `assignedTeacherId = assignedTeacherIds[0] ?? null` retained THROUGH MVP for any reader
+  missed in the sweep (cabinet/lessons-section is the canonical case).
 
 **Day 3 — Teacher-owned tariffs + soft-delete** (Epic 2)
 - `pricing_tariffs.teacher_id` filters at every read-site.
@@ -1037,4 +1057,4 @@ Master plan-doc itself goes through `/codex-paranoia plan` rounds 1-3 before Epi
 
 ---
 
-— END OF DRAFT, plan-paranoia rounds 1-19 closed (off-protocol per owner authorization) —
+— END OF DRAFT, plan-paranoia rounds 1-20 closed (off-protocol per owner authorization) —
