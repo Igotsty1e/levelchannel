@@ -641,6 +641,20 @@ The migration is **a row-move, not a synthetic-account split**:
    `revoked_at = now()`. The teacher will need to re-log on the new email.
    (Acceptable — one-time inconvenience for clean migration.)
 
+4a. **Mass-consume outstanding single-use auth tokens on OLD** (round-24 BLOCKER closure
+    — single-use tokens are `account_id`-bound, NOT email-bound):
+    ```sql
+    update password_resets    set consumed_at = now() where account_id = OLD.id and consumed_at is null;
+    update email_verifications set consumed_at = now() where account_id = OLD.id and consumed_at is null;
+    ```
+    Rationale: any stale `password-reset` / `verify-email` link previously sent to the
+    REAL mailbox (which is about to become NEW's email) would otherwise still authenticate
+    into OLD after the row-move — `lib/auth/single-use-tokens.ts:36,80` mints/consumes by
+    `account_id`, and `app/api/auth/reset-confirm/route.ts:56-69` + `verify/route.ts:43-49`
+    both create a session for the consumed token's `account_id`. Marking all OLD-bound
+    tokens consumed in the same TX as the email swap closes that window. Anastasiya / Ivan
+    will need to request fresh reset/verify links post-migration if needed.
+
 5. **Re-point teacher-side data from OLD to NEW** (round-22 BLOCKER #3 closure —
    expanded inventory + corrected `teacher_calendar_integrations` column name):
    - `lesson_slots.teacher_account_id = OLD.id` → `NEW.id`.
@@ -1117,4 +1131,4 @@ Master plan-doc itself goes through `/codex-paranoia plan` rounds 1-3 before Epi
 
 ---
 
-— END OF DRAFT, plan-paranoia rounds 1-23 closed (off-protocol per owner authorization) —
+— END OF DRAFT, plan-paranoia rounds 1-24 closed (off-protocol per owner authorization) —
