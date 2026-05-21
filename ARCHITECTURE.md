@@ -22,7 +22,7 @@ Module-specific contracts + invariants + file inventory live next to each module
 - [`lib/admin/README.md`](lib/admin/README.md) — operator-tunable settings, probe-status (4 alert probes + 1 digest sibling surface), conflict-feed reader, digest-summary reader (1 critical-path file).
 - [`lib/security/README.md`](lib/security/README.md) — idempotency, rate-limit, origin gate (2 critical-path files).
 
-The critical-path inventory (`docs/critical-path.md`) lists the 21 load-bearing files across these modules (refreshed 2026-05-19 PR #369; one addition since the 20-file baseline — `lib/auth/teacher-invites.ts` for SAAS-3+4). PRs touching any of them MUST carry `Codex-Paranoia: SIGN-OFF`.
+The critical-path inventory (`docs/critical-path.md`) lists the 25 load-bearing files across these modules (refreshed 2026-05-21 at CRITICAL-PATH-INVENTORY epic close; additions since the 20-file baseline — `lib/auth/teacher-invites.ts` (SAAS-3+4), `app/api/payments/sbp/create-qr/route.ts` (SBP-PAY), `lib/admin/conflict-feed.ts` (BCS-DEF-2), `scripts/teacher-daily-digest.mjs` (BCS-DEF-5), `scripts/learner-reminder-dispatch.mjs` (BCS-DEF-4)). PRs touching any of them MUST carry `Codex-Paranoia: SIGN-OFF`.
 
 ## Layout
 

@@ -1,8 +1,8 @@
 # Critical-path inventory
 
 **Status:** approved (2026-05-18; product-owner request).
-**Last refresh:** 2026-05-19 (post-burst) — file-existence re-verified across all 24 entries; three additions for the 2026-05-19 burst: item 22 (`app/api/payments/sbp/create-qr/route.ts`, SBP-PAY), item 23 (`lib/admin/conflict-feed.ts`, BCS-DEF-2), item 24 (`scripts/teacher-daily-digest.mjs`, BCS-DEF-5). Item 17 (`lib/calendar/pull-runner.ts`) is still on the list — BCS-DEF-7 Phase 2 expanded its surface to include the delta-merge read path under the same atomicity invariant. BCS-DEF-4 (`scripts/learner-reminder-dispatch.mjs`) is on a feature branch and will join the list when merged.
-**Scope:** 24 files whose breakage = production incident (money, security, or scheduling integrity). PRs that touch any file in this list MUST land `Codex-Paranoia: SIGN-OFF` (full paranoia loop), NOT `SUB-WAVE self-reviewed`.
+**Last refresh:** 2026-05-21 (CRITICAL-PATH-INVENTORY epic close) — file-existence re-verified across all 25 entries; one addition: item 25 (`scripts/learner-reminder-dispatch.mjs`, BCS-DEF-4 merged 2026-05-20 via PR #392). Previous refresh 2026-05-19 (post-burst) added items 22-24 (SBP-PAY, BCS-DEF-2 conflict-feed, BCS-DEF-5 teacher-daily-digest). Item 17 (`lib/calendar/pull-runner.ts`) still on the list — BCS-DEF-7 Phase 2 expanded its surface to include the delta-merge read path under the same atomicity invariant.
+**Scope:** 25 files whose breakage = production incident (money, security, scheduling integrity, or silent comms drop). PRs that touch any file in this list MUST land `Codex-Paranoia: SIGN-OFF` (full paranoia loop), NOT `SUB-WAVE self-reviewed`.
 
 ## Selection criteria
 
@@ -12,10 +12,11 @@ A file is on this list iff at least one is true:
 2. **Authoritative security gate.** A bug bypasses a session/admin-role check or lets a user act on data they don't own.
 3. **Calendar/booking integrity.** A bug double-books a slot, loses a cancel, or de-syncs against Google.
 4. **Audit-log integrity.** A bug rewrites or drops audit history that legal/forensic relies on.
+5. **Silent comms drop on an idempotency-keyed schedule.** A bug double-sends or silently skips a per-user, per-day reminder; the row's UNIQUE constraint then blocks any manual retry, so the recovery cost is operator-side SQL.
 
 "Production incident" here means: requires operator action to make whole (manual SQL, refund, support contact). Not "a route returns 500" — those are routine.
 
-## The 24
+## The 25
 
 Grouped by failure mode. Each entry: path + the specific invariant it owns.
 
@@ -64,6 +65,10 @@ Grouped by failure mode. Each entry: path + the specific invariant it owns.
 
 24. **`scripts/teacher-daily-digest.mjs`** (BCS-DEF-5, 2026-05-19). Owns: the daily 08:00 teacher lesson digest cron driver. Candidate-set SQL evaluates `now() AT TIME ZONE coalesce(p.timezone, 'Europe/Moscow')` in a single round-trip per tick — bad timezone string would crash the whole tick (defended by migration 0069 IANA CHECK constraint). Idempotency via `teacher_account_daily_digests` PK `(account_id, sent_date)` where `sent_date` is the teacher's LOCAL calendar day (NOT UTC). State machine encoded in the row's CHECK constraint (`empty_day` / `account_email_missing` / `send_failed` terminal buckets). A bug here either double-sends digests to teachers (PK conflict surfaces as send_failed) or silently drops the run; the operator's `/admin/settings/digest` 7-day widget would catch the latter within a day. Sibling probe (writes `probe_runs` with `probe_name='teacher-daily-digest'`, NOT iterated in `PROBE_NAMES`).
 
+### Silent comms drop — burst additions (1 file)
+
+25. **`scripts/learner-reminder-dispatch.mjs`** (BCS-DEF-4, 2026-05-20 — PR #392). Owns: the per-minute learner 60-min-before-lesson email reminder cron driver. Idempotent atomic claim via `INSERT INTO learner_reminder_dispatches (slot_id, channel, ...) ON CONFLICT DO NOTHING RETURNING id`; a worker crash between claim and the `status='sent'`/`status='skipped'` UPDATE strands the row at `status='claimed'` and the UNIQUE `(slot_id, channel)` constraint blocks any retry — only operator `DELETE` unblocks. Operator knobs go through `lib/admin/operator-settings.ts` (DB → env → default chain) for the master switch, the `LEARNER_REMINDER_WINDOW_MINUTES` (clamped 5..360), and the per-tick rate-limit. A bug here either spams a learner with duplicate reminders 1h before their lesson (PK conflict + audit noise) or silently drops the entire tick (operator catches via the per-tick `probe_runs` row on `/admin/settings/alerts`).
+
 ## Process gate
 
 PRs that modify any file from this list MUST land with:
@@ -96,3 +101,7 @@ If a file feels load-bearing but doesn't make this list, ask: "If this file comm
 Re-walk this list every 6 weeks or after any production incident. Add files when a new money-moving / auth surface ships (e.g. if a future wave adds a second payment provider, its webhook handler joins). Remove files when a refactor breaks a load-bearing concern into smaller pieces — the new pieces may not individually meet the bar.
 
 Next scheduled re-walk: **2026-06-29**.
+
+## Future CI gate
+
+Today, the `Codex-Paranoia: SIGN-OFF` requirement for these files lives only as a contributor convention enforced by the skill-pipeline commit-msg hook plus reviewer attention. The intended hardening is a follow-up epic that wires a `scripts/critical-path-check.sh` guard into the existing `.githooks/commit-msg` chain and a parallel `.github/workflows/critical-path.yml` action: both parse the path list from this document, look at the PR's HEAD commit-message trailer block, and reject the push or PR if the commit touches any listed file and lacks `Codex-Paranoia: SIGN-OFF round N/3` (`SUB-WAVE self-reviewed` does NOT satisfy this gate for critical-path files, regardless of the parent epic's plan-paranoia status). Implementation is deferred so reviewers can argue with the list itself first; mechanical enforcement lands once the surface stops drifting under feature work.
