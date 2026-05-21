@@ -458,8 +458,8 @@ creation time. Four derivation paths:
 1. **slot-paid via `metadata.slotId`** (current) — derive teacher from
    `lesson_slots.teacher_account_id` already on the slot. Already shipped.
 2. **package-paid via `metadata.packageSlug`** — derive teacher from
-   `lesson_packages.teacher_id` (column added in mig 0076). Slug becomes teacher-scoped
-   (UNIQUE per teacher_id). Checkout route at `app/api/checkout/package/[slug]/route.ts`
+   `lesson_packages.teacher_id` (column added in mig 0076a; UNIQUE flip to
+   `(teacher_id, slug)` happens later in mig 0076b on Day 4 / Epic 3). Checkout route at `app/api/checkout/package/[slug]/route.ts`
    updated to also accept `?teacher=` query param OR to derive from the current learner's
    single-active link if unambiguous; if ambiguous (multi-link), 400 with reason.
 3. **legacy direct-link top-up** (no slot/package, just `amount + email`) — **PRESERVED**
@@ -472,10 +472,11 @@ creation time. Four derivation paths:
    so the teacher_account_id is unambiguous at order creation.
 
 Backfill is in **mig 0085** (NOT 0083): mig 0085 adds `payment_orders.teacher_account_id`
-as nullable, backfills via the slot/package linkage chain, then `SET NOT NULL`. Orders
-without linkage → assigned to the bootstrap plan-4 teacher account (logged in audit
-history). Mig 0083 (bootstrap row-MOVE) runs first; 0085 depends on the bootstrap
-account being in place. Order: 0083 → 0085.
+as nullable on Day 1 and backfills via the slot/package linkage chain. Orders without
+linkage → bootstrap plan-4 teacher account (logged in audit history). Mig 0083 (bootstrap
+row-MOVE) runs first; 0085 depends on the bootstrap account being in place. Order:
+0083 → 0085. **NOT NULL flip is deferred to Epic 6 (Day 6)** when `/api/payments` is
+updated to always pass `teacher_account_id` — matches §2.1 mig table + §5 Day 1 footer.
 
 `/api/payments` validates the inferred `teacher_account_id` against
 `teacher_subscriptions` — only plan-4 teachers' orders accepted. Mid/Pro/Free teachers do
