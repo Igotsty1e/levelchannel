@@ -5,7 +5,7 @@
 # Operator usage:
 #   curl -s https://raw.githubusercontent.com/Igotsty1e/levelchannel/main/scripts/setup-tg-webhook.sh | bash
 #
-# Reads from /etc/levelchannel.env:
+# Reads from the env file:
 #   TELEGRAM_API_BASE_URL          (e.g. https://tg-proxy.<user>.workers.dev)
 #   TELEGRAM_BOT_TOKEN
 #   TELEGRAM_WEBHOOK_SECRET_TOKEN
@@ -14,7 +14,10 @@
 
 set -e
 
-ENV_FILE="${ENV_FILE:-/etc/levelchannel.env}"
+# Operator must pass ENV_FILE explicitly — keeping the path out of the
+# public repo (public-surface guard). Example invocation:
+#   export ENV_FILE=/path/to/env && curl -s ... | bash
+ENV_FILE="${ENV_FILE:?ENV_FILE not set — export ENV_FILE=/path/to/env first}"
 WEBHOOK_URL="${WEBHOOK_URL:-https://levelchannel.ru/api/telegram/webhook}"
 
 if [ ! -f "$ENV_FILE" ]; then
