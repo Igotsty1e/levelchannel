@@ -10,7 +10,7 @@ Plan-mode trail:
 
 Wave-mode paranoia: SIGN-OFF round 1/3 with 2 WARNs (transport-error wrap + 502/503 test coverage) closed inline before merge.
 
-Follow-ups discovered during wave-mode and tracked in `ENGINEERING_BACKLOG.md §Audit findings — 2026-05-17`: AUDIT-CODE-2 (idempotency cache poisoning fix, PR #254), AUDIT-CODE-3 (extract `isUndefinedTableError` helper), AUDIT-CODE-7 (success-side detector log).
+Follow-ups discovered during wave-mode and tracked in [`docs/backlog/audit-2026-05-17.md`](../backlog/audit-2026-05-17.md) (extracted from `ENGINEERING_BACKLOG.md` on 2026-05-21 via DOC-SPLIT): AUDIT-CODE-2 (idempotency cache poisoning fix, PR #254), AUDIT-CODE-3 (extract `isUndefinedTableError` helper), AUDIT-CODE-7 (success-side detector log).
 **Wave name:** ALERTS-OBS (one-PR epic; small enough to fit in a single PR).
 **Trigger:** admin-ux-coverage §10.1 P2. Operator has no signal today that the three alert probes (auth-flow, calendar-pathology, webhook-flow) are actually running, what they last decided, or that the email transport works — only journald and per-probe local dedup state files. The operator cannot see this without SSH.
 
