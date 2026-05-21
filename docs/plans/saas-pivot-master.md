@@ -511,26 +511,42 @@ select coalesce(sum(amount_net), 0)
  where teacher_account_id = $1;
 
 -- accrued rows eligible for the next payout batch
--- (not yet in any payout_coverage AND not yet clawback'd)
-select e.id, e.amount_net, e.payment_order_id
+-- Round-22 BLOCKER #2 closure: partial-refund support. An accrued row
+-- is payable on the NET remaining after partial clawbacks (not just
+-- "any clawback → exclude"). Pre-fix logic excluded the entire accrued
+-- on the first clawback row, even if the clawback was partial.
+select e.id,
+       e.amount_net + coalesce(c.clawed_back, 0) as net_remaining,
+       e.payment_order_id
   from teacher_earnings e
+  left join lateral (
+    select sum(amount_net) as clawed_back
+      from teacher_earnings c
+     where c.kind = 'clawback'
+       and c.related_accrued_id = e.id
+  ) c on true
  where e.teacher_account_id = $1
    and e.kind = 'accrued'
+   and e.amount_net + coalesce(c.clawed_back, 0) > 0
    and not exists (
      select 1 from teacher_earnings_payout_coverage cov
       where cov.accrued_id = e.id
-   )
-   and not exists (
-     select 1 from teacher_earnings c
-      where c.kind = 'clawback'
-        and c.related_accrued_id = e.id
    );
 ```
 
-**Refund handler (`app/api/admin/refunds/route.ts:22`):** after writing the refund row,
-ALWAYS insert a new `kind='clawback'` row with `amount_net = -original_accrued.amount_net`,
-`refund_id = $newRefundId`, `related_accrued_id = $originalAccruedId`. **Never UPDATE the
-original accrued row.** If balance goes negative, operator gets an alert email.
+**Refund handler (`app/api/admin/refunds/route.ts:178-207`):** after writing the refund row,
+ALWAYS insert a new `kind='clawback'` row with **`amount_net = -refund.amount_kopecks/100`**
+(the actual refunded amount, NOT the full accrued amount — round-22 BLOCKER #2 closure:
+the existing refund route at `:178-207` supports partial refunds gated by
+`prior + this <= allocation`; clawback'ing the full accrued on a partial refund would
+over-debit the teacher). `refund_id = $newRefundId`, `related_accrued_id = $originalAccruedId`.
+A single accrued row CAN have N clawback rows from N partial refunds; the eligible-for-payout
+query already handles this (`select e where not exists clawback c.related_accrued_id = e.id`)
+needs an update: it currently treats ANY clawback as full reversal. Updated query in §2.7:
+`accrued_after_clawback(e) = e.amount_net + sum(clawback.amount_net where related_accrued_id = e.id)`;
+include in payout if `accrued_after_clawback(e) > 0` AND `NOT EXISTS payout_coverage`. The
+"if balance < 0 → alert operator" rule still holds for cumulative deficit. **Never UPDATE
+the original accrued row.**
 
 **Day 6 ledger UI:** uses the canonical queries above. "Current balance" = SUM; "Eligible
 for payout" = filtered list; "Negative balance teachers" = SUM < 0 group.
@@ -578,7 +594,8 @@ writers (must ALL be updated in Epic 6 BEFORE the NOT NULL flip):**
 | Package checkout | `app/api/checkout/package/[slug]/route.ts:185-224` | Derive from `lesson_packages.teacher_id` (mig 0076a) — pass into `store.create`. |
 | Admin package grant | `app/api/admin/packages/[id]/grant/route.ts:271-287` | Derive from package; pass through. |
 | SBP-QR create | `app/api/payments/sbp/create-qr/route.ts:221-250` | Derive from slot/package; pass through. |
-| Shared store-postgres | `lib/payments/store-postgres.ts:223-247` + `lib/payments/types.ts:57-99` + `lib/payments/provider/checkout.ts:46-95` | **Contract update: `PaymentOrder` type + `store.create()` signature accept `teacherAccountId: string \| null`. Type-level default is null during the dual-write window; flip to required after all five callers pass it.** |
+| **Saved-card one-click** (round-22 BLOCKER #1 closure) | `app/api/payments/charge-token/route.ts:138-151` → `chargeWithSavedCard()` → `lib/payments/provider/checkout.ts:147-175` (`createOrder`) | Derive from slot/package metadata (same paths as `/api/payments`); pass `teacher_account_id` into `createOrder`. Without this, one-click payments would fail the Day-6 NOT NULL flip. |
+| Shared store-postgres | `lib/payments/store-postgres.ts:223-247` + `lib/payments/types.ts:57-99` + `lib/payments/provider/checkout.ts:46-95,147-175` | **Contract update: `PaymentOrder` type + `store.create()` + `createOrder()` signatures accept `teacherAccountId: string \| null`. Type-level default is null during the dual-write window; flip to required after all SIX callers pass it.** |
 
 Mig 0085 backfill chain (Day 1 nullable): (a) for orders WITH `metadata.slotId` → join
 `lesson_slots.teacher_account_id`; (b) for orders WITH `metadata.packageSlug` → join
@@ -619,7 +636,8 @@ The migration is **a row-move, not a synthetic-account split**:
    `revoked_at = now()`. The teacher will need to re-log on the new email.
    (Acceptable — one-time inconvenience for clean migration.)
 
-5. **Re-point teacher-side data from OLD to NEW**:
+5. **Re-point teacher-side data from OLD to NEW** (round-22 BLOCKER #3 closure —
+   expanded inventory + corrected `teacher_calendar_integrations` column name):
    - `lesson_slots.teacher_account_id = OLD.id` → `NEW.id`.
    - `pricing_tariffs.teacher_id = NULL` → `NEW.id` (column from mig 0075 backfills here;
      this is what makes Epic 2 statement "bootstrap teacher owns all legacy tariffs" hold).
@@ -627,10 +645,28 @@ The migration is **a row-move, not a synthetic-account split**:
      drops the global UNIQUE and adds the composite).
    - `package_purchases.teacher_id` filled from `lesson_packages.teacher_id`. Column already
      added by mig 0076c (Day 1, before 0083); NOT NULL flip lands later in Epic 3 (Day 4).
-   - `teacher_calendar_integrations.teacher_account_id` → repoint.
+   - `teacher_calendar_integrations.account_id` → repoint. (Table is keyed by
+     `account_id`, not `teacher_account_id` — per `migrations/0043_teacher_calendar_integrations.sql:21`.
+     Pre-fix said `teacher_account_id` which does not exist on this table.)
+   - `teacher_external_busy_intervals.teacher_account_id` → repoint
+     (`migrations/0044_teacher_external_busy_intervals.sql:29`). Busy cache fed by Google
+     pull job; if not repointed, conflict detection still flags OLD's events against
+     NEW's slots, but the table key would orphan.
+   - `calendar_push_jobs.teacher_account_id` + `calendar_pull_jobs.teacher_account_id` →
+     repoint (`migrations/0045_calendar_jobs.sql:27,95`). Both have `ON DELETE CASCADE`
+     from accounts, so missing repoint + OLD account modification triggers no row-loss,
+     but live in-flight jobs would silently target OLD which now has no `teacher` role.
+   - `teacher_invites.teacher_account_id` → repoint
+     (`migrations/0057_teacher_invites.sql:23`). Without this, any outstanding invite
+     links Анастасия generated would still point at OLD; the redeem-CTE re-checks
+     `account_roles` and would reject because OLD no longer holds `teacher` role
+     (closes a real "all your existing invite URLs go 409" footgun).
    - `accounts.teacher_telegram_*` columns: copy `OLD`'s values to `NEW`, NULL on `OLD`.
    - `teacher_account_daily_digests.account_id` → repoint (history preserved).
    - `learner_reminder_dispatches.*` rows linked via teacher_id → repoint.
+   - **Verification grep** before shipping mig 0083: `grep -RnE "teacher_account_id|teacher_id"
+     migrations/ | awk -F: '{print $1}' | sort -u` against the §0z disposition map. Any
+     teacher-bound table NOT in the list above MUST be added before the mig runs.
 
 5a. **Re-point `account_profiles` row from OLD to NEW + set `teacher_public_slug='level'`**
    (round-21 BLOCKER closure — was previously missing; `account_profiles` is a separate
@@ -1073,4 +1109,4 @@ Master plan-doc itself goes through `/codex-paranoia plan` rounds 1-3 before Epi
 
 ---
 
-— END OF DRAFT, plan-paranoia rounds 1-21 closed (off-protocol per owner authorization) —
+— END OF DRAFT, plan-paranoia rounds 1-22 closed (off-protocol per owner authorization) —
