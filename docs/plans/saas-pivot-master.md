@@ -150,8 +150,17 @@ Four plans:
 
 - Postpaid: teacher marks "lesson completed" → learner sees accumulating balance owed.
   Teacher manually marks "paid" (full or partial sum). Platform does NOT touch money.
-- Package: learner buys a package from teacher → balance decrements on completion. Same
-  payment-out-of-band rule for the package purchase itself (Mid/Pro teachers handle
+- Package: learner buys a package from teacher → **package consumption is debited at
+  booking (NOT on completion)** — keeps the existing ledger semantics from migration
+  0033 (`lib/scheduling/slots/booking.ts:220` consumes; `lib/scheduling/slots/mutations-cancel.ts:140`
+  restores on slot cancel). Round-27 BLOCKER #1 closure: prior wording said "decrements
+  on completion" which would have required a same-slot re-bind path that mig 0033
+  explicitly forbids. The package_consumptions ledger is unchanged by the SaaS pivot;
+  lesson_completions is a SEPARATE concept that tracks "проведено" status + earnings
+  ledger entries, not package unit count. Un-mark of a completion does NOT restore the
+  package consumption (consumption is bound to the booking, not the completion); only a
+  slot CANCEL restores it. Debt query at §2.6 already filters out package-backed slots
+  via `LEFT JOIN package_consumptions`. Same  payment-out-of-band rule for the package purchase itself (Mid/Pro teachers handle
   payment off-platform).
 
 **Plan-4 learners — current CloudPayments flow.**
@@ -186,6 +195,7 @@ the same name → minimum churn on the 20+ read-sites surfaced by schema-survey.
 | `0084` | (post-MVP) accounts.assigned_teacher_id retire | Drop the legacy column AFTER all read-sites are migrated to use `learner_teacher_links` or `getActiveTeacherForLearner()`. Deferred to a separate epic (not in 8-day MVP). |
 | `0085` | payment_orders.teacher_account_id | `alter table payment_orders add column teacher_account_id uuid references accounts(id) NULL` in Day 1; backfill via slot/package linkage chain. **NOT NULL flip deferred to Epic 6 (Day 6)** when ALL FIVE payment_orders writers (§2.8 table) pass `teacher_account_id` at order creation. Index `(teacher_account_id, created_at desc)` for admin filters created in 0085 immediately. |
 | `0086` | account_profiles.teacher_public_slug | `add column teacher_public_slug text null` + `unique` + `check (teacher_public_slug ~ '^[a-z0-9][a-z0-9-]{2,30}$')`. Source-of-truth for `/t/<teacher-slug>/pay` route (round-19 BLOCKER #3 closure — was previously absent from schema). **Runs BEFORE 0083** (round-20 BLOCKER #1 closure — Day-1 canonical order is 0086 → 0083). Bootstrap teacher backfilled to `'level'` by mig 0083 step 4; new plan-4 teachers pick their slug in `/admin/teachers/[id]/plan` toggle (Epic 6). Nullable for Free/Mid/Pro teachers (they have no /pay surface). |
+| `0087` | payment_orders.granted_by_teacher_id + provider='teacher_grant' | Round-27 BLOCKER #2 closure: Free/Mid/Pro teacher-issued packages need a non-money writer path, but mig 0033 requires `package_purchases.payment_order_id NOT NULL`. Adds: column `granted_by_teacher_id uuid null references accounts(id) on delete restrict`; extends `payment_orders_provider_check` to allow `'teacher_grant'`; extends `payment_orders_status_check` to allow `'teacher_granted'` (separate from operator's `'granted'`); extends the existing triple-CHECK to a quadruple-CHECK so `provider='teacher_grant' ⇔ granted_by_teacher_id IS NOT NULL ⇔ status='teacher_granted' ⇔ granted_by_operator_id IS NULL`. App-side gate: teacher actor in `/teacher/packages/[id]/issue` route writes a synthetic `payment_orders` row with `provider='teacher_grant'` + `status='teacher_granted'` + `granted_by_teacher_id=$session.teacherId`, then the `package_purchases` row references it (same shape as the existing admin-grant flow). Lands on Day 4 (Epic 3). |
 
 ### 2.4 Soft-delete semantics for tariffs (BLOCKER 2 closure)
 
@@ -901,6 +911,7 @@ referencing their own tariff. Cross-teacher leakage gated by `WHERE teacher_id =
 ### Epic 3: teacher-owned packages (SAAS-PKG-OWNERSHIP)
 
 - Migrations 0076a/b/c (already in Epic 1 schema block — see §2.1). NO new `teacher_packages` table: the canonical tables are `lesson_packages` + `package_purchases` extended with `teacher_id`. Slug becomes UNIQUE per `(teacher_id, slug)` after mig 0076b.
+- Mig 0087 ships in this epic — `payment_orders` extended to support `provider='teacher_grant'` (round-27 BLOCKER #2 closure). Without it, the off-platform package-issue path cannot land because `package_purchases.payment_order_id` is NOT NULL.
 - `lib/billing/packages/` is extended (existing module) with teacher-scope helpers in catalog, purchases, grant, recon, debt.
 - `/teacher/packages` CRUD page.
 - Learner buys package — for Free/Mid/Pro teachers: off-platform payment, teacher manually marks "выдан" in `/teacher/learners/[id]/packages`.
@@ -1082,6 +1093,8 @@ window. **Each fixture/test below is explicitly named, NOT discovered ad-hoc:**
 - `lesson_packages.teacher_id` + `package_purchases.teacher_id` columns wired.
 - Grant/recon/debt all teacher-aware.
 - `/teacher/packages` CRUD.
+- **Mig 0087** ships — `provider='teacher_grant'` + `granted_by_teacher_id` (round-27 BLOCKER #2 closure).
+- `/teacher/packages/[id]/issue` route: teacher writes a synthetic `payment_orders` row with `provider='teacher_grant'` + `status='teacher_granted'` + `granted_by_teacher_id` in same TX as the `package_purchases` insert. Reuses the existing admin-grant transactional pattern but with the teacher's account_id (not an operator). No money flow; no CloudPayments call.
 
 **Day 5A — Lesson completion schema + ALL writers unified + cron disabled** (Epic 5A)
 - Migrations 0079 (lesson_completions + `was_no_show` boolean + UNIQUE(slot_id) + triggers + immutable_at) + 0080 (settlements + M:N).
@@ -1177,4 +1190,4 @@ Master plan-doc itself goes through `/codex-paranoia plan` rounds 1-3 before Epi
 
 ---
 
-— END OF DRAFT, plan-paranoia rounds 1-26 closed (off-protocol per owner authorization) —
+— END OF DRAFT, plan-paranoia rounds 1-27 closed (off-protocol per owner authorization) —
