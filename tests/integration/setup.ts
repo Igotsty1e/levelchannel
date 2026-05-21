@@ -25,6 +25,12 @@ afterEach(async () => {
   // delete cascade), so it's not listed explicitly. pricing_tariffs is
   // domain-orthogonal but small; truncating it here keeps cabinet
   // integration cases independent.
+  // SAAS-PIVOT Day 1 (2026-05-22) fixture sweep — round-25 BLOCKER #2
+  // closure: add ONLY Day-1 tables here. `lesson_completions`,
+  // `lesson_settlements`, `lesson_settlement_completions` are deferred
+  // to Day 5A (Epic 5) — adding them now would fail TRUNCATE on tables
+  // that don't yet exist. Order respects FKs: child tables before
+  // parents (CASCADE handles incidental edges).
   await pool.query(`
     truncate table
       account_consents,
@@ -38,8 +44,15 @@ afterEach(async () => {
       payment_allocations,
       payment_orders,
       lesson_slots,
+      learner_teacher_links,
+      teacher_invites,
+      teacher_subscriptions,
+      teacher_earnings_payout_coverage,
+      teacher_earnings,
+      account_profiles,
       accounts,
-      pricing_tariffs
+      pricing_tariffs,
+      teacher_subscription_plans
     restart identity cascade
   `)
   // legal-versioning sister wave: TRUNCATE CASCADE follows the FK
@@ -60,6 +73,20 @@ afterEach(async () => {
        '# Согласие на обработку персональных данных (v1)' || E'\n\n' ||
        '_Полный текст: см. https://levelchannel.ru/consent/personal-data на момент эффективной даты._')
     on conflict (doc_kind, version_label) do nothing
+  `)
+  // SAAS-PIVOT Day 1 (2026-05-22) — re-seed teacher_subscription_plans
+  // baseline rows (mig 0073 INSERTs four canonical slugs; TRUNCATE
+  // above wipes them between tests). Same pattern as the legal
+  // re-seed above. Tests that need a teacher with a Mid/Pro/Free/Plan-4
+  // subscription depend on this baseline.
+  await pool.query(`
+    insert into teacher_subscription_plans (slug, title_ru, price_kopecks_monthly, learner_limit, features)
+    values
+      ('free', 'Free', 0, 1, '{}'::jsonb),
+      ('mid', 'Mid', 30000, 5, '{}'::jsonb),
+      ('pro', 'Pro', 80000, 30, '{}'::jsonb),
+      ('operator-managed', 'Operator-managed', 0, null, '{"money_flow_through_platform": true}'::jsonb)
+    on conflict (slug) do nothing
   `)
   // Reset in-memory and Postgres rate-limit buckets so per-IP and
   // per-email-hash counters don't leak across test cases.
