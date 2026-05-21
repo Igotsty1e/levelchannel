@@ -45,6 +45,17 @@ Public repository readers should use:
   surfaces as a payment method inside the standard CloudPayments
   widget. Added by PAY-SBP-REMOVAL (2026-05-20).
 
+- `TELEGRAM_API_BASE_URL` — base URL for outbound Telegram Bot API
+  calls. Default `https://api.telegram.org`. Mandatory override when
+  the production VPS cannot reach `api.telegram.org` directly (some
+  RU hosting blocks the host). Set to a reverse-proxy URL such as a
+  Cloudflare Worker that forwards `/bot<TOKEN>/<method>` verbatim to
+  `api.telegram.org`. Reference Worker implementation lives at
+  `scripts/cloudflare-worker-telegram-proxy.js`; operator procedure
+  is in the private runbook. Read-once at module load in
+  `scripts/lib/telegram-alerts.mjs` — restart the app after changing.
+  Added by BCS-DEF-4-TG-PROXY (2026-05-21).
+
 ## Maintenance rule
 
 Do not reintroduce production hostnames, server IPs, private SSH commands,
