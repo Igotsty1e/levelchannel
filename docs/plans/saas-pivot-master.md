@@ -195,7 +195,7 @@ the same name → minimum churn on the 20+ read-sites surfaced by schema-survey.
 | `0084` | (post-MVP) accounts.assigned_teacher_id retire | Drop the legacy column AFTER all read-sites are migrated to use `learner_teacher_links` or `getActiveTeacherForLearner()`. Deferred to a separate epic (not in 8-day MVP). |
 | `0085` | payment_orders.teacher_account_id | `alter table payment_orders add column teacher_account_id uuid references accounts(id) NULL` in Day 1; backfill via slot/package linkage chain. **NOT NULL flip deferred to Epic 6 (Day 6)** when ALL FIVE payment_orders writers (§2.8 table) pass `teacher_account_id` at order creation. Index `(teacher_account_id, created_at desc)` for admin filters created in 0085 immediately. |
 | `0086` | account_profiles.teacher_public_slug | `add column teacher_public_slug text null` + `unique` + `check (teacher_public_slug ~ '^[a-z0-9][a-z0-9-]{2,30}$')`. Source-of-truth for `/t/<teacher-slug>/pay` route (round-19 BLOCKER #3 closure — was previously absent from schema). **Runs BEFORE 0083** (round-20 BLOCKER #1 closure — Day-1 canonical order is 0086 → 0083). Bootstrap teacher backfilled to `'level'` by mig 0083 step 4; new plan-4 teachers pick their slug in `/admin/teachers/[id]/plan` toggle (Epic 6). Nullable for Free/Mid/Pro teachers (they have no /pay surface). |
-| `0087` | payment_orders.granted_by_teacher_id + provider='teacher_grant' | Round-27 BLOCKER #2 closure: Free/Mid/Pro teacher-issued packages need a non-money writer path, but mig 0033 requires `package_purchases.payment_order_id NOT NULL`. Adds: column `granted_by_teacher_id uuid null references accounts(id) on delete restrict`; extends `payment_orders_provider_check` to allow `'teacher_grant'`; extends `payment_orders_status_check` to allow `'teacher_granted'` (separate from operator's `'granted'`); extends the existing triple-CHECK to a quadruple-CHECK so `provider='teacher_grant' ⇔ granted_by_teacher_id IS NOT NULL ⇔ status='teacher_granted' ⇔ granted_by_operator_id IS NULL`. App-side gate: teacher actor in `/teacher/packages/[id]/issue` route writes a synthetic `payment_orders` row with `provider='teacher_grant'` + `status='teacher_granted'` + `granted_by_teacher_id=$session.teacherId`, then the `package_purchases` row references it (same shape as the existing admin-grant flow). Lands on Day 4 (Epic 3). |
+| `0087` | payment_orders.granted_by_teacher_id + provider='teacher_grant' | Round-27 BLOCKER #2 closure: Free/Mid/Pro teacher-issued packages need a non-money writer path, but mig 0033 requires `package_purchases.payment_order_id NOT NULL`. Adds: column `granted_by_teacher_id uuid null references accounts(id) on delete restrict`; extends `payment_orders_provider_check` to allow `'teacher_grant'`; extends `payment_orders_status_check` to allow `'teacher_granted'` (active state) and `'teacher_revoked'` (round-29 closure — symmetric audit trail when a teacher voids an issued package); extends the existing triple-CHECK to a quadruple-CHECK so `provider='teacher_grant' ⇔ granted_by_teacher_id IS NOT NULL ⇔ status IN ('teacher_granted','teacher_revoked') ⇔ granted_by_operator_id IS NULL`. App-side gate: teacher actor in `/teacher/packages/[id]/issue` route writes a synthetic `payment_orders` row with `provider='teacher_grant'` + `status='teacher_granted'` + `granted_by_teacher_id=$session.teacherId`, then the `package_purchases` row references it (same shape as the existing admin-grant flow). Lands on Day 4 (Epic 3). |
 
 ### 2.4 Soft-delete semantics for tariffs (BLOCKER 2 closure)
 
@@ -1106,7 +1106,7 @@ window. **Each fixture/test below is explicitly named, NOT discovered ad-hoc:**
   0087's new enum values would otherwise be unreadable by the existing TS unions and
   would crash `store-postgres` mapping on the first SELECT):
   - `lib/payments/types.ts:5` — extend `PaymentProvider` union with `'teacher_grant'`
-    and `PaymentStatus` union with `'teacher_granted'`.
+    and `PaymentStatus` union with `'teacher_granted'` + `'teacher_revoked'`.
   - `lib/payments/store-postgres.ts:89` — extend the row→object mapper to accept the
     new enum values (currently throws on anything outside the allow-list).
   - `app/admin/(gated)/payments/page.tsx:11-30` — add `'teacher_granted'` to the status
@@ -1123,6 +1123,23 @@ window. **Each fixture/test below is explicitly named, NOT discovered ad-hoc:**
   - `lib/billing/packages/catalog.ts` — add `getPackageById(id)` if it doesn't exist;
     `getPackageBySlug` callers either accept a teacher_id discriminator or are deprecated.
 - `/teacher/packages/[id]/issue` route: teacher writes a synthetic `payment_orders` row with `provider='teacher_grant'` + `status='teacher_granted'` + `granted_by_teacher_id` in same TX as the `package_purchases` insert. Reuses the existing admin-grant transactional pattern but with the teacher's account_id (not an operator). No money flow; no CloudPayments call.
+- **Non-money refund guard sweep** (round-29 BLOCKER closure — refund route currently
+  only rejects `admin_grant`; without this Epic 3 ships a state-corruption hole where an
+  operator can "refund" a free teacher-issued package and write phantom reversal rows on
+  a non-money order):
+  - `app/api/admin/refunds/route.ts:117,133,202,230` — extend the rejection list to also
+    reject `provider='teacher_grant'`. Error code `non_money_order_not_refundable` with
+    Russian message "Этот заказ не платный — для отмены воспользуйтесь revoke в кабинете
+    учителя."
+  - **New `/teacher/packages/[id]/revoke` route** (and matching `/admin/teacher-grant/[id]/revoke`
+    operator override) that voids the `package_purchases` row + restores active
+    consumptions WITHOUT writing a `payment_allocation_reversals` row (there is no money
+    to reverse). Voids `payment_orders.status` to a new `'teacher_revoked'` value (added
+    in mig 0087 alongside `teacher_granted` for symmetric audit trail). The route is
+    permitted only when no slot has been completed against the package; otherwise the
+    completion would orphan from the consumption-restore. App-side gate, with a daily
+    operator-alert if any teacher_grant row sits in `voided_at` state without
+    corresponding learner notification.
 
 **Day 5A — Lesson completion schema + ALL writers unified + cron disabled** (Epic 5A)
 - Migrations 0079 (lesson_completions + `was_no_show` boolean + UNIQUE(slot_id) + triggers + immutable_at) + 0080 (settlements + M:N).
@@ -1218,4 +1235,4 @@ Master plan-doc itself goes through `/codex-paranoia plan` rounds 1-3 before Epi
 
 ---
 
-— END OF DRAFT, plan-paranoia rounds 1-28 closed (off-protocol per owner authorization) —
+— END OF DRAFT, plan-paranoia rounds 1-29 closed (off-protocol per owner authorization) —
