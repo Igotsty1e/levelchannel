@@ -13,37 +13,40 @@ This file MUST be sent through `/codex-paranoia plan` rounds 1-3 BEFORE any sub-
 Plan covers a multi-month epic-family — the BLOCKER bar is "would the implementation
 of any sub-epic deadlock against another sub-epic's assumptions?"
 
-### 0b. Round-2 closure table (2026-05-21)
+### 0b. Round-2/3/4 closure table — pointer to authoritative body sections
 
-Round 2 surfaced 7 BLOCKERs + 1 WARN against the round-1 revisions. All closed below:
+Authoritative content lives in §2.x / §3 / §5 / §6. This table is a thin index of where
+each historical BLOCKER was finally resolved. Body sections are SoT — if this table drifts
+from body, body wins.
 
-| # | Severity | Closure ref |
+| # | Final body location | One-line summary |
 |---|---|---|
-| R2-1 | BLOCKER — bootstrap teacher account closure not consistent: §2.9 says "synthetic, never logs in", but Day 1 reassigns digest cron / settings page / calendar integration / Telegram state to it. The existing prod teacher loses identity. | §2.9 rewritten — the bootstrap teacher account is NOT synthetic. It uses the production teacher's ACTUAL email (extracted from the existing hybrid admin+teacher account by demoting it: revoke `teacher` role from admin acct, create NEW pure teacher acct with same email + transfer all teacher-side state — including the Telegram binding row, calendar integration row, digest dedup rows). The existing admin account becomes admin-only. The new teacher account becomes the prod teacher login. Migration 0083 is now a 2-step: (a) mint new account, (b) MOVE teacher-side rows (slots, integrations, completions stub, learner_teacher_links derived from `assigned_teacher_id`). Idempotent via the new `teacher_account_migration_marker` on the source. |
-| R2-2 | BLOCKER — §2.5 deadlocks "book a new teacher". The closure only covers existing-link case + ?teacher= param; no atomic "create link on first book" path. | §2.5 expanded — **invite-redeem is the ONLY way to create a `learner_teacher_links` row.** Booking surfaces never auto-create a link. Booking from `available/route.ts` returns 403 if learner has no link with the slot's teacher. Slot listings filter by `getActiveTeacherForLearner` or by `?teacher=` (validated against link set). This means learner discovery flow is: invite-link → register → bound to inviting teacher → see slots → book. There is no "browse and book from arbitrary teacher" path. Owner Q-7 (2026-05-21): "invite adds teacher to learner's links" — confirmed sole link-creation path. |
-| R2-3 | BLOCKER — §2.6 derived-status only forward (completion-insert→status='completed'). No reverse rule for un-mark within 48h window or completion-row delete. | §2.6 expanded — `slot.status='completed'` is DERIVED. Triggers: (a) on `lesson_completions` INSERT → set `lesson_slots.status='completed'`. (b) on `lesson_completions` DELETE → set `lesson_slots.status='booked'` (revert). Un-mark within 48h = `DELETE lesson_completions WHERE id=...`. The slot becomes `booked` again. After 48h, the completion row is immutable (CHECK `created_at < now() - interval '48 hours'` blocks delete). `mutations-cancel.ts` updated to allow cancelling a `completed` slot ONLY if the completion is within the 48h window (since after that the slot is settled). The flow: un-mark → status flips back to booked → then cancel → status='cancelled'. Two-step cancel-after-completion is by design. |
-| R2-4 | BLOCKER — §2.7 contradicts itself: state table says refund "cleared by clawback row" (append-only), but refund handler text says "flip to clawback (zero out)" (in-place mutation). | §2.7 rewritten — choose IMMUTABLE APPEND-ONLY. Refund logic: always INSERT a new `teacher_earnings` row with `state='clawback'` + `amount_net = -original_accrued_amount`. Original `accrued` row stays as-is. Operator balance = `SUM(amount_net) WHERE teacher_account_id=$1 AND state IN ('accrued','paid_out','clawback')` (negative means clawback exceeds payout). CHECK constraint already allows this — no schema change. Refund handler in `app/api/admin/refunds/route.ts` ALWAYS inserts a clawback row, never updates existing rows. |
-| R2-5 | BLOCKER — §2.8 assumes teacher-scoped slug, but mig 0076 only adds `teacher_id` column — `lesson_packages.slug` stays `UNIQUE`. | §2.1 mig 0076 expanded — also DROPs the global `UNIQUE(slug)` index and creates `UNIQUE(teacher_id, slug)` instead. Bootstrap teacher account gets all existing slugs (no rename). New teachers can register their own slugs independently. Backfill ordering: (a) mig 0076 adds `teacher_id NOT NULL DEFAULT $bootstrap_id`, (b) mig 0083 sets teacher_id properly, (c) mig 0076b drops old UNIQUE + adds new composite. All in mig 0076 as a 3-statement script. Checkout route `app/checkout/package/[slug]/route.ts` updated to also accept `?teacher=` query param OR derive teacher from current learner-link if unambiguous. |
-| R2-6 | BLOCKER — §2.1 says "no teacher_tariffs / teacher_packages tables", but ER diagram + Epic 2 + Epic 3 still reference those names. | §2.2 ER diagram + Epic 2 + Epic 3 sections rewritten to consistently use `pricing_tariffs` + `lesson_packages` (extended with teacher_id), NEVER the shadow names. ER block updated. Epic-text scrubbed. |
-| R2-7 | BLOCKER — §2.10 past_due >3d "read-only" only gates teacher-write scopes; learner-booking is not mentioned. | §2.10 expanded — past_due (>3 days) ALSO freezes learner-side booking for that teacher's slots. `app/api/slots/available/route.ts` + booking-days/booking-times/book all check `requireActiveSubscription('learner-book', teacherId)`. Result: existing learners can VIEW their history but cannot book new slots until teacher upgrades / pays. Existing booked slots remain — they can be cancelled by either side but not "completed" (the teacher is past_due read-only). |
-| R2-8 | WARN — Day 5 too heavy: backfill migration + cron removal + triggers + debt-reader + summary rewrites + 48h + cancellation interaction. | §5 split Day 5 into Day 5A (schema 0079/0080 + completion-insert trigger + 48h immutability CHECK + UI to mark complete + cabinet read) and Day 5B (auto-cron removal + debt-reader rewrite + cancel-after-complete interaction + reverse trigger for un-mark). Total 7-day MVP becomes 8 days. Owner authorized "don't be afraid to spend more time" — accept 1-day overrun. |
+| R2-1 | §2.9 | Bootstrap teacher account = 7-step row-MOVE migration: mint NEW pure-teacher inheriting prod email + password; swap OLD admin email to synthetic; revoke OLD sessions; re-point teacher-side rows + learner links; marker for idempotency. |
+| R2-2 | §2.5 | Invite-redeem is the SOLE link-creation path. Booking surfaces return 403 if learner has no link. (Owner Q-7 confirmed.) |
+| R2-3 | §2.6 | Forward+reverse Postgres triggers. 48h immutability enforced at the application layer (un-complete route), NOT CHECK — CHECK does not run on DELETE. |
+| R2-4 | §2.7 | Immutable append-only ledger. Refund handler ALWAYS INSERTs `kind='clawback'` row. Sign-invariant CHECK. |
+| R2-5 | §2.1 | Mig 0076 split into 0076a / 0083 (backfill) / 0076b (drop global UNIQUE + add UNIQUE(teacher_id, slug) + NOT NULL) / 0076c (purchases column). DDL order explicit. |
+| R2-6 | §2.2 ER + §3 Epic 2 + §3 Epic 3 | Canonical `pricing_tariffs` + `lesson_packages` extended with `teacher_id`. No `teacher_tariffs` / `teacher_packages` shadow tables anywhere. No FK rename. |
+| R2-7 | §2.10 | Full scope matrix incl. `learner-book`, `learner-cancel`, `teacher-cancel`. Suspended teachers cannot cancel; learners can always rescue. |
+| R2-8 | §5 | Day 5 → Day 5A (schema + UI) + Day 5B (cron removal + debt rewrite + cancel interaction). 8-day MVP total. |
 
-### 0a. Round-1 closure table (2026-05-21)
+### 0a. Round-1 closure pointer table — body is SoT
 
-Round 1 surfaced 7 BLOCKERs + 3 WARNs. Closures in-doc below:
+Authoritative content lives in §2.x / §3 / §5. This table indexes where each historical
+BLOCKER was finally resolved. Body wins on any drift.
 
-| # | Severity | Finding | Closure |
-|---|---|---|---|
-| 1 | BLOCKER | Package ownership against stale surface — canonical tables are `lesson_packages` + `package_purchases` + `package_consumptions` (mig 0033), not the imaginary `pricing_packages`. Buy route writes only `{accountId, packageSlug, packageDurationMinutes, packageId}` with no teacher key. Grant/recon resolves by global slug. | §2.1 — Migration 0076 renamed in scope: **add `teacher_id` columns to existing `lesson_packages` + `package_purchases` + propagate through grant/recon** (NOT a separate `teacher_packages` table). §3 Epic 3 expanded to enumerate the 5 modules (catalog, purchases, grant, recon, debt) that need teacher-aware filters. |
-| 2 | BLOCKER | Tariff migration treated as rename — but `pricing_tariffs` is load-bearing in checkout, booking, debt, refunds, deletion guards. Historical-slot semantics under `deleted_at` unspecified. | §2.1 — Migration 0075 / 0082 reworked: **add `teacher_id` to existing `pricing_tariffs`** + `deleted_at` column. Slot reads keep joining `pricing_tariffs` — no rename of FK. Soft-delete: deleted tariff is hidden in CRUD but visible in historical reads via `WHERE deleted_at IS NULL OR slot.start_at < tariff.deleted_at` discipline (per §2.4 below). §3 Epic 2 calls out the 8 read-sites. |
-| 3 | BLOCKER | n:m learner-teacher has no replacement for "current active teacher context" — `assigned_teacher_id` is hard-bound in booking, calendar, admin assign, etc. | §2.5 — introduces explicit "current teacher context" contract: helper `getActiveTeacherForLearner(accountId)` returns FIRST `learner_teacher_links` row by `linked_at ASC` IF only one link, else takes a `?teacher=` query param. Cabinet UI multi-teacher selector (§3 Epic 7 wires it). Migration 0077 deferred to AFTER Epic 1 backfills (single link per learner from old `assigned_teacher_id`). |
-| 4 | BLOCKER | `lesson_completions` collides with shipped `lesson_slots.status='completed'` + daily auto-complete cron. | §2.6 — `lesson_completions` REPLACES the existing daily auto-complete cron. Slot `status='completed'` becomes DERIVED from `lesson_completions` row presence. Migration 0079 backfills completions from existing `lesson_slots WHERE status='completed'`. Auto-complete cron deprecated (separately deferred per owner Q-2 decision). |
-| 5 | BLOCKER | `teacher_earnings` ledger has no payout/refund state machine — refund after payout breaks. | §2.7 — explicit 3-state earnings ledger: `accrued | paid_out | clawback`. Refund after payout writes a `clawback` row + flips matching `accrued` rows. Operator gets alert if clawback creates negative balance for teacher. Epic 5 §3 expanded with state machine + refund-after-payout test cases. |
-| 6 | BLOCKER | `/pay` can't become multi-tenant plan-4 surface — current `/api/payments` accepts no teacher identity, orders have no teacher key, backfill impossible. | §2.8 — `/pay` is **operator-only path going forward**, all existing orders backfilled with `teacher_account_id = operator_team_teacher_account.id`. New plan-4 teacher payments use the slot-binding contract (slotId→tariff→teacher_id derivation) which is already on every order via `metadata.slotId`. Free/Mid/Pro DO NOT use `/pay`. |
-| 7 | BLOCKER | Operator account can't simultaneously be `admin` + `teacher` (guards reject hybrid). | §2.9 — pivot creates a **separate teacher account** ("LevelChannel Tutor Team" or similar) for the existing teaching activity. Backfill: existing `lesson_slots.teacher_account_id` points at this NEW account. Existing operator admin account stays admin-only. Migration 0083 mints the bootstrap teacher account + reassigns historical slots/learners. |
-| 8 | WARN | Subscription enforcement underspecified at the gates — what can `past_due` teachers do? | §2.10 — `past_due` teachers: cannot invite NEW learners, existing slots/bookings unaffected. After 3-day grace, plan auto-downgrades to Free (NOT cancelled — keeps active learners viewable read-only). Gates added at `requireTeacherAndVerified` (returns 403 + reason for write paths on `past_due`-with-cap-exceeded). |
-| 9 | WARN | Multi-tenant privacy is app-query discipline only — no DB RLS — and global reads (tariff checkout, package catalog) exist. | §2.11 — RLS deferred to phase-2 hardening epic. Phase-1 enforces app-level filters via centralized helpers: `requireTeacherScope(query, teacherAccountId)` wrapper for every multi-tenant query. ESLint custom rule (or grep-based CI guard) flags raw `from pricing_tariffs` / `from lesson_packages` reads without the wrapper. Phase-2 ratchets to RLS. |
-| 10 | WARN | 7-day MVP too aggressive — recurrent billing, public upgrades, payout tooling must be deferred. | §5 reshaped: Day 7 cut is **self-reg + tenant-owned tariffs + tenant-owned packages + n:m context groundwork + admin teacher list + landing draft**. RECURRENT BILLING, public Mid/Pro upgrade UI, payout flow → **post-day-7 epics**. Plan-4 toggle remains in MVP (admin manual flip). |
+| # | Final body location | One-line summary |
+|---|---|---|
+| 1 | §2.1 + §3 Epic 3 | Canonical `lesson_packages` + `package_purchases` extended with `teacher_id` (NOT shadow `teacher_packages` table). Buy route + grant/recon/debt all teacher-aware. |
+| 2 | §2.1 + §2.4 + §3 Epic 2 | Canonical `pricing_tariffs` extended with `teacher_id` + `deleted_at`. No FK rename. Soft-delete via `deleted_at`; historical slot reads always JOIN unfiltered. |
+| 3 | §2.5 | Explicit `getActiveTeacherForLearner()` contract. Invite-redeem is the SOLE link-creation path. Migration 0077 backfills single-link-per-learner from `assigned_teacher_id`. |
+| 4 | §2.6 | `lesson_completions` REPLACES auto-cron. Slot status DERIVED via forward+reverse Postgres triggers. 48h immutability is application-layer (un-complete route), not CHECK. |
+| 5 | §2.7 | Immutable append-only ledger. Refund handler INSERTs `clawback` row (never UPDATEs). Sign-invariant CHECK. |
+| 6 | §2.8 + §2.1 mig 0085 | `/pay` keeps legacy direct-link compat via bootstrap-teacher credit; new teachers get `/t/<slug>/pay`. `payment_orders.teacher_account_id` added (mig 0085) + backfilled. |
+| 7 | §2.9 | Bootstrap account = row-MOVE migration (mint NEW pure-teacher inheriting prod email/password; swap OLD admin email; revoke OLD sessions; re-point teacher-side rows + learner links). |
+| 8 | §2.10 | Full scope matrix incl. `learner-book` + `learner-cancel` + `teacher-cancel`. Suspended teachers cannot cancel; learners can always rescue. |
+| 9 | §2.11 | Phase-1 app-query discipline + CI grep guard. RLS deferred to phase-2 hardening epic. |
+| 10 | §5 | Day 5 split into 5A/5B → 8-day MVP. Recurrent billing + public upgrades + payout tooling deferred to post-MVP epics. |
 
 ## 1. Product context
 
@@ -115,6 +118,7 @@ the same name → minimum churn on the 20+ read-sites surfaced by schema-survey.
 | `0081` | teacher_earnings — append-only ledger | `accrued / paid_out / clawback` rows. Sign-invariant CHECK. Refund handler always inserts new `clawback` row (never UPDATEs). |
 | `0083` | bootstrap teacher account + email swap + row migration | Mints NEW account inheriting prod email + password; renames OLD admin email to synthetic; revokes OLD sessions; re-points teacher-side data + learner links. See §2.9 for the full 7-step TX. **Order-dependent: must run AFTER 0073-0078 + 0076a + 0079, before 0076b.** |
 | `0084` | (post-MVP) accounts.assigned_teacher_id retire | Drop the legacy column AFTER all read-sites are migrated to use `learner_teacher_links` or `getActiveTeacherForLearner()`. Deferred to a separate epic (not in 7-day MVP). |
+| `0085` | payment_orders.teacher_account_id | (R4 BLOCKER 1 closure) `alter table payment_orders add column teacher_account_id uuid references accounts(id)`. Backfill via slot/package linkage chain (§2.8 paths 1-2); orders with no linkage → bootstrap teacher (path 3). Then `alter ... set not null`. Index `(teacher_account_id, created_at desc)` for admin filters. |
 
 ### 2.4 Soft-delete semantics for tariffs (BLOCKER 2 closure)
 
@@ -511,38 +515,35 @@ erDiagram
 
 ### Epic 1: schema + teacher self-registration (SAAS-3-IMPL)
 
-- Migrations 0073-0078, 0082.
+- Migrations: 0073, 0074, 0075, 0076a, 0077, 0078, 0079, 0083 (bootstrap), 0076b, 0076c, 0081, 0085. See §2.1 for the exact ordering.
 - `/register?role=teacher` route activated. Plan-doc PR #339-area already drafted.
 - HMAC invite-token primitive: `lib/auth/teacher-invites.ts` (TEACHER_INVITE_SECRET env already shipped).
-- Backfill: existing teachers in production get a `teacher_subscriptions(plan='free', state='active')` row.
-- Free is the only assignable plan in this epic — billing UI lands in Epic 4.
+- Backfill: the SOLE existing teacher (the operator-team account being row-migrated in mig 0083) gets `teacher_subscriptions(plan='operator-managed', state='active')` — per §2.9 + §4.C. No other "existing teachers" on prod.
+- Free is the default assignable plan for newly-registered teachers — billing UI lands in Epic 4.
 
 **Deliverable:** Teacher can register at `/register?role=teacher`, log in, see empty `/teacher` cabinet, generate an invite link. Learner registers via invite link → `learner_teacher_links` row inserted.
 
 ### Epic 2: teacher-owned tariffs (SAAS-TARIFF-OWNERSHIP)
 
-- Migrations 0075 + 0082.
-- `lib/teacher-tariffs/` module (CRUD store + actions + soft-delete).
+- Migration 0075 (already in Epic 1 schema block — see §2.1). NO FK rename: `lesson_slots.tariff_id` keeps its name; the `teacher_id` column is on `pricing_tariffs` (canonical table).
+- `lib/pricing/tariffs.ts` extends existing module (NOT a new `teacher-tariffs/` module). CRUD reads filter by `teacher_id = $session` + `deleted_at IS NULL`.
 - `/teacher/tariffs` page: list, create, edit, delete (soft).
-- Slot creation now picks from teacher's tariffs (filtered `deleted_at IS NULL`).
-- Booking flow unchanged at the schema level — `lesson_slots.teacher_tariff_id` FK rename.
-- `pricing_tariffs` admin-side migrates to teacher-owned for the existing operator account
-  (treat operator-team as a "first teacher"). Old admin tariff CRUD UI deprecated.
+- Slot creation now picks from `pricing_tariffs WHERE teacher_id = $session AND deleted_at IS NULL`.
+- Booking + read-sites continue to JOIN `pricing_tariffs` by `tariff_id` (no FK rename per §2.4).
+- The bootstrap teacher account from mig 0083 owns all pre-existing `pricing_tariffs` rows.
 
 **Deliverable:** A teacher sees their own tariffs in `/teacher/tariffs`, creates a slot
 referencing their own tariff. Cross-teacher leakage gated by `WHERE teacher_id = $sessionTeacherId`.
 
 ### Epic 3: teacher-owned packages (SAAS-PKG-OWNERSHIP)
 
-- Migration 0076.
-- `lib/teacher-packages/` mirror of teacher-tariffs.
+- Migrations 0076a/b/c (already in Epic 1 schema block — see §2.1). NO new `teacher_packages` table: the canonical tables are `lesson_packages` + `package_purchases` extended with `teacher_id`. Slug becomes UNIQUE per `(teacher_id, slug)` after mig 0076b.
+- `lib/billing/packages/` is extended (existing module) with teacher-scope helpers in catalog, purchases, grant, recon, debt.
 - `/teacher/packages` CRUD page.
-- Learner buys package — for Free/Mid/Pro teachers: off-platform payment, teacher manually
-  marks "выдан" in `/teacher/learners/[id]/packages`.
-- For Plan-4 teachers: `/cabinet/packages` learner-buy flow uses teacher's packages
-  (existing PKG-LEARNER-BUY infra works, with `teacher_packages.teacher_id` filter added).
+- Learner buys package — for Free/Mid/Pro teachers: off-platform payment, teacher manually marks "выдан" in `/teacher/learners/[id]/packages`.
+- For Plan-4 teachers: `/cabinet/packages` learner-buy flow uses the teacher's packages via the existing PKG-LEARNER-BUY infra with a `teacher_id` filter added.
 - `package_grant_resolutions` (PKG-RECON) reuses for Plan-4 path.
-- Existing `lesson_packages` migrates to operator account's `teacher_packages` (same as tariffs).
+- The bootstrap teacher account from mig 0083 owns all pre-existing `lesson_packages` rows.
 
 **Deliverable:** Teacher creates a package "10 lessons @ 1500₽". Learner of a Free/Mid/Pro
 teacher sees "учитель добавил вам пакет" — no payment UI. Learner of a Plan-4 teacher sees
