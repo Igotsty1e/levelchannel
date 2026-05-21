@@ -276,16 +276,71 @@ export async function runTeacherTelegramBlock({
     await client.query('commit')
     return { tg: 'terminal_send_failed', error: result.error }
   } catch (err) {
+    // BCS-DEF-5-TG-WAVE-PARANOIA round-1 BLOCKER 1 closure:
+    // crash mid-block MUST persist a terminal state on the dedup row.
+    // Otherwise candidate-set filter (email_sent=true) excludes this
+    // teacher from re-evaluation and the row stays pending forever
+    // while operator stats say "terminal_send_failed". We rollback
+    // the in-flight TX, then open a SECOND TX to write the terminal
+    // marker. The second write uses the same guarded WHERE clause
+    // so we never overwrite an already-terminal row.
     try {
       await client.query('rollback')
     } catch {
       /* swallow rollback errors */
     }
+    const redactedCrash = redactTelegramSecret(
+      stringifyTelegramError(err),
+      tgToken,
+    ).slice(0, 1000)
     logJson('warn', 'block crashed', {
       accountId,
       ymd,
-      err: redactTelegramSecret(stringifyTelegramError(err), tgToken),
+      err: redactedCrash,
     })
+    try {
+      await client.query('begin')
+      // attempts may be 0 (crash before step 4) or 1 (crash after
+      // bump). Coalesce to satisfy the CHECK constraint's
+      // send_failed branch (attempts >= 1). Using GREATEST so
+      // already-bumped rows aren't downgraded.
+      const recoveryR = await client.query(
+        `update teacher_account_daily_digests
+            set telegram_skipped_reason = 'send_failed',
+                telegram_last_error = $3,
+                telegram_attempts = greatest(telegram_attempts, 1)
+          where account_id = $1 and sent_date = $2::date
+            and telegram_sent = false
+            and telegram_skipped_reason is null`,
+        [accountId, ymd, `block_crashed: ${redactedCrash}`],
+      )
+      await client.query('commit')
+      if (recoveryR.rowCount === 0) {
+        // Either the dedup row never existed (called pre-email-commit?
+        // shouldn't happen by contract) or another path raced us to a
+        // terminal state. Both are safe to ignore — the counter still
+        // says terminal_send_failed.
+        logJson('info', 'block-crashed recovery UPDATE affected 0 rows', {
+          accountId,
+          ymd,
+        })
+      }
+    } catch (recoveryErr) {
+      try {
+        await client.query('rollback')
+      } catch {
+        /* swallow */
+      }
+      logJson(
+        'error',
+        'block-crashed recovery write itself failed — row left in pending state',
+        {
+          accountId,
+          ymd,
+          err: recoveryErr instanceof Error ? recoveryErr.message : String(recoveryErr),
+        },
+      )
+    }
     return { tg: 'terminal_send_failed', error: 'block_crashed' }
   }
 }

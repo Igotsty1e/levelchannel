@@ -32,44 +32,61 @@ export function generateTeacherBindCode(): string {
   return out
 }
 
-// Issue a fresh code for the account. Caller MUST hold the account-
-// scoped advisory lock (see actions.ts) — issuing implicitly invalidates
-// any prior active code by deleting it within the same TX.
+// Issue a fresh code for the account. BCS-DEF-5-TG-WAVE-PARANOIA
+// round-1 WARN 3 closure: takes the account-scoped `ttbc:` advisory
+// lock INSIDE the same TX as DELETE + INSERT so concurrent
+// "Получить код" clicks serialise and produce only ONE active code.
+// The same lock-prefix is held by webhook handleStart on consume +
+// by cabinet unbind — single key-space, no deadlock potential.
 export async function issueTeacherBindCode(
   accountId: string,
 ): Promise<TeacherBindCodeRow> {
   const pool = getAuthPool()
-  const code = generateTeacherBindCode()
-  const now = new Date()
-  const expiresAt = new Date(now.getTime() + TTL_MS)
-  await pool.query(
-    `delete from teacher_telegram_bind_codes
-       where account_id = $1::uuid and consumed_at is null`,
-    [accountId],
-  )
-  const r = await pool.query<{
-    id: string
-    account_id: string
-    code: string
-    created_at: string
-    expires_at: string
-    consumed_at: string | null
-    consumed_chat_id: string | null
-  }>(
-    `insert into teacher_telegram_bind_codes
-       (account_id, code, created_at, expires_at)
-       values ($1::uuid, $2, $3::timestamptz, $4::timestamptz)
-       returning id, account_id, code, created_at, expires_at, consumed_at, consumed_chat_id`,
-    [accountId, code, now.toISOString(), expiresAt.toISOString()],
-  )
-  const row = r.rows[0]
-  return {
-    id: String(row.id),
-    accountId: String(row.account_id),
-    code: String(row.code),
-    createdAt: String(row.created_at),
-    expiresAt: String(row.expires_at),
-    consumedAt: row.consumed_at ? String(row.consumed_at) : null,
-    consumedChatId: row.consumed_chat_id ? String(row.consumed_chat_id) : null,
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+    await client.query(
+      `select pg_advisory_xact_lock(hashtextextended('ttbc:' || $1::text, 0))`,
+      [accountId],
+    )
+    const code = generateTeacherBindCode()
+    const now = new Date()
+    const expiresAt = new Date(now.getTime() + TTL_MS)
+    await client.query(
+      `delete from teacher_telegram_bind_codes
+         where account_id = $1::uuid and consumed_at is null`,
+      [accountId],
+    )
+    const r = await client.query<{
+      id: string
+      account_id: string
+      code: string
+      created_at: string
+      expires_at: string
+      consumed_at: string | null
+      consumed_chat_id: string | null
+    }>(
+      `insert into teacher_telegram_bind_codes
+         (account_id, code, created_at, expires_at)
+         values ($1::uuid, $2, $3::timestamptz, $4::timestamptz)
+         returning id, account_id, code, created_at, expires_at, consumed_at, consumed_chat_id`,
+      [accountId, code, now.toISOString(), expiresAt.toISOString()],
+    )
+    await client.query('commit')
+    const row = r.rows[0]
+    return {
+      id: String(row.id),
+      accountId: String(row.account_id),
+      code: String(row.code),
+      createdAt: String(row.created_at),
+      expiresAt: String(row.expires_at),
+      consumedAt: row.consumed_at ? String(row.consumed_at) : null,
+      consumedChatId: row.consumed_chat_id ? String(row.consumed_chat_id) : null,
+    }
+  } catch (err) {
+    await client.query('rollback').catch(() => {})
+    throw err
+  } finally {
+    client.release()
   }
 }

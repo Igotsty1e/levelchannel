@@ -536,6 +536,49 @@ export async function processOneTeacher({
             ymd,
             err: tgErr instanceof Error ? tgErr.message : String(tgErr),
           })
+          // BCS-DEF-5-TG-WAVE-PARANOIA round-1 BLOCKER 1 closure:
+          // outer-wrapper crash (e.g. renderer throws BEFORE the
+          // helper opens its own TX) MUST also persist terminal
+          // state so the dedup row doesn't stay pending forever.
+          // Opens a fresh TX on the same client (the email TX-A
+          // already committed).
+          try {
+            await client.query('begin')
+            await client.query(
+              `update teacher_account_daily_digests
+                  set telegram_skipped_reason = 'send_failed',
+                      telegram_last_error = $3,
+                      telegram_attempts = greatest(telegram_attempts, 1)
+                where account_id = $1 and sent_date = $2::date
+                  and telegram_sent = false
+                  and telegram_skipped_reason is null`,
+              [
+                candidate.accountId,
+                ymd,
+                `outer_wrapper_crashed: ${
+                  tgErr instanceof Error
+                    ? tgErr.message.slice(0, 800)
+                    : String(tgErr).slice(0, 800)
+                }`,
+              ],
+            )
+            await client.query('commit')
+          } catch (recoveryErr) {
+            try {
+              await client.query('rollback')
+            } catch {
+              /* swallow */
+            }
+            logJson(
+              'error',
+              'outer-wrapper recovery write itself failed',
+              {
+                accountId: candidate.accountId,
+                ymd,
+                err: recoveryErr instanceof Error ? recoveryErr.message : String(recoveryErr),
+              },
+            )
+          }
         }
       }
 

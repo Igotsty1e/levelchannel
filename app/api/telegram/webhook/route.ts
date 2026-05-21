@@ -197,6 +197,36 @@ async function handleStart(
       return
     }
     const { kind, account_id: rawAccountId } = sel.rows[0]
+    // BCS-DEF-5-TG-WAVE-PARANOIA round-1 WARN 4 closure: re-check
+    // the role-specific master switch HERE. Top-level gate accepts
+    // the webhook update if EITHER switch is on (so both channels
+    // share one webhook). If a code was issued before its channel's
+    // switch was flipped off, the consume must NOT bind silently.
+    const scopeName = kind === 'teacher' ? 'teacher-daily-digest' : 'learner-reminders'
+    const switchKey = kind === 'teacher'
+      ? 'TEACHER_DIGEST_TELEGRAM_ENABLED'
+      : 'LEARNER_REMINDERS_TELEGRAM_ENABLED'
+    const roleSettings = await resolveOperatorSettingsForProbe(scopeName)
+    const roleSwitch =
+      typeof roleSettings[switchKey]?.value === 'number'
+        ? (roleSettings[switchKey].value as number)
+        : 0
+    if (roleSwitch !== 1) {
+      await client.query('rollback')
+      logJson('warn', 'tg bind: per-role switch off after resolve', {
+        kind,
+        scopeName,
+        code,
+        fromId,
+      })
+      await replySafe(
+        chatId,
+        kind === 'teacher'
+          ? 'Канал «дайджест учителя» сейчас выключен оператором. Попробуйте позже.'
+          : 'Канал «напоминания учащимся» сейчас выключен оператором. Попробуйте позже.',
+      )
+      return
+    }
     const accountId = String(rawAccountId)
 
     // Account-scoped advisory lock. Key prefix matches issuance side
