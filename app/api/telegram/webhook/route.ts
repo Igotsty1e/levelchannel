@@ -62,14 +62,26 @@ export async function POST(request: Request) {
     )
   }
 
-  // 2. Master switch — channel disabled → 200 ignore (don't have TG
-  // retry on operator-toggle).
-  const settings = await resolveOperatorSettingsForProbe('learner-reminders')
-  const masterSwitch =
-    typeof settings.LEARNER_REMINDERS_TELEGRAM_ENABLED?.value === 'number'
-      ? (settings.LEARNER_REMINDERS_TELEGRAM_ENABLED.value as number)
+  // 2. Master switch — channel disabled → 200 ignore. Either the
+  // learner channel (BCS-DEF-4-TG) OR the teacher digest channel
+  // (BCS-DEF-5-TG) being on is enough to accept the webhook. Per-
+  // role gating happens inside handleStart via the table the code
+  // resolves against.
+  const learnerSettings = await resolveOperatorSettingsForProbe(
+    'learner-reminders',
+  )
+  const learnerSwitch =
+    typeof learnerSettings.LEARNER_REMINDERS_TELEGRAM_ENABLED?.value === 'number'
+      ? (learnerSettings.LEARNER_REMINDERS_TELEGRAM_ENABLED.value as number)
       : 0
-  if (masterSwitch !== 1) {
+  const teacherSettings = await resolveOperatorSettingsForProbe(
+    'teacher-daily-digest',
+  )
+  const teacherSwitch =
+    typeof teacherSettings.TEACHER_DIGEST_TELEGRAM_ENABLED?.value === 'number'
+      ? (teacherSettings.TEACHER_DIGEST_TELEGRAM_ENABLED.value as number)
+      : 0
+  if (learnerSwitch !== 1 && teacherSwitch !== 1) {
     return NextResponse.json({ ok: true, ignored: 'channel_disabled' }, { headers: NO_STORE })
   }
 
@@ -139,6 +151,8 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true }, { headers: NO_STORE })
 }
 
+type BindKind = 'learner' | 'teacher'
+
 async function handleStart(
   code: string,
   chatId: string,
@@ -153,11 +167,22 @@ async function handleStart(
   const client = await pool.connect()
   try {
     await client.query('begin')
-    // Look up + consume atomically under account lock.
-    const sel = await client.query<{ id: string; account_id: string }>(
-      `select id, account_id from learner_telegram_bind_codes
+    // BCS-DEF-5-TG §2.5 — UNION-resolve across both bind-code tables.
+    // Code-collision across tables is ~32^8 ≈ 10^12 probability per
+    // pair; defensive: if the UNION returns >1 row we bail with an
+    // internal-error reply.
+    const sel = await client.query<{
+      kind: BindKind
+      id: string
+      account_id: string
+    }>(
+      `select 'learner'::text as kind, id, account_id
+         from learner_telegram_bind_codes
         where code = $1 and consumed_at is null and expires_at > now()
-        for update`,
+       union all
+       select 'teacher'::text as kind, id, account_id
+         from teacher_telegram_bind_codes
+        where code = $1 and consumed_at is null and expires_at > now()`,
       [code],
     )
     if (sel.rows.length === 0) {
@@ -165,14 +190,71 @@ async function handleStart(
       await replySafe(chatId, 'Код не найден или истёк. Получите новый в личном кабинете LevelChannel.')
       return
     }
-    const bindRow = sel.rows[0]
-    const accountId = String(bindRow.account_id)
+    if (sel.rows.length > 1) {
+      await client.query('rollback')
+      logJson('warn', 'tg bind: cross-table code collision', { code, fromId })
+      await replySafe(chatId, 'Внутренняя ошибка. Получите новый код в личном кабинете.')
+      return
+    }
+    const { kind, account_id: rawAccountId } = sel.rows[0]
+    // BCS-DEF-5-TG-WAVE-PARANOIA round-1 WARN 4 closure: re-check
+    // the role-specific master switch HERE. Top-level gate accepts
+    // the webhook update if EITHER switch is on (so both channels
+    // share one webhook). If a code was issued before its channel's
+    // switch was flipped off, the consume must NOT bind silently.
+    const scopeName = kind === 'teacher' ? 'teacher-daily-digest' : 'learner-reminders'
+    const switchKey = kind === 'teacher'
+      ? 'TEACHER_DIGEST_TELEGRAM_ENABLED'
+      : 'LEARNER_REMINDERS_TELEGRAM_ENABLED'
+    const roleSettings = await resolveOperatorSettingsForProbe(scopeName)
+    const roleSwitch =
+      typeof roleSettings[switchKey]?.value === 'number'
+        ? (roleSettings[switchKey].value as number)
+        : 0
+    if (roleSwitch !== 1) {
+      await client.query('rollback')
+      logJson('warn', 'tg bind: per-role switch off after resolve', {
+        kind,
+        scopeName,
+        code,
+        fromId,
+      })
+      await replySafe(
+        chatId,
+        kind === 'teacher'
+          ? 'Канал «дайджест учителя» сейчас выключен оператором. Попробуйте позже.'
+          : 'Канал «напоминания учащимся» сейчас выключен оператором. Попробуйте позже.',
+      )
+      return
+    }
+    const accountId = String(rawAccountId)
 
-    // Account lock — serializes with cabinet unbind + scheduler reads.
+    // Account-scoped advisory lock. Key prefix matches issuance side
+    // (ltbc:<accountId> for learner, ttbc:<accountId> for teacher) so
+    // issue + consume + auto-unbind on the same account serialise.
+    const lockPrefix = kind === 'teacher' ? 'ttbc:' : 'ltbc:'
     await client.query(
-      `select pg_advisory_xact_lock(hashtextextended('ltbc:' || $1::text, 0))`,
-      [accountId],
+      `select pg_advisory_xact_lock(hashtextextended($1 || $2::text, 0))`,
+      [lockPrefix, accountId],
     )
+
+    // Re-SELECT FOR UPDATE inside the lock — race-loser bail.
+    const reSel = await client.query<{ id: string }>(
+      kind === 'teacher'
+        ? `select id from teacher_telegram_bind_codes
+            where code = $1 and consumed_at is null and expires_at > now()
+            for update`
+        : `select id from learner_telegram_bind_codes
+            where code = $1 and consumed_at is null and expires_at > now()
+            for update`,
+      [code],
+    )
+    if (reSel.rows.length === 0) {
+      await client.query('rollback')
+      await replySafe(chatId, 'Код просрочен или уже использован.')
+      return
+    }
+    const bindRowId = reSel.rows[0].id
 
     // Account purge gate.
     const acc = await client.query<{ scheduled_purge_at: string | null }>(
@@ -185,26 +267,45 @@ async function handleStart(
       return
     }
 
-    // Consume + bind.
-    await client.query(
-      `update learner_telegram_bind_codes
-          set consumed_at = now(), consumed_chat_id = $1
-        where id = $2::uuid`,
-      [chatId, bindRow.id],
-    )
-    await client.query(
-      `update accounts
-          set learner_telegram_enabled = true,
-              learner_telegram_chat_id = $1,
-              updated_at = now()
-        where id = $2::uuid`,
-      [chatId, accountId],
-    )
+    // Consume + bind. Branch on kind for the correct table + columns.
+    if (kind === 'teacher') {
+      await client.query(
+        `update teacher_telegram_bind_codes
+            set consumed_at = now(), consumed_chat_id = $1
+          where id = $2::uuid`,
+        [chatId, bindRowId],
+      )
+      await client.query(
+        `update accounts
+            set teacher_telegram_enabled = true,
+                teacher_telegram_chat_id = $1,
+                updated_at = now()
+          where id = $2::uuid`,
+        [chatId, accountId],
+      )
+    } else {
+      await client.query(
+        `update learner_telegram_bind_codes
+            set consumed_at = now(), consumed_chat_id = $1
+          where id = $2::uuid`,
+        [chatId, bindRowId],
+      )
+      await client.query(
+        `update accounts
+            set learner_telegram_enabled = true,
+                learner_telegram_chat_id = $1,
+                updated_at = now()
+          where id = $2::uuid`,
+        [chatId, accountId],
+      )
+    }
     await client.query('commit')
-    logJson('info', 'tg bind succeeded', { accountId, fromId })
+    logJson('info', 'tg bind succeeded', { kind, accountId, fromId })
     await replySafe(
       chatId,
-      'Готово! Теперь напоминания о занятиях LevelChannel будут приходить сюда. Чтобы отписаться, отправьте /stop.',
+      kind === 'teacher'
+        ? 'Готово! Утренний дайджест занятий LevelChannel будет приходить сюда в 08:00 по вашему часовому поясу. Чтобы отписаться, отправьте /stop.'
+        : 'Готово! Теперь напоминания о занятиях LevelChannel будут приходить сюда. Чтобы отписаться, отправьте /stop.',
     )
   } catch (err) {
     await client.query('rollback').catch(() => {})
@@ -219,8 +320,12 @@ async function handleStart(
 }
 
 async function handleStop(chatId: string): Promise<void> {
+  // BCS-DEF-5-TG §2.5 — /stop unbinds whichever role(s) this chat is
+  // bound under. A single Telegram chat can theoretically be bound to
+  // both a learner and a teacher account (same person); we unbind any
+  // matching row in each column.
   const pool = getAuthPool()
-  const r = await pool.query<{ id: string }>(
+  const learnerR = await pool.query<{ id: string }>(
     `update accounts
         set learner_telegram_enabled = false,
             learner_telegram_chat_id = null,
@@ -229,11 +334,24 @@ async function handleStop(chatId: string): Promise<void> {
       returning id`,
     [chatId],
   )
-  if (r.rows.length > 0) {
-    logJson('info', 'tg unbind via /stop', { accountId: r.rows[0].id })
+  const teacherR = await pool.query<{ id: string }>(
+    `update accounts
+        set teacher_telegram_enabled = false,
+            teacher_telegram_chat_id = null,
+            updated_at = now()
+      where teacher_telegram_chat_id = $1 and teacher_telegram_enabled = true
+      returning id`,
+    [chatId],
+  )
+  const unbindCount = learnerR.rows.length + teacherR.rows.length
+  if (unbindCount > 0) {
+    logJson('info', 'tg unbind via /stop', {
+      learnerAccountIds: learnerR.rows.map((row) => row.id),
+      teacherAccountIds: teacherR.rows.map((row) => row.id),
+    })
     await replySafe(
       chatId,
-      'Вы отписались от напоминаний LevelChannel. Чтобы снова подключиться — получите новый код в личном кабинете.',
+      'Вы отписались от уведомлений LevelChannel. Чтобы снова подключиться — получите новый код в личном кабинете.',
     )
   } else {
     await replySafe(chatId, 'Подписка не найдена.')

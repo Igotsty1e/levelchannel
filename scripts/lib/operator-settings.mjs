@@ -198,6 +198,18 @@ export const SETTING_SCHEMA = Object.freeze({
       'max retries for a single teacher digest within the firing window before terminal send_failed.',
     scope: 'teacher-daily-digest',
   }),
+  // BCS-DEF-5-TG (2026-05-21) — mirror of the TS twin. Drift test
+  // pins JSON.stringify equality.
+  TEACHER_DIGEST_TELEGRAM_ENABLED: Object.freeze({
+    kind: 'int',
+    default: 0,
+    min: 0,
+    max: 1,
+    envName: 'TEACHER_DIGEST_TELEGRAM_ENABLED',
+    description:
+      'master switch (1=on/0=off) for sending the daily teacher digest via Telegram (in addition to email); reuses TELEGRAM_BOT_TOKEN and the webhook from BCS-DEF-4-TG. Per-teacher opt-in still required (accounts.teacher_telegram_enabled=true after /start <code> handshake).',
+    scope: 'teacher-daily-digest',
+  }),
   // BCS-DEF-4 (2026-05-19) — learner reminder scheduler. Mirror of
   // lib/admin/operator-settings.ts; drift test pins JSON.stringify
   // equality.

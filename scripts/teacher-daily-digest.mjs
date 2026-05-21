@@ -46,6 +46,9 @@ import {
   VERDICT_KINDS,
 } from './lib/probe-runs.mjs'
 import { renderTeacherDailyDigestEmail } from './lib/teacher-daily-digest-template.mjs'
+import { renderTeacherDailyDigestTelegram } from './lib/teacher-daily-digest-telegram-template.mjs'
+import { runTeacherTelegramBlock } from './lib/teacher-daily-digest-telegram.mjs'
+import { sendTelegramMessage } from './lib/telegram-alerts.mjs'
 import { safeTimezone } from './lib/timezone.mjs'
 
 const EMAIL_FROM =
@@ -275,6 +278,13 @@ export async function processOneTeacher({
   now,
   maxAttempts,
   resendSend,
+  // BCS-DEF-5-TG (2026-05-21) — Telegram block on the email-sent
+  // branch only. Defaults preserve backward-compat (tests omitting
+  // these args get the no-Telegram path).
+  telegramEnabled = false,
+  tgToken = '',
+  tgSend = sendTelegramMessage,
+  renderTelegram = renderTeacherDailyDigestTelegram,
 }) {
   const tz = safeTimezone(candidate.rawTz)
   const { ymd, hms } = nowInTimezoneParts(now, tz)
@@ -449,21 +459,24 @@ export async function processOneTeacher({
       .filter((id) => id !== null)
     const learnerLabels = await loadLearnerLabels(client, learnerAccountIds)
 
-    // Step h — render email.
+    // Step h — render email. The normalized-slot array is hoisted into
+    // a local so the Telegram block (§2.4.2 Change A) can pass the SAME
+    // shape into the Telegram renderer (R3 WARN #2 closure).
+    const normalizedSlots = slots.map((s) => {
+      const learner = s.learnerAccountId
+        ? learnerLabels.get(s.learnerAccountId) ?? null
+        : null
+      return {
+        startAtIso: s.startAtIso,
+        learnerDisplayName: learner?.displayName ?? null,
+        learnerEmail: learner?.email ?? '',
+        zoomUrl: s.zoomUrl,
+      }
+    })
     const rendered = renderTeacherDailyDigestEmail({
       teacherDisplayName: candidate.displayName,
       teacherTimezone: tz,
-      slots: slots.map((s) => {
-        const learner = s.learnerAccountId
-          ? learnerLabels.get(s.learnerAccountId) ?? null
-          : null
-        return {
-          startAtIso: s.startAtIso,
-          learnerDisplayName: learner?.displayName ?? null,
-          learnerEmail: learner?.email ?? '',
-          zoomUrl: s.zoomUrl,
-        }
-      }),
+      slots: normalizedSlots,
       siteUrl: SITE_URL,
     })
 
@@ -493,7 +506,87 @@ export async function processOneTeacher({
         [candidate.accountId, ymd, sendResult.emailId],
       )
       await client.query('commit')
-      return { outcome: 'sent', emailId: sendResult.emailId }
+
+      // BCS-DEF-5-TG (2026-05-21) — Telegram block on the email-sent
+      // branch only. Email already durably persisted; best-effort
+      // second-channel delivery. Failures here NEVER unwind the email.
+      let telegramOutcome = null
+      if (telegramEnabled && tgToken) {
+        try {
+          const tgBody = renderTelegram({
+            slots: normalizedSlots,
+            teacherDisplayName: candidate.displayName,
+            teacherTimezone: tz,
+            siteUrl: SITE_URL,
+          })
+          const tgResult = await runTeacherTelegramBlock({
+            client,
+            accountId: candidate.accountId,
+            ymd,
+            telegramEnabled: true,
+            tgToken,
+            tgSend,
+            body: tgBody,
+          })
+          telegramOutcome = tgResult.tg
+        } catch (tgErr) {
+          telegramOutcome = 'terminal_send_failed'
+          logJson('warn', 'telegram render/dispatch crashed', {
+            accountId: candidate.accountId,
+            ymd,
+            err: tgErr instanceof Error ? tgErr.message : String(tgErr),
+          })
+          // BCS-DEF-5-TG-WAVE-PARANOIA round-1 BLOCKER 1 closure:
+          // outer-wrapper crash (e.g. renderer throws BEFORE the
+          // helper opens its own TX) MUST also persist terminal
+          // state so the dedup row doesn't stay pending forever.
+          // Opens a fresh TX on the same client (the email TX-A
+          // already committed).
+          try {
+            await client.query('begin')
+            await client.query(
+              `update teacher_account_daily_digests
+                  set telegram_skipped_reason = 'send_failed',
+                      telegram_last_error = $3,
+                      telegram_attempts = greatest(telegram_attempts, 1)
+                where account_id = $1 and sent_date = $2::date
+                  and telegram_sent = false
+                  and telegram_skipped_reason is null`,
+              [
+                candidate.accountId,
+                ymd,
+                `outer_wrapper_crashed: ${
+                  tgErr instanceof Error
+                    ? tgErr.message.slice(0, 800)
+                    : String(tgErr).slice(0, 800)
+                }`,
+              ],
+            )
+            await client.query('commit')
+          } catch (recoveryErr) {
+            try {
+              await client.query('rollback')
+            } catch {
+              /* swallow */
+            }
+            logJson(
+              'error',
+              'outer-wrapper recovery write itself failed',
+              {
+                accountId: candidate.accountId,
+                ymd,
+                err: recoveryErr instanceof Error ? recoveryErr.message : String(recoveryErr),
+              },
+            )
+          }
+        }
+      }
+
+      return {
+        outcome: 'sent',
+        emailId: sendResult.emailId,
+        telegramOutcome,
+      }
     }
 
     // Transient failure — keep row in pending state (attempts already
@@ -545,12 +638,20 @@ async function main() {
     const masterSwitch = settings.TEACHER_DIGEST_MASTER_SWITCH.value === 1
     const rateLimit = settings.TEACHER_DIGEST_RATE_LIMIT_PER_TICK.value
     const maxAttempts = settings.TEACHER_DIGEST_MAX_ATTEMPTS.value
+    // BCS-DEF-5-TG (2026-05-21) — Telegram channel master switch
+    // (default 0, OFF). Independent of TEACHER_DIGEST_MASTER_SWITCH —
+    // operator can run email-only by leaving this at 0.
+    const telegramEnabled =
+      settings.TEACHER_DIGEST_TELEGRAM_ENABLED?.value === 1
+    const tgToken = (process.env.TELEGRAM_BOT_TOKEN ?? '').trim()
 
     resolvedThresholds = {
       TEACHER_DIGEST_MASTER_SWITCH:
         settings.TEACHER_DIGEST_MASTER_SWITCH.value,
       TEACHER_DIGEST_RATE_LIMIT_PER_TICK: rateLimit,
       TEACHER_DIGEST_MAX_ATTEMPTS: maxAttempts,
+      TEACHER_DIGEST_TELEGRAM_ENABLED:
+        settings.TEACHER_DIGEST_TELEGRAM_ENABLED?.value ?? 0,
     }
 
     // Step 2 — master switch gate.
@@ -592,6 +693,15 @@ async function main() {
       email_missing: 0,
       sent: 0,
       send_failed_transient: 0,
+      // BCS-DEF-5-TG (2026-05-21) — Telegram channel outcome counters.
+      // Each maps 1:1 to a `tg:` return value from runTeacherTelegramBlock.
+      telegram_sent: 0,
+      telegram_skipped_no_binding: 0,
+      telegram_skipped_disabled: 0,
+      telegram_terminal_send_failed: 0,
+      telegram_bot_blocked: 0,
+      telegram_already_sent: 0,
+      telegram_row_missing: 0,
     }
 
     const apiKey = process.env.RESEND_API_KEY?.trim() ?? ''
@@ -641,6 +751,9 @@ async function main() {
           now: new Date(),
           maxAttempts,
           resendSend,
+          // BCS-DEF-5-TG (2026-05-21) — Telegram block on email-sent.
+          telegramEnabled,
+          tgToken,
         })
       } catch (perTeacherErr) {
         logJson('error', 'per-teacher processing crashed', {
@@ -683,6 +796,15 @@ async function main() {
           break
         default:
           break
+      }
+
+      // BCS-DEF-5-TG (2026-05-21) — Telegram outcome counter.
+      if (
+        result.telegramOutcome !== null
+        && result.telegramOutcome !== undefined
+      ) {
+        const key = `telegram_${result.telegramOutcome}`
+        counts[key] = (counts[key] ?? 0) + 1
       }
     }
 
