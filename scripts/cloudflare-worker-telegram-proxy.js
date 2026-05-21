@@ -8,7 +8,7 @@
 //   Path: /bot<TOKEN>/<method>  (verbatim forward of any sub-path)
 //
 // Inbound path: Telegram → Worker → levelchannel.ru/api/telegram/webhook
-//   Used because Telegram's webhook POSTs to 83.217.202.136 also time
+//   Used because Telegram's webhook POSTs to the production VPS also time
 //   out (same RKN block in the reverse direction). setWebhook URL now
 //   points at this Worker; Worker forwards the POST + secret-token
 //   header verbatim to the app. Cloudflare ↔ Timeweb is not blocked.
