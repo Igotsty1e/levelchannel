@@ -289,11 +289,15 @@ End state: every billable lesson event (whether "проведено" or "no_show
 4. Debt read at `lib/billing/packages/debt.ts:41` switches to LEFT JOIN `lesson_completions`.
 5. `teacher-learners.ts:29` similarly.
 6. `mutations-cancel.ts` extended with the `'completed'` rejection rules.
-7. `lesson_slots.status` enum keeps `'completed'` + `'no_show_*'` values. Route handlers
-   stop writing `'completed'` directly (forward trigger is the SoT). The `no_show_learner`
-   mutation in `mutations-no-show.ts` is updated to ALSO insert a `lesson_completions`
-   row with `was_no_show=true` atomically in the same TX — preserves the unified-SoT
-   invariant. `no_show_teacher` mutation stays as-is (no completion row, not billable).
+7. `lesson_slots.status` enum keeps `'completed'` + `'no_show_*'` values. ALL FOUR
+   billable-event writers go through a unified `markLessonCompleted()` helper that
+   inserts the completion row first, then the forward trigger flips the slot's status.
+   Writers: (a) teacher mark UI, (b) `mutations-no-show.ts` no_show_learner branch,
+   (c) admin mark route at `app/api/admin/slots/[id]/mark` via
+   `lib/scheduling/slots/lifecycle.ts:markSlotLifecycle`, (d) daily auto-complete cron at
+   `scripts/auto-complete-slots.mjs` (rewritten to INSERT completions instead of direct
+   status UPDATE; cron itself disabled on Day 5B). `no_show_teacher` mutation stays as
+   a direct status write — not billable, no completion row.
 
 Epic 5 implementation note: split into 5A (schema 0079/0080 + triggers + 48h immutability
 + teacher UI to mark complete + cabinet read) and 5B (auto-cron removal + debt-reader
@@ -725,14 +729,20 @@ ZERO route changes on Day 1 — schema-only PR.
 - Grant/recon/debt all teacher-aware.
 - `/teacher/packages` CRUD.
 
-**Day 5A — Lesson completion schema + UI mark/un-mark** (Epic 5A)
+**Day 5A — Lesson completion schema + ALL writers unified** (Epic 5A)
 - Migrations 0079 (lesson_completions + `was_no_show` boolean + triggers + immutable_at) + 0080 (settlements + M:N).
 - Backfill BOTH historical `status='completed'` (was_no_show=false) AND `status='no_show_learner'` (was_no_show=true) slots into lesson_completions. `no_show_teacher` not backfilled.
-- Update `lib/scheduling/slots/mutations-no-show.ts` so `no_show_learner` write also inserts a completion row atomically. `no_show_teacher` mutation unchanged.
+- **All four lifecycle writers refactored to go through a single `markLessonCompleted()` helper that inserts `lesson_completions` first, then lets the trigger flip `lesson_slots.status`. NO direct status writer remains after Day 5A:**
+  1. Teacher self-mark in `/teacher/learners/[id]` (new UI in this day).
+  2. `lib/scheduling/slots/mutations-no-show.ts` no_show_learner branch.
+  3. Admin mark route `/api/admin/slots/[id]/mark` via `lib/scheduling/slots/lifecycle.ts:markSlotLifecycle` — rewritten to call the helper.
+  4. Daily auto-complete cron in `scripts/auto-complete-slots.mjs` — rewritten to INSERT lesson_completions (not direct UPDATE status). Cron stays alive for Day 5A; its disable lands in Day 5B once teacher UI is ready.
+- `no_show_teacher` mutation stays as direct status write (not billable, no completion row).
 - `/teacher/learners/[id]` page basic shape — list completions + mark/un-mark button.
 - Forward + reverse trigger end-to-end test (insert→status flip, delete→status flip back).
 - 48h immutability gate (application-side) — see §2.6.
-- NO auto-cron removal yet; coexists temporarily.
+
+After Day 5A: `lesson_completions` is the SoT for billable lesson events. `lesson_slots.status` is derived. No write bypass.
 
 **Day 5B — Auto-cron removal + debt/summary rewrites + cancel interaction** (Epic 5B)
 - DISABLE the daily auto-complete cron.
