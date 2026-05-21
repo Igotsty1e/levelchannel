@@ -1106,8 +1106,14 @@ window. **Each fixture/test below is explicitly named, NOT discovered ad-hoc:**
 - **Runtime contract sweep ATOMIC with mig 0087** (round-28 BLOCKER #2 closure — mig
   0087's new enum values would otherwise be unreadable by the existing TS unions and
   would crash `store-postgres` mapping on the first SELECT):
-  - `lib/payments/types.ts:5` — extend `PaymentProvider` union with `'teacher_grant'`
-    and `PaymentStatus` union with `'teacher_granted'` + `'teacher_revoked'`.
+  - `lib/payments/types.ts:5,13` — extend `PaymentProvider` union with `'teacher_grant'`,
+    `PaymentStatus` union with `'teacher_granted'` + `'teacher_revoked'`, AND `PaymentMethod`
+    union with `'teacher_grant'` (round-31 BLOCKER closure — mig 0087 quadruple-CHECK
+    requires `payment_method='teacher_grant'` symmetric to the new provider; without the
+    TS union extension, the INSERT in the issue-route either fails the new CHECK or
+    `mapRowToOrder()` throws on the first read).
+  - `lib/payments/store-postgres.ts:107,164` `KNOWN_PAYMENT_METHODS` set — add
+    `'teacher_grant'` so `mapRowToOrder()` accepts the read-back.
   - `lib/payments/store-postgres.ts:89` — extend the row→object mapper to accept the
     new enum values (currently throws on anything outside the allow-list).
   - `app/admin/(gated)/payments/page.tsx:11-30` — add `'teacher_granted'` to the status
@@ -1123,7 +1129,7 @@ window. **Each fixture/test below is explicitly named, NOT discovered ad-hoc:**
   - `lib/billing/package-grant.ts:160` — call `getPackageById(metadata.packageId)`.
   - `lib/billing/packages/catalog.ts` — add `getPackageById(id)` if it doesn't exist;
     `getPackageBySlug` callers either accept a teacher_id discriminator or are deprecated.
-- `/teacher/packages/[id]/issue` route: teacher writes a synthetic `payment_orders` row with `provider='teacher_grant'` + `status='teacher_granted'` + `granted_by_teacher_id` in same TX as the `package_purchases` insert. Reuses the existing admin-grant transactional pattern but with the teacher's account_id (not an operator). No money flow; no CloudPayments call.
+- `/teacher/packages/[id]/issue` route: teacher writes a synthetic `payment_orders` row with `provider='teacher_grant'` + `status='teacher_granted'` + **`payment_method='teacher_grant'`** (round-31 BLOCKER closure — required by mig 0087 quadruple-CHECK symmetry) + `granted_by_teacher_id=$session.teacherId` + `teacher_account_id=$session.teacherId` (round-30 BLOCKER #2 — for Day-6 NOT NULL flip pre-condition) in same TX as the `package_purchases` insert. Reuses the existing admin-grant transactional pattern but with the teacher's account_id (not an operator). No money flow; no CloudPayments call.
 - **Non-money refund guard sweep** (round-29 BLOCKER closure — refund route currently
   only rejects `admin_grant`; without this Epic 3 ships a state-corruption hole where an
   operator can "refund" a free teacher-issued package and write phantom reversal rows on
@@ -1236,4 +1242,4 @@ Master plan-doc itself goes through `/codex-paranoia plan` rounds 1-3 before Epi
 
 ---
 
-— END OF DRAFT, plan-paranoia rounds 1-30 closed (off-protocol per owner authorization) —
+— END OF DRAFT, plan-paranoia rounds 1-31 closed (off-protocol per owner authorization) —
