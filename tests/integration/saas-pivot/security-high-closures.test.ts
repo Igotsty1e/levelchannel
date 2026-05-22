@@ -232,6 +232,27 @@ describe('SAAS-PIVOT security-audit HIGH-1 — /api/checkout/package/[slug] disa
     expect(orderRow.rows[0]?.teacher_account_id).toBe(teacherB.id)
   })
 
+  it('round-1 BLOCKER#2 closure — buying a non-plan-4 teacher\'s package returns 422 plan_4_required', async () => {
+    const SLUG = 'audit-h2-buyside'
+    const teacher = await makeTeacher({
+      emailSuffix: 'h2-buy-free',
+      planSlug: 'free',
+    })
+    const pkg = await createPackageOwnedBy(teacher.id, SLUG)
+    const learner = await registerLearner('audit-h2-buyside-learner@example.com')
+
+    const r = await checkoutPackageHandler(
+      buildRequest(
+        `/api/checkout/package/${SLUG}?packageId=${encodeURIComponent(pkg.id)}`,
+        { cookie: learner.cookie, body: {} },
+      ),
+      { params: Promise.resolve({ slug: SLUG }) },
+    )
+    expect(r.status).toBe(422)
+    const body = await r.json()
+    expect(body.error).toBe('plan_4_required')
+  })
+
   it('with ?packageId pointing at a different slug returns 404 (confused-deputy refused)', async () => {
     const SLUG_URL = 'audit-h1-url-slug'
     const SLUG_REAL = 'audit-h1-real-slug'
@@ -253,6 +274,54 @@ describe('SAAS-PIVOT security-audit HIGH-1 — /api/checkout/package/[slug] disa
     )
     expect(r.status).toBe(404)
     void pkgUrl
+  })
+})
+
+describe('SAAS-PIVOT security-audit HIGH-2 — POST /api/teacher/tariffs plan-4 gate', () => {
+  it('rejects a free-plan teacher with 422 plan_4_required', async () => {
+    const { POST: teacherTariffsPost } = await import(
+      '@/app/api/teacher/tariffs/route'
+    )
+    const teacher = await makeTeacher({
+      emailSuffix: 'h2t-free',
+      planSlug: 'free',
+    })
+    const cookie = await teacherCookie(teacher.id)
+    const r = await teacherTariffsPost(
+      buildRequest('/api/teacher/tariffs', {
+        cookie,
+        body: {
+          titleRu: 'Should be rejected',
+          amountKopecks: 100000,
+          durationMinutes: 60,
+        },
+      }),
+    )
+    expect(r.status).toBe(422)
+    const body = await r.json()
+    expect(body.error).toBe('plan_4_required')
+  })
+
+  it('accepts a plan-4 teacher with 201', async () => {
+    const { POST: teacherTariffsPost } = await import(
+      '@/app/api/teacher/tariffs/route'
+    )
+    const teacher = await makeTeacher({
+      emailSuffix: 'h2t-p4',
+      planSlug: 'operator-managed',
+    })
+    const cookie = await teacherCookie(teacher.id)
+    const r = await teacherTariffsPost(
+      buildRequest('/api/teacher/tariffs', {
+        cookie,
+        body: {
+          titleRu: 'Plan-4 OK',
+          amountKopecks: 100000,
+          durationMinutes: 60,
+        },
+      }),
+    )
+    expect(r.status).toBe(201)
   })
 })
 
@@ -425,60 +494,58 @@ describe('SAAS-PIVOT security-audit HIGH-4 — payment surfaces plan-4 gate', ()
     expect(body.error).toBe('plan_4_required')
   })
 
-  it('charge-token plan-4 gate is wired (helper-level + source-pin)', async () => {
+  it('charge-token rejects a non-plan-4 teacher with 422 plan_4_required (runtime gate)', async () => {
     // charge-token reads `paymentConfig.provider` at module-load time
-    // (lib/payments/config.ts:28). Tests run with PAYMENTS_PROVIDER=mock
-    // (tests/setup-env.ts), so the route's early gate returns 503
-    // `one_click_unavailable` BEFORE reaching the new plan-4 gate.
-    // Flipping the env at runtime via `vi.stubEnv` does not help
-    // because the config is frozen at module load.
+    // (lib/payments/config.ts:28). The route module captured
+    // `provider='mock'` at the top-level import above, so we can't
+    // flip the early gate after the fact.
     //
-    // Instead of forcing a process-level provider flip (which would
-    // ripple into other modules that captured env at load time), this
-    // test asserts the closure two ways:
-    //
-    //   (a) `isOperatorManagedTeacher` returns false for the non-plan-4
-    //       teacher the gate would reject — i.e. the underlying SoT
-    //       predicate behaves correctly at the data layer.
-    //   (b) Source-pin: the route file imports `isOperatorManagedTeacher`
-    //       and applies the gate after the teacher derivation. If a
-    //       future edit drops the gate, this source-pin fails.
-    //
-    // Combined: the gate exists in source AND the predicate it calls
-    // would return 422 against a non-plan-4 teacher.
-    const { isOperatorManagedTeacher } = await import(
-      '@/lib/payments/teacher-derivation'
-    )
-    const teacher = await makeTeacher({
-      emailSuffix: 'h4-ct-helper',
-      planSlug: 'pro',
-    })
-    expect(await isOperatorManagedTeacher(teacher.id)).toBe(false)
+    // To actually exercise the runtime plan-4 gate (round-1 WARN#3
+    // closure), we vi.resetModules() then dynamically re-import
+    // BOTH `lib/payments/config` and the charge-token route inside a
+    // `PAYMENTS_PROVIDER=cloudpayments` env window. The fresh route
+    // module captures `provider='cloudpayments'`, the early
+    // 503-gate is bypassed, and the plan-4 gate fires when we feed
+    // it a non-plan-4 ?t=<slug>.
+    vi.stubEnv('PAYMENTS_PROVIDER', 'cloudpayments')
+    vi.resetModules()
+    try {
+      await getDbPool().query(
+        `delete from accounts where teacher_account_migration_marker = 'bootstrap-2026-05-22'`,
+      )
+      const publicSlug = `h4-ct-rt-${randomUUID().slice(0, 6)}`
+      await makeTeacher({
+        emailSuffix: 'h4-ct-rt',
+        planSlug: 'pro',
+        publicSlug,
+      })
+      const learner = await registerLearner('audit-h4-ct-rt-learner@example.com')
 
-    // Source-pin: the route file MUST import isOperatorManagedTeacher
-    // AND apply it after deriveTeacherAccountIdForOrder.
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const src = fs.readFileSync(
-      path.resolve(
-        process.cwd(),
-        'app/api/payments/charge-token/route.ts',
-      ),
-      'utf8',
-    )
-    expect(src).toContain('isOperatorManagedTeacher')
-    // Gate is downstream of the derivation call.
-    const derivIdx = src.indexOf('deriveTeacherAccountIdForOrder(')
-    // We want the SECOND occurrence (the call inside POST), not the
-    // import.
-    const callIdx = src.indexOf('deriveTeacherAccountIdForOrder(', derivIdx + 1)
-    const gateIdx = src.indexOf('isOperatorManagedTeacher(')
-    // Second occurrence of the gate call (call site inside POST).
-    const gateCallIdx = src.indexOf('isOperatorManagedTeacher(', gateIdx + 1)
-    expect(callIdx).toBeGreaterThan(-1)
-    expect(gateCallIdx).toBeGreaterThan(callIdx)
+      // Dynamic import so the fresh module reads the stubbed env.
+      const routeModule = await import('@/app/api/payments/charge-token/route')
+      const r = await routeModule.POST(
+        buildRequest(
+          `/api/payments/charge-token?t=${encodeURIComponent(publicSlug)}`,
+          {
+            cookie: learner.cookie,
+            body: {
+              amountRub: 1500,
+              personalDataConsentAccepted: true,
+            },
+            headers: { 'Idempotency-Key': randomUUID() },
+          },
+        ),
+      )
+      expect(r.status).toBe(422)
+      const body = await r.json()
+      expect(body.error).toBe('plan_4_required')
+    } finally {
+      vi.stubEnv('PAYMENTS_PROVIDER', 'mock')
+      vi.resetModules()
+    }
 
-    // Touch chargeTokenHandler so the import is exercised (lint).
+    // Touch chargeTokenHandler so the static import is still
+    // exercised (lint guard).
     expect(typeof chargeTokenHandler).toBe('function')
   })
 })

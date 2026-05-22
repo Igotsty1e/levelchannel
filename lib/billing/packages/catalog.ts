@@ -45,13 +45,26 @@ function rowToPackage(row: Record<string, unknown>): LessonPackage {
   }
 }
 
+// SAAS-PIVOT security-audit HIGH-2 round-1 BLOCKER#2 closure
+// (2026-05-23). The learner-facing catalog `/cabinet/packages` must
+// not show packages owned by non-plan-4 (Free/Mid/Pro) teachers: a
+// learner who clicks Buy on one of those would surface the new 422
+// `plan_4_required` gate in the checkout route — confusing UX AND
+// useless catalog real-estate. Filter the catalog at read time by
+// joining `teacher_subscriptions` and keeping only `plan_slug =
+// 'operator-managed' and state = 'active'` rows. The bootstrap
+// teacher is plan-4 (mig 0083), so legacy single-tenant catalogs are
+// unaffected.
 export async function listActivePackages(): Promise<LessonPackage[]> {
   const pool = getDbPool()
   const result = await pool.query(
-    `select ${PACKAGE_COLS}
-       from lesson_packages
-      where is_active = true
-      order by display_order asc, id asc`,
+    `select ${PACKAGE_COLS.split(',').map((c) => `lp.${c.trim()}`).join(', ')}
+       from lesson_packages lp
+       join teacher_subscriptions ts on ts.account_id = lp.teacher_id
+      where lp.is_active = true
+        and ts.plan_slug = 'operator-managed'
+        and ts.state = 'active'
+      order by lp.display_order asc, lp.id asc`,
   )
   return result.rows.map((r) => rowToPackage(r as Record<string, unknown>))
 }
@@ -61,12 +74,17 @@ export async function listActivePackagesByDuration(
   limit = 3,
 ): Promise<LessonPackage[]> {
   const pool = getDbPool()
+  // Same plan-4 catalog filter as `listActivePackages` — keep the
+  // two read surfaces consistent.
   const result = await pool.query(
-    `select ${PACKAGE_COLS}
-       from lesson_packages
-      where is_active = true
-        and duration_minutes = $1
-      order by display_order asc, id asc
+    `select ${PACKAGE_COLS.split(',').map((c) => `lp.${c.trim()}`).join(', ')}
+       from lesson_packages lp
+       join teacher_subscriptions ts on ts.account_id = lp.teacher_id
+      where lp.is_active = true
+        and lp.duration_minutes = $1
+        and ts.plan_slug = 'operator-managed'
+        and ts.state = 'active'
+      order by lp.display_order asc, lp.id asc
       limit $2`,
     [durationMinutes, Math.min(Math.max(limit, 1), 20)],
   )

@@ -141,10 +141,25 @@ that backs the `/cabinet/packages` buy CTA. The contract:
   `isLearnerArchetypeCandidate` (deletion-grace coverage). Admin /
   teacher / unverified / deletion-grace accounts get rejected before
   the order is created.
+- Multi-tenant disambiguation (SAAS-PIVOT security-audit HIGH-1,
+  2026-05-23): URL slug alone is no longer unique (mig 0089). Route
+  accepts `?packageId=<uuid>` (preferred — canonical; the URL slug
+  is verified against the row's actual slug to refuse confused-deputy)
+  or `?teacher=<uuid>` (composite teacher,slug lookup). Bare slug is
+  refused with 400 `package_slug_ambiguous` when more than one row
+  matches. The cabinet `BuyButton` threads `?packageId=` automatically.
+- Plan-4 gate (SAAS-PIVOT security-audit HIGH-2, 2026-05-23): after
+  resolving the package row, the route calls
+  `isOperatorManagedTeacher(teacher_id)` and returns 422
+  `plan_4_required` if the owning teacher is not on the
+  operator-managed (plan-4) subscription. Same contract as
+  `/api/payments`, `/api/payments/sbp/create-qr`,
+  `/api/payments/charge-token`, and `POST /api/teacher/packages`.
 - Idempotency: wrapped in `withIdempotency` scoped to
-  `checkout:package:${slug}:${accountId}` so an `Idempotency-Key`
-  replay across different packages or different accounts is a cache
-  miss, not a leak.
+  `checkout:package:${packageId}:${slug}:${accountId}` — `packageId`
+  is the load-bearing portion so an `Idempotency-Key` replay across
+  two teachers sharing the same slug remains a cache miss, not a
+  cross-tenant leak (security-audit round-1 BLOCKER closure).
 - Race-safe gates: inside the idempotent body the route acquires a
   dedicated `PoolClient`, opens a transaction, and takes a
   `pg_advisory_xact_lock(hashtextextended('pkg-stack:' || accountId || ':' || durationMinutes, 0))`
