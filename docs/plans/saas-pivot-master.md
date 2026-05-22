@@ -1,6 +1,6 @@
 # SaaS-pivot master plan (2026-05-21)
 
-**Status:** DRAFT — plan-paranoia rounds 1-16 closed (off-protocol per owner authorization).
+**Status:** SHIPPED 2026-05-22 — all 8 epics (Days 1-7) merged to main via PRs #411 / #413 / #414 / #415 / #419 / #420 / #421 / #424 / #425. Plan-paranoia rounds 1-32 closed (off-protocol per owner authorization).
 **Author:** Claude (orchestrator-mode).
 **Decision context:** chat session 2026-05-21 with product owner.
 
