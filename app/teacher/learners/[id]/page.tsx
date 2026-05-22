@@ -5,6 +5,7 @@ import { notFound, redirect } from 'next/navigation'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getDbPool } from '@/lib/db/pool'
 
+import { RenameLearnerForm } from './rename-form'
 import UncompleteButton from './uncomplete-button'
 
 // SAAS-PIVOT Epic 5A Day 5A — teacher learner-detail page.
@@ -172,6 +173,12 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
       <p style={{ color: 'var(--secondary)', marginBottom: 24 }}>
         {learner.email}
       </p>
+
+      <RenameLearnerForm
+        learnerId={learnerId}
+        initialDisplayName={learner.display_name ?? ''}
+        initialEmail={learner.email}
+      />
 
       <section
         style={{
