@@ -7,6 +7,7 @@ import { getGoogleCalendarOauthConfig } from '@/lib/calendar/google/config'
 import { exchangeCodeForTokens } from '@/lib/calendar/google/oauth'
 import { verifyOauthState } from '@/lib/calendar/google/state'
 import { upsertGoogleIntegration } from '@/lib/calendar/integrations'
+import { enqueuePullJob } from '@/lib/calendar/pull-worker'
 import { enforceRateLimit } from '@/lib/security/request'
 
 export const runtime = 'nodejs'
@@ -179,6 +180,38 @@ export async function GET(request: Request) {
     }
   } catch (e) {
     console.error('[calendar/oauth] channel setup threw:', e)
+  }
+
+  // SaaS-pivot multi-tenant audit 2026-05-23 — close GAP-1.
+  //
+  // Google's channels.watch handshake fires `X-Goog-Resource-State:
+  // sync`, which the webhook deliberately skips for pull-enqueue
+  // (it's just the channel-created marker, not a real change). In
+  // the single-tenant era the operator's calendar was constantly
+  // active so the first real event always pulled within minutes.
+  // With multi-tenant onboarding, a quiet calendar would silently
+  // leave `teacher_external_busy_intervals` empty until the next
+  // real change — meaning the conflict detector finds zero
+  // conflicts and free-slot freshness gates pass on a stale
+  // (empty) cache.
+  //
+  // Fix: enqueue a priority=2 pull job per read calendar after the
+  // channel is wired up. Best-effort (non-fatal). Default
+  // readCalendarIds=['primary'] at upsert time, but iterate in case
+  // a later flow changes that default.
+  try {
+    for (const calendarId of upsert.record.readCalendarIds) {
+      await enqueuePullJob({
+        teacherAccountId: session.account.id,
+        externalCalendarId: calendarId,
+        priority: 2,
+      })
+    }
+  } catch (e) {
+    console.warn(
+      '[calendar/oauth] initial pull enqueue failed:',
+      e instanceof Error ? e.message : String(e),
+    )
   }
 
   return redirectToSettings(origin, { connected: '1' })
