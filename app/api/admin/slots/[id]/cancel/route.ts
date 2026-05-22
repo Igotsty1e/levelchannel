@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { NO_STORE } from '@/lib/api/http-headers'
 import { runCancelFromConflictCleanup } from '@/lib/admin/conflict-feed'
 import { requireAdminRole } from '@/lib/auth/guards'
-import { cancelSlot } from '@/lib/scheduling/slots'
+import { cancelSlot, CancelAfterCompletionError } from '@/lib/scheduling/slots'
 import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
@@ -125,6 +125,18 @@ export async function POST(request: Request, { params }: RouteParams) {
 
     return NextResponse.json({ slot: cancelled }, { status: 200, headers: NO_STORE })
   } catch (err) {
+    // SAAS-PIVOT Day 5A — cancel-after-completion contract. 409 with
+    // hint to un-mark first via /api/teacher/lessons/[id]/uncomplete.
+    if (err instanceof CancelAfterCompletionError) {
+      return NextResponse.json(
+        {
+          error: 'after_completion',
+          message:
+            'Слот уже отмечен как проведённый. Сначала снимите отметку через /uncomplete.',
+        },
+        { status: 409, headers: NO_STORE },
+      )
+    }
     const msg = err instanceof Error ? err.message : 'unknown'
     // cancelSlot throws `slot/cancellationReason/too_long` on bad input.
     if (msg.startsWith('slot/')) {

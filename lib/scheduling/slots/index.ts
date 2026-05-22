@@ -83,6 +83,7 @@ export { MAX_ZOOM_URL_LEN, validateZoomUrl } from './validation'
 export type { ZoomUrlValidationError } from './validation'
 
 export {
+  CancelAfterCompletionError,
   cancelLearnerSlot,
   cancelSlot,
   cancelSlotByTeacher,

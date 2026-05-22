@@ -110,6 +110,17 @@ export async function POST(request: Request, { params }: RouteParams) {
         { status: 409, headers: NO_STORE },
       )
     }
+    // SAAS-PIVOT Day 5A — slot is in a billable terminal state.
+    if (result.reason === 'after_completion') {
+      return NextResponse.json(
+        {
+          error: 'after_completion',
+          message:
+            'Урок уже отмечен как проведённый. Свяжитесь с преподавателем, чтобы снять отметку.',
+        },
+        { status: 409, headers: NO_STORE },
+      )
+    }
     // too_late_to_cancel
     return NextResponse.json(
       {

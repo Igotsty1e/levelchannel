@@ -97,6 +97,18 @@ export async function POST(request: Request, { params }: RouteParams) {
         { status: 400, headers: NO_STORE },
       )
     }
+    // SAAS-PIVOT Day 5A — billable terminal state. Teacher needs to
+    // un-mark first via /api/teacher/lessons/[id]/uncomplete.
+    if (result.reason === 'after_completion') {
+      return NextResponse.json(
+        {
+          error: 'after_completion',
+          message:
+            'Слот уже отмечен как проведённый. Сначала снимите отметку через "Не было занятия".',
+        },
+        { status: 409, headers: NO_STORE },
+      )
+    }
     // already_terminal
     return NextResponse.json(
       {
