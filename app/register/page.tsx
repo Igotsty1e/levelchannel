@@ -18,10 +18,19 @@ export default function RegisterPage() {
   // atomically. A future polish PR can add a /api/teacher/invites/
   // preview endpoint to render «Вас пригласил <email>» before submit.
   const inviteToken = searchParams.get('invite') ?? null
+  // SAAS-PIVOT Epic 1 Day 2 (2026-05-22) — `/register?role=teacher`
+  // pre-selects the teacher branch so the teacher-acquisition landing
+  // can deep-link learners → registration with the right role already
+  // chosen (plan §5 Day 2 "/register?role=teacher route activation").
+  // An invite token still forces role=student (anti-spoof on the
+  // server) regardless of this query param.
+  const roleFromQuery = searchParams.get('role')
+  const initialRole: 'student' | 'teacher' =
+    roleFromQuery === 'teacher' ? 'teacher' : 'student'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   // An invited learner has role pre-locked to student.
-  const [role, setRole] = useState<'student' | 'teacher'>('student')
+  const [role, setRole] = useState<'student' | 'teacher'>(initialRole)
   const [consent, setConsent] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)

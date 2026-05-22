@@ -1,4 +1,5 @@
 import type { Account } from '@/lib/auth/accounts'
+import { getActiveTeacherIdsForLearner } from '@/lib/auth/teacher-scope'
 import { hashToken, mintToken } from '@/lib/auth/tokens'
 import { getAuthPool } from '@/lib/auth/pool'
 
@@ -67,6 +68,20 @@ export async function lookupSession(
   if (new Date(String(row.session_expires_at)).getTime() <= Date.now()) return null
   if (row.disabled_at) return null
 
+  // SAAS-PIVOT Day 2 (2026-05-22) — hydrate the n:m teacher array from
+  // learner_teacher_links (plan §2.5). The legacy single-value column
+  // (account_assigned_teacher_id, fetched in the SELECT above) becomes
+  // a back-compat alias: `assignedTeacherId = assignedTeacherIds[0] ??
+  // null`. We deliberately compute the alias from the helper output
+  // rather than from the legacy column so the two stay consistent
+  // even if a writer accidentally drifts (e.g. INSERTs a link without
+  // also updating accounts.assigned_teacher_id during the dual-write
+  // window). assignedTeacherIds is empty for non-learners (teacher/
+  // admin accounts have no rows in learner_teacher_links keyed on
+  // their id as learner) — uniform shape across all roles.
+  const accountId = String(row.account_id)
+  const assignedTeacherIds = await getActiveTeacherIdsForLearner(accountId)
+
   return {
     session: {
       id: String(row.session_id),
@@ -75,7 +90,7 @@ export async function lookupSession(
       createdAt: new Date(String(row.session_created_at)).toISOString(),
     },
     account: {
-      id: String(row.account_id),
+      id: accountId,
       email: String(row.email),
       passwordHash: String(row.password_hash),
       emailVerifiedAt: row.email_verified_at
@@ -90,9 +105,12 @@ export async function lookupSession(
       purgedAt: row.account_purged_at
         ? new Date(String(row.account_purged_at)).toISOString()
         : null,
-      assignedTeacherId: row.account_assigned_teacher_id
-        ? String(row.account_assigned_teacher_id)
-        : null,
+      // Back-compat alias for any reader missed by the Day-2 sweep
+      // (e.g. cabinet/lessons-section.tsx per plan §2.5). Through MVP
+      // the alias coexists with assignedTeacherIds; mig 0084 drops
+      // both post-MVP.
+      assignedTeacherId: assignedTeacherIds[0] ?? null,
+      assignedTeacherIds,
       createdAt: new Date(String(row.account_created_at)).toISOString(),
       updatedAt: new Date(String(row.account_updated_at)).toISOString(),
     },

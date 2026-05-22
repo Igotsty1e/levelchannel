@@ -43,9 +43,14 @@ describe('SAAS-4 lib/auth/teacher-invites.ts DB primitives', () => {
     expect(src).toMatch(/with verified_invite as \(/)
     expect(src).toMatch(/exists \(\s*select 1 from account_roles/)
     expect(src).toMatch(/and r\.role = 'teacher'/)
-    // Outer UPDATE binds accounts.assigned_teacher_id from CTE.
+    // SAAS-PIVOT Day 2 (2026-05-22) — the writable CTE now also inserts
+    // into learner_teacher_links (canonical n:m table) and dual-writes
+    // accounts.assigned_teacher_id from the CTE. Both writes derive
+    // the teacher id from the verified_invite CTE (anti-spoof). The
+    // CTE alias is `vi` after the rewrite.
+    expect(src).toMatch(/insert into learner_teacher_links/)
     expect(src).toMatch(
-      /update accounts\s+set assigned_teacher_id = verified_invite\.teacher_account_id/,
+      /update accounts\s+set assigned_teacher_id = vi\.teacher_account_id/,
     )
   })
 

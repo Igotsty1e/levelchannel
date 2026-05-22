@@ -62,12 +62,21 @@ async function registerAndCookie(
   return { cookie: cookie!, accountId: created!.id }
 }
 
+// SAAS-PIVOT Day 2 (2026-05-22) — dual-write: see book-agenda.test.ts.
 async function assignTeacher(
   learnerAccountId: string,
   teacherAccountId: string,
 ): Promise<void> {
-  await getDbPool().query(
+  const pool = getDbPool()
+  await pool.query(
     `update accounts set assigned_teacher_id = $2 where id = $1`,
+    [learnerAccountId, teacherAccountId],
+  )
+  await pool.query(
+    `insert into learner_teacher_links (learner_account_id, teacher_account_id, linked_at)
+       values ($1, $2, now())
+     on conflict (learner_account_id, teacher_account_id) do update
+       set unlinked_at = null`,
     [learnerAccountId, teacherAccountId],
   )
 }

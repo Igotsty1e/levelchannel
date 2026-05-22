@@ -22,9 +22,19 @@ function read(p: string): string {
 }
 
 describe('SAAS-3 register form', () => {
-  it('ships a role state initialised to "student"', () => {
+  it('ships a role state with student default (overridable via ?role=teacher query)', () => {
     const src = read('app/register/page.tsx')
-    expect(src).toMatch(/useState<['"]student['"] \| ['"]teacher['"]>\(['"]student['"]\)/)
+    // SAAS-PIVOT Day 2 (2026-05-22) — initial role now comes from
+    // `initialRole` (derived from ?role=<…> query, defaulting to
+    // 'student'). The teacher-acquisition landing deep-links to
+    // /register?role=teacher; an invite token still forces student
+    // server-side. The default-when-no-query is still 'student'.
+    expect(src).toMatch(
+      /useState<['"]student['"] \| ['"]teacher['"]>\(initialRole\)/,
+    )
+    expect(src).toMatch(
+      /initialRole:\s*['"]student['"]\s*\|\s*['"]teacher['"]\s*=\s*\n?\s*roleFromQuery === ['"]teacher['"] \? ['"]teacher['"] : ['"]student['"]/,
+    )
   })
 
   it('renders two radio inputs (student, teacher)', () => {

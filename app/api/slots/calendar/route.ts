@@ -94,8 +94,13 @@ export async function GET(request: Request) {
     // Wave A guard: learner role exists but the calendar surface is
     // not yet wired in /cabinet (that's Wave B). The auth-matrix
     // contract is pinned now so Wave B inherits it without rework.
-    const assigned = auth.account.assignedTeacherId
-    if (!assigned || teacherId !== assigned) {
+    //
+    // SAAS-PIVOT Day 2 (2026-05-22) — n:m teacher context (plan §2.5).
+    // A learner with multiple active teachers may legitimately view
+    // any of them via the calendar surface. Check membership in the
+    // active link set, not the legacy single-value alias.
+    const assignedIds = auth.account.assignedTeacherIds
+    if (assignedIds.length === 0 || !assignedIds.includes(teacherId)) {
       return NextResponse.json(
         { error: 'teacher_id_mismatch', message: 'Learner can only view assigned teacher.' },
         { status: 403, headers: NO_STORE },

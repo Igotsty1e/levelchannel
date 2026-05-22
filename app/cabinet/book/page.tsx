@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { AuthShell } from '@/components/auth-shell'
 import { getAccountProfile } from '@/lib/auth/profiles'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { getActiveTeacherForLearner } from '@/lib/auth/teacher-scope'
 import { TIMEZONE_OPTIONS, safeTimezone } from '@/lib/auth/timezones'
 
 import { MonthDayPicker } from './month-day-picker'
@@ -40,7 +41,15 @@ export default async function BookPage() {
     redirect('/cabinet')
   }
 
-  const teacherId = session.account.assignedTeacherId
+  // SAAS-PIVOT Day 2 (2026-05-22) — n:m teacher context (plan §2.5).
+  // Cabinet entry into /cabinet/book uses the "single active teacher"
+  // semantics. Multi-link learners land on the same shell but the
+  // MonthDayPicker is expected to surface the chooser via the
+  // /api/slots/booking-days needs_teacher_picker error path (the
+  // client-side picker fetches that endpoint on mount). For zero-link
+  // learners we show the existing «учитель не назначен» hint.
+  const resolved = await getActiveTeacherForLearner(session.account.id)
+  const teacherId = resolved.teacherId
   const profile = await getAccountProfile(session.account.id)
   // BUG fix 2026-05-15 — legacy rows may carry a non-IANA value like
   // 'Moscow' which then leaks to /api/slots/booking-days as `tz=Moscow`

@@ -47,12 +47,27 @@ async function registerAndCookie(
   return { cookie: cookie!, accountId: created!.id }
 }
 
+// SAAS-PIVOT Day 2 (2026-05-22) — dual-write fixture: tests that need
+// a learner pinned to a teacher must now seed BOTH the legacy column
+// (accounts.assigned_teacher_id, kept through MVP for the back-compat
+// alias) AND the canonical learner_teacher_links row (plan §2.5).
+// Without the link-row insert, /api/slots/booking-* reads — which
+// switched to getActiveTeacherForLearner() — would see the learner
+// as unbound and 200-with-empty.
 async function assignTeacher(
   learnerAccountId: string,
   teacherAccountId: string,
 ): Promise<void> {
-  await getDbPool().query(
+  const pool = getDbPool()
+  await pool.query(
     `update accounts set assigned_teacher_id = $2 where id = $1`,
+    [learnerAccountId, teacherAccountId],
+  )
+  await pool.query(
+    `insert into learner_teacher_links (learner_account_id, teacher_account_id, linked_at)
+       values ($1, $2, now())
+     on conflict (learner_account_id, teacher_account_id) do update
+       set unlinked_at = null`,
     [learnerAccountId, teacherAccountId],
   )
 }

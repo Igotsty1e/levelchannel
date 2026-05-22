@@ -14,6 +14,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const bookSlotMock = vi.fn()
 const requireLearnerArchetypeAndVerifiedMock = vi.fn()
+const getActiveTeacherForLearnerMock = vi.fn()
+const getActiveTeacherIdsForLearnerMock = vi.fn()
 
 vi.mock('@/lib/scheduling/slots', () => ({
   bookSlot: (...a: unknown[]) => bookSlotMock(...a),
@@ -22,6 +24,16 @@ vi.mock('@/lib/scheduling/slots', () => ({
 vi.mock('@/lib/auth/guards', () => ({
   requireLearnerArchetypeAndVerified: () =>
     requireLearnerArchetypeAndVerifiedMock(),
+}))
+
+// SAAS-PIVOT Day 2 (2026-05-22) — the route now resolves the
+// learner's active teacher via lib/auth/teacher-scope (n:m). Mock
+// both helpers so this unit test stays DB-free.
+vi.mock('@/lib/auth/teacher-scope', () => ({
+  getActiveTeacherForLearner: (...a: unknown[]) =>
+    getActiveTeacherForLearnerMock(...a),
+  getActiveTeacherIdsForLearner: (...a: unknown[]) =>
+    getActiveTeacherIdsForLearnerMock(...a),
 }))
 
 vi.mock('@/lib/security/request', () => ({
@@ -48,18 +60,31 @@ describe('POST /api/slots/[id]/book — self-booking gate', () => {
   beforeEach(() => {
     bookSlotMock.mockReset()
     requireLearnerArchetypeAndVerifiedMock.mockReset()
+    getActiveTeacherForLearnerMock.mockReset()
+    getActiveTeacherIdsForLearnerMock.mockReset()
     requireLearnerArchetypeAndVerifiedMock.mockResolvedValue({
       ok: true,
-      // BCS-HARDEN-1 — the book route now refuses null-assignedTeacherId
-      // upfront, so the mock has to carry a non-null teacher id for
-      // the test to reach the bookSlot mock path.
+      // BCS-HARDEN-1 — the book route now refuses null-assignedTeacher
+      // upfront. SAAS-PIVOT Day 2 — n:m resolution comes from the
+      // teacher-scope mocks below; the account.assignedTeacherId field
+      // is the back-compat alias and not consumed by the new route.
       account: {
         id: 'self-1',
         email: 'self@example.com',
         assignedTeacherId: '11111111-1111-1111-1111-111111111111',
+        assignedTeacherIds: ['11111111-1111-1111-1111-111111111111'],
       },
       session: { id: 's-1' },
     })
+    // Single-link learner default — getActiveTeacherForLearner returns
+    // the single id, no picker.
+    getActiveTeacherForLearnerMock.mockResolvedValue({
+      teacherId: '11111111-1111-1111-1111-111111111111',
+      needsPicker: false,
+    })
+    getActiveTeacherIdsForLearnerMock.mockResolvedValue([
+      '11111111-1111-1111-1111-111111111111',
+    ])
   })
 
   afterEach(() => vi.restoreAllMocks())
