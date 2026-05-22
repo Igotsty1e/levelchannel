@@ -19,7 +19,11 @@ export default async function AdminSlotsPage() {
   const [teachers, slots, tariffs, learners, conflictCount] = await Promise.all([
     listAccountsByRole('teacher'),
     listAllSlotsForAdmin({ status: 'all', limit: 200 }),
-    listActiveTariffs(),
+    // teacher-scope: admin-global — operator picks "as which teacher"
+    // in the slot-create form, so the dropdown lists every teacher's
+    // active tariffs. SAAS-PIVOT Epic 6 adds a teacher-filter chip;
+    // until then admin sees the union.
+    listActiveTariffs({ teacherId: null }),
     listLearnerCandidates(),
     // BCS-DEF-2 — badge for /admin/slots/conflicts. Returns null on
     // DB error so the link still renders without a count.

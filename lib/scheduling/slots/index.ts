@@ -70,6 +70,8 @@ export {
 
 export {
   SlotTeacherRoleError,
+  TariffNotActiveError,
+  TariffOwnershipError,
   bulkCreateSlots,
   createSlot,
   deleteOpenSlot,

@@ -6,6 +6,11 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export default async function AdminPricingPage() {
+  // teacher-scope: admin-global — operator sees every teacher's
+  // catalogue here (Epic 6 will add a teacher-filter chip). Soft-
+  // deleted tariffs hidden by default; the route accepts
+  // ?includeArchived=1 for the audit view but this SSR shell keeps
+  // the active-only view for now.
   const tariffs = await listAllTariffs()
   return (
     <>

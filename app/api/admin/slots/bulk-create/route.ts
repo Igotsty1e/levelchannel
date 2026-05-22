@@ -7,6 +7,8 @@ import {
   type BulkCreateInput,
   bulkCreateSlots,
   SlotTeacherRoleError,
+  TariffNotActiveError,
+  TariffOwnershipError,
 } from '@/lib/scheduling/slots'
 import {
   enforceRateLimit,
@@ -91,6 +93,27 @@ export async function POST(request: Request) {
       { status: 201, headers: NO_STORE },
     )
   } catch (err) {
+    if (err instanceof TariffNotActiveError) {
+      return NextResponse.json(
+        {
+          error:
+            err.reason === 'soft_deleted'
+              ? 'slot/tariffId/archived'
+              : 'slot/tariffId/unknown',
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    if (err instanceof TariffOwnershipError) {
+      return NextResponse.json(
+        {
+          error: 'slot/tariffId/wrong_teacher',
+          message:
+            'Этот тариф принадлежит другому учителю. Выберите тариф учителя или смените учителя слотов.',
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
     if (err instanceof SlotTeacherRoleError) {
       return NextResponse.json(
         {

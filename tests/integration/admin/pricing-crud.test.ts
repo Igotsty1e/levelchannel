@@ -15,7 +15,12 @@ import { POST as registerHandler } from '@/app/api/auth/register/route'
 import { getAccountByEmail, grantAccountRole } from '@/lib/auth/accounts'
 
 import '../setup'
-import { buildRequest, extractSessionCookie, futureSlotIso } from '../helpers'
+import {
+  buildRequest,
+  extractSessionCookie,
+  futureSlotIso,
+  seedBootstrapTeacher,
+} from '../helpers'
 
 async function adminCookie(email = 'pricing-admin@example.com') {
   const password = 'StrongPassword123'
@@ -40,6 +45,10 @@ async function adminCookie(email = 'pricing-admin@example.com') {
 describe('admin pricing CRUD', () => {
   it('creates, lists, patches a tariff', async () => {
     const cookie = await adminCookie()
+    // SAAS-PIVOT Day 3: /admin/pricing POST falls back to bootstrap
+    // teacher when no `teacherId` body override is passed. Seed the
+    // marker row so the fallback resolves.
+    await seedBootstrapTeacher()
 
     const created = await createTariffHandler(
       buildRequest('/api/admin/pricing', {
@@ -123,6 +132,7 @@ describe('admin pricing CRUD', () => {
 
   it('BUG-2: hard-deletes an unreferenced tariff', async () => {
     const cookie = await adminCookie('pricing-del-ok@example.com')
+    await seedBootstrapTeacher()
     const created = await createTariffHandler(
       buildRequest('/api/admin/pricing', {
         cookie,
@@ -156,6 +166,7 @@ describe('admin pricing CRUD', () => {
 
   it('BUG-2: refuses to hard-delete a tariff bound to any slot', async () => {
     const cookie = await adminCookie('pricing-del-blocked@example.com')
+    await seedBootstrapTeacher()
     const teacherEmail = 'pricing-del-teacher@example.com'
     await registerHandler(
       buildRequest('/api/auth/register', {
@@ -262,6 +273,7 @@ describe('admin pricing CRUD', () => {
 
   it('BUG-3: admin slot create refuses tariff with mismatched duration', async () => {
     const cookie = await adminCookie('pricing-slot-gate@example.com')
+    await seedBootstrapTeacher()
     const teacherEmail = 'pricing-slot-gate-teacher@example.com'
     await registerHandler(
       buildRequest('/api/auth/register', {
@@ -313,6 +325,7 @@ describe('admin pricing CRUD', () => {
 
   it('BUG-3: PATCH duration_minutes is immutable after first slot reference (409 via app guard)', async () => {
     const cookie = await adminCookie('pricing-dur-immutable@example.com')
+    await seedBootstrapTeacher()
     const teacherEmail = 'pricing-dur-imm-teacher@example.com'
     await registerHandler(
       buildRequest('/api/auth/register', {
