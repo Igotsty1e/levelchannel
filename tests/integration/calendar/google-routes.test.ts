@@ -180,6 +180,45 @@ describe('GET /api/teacher/calendar/google/callback', () => {
     expect(read?.writeCalendarId).toBe('primary')
   })
 
+  it('saas-pivot multi-tenant audit (2026-05-23) — initial pull job is enqueued for the calling teacher on connect', async () => {
+    // GAP-1 closure: a freshly-connected teacher with a quiet calendar
+    // must still get `teacher_external_busy_intervals` populated. The
+    // OAuth callback enqueues a priority=2 pull job per read_calendar_ids
+    // entry; the pull cron drains it on the next minute tick.
+    const t = await makeTeacher({ email: 't-cb-pull-enqueue@example.com' })
+    const state = generateOauthState({
+      accountId: t.accountId,
+      secret: TEST_OAUTH_STATE_SECRET,
+    })
+    googleTokenFetchMock({
+      access_token: 'AT',
+      refresh_token: 'RT',
+      expires_in: 3600,
+      scope: 'https://www.googleapis.com/auth/calendar.events',
+      token_type: 'Bearer',
+    })
+    const res = await callbackHandler(
+      buildRequest(
+        `/api/teacher/calendar/google/callback?code=AUTH&state=${encodeURIComponent(state)}`,
+        { cookie: t.cookie },
+      ),
+    )
+    expect(res.status).toBe(302)
+
+    const { getDbPool } = await import('@/lib/db/pool')
+    const pool = getDbPool()
+    const jobs = await pool.query(
+      `select external_calendar_id, priority, status
+         from calendar_pull_jobs
+        where teacher_account_id = $1`,
+      [t.accountId],
+    )
+    expect(jobs.rows.length).toBe(1)
+    expect(String(jobs.rows[0].external_calendar_id)).toBe('primary')
+    expect(Number(jobs.rows[0].priority)).toBe(2)
+    expect(String(jobs.rows[0].status)).toBe('pending')
+  })
+
   it('redirects to settings?error=state_invalid when state belongs to a different account', async () => {
     const teacherA = await makeTeacher({ email: 't-cb-stateA@example.com' })
     const teacherB = await makeTeacher({ email: 't-cb-stateB@example.com' })
