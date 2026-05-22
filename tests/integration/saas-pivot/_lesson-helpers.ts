@@ -33,11 +33,15 @@ export async function freshPastBookedSlot(
   tariffAmountKopecks: number = 150000,
 ): Promise<string> {
   const pool = getDbPool()
+  // pricing_tariffs.teacher_id is NOT NULL after mig 0088 (Day 3). The
+  // owning teacher is the same one whose slot we're about to insert.
   const tariff = await pool.query<{ id: string }>(
-    `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes)
-     values ('saas5b-' || floor(random()*1e9)::text, 'SaaS-5B test tariff', $1, 60)
+    `insert into pricing_tariffs
+       (teacher_id, slug, title_ru, amount_kopecks, duration_minutes)
+     values ($1, 'saas5b-' || floor(random()*1e9)::text,
+             'SaaS-5B test tariff', $2, 60)
      returning id`,
-    [tariffAmountKopecks],
+    [teacherId, tariffAmountKopecks],
   )
   // Anchor a fresh future slot inside the MSK 06-22 band to get past
   // the INSERT-time CHECK.

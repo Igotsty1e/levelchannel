@@ -51,11 +51,19 @@ async function freshPastBookedSlot(
 ): Promise<string> {
   const pool = getDbPool()
   // Tariff for the amount snapshot.
+  //
+  // SAAS-PIVOT Day 5B (2026-05-22) fixture follow-up — mig 0088 (Day 3)
+  // flipped `pricing_tariffs.teacher_id` to NOT NULL. The Day-5A
+  // fixture omitted the column; surfaced as a constraint violation
+  // once Day 5A rebased onto main (which has #414 / Day 3). Pass the
+  // owning teacher explicitly.
   const tariff = await pool.query<{ id: string }>(
-    `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes)
-     values ('saas5a-' || floor(random()*1e9)::text, 'SaaS-5A test tariff', $1, 60)
+    `insert into pricing_tariffs
+       (teacher_id, slug, title_ru, amount_kopecks, duration_minutes)
+     values ($1, 'saas5a-' || floor(random()*1e9)::text,
+             'SaaS-5A test tariff', $2, 60)
      returning id`,
-    [tariffAmountKopecks],
+    [teacherId, tariffAmountKopecks],
   )
   // Pick a unique future minute to dodge the (teacher, start_at) unique
   // constraint across tests.
@@ -338,10 +346,15 @@ describe('SAAS-PIVOT Day 5A — lesson_completions schema + triggers', () => {
     const teacherId = await freshAccount('5a-teacher-future')
     const learnerId = await freshAccount('5a-learner-future')
     const pool = getDbPool()
+    // Day-5B fixture follow-up: pricing_tariffs.teacher_id NOT NULL
+    // after mig 0088.
     const tariff = await pool.query<{ id: string }>(
-      `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes)
-       values ('saas5a-future-' || floor(random()*1e9)::text, 'fut', 150000, 60)
+      `insert into pricing_tariffs
+         (teacher_id, slug, title_ru, amount_kopecks, duration_minutes)
+       values ($1, 'saas5a-future-' || floor(random()*1e9)::text,
+               'fut', 150000, 60)
        returning id`,
+      [teacherId],
     )
     // 2 days in the future, 12:00 UTC = 15:00 MSK (within band).
     const future = new Date(Date.now() + 2 * 24 * 60 * 60_000)
