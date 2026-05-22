@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
 import { requireLearnerArchetypeAndVerified } from '@/lib/auth/guards'
+import {
+  getActiveTeacherForLearner,
+  getActiveTeacherIdsForLearner,
+} from '@/lib/auth/teacher-scope'
 import { bookSlot } from '@/lib/scheduling/slots'
 import {
   enforceRateLimit,
@@ -66,17 +70,46 @@ export async function POST(request: Request, { params }: RouteParams) {
   // the same not_found outcome (no enumeration of foreign slots).
   //
   // BCS-HARDEN-1 (2026-05-14) — the legacy null bypass is closed.
-  // When assignedTeacherId is null (the learner is not bound to any
-  // teacher), refuse the booking at the route layer with a 404 that
-  // matches the not_found shape. Production learners are always
-  // assigned before they hit this route from the cabinet flow, and
-  // admin-side "book as operator" uses /api/admin/slots/[id]/book-as-
-  // operator — neither touches this route with a null binding.
+  // When the learner has no active teacher link, refuse the booking
+  // at the route layer with a 404 that matches the not_found shape.
   //
-  // 404 (not 403) is deliberate: it matches "this slot doesn't exist
-  // for you" and keeps the absence of a teacher binding out of the
-  // response, defending against learner-enumeration probes.
-  const expectedTeacherId = auth.account.assignedTeacherId ?? null
+  // SAAS-PIVOT Day 2 (2026-05-22) — n:m teacher context (plan §2.5).
+  // Multi-link learners must specify `?teacher=<id>` (validated against
+  // their link set); a multi-link booking without disambiguation
+  // returns 400 needs_teacher_picker so the client can surface the
+  // chooser. Zero-link learners still collapse to 404 (no
+  // enumeration of the teacher-binding shape). 404 (not 403) on the
+  // zero-link branch is deliberate: it matches "this slot doesn't
+  // exist for you" and defends against learner-enumeration probes.
+  const url = new URL(request.url)
+  const teacherFromQuery = url.searchParams.get('teacher')
+  const resolved = await getActiveTeacherForLearner(auth.account.id)
+  let expectedTeacherId: string | null
+  if (resolved.needsPicker) {
+    if (!teacherFromQuery) {
+      return NextResponse.json(
+        {
+          error: 'needs_teacher_picker',
+          message:
+            'У вас несколько учителей. Укажите учителя через параметр ?teacher=<id>.',
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    const allowed = await getActiveTeacherIdsForLearner(auth.account.id)
+    if (!allowed.includes(teacherFromQuery)) {
+      return NextResponse.json(
+        {
+          error: 'needs_teacher_picker',
+          message: 'Этот учитель не привязан к вашему аккаунту.',
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    expectedTeacherId = teacherFromQuery
+  } else {
+    expectedTeacherId = resolved.teacherId
+  }
   if (!expectedTeacherId) {
     return NextResponse.json(
       { error: 'Slot not found.' },

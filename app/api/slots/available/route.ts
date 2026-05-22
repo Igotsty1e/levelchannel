@@ -3,6 +3,10 @@ import { NextResponse } from 'next/server'
 import { NO_STORE } from '@/lib/api/http-headers'
 import { listAccountRoles } from '@/lib/auth/accounts'
 import { getCurrentSession } from '@/lib/auth/sessions'
+import {
+  getActiveTeacherForLearner,
+  getActiveTeacherIdsForLearner,
+} from '@/lib/auth/teacher-scope'
 import { listOpenFutureSlots, toPublicSlot } from '@/lib/scheduling/slots'
 import { enforceRateLimit } from '@/lib/security/request'
 
@@ -62,18 +66,51 @@ export async function GET(request: Request) {
 
   let teacherFilter: string | null | undefined
   if (session) {
-    // Authenticated learner: ALWAYS use the session-derived filter.
-    // Ignore whatever the client sent in `?teacher=`.
-    const assigned = session.account.assignedTeacherId
-    if (!assigned) {
+    // SAAS-PIVOT Day 2 (2026-05-22) — n:m teacher context (plan §2.5).
+    // The pivot promotes a learner's assigned-teacher binding from a
+    // single value to an n:m membership in learner_teacher_links.
+    //   - single active link → that teacher's id; ignore ?teacher= override.
+    //   - multiple active links → require an explicit ?teacher=<id>
+    //     query param validated against the learner's link set.
+    //     Without it, 400 needs_teacher_picker so the client renders a
+    //     teacher chooser.
+    //   - zero active links → empty list (legacy behaviour preserved).
+    const resolved = await getActiveTeacherForLearner(session.account.id)
+    if (resolved.needsPicker) {
+      // Multi-link learner. Validate ?teacher=<id> against the
+      // learner's active link set; never trust a client-supplied
+      // teacher id as-is.
+      if (!teacherFromQuery) {
+        return NextResponse.json(
+          {
+            error: 'needs_teacher_picker',
+            message:
+              'У вас несколько учителей. Укажите учителя через параметр ?teacher=<id>.',
+          },
+          { status: 400, headers: NO_STORE },
+        )
+      }
+      const allowed = await getActiveTeacherIdsForLearner(session.account.id)
+      if (!allowed.includes(teacherFromQuery)) {
+        return NextResponse.json(
+          {
+            error: 'needs_teacher_picker',
+            message: 'Этот учитель не привязан к вашему аккаунту.',
+          },
+          { status: 400, headers: NO_STORE },
+        )
+      }
+      teacherFilter = teacherFromQuery
+    } else if (resolved.teacherId === null) {
       // Logged-in learner with no assigned teacher → empty list,
       // cabinet surfaces the «учитель не назначен» hint.
       return NextResponse.json(
         { slots: [] },
         { status: 200, headers: NO_STORE },
       )
+    } else {
+      teacherFilter = resolved.teacherId
     }
-    teacherFilter = assigned
   } else {
     // Anonymous: explicit query filter (or null = all teachers).
     teacherFilter = teacherFromQuery

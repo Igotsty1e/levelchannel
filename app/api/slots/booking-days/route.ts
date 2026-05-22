@@ -3,6 +3,10 @@ import { NextResponse } from 'next/server'
 import { NO_STORE } from '@/lib/api/http-headers'
 import { requireLearnerArchetypeAndVerified } from '@/lib/auth/guards'
 import { getAccountProfile } from '@/lib/auth/profiles'
+import {
+  getActiveTeacherForLearner,
+  getActiveTeacherIdsForLearner,
+} from '@/lib/auth/teacher-scope'
 import { safeTimezone } from '@/lib/auth/timezones'
 import {
   listOpenBookingDays,
@@ -50,6 +54,7 @@ export async function GET(request: Request) {
   const fromYmd = url.searchParams.get('from')
   const toYmd = url.searchParams.get('to')
   const tzParam = url.searchParams.get('tz')
+  const teacherFromQuery = url.searchParams.get('teacher')
 
   const profile = await getAccountProfile(auth.account.id)
   // BUG fix 2026-05-15 — sanitise legacy profile values like 'Moscow'
@@ -66,7 +71,37 @@ export async function GET(request: Request) {
     )
   }
 
-  const teacherId = auth.account.assignedTeacherId
+  // SAAS-PIVOT Day 2 (2026-05-22) — n:m teacher context (plan §2.5).
+  // Multi-link learner must specify ?teacher=<id> validated against
+  // their link set; otherwise 400 needs_teacher_picker.
+  const resolved = await getActiveTeacherForLearner(auth.account.id)
+  let teacherId: string | null
+  if (resolved.needsPicker) {
+    if (!teacherFromQuery) {
+      return NextResponse.json(
+        {
+          error: 'needs_teacher_picker',
+          message:
+            'У вас несколько учителей. Укажите учителя через параметр ?teacher=<id>.',
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    const allowed = await getActiveTeacherIdsForLearner(auth.account.id)
+    if (!allowed.includes(teacherFromQuery)) {
+      return NextResponse.json(
+        {
+          error: 'needs_teacher_picker',
+          message: 'Этот учитель не привязан к вашему аккаунту.',
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    teacherId = teacherFromQuery
+  } else {
+    teacherId = resolved.teacherId
+  }
+
   if (!teacherId) {
     return NextResponse.json(
       { days: [] },

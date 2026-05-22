@@ -5,6 +5,7 @@ import { notFound, redirect } from 'next/navigation'
 import { AuthShell } from '@/components/auth-shell'
 import { getAccountProfile } from '@/lib/auth/profiles'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { getActiveTeacherIdsForLearner } from '@/lib/auth/teacher-scope'
 import { safeTimezone } from '@/lib/auth/timezones'
 import { getSlotById, isValidYmd } from '@/lib/scheduling/slots'
 
@@ -40,12 +41,22 @@ export default async function BookConfirmPage({ params }: RouteParams) {
   // returned for: missing slot, foreign-teacher slot, or learner
   // without an assigned teacher at all. Only after we've confirmed
   // the slot is OURS do we branch on status.
+  //
+  // SAAS-PIVOT Day 2 (2026-05-22) — n:m teacher context (plan §2.5).
+  // A learner may have multiple active links; the confirm screen
+  // accepts the slot if its teacher_account_id is ANY of the
+  // learner's active links. The booking POST itself is anti-spoof
+  // again via expectedTeacherId (?teacher=<id> required for multi-
+  // link). No need to require ?teacher= here — the read screen just
+  // checks membership.
   const slot = await getSlotById(slotId)
-  const assignedTeacherId = session.account.assignedTeacherId
+  const allowedTeacherIds = await getActiveTeacherIdsForLearner(
+    session.account.id,
+  )
   if (
     !slot
-    || !assignedTeacherId
-    || slot.teacherAccountId !== assignedTeacherId
+    || allowedTeacherIds.length === 0
+    || !allowedTeacherIds.includes(slot.teacherAccountId)
   ) {
     notFound()
   }
@@ -148,7 +159,11 @@ export default async function BookConfirmPage({ params }: RouteParams) {
           }}
         />
 
-        <ConfirmForm slotId={slot.id} ymd={ymd} />
+        <ConfirmForm
+          slotId={slot.id}
+          ymd={ymd}
+          teacherAccountId={slot.teacherAccountId}
+        />
       </div>
     </AuthShell>
   )

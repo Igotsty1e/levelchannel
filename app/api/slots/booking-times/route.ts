@@ -3,6 +3,10 @@ import { NextResponse } from 'next/server'
 import { NO_STORE } from '@/lib/api/http-headers'
 import { requireLearnerArchetypeAndVerified } from '@/lib/auth/guards'
 import { getAccountProfile } from '@/lib/auth/profiles'
+import {
+  getActiveTeacherForLearner,
+  getActiveTeacherIdsForLearner,
+} from '@/lib/auth/teacher-scope'
 import { safeTimezone } from '@/lib/auth/timezones'
 import {
   isValidIanaTz,
@@ -43,6 +47,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url)
   const ymd = url.searchParams.get('ymd')
   const tzParam = url.searchParams.get('tz')
+  const teacherFromQuery = url.searchParams.get('teacher')
 
   if (!ymd || !isValidYmd(ymd)) {
     return NextResponse.json(
@@ -64,7 +69,35 @@ export async function GET(request: Request) {
     )
   }
 
-  const teacherId = auth.account.assignedTeacherId
+  // SAAS-PIVOT Day 2 (2026-05-22) — n:m teacher context (plan §2.5).
+  const resolved = await getActiveTeacherForLearner(auth.account.id)
+  let teacherId: string | null
+  if (resolved.needsPicker) {
+    if (!teacherFromQuery) {
+      return NextResponse.json(
+        {
+          error: 'needs_teacher_picker',
+          message:
+            'У вас несколько учителей. Укажите учителя через параметр ?teacher=<id>.',
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    const allowed = await getActiveTeacherIdsForLearner(auth.account.id)
+    if (!allowed.includes(teacherFromQuery)) {
+      return NextResponse.json(
+        {
+          error: 'needs_teacher_picker',
+          message: 'Этот учитель не привязан к вашему аккаунту.',
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    teacherId = teacherFromQuery
+  } else {
+    teacherId = resolved.teacherId
+  }
+
   if (!teacherId) {
     return NextResponse.json(
       { slots: [] },

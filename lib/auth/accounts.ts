@@ -11,11 +11,22 @@ export type Account = {
   disabledAt: string | null
   scheduledPurgeAt: string | null
   purgedAt: string | null
-  // Phase 6+: 1:1 binding to a teacher account. Cabinet uses this to
-  // filter open slots so a learner only sees their teacher's
-  // availability. Null = no teacher assigned yet (cabinet renders a
-  // "обратитесь к оператору" hint).
+  // Phase 6+ (1:1 legacy): single teacher binding. SAAS-PIVOT Day 2
+  // (2026-05-22) re-purposed this as a BACK-COMPAT ALIAS for
+  // `assignedTeacherIds[0] ?? null`. New code should consume
+  // `assignedTeacherIds` directly and treat this as a convenience read
+  // for the "first active teacher" case. Persisted in
+  // accounts.assigned_teacher_id for the dual-write window (mig 0084
+  // drops the column post-MVP). See plan §2.5.
   assignedTeacherId: string | null
+  // SAAS-PIVOT Day 2 (2026-05-22) — n:m roll-out of teacher links.
+  // Sourced from `learner_teacher_links` via
+  // `getActiveTeacherIdsForLearner()` at session hydration. Ordered
+  // `linked_at asc`. Empty array for learners with no active teacher
+  // links. For non-learners (teacher / admin accounts) it's always
+  // empty; the field is on the Account type for uniformity, not because
+  // teachers ever have peers in `learner_teacher_links`.
+  assignedTeacherIds: string[]
   createdAt: string
   updatedAt: string
 }
@@ -50,6 +61,16 @@ function rowToAccount(row: Record<string, unknown>): Account {
     assignedTeacherId: row.assigned_teacher_id
       ? String(row.assigned_teacher_id)
       : null,
+    // SAAS-PIVOT Day 2 (2026-05-22) — populated authoritatively at
+    // session hydration (lib/auth/sessions.ts) via
+    // getActiveTeacherIdsForLearner(). For one-off Account row
+    // materializations from getAccountById / getAccountByEmail /
+    // listAccounts the n:m array is NOT joined here (those callers do
+    // not consume it; adding a join would burn extra Postgres round-
+    // trips on every list page). If a non-session caller ever needs
+    // the n:m view, call getActiveTeacherIdsForLearner(accountId)
+    // explicitly. Default is [].
+    assignedTeacherIds: [],
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
   }
@@ -378,14 +399,65 @@ export async function setAssignedTeacher(
     }
   }
   const pool = getAuthPool()
-  await pool.query(
-    `update accounts
-        set assigned_teacher_id = $2,
-            updated_at = now()
-      where id = $1
-        and purged_at is null`,
-    [learnerId, teacherId],
-  )
+  // SAAS-PIVOT Day 2 (2026-05-22) — dual-write: legacy
+  // accounts.assigned_teacher_id AND new learner_teacher_links table
+  // (plan §2.5). The pivot makes learner_teacher_links the canonical
+  // truth at the reader layer; the legacy column stays through MVP for
+  // the back-compat alias (mig 0084 post-MVP).
+  //
+  // Race-safety: this writer is the operator-mutation surface
+  // (admin /accounts/[id] reassign). The invite-redeem path uses a
+  // distinct atomic-CTE writer in lib/auth/teacher-invites.ts; both
+  // ultimately INSERT into learner_teacher_links with ON CONFLICT
+  // semantics, so concurrent redeem + manual reassign cannot create
+  // duplicate (learner, teacher) rows (PK enforces uniqueness).
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+    await client.query(
+      `update accounts
+          set assigned_teacher_id = $2,
+              updated_at = now()
+        where id = $1
+          and purged_at is null`,
+      [learnerId, teacherId],
+    )
+    if (teacherId === null) {
+      // Unassign: soft-unlink ALL active links for this learner. This
+      // matches the legacy "reset to null" semantics — an operator
+      // clearing the assigned teacher should also tear down the n:m
+      // active set, not just the alias.
+      await client.query(
+        `update learner_teacher_links
+            set unlinked_at = coalesce(unlinked_at, now())
+          where learner_account_id = $1
+            and unlinked_at is null`,
+        [learnerId],
+      )
+    } else {
+      // Assign: INSERT-or-revive. PK on (learner, teacher) means a
+      // historic unlink is re-armed via DO UPDATE; ON CONFLICT also
+      // covers the dedupe case where redeem-CTE already inserted the
+      // row.
+      await client.query(
+        `insert into learner_teacher_links (learner_account_id, teacher_account_id, linked_at, unlinked_at)
+           values ($1, $2, now(), null)
+         on conflict (learner_account_id, teacher_account_id) do update
+           set unlinked_at = null,
+               linked_at = case
+                 when learner_teacher_links.unlinked_at is not null then excluded.linked_at
+                 else learner_teacher_links.linked_at
+               end`,
+        [learnerId, teacherId],
+      )
+    }
+    await client.query('commit')
+  } catch (err) {
+    await client.query('rollback').catch(() => undefined)
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 // Phase 3 deletion grace: stamps both disabled_at and

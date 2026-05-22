@@ -26,6 +26,11 @@ export type TeacherLearnerSummary = {
 export async function listLearnersForTeacher(
   teacherAccountId: string,
 ): Promise<TeacherLearnerSummary[]> {
+  // SAAS-PIVOT Day 2 (2026-05-22) — n:m teacher context (plan §2.5).
+  // "is_assigned" now sources from learner_teacher_links (canonical)
+  // with the active-link predicate (unlinked_at IS NULL). Existence in
+  // the link set drives both the candidate-row predicate AND the
+  // is_assigned flag.
   const pool = getDbPool()
   const result = await pool.query(
     `with stats as (
@@ -38,11 +43,17 @@ export async function listLearnersForTeacher(
         where s.teacher_account_id = $1
           and s.learner_account_id is not null
         group by s.learner_account_id
+     ),
+     active_links as (
+       select learner_account_id
+         from learner_teacher_links
+        where teacher_account_id = $1
+          and unlinked_at is null
      )
      select a.id as learner_id,
             a.email as learner_email,
             p.display_name,
-            (a.assigned_teacher_id = $1) as is_assigned,
+            (al.learner_account_id is not null) as is_assigned,
             coalesce(st.upcoming_count, 0)::int as upcoming_count,
             coalesce(st.completed_count, 0)::int as completed_count,
             coalesce(st.cancelled_count, 0)::int as cancelled_count,
@@ -50,7 +61,8 @@ export async function listLearnersForTeacher(
        from accounts a
        left join account_profiles p on p.account_id = a.id
        left join stats st on st.learner_id = a.id
-      where a.assigned_teacher_id = $1
+       left join active_links al on al.learner_account_id = a.id
+      where al.learner_account_id is not null
          or st.learner_id is not null
       order by is_assigned desc,
                (coalesce(st.upcoming_count, 0) + coalesce(st.completed_count, 0)) desc,

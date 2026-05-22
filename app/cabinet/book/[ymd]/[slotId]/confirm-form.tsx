@@ -18,9 +18,17 @@ const MAX_AGENDA_CHARS = 1000
 export function ConfirmForm({
   slotId,
   ymd,
+  // SAAS-PIVOT Day 2 (2026-05-22) — when present, the confirm screen
+  // forwards `?teacher=<teacherAccountId>` to /api/slots/<id>/book so
+  // a multi-link learner doesn't 400 needs_teacher_picker on the POST.
+  // The server has already validated that this slot's teacher is in
+  // the learner's active link set (parent page guard), so passing it
+  // through the query string here is safe.
+  teacherAccountId,
 }: {
   slotId: string
   ymd: string
+  teacherAccountId?: string | null
 }) {
   const router = useRouter()
   const [agenda, setAgenda] = useState('')
@@ -32,7 +40,10 @@ export function ConfirmForm({
     setBusy(true)
     setError(null)
     try {
-      const res = await fetch(`/api/slots/${slotId}/book`, {
+      const bookUrl = teacherAccountId
+        ? `/api/slots/${slotId}/book?teacher=${encodeURIComponent(teacherAccountId)}`
+        : `/api/slots/${slotId}/book`
+      const res = await fetch(bookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ agenda: agenda || undefined }),
