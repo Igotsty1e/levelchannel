@@ -311,7 +311,11 @@ describe('Phase 5 lifecycle + 24h rule', () => {
     expect(mark.status).toBe(400)
   })
 
-  it('autoCompletePastBookedSlots flips matching rows', async () => {
+  // SAAS-PIVOT Day 5A (2026-05-22) — auto-cron DISABLED per Owner Q-2.
+  // The function now logs + returns zero unconditionally. Test inverted
+  // to anchor the disabled contract: past-booked rows STAY booked
+  // (the manual mark path is the only way to drive completion now).
+  it('autoCompletePastBookedSlots is a no-op (disabled per Day 5A)', async () => {
     const teacher = await registerAndCookie('teacher-l6@example.com', {
       verifyEmail: true,
       role: 'teacher',
@@ -325,8 +329,6 @@ describe('Phase 5 lifecycle + 24h rule', () => {
     })
     await setAssignedTeacher(learner.accountId, teacher.accountId)
 
-    // Two slots: one booked-and-past (should be completed), one
-    // booked-and-future (should be left alone).
     const past = await adminCreateHandler(
       buildRequest('/api/admin/slots', {
         cookie: admin.cookie,
@@ -345,38 +347,17 @@ describe('Phase 5 lifecycle + 24h rule', () => {
       }),
       { params: Promise.resolve({ id: pastId }) },
     )
-    // Backdate so start_at + duration is in the past.
     await backdateSlot(pastId, 90)
 
-    const future = await adminCreateHandler(
-      buildRequest('/api/admin/slots', {
-        cookie: admin.cookie,
-        body: {
-          teacherAccountId: teacher.accountId,
-          startAt: futureIsoMinutes(48 * 60),
-          durationMinutes: 60,
-        },
-      }),
-    )
-    const futureId = (await future.json()).slot.id as string
-    await bookHandler(
-      buildRequest(`/api/slots/${futureId}/book`, {
-        cookie: learner.cookie,
-        body: {},
-      }),
-      { params: Promise.resolve({ id: futureId }) },
-    )
-
     const result = await autoCompletePastBookedSlots()
-    expect(result.completed).toBeGreaterThanOrEqual(1)
+    expect(result.completed).toBe(0)
 
     const after = await getDbPool().query(
-      `select id, status from lesson_slots where id in ($1, $2)`,
-      [pastId, futureId],
+      `select status from lesson_slots where id = $1`,
+      [pastId],
     )
-    const map = new Map(after.rows.map((r) => [r.id, r.status]))
-    expect(map.get(pastId)).toBe('completed')
-    expect(map.get(futureId)).toBe('booked')
+    // Still 'booked' — the disabled cron did NOT flip it.
+    expect(after.rows[0].status).toBe('booked')
   })
 
   // Wave 25 — malformed-JSON consistency on cancel routes (Codex

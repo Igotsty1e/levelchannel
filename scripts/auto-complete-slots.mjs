@@ -1,27 +1,23 @@
 #!/usr/bin/env node
 //
-// Phase 5 — daily auto-complete cron. Flips every still-`booked`
-// lesson_slots row whose start_at + duration_minutes is in the past
-// to `completed`, stamps marked_at, and prepends a
-// 'slot.completed' event to the row's events log.
+// SAAS-PIVOT Epic 5A Day 5A (2026-05-22) — DISABLED.
 //
-// Why daily and not hourly:
-//   - Operator usually marks lessons within a few hours after they
-//     happen via /admin/slots's «Прошёл» / «Не пришёл» buttons.
-//   - Daily fires once at 03:30 UTC (06:30 MSK) — late enough that
-//     yesterday's last lesson is comfortably finished, early enough
-//     that the operator sees a fresh "yesterday's lessons completed"
-//     view in the morning.
-//   - Operator overrides land in `completed` / `no_show_*` first,
-//     which moves status away from 'booked', so the WHERE clause
-//     skips them naturally — no race / clobber.
+// Owner Q-2 (2026-05-21): teacher-manual marking only in MVP. The
+// daily auto-complete cron is dark from Day 5A onwards; lesson
+// completion is now driven by `markLessonCompleted()` writes that go
+// through `lesson_completions` + forward trigger.
 //
-// Idempotent: rerunning the same minute is a no-op (the WHERE matches
-// nothing). Safe to use Persistent=true on the systemd timer.
-
-import pg from 'pg'
-
-import { resolveSslConfig } from './_pg-ssl.mjs'
+// We keep the script (and its systemd timer wiring) so the existing
+// deploy contour continues to no-op cleanly. Returning exit 0 keeps
+// the timer log green; if the cron ever needs to be re-enabled,
+// restore the historical body from git (or re-write per a future
+// auto-mark epic).
+//
+// Historical behaviour (Phase 5): flipped every still-`booked` row
+// whose start_at + duration_minutes was in the past to `completed`.
+// That behaviour now lives in `lesson_completions` writers (manual
+// or, future, scheduled). DO NOT re-add direct status writes here —
+// they bypass the unified billable-event SoT.
 
 function logJson(level, msg, extra = {}) {
   console.log(
@@ -35,51 +31,8 @@ function logJson(level, msg, extra = {}) {
   )
 }
 
-async function main() {
-  if (!process.env.DATABASE_URL) {
-    logJson('error', 'DATABASE_URL not set; aborting')
-    process.exit(2)
-  }
-
-  const pool = new pg.Pool({
-    connectionString: process.env.DATABASE_URL,
-    max: 1,
-    ssl: resolveSslConfig(process.env.DATABASE_URL),
-  })
-
-  try {
-    const event = JSON.stringify([
-      {
-        type: 'slot.completed',
-        at: new Date().toISOString(),
-        actor: 'system',
-        payload: { source: 'auto-complete' },
-      },
-    ])
-    const result = await pool.query(
-      `update lesson_slots
-          set status = 'completed',
-              marked_at = now(),
-              updated_at = now(),
-              events = $1::jsonb || events
-        where status = 'booked'
-          and start_at + (duration_minutes || ' minutes')::interval <= now()`,
-      [event],
-    )
-    logJson('info', 'done', { completed: result.rowCount ?? 0 })
-  } catch (err) {
-    logJson('error', 'failed', {
-      error: err instanceof Error ? err.message : String(err),
-    })
-    process.exit(1)
-  } finally {
-    await pool.end()
-  }
-}
-
-main().catch((err) => {
-  logJson('error', 'unhandled', {
-    error: err instanceof Error ? err.message : String(err),
-  })
-  process.exit(1)
+logJson('info', 'auto-complete cron disabled per Day-5A migration', {
+  disabled: true,
+  reason: 'SAAS-PIVOT Owner Q-2 (manual only in MVP)',
 })
+process.exit(0)

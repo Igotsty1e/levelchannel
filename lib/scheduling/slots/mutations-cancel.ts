@@ -3,6 +3,13 @@
 // preserved verbatim so the legacy fast path
 // (BILLING_WAVE_ACTIVE !== 'true') still avoids loading billing
 // modules entirely.
+//
+// SAAS-PIVOT Day 5A (2026-05-22): cancel-after-completion contract.
+// Cancel writers reject when status ∈ ('completed', 'no_show_learner')
+// — the caller must un-mark the completion first (which the reverse
+// trigger flips back to 'booked'). Rationale: a completion row is the
+// billable-event SoT; cancelling a completed slot would silently
+// stranded the lesson_completions row. See plan §2.6 + §5 Day 5A.
 
 import { getDbPool } from '@/lib/db/pool'
 import { getLearnerCancelWindowHours } from '@/lib/scheduling/policy'
@@ -20,6 +27,17 @@ import type {
   LessonSlot,
 } from './types'
 
+export class CancelAfterCompletionError extends Error {
+  public readonly slotId: string
+  public readonly status: string
+  constructor(slotId: string, status: string) {
+    super('slot/cancel/after_completion')
+    this.name = 'CancelAfterCompletionError'
+    this.slotId = slotId
+    this.status = status
+  }
+}
+
 export async function cancelSlot(
   slotId: string,
   cancelledByAccountId: string,
@@ -31,6 +49,20 @@ export async function cancelSlot(
     throw new Error('slot/cancellationReason/too_long')
   }
   const pool = getDbPool()
+  // SAAS-PIVOT Day 5A — cancel-after-completion rejection. Pre-check
+  // outside the tx (cheap read) so the friendly error surfaces before
+  // we open the heavier cancel-tx. The actual SQL UPDATE below also
+  // excludes ('completed','no_show_learner') as belt-and-braces.
+  const preCheck = await pool.query(
+    `select status from lesson_slots where id = $1`,
+    [slotId],
+  )
+  if (preCheck.rows.length > 0) {
+    const currentStatus = String(preCheck.rows[0].status)
+    if (currentStatus === 'completed' || currentStatus === 'no_show_learner') {
+      throw new CancelAfterCompletionError(slotId, currentStatus)
+    }
+  }
   // Billing wave PR 1: same tx wrap as cancelLearnerSlot. Restore
   // package unit on success; restore is idempotent + no-op for
   // postpaid slots.
@@ -46,7 +78,7 @@ export async function cancelSlot(
               updated_at = now(),
               events = $4::jsonb || events
         where id = $1
-          and status <> 'cancelled'
+          and status not in ('cancelled', 'completed', 'no_show_learner')
         returning ${SLOT_COLUMNS}`,
       [
         slotId,
@@ -172,7 +204,14 @@ export async function cancelLearnerSlot(
   if (String(row.learner_account_id ?? '') !== learnerAccountId) {
     return { ok: false, reason: 'not_owner' }
   }
-  if (String(row.status) !== 'booked') {
+  // SAAS-PIVOT Day 5A — explicit reason for the cancel-after-complete
+  // case so the route can surface the "un-mark first" hint instead of
+  // the generic "already terminal".
+  const currentStatus = String(row.status)
+  if (currentStatus === 'completed' || currentStatus === 'no_show_learner') {
+    return { ok: false, reason: 'after_completion' }
+  }
+  if (currentStatus !== 'booked') {
     return { ok: false, reason: 'already_terminal' }
   }
   const startMs = new Date(String(row.start_at)).getTime()
@@ -283,6 +322,12 @@ export async function cancelSlotByTeacher(
     (!reason || reason.trim() === '')
   ) {
     return { ok: false, reason: 'reason_required_for_booked' }
+  }
+  // SAAS-PIVOT Day 5A — surface after_completion distinctly so the
+  // teacher UI can guide them to /uncomplete first.
+  const currentStatus = String(sniff.rows[0].status)
+  if (currentStatus === 'completed' || currentStatus === 'no_show_learner') {
+    return { ok: false, reason: 'after_completion' }
   }
   return { ok: false, reason: 'already_terminal' }
 }
