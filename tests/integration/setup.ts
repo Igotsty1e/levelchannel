@@ -27,11 +27,12 @@ afterEach(async () => {
   // domain-orthogonal but small; truncating it here keeps cabinet
   // integration cases independent.
   // SAAS-PIVOT Day 1 (2026-05-22) fixture sweep — round-25 BLOCKER #2
-  // closure: add ONLY Day-1 tables here. `lesson_completions`,
-  // `lesson_settlements`, `lesson_settlement_completions` are deferred
-  // to Day 5A (Epic 5) — adding them now would fail TRUNCATE on tables
-  // that don't yet exist. Order respects FKs: child tables before
-  // parents (CASCADE handles incidental edges).
+  // closure: add Day-1 tables here.
+  // SAAS-PIVOT Day 5A (2026-05-22) — extend to include
+  // `lesson_completions`, `lesson_settlements`,
+  // `lesson_settlement_completions` (now exist in migrations 0092/0093).
+  // Order respects FKs: child tables before parents (CASCADE handles
+  // incidental edges).
   await pool.query(`
     truncate table
       account_consents,
@@ -44,6 +45,9 @@ afterEach(async () => {
       lesson_packages,
       payment_allocations,
       payment_orders,
+      lesson_settlement_completions,
+      lesson_settlements,
+      lesson_completions,
       lesson_slots,
       learner_teacher_links,
       teacher_invites,

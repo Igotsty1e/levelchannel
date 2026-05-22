@@ -261,7 +261,15 @@ export type CancelLearnerSlotResult =
   | { ok: true; slot: LessonSlot }
   | {
       ok: false
-      reason: 'not_found' | 'not_owner' | 'already_terminal' | 'too_late_to_cancel'
+      reason:
+        | 'not_found'
+        | 'not_owner'
+        | 'already_terminal'
+        | 'too_late_to_cancel'
+        // SAAS-PIVOT Day 5A — slot is in a billable terminal state
+        // (`completed` / `no_show_learner`). Learner must call the
+        // un-complete path first (teacher action) before re-cancelling.
+        | 'after_completion'
       minutesUntilStart?: number
     }
 
@@ -304,6 +312,10 @@ export type CancelTeacherSlotResult =
         | 'not_owner'
         | 'already_terminal'
         | 'reason_required_for_booked'
+        // SAAS-PIVOT Day 5A — slot is in a billable terminal state
+        // (`completed` / `no_show_learner`). Teacher must un-mark via
+        // /api/teacher/lessons/[id]/uncomplete first.
+        | 'after_completion'
     }
 
 // Codex Wave 13 Pass 2 #11. Same shape as editOpenSlot — discriminated

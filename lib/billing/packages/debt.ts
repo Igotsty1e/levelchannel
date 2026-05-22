@@ -37,16 +37,22 @@ export async function listAccountPostpaidDebt(
   // archived tariff would dead-end the user. With this filter, the
   // archived case falls through to "обратитесь к оператору" via the
   // null-slug branch in the UI.
+  // SAAS-PIVOT Day 5A (2026-05-22) — read from lesson_completions
+  // (SoT) instead of lesson_slots.status. The forward trigger keeps
+  // status in sync but the completion row is the authoritative
+  // billable-event record. INNER JOIN over lesson_completions filters
+  // to "actually billable" rows; we still surface s.status for the UI
+  // (cabinet shows "проведено" vs "не пришёл" label).
   const result = await pool.query(
     `select s.id, s.start_at, s.duration_minutes, s.status, s.tariff_id,
             t.slug as tariff_slug,
             t.amount_kopecks as expected_amount_kopecks,
             s.legacy_grandfathered
        from lesson_slots s
+       join lesson_completions lc on lc.slot_id = s.id
        left join pricing_tariffs t
               on t.id = s.tariff_id and t.is_active = true
       where s.learner_account_id = $1
-        and s.status in ('completed', 'no_show_learner')
         and not exists (
           select 1 from package_consumptions pc
            where pc.slot_id = s.id and pc.restored_at is null
@@ -121,16 +127,20 @@ export async function listAccountsWithPostpaidDebtAggregate(opts?: {
   const pool = getDbPool()
   const minKopecks = opts?.minKopecks ?? 0
   const result = await pool.query(
+    // SAAS-PIVOT Day 5A (2026-05-22) — SoT shift: aggregate from
+    // lesson_completions, not lesson_slots.status. Same JOIN as the
+    // per-account query above. Mirrors the predicate so the per-account
+    // and aggregate views stay consistent.
     `with debt_slots as (
        select s.learner_account_id,
               s.id as slot_id,
               s.start_at,
               t.amount_kopecks as expected_amount_kopecks
          from lesson_slots s
+         join lesson_completions lc on lc.slot_id = s.id
          left join pricing_tariffs t
                 on t.id = s.tariff_id and t.is_active = true
         where s.learner_account_id is not null
-          and s.status in ('completed', 'no_show_learner')
           and not exists (
             select 1 from package_consumptions pc
              where pc.slot_id = s.id and pc.restored_at is null
