@@ -46,7 +46,11 @@ export default async function TeacherPage() {
     redirect('/login')
   }
 
-  const tariffs = await listActiveTariffs()
+  // SAAS-PIVOT Epic 2 Day 3 — teacher catalogue is now per-teacher.
+  // Pass the current teacher's account id so the calendar's tariff
+  // dropdown only sees this teacher's own tariffs (cross-teacher
+  // leakage gate at the data layer).
+  const tariffs = await listActiveTariffs({ teacherId: current.account.id })
   const conflictCount = await countTeacherConflicts(current.account.id)
   const hiddenCount = await countHiddenSlotsForTeacher(current.account.id)
   // 2026-05-16 UI gap closure — backend Google integration exists
@@ -169,6 +173,17 @@ export default async function TeacherPage() {
           }}
         >
           Дайджест занятий →
+        </Link>
+        <Link
+          href="/teacher/tariffs"
+          style={{
+            color: 'var(--secondary)',
+            textDecoration: 'none',
+            fontSize: 13,
+            marginLeft: 16,
+          }}
+        >
+          Мои тарифы →
         </Link>
       </div>
       <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 8 }}>

@@ -303,6 +303,34 @@ export function assertIntegrationDbEnv(): void {
   }
 }
 
+// SAAS-PIVOT Epic 2 Day 3 — seed a minimal bootstrap teacher row.
+// Mig 0083 row-MOVE only runs against a DB that already has an admin
+// account; integration tests run on a fresh DB with no admin, so the
+// marker row is absent. Tests that exercise legacy `/admin/pricing`
+// (which falls back to the bootstrap teacher when no `teacherId` is
+// passed in the body) call this helper in their test body. Tests that
+// own the bootstrap mig directly (schema-day1.test.ts) MUST NOT call
+// this; they own the seed/no-seed invariants.
+export async function seedBootstrapTeacher(): Promise<string> {
+  const pool = getDbPool()
+  const result = await pool.query<{ id: string }>(
+    `insert into accounts (
+       id, email, password_hash, email_verified_at,
+       teacher_account_migration_marker, created_at, updated_at
+     ) values (
+       gen_random_uuid(),
+       'bootstrap-test-teacher-' || gen_random_uuid()::text || '@levelchannel.internal',
+       '$argon2id$v=19$m=65536,t=3,p=4$placeholderplaceholderplaceholder$placeholderplaceholderplaceholderplaceholder',
+       now(),
+       'bootstrap-2026-05-22',
+       now(),
+       now()
+     )
+     returning id`,
+  )
+  return String(result.rows[0].id)
+}
+
 export type SeedPaymentOrderInput = {
   invoiceId?: string
   amountRub?: number

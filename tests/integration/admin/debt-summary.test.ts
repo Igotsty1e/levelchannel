@@ -74,11 +74,16 @@ async function seedLearnerWithDebt(
     `insert into account_roles (account_id, role) values ($1, 'teacher')`,
     [teacherId],
   )
+  // SAAS-PIVOT Epic 2 Day 3 (mig 0088): pricing_tariffs.teacher_id NOT NULL.
   const tariff = await pool.query(
-    `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes)
-     values ($1, '60 мин', $2, 60)
+    `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes, teacher_id)
+     values ($1, '60 мин', $2, 60, $3)
      returning id`,
-    [`${opts.emailPrefix}-tariff-${Date.now()}-${Math.floor(Math.random() * 1e6)}`, opts.tariffKopecks],
+    [
+      `${opts.emailPrefix}-tariff-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+      opts.tariffKopecks,
+      teacherId,
+    ],
   )
   const tariffId = String(tariff.rows[0].id)
 
