@@ -50,12 +50,14 @@ async function freshPastBookedSlot(
   tariffAmountKopecks: number = 150000,
 ): Promise<string> {
   const pool = getDbPool()
-  // Tariff for the amount snapshot.
+  // Tariff for the amount snapshot. mig 0088 (Day 3) flipped
+  // pricing_tariffs.teacher_id NOT NULL, so we must pass it. Use the
+  // slot owner's teacher_id.
   const tariff = await pool.query<{ id: string }>(
-    `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes)
-     values ('saas5a-' || floor(random()*1e9)::text, 'SaaS-5A test tariff', $1, 60)
+    `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes, teacher_id)
+     values ('saas5a-' || floor(random()*1e9)::text, 'SaaS-5A test tariff', $1, 60, $2)
      returning id`,
-    [tariffAmountKopecks],
+    [tariffAmountKopecks, teacherId],
   )
   // Pick a unique future minute to dodge the (teacher, start_at) unique
   // constraint across tests.
@@ -339,9 +341,10 @@ describe('SAAS-PIVOT Day 5A — lesson_completions schema + triggers', () => {
     const learnerId = await freshAccount('5a-learner-future')
     const pool = getDbPool()
     const tariff = await pool.query<{ id: string }>(
-      `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes)
-       values ('saas5a-future-' || floor(random()*1e9)::text, 'fut', 150000, 60)
+      `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes, teacher_id)
+       values ('saas5a-future-' || floor(random()*1e9)::text, 'fut', 150000, 60, $1)
        returning id`,
+      [teacherId],
     )
     // 2 days in the future, 12:00 UTC = 15:00 MSK (within band).
     const future = new Date(Date.now() + 2 * 24 * 60 * 60_000)

@@ -87,13 +87,11 @@ async function seedLearnerWithDebt(
   )
   const tariffId = String(tariff.rows[0].id)
 
-  // Debt slots: completed, learner_account_id set, no allocation.
-  // Anchor at YYYY-MM-DD 12:00 MSK (yesterday) + 30-min increments —
-  // stays inside the [06:00..22:00] MSK business band regardless of
-  // when CI runs (the previous `now() - N hours` shape was flaky when
-  // CI ran in early MSK morning — Codex Wave 63 catch).
+  // Debt slots: booked → mark completed via lesson_completions insert
+  // (Day 5A SoT shift: debt query now joins lesson_completions, not
+  // slot.status). Forward trigger flips slot.status='completed'.
   for (let i = 0; i < opts.debtSlotCount; i++) {
-    await pool.query(
+    const slot = await pool.query<{ id: string }>(
       `insert into lesson_slots
          (teacher_account_id, start_at, duration_minutes, status, learner_account_id, booked_at, tariff_id)
        values ($1,
@@ -101,8 +99,15 @@ async function seedLearnerWithDebt(
                  + interval '12 hours'
                  + ($4::int * interval '30 minutes')
                ) at time zone 'Europe/Moscow',
-               60, 'completed', $2, now() - interval '2 days', $3)`,
+               60, 'booked', $2, now() - interval '2 days', $3)
+       returning id`,
       [teacherId, learnerId, tariffId, i],
+    )
+    await pool.query(
+      `insert into lesson_completions
+         (slot_id, teacher_id, amount_kopecks, completed_at, marked_by_account_id)
+       values ($1, $2, 150000, now() - interval '1 day', $2)`,
+      [String(slot.rows[0].id), teacherId],
     )
   }
   // Paid slots: same shape but with paid allocation, must NOT appear in debt.
@@ -117,11 +122,18 @@ async function seedLearnerWithDebt(
                  + interval '12 hours'
                  + ($4::int * interval '30 minutes')
                ) at time zone 'Europe/Moscow',
-               60, 'completed', $2, now() - interval '3 days', $3)
+               60, 'booked', $2, now() - interval '3 days', $3)
        returning id`,
       [teacherId, learnerId, tariffId, i],
     )
     const slotId = String(slot.rows[0].id)
+    // mark completed via lesson_completions (forward trigger flips slot.status)
+    await pool.query(
+      `insert into lesson_completions
+         (slot_id, teacher_id, amount_kopecks, completed_at, marked_by_account_id)
+       values ($1, $2, 150000, now() - interval '2 days', $2)`,
+      [slotId, teacherId],
+    )
     const invoiceId = freshInvoiceId('lc_debt_paid')
     await pool.query(
       `insert into payment_orders
