@@ -140,23 +140,29 @@ describe('payment_orders admin_grant triple-CHECK (migration 0051)', () => {
   })
 
   it('rejects unknown provider (taxonomy CHECK)', async () => {
+    // mig 0090 (Day 4) consolidated the provider-check into the
+    // quadruple-CHECK `payment_orders_grant_consistency`. An unknown
+    // provider now fails that combined invariant instead of the old
+    // standalone payment_orders_provider_check.
     await expect(
       insertOrder({
         provider: 'wechat_pay',
         status: 'paid',
         grantedByOperatorId: null,
       }),
-    ).rejects.toThrow(/payment_orders_provider_check/)
+    ).rejects.toThrow(/payment_orders_grant_consistency|payment_orders_provider_check/)
   })
 
   it('rejects unknown status (taxonomy CHECK)', async () => {
+    // mig 0090 (Day 4): see comment above. Same consolidation
+    // applies to the status taxonomy.
     await expect(
       insertOrder({
         provider: 'cloudpayments',
         status: 'refunded',
         grantedByOperatorId: null,
       }),
-    ).rejects.toThrow(/payment_orders_status_check/)
+    ).rejects.toThrow(/payment_orders_grant_consistency|payment_orders_status_check/)
   })
 
   it('paid_not_granted query does NOT include admin grants', async () => {
