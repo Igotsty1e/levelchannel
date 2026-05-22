@@ -6,6 +6,12 @@
 
 import { listAccountRoles } from '@/lib/auth/accounts'
 import { getDbPool } from '@/lib/db/pool'
+import {
+  TariffNotActiveError,
+  TariffOwnershipError,
+  assertTariffActive,
+  assertTariffOwnedByTeacher,
+} from '@/lib/pricing/tariffs'
 
 import {
   SLOT_COLUMNS,
@@ -24,6 +30,11 @@ import type {
   MoveOpenSlotResult,
   MoveTeacherSlotResult,
 } from './types'
+
+// SAAS-PIVOT Epic 2 Day 3 — re-export the tariff guard errors so
+// route-layer handlers can `instanceof` check them without crossing
+// module boundaries through the `slots` barrel.
+export { TariffNotActiveError, TariffOwnershipError }
 
 // Codex 2026-05-08 (MEDIUM-LOW) — slot creation must verify the
 // `teacherAccountId` actually has the `teacher` role. Pre-fix, the
@@ -98,6 +109,15 @@ export async function createSlot(
     if (!UUID_PATTERN.test(input.tariffId)) {
       throw new Error('slot/tariffId/invalid')
     }
+    // SAAS-PIVOT Epic 2 Day 3 — booking-time gate:
+    //   1. tariff must exist + NOT be soft-deleted.
+    //   2. tariff must be OWNED by the slot's teacher (no cross-teacher
+    //      leak via admin route body manipulation).
+    // Order: assertTariffActive() first so soft-deleted tariffs fail
+    // with the more specific archive error (UI can offer "восстановить"
+    // or "выбрать другой тариф"); ownership check second.
+    await assertTariffActive(input.tariffId)
+    await assertTariffOwnedByTeacher(input.tariffId, input.teacherAccountId)
     // BUG-2026-05-13-3: a 90-min tariff must not clip to a 60-min slot
     // (or vice versa). Tariff is the product unit; slot duration must
     // match it exactly when one is bound.
@@ -153,6 +173,12 @@ export async function bulkCreateSlots(
     if (!UUID_PATTERN.test(input.tariffId)) {
       throw new Error('slot/tariffId/invalid')
     }
+    // SAAS-PIVOT Epic 2 Day 3 — same gates as createSlot. assertTariffActive
+    // catches soft-deleted; assertTariffOwnedByTeacher catches cross-
+    // teacher binding. Both fire BEFORE we open the TX so the whole
+    // batch fails fast.
+    await assertTariffActive(input.tariffId)
+    await assertTariffOwnedByTeacher(input.tariffId, input.teacherAccountId)
     // BUG-2026-05-13-3: tariff duration must match the bulk-create
     // slot duration (single duration for the whole batch).
     await assertTariffDurationMatches(input.tariffId, input.durationMinutes)

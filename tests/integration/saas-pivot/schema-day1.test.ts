@@ -114,17 +114,12 @@ describe('SAAS-PIVOT Day 1 — teacher_subscriptions (mig 0074)', () => {
   })
 })
 
-describe('SAAS-PIVOT Day 1 — pricing_tariffs.teacher_id nullable (mig 0075)', () => {
-  it('insert without teacher_id succeeds (Day-1 deferred flip)', async () => {
-    // duration_minutes is NOT NULL after mig 0046; supply 60 explicitly.
-    await getDbPool().query(
-      `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes)
-       values ('day1-tariff-' || floor(random() * 1e9)::text, 'Day-1 tariff', 1500, 60)`,
-    )
-    // No throw = pass.
-  })
-
-  it('deleted_at column exists and is nullable', async () => {
+describe('SAAS-PIVOT Day 1 — pricing_tariffs.teacher_id + deleted_at (mig 0075/0088)', () => {
+  // SAAS-PIVOT Epic 2 Day 3 (mig 0088) flipped pricing_tariffs.teacher_id
+  // to NOT NULL. The Day-1 "insert-without-teacher-id-succeeds" claim is
+  // historical — replaced by the NOT NULL assertion that lives in the
+  // teacher-tariffs.test.ts suite alongside the writer tests.
+  it('teacher_id is NOT NULL after mig 0088, deleted_at remains nullable', async () => {
     const result = await getDbPool().query<{ column_name: string; is_nullable: string }>(
       `select column_name, is_nullable
          from information_schema.columns
@@ -134,7 +129,7 @@ describe('SAAS-PIVOT Day 1 — pricing_tariffs.teacher_id nullable (mig 0075)', 
     )
     expect(result.rows).toEqual([
       { column_name: 'deleted_at', is_nullable: 'YES' },
-      { column_name: 'teacher_id', is_nullable: 'YES' },
+      { column_name: 'teacher_id', is_nullable: 'NO' },
     ])
   })
 })

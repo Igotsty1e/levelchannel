@@ -8,6 +8,8 @@ import {
   createSlot,
   listAllSlotsForAdmin,
   SlotTeacherRoleError,
+  TariffNotActiveError,
+  TariffOwnershipError,
 } from '@/lib/scheduling/slots'
 import {
   enforceRateLimit,
@@ -80,6 +82,34 @@ export async function POST(request: Request) {
     const slot = await createSlot(input as CreateSlotInput)
     return NextResponse.json({ slot }, { status: 201, headers: NO_STORE })
   } catch (err) {
+    if (err instanceof TariffNotActiveError) {
+      // SAAS-PIVOT Epic 2 Day 3 — operator picked a soft-deleted or
+      // unknown tariff. Surface with the same code as the teacher
+      // route so the calendar client can render a uniform message.
+      return NextResponse.json(
+        {
+          error:
+            err.reason === 'soft_deleted'
+              ? 'slot/tariffId/archived'
+              : 'slot/tariffId/unknown',
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    if (err instanceof TariffOwnershipError) {
+      // SAAS-PIVOT Epic 2 Day 3 — admin picked a teacher in the body
+      // who doesn't own the chosen tariff. The admin UI doesn't yet
+      // filter the tariff dropdown by selected teacher (Epic 6); this
+      // surface gives the operator a clean error to fix the pairing.
+      return NextResponse.json(
+        {
+          error: 'slot/tariffId/wrong_teacher',
+          message:
+            'Этот тариф принадлежит другому учителю. Выберите тариф учителя или смените учителя слота.',
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
     if (err instanceof SlotTeacherRoleError) {
       // Codex 2026-05-08 (MEDIUM-LOW) — target account does not have
       // the `teacher` role. Surface as 400 with a translated message.

@@ -53,6 +53,16 @@ export default async function CheckoutPage({
   const { tariffSlug } = await params
   const sp = await searchParams
 
+  // SAAS-PIVOT Epic 2 Day 3 — admin-global lookup. The /checkout/:slug
+  // route is the public direct-pay surface; the resolved tariff carries
+  // its owning teacher_id which downstream code (payment writer +
+  // teacher_earnings ledger in Epic 4/5) will pick up. The slug is
+  // still globally unique on Day 3 (composite UNIQUE for tariffs is
+  // out of scope per plan §3 Epic 2), so findByActiveSlug is safe.
+  // teacher-scope: admin-global — we need every teacher's catalogue to
+  // resolve a checkout link sent over WhatsApp/email. Soft-deleted
+  // tariffs (deleted_at IS NOT NULL) are excluded by default from
+  // listAllTariffs() so an archived link 404s gracefully.
   const tariffs = await listAllTariffs()
   const tariff = tariffs.find(
     (t) => t.slug === tariffSlug && t.isActive,
