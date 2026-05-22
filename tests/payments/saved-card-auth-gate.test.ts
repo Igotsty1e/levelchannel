@@ -45,6 +45,16 @@ vi.mock('@/lib/payments/provider', () => ({
   chargeWithSavedCard: (args: unknown) => chargeWithSavedCardMock(args),
 }))
 
+// SAAS-PIVOT Epic 6 Day 6: charge-token now calls deriveTeacherAccountIdForOrder
+// which hits getDbPool. Unit test runs without DATABASE_URL — mock the helper
+// to return null (no derivation → falls back to bootstrap, or stays null;
+// the test's chargeWithSavedCard mock returns 'no_saved_card' before
+// teacher_account_id matters).
+vi.mock('@/lib/payments/teacher-derivation', () => ({
+  deriveTeacherAccountIdForOrder: vi.fn().mockResolvedValue(null),
+  isOperatorManagedTeacher: vi.fn().mockResolvedValue(false),
+}))
+
 vi.mock('@/lib/payments/config', () => ({
   paymentConfig: {
     provider: 'cloudpayments',
