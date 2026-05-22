@@ -19,7 +19,11 @@
 // is the load-bearing invariant from Codex round 5 MEDIUM.
 
 import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
-import { createPackagePurchase, getPackageBySlug } from '@/lib/billing/packages'
+import {
+  createPackagePurchase,
+  getPackageById,
+  getPackageBySlug,
+} from '@/lib/billing/packages'
 import { learnerHasActivePackageOfDuration } from '@/lib/billing/packages'
 import { getDbPool } from '@/lib/db/pool'
 import { sendOperatorPackageGrantFailureNotification } from '@/lib/email/dispatch'
@@ -94,6 +98,12 @@ export async function processPackageGrant(
   }
 
   const metaAccountId = fullOrder.metadata?.accountId
+  // SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — canonical identifier flips
+  // to packageId. Checkout has populated metadata.packageId since
+  // PR #382; this branch keeps the legacy packageSlug fallback so a
+  // pre-PR-382 in-flight order doesn't end up un-grantable, but new
+  // grants ALWAYS resolve via id (per round-28 BLOCKER #1 closure).
+  const metaPackageId = fullOrder.metadata?.packageId
   const metaPackageSlug = fullOrder.metadata?.packageSlug
 
   if (typeof metaAccountId !== 'string' || metaAccountId.length === 0) {
@@ -149,24 +159,40 @@ export async function processPackageGrant(
   }
   const accountId = metaResolvedId
 
-  if (typeof metaPackageSlug !== 'string') {
-    // Should be filtered by caller (only call this fn on package
-    // orders), but defensive.
+  // SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — packageId-first lookup
+  // (round-28 BLOCKER #1 closure). Slug fallback preserves backwards
+  // compat with pre-PR-382 in-flight orders. Either identifier must be
+  // present; both missing = semantic failure.
+  if (typeof metaPackageId !== 'string' && typeof metaPackageSlug !== 'string') {
     await audit(invoiceId, fullOrder, 'no_metadata_accountid', actor, {
-      hint: 'missing_package_slug',
+      hint: 'missing_package_identifier',
     })
     return { kind: 'semantic_failure', reason: 'no_metadata_accountid' }
   }
-  const pkg = await getPackageBySlug(metaPackageSlug)
+  let pkg = typeof metaPackageId === 'string' && metaPackageId.length > 0
+    ? await getPackageById(metaPackageId)
+    : null
+  if (!pkg && typeof metaPackageSlug === 'string' && metaPackageSlug.length > 0) {
+    // Slug fallback. Logged-deprecated-path: post-Epic-3-Day-4 a slug
+    // can resolve to the wrong tenant's package if two teachers ship
+    // the same slug, but the bootstrap teacher (mig 0083) currently
+    // owns every legacy package row so this is a safe fallback during
+    // the rollout window.
+    pkg = await getPackageBySlug(metaPackageSlug)
+  }
   if (!pkg || !pkg.isActive) {
     // Wave 46 — was a silent 200-path failure (no audit, no email).
     // The operator now sees both an audit row AND a Resend dispatch
     // so they can react to a paid-but-not-granted incident.
     await audit(invoiceId, fullOrder, 'package_unknown_or_inactive', actor, {
-      slug: metaPackageSlug,
+      slug: metaPackageSlug ?? null,
+      packageId: metaPackageId ?? null,
       reason: !pkg ? 'not_found' : 'inactive',
     })
-    return { kind: 'package_unknown_or_inactive', slug: metaPackageSlug }
+    return {
+      kind: 'package_unknown_or_inactive',
+      slug: typeof metaPackageSlug === 'string' ? metaPackageSlug : '',
+    }
   }
 
   // expires_at = paid_at + 6 months. Read paid_at from the order
@@ -246,6 +272,12 @@ export async function processPackageGrant(
       durationMinutes: pkg.durationMinutes,
       countInitial: pkg.count,
       expiresAt,
+      // SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — denormalise from the
+      // package row's owning teacher. Mig 0076b made teacher_id
+      // NOT NULL on package_purchases; the webhook path now
+      // propagates the value at grant time so the column stays
+      // consistent with lesson_packages.teacher_id.
+      teacherId: pkg.teacherId,
     })
     if (!purchase) {
       // UNIQUE on payment_order_id rejected — should be unreachable
@@ -362,7 +394,12 @@ async function audit(
       packageSlug:
         typeof fullOrder?.metadata?.packageSlug === 'string'
           ? fullOrder.metadata.packageSlug
-          : null,
+          : typeof fullOrder?.metadata?.packageId === 'string'
+            ? // SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — fall back to
+              // packageId for the operator email so post-flip orders
+              // (slug-less) still carry a stable identifier.
+              `id=${fullOrder.metadata.packageId}`
+            : null,
       customerEmail: fullOrder?.customerEmail ?? null,
       amountRub: fullOrder?.amountRub ?? null,
       reason,

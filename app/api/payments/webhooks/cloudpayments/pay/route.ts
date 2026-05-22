@@ -153,16 +153,23 @@ export async function POST(request: Request) {
 
       // Billing wave PR 2 — package grant branch.
       //
-      // If the order's metadata names a packageSlug, dispatch to the
-      // shared grant flow (lib/billing/package-grant.ts) which
-      // implements dual-source ownership corroboration with eight
-      // semantic-failure reasons (last one: already_owns_active_package
-      // — cross-flow anti-stacking, PKG-ADMIN-GRANT 2026-05-16).
+      // If the order's metadata names a packageId (post-PR-382) OR
+      // packageSlug (legacy in-flight orders), dispatch to the shared
+      // grant flow (lib/billing/package-grant.ts) which implements
+      // dual-source ownership corroboration with eight semantic-failure
+      // reasons (last one: already_owns_active_package — cross-flow
+      // anti-stacking, PKG-ADMIN-GRANT 2026-05-16). The grant flow
+      // itself resolves the package via id-first / slug-fallback
+      // (round-28 BLOCKER #1 closure, SAAS-PIVOT Epic 3 Day 4).
       // Operational failures rethrow → CloudPayments retries naturally.
       try {
         const fullOrderForPkg = await getOrder(order.invoiceId)
+        const metaPackageId = fullOrderForPkg?.metadata?.packageId
         const metaPackageSlug = fullOrderForPkg?.metadata?.packageSlug
-        if (typeof metaPackageSlug === 'string' && metaPackageSlug) {
+        const hasPackageIdent =
+          (typeof metaPackageId === 'string' && metaPackageId)
+          || (typeof metaPackageSlug === 'string' && metaPackageSlug)
+        if (hasPackageIdent) {
           await processPackageGrant(order.invoiceId)
         }
       } catch (err) {

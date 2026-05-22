@@ -19,11 +19,16 @@ export type PackagePurchase = {
   countInitial: number
   expiresAt: string
   createdAt: string
+  // SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — owning teacher (NOT NULL
+  // post-mig-0076b). Denormalised from lesson_packages.teacher_id at
+  // purchase time.
+  teacherId: string
 }
 
 const PURCHASE_COLS =
   'id, account_id, package_id, payment_order_id, amount_kopecks, currency, ' +
-  'title_snapshot, duration_minutes, count_initial, expires_at, created_at'
+  'title_snapshot, duration_minutes, count_initial, expires_at, created_at, ' +
+  'teacher_id'
 
 function rowToPurchase(row: Record<string, unknown>): PackagePurchase {
   return {
@@ -38,6 +43,7 @@ function rowToPurchase(row: Record<string, unknown>): PackagePurchase {
     countInitial: Number(row.count_initial),
     expiresAt: new Date(String(row.expires_at)).toISOString(),
     createdAt: new Date(String(row.created_at)).toISOString(),
+    teacherId: String(row.teacher_id),
   }
 }
 
@@ -60,13 +66,30 @@ export async function createPackagePurchase(
     durationMinutes: number
     countInitial: number
     expiresAt: Date
+    // SAAS-PIVOT Epic 3 Day 4 (2026-05-22): mig 0076b flipped
+    // package_purchases.teacher_id NOT NULL. New callers pass it
+    // explicitly (denormalised from the package row's owning teacher
+    // — webhook + admin grant + teacher_grant all do this). Legacy
+    // callers that omit it fall back to the package row's
+    // teacher_id read in the same tx; if the package row has been
+    // deleted (impossible — FK is ON DELETE RESTRICT), the underlying
+    // NOT NULL constraint raises.
+    teacherId?: string
   },
 ): Promise<PackagePurchase | null> {
+  let teacherId = input.teacherId ?? null
+  if (!teacherId) {
+    const pkgRow = await client.query<{ teacher_id: string }>(
+      `select teacher_id from lesson_packages where id = $1`,
+      [input.packageId],
+    )
+    teacherId = pkgRow.rows[0]?.teacher_id ?? null
+  }
   const result = await client.query(
     `insert into package_purchases
        (account_id, package_id, payment_order_id, amount_kopecks, currency,
-        title_snapshot, duration_minutes, count_initial, expires_at)
-     values ($1, $2, $3, $4, 'RUB', $5, $6, $7, $8)
+        title_snapshot, duration_minutes, count_initial, expires_at, teacher_id)
+     values ($1, $2, $3, $4, 'RUB', $5, $6, $7, $8, $9::uuid)
      on conflict (payment_order_id) do nothing
      returning ${PURCHASE_COLS}`,
     [
@@ -78,6 +101,7 @@ export async function createPackagePurchase(
       input.durationMinutes,
       input.countInitial,
       input.expiresAt.toISOString(),
+      teacherId,
     ],
   )
   return result.rows[0] ? rowToPurchase(result.rows[0]) : null
