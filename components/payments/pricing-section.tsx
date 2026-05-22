@@ -242,7 +242,13 @@ async function openCloudPaymentsWidget(intent: CloudPaymentsWidgetIntent) {
   })
 }
 
-export function PricingSection() {
+// SAAS-PIVOT Epic 6 Day 6 — optional teacher slug. When this section
+// renders inside `/t/<slug>/pay`, the slug is threaded into POST
+// /api/payments via `?t=<slug>` so the writer derives teacher_account_id
+// from `account_profiles.teacher_public_slug` (plan §2.8). On the
+// canonical `/pay` page the prop is undefined and the writer falls
+// through to the bootstrap teacher.
+export function PricingSection({ teacherSlug }: { teacherSlug?: string } = {}) {
   const router = useRouter()
   const [amountRub, setAmountRub] = useState('3500')
   const [email, setEmail] = useState('')
@@ -534,7 +540,10 @@ export function PricingSection() {
           ? crypto.randomUUID()
           : `${Date.now()}-${Math.random().toString(16).slice(2)}`
       const idempotencyKey = `lc-create-${entropy}`
-      const response = await fetch('/api/payments', {
+      const paymentsUrl = teacherSlug
+        ? `/api/payments?t=${encodeURIComponent(teacherSlug)}`
+        : '/api/payments'
+      const response = await fetch(paymentsUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -15,6 +15,10 @@ import {
   validateCustomerEmail,
 } from '@/lib/payments/catalog'
 import { createPayment } from '@/lib/payments/provider'
+import {
+  deriveTeacherAccountIdForOrder,
+  isOperatorManagedTeacher,
+} from '@/lib/payments/teacher-derivation'
 import { appendCheckoutTelemetryEvent } from '@/lib/telemetry/store'
 import { withIdempotency } from '@/lib/security/idempotency'
 import {
@@ -172,6 +176,40 @@ export async function POST(request: Request) {
       slotId = slotIdRaw
     }
 
+    // SAAS-PIVOT Epic 6 Day 6 — derive owning teacher account.
+    // Order of precedence: slotId → ?t=<slug> → bootstrap fallback.
+    // metadata.packageId/packageSlug are not used by this surface
+    // (custom-amount widget); package buys go through /api/checkout/package.
+    const url = new URL(request.url)
+    const teacherSlugFromQuery = url.searchParams.get('t')
+    const teacherAccountId = await deriveTeacherAccountIdForOrder({
+      slotId,
+      teacherSlug: teacherSlugFromQuery,
+    })
+    if (!teacherAccountId) {
+      return {
+        status: 500,
+        body: {
+          error: 'teacher_resolution_failed',
+          message: 'Не удалось определить учителя для платежа.',
+        },
+      }
+    }
+    // Plan-4 gate: only operator-managed teachers accept money via the
+    // platform. Non-plan-4 teachers (Free/Mid/Pro) handle billing
+    // off-platform — sending money through here would orphan the funds.
+    const isPlan4 = await isOperatorManagedTeacher(teacherAccountId)
+    if (!isPlan4) {
+      return {
+        status: 422,
+        body: {
+          error: 'teacher_not_operator_managed',
+          message:
+            'Этот учитель не использует платформенную оплату. Оплатите занятия напрямую учителю.',
+        },
+      }
+    }
+
     try {
       const { order, checkoutIntent, receiptToken } = await createPayment(
         amountRub,
@@ -184,6 +222,7 @@ export async function POST(request: Request) {
           }),
           customerComment,
           slotId,
+          teacherAccountId,
         },
       )
 

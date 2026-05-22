@@ -1,10 +1,21 @@
 import { randomUUID } from 'node:crypto'
 
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
 import { getDbPool } from '@/lib/db/pool'
 
 import '../setup'
+
+// SAAS-PIVOT Epic 6 Day 6 (2026-05-22) — the integration setup
+// auto-seeds a bootstrap teacher (so /api/payments writers have a
+// fallback). This test file owns the bootstrap-existence invariants
+// directly (mig 0083 idempotency, no-bootstrap-on-fresh-DB), so we
+// wipe the auto-seeded marker before each test in this file.
+beforeEach(async () => {
+  await getDbPool().query(
+    `delete from accounts where teacher_account_migration_marker = 'bootstrap-2026-05-22'`,
+  )
+})
 
 // SAAS-PIVOT Epic 1 Day 1 schema invariants.
 //
@@ -312,24 +323,24 @@ describe('SAAS-PIVOT Day 1 — account_profiles.teacher_public_slug (mig 0086)',
   })
 })
 
-describe('SAAS-PIVOT Day 1 — payment_orders.teacher_account_id nullable (mig 0085)', () => {
-  it('does NOT break existing inserts that omit teacher_account_id', async () => {
-    const invoiceId = `lc_day1_${randomUUID().replace(/-/g, '').slice(0, 16)}`
-    await getDbPool().query(
-      `insert into payment_orders (
-         invoice_id, amount_rub, currency, description, provider, status,
-         created_at, updated_at, customer_email, receipt_email, receipt
-       ) values (
-         $1, 100, 'RUB', 'day-1 schema test', 'cloudpayments', 'pending',
-         now(), now(), 'day1@example.com', 'day1@example.com', '{}'::jsonb
-       )`,
-      [invoiceId],
-    )
-    const row = await getDbPool().query<{ teacher_account_id: string | null }>(
-      `select teacher_account_id from payment_orders where invoice_id = $1`,
-      [invoiceId],
-    )
-    expect(row.rows[0].teacher_account_id).toBeNull()
+describe('SAAS-PIVOT Day 6 — payment_orders.teacher_account_id NOT NULL (mig 0094)', () => {
+  // SAAS-PIVOT Epic 6 Day 6 (mig 0094) flipped teacher_account_id to
+  // NOT NULL after the Day-6 writer sweep. Day-1 "insert-without-id-succeeds"
+  // claim is historical; replaced by NOT NULL assertion.
+  it('mig 0094: INSERT without teacher_account_id fails NOT NULL', async () => {
+    const invoiceId = `lc_day6_${randomUUID().replace(/-/g, '').slice(0, 16)}`
+    await expect(
+      getDbPool().query(
+        `insert into payment_orders (
+           invoice_id, amount_rub, currency, description, provider, status,
+           created_at, updated_at, customer_email, receipt_email, receipt
+         ) values (
+           $1, 100, 'RUB', 'day-6 schema test', 'cloudpayments', 'pending',
+           now(), now(), 'day6@example.com', 'day6@example.com', '{}'::jsonb
+         )`,
+        [invoiceId],
+      ),
+    ).rejects.toThrow(/teacher_account_id|null value|23502/i)
   })
 
   it('accepts an explicit teacher_account_id', async () => {

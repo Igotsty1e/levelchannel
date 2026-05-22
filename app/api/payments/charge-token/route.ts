@@ -13,6 +13,7 @@ import {
 import { paymentConfig } from '@/lib/payments/config'
 import { buildPersonalDataConsentSnapshot } from '@/lib/legal/personal-data'
 import { chargeWithSavedCard } from '@/lib/payments/provider'
+import { deriveTeacherAccountIdForOrder } from '@/lib/payments/teacher-derivation'
 import { appendCheckoutTelemetryEvent } from '@/lib/telemetry/store'
 import { withIdempotency } from '@/lib/security/idempotency'
 import {
@@ -135,6 +136,26 @@ export async function POST(request: Request) {
       }
     }
 
+    // SAAS-PIVOT Epic 6 Day 6 — derive owning teacher. One-click
+    // saved-card path doesn't carry slot/package context (it's the
+    // mirror of /api/payments custom-amount path), so the helper
+    // falls through to the bootstrap teacher unless `?t=<slug>` is
+    // present in the URL.
+    const ctUrl = new URL(request.url)
+    const ctTeacherSlug = ctUrl.searchParams.get('t')
+    const teacherAccountId = await deriveTeacherAccountIdForOrder({
+      teacherSlug: ctTeacherSlug,
+    })
+    if (!teacherAccountId) {
+      return {
+        status: 500,
+        body: {
+          error: 'teacher_resolution_failed',
+          message: 'Не удалось определить учителя для платежа.',
+        },
+      }
+    }
+
     let result: Awaited<ReturnType<typeof chargeWithSavedCard>>
     try {
       result = await chargeWithSavedCard({
@@ -148,6 +169,7 @@ export async function POST(request: Request) {
         // RECEIPT-3DS-TOKEN: pin metadata.accountId so /thank-you's
         // post-3DS poll can session-fallback the receipt-token gate.
         accountId: session.account.id,
+        teacherAccountId,
       })
     } catch (err) {
       // Synchronous failure inside the charge path — most likely a CP

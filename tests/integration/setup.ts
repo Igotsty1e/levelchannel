@@ -93,6 +93,44 @@ afterEach(async () => {
       ('operator-managed', 'Operator-managed', 0, null, '{"money_flow_through_platform": true}'::jsonb)
     on conflict (slug) do nothing
   `)
+  // SAAS-PIVOT Epic 6 Day 6 (2026-05-22) — seed a baseline bootstrap
+  // teacher account with operator-managed plan so EVERY test that
+  // exercises /api/payments (or any writer that falls back to the
+  // bootstrap teacher) has a non-null teacher_account_id available.
+  // Tests that need to assert NO bootstrap (schema-day1.test.ts) own
+  // the no-bootstrap invariant directly and don't go through this
+  // setup path.
+  //
+  // Marker matches BOOTSTRAP_MARKER in lib/auth/bootstrap-teacher.ts.
+  await pool.query(`
+    insert into accounts (
+      id, email, password_hash, email_verified_at,
+      teacher_account_migration_marker, created_at, updated_at
+    ) values (
+      gen_random_uuid(),
+      'integration-bootstrap-' || gen_random_uuid() || '@levelchannel.internal',
+      '$argon2id$v=19$m=65536,t=3,p=4$placeholderplaceholderplaceholder$placeholderplaceholderplaceholderplaceholder',
+      now(),
+      'bootstrap-2026-05-22',
+      now(),
+      now()
+    )
+    on conflict do nothing
+  `)
+  await pool.query(`
+    insert into account_roles (account_id, role)
+    select id, 'teacher' from accounts
+     where teacher_account_migration_marker = 'bootstrap-2026-05-22'
+    on conflict (account_id, role) do nothing
+  `)
+  await pool.query(`
+    insert into teacher_subscriptions (account_id, plan_slug, state)
+    select id, 'operator-managed', 'active' from accounts
+     where teacher_account_migration_marker = 'bootstrap-2026-05-22'
+    on conflict (account_id) do update
+      set plan_slug = excluded.plan_slug,
+          state = excluded.state
+  `)
   // Reset in-memory and Postgres rate-limit buckets so per-IP and
   // per-email-hash counters don't leak across test cases.
   await __resetRateLimitsForTesting()

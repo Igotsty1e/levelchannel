@@ -23,6 +23,7 @@ import { createCloudPaymentsOrder } from '@/lib/payments/cloudpayments'
 import { resolveOrderAccountIdForCreate } from '@/lib/payments/order-account-resolver'
 import { createOrder, updateOrder } from '@/lib/payments/store'
 import { markOrderFailed } from '@/lib/payments/provider'
+import { deriveTeacherAccountIdForOrder } from '@/lib/payments/teacher-derivation'
 import { withIdempotency } from '@/lib/security/idempotency'
 import {
   enforceRateLimit,
@@ -218,6 +219,26 @@ export async function POST(request: Request) {
     // lib/payments/provider/checkout.ts:62-95 createPayment).
     const receiptTokenPair = mintToken()
 
+    // SAAS-PIVOT Epic 6 Day 6 — derive owning teacher. SBP create-qr
+    // is the custom-amount entry surface (no slot/package context),
+    // so the resolver falls through to the bootstrap teacher unless
+    // a `?t=<slug>` query is present (we accept that on the same
+    // surface as /api/payments).
+    const sbpUrl = new URL(request.url)
+    const sbpTeacherSlug = sbpUrl.searchParams.get('t')
+    const teacherAccountId = await deriveTeacherAccountIdForOrder({
+      teacherSlug: sbpTeacherSlug,
+    })
+    if (!teacherAccountId) {
+      return {
+        status: 500,
+        body: {
+          error: 'teacher_resolution_failed',
+          message: 'Не удалось определить учителя для платежа.',
+        },
+      }
+    }
+
     // Build the order in-memory. createCloudPaymentsOrder writes
     // paymentMethod='sbp' onto the top-level column (single source
     // of truth, §0a BLOCKER#6 + §0b BLOCKER#2 closures).
@@ -230,6 +251,7 @@ export async function POST(request: Request) {
         source: 'sbp-button',
         personalDataConsent,
         customerComment,
+        teacherAccountId,
       },
     )
 
