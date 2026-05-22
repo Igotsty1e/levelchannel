@@ -1,0 +1,218 @@
+// SAAS-PIVOT Epic 7 Day 7 — per-teacher block data fetcher for the
+// multi-teacher cabinet view.
+//
+// Plan: docs/plans/saas-pivot-master.md §3 Epic 7 + §5 Day 7.
+//
+// Given a learner and the resolved set of active teacher account_ids
+// (caller already ran `getActiveTeacherIdsForLearner`), batch-fetch the
+// per-teacher render payload:
+//   - teacher display name + email (label fallback)
+//   - upcoming booked slot count (next 7 days, status='booked', start
+//     in the future) — small list for the inline summary, not the full
+//     timeline (which `listSlotsForLearner` already returns merged)
+//   - balance owed (kopecks) — sum of `pricing_tariffs.amount_kopecks`
+//     across this learner's debt slots scoped to THIS teacher. Uses the
+//     same predicate as `listAccountPostpaidDebt` from
+//     lib/billing/packages/debt.ts to stay aligned with /cabinet's "К
+//     оплате" surface. Day 5B will rewrite that predicate to consume
+//     `lesson_completions` — this helper consumes the SAME source so it
+//     auto-migrates when Day 5B lands.
+//   - active package count (own purchases). v0: simple sum across the
+//     learner's `package_purchases` rows. Day 4 (PR #415) adds
+//     `teacher_id` to `package_purchases`; once that lands the count
+//     can drill down per teacher. Until then the cabinet sub-block
+//     shows the LEARNER-WIDE active-package count and labels it
+//     accordingly (the package itself is teacher-owned at creation
+//     time but the learner's purchase row currently has no
+//     teacher_id link in main — see plan §5 Day 4 column-add).
+//
+// Why a single helper not 4× separate queries: the cabinet page already
+// awaits 7+ promises in parallel for v1. Adding 4×N more (where N =
+// teacher count) would balloon the SSR latency. This helper batches:
+//   - one accounts/profiles fetch for ALL teacher ids
+//   - one slot-summary query keyed on (learner, teacher_id)
+//   - one debt-summary query keyed on (learner, teacher_id)
+// resulting in 3 round-trips total regardless of N.
+//
+// Read-only. No mutations. SSR-safe (no client imports).
+
+import { getAuthPool } from '@/lib/auth/pool'
+import { getDbPool } from '@/lib/db/pool'
+
+export type TeacherBlock = {
+  teacherId: string
+  teacherDisplayName: string
+  // Upcoming booked slots scoped to THIS (learner, teacher) pair, next
+  // 7 days, ordered by start_at asc. Capped at 5 — the unified timeline
+  // section above is the authoritative full list; this is a "что у
+  // тебя с этим учителем" inline preview.
+  upcomingSlots: Array<{
+    slotId: string
+    startAt: string
+    durationMinutes: number
+    tariffTitleRu: string | null
+  }>
+  // Sum of tariff amounts for this learner's debt slots scoped to
+  // this teacher. Mirrors the `listAccountPostpaidDebt` predicate.
+  balanceOwedKopecks: number
+  debtSlotCount: number
+  // Active package count for THIS learner. Currently learner-wide (see
+  // file-header note); will narrow to per-teacher once Day 4 lands
+  // `package_purchases.teacher_id`.
+  activePackageCount: number
+}
+
+export async function loadTeacherBlocks(
+  learnerAccountId: string,
+  teacherIds: string[],
+): Promise<TeacherBlock[]> {
+  if (teacherIds.length === 0) return []
+
+  const authPool = getAuthPool()
+  const dbPool = getDbPool()
+
+  // 1. Resolve teacher display labels in one query.
+  const teacherRows = await authPool.query<{
+    id: string
+    email: string
+    display_name: string | null
+  }>(
+    `select a.id, a.email, p.display_name
+       from accounts a
+       left join account_profiles p on p.account_id = a.id
+      where a.id = any($1::uuid[])`,
+    [teacherIds],
+  )
+  const teacherLabel = new Map<string, string>()
+  for (const r of teacherRows.rows) {
+    const label = (r.display_name ?? '').trim() || String(r.email)
+    teacherLabel.set(String(r.id), label)
+  }
+
+  // 2. Upcoming booked slots per (learner, teacher), next 7 days.
+  const upcomingRows = await dbPool.query<{
+    id: string
+    teacher_account_id: string
+    start_at: string
+    duration_minutes: number
+    tariff_title_ru: string | null
+  }>(
+    `select s.id,
+            s.teacher_account_id,
+            s.start_at,
+            s.duration_minutes,
+            t.title_ru as tariff_title_ru
+       from lesson_slots s
+       left join pricing_tariffs t on t.id = s.tariff_id
+      where s.learner_account_id = $1
+        and s.teacher_account_id = any($2::uuid[])
+        and s.status = 'booked'
+        and s.start_at >= now()
+        and s.start_at < now() + interval '7 days'
+      order by s.start_at asc`,
+    [learnerAccountId, teacherIds],
+  )
+
+  const upcomingByTeacher = new Map<string, TeacherBlock['upcomingSlots']>()
+  for (const id of teacherIds) upcomingByTeacher.set(id, [])
+  for (const r of upcomingRows.rows) {
+    const arr = upcomingByTeacher.get(String(r.teacher_account_id))
+    if (!arr) continue
+    if (arr.length >= 5) continue
+    arr.push({
+      slotId: String(r.id),
+      startAt: new Date(String(r.start_at)).toISOString(),
+      durationMinutes: Number(r.duration_minutes),
+      tariffTitleRu: r.tariff_title_ru ? String(r.tariff_title_ru) : null,
+    })
+  }
+  // 3. Debt aggregate per teacher. Mirrors lib/billing/packages/debt.ts
+  // `listAccountPostpaidDebt` predicate, grouped by teacher_account_id.
+  // Day 5B will switch the underlying predicate to consume
+  // `lesson_completions`; this CTE auto-follows when that file ships.
+  const debtRows = await dbPool.query<{
+    teacher_account_id: string
+    total_debt_kopecks: string | number | null
+    slot_count: number
+  }>(
+    `select s.teacher_account_id,
+            coalesce(sum(t.amount_kopecks), 0)::bigint as total_debt_kopecks,
+            count(*)::int as slot_count
+       from lesson_slots s
+       left join pricing_tariffs t
+              on t.id = s.tariff_id and t.is_active = true
+      where s.learner_account_id = $1
+        and s.teacher_account_id = any($2::uuid[])
+        and s.status in ('completed', 'no_show_learner')
+        and not exists (
+          select 1 from package_consumptions pc
+           where pc.slot_id = s.id and pc.restored_at is null
+        )
+        and not exists (
+          select 1 from payment_allocations pa
+           join payment_orders po on po.invoice_id = pa.payment_order_id
+          where pa.kind = 'lesson_slot'
+            and pa.target_id = s.id::text
+            and po.status = 'paid'
+            and (
+              select coalesce(sum(par.refunded_kopecks), 0)::bigint
+                from payment_allocation_reversals par
+               where par.payment_order_id = pa.payment_order_id
+                 and par.kind = pa.kind
+                 and par.target_id = pa.target_id
+            ) < pa.amount_kopecks
+        )
+      group by s.teacher_account_id`,
+    [learnerAccountId, teacherIds],
+  )
+
+  const debtByTeacher = new Map<
+    string,
+    { totalDebtKopecks: number; slotCount: number }
+  >()
+  for (const id of teacherIds) {
+    debtByTeacher.set(id, { totalDebtKopecks: 0, slotCount: 0 })
+  }
+  for (const r of debtRows.rows) {
+    debtByTeacher.set(String(r.teacher_account_id), {
+      totalDebtKopecks: Number(r.total_debt_kopecks ?? 0),
+      slotCount: Number(r.slot_count ?? 0),
+    })
+  }
+
+  // 4. Active package count — learner-wide for v0 (see header note).
+  // Cheap COUNT; same predicate as `listAccountActivePackages` minus
+  // the row projection.
+  const pkgRow = await dbPool.query<{ count: number }>(
+    `select count(*)::int as count
+       from package_purchases pp
+      where pp.account_id = $1
+        and pp.expires_at > now()
+        and pp.voided_at is null
+        and (pp.count_initial - (
+          select count(*) from package_consumptions pc
+           where pc.package_purchase_id = pp.id
+             and pc.restored_at is null
+        )) > 0`,
+    [learnerAccountId],
+  )
+  const activePackageCountAll = Number(pkgRow.rows[0]?.count ?? 0)
+
+  // 5. Assemble blocks in the order teacherIds was given (caller's
+  // contract: linked_at asc from getActiveTeacherIdsForLearner).
+  return teacherIds.map((teacherId) => {
+    const debt = debtByTeacher.get(teacherId) ?? {
+      totalDebtKopecks: 0,
+      slotCount: 0,
+    }
+    return {
+      teacherId,
+      teacherDisplayName:
+        teacherLabel.get(teacherId) ?? 'учитель',
+      upcomingSlots: upcomingByTeacher.get(teacherId) ?? [],
+      balanceOwedKopecks: debt.totalDebtKopecks,
+      debtSlotCount: debt.slotCount,
+      activePackageCount: activePackageCountAll,
+    }
+  })
+}
