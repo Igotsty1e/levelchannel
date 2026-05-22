@@ -435,7 +435,37 @@ export async function setAssignedTeacher(
         [learnerId],
       )
     } else {
-      // Assign: INSERT-or-revive. PK on (learner, teacher) means a
+      // Assign: SAAS-PIVOT Day 2 round-1 BLOCKER #1 closure (codex
+      // paranoia 2026-05-22) — this writer is the operator-mutation
+      // surface (admin /accounts/[id] teacher-reassignment). The admin
+      // UI + the surrounding semantics are SINGLE-teacher: when an
+      // operator picks "teacher B" the intent is to MOVE the learner
+      // from their previous teacher to B, not to add B as a parallel
+      // link. Without an explicit soft-unlink of the previous active
+      // link, the legacy single-assign UI silently drifts learners
+      // into multi-link state and routes start returning 400
+      // needs_teacher_picker.
+      //
+      // Step 1: soft-unlink every active link to a teacher OTHER than
+      // the target. Step 2: INSERT-or-revive the target link. Same
+      // TX, same client — no torn state visible to a reader.
+      //
+      // The invite-redeem path (lib/auth/teacher-invites.ts) does NOT
+      // call this helper — that path INSERTs a parallel link via its
+      // own writable CTE per plan Q-7 (a learner with one teacher can
+      // redeem a second teacher's invite and end up multi-link). The
+      // single-teacher semantics here are SPECIFIC to the operator
+      // reassignment route; the n:m model is preserved at the schema
+      // layer + via redeems.
+      await client.query(
+        `update learner_teacher_links
+            set unlinked_at = coalesce(unlinked_at, now())
+          where learner_account_id = $1
+            and teacher_account_id <> $2
+            and unlinked_at is null`,
+        [learnerId, teacherId],
+      )
+      // INSERT-or-revive the target. PK on (learner, teacher) means a
       // historic unlink is re-armed via DO UPDATE; ON CONFLICT also
       // covers the dedupe case where redeem-CTE already inserted the
       // row.

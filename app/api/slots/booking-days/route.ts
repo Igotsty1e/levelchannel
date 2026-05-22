@@ -17,7 +17,7 @@ import { enforceRateLimit } from '@/lib/security/request'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// GET /api/slots/booking-days?from=YYYY-MM-DD&to=YYYY-MM-DD&tz=Europe/Moscow
+// GET /api/slots/booking-days?from=YYYY-MM-DD&to=YYYY-MM-DD&tz=Europe/Moscow&teacher=<uuid>
 //
 // Returns the list of YYYY-MM-DD calendar days within the requested
 // range that hold ≥1 OPEN, future slot belonging to the caller's
@@ -27,9 +27,14 @@ export const dynamic = 'force-dynamic'
 // (this is a learner-only surface; operator UIs use /api/admin/slots
 // and /api/slots/calendar respectively).
 //
-// Teacher filter: forced to `session.account.assignedTeacherId`. The
-// learner cannot browse other teachers' availability — there is no
-// marketplace in MVP.
+// Teacher filter — n:m teacher context (SAAS-PIVOT Day 2, plan §2.5):
+//   - Single active link → filter forced to that teacher;
+//     `?teacher=` query is ignored.
+//   - Multiple active links → `?teacher=<id>` REQUIRED + validated
+//     against the learner's active link set; missing or foreign
+//     teacher → 400 `needs_teacher_picker`.
+//   - Zero active links → returns `{ days: [] }` (cabinet surfaces
+//     the «учитель не назначен» hint).
 //
 // Timezone: `tz` query param, default = learner's profile tz, fallback
 // `Europe/Moscow`. Day grouping happens in Postgres via `AT TIME ZONE`

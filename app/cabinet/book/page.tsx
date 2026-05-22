@@ -42,14 +42,20 @@ export default async function BookPage() {
   }
 
   // SAAS-PIVOT Day 2 (2026-05-22) — n:m teacher context (plan §2.5).
-  // Cabinet entry into /cabinet/book uses the "single active teacher"
-  // semantics. Multi-link learners land on the same shell but the
-  // MonthDayPicker is expected to surface the chooser via the
-  // /api/slots/booking-days needs_teacher_picker error path (the
-  // client-side picker fetches that endpoint on mount). For zero-link
-  // learners we show the existing «учитель не назначен» hint.
+  // Single-link learner: `resolved.teacherId` directly. Multi-link
+  // learner: fall back to the first-linked teacher (back-compat alias
+  // semantics) so the cabinet flow remains functional v0. Epic 7
+  // adds the full teacher chooser. Zero-link → null + the existing
+  // «учитель не назначен» hint.
+  //
+  // The selected teacher id is forwarded as ?teacher=<id> all the way
+  // through MonthDayPicker → /api/slots/booking-days → time-list →
+  // /api/slots/booking-times → confirm screen → /api/slots/[id]/book,
+  // so multi-link learners never trip the needs_teacher_picker error
+  // path during the MVP single-teacher cabinet flow.
   const resolved = await getActiveTeacherForLearner(session.account.id)
-  const teacherId = resolved.teacherId
+  const teacherId =
+    resolved.teacherId ?? session.account.assignedTeacherIds[0] ?? null
   const profile = await getAccountProfile(session.account.id)
   // BUG fix 2026-05-15 — legacy rows may carry a non-IANA value like
   // 'Moscow' which then leaks to /api/slots/booking-days as `tz=Moscow`
@@ -152,7 +158,7 @@ export default async function BookPage() {
             >
               Выберите день
             </h2>
-            <MonthDayPicker tz={tz} />
+            <MonthDayPicker tz={tz} teacherAccountId={teacherId} />
             <p
               style={{
                 fontSize: 12,

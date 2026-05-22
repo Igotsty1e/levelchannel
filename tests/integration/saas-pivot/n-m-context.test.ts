@@ -315,16 +315,79 @@ describe('SAAS-PIVOT Day 2 — atomic invite redeem CTE writes both columns', ()
     )
     expect(links.rows).toHaveLength(2)
 
-    // The back-compat alias still points at the FIRST teacher (A, the
-    // earliest linked_at). The redeem's dual-write UPDATE overwrites it
-    // to B, which is intentional legacy behaviour — single-value alias
-    // can only hold one value; new readers must use assignedTeacherIds.
+    // The legacy accounts.assigned_teacher_id column is dual-written
+    // by the redeem CTE — the second redeem OVERWRITES the column to
+    // teacher B (last writer wins on a single-value field). This is
+    // intentional: the column is single-value, the n:m canonical
+    // truth is the link table. New readers MUST consume
+    // assignedTeacherIds (the session-hydration array) rather than
+    // the alias. Verify the exact overwrite shape so the dual-write
+    // contract stays pinned.
     const refetched = await getAccountByEmail(learnerEmail)
-    // Either A or B is acceptable (legacy alias semantics on multi-
-    // link); we only verify the link table is the source of truth.
-    expect([teacherA.id, teacherB.id]).toContain(
-      refetched!.assignedTeacherId,
+    expect(refetched!.assignedTeacherId).toBe(teacherB.id)
+    // Session hydration (lookupSession) populates assignedTeacherIds
+    // from the canonical link table ordered linked_at asc; the alias
+    // derived there is [0] which is A (the earliest link).
+    const { cookieValue } = await createSession({ accountId: learner.id })
+    const looked = await lookupSession(cookieValue)
+    expect(looked).not.toBeNull()
+    expect(looked!.account.assignedTeacherIds).toEqual([
+      teacherA.id,
+      teacherB.id,
+    ])
+    expect(looked!.account.assignedTeacherId).toBe(teacherA.id)
+  })
+})
+
+describe('SAAS-PIVOT Day 2 — operator reassignment preserves single-teacher semantics', () => {
+  it('setAssignedTeacher (admin path) soft-unlinks prior active links when reassigning to a new teacher', async () => {
+    const { setAssignedTeacher } = await import('@/lib/auth/accounts')
+    const teacherA = await makeTeacher('reassign-teacher-a@example.com')
+    const teacherB = await makeTeacher('reassign-teacher-b@example.com')
+    const learner = await makeAccount('reassign-learner@example.com')
+    // Initial assignment to A.
+    await setAssignedTeacher(learner, teacherA)
+    let active = await getActiveTeacherIdsForLearner(learner)
+    expect(active).toEqual([teacherA])
+
+    // Operator reassigns to B. The legacy single-teacher UI semantics
+    // require A's link to soft-unlink atomically. Without this guard,
+    // the learner would silently drift to multi-link and routes would
+    // start returning 400 needs_teacher_picker after the reassignment.
+    await setAssignedTeacher(learner, teacherB)
+    active = await getActiveTeacherIdsForLearner(learner)
+    expect(active).toEqual([teacherB])
+
+    // The canonical link to A still exists in the table but with
+    // unlinked_at set — historical record preserved.
+    const pool = getAuthPool()
+    const rows = await pool.query(
+      `select teacher_account_id, unlinked_at
+         from learner_teacher_links
+        where learner_account_id = $1
+        order by teacher_account_id`,
+      [learner],
     )
+    const linkA = rows.rows.find((r) => r.teacher_account_id === teacherA)
+    const linkB = rows.rows.find((r) => r.teacher_account_id === teacherB)
+    expect(linkA).toBeDefined()
+    expect(linkA!.unlinked_at).not.toBeNull()
+    expect(linkB).toBeDefined()
+    expect(linkB!.unlinked_at).toBeNull()
+  })
+
+  it('setAssignedTeacher (null = unassign) soft-unlinks every active link', async () => {
+    const { setAssignedTeacher } = await import('@/lib/auth/accounts')
+    const teacherA = await makeTeacher('unassign-teacher-a@example.com')
+    const teacherB = await makeTeacher('unassign-teacher-b@example.com')
+    const learner = await makeAccount('unassign-learner@example.com')
+    // Two active links (multi-link state via invite redeem semantics).
+    await link(learner, teacherA)
+    await link(learner, teacherB)
+
+    await setAssignedTeacher(learner, null)
+    const active = await getActiveTeacherIdsForLearner(learner)
+    expect(active).toEqual([])
   })
 })
 

@@ -47,8 +47,13 @@ function mockTxOk() {
   // SAAS-PIVOT Day 2 (2026-05-22) — the dual-write TX issues:
   //   1. begin
   //   2. update accounts set assigned_teacher_id = $2 …
-  //   3. EITHER insert into learner_teacher_links (assign branch)
-  //      OR update learner_teacher_links set unlinked_at = … (null branch)
+  //   3. EITHER unassign branch:
+  //        update learner_teacher_links unlinked_at = now()
+  //          where learner = $1 and unlinked_at is null
+  //      OR assign branch (round-1 BLOCKER #1 closure):
+  //        a. update learner_teacher_links unlinked_at = now()
+  //             where learner = $1 and teacher <> $2 (soft-unlink old)
+  //        b. insert into learner_teacher_links on conflict update
   //   4. commit
   clientQueryMock.mockImplementation(async (sql: string) => {
     if (sql.startsWith('begin')) return { rowCount: 0 }
@@ -87,20 +92,33 @@ describe('setAssignedTeacher — teacher-role guard + dual-write', () => {
     expect(clientQueryMock).not.toHaveBeenCalled()
   })
 
-  it('proceeds when target has teacher role (dual-write TX)', async () => {
+  it('proceeds when target has teacher role (dual-write TX, soft-unlinks old links)', async () => {
     mockRoles(['teacher'])
     mockTxOk()
     await setAssignedTeacher('learner-1', 'teacher-acct')
     // Role lookup on the pool.
     expect(poolQueryMock).toHaveBeenCalledTimes(1)
-    // begin + update accounts + insert links + commit (4 calls).
-    expect(clientQueryMock).toHaveBeenCalledTimes(4)
+    // begin + update accounts + soft-unlink old links + insert link + commit (5 calls).
+    expect(clientQueryMock).toHaveBeenCalledTimes(5)
     // The release returned the client to the pool.
     expect(releaseMock).toHaveBeenCalledTimes(1)
     // Verify both writers carry the (learner, teacher) tuple.
     const sqlByCall = clientQueryMock.mock.calls.map((c) => c[0] as string)
     expect(sqlByCall.some((s) => s.includes('update accounts'))).toBe(true)
-    expect(sqlByCall.some((s) => s.includes('learner_teacher_links'))).toBe(true)
+    expect(
+      sqlByCall.some(
+        (s) =>
+          s.includes('learner_teacher_links') &&
+          s.includes('teacher_account_id <> $2'),
+      ),
+    ).toBe(true)
+    expect(
+      sqlByCall.some(
+        (s) =>
+          s.includes('insert into learner_teacher_links') &&
+          s.includes('on conflict'),
+      ),
+    ).toBe(true)
   })
 
   it('proceeds for unassign (teacherId=null) without role check, soft-unlinks links', async () => {

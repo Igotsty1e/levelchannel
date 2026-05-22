@@ -22,7 +22,20 @@ function formatTime(iso: string, tz: string): string {
   })
 }
 
-export function TimeList({ ymd, tz }: { ymd: string; tz: string }) {
+export function TimeList({
+  ymd,
+  tz,
+  // SAAS-PIVOT Day 2 (2026-05-22) — forwarded from /cabinet/book/[ymd]
+  // page (sourced from getActiveTeacherForLearner + first-link
+  // fallback for multi-link learners). Threaded into the booking-times
+  // fetch + the confirm-screen link so the whole flow is teacher-
+  // scoped end-to-end.
+  teacherAccountId,
+}: {
+  ymd: string
+  tz: string
+  teacherAccountId?: string | null
+}) {
   const router = useRouter()
   const [slots, setSlots] = useState<PublicSlot[]>([])
   const [loading, setLoading] = useState(true)
@@ -32,7 +45,9 @@ export function TimeList({ ymd, tz }: { ymd: string; tz: string }) {
     let cancelled = false
     setLoading(true)
     setError(null)
-    const q = new URLSearchParams({ ymd, tz }).toString()
+    const qParams: Record<string, string> = { ymd, tz }
+    if (teacherAccountId) qParams.teacher = teacherAccountId
+    const q = new URLSearchParams(qParams).toString()
     fetch(`/api/slots/booking-times?${q}`, { cache: 'no-store' })
       .then(async (r) => {
         if (!r.ok) {
@@ -53,7 +68,7 @@ export function TimeList({ ymd, tz }: { ymd: string; tz: string }) {
     return () => {
       cancelled = true
     }
-  }, [ymd, tz])
+  }, [ymd, tz, teacherAccountId])
 
   if (loading) {
     return (
@@ -104,7 +119,12 @@ export function TimeList({ ymd, tz }: { ymd: string; tz: string }) {
         <li key={slot.id}>
           <button
             type="button"
-            onClick={() => router.push(`/cabinet/book/${ymd}/${slot.id}`)}
+            onClick={() => {
+              const next = teacherAccountId
+                ? `/cabinet/book/${ymd}/${slot.id}?teacher=${encodeURIComponent(teacherAccountId)}`
+                : `/cabinet/book/${ymd}/${slot.id}`
+              router.push(next)
+            }}
             style={{
               width: '100%',
               padding: '12px 16px',

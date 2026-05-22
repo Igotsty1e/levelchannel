@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { AuthShell } from '@/components/auth-shell'
 import { getAccountProfile } from '@/lib/auth/profiles'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { getActiveTeacherIdsForLearner } from '@/lib/auth/teacher-scope'
 import { safeTimezone } from '@/lib/auth/timezones'
 import { isValidYmd } from '@/lib/scheduling/slots'
 
@@ -21,7 +22,10 @@ export const metadata = {
   title: 'Выберите время — LevelChannel',
 }
 
-type RouteParams = { params: Promise<{ ymd: string }> }
+type RouteParams = {
+  params: Promise<{ ymd: string }>
+  searchParams: Promise<{ teacher?: string }>
+}
 
 const MONTH_NAMES = [
   'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
@@ -32,8 +36,12 @@ const WEEKDAY_NAMES = [
   'четверг', 'пятница', 'суббота',
 ]
 
-export default async function BookDayPage({ params }: RouteParams) {
+export default async function BookDayPage({
+  params,
+  searchParams,
+}: RouteParams) {
   const { ymd } = await params
+  const { teacher: teacherFromQuery } = await searchParams
 
   if (!isValidYmd(ymd)) redirect('/cabinet/book')
 
@@ -46,6 +54,19 @@ export default async function BookDayPage({ params }: RouteParams) {
 
   const profile = await getAccountProfile(session.account.id)
   const tz = safeTimezone(profile?.timezone)
+
+  // SAAS-PIVOT Day 2 (2026-05-22) — n:m teacher context (plan §2.5).
+  // If parent's MonthDayPicker propagated ?teacher=<id>, validate it
+  // against the learner's active link set; otherwise fall back to the
+  // first-linked teacher (back-compat single-teacher semantics).
+  // Multi-link learners reach Epic 7's picker in a future PR.
+  const activeTeacherIds = await getActiveTeacherIdsForLearner(
+    session.account.id,
+  )
+  const resolvedTeacherId =
+    teacherFromQuery && activeTeacherIds.includes(teacherFromQuery)
+      ? teacherFromQuery
+      : (activeTeacherIds[0] ?? null)
 
   // Pretty header: localize the picked day. Date constructor treats
   // `YYYY-MM-DD` as UTC midnight; we want a human readable label in
@@ -138,7 +159,11 @@ export default async function BookDayPage({ params }: RouteParams) {
           Длительность: 50 мин
         </p>
 
-        <TimeList ymd={ymd} tz={tz} />
+        <TimeList
+          ymd={ymd}
+          tz={tz}
+          teacherAccountId={resolvedTeacherId}
+        />
       </div>
     </AuthShell>
   )

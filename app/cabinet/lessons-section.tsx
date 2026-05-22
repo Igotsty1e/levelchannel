@@ -145,9 +145,18 @@ export function LessonsSection({
 
   async function refresh() {
     try {
+      // SAAS-PIVOT Day 2 (2026-05-22) — when the learner is bound to
+      // at least one teacher we forward ?teacher=<id> to
+      // /api/slots/available. /api/slots/mine has no teacher scope
+      // (it lists the learner's own bookings) so the param is omitted
+      // there. Multi-link learners reach this surface via the
+      // first-linked teacher (alias) — Epic 7 polish adds picker UI.
+      const availableUrl = assignedTeacherId
+        ? `/api/slots/available?teacher=${encodeURIComponent(assignedTeacherId)}`
+        : '/api/slots/available'
       const [m, a] = await Promise.all([
         fetch('/api/slots/mine', { cache: 'no-store' }).then((r) => r.json()),
-        fetch('/api/slots/available', { cache: 'no-store' }).then((r) => r.json()),
+        fetch(availableUrl, { cache: 'no-store' }).then((r) => r.json()),
       ])
       setMine(m.slots ?? [])
       setAvailable(a.slots ?? [])
@@ -168,7 +177,10 @@ export function LessonsSection({
     setErr(null)
     setInfo(null)
     try {
-      const res = await fetch(`/api/slots/${slotId}/book`, { method: 'POST' })
+      const bookUrl = assignedTeacherId
+        ? `/api/slots/${slotId}/book?teacher=${encodeURIComponent(assignedTeacherId)}`
+        : `/api/slots/${slotId}/book`
+      const res = await fetch(bookUrl, { method: 'POST' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         if (data?.error === 'email_not_verified') {

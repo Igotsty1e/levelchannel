@@ -17,13 +17,16 @@ export const dynamic = 'force-dynamic'
 // GET /api/slots/available?teacher=<uuid>&from=<iso>&to=<iso>
 //
 // Behaviour:
-//   - Authenticated learner: filter is FORCED to their
-//     `assigned_teacher_id`. Any `?teacher=` query param is ignored.
-//     Codex 2026-05-08 — pre-fix, the query param overrode the
-//     session-derived filter, letting a learner browse arbitrary
-//     teachers' slots (including a different learner's assigned
-//     teacher's roster). Now the session is the trust anchor; the
-//     query param is decorative for this caller class.
+//   - Authenticated learner — n:m teacher context (SAAS-PIVOT Day 2,
+//     plan §2.5):
+//       * Single active link → filter forced to that teacher; any
+//         `?teacher=` query param is ignored (anti-spoof — the
+//         session-derived link set is the trust anchor).
+//       * Multiple active links → `?teacher=<id>` REQUIRED and
+//         validated against the learner's active link set; missing
+//         or foreign → 400 `needs_teacher_picker`.
+//       * Zero active links → empty list (cabinet «учитель не
+//         назначен» hint).
 //   - Anonymous (no session): caller may pass `?teacher=<uuid>` for
 //     explicit filter, otherwise gets all open slots. Anonymous
 //     "browse all open slots" is the existing loose contract — used
