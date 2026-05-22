@@ -297,6 +297,13 @@ export async function POST(request: Request, { params }: RouteParams) {
         )
 
         // INSERT package_purchases directly via shared helper.
+        // SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — teacher_id is now
+        // NOT NULL on package_purchases (mig 0076b). Denormalise
+        // from the package row's owning teacher; the admin grant
+        // itself is run by an operator (auth.account.id), but the
+        // package itself still belongs to the bootstrap teacher (or
+        // whichever teacher created it), and the purchase row tracks
+        // the latter — same denormalisation rule as the webhook path.
         const purchase = await createPackagePurchase(lockClient, {
           accountId: targetAccountId,
           packageId: pkg.id,
@@ -306,6 +313,7 @@ export async function POST(request: Request, { params }: RouteParams) {
           durationMinutes: pkg.durationMinutes,
           countInitial: pkg.count,
           expiresAt,
+          teacherId: pkg.teacherId,
         })
         if (!purchase) {
           // ON CONFLICT(payment_order_id) DO NOTHING returned null.

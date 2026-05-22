@@ -3,7 +3,11 @@ import { NextResponse } from 'next/server'
 import { NO_STORE } from '@/lib/api/http-headers'
 import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireAdminRole } from '@/lib/auth/guards'
-import { createPackage, listActivePackages } from '@/lib/billing/packages'
+import {
+  createPackage,
+  getBootstrapTeacherAccountId,
+  listActivePackages,
+} from '@/lib/billing/packages'
 import { getDbPool } from '@/lib/db/pool'
 import {
   enforceRateLimit,
@@ -97,6 +101,25 @@ export async function POST(request: Request) {
     )
   }
 
+  // SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — mig 0076b flipped
+  // lesson_packages.teacher_id NOT NULL. The /admin/packages legacy
+  // create flow has no teacher session to inherit from, so route every
+  // admin-issued package to the bootstrap teacher (mig 0083 marker).
+  // Operator can either choose a teacher via a future
+  // `?teacher_id=` param OR keep emitting against the bootstrap
+  // teacher; we default to the latter.
+  const bootstrapTeacherId = await getBootstrapTeacherAccountId()
+  if (!bootstrapTeacherId) {
+    return NextResponse.json(
+      {
+        error: 'bootstrap_teacher_missing',
+        message:
+          'Operator-managed teacher account not found. Run mig 0083 (bootstrap row-MOVE) first.',
+      },
+      { status: 422, headers: NO_STORE },
+    )
+  }
+
   try {
     const pkg = await createPackage({
       slug,
@@ -112,6 +135,7 @@ export async function POST(request: Request) {
         typeof body.displayOrder === 'number'
           ? body.displayOrder
           : DEFAULT_DISPLAY_ORDER,
+      teacherId: bootstrapTeacherId,
     })
     return NextResponse.json(
       { package: pkg },
@@ -124,7 +148,11 @@ export async function POST(request: Request) {
     // is too broad and would misclassify any error containing the
     // substring (e.g. a translated message like "must be unique").
     const code = (err as { code?: string } | null)?.code ?? ''
-    if (code === '23505' || msg.includes('lesson_packages_slug_key')) {
+    if (
+      code === '23505'
+      || msg.includes('lesson_packages_slug_key')
+      || msg.includes('lesson_packages_teacher_slug_unique')
+    ) {
       return NextResponse.json(
         { error: 'slug_already_exists' },
         { status: 409, headers: NO_STORE },

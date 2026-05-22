@@ -17,11 +17,15 @@ export type LessonPackage = {
   displayOrder: number
   createdAt: string
   updatedAt: string
+  // SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — owning teacher (mig 0076a
+  // added the column nullable; mig 0076b in Day 4 flipped NOT NULL).
+  // String at the TS layer; UUID at the DB layer.
+  teacherId: string
 }
 
 const PACKAGE_COLS =
   'id, slug, title_ru, description_ru, duration_minutes, count, amount_kopecks, ' +
-  'currency, is_active, display_order, created_at, updated_at'
+  'currency, is_active, display_order, created_at, updated_at, teacher_id'
 
 function rowToPackage(row: Record<string, unknown>): LessonPackage {
   return {
@@ -37,6 +41,7 @@ function rowToPackage(row: Record<string, unknown>): LessonPackage {
     displayOrder: Number(row.display_order),
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
+    teacherId: String(row.teacher_id),
   }
 }
 
@@ -68,6 +73,19 @@ export async function listActivePackagesByDuration(
   return result.rows.map((r) => rowToPackage(r as Record<string, unknown>))
 }
 
+/**
+ * @deprecated SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — global slug
+ * uniqueness was retired by mig 0076b; slug is now unique only per
+ * (teacher_id, slug). This helper still works on a fresh DB because
+ * mig 0033's data has every row owned by the bootstrap teacher, but
+ * it CAN return the wrong row in a multi-tenant world where two
+ * teachers ship a package with the same slug. New code should call
+ * `getPackageById(uuid)`; the webhook + grant paths read
+ * metadata.packageId (populated since PR #382 at checkout-init time)
+ * and skip slug-based lookup entirely. Kept for the public catalog
+ * endpoint and the URL-bound checkout flow (`/checkout/package/[slug]`)
+ * where the operator-scoped guarantee is still implicit.
+ */
 export async function getPackageBySlug(slug: string): Promise<LessonPackage | null> {
   const pool = getDbPool()
   const result = await pool.query(
@@ -77,9 +95,32 @@ export async function getPackageBySlug(slug: string): Promise<LessonPackage | nu
   return result.rows[0] ? rowToPackage(result.rows[0]) : null
 }
 
+// SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — teacher-scoped catalog
+// lookup. The public checkout flow accepts `/checkout/package/[slug]`
+// URLs that are NOT scoped by teacher (a /teacher/<slug>/... namespace
+// is future work); this helper exists for the teacher cabinet write
+// surface so the editor can disambiguate two packages with the same
+// slug owned by different teachers without relying on the deprecated
+// global getPackageBySlug.
+export async function getPackageBySlugForTeacher(
+  teacherId: string,
+  slug: string,
+): Promise<LessonPackage | null> {
+  const pool = getDbPool()
+  const result = await pool.query(
+    `select ${PACKAGE_COLS}
+       from lesson_packages
+      where teacher_id = $1::uuid
+        and slug = $2`,
+    [teacherId, slug],
+  )
+  return result.rows[0] ? rowToPackage(result.rows[0]) : null
+}
+
 // PKG-ADMIN-GRANT LBL.1 — operator grant route picks by `id` (UUID
 // from URL `/admin/packages/[id]/grant`), not slug. Same shape as
-// `getPackageBySlug`.
+// `getPackageBySlug`. Post-Epic-3-Day-4 this is the canonical
+// catalog-by-id lookup; webhook + grant + admin paths all use this.
 export async function getPackageById(id: string): Promise<LessonPackage | null> {
   const pool = getDbPool()
   const result = await pool.query(
@@ -89,8 +130,17 @@ export async function getPackageById(id: string): Promise<LessonPackage | null> 
   return result.rows[0] ? rowToPackage(result.rows[0]) : null
 }
 
-// Admin-side create. Used by the future /admin/packages catalog UI
-// (PR 4). Validation lives at the call site; this just inserts.
+// Admin-side create. Used by the legacy /admin/packages catalog UI
+// AND the new /teacher/packages catalog UI (SAAS-PIVOT Epic 3 Day 4).
+// Validation lives at the call site; this just inserts.
+//
+// SAAS-PIVOT Epic 3 Day 4 (2026-05-22): mig 0076b flipped
+// lesson_packages.teacher_id NOT NULL. New callers pass `teacherId`
+// explicitly (the /admin route resolves bootstrap, the /teacher route
+// passes session.account.id). Callers that don't pass `teacherId`
+// (existing /admin tests, fixture helpers) fall back to the bootstrap
+// teacher; in a fresh DB (no admin row) the underlying NOT NULL
+// constraint raises and the caller sees a 23502.
 export async function createPackage(input: {
   slug: string
   titleRu: string
@@ -100,13 +150,22 @@ export async function createPackage(input: {
   amountKopecks: number
   isActive?: boolean
   displayOrder?: number
+  teacherId?: string | null
 }): Promise<LessonPackage> {
   const pool = getDbPool()
+  let teacherId = input.teacherId ?? null
+  if (!teacherId) {
+    // Fall back to the bootstrap teacher row. In production, mig 0083
+    // seeded it at deploy time; in test scenarios where the row was
+    // truncated, `ensureBootstrapTeacherAccount` creates it on demand
+    // so legacy fixtures keep working without a fixture-wide rewrite.
+    teacherId = await ensureBootstrapTeacherAccount()
+  }
   const result = await pool.query(
     `insert into lesson_packages
        (slug, title_ru, description_ru, duration_minutes, count, amount_kopecks,
-        is_active, display_order)
-     values ($1, $2, $3, $4, $5, $6, $7, $8)
+        is_active, display_order, teacher_id)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9::uuid)
      returning ${PACKAGE_COLS}`,
     [
       input.slug,
@@ -117,9 +176,92 @@ export async function createPackage(input: {
       input.amountKopecks,
       input.isActive ?? true,
       input.displayOrder ?? 100,
+      teacherId,
     ],
   )
   return rowToPackage(result.rows[0])
+}
+
+// SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — bootstrap teacher lookup.
+// The /admin/packages legacy create + grant flows still need a
+// teacher_id to satisfy the now-NOT-NULL constraint on
+// lesson_packages.teacher_id; we route them through the bootstrap
+// teacher account established by mig 0083 (marker
+// 'bootstrap-2026-05-22'). Returns null on a fresh DB where mig 0083
+// was a no-op (no admin to row-MOVE from); callers in that branch
+// MUST 422 rather than fabricate a row.
+export async function getBootstrapTeacherAccountId(): Promise<string | null> {
+  const pool = getDbPool()
+  const result = await pool.query<{ id: string }>(
+    `select id
+       from accounts
+      where teacher_account_migration_marker = 'bootstrap-2026-05-22'
+      limit 1`,
+  )
+  return result.rows[0] ? String(result.rows[0].id) : null
+}
+
+// SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — find-or-create the bootstrap
+// teacher row. Mig 0083 only seeds it when an admin account exists at
+// migrate-time; integration tests truncate accounts between cases, so
+// the row vanishes. Callers that need a satisfying teacher_id (legacy
+// /admin/packages POST + the createPackage default branch) call this
+// helper to get one regardless. The created row carries the same
+// marker as the migration so a re-call returns the same id.
+//
+// `email` defaults to a synthetic internal address that can't collide
+// with real signups (the UNIQUE on accounts.email keys is preserved).
+// Caller can pass a custom email if a specific test scenario needs
+// it (e.g. payment_orders.customer_email assertions).
+export async function ensureBootstrapTeacherAccount(): Promise<string> {
+  const existing = await getBootstrapTeacherAccountId()
+  if (existing) return existing
+  const pool = getDbPool()
+  // The bootstrap email follows the migration's synthetic naming
+  // convention (admin-2026-05-22@levelchannel.internal). For the
+  // ensure path we use a distinct address so we don't collide with a
+  // real-running mig 0083 row that the test suite later inserts.
+  const email = 'bootstrap-2026-05-22@levelchannel.internal'
+  const insertRes = await pool.query<{ id: string }>(
+    `insert into accounts (email, password_hash, email_verified_at,
+                           teacher_account_migration_marker, created_at, updated_at)
+     values ($1, 'fake-hash-bootstrap-ensure', now(),
+             'bootstrap-2026-05-22', now(), now())
+     on conflict (email) do update
+       set teacher_account_migration_marker = excluded.teacher_account_migration_marker,
+           updated_at = now()
+     returning id`,
+    [email],
+  )
+  const id = String(insertRes.rows[0].id)
+  // Make sure the row has the teacher role so it's discoverable as
+  // a real teacher account.
+  await pool.query(
+    `insert into account_roles (account_id, role)
+     values ($1, 'teacher')
+     on conflict (account_id, role) do nothing`,
+    [id],
+  )
+  return id
+}
+
+// SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — teacher-scoped catalog list.
+// Used by `/teacher/packages` cabinet SSR. Returns BOTH active and
+// inactive packages owned by this teacher; the editor surface
+// renders both buckets (active list + archived list) so the operator
+// can re-activate or just see the historical record.
+export async function listPackagesByTeacher(
+  teacherId: string,
+): Promise<LessonPackage[]> {
+  const pool = getDbPool()
+  const result = await pool.query(
+    `select ${PACKAGE_COLS}
+       from lesson_packages
+      where teacher_id = $1::uuid
+      order by is_active desc, display_order asc, id asc`,
+    [teacherId],
+  )
+  return result.rows.map((r) => rowToPackage(r as Record<string, unknown>))
 }
 
 // Wave 15 — admin metadata edit. The DB trigger
