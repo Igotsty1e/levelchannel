@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server'
 import { NO_STORE } from '@/lib/api/http-headers'
 import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireTeacherAndVerified } from '@/lib/auth/guards'
+import { isOperatorManagedTeacher } from '@/lib/payments/teacher-derivation'
 import {
   createTariffForTeacher,
   listTariffsForTeacher,
@@ -66,6 +67,25 @@ export async function POST(request: Request) {
 
   const guard = await requireTeacherAndVerified(request)
   if (!guard.ok) return guard.response
+
+  // SAAS-PIVOT security-audit HIGH-2 (2026-05-23) closure — plan-4
+  // gate at create time. Same rationale as
+  // /api/teacher/packages POST: a non-plan-4 teacher's tariff that
+  // gets booked + paid through the platform would orphan the funds,
+  // because /checkout/[tariffSlug] resolves teacher_account_id via
+  // the tariff's owning teacher and the platform has no disbursement
+  // path to non-plan-4 teachers.
+  const isPlan4 = await isOperatorManagedTeacher(guard.account.id)
+  if (!isPlan4) {
+    return NextResponse.json(
+      {
+        error: 'plan_4_required',
+        message:
+          'Только Plan-4 учителя могут публиковать платные тарифы. Используйте оплату напрямую.',
+      },
+      { status: 422, headers: NO_STORE },
+    )
+  }
 
   const parsed = await readJsonObjectOr400(request)
   if (!parsed.ok) return parsed.response

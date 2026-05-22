@@ -318,7 +318,13 @@ describe('SAAS-PIVOT Epic 6 — /api/payments plan-4 gate', () => {
     )
     expect(resp.status).toBe(422)
     const body = await resp.json()
-    expect(body.error).toBe('teacher_not_operator_managed')
+    // SAAS-PIVOT security-audit (2026-05-23) round-1 WARN#5 closure —
+    // /api/payments now returns the unified `plan_4_required` error
+    // code (matching the new gates on package buy, SBP, charge-token,
+    // and teacher-side create) while preserving the previous code as
+    // `legacy_error` for any external consumer pinned on it.
+    expect(body.error).toBe('plan_4_required')
+    expect(body.legacy_error).toBe('teacher_not_operator_managed')
   })
 
   // Touch un-used helper for the lint pass.
