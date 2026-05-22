@@ -10,6 +10,20 @@
 
 import { getDbPool } from '@/lib/db/pool'
 
+// Monotonically-decreasing counter for freshPastBookedSlot. Each call
+// yields a STRICTLY LATER past `start_at` than the previous one, so
+// downstream FIFO walks (`order by completed_at asc`) see a stable
+// order matching the call sequence. Starts at 60 days back and steps
+// down by 1 day per call — supports up to ~58 inserts per test file
+// before colliding with `now()`.
+let pastSlotCounter = 60
+export function freshPastSlotDaysBackCounter(): number {
+  const v = pastSlotCounter
+  pastSlotCounter -= 1
+  if (pastSlotCounter < 2) pastSlotCounter = 60 // wrap (no test ships > 50 slots)
+  return v
+}
+
 export async function freshAccount(prefix: string): Promise<string> {
   const email =
     `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`.toLowerCase()
@@ -65,8 +79,11 @@ export async function freshPastBookedSlot(
      returning id`,
     [teacherId, slotMsk.toISOString(), learnerId, tariff.rows[0].id],
   )
-  // Backdate inside the band: random past day × random MSK hour 06-20.
-  const daysBack = 1 + Math.floor(Math.random() * 60)
+  // Backdate inside the band. daysBack uses a monotonically-decreasing
+  // counter so each subsequent call yields a STRICTLY LATER past slot
+  // (later `start_at` → later `completed_at`). FIFO walks downstream
+  // see a stable order matching the call sequence.
+  const daysBack = freshPastSlotDaysBackCounter()
   const hourMsk = 6 + Math.floor(Math.random() * 15) // 06..20 MSK
   const minute = Math.random() < 0.5 ? 0 : 30
   const anchor = new Date()
