@@ -1,0 +1,59 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e4]:
+      - link "LevelChannel" [ref=e5] [cursor=pointer]:
+        - /url: /
+      - link "← На главную" [ref=e6] [cursor=pointer]:
+        - /url: /
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: Оплата онлайн
+        - heading "Оплатить согласованную сумму" [level=3] [ref=e11]
+        - paragraph [ref=e12]: Укажите сумму и e-mail. Платёж откроется прямо на сайте, а электронный чек после успешной оплаты отправит платёжный провайдер на этот e-mail.
+        - generic [ref=e13]:
+          - generic [ref=e14]: От 10 до 50 000 ₽
+          - generic [ref=e15]: Чек автоматически придёт на e-mail
+        - generic [ref=e16]:
+          - generic [ref=e17]:
+            - generic [ref=e18]: Сумма, ₽
+            - textbox "Сумма, ₽" [ref=e19]:
+              - /placeholder: Например, 3500
+              - text: "3500"
+          - generic [ref=e20]:
+            - generic [ref=e21]: E-mail для оплаты и чека
+            - textbox "E-mail для оплаты и чека На этот e-mail придёт электронный чек после успешной оплаты." [ref=e22]:
+              - /placeholder: you@example.com
+            - generic [ref=e23]: На этот e-mail придёт электронный чек после успешной оплаты.
+          - generic [ref=e24]:
+            - generic [ref=e25]: Комментарий (не обязательно)
+            - textbox "Комментарий (не обязательно) Появится в назначении платежа. Осталось 128 симв." [ref=e26]:
+              - /placeholder: "например: за занятие 26 апреля"
+            - generic [ref=e27]: Появится в назначении платежа. Осталось 128 симв.
+          - generic [ref=e28] [cursor=pointer]:
+            - checkbox "Запомнить карту, чтобы в следующий раз оплатить в один клик. Карту сохраняет CloudPayments, у нас — только токен." [ref=e29]
+            - generic [ref=e30]: Запомнить карту, чтобы в следующий раз оплатить в один клик. Карту сохраняет CloudPayments, у нас — только токен.
+          - generic [ref=e31] [cursor=pointer]:
+            - checkbox "Я даю согласие на обработку моих персональных данных в целях оплаты, связи по заказу и исполнения договора. Текст согласия." [ref=e32]
+            - generic [ref=e33]:
+              - text: Я даю согласие на обработку моих персональных данных в целях оплаты, связи по заказу и исполнения договора.
+              - link "Текст согласия" [ref=e34]:
+                - /url: /consent/personal-data
+              - text: .
+          - generic [ref=e35]:
+            - button "Перейти к оплате" [ref=e36] [cursor=pointer]
+            - generic [ref=e37]:
+              - text: Нажимая кнопку, вы подтверждаете согласие с
+              - link "обработкой персональных данных" [ref=e38] [cursor=pointer]:
+                - /url: /consent/personal-data
+              - text: ", а также с"
+              - link "офертой" [ref=e39] [cursor=pointer]:
+                - /url: /offer
+              - text: и
+              - link "политикой персональных данных" [ref=e40] [cursor=pointer]:
+                - /url: /privacy
+              - text: .
+      - complementary [ref=e41]:
+        - paragraph [ref=e42]: Безопасная оплата
+        - heading "Форма откроется поверх сайта" [level=4] [ref=e43]
+        - paragraph [ref=e44]: После успешной оплаты чек автоматически придёт на e-mail. Если форму закрыть, платёж не будет считаться завершённым.
+  - alert [ref=e45]

@@ -16,6 +16,8 @@ export function createMockOrder(
     personalDataConsent?: PersonalDataConsentSnapshot
     customerComment?: string | null
     slotId?: string | null
+    // SAAS-PIVOT Epic 6 Day 6 — owning teacher account (mig 0094 flips NOT NULL).
+    teacherAccountId?: string | null
   } = {},
 ): PaymentOrder {
   const now = new Date()
@@ -63,6 +65,7 @@ export function createMockOrder(
     customerComment,
     // SBP-PAY (2026-05-19) — mock orders are always card-flow stand-ins.
     paymentMethod: 'card',
+    teacherAccountId: options.teacherAccountId ?? null,
     metadata: {
       mockBankSessionId: randomUUID(),
       personalDataConsent: options.personalDataConsent,

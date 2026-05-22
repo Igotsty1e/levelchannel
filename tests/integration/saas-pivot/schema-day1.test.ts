@@ -1,10 +1,21 @@
 import { randomUUID } from 'node:crypto'
 
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
 import { getDbPool } from '@/lib/db/pool'
 
 import '../setup'
+
+// SAAS-PIVOT Epic 6 Day 6 (2026-05-22) — the integration setup
+// auto-seeds a bootstrap teacher (so /api/payments writers have a
+// fallback). This test file owns the bootstrap-existence invariants
+// directly (mig 0083 idempotency, no-bootstrap-on-fresh-DB), so we
+// wipe the auto-seeded marker before each test in this file.
+beforeEach(async () => {
+  await getDbPool().query(
+    `delete from accounts where teacher_account_migration_marker = 'bootstrap-2026-05-22'`,
+  )
+})
 
 // SAAS-PIVOT Epic 1 Day 1 schema invariants.
 //

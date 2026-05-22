@@ -55,6 +55,10 @@ export async function listPaymentOrdersForAdmin(params: {
   email?: string
   fromIso?: string
   toIso?: string
+  // SAAS-PIVOT Epic 6 Day 6 — optional teacher filter. Null/undefined
+  // preserves current behaviour ("all teachers"). When set, narrows
+  // the WHERE clause via teacher_account_id (mig 0094 NOT NULL).
+  teacherAccountId?: string | null
   limit?: number
   offset?: number
 }): Promise<AdminPaymentListPage> {
@@ -80,6 +84,10 @@ export async function listPaymentOrdersForAdmin(params: {
   if (params.toIso) {
     args.push(params.toIso)
     clauses.push(`created_at <= $${args.length}`)
+  }
+  if (params.teacherAccountId) {
+    args.push(params.teacherAccountId)
+    clauses.push(`teacher_account_id = $${args.length}::uuid`)
   }
   const where = clauses.length ? `where ${clauses.join(' and ')}` : ''
   const filterArgs = args.slice()

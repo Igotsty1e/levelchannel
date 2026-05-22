@@ -311,8 +311,21 @@ export function assertIntegrationDbEnv(): void {
 // passed in the body) call this helper in their test body. Tests that
 // own the bootstrap mig directly (schema-day1.test.ts) MUST NOT call
 // this; they own the seed/no-seed invariants.
+//
+// SAAS-PIVOT Epic 6 Day 6 (2026-05-22) — setup.ts auto-seeds a
+// bootstrap row in afterEach so /api/payments writers have a
+// fallback. This helper is now idempotent: if a marker row already
+// exists, return its id rather than minting a duplicate. The
+// schema-day1 tests wipe the auto-seeded row in their own beforeEach
+// to preserve their invariants.
 export async function seedBootstrapTeacher(): Promise<string> {
   const pool = getDbPool()
+  const existing = await pool.query<{ id: string }>(
+    `select id from accounts
+      where teacher_account_migration_marker = 'bootstrap-2026-05-22'
+      limit 1`,
+  )
+  if (existing.rows[0]?.id) return String(existing.rows[0].id)
   const result = await pool.query<{ id: string }>(
     `insert into accounts (
        id, email, password_hash, email_verified_at,
@@ -339,6 +352,10 @@ export type SeedPaymentOrderInput = {
   provider?: 'cloudpayments' | 'mock'
   description?: string
   ageMinutes?: number
+  // SAAS-PIVOT Epic 6 Day 6 — payment_orders.teacher_account_id is
+  // NOT NULL after mig 0094. Tests that don't care which teacher
+  // gets credited let the helper auto-seed a fresh teacher row.
+  teacherAccountId?: string
 }
 
 export type SeededPaymentOrder = {
@@ -347,6 +364,7 @@ export type SeededPaymentOrder = {
   customerEmail: string
   status: string
   provider: string
+  teacherAccountId: string
 }
 
 // Wave 13 Pass 3 #11. Direct INSERT into payment_orders with
@@ -364,18 +382,57 @@ export async function seedPaymentOrder(
   const provider = input.provider ?? 'cloudpayments'
   const description = input.description ?? 'Integration test fixture'
   const ageMinutes = input.ageMinutes ?? 0
+  // SAAS-PIVOT Epic 6 Day 6 — auto-seed a teacher_account_id when the
+  // caller doesn't supply one. Most legacy tests don't care which
+  // teacher owns the order; they just need a valid FK. We synthesise
+  // a fresh accounts row + insert a teacher_subscriptions plan-4 row
+  // so isOperatorManagedTeacher() returns true if the test path runs
+  // through /api/payments. Idempotent per-test (afterEach truncates).
+  let teacherAccountId = input.teacherAccountId
+  if (!teacherAccountId) {
+    const teacherEmail = `fixture-teacher-${randomUUID()}@example.com`.toLowerCase()
+    const teacherRow = await getDbPool().query<{ id: string }>(
+      `insert into accounts (email, password_hash, email_verified_at)
+         values ($1, 'fake-hash-for-fixture-tests', now())
+       returning id`,
+      [teacherEmail],
+    )
+    teacherAccountId = String(teacherRow.rows[0].id)
+    await getDbPool().query(
+      `insert into account_roles (account_id, role) values ($1, 'teacher')
+         on conflict (account_id, role) do nothing`,
+      [teacherAccountId],
+    )
+    await getDbPool().query(
+      `insert into teacher_subscriptions (account_id, plan_slug, state)
+         values ($1, 'operator-managed', 'active')
+         on conflict (account_id) do update set plan_slug = excluded.plan_slug, state = excluded.state`,
+      [teacherAccountId],
+    )
+  }
 
   await getDbPool().query(
     `insert into payment_orders (
        invoice_id, amount_rub, currency, description, provider, status,
-       created_at, updated_at, customer_email, receipt_email, receipt
+       created_at, updated_at, customer_email, receipt_email, receipt,
+       teacher_account_id
      ) values (
        $1, $2, 'RUB', $3, $4, $5,
-       now() - make_interval(mins => $6), now(), $7, $7, '{}'::jsonb
+       now() - make_interval(mins => $6), now(), $7, $7, '{}'::jsonb,
+       $8::uuid
      )`,
-    [invoiceId, amountRub, description, provider, status, ageMinutes, customerEmail],
+    [
+      invoiceId,
+      amountRub,
+      description,
+      provider,
+      status,
+      ageMinutes,
+      customerEmail,
+      teacherAccountId,
+    ],
   )
-  return { invoiceId, amountRub, customerEmail, status, provider }
+  return { invoiceId, amountRub, customerEmail, status, provider, teacherAccountId }
 }
 
 // Wave 13 Pass 3 #11. Companion: emit the canonical 'order.created'
