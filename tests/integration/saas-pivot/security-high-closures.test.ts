@@ -56,6 +56,17 @@ beforeAll(() => {
 
 afterAll(() => {
   vi.unstubAllEnvs()
+  // Defensive: vi.unstubAllEnvs() restores to the captured "original"
+  // values, but interaction with `vi.resetModules()` inside a test
+  // can confuse the stub tracker (the charge-token test does both).
+  // Explicitly normalise the env back to what `tests/setup-env.ts`
+  // would write for an integration run, so the next file in this
+  // sequential worker (fileParallelism: false) doesn't inherit a
+  // stray override.
+  process.env.PAYMENTS_PROVIDER = 'mock'
+  process.env.PAYMENTS_ALLOW_MOCK_CONFIRM = 'true'
+  delete process.env.SBP_ENABLED
+  delete process.env.BILLING_WAVE_ACTIVE
 })
 
 async function makeTeacher(opts: {
@@ -232,13 +243,23 @@ describe('SAAS-PIVOT security-audit HIGH-1 — /api/checkout/package/[slug] disa
     expect(orderRow.rows[0]?.teacher_account_id).toBe(teacherB.id)
   })
 
-  it('round-2 WARN#2 closure — same Idempotency-Key replayed across two teachers sharing a slug does NOT bridge tenants', async () => {
+  it('round-2 WARN#2 closure — same Idempotency-Key on two teachers sharing a slug uses scope (pkg.id) NOT just slug', async () => {
     // Round-1 BLOCKER#1 closure pinned `pkg.id` into the
     // `withIdempotency` scope. Verify at the integration layer: feed
-    // the same `Idempotency-Key` to two different teacher-owned
-    // packages that share a slug. The cache must miss on the second
-    // call (different scope → different cache key) and the second
-    // order must point at the second teacher.
+    // the same `Idempotency-Key` to TWO LEARNERS each buying a
+    // different teacher's package that happens to share the same
+    // slug. The cache must miss on the second learner's call
+    // (different `accountId` and different `pkg.id` → different
+    // scope → different cache key), and the resulting order must
+    // point at the second learner's teacher, not the first learner's.
+    //
+    // We use two learners (not one) because the same learner buying
+    // two same-duration packages hits the route's
+    // `already_owns_active_package` 409 gate (gate 2 inside the
+    // idempotency body — unrelated to the idempotency scope). The
+    // idempotency cross-tenant question is specifically: "does the
+    // same Idempotency-Key on a DIFFERENT scope MISS?". Different
+    // accounts is the cleanest pin for that.
     const SLUG = 'audit-h1-idemp-replay'
     const teacherA = await makeTeacher({
       emailSuffix: 'h1-replay-a',
@@ -250,8 +271,11 @@ describe('SAAS-PIVOT security-audit HIGH-1 — /api/checkout/package/[slug] disa
     })
     const pkgA = await createPackageOwnedBy(teacherA.id, SLUG, 60, 100000)
     const pkgB = await createPackageOwnedBy(teacherB.id, SLUG, 60, 200000)
-    const learner = await registerLearner(
-      'audit-h1-replay-learner@example.com',
+    const learnerA = await registerLearner(
+      'audit-h1-replay-learnerA@example.com',
+    )
+    const learnerB = await registerLearner(
+      'audit-h1-replay-learnerB@example.com',
     )
     const sharedKey = randomUUID()
 
@@ -259,7 +283,7 @@ describe('SAAS-PIVOT security-audit HIGH-1 — /api/checkout/package/[slug] disa
       buildRequest(
         `/api/checkout/package/${SLUG}?packageId=${encodeURIComponent(pkgA.id)}`,
         {
-          cookie: learner.cookie,
+          cookie: learnerA.cookie,
           body: {},
           headers: { 'Idempotency-Key': sharedKey },
         },
@@ -278,7 +302,7 @@ describe('SAAS-PIVOT security-audit HIGH-1 — /api/checkout/package/[slug] disa
       buildRequest(
         `/api/checkout/package/${SLUG}?packageId=${encodeURIComponent(pkgB.id)}`,
         {
-          cookie: learner.cookie,
+          cookie: learnerB.cookie,
           body: {},
           headers: { 'Idempotency-Key': sharedKey },
         },
@@ -288,7 +312,8 @@ describe('SAAS-PIVOT security-audit HIGH-1 — /api/checkout/package/[slug] disa
     expect(r2.status).toBe(200)
     const body2 = await r2.json()
     // Different invoice means the second call was NOT a cache hit
-    // (which would have returned the first invoice id verbatim).
+    // (which would have returned the first learner's invoice id
+    // verbatim — a cross-tenant leak).
     expect(body2.invoiceId).not.toBe(body1.invoiceId)
     const order2 = await getDbPool().query<{ teacher_account_id: string }>(
       `select teacher_account_id from payment_orders where invoice_id = $1`,
