@@ -390,15 +390,17 @@ describe('processOneTeacher — verdict paths', () => {
       timezone: 'Europe/Moscow',
     })
     const learnerId = await makeLearner('learner-ed')
-    // Slot is YESTERDAY 15:00 MSK — outside the teacher's TODAY in MSK
-    // (past-band of the candidate query) but still inside the 24h
-    // window backwards (= within candidate-set scope). The per-teacher
-    // SELECT `start_at >= today_local_00:00 AT TIME ZONE` excludes it
-    // from the slot list → empty_day branch.
+    // Slot is YESTERDAY 23:30 MSK — outside the teacher's TODAY in MSK
+    // but always within the 24h past window regardless of MSK time of
+    // day. The previous fixture used "yesterday 15:00 MSK" which was
+    // OUT of the 24h window when CI ran in the latter half of the
+    // MSK day (yesterday 15:00 - now() 18:00 = 27h ago → flaky).
+    // 23:30 MSK on a 30-min boundary satisfies
+    // lesson_slots_start_30min_aligned and stays inside the band.
     const yesterdaySlot = await getDbPool().query(
       `select (
          date_trunc('day', now() AT TIME ZONE 'Europe/Moscow')
-         - interval '1 day' + interval '15 hours'
+         - interval '1 day' + interval '23 hours 30 minutes'
        ) AT TIME ZONE 'Europe/Moscow' as ts`,
     )
     const startAt = new Date(String(yesterdaySlot.rows[0].ts)).toISOString()
