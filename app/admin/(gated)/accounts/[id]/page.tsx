@@ -10,6 +10,7 @@ import {
   listLearnerCandidates,
 } from '@/lib/auth/accounts'
 import { getAccountProfile } from '@/lib/auth/profiles'
+import { getActiveTeacherIdsForLearner } from '@/lib/auth/teacher-scope'
 import { listAccountActivePackages, listAccountPostpaidDebt } from '@/lib/billing/packages'
 import { getDbPool } from '@/lib/db/pool'
 import { listLearnersForTeacher } from '@/lib/scheduling/teacher-learners'
@@ -60,6 +61,25 @@ export default async function AdminAccountDetailPage({ params }: RouteParams) {
         listLearnerCandidates(),
       ])
     : [[], []]
+
+  // SAAS-PIVOT Day 2 (2026-05-22) codex-paranoia round-2 WARN #2
+  // closure — admin learner drill-down now surfaces the FULL active
+  // teacher link set (n:m canonical) not just the legacy single-value
+  // alias. Operator reassignment widget still picks ONE teacher (the
+  // single-teacher operator semantics are enforced by setAssignedTeacher
+  // soft-unlinking other links inside a TX + advisory lock); but the
+  // VISIBILITY layer must show every active link so the operator sees
+  // the real state. For a learner with multi-link via invite redeem
+  // (Q-7 path), the array carries 2+ teachers.
+  const activeTeacherIds = isLearnerView
+    ? await getActiveTeacherIdsForLearner(account.id)
+    : []
+  const activeTeacherList = activeTeacherIds
+    .map((id) => {
+      const teacher = teachers.find((t) => t.id === id)
+      return teacher ? { id: teacher.id, email: teacher.email } : null
+    })
+    .filter((t): t is { id: string; email: string } => t !== null)
   // Eligible candidates to assign = verified non-admin accounts that
   // are NOT already assigned to this teacher AND are not the teacher
   // themselves (the data layer rejects self-assignment via the
@@ -192,6 +212,50 @@ export default async function AdminAccountDetailPage({ params }: RouteParams) {
 
       {!account.purgedAt && isLearnerView ? (
         <Section title="Учитель">
+          {activeTeacherList.length > 1 ? (
+            <div style={{ marginBottom: 12 }}>
+              <p
+                style={{
+                  color: 'var(--secondary)',
+                  fontSize: 13,
+                  margin: '0 0 6px 0',
+                }}
+              >
+                Активные привязки ({activeTeacherList.length}):
+              </p>
+              <ul
+                style={{
+                  listStyle: 'none',
+                  padding: 0,
+                  margin: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                }}
+              >
+                {activeTeacherList.map((t) => (
+                  <li
+                    key={t.id}
+                    style={{ fontSize: 13, color: 'var(--text)' }}
+                  >
+                    • {t.email}
+                  </li>
+                ))}
+              </ul>
+              <p
+                style={{
+                  color: 'var(--secondary)',
+                  fontSize: 12,
+                  marginTop: 8,
+                  lineHeight: 1.5,
+                }}
+              >
+                Выбор ниже — это операторская переустановка: указанный
+                учитель станет единственным активным, остальные ссылки
+                будут переведены в статус «отвязан».
+              </p>
+            </div>
+          ) : null}
           <TeacherAssignment
             accountId={account.id}
             currentTeacherId={account.assignedTeacherId}

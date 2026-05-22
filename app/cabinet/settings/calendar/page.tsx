@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { AuthShell } from '@/components/auth-shell'
 import { listAccountRoles } from '@/lib/auth/accounts'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { getActiveTeacherForLearner } from '@/lib/auth/teacher-scope'
 import { getDbPool } from '@/lib/db/pool'
 
 // BCS-C.5 — learner read-only "your teacher uses Google Calendar"
@@ -36,7 +37,13 @@ export default async function LearnerCalendarSettingsPage() {
     redirect('/teacher')
   }
 
-  const teacherId = session.account.assignedTeacherId
+  // SAAS-PIVOT Day 2 (2026-05-22) — n:m teacher context (plan §2.5).
+  // For multi-link learners, this read-only "your teacher uses Google
+  // Calendar" landing currently shows the FIRST teacher's sync state
+  // (back-compat semantics). A future polish (Epic 7) can render
+  // per-teacher cards; for v0 the single-teacher shape is preserved.
+  const resolved = await getActiveTeacherForLearner(session.account.id)
+  const teacherId = resolved.teacherId ?? session.account.assignedTeacherId
   let teacherSyncState: string | null = null
   if (teacherId) {
     const pool = getDbPool()

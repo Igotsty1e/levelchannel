@@ -43,7 +43,19 @@ function buildMonthGrid(year: number, monthIdx: number): (Date | null)[] {
   return cells
 }
 
-export function MonthDayPicker({ tz }: { tz: string }) {
+export function MonthDayPicker({
+  tz,
+  // SAAS-PIVOT Day 2 (2026-05-22) — server passes the resolved teacher
+  // id from getActiveTeacherForLearner(). For multi-link learners
+  // (Epic 7 polish), this is the first-linked teacher (back-compat
+  // alias semantics). The picker propagates `?teacher=<id>` to both
+  // the booking-days fetch and the per-day route so the entire
+  // booking flow carries the same teacher context.
+  teacherAccountId,
+}: {
+  tz: string
+  teacherAccountId?: string | null
+}) {
   const router = useRouter()
   const today = useMemo(() => new Date(), [])
   const [view, setView] = useState({
@@ -68,11 +80,13 @@ export function MonthDayPicker({ tz }: { tz: string }) {
       lastDay.getUTCMonth(),
       lastDay.getUTCDate(),
     )
-    const q = new URLSearchParams({
+    const qParams: Record<string, string> = {
       from: fromYmd,
       to: toYmd,
       tz,
-    }).toString()
+    }
+    if (teacherAccountId) qParams.teacher = teacherAccountId
+    const q = new URLSearchParams(qParams).toString()
     fetch(`/api/slots/booking-days?${q}`, { cache: 'no-store' })
       .then(async (r) => {
         if (!r.ok) {
@@ -93,7 +107,7 @@ export function MonthDayPicker({ tz }: { tz: string }) {
     return () => {
       cancelled = true
     }
-  }, [view.year, view.monthIdx, tz])
+  }, [view.year, view.monthIdx, tz, teacherAccountId])
 
   const grid = buildMonthGrid(view.year, view.monthIdx)
 
@@ -201,7 +215,12 @@ export function MonthDayPicker({ tz }: { tz: string }) {
               type="button"
               role="gridcell"
               disabled={!isAvailable || isPast}
-              onClick={() => router.push(`/cabinet/book/${cellYmd}`)}
+              onClick={() => {
+                const next = teacherAccountId
+                  ? `/cabinet/book/${cellYmd}?teacher=${encodeURIComponent(teacherAccountId)}`
+                  : `/cabinet/book/${cellYmd}`
+                router.push(next)
+              }}
               aria-label={`${day} ${MONTH_NAMES[view.monthIdx]}${isAvailable ? ', свободное время' : ''}`}
               style={{
                 background: isAvailable && !isPast

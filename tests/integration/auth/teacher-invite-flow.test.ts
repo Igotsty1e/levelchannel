@@ -119,10 +119,26 @@ describe('TINV.8 — teacher invite-link integration', () => {
     expect(regRes.status).toBe(200)
     const learner = await getAccountByEmail('invited-learner@example.com')
     expect(learner).not.toBeNull()
+    // Back-compat alias still set (dual-write through MVP).
     expect(learner!.assignedTeacherId).toBe(teacherId)
+    // SAAS-PIVOT Day 2 (2026-05-22) — n:m canonical SoT is the
+    // learner_teacher_links table. Assert the row was inserted by the
+    // atomic redeem CTE. `getAccountByEmail` does not populate
+    // assignedTeacherIds (it's session-only); we verify via direct DB
+    // query.
+    const pool = getAuthPool()
+    const linkRow = await pool.query(
+      `select teacher_account_id, via_invite_id, unlinked_at
+         from learner_teacher_links
+        where learner_account_id = $1`,
+      [learner!.id],
+    )
+    expect(linkRow.rows).toHaveLength(1)
+    expect(linkRow.rows[0].teacher_account_id).toBe(teacherId)
+    expect(linkRow.rows[0].unlinked_at).toBeNull()
 
     // 4. DB: invite row is marked used + used_by_account_id set.
-    const pool = getAuthPool()
+    // Reuse the pool declared above (line 129) for the link assertion.
     const inviteRow = await pool.query(
       `select used_at, used_by_account_id from teacher_invites where id = $1`,
       [created.id],

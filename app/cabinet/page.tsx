@@ -82,6 +82,20 @@ export default async function CabinetPage() {
     redirect('/admin')
   }
 
+  // SAAS-PIVOT Day 2 (2026-05-22) codex-paranoia round-2 WARN #3
+  // closure — derive the cabinet's "primary teacher" from the n:m
+  // canonical array, not from the legacy single-value alias. For
+  // single-link learners these are identical; for multi-link learners
+  // (Q-7 invite redeem path) the alias may have been overwritten by
+  // last-redeem semantics, but the canonical array stays
+  // [first-linked, ...]. Booking blocks in the cabinet still consume
+  // a single "primary" teacher (v0 — Epic 7 polish adds the picker UI);
+  // sourcing it from assignedTeacherIds[0] keeps that v0 stable.
+  const primaryTeacherId = isLearner
+    ? (account.assignedTeacherIds[0] ?? null)
+    : null
+  const hasAnyTeacher = isLearner && account.assignedTeacherIds.length > 0
+
   const [
     profile,
     mySlots,
@@ -93,9 +107,9 @@ export default async function CabinetPage() {
   ] = await Promise.all([
     getAccountProfile(account.id),
     isLearner ? listSlotsForLearner(account.id, 20) : Promise.resolve([]),
-    isLearner && account.assignedTeacherId
+    isLearner && primaryTeacherId
       ? listOpenFutureSlots({
-          teacherAccountId: account.assignedTeacherId,
+          teacherAccountId: primaryTeacherId,
           limit: 50,
         })
       : Promise.resolve([]),
@@ -199,8 +213,8 @@ export default async function CabinetPage() {
             emailVerified={isVerified}
             initialPaidSlotIds={paidSlotIds}
             initialRefundedSlotIds={refundedSlotIds}
-            hasAssignedTeacher={Boolean(account.assignedTeacherId)}
-            assignedTeacherId={account.assignedTeacherId}
+            hasAssignedTeacher={hasAnyTeacher}
+            assignedTeacherId={primaryTeacherId}
             activePackages={activePackages.map((p) => ({
               id: p.id,
               titleSnapshot: p.titleSnapshot,

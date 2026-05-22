@@ -11,11 +11,22 @@ export type Account = {
   disabledAt: string | null
   scheduledPurgeAt: string | null
   purgedAt: string | null
-  // Phase 6+: 1:1 binding to a teacher account. Cabinet uses this to
-  // filter open slots so a learner only sees their teacher's
-  // availability. Null = no teacher assigned yet (cabinet renders a
-  // "обратитесь к оператору" hint).
+  // Phase 6+ (1:1 legacy): single teacher binding. SAAS-PIVOT Day 2
+  // (2026-05-22) re-purposed this as a BACK-COMPAT ALIAS for
+  // `assignedTeacherIds[0] ?? null`. New code should consume
+  // `assignedTeacherIds` directly and treat this as a convenience read
+  // for the "first active teacher" case. Persisted in
+  // accounts.assigned_teacher_id for the dual-write window (mig 0084
+  // drops the column post-MVP). See plan §2.5.
   assignedTeacherId: string | null
+  // SAAS-PIVOT Day 2 (2026-05-22) — n:m roll-out of teacher links.
+  // Sourced from `learner_teacher_links` via
+  // `getActiveTeacherIdsForLearner()` at session hydration. Ordered
+  // `linked_at asc`. Empty array for learners with no active teacher
+  // links. For non-learners (teacher / admin accounts) it's always
+  // empty; the field is on the Account type for uniformity, not because
+  // teachers ever have peers in `learner_teacher_links`.
+  assignedTeacherIds: string[]
   createdAt: string
   updatedAt: string
 }
@@ -50,6 +61,16 @@ function rowToAccount(row: Record<string, unknown>): Account {
     assignedTeacherId: row.assigned_teacher_id
       ? String(row.assigned_teacher_id)
       : null,
+    // SAAS-PIVOT Day 2 (2026-05-22) — populated authoritatively at
+    // session hydration (lib/auth/sessions.ts) via
+    // getActiveTeacherIdsForLearner(). For one-off Account row
+    // materializations from getAccountById / getAccountByEmail /
+    // listAccounts the n:m array is NOT joined here (those callers do
+    // not consume it; adding a join would burn extra Postgres round-
+    // trips on every list page). If a non-session caller ever needs
+    // the n:m view, call getActiveTeacherIdsForLearner(accountId)
+    // explicitly. Default is [].
+    assignedTeacherIds: [],
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
   }
@@ -378,14 +399,112 @@ export async function setAssignedTeacher(
     }
   }
   const pool = getAuthPool()
-  await pool.query(
-    `update accounts
-        set assigned_teacher_id = $2,
-            updated_at = now()
-      where id = $1
-        and purged_at is null`,
-    [learnerId, teacherId],
-  )
+  // SAAS-PIVOT Day 2 (2026-05-22) — dual-write: legacy
+  // accounts.assigned_teacher_id AND new learner_teacher_links table
+  // (plan §2.5). The pivot makes learner_teacher_links the canonical
+  // truth at the reader layer; the legacy column stays through MVP for
+  // the back-compat alias (mig 0084 post-MVP).
+  //
+  // Race-safety (codex-paranoia round-2 BLOCKER #1 closure,
+  // 2026-05-22): this writer (operator reassign) and the invite-redeem
+  // writer (lib/auth/teacher-invites.ts redeemInviteAndBindLearnerAtomic)
+  // both touch learner_teacher_links for the same learner. Without
+  // serialisation, READ COMMITTED admits a TOCTOU window: operator
+  // soft-unlinks "all but target" while a concurrent redeem inserts a
+  // third link in a not-yet-committed snapshot; both commit; the
+  // single-teacher operator semantics quietly drift back to multi-link.
+  //
+  // Defence: take a transaction-scoped advisory lock keyed on the
+  // learner's account uuid before any write. Invite redeem takes the
+  // SAME lock (see teacher-invites.ts), so concurrent invite redeem
+  // and operator reassign serialise. The PK on (learner, teacher) is
+  // still the unique-row guard; the lock is the multi-link-state
+  // serialiser.
+  //
+  // The lock key uses a 64-bit hash of the learner uuid (Postgres
+  // advisory locks take bigint). `hashtext()::bigint` is a fast,
+  // deterministic, collision-tolerant choice — collisions only mean
+  // two unrelated learners serialise their assigns, which is harmless.
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+    await client.query('select pg_advisory_xact_lock(hashtext($1)::bigint)', [
+      `lc-saas-pivot:learner-teacher-links:${learnerId}`,
+    ])
+    await client.query(
+      `update accounts
+          set assigned_teacher_id = $2,
+              updated_at = now()
+        where id = $1
+          and purged_at is null`,
+      [learnerId, teacherId],
+    )
+    if (teacherId === null) {
+      // Unassign: soft-unlink ALL active links for this learner. This
+      // matches the legacy "reset to null" semantics — an operator
+      // clearing the assigned teacher should also tear down the n:m
+      // active set, not just the alias.
+      await client.query(
+        `update learner_teacher_links
+            set unlinked_at = coalesce(unlinked_at, now())
+          where learner_account_id = $1
+            and unlinked_at is null`,
+        [learnerId],
+      )
+    } else {
+      // Assign: SAAS-PIVOT Day 2 round-1 BLOCKER #1 closure (codex
+      // paranoia 2026-05-22) — this writer is the operator-mutation
+      // surface (admin /accounts/[id] teacher-reassignment). The admin
+      // UI + the surrounding semantics are SINGLE-teacher: when an
+      // operator picks "teacher B" the intent is to MOVE the learner
+      // from their previous teacher to B, not to add B as a parallel
+      // link. Without an explicit soft-unlink of the previous active
+      // link, the legacy single-assign UI silently drifts learners
+      // into multi-link state and routes start returning 400
+      // needs_teacher_picker.
+      //
+      // Step 1: soft-unlink every active link to a teacher OTHER than
+      // the target. Step 2: INSERT-or-revive the target link. Same
+      // TX, same client — no torn state visible to a reader.
+      //
+      // The invite-redeem path (lib/auth/teacher-invites.ts) does NOT
+      // call this helper — that path INSERTs a parallel link via its
+      // own writable CTE per plan Q-7 (a learner with one teacher can
+      // redeem a second teacher's invite and end up multi-link). The
+      // single-teacher semantics here are SPECIFIC to the operator
+      // reassignment route; the n:m model is preserved at the schema
+      // layer + via redeems.
+      await client.query(
+        `update learner_teacher_links
+            set unlinked_at = coalesce(unlinked_at, now())
+          where learner_account_id = $1
+            and teacher_account_id <> $2
+            and unlinked_at is null`,
+        [learnerId, teacherId],
+      )
+      // INSERT-or-revive the target. PK on (learner, teacher) means a
+      // historic unlink is re-armed via DO UPDATE; ON CONFLICT also
+      // covers the dedupe case where redeem-CTE already inserted the
+      // row.
+      await client.query(
+        `insert into learner_teacher_links (learner_account_id, teacher_account_id, linked_at, unlinked_at)
+           values ($1, $2, now(), null)
+         on conflict (learner_account_id, teacher_account_id) do update
+           set unlinked_at = null,
+               linked_at = case
+                 when learner_teacher_links.unlinked_at is not null then excluded.linked_at
+                 else learner_teacher_links.linked_at
+               end`,
+        [learnerId, teacherId],
+      )
+    }
+    await client.query('commit')
+  } catch (err) {
+    await client.query('rollback').catch(() => undefined)
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 // Phase 3 deletion grace: stamps both disabled_at and

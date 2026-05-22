@@ -12,12 +12,24 @@ import {
 } from '@/lib/auth/accounts'
 import { getDbPool } from '@/lib/db/pool'
 
+// SAAS-PIVOT Day 2 (2026-05-22) — dual-write: seed both the legacy
+// column (back-compat alias) AND the canonical learner_teacher_links
+// row (plan §2.5). The /api/slots/[id]/book route now consults
+// getActiveTeacherForLearner() which queries the n:m table.
 async function assignTeacher(
   learnerAccountId: string,
   teacherAccountId: string,
 ): Promise<void> {
-  await getDbPool().query(
+  const pool = getDbPool()
+  await pool.query(
     `update accounts set assigned_teacher_id = $2 where id = $1`,
+    [learnerAccountId, teacherAccountId],
+  )
+  await pool.query(
+    `insert into learner_teacher_links (learner_account_id, teacher_account_id, linked_at)
+       values ($1, $2, now())
+     on conflict (learner_account_id, teacher_account_id) do update
+       set unlinked_at = null`,
     [learnerAccountId, teacherAccountId],
   )
 }

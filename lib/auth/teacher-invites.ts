@@ -320,7 +320,9 @@ export async function revokeInvite(
 
 /**
  * Atomically redeem an invite AND bind the learner account to the
- * inviting teacher. One Postgres statement using a writable CTE.
+ * inviting teacher. Wraps a single writable CTE statement inside an
+ * explicit TX so the redeem-side advisory lock can be taken
+ * (see "Concurrency note" below).
  *
  * Verifies in the same snapshot that:
  *   1. The invite is active (used_at IS NULL, revoked_at IS NULL,
@@ -328,16 +330,36 @@ export async function revokeInvite(
  *   2. The inviter still holds the `teacher` role at the moment of
  *      redeem (EXISTS subquery against account_roles).
  *
- * If any condition fails → 0 rows in CTE → no UPDATE on accounts →
- * returns null. Caller (register route) should fail the entire
- * register and surface invite_already_used_or_expired.
+ * If any condition fails → 0 rows in CTE → no writes → returns null.
+ * Caller (register route) should fail the entire register and surface
+ * invite_already_used_or_expired.
  *
  * If all conditions hold → 1 row in CTE → UPDATE accounts.assigned_
- * teacher_id from the CTE's teacher_account_id (NEVER from any
- * client-submitted field — anti-spoof guarantee).
+ * teacher_id (dual-write back-compat) AND INSERT learner_teacher_links
+ * (canonical, SAAS-PIVOT Day 2). Both writes derive from the CTE's
+ * teacher_account_id (NEVER from any client-submitted field —
+ * anti-spoof guarantee).
  *
  * Closes round-3 BLOCKER#1 (race window between role-check and
- * accounts.assigned_teacher_id UPDATE).
+ * accounts.assigned_teacher_id UPDATE). SAAS-PIVOT Day 2 extends the
+ * single-statement writable CTE to ALSO INSERT a row into
+ * learner_teacher_links (plan §2.5) with via_invite_id = inviteId.
+ * ON CONFLICT (learner, teacher) DO UPDATE SET unlinked_at=NULL keeps
+ * re-link a single-row idempotent operation per plan §2.1 row 0077
+ * comment.
+ *
+ * Per Q-7 (§4): redeeming an invite from a SECOND teacher when the
+ * learner already has a link to a first teacher just adds the new
+ * teacher to the link set — both rows present, learner becomes n:m.
+ * The PK (learner, teacher) prevents duplicates within a pair; no
+ * row dedupe is needed across teachers.
+ *
+ * Writer inventory (SAAS-PIVOT Day 2, 2026-05-22): this CTE is ONE OF
+ * TWO writers to learner_teacher_links. The other is
+ * lib/auth/accounts.ts setAssignedTeacher (operator reassignment).
+ * Both writers serialise via the same tx advisory lock keyed on
+ * learner uuid so concurrent invocations do not produce drift in
+ * the active-link set.
  */
 export async function redeemInviteAndBindLearnerAtomic(
   inviteId: string,
@@ -347,30 +369,80 @@ export async function redeemInviteAndBindLearnerAtomic(
     return null
   }
   const pool = getAuthPool()
-  const res = await pool.query<{ teacher_account_id: string }>(
-    `with verified_invite as (
-       update teacher_invites
-          set used_at = now(),
-              used_by_account_id = $2
-        where id = $1
-          and used_at is null
-          and revoked_at is null
-          and expires_at > now()
-          and exists (
-            select 1 from account_roles r
-             where r.account_id = teacher_invites.teacher_account_id
-               and r.role = 'teacher'
-          )
-       returning teacher_account_id
-     )
-     update accounts
-        set assigned_teacher_id = verified_invite.teacher_account_id
-       from verified_invite
-      where accounts.id = $2
-     returning verified_invite.teacher_account_id`,
-    [inviteId, learnerAccountId],
-  )
-  const row = res.rows[0]
-  if (!row) return null
-  return { teacherAccountId: row.teacher_account_id }
+  // The writable CTE has THREE statements chained:
+  //   1. verified_invite — UPDATE teacher_invites with the role-EXISTS
+  //      anti-spoof check; returns teacher_account_id.
+  //   2. linked — INSERT into learner_teacher_links (canonical n:m
+  //      table). ON CONFLICT revives a previously-unlinked row.
+  //   3. dual_write — UPDATE accounts.assigned_teacher_id (back-compat
+  //      alias for any not-yet-rewritten reader; mig 0084 drops it).
+  // All three see the SAME teacher_account_id from the CTE — even if a
+  // concurrent transaction yanks the inviter's teacher role between
+  // (1) and (2), the snapshot wraps the entire statement so no
+  // mid-flight role-mutation can sneak through.
+  //
+  // Concurrency note (codex-paranoia round-2 BLOCKER #1 closure,
+  // 2026-05-22): the operator reassign writer
+  // (lib/auth/accounts.ts:setAssignedTeacher) takes a tx advisory lock
+  // keyed on the learner uuid before mutating learner_teacher_links.
+  // Redeem-and-bind takes the SAME advisory lock so concurrent redeem
+  // + operator reassign serialise. Without it, a redeem committing
+  // its INSERT between the operator's soft-unlink and INSERT would
+  // leave the learner multi-link.
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+    await client.query(
+      'select pg_advisory_xact_lock(hashtext($1)::bigint)',
+      [`lc-saas-pivot:learner-teacher-links:${learnerAccountId}`],
+    )
+    const res = await client.query<{ teacher_account_id: string }>(
+      `with verified_invite as (
+         update teacher_invites
+            set used_at = now(),
+                used_by_account_id = $2
+          where id = $1
+            and used_at is null
+            and revoked_at is null
+            and expires_at > now()
+            and exists (
+              select 1 from account_roles r
+               where r.account_id = teacher_invites.teacher_account_id
+                 and r.role = 'teacher'
+            )
+         returning teacher_account_id, id as invite_id
+       ),
+       linked as (
+         insert into learner_teacher_links (learner_account_id, teacher_account_id, linked_at, unlinked_at, via_invite_id)
+         select $2, vi.teacher_account_id, now(), null, vi.invite_id
+           from verified_invite vi
+         on conflict (learner_account_id, teacher_account_id) do update
+           set unlinked_at = null,
+               linked_at = case
+                 when learner_teacher_links.unlinked_at is not null then excluded.linked_at
+                 else learner_teacher_links.linked_at
+               end,
+               via_invite_id = coalesce(learner_teacher_links.via_invite_id, excluded.via_invite_id)
+         returning teacher_account_id
+       ),
+       dual_write as (
+         update accounts
+            set assigned_teacher_id = vi.teacher_account_id
+           from verified_invite vi
+          where accounts.id = $2
+          returning vi.teacher_account_id
+       )
+       select teacher_account_id from linked`,
+      [inviteId, learnerAccountId],
+    )
+    await client.query('commit')
+    const row = res.rows[0]
+    if (!row) return null
+    return { teacherAccountId: row.teacher_account_id }
+  } catch (err) {
+    await client.query('rollback').catch(() => undefined)
+    throw err
+  } finally {
+    client.release()
+  }
 }

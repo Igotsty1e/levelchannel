@@ -3,6 +3,10 @@ import { NextResponse } from 'next/server'
 import { NO_STORE } from '@/lib/api/http-headers'
 import { requireLearnerArchetypeAndVerified } from '@/lib/auth/guards'
 import { getAccountProfile } from '@/lib/auth/profiles'
+import {
+  getActiveTeacherForLearner,
+  getActiveTeacherIdsForLearner,
+} from '@/lib/auth/teacher-scope'
 import { safeTimezone } from '@/lib/auth/timezones'
 import {
   listOpenBookingDays,
@@ -13,7 +17,7 @@ import { enforceRateLimit } from '@/lib/security/request'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// GET /api/slots/booking-days?from=YYYY-MM-DD&to=YYYY-MM-DD&tz=Europe/Moscow
+// GET /api/slots/booking-days?from=YYYY-MM-DD&to=YYYY-MM-DD&tz=Europe/Moscow&teacher=<uuid>
 //
 // Returns the list of YYYY-MM-DD calendar days within the requested
 // range that hold ≥1 OPEN, future slot belonging to the caller's
@@ -23,9 +27,14 @@ export const dynamic = 'force-dynamic'
 // (this is a learner-only surface; operator UIs use /api/admin/slots
 // and /api/slots/calendar respectively).
 //
-// Teacher filter: forced to `session.account.assignedTeacherId`. The
-// learner cannot browse other teachers' availability — there is no
-// marketplace in MVP.
+// Teacher filter — n:m teacher context (SAAS-PIVOT Day 2, plan §2.5):
+//   - Single active link → filter forced to that teacher;
+//     `?teacher=` query is ignored.
+//   - Multiple active links → `?teacher=<id>` REQUIRED + validated
+//     against the learner's active link set; missing or foreign
+//     teacher → 400 `needs_teacher_picker`.
+//   - Zero active links → returns `{ days: [] }` (cabinet surfaces
+//     the «учитель не назначен» hint).
 //
 // Timezone: `tz` query param, default = learner's profile tz, fallback
 // `Europe/Moscow`. Day grouping happens in Postgres via `AT TIME ZONE`
@@ -50,6 +59,7 @@ export async function GET(request: Request) {
   const fromYmd = url.searchParams.get('from')
   const toYmd = url.searchParams.get('to')
   const tzParam = url.searchParams.get('tz')
+  const teacherFromQuery = url.searchParams.get('teacher')
 
   const profile = await getAccountProfile(auth.account.id)
   // BUG fix 2026-05-15 — sanitise legacy profile values like 'Moscow'
@@ -66,7 +76,37 @@ export async function GET(request: Request) {
     )
   }
 
-  const teacherId = auth.account.assignedTeacherId
+  // SAAS-PIVOT Day 2 (2026-05-22) — n:m teacher context (plan §2.5).
+  // Multi-link learner must specify ?teacher=<id> validated against
+  // their link set; otherwise 400 needs_teacher_picker.
+  const resolved = await getActiveTeacherForLearner(auth.account.id)
+  let teacherId: string | null
+  if (resolved.needsPicker) {
+    if (!teacherFromQuery) {
+      return NextResponse.json(
+        {
+          error: 'needs_teacher_picker',
+          message:
+            'У вас несколько учителей. Укажите учителя через параметр ?teacher=<id>.',
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    const allowed = await getActiveTeacherIdsForLearner(auth.account.id)
+    if (!allowed.includes(teacherFromQuery)) {
+      return NextResponse.json(
+        {
+          error: 'needs_teacher_picker',
+          message: 'Этот учитель не привязан к вашему аккаунту.',
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    teacherId = teacherFromQuery
+  } else {
+    teacherId = resolved.teacherId
+  }
+
   if (!teacherId) {
     return NextResponse.json(
       { days: [] },
