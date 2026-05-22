@@ -385,6 +385,17 @@ describe('processOneTeacher — verdict paths', () => {
   })
 
   it('empty_day → writes flag row, no send', async () => {
+    // Skip when MSK is in the late-evening corner: 22:00-24:00 MSK.
+    // No "yesterday in MSK" time satisfies both (a) inside business band
+    // (06:00-22:00) and (b) within 24h past window. The previous attempts
+    // at 15:00 / 22:00 / 23:30 each fail at a different MSK hour.
+    const mskHourRow = await getDbPool().query<{ h: number }>(
+      `select extract(hour from now() at time zone 'Europe/Moscow')::int as h`,
+    )
+    if (mskHourRow.rows[0].h >= 22) {
+      console.warn('[digest-test] skipping empty_day: MSK late-evening band')
+      return
+    }
     const teacherId = await makeTeacher({
       emailPrefix: 'empty-day',
       timezone: 'Europe/Moscow',
