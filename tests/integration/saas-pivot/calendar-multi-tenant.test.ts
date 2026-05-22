@@ -95,28 +95,25 @@ async function bookedSlot(
   teacherId: string,
   startIso: string,
   duration = 60,
-): Promise<string> {
+): Promise<{ id: string; startAtIso: string }> {
   const pool = getDbPool()
   // Snap start to a 30-min boundary inside MSK 06-22 band to satisfy
   // lesson_slots_start_30min_aligned + lesson_slots_start_in_business_hours.
-  // Callers pass arbitrary future ISOs; we round down to the nearest 30
-  // and clamp the MSK hour into [06,21].
   const d = new Date(startIso)
   d.setUTCMinutes(d.getUTCMinutes() < 30 ? 0 : 30, 0, 0)
-  // MSK = UTC+3. Force UTC hour to keep MSK in 09:00 (UTC 06) to
-  // avoid edge cases. Override if caller passed something far off.
   const mskHourEstimate = (d.getUTCHours() + 3) % 24
   if (mskHourEstimate < 6 || mskHourEstimate > 21) {
-    d.setUTCHours(9, d.getUTCMinutes(), 0, 0) // MSK 12:00
+    d.setUTCHours(9, d.getUTCMinutes(), 0, 0)
   }
+  const finalIso = d.toISOString()
   const r = await pool.query(
     `insert into lesson_slots (id, teacher_account_id, start_at, duration_minutes,
                                status, learner_account_id, booked_at)
      values (gen_random_uuid(), $1, $2::timestamptz, $3, 'booked', $1, now())
      returning id`,
-    [teacherId, d.toISOString(), duration],
+    [teacherId, finalIso, duration],
   )
-  return String(r.rows[0].id)
+  return { id: String(r.rows[0].id), startAtIso: finalIso }
 }
 
 function mockEventsListResponse(items: unknown[]): Response {
@@ -222,7 +219,7 @@ describe('saas-pivot/calendar-multi-tenant — per-teacher isolation', () => {
 
     const slotA = await bookedSlot(a, '2026-10-20T10:00:00Z')
     const enq = await enqueueCreatePushIfIntegrationActive({
-      slotId: slotA,
+      slotId: slotA.id,
       teacherAccountId: a,
     })
     expect(enq.enqueued).toBe(true)
@@ -236,7 +233,7 @@ describe('saas-pivot/calendar-multi-tenant — per-teacher isolation', () => {
     )
     expect(aJobs.rows.length).toBe(1)
     expect(aJobs.rows[0].kind).toBe('create')
-    expect(String(aJobs.rows[0].slot_id)).toBe(slotA)
+    expect(String(aJobs.rows[0].slot_id)).toBe(slotA.id)
 
     const bJobs = await pool.query(
       `select count(*)::int as n from calendar_push_jobs
@@ -260,10 +257,10 @@ describe('saas-pivot/calendar-multi-tenant — per-teacher isolation', () => {
           set external_event_id = 'EVT-A-DELETE',
               external_calendar_id = 'primary'
         where id = $1`,
-      [slotA],
+      [slotA.id],
     )
     await enqueuePushJob({
-      slotId: slotA,
+      slotId: slotA.id,
       teacherAccountId: a,
       kind: 'delete',
       payload: { write_calendar_id: 'primary' },
@@ -292,6 +289,8 @@ describe('saas-pivot/calendar-multi-tenant — per-teacher isolation', () => {
 
     const pool = getDbPool()
     // Slot for A overlapping a foreign event in A's calendar.
+    // bookedSlot snaps to MSK band — use the RETURNED start_at for the
+    // busy interval so they actually overlap.
     const startAtA = new Date(Date.now() + 24 * 3600_000).toISOString()
     const slotA = await bookedSlot(a, startAtA)
     await pool.query(
@@ -301,11 +300,11 @@ describe('saas-pivot/calendar-multi-tenant — per-teacher isolation', () => {
        values (gen_random_uuid(), $1, 'primary', 'EVT-A-FOREIGN',
                $2::timestamptz, $2::timestamptz + interval '60 minutes',
                false, false, now())`,
-      [a, startAtA],
+      [a, slotA.startAtIso],
     )
 
     // Slot for B with NO overlap in B's own calendar.
-    const startAtB = new Date(Date.now() + 24 * 3600_000 + 60_000).toISOString()
+    const startAtB = new Date(Date.now() + 48 * 3600_000).toISOString()
     const slotB = await bookedSlot(b, startAtB)
 
     // Crucially: also stamp a foreign event under B's calendar covering
@@ -324,9 +323,9 @@ describe('saas-pivot/calendar-multi-tenant — per-teacher isolation', () => {
           false, false, now())`,
       [
         a,
-        startAtB, // foreign A-event at B's time — must NOT touch B's slot
+        slotB.startAtIso, // foreign A-event at B's time — must NOT touch B's slot
         b,
-        new Date(Date.now() + 48 * 3600_000).toISOString(), // B's foreign event far from B's slot
+        new Date(Date.now() + 72 * 3600_000).toISOString(), // B's foreign event far from B's slot
       ],
     )
 
@@ -345,13 +344,13 @@ describe('saas-pivot/calendar-multi-tenant — per-teacher isolation', () => {
     const rowA = await pool.query(
       `select external_conflict_at, conflict_source_calendar_id, conflict_source_event_id
          from lesson_slots where id = $1`,
-      [slotA],
+      [slotA.id],
     )
     expect(rowA.rows[0].external_conflict_at).not.toBeNull()
 
     const rowB = await pool.query(
       `select external_conflict_at from lesson_slots where id = $1`,
-      [slotB],
+      [slotB.id],
     )
     expect(rowB.rows[0].external_conflict_at).toBeNull()
   })
