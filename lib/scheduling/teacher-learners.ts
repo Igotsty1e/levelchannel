@@ -31,16 +31,32 @@ export async function listLearnersForTeacher(
   // with the active-link predicate (unlinked_at IS NULL). Existence in
   // the link set drives both the candidate-row predicate AND the
   // is_assigned flag.
+  //
+  // SAAS-PIVOT Day 5A (2026-05-22) — completion + no_show_learner
+  // counts source from `lesson_completions` (SoT) instead of
+  // lesson_slots.status. `no_show_teacher` stays read from
+  // lesson_slots.status (no completion row — non-billable path).
+  // `cancelled` and `upcoming` remain on the slot status (cancellation
+  // is not a billable event).
   const pool = getDbPool()
   const result = await pool.query(
     `with stats as (
        select s.learner_account_id as learner_id,
               count(*) filter (where s.status = 'booked' and s.start_at > now())::int as upcoming_count,
-              count(*) filter (where s.status = 'completed')::int as completed_count,
               count(*) filter (where s.status = 'cancelled')::int as cancelled_count,
-              count(*) filter (where s.status in ('no_show_learner', 'no_show_teacher'))::int as no_show_count
+              count(*) filter (where s.status = 'no_show_teacher')::int as no_show_teacher_count
          from lesson_slots s
         where s.teacher_account_id = $1
+          and s.learner_account_id is not null
+        group by s.learner_account_id
+     ),
+     completion_stats as (
+       select s.learner_account_id as learner_id,
+              count(*) filter (where lc.was_no_show = false)::int as completed_count,
+              count(*) filter (where lc.was_no_show = true)::int as no_show_learner_count
+         from lesson_completions lc
+         join lesson_slots s on s.id = lc.slot_id
+        where lc.teacher_id = $1
           and s.learner_account_id is not null
         group by s.learner_account_id
      ),
@@ -55,17 +71,22 @@ export async function listLearnersForTeacher(
             p.display_name,
             (al.learner_account_id is not null) as is_assigned,
             coalesce(st.upcoming_count, 0)::int as upcoming_count,
-            coalesce(st.completed_count, 0)::int as completed_count,
+            coalesce(cs.completed_count, 0)::int as completed_count,
             coalesce(st.cancelled_count, 0)::int as cancelled_count,
-            coalesce(st.no_show_count, 0)::int as no_show_count
+            (
+              coalesce(cs.no_show_learner_count, 0)
+              + coalesce(st.no_show_teacher_count, 0)
+            )::int as no_show_count
        from accounts a
        left join account_profiles p on p.account_id = a.id
        left join stats st on st.learner_id = a.id
+       left join completion_stats cs on cs.learner_id = a.id
        left join active_links al on al.learner_account_id = a.id
       where al.learner_account_id is not null
          or st.learner_id is not null
+         or cs.learner_id is not null
       order by is_assigned desc,
-               (coalesce(st.upcoming_count, 0) + coalesce(st.completed_count, 0)) desc,
+               (coalesce(st.upcoming_count, 0) + coalesce(cs.completed_count, 0)) desc,
                a.email asc`,
     [teacherAccountId],
   )

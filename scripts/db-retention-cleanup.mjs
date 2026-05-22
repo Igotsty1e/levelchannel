@@ -80,6 +80,20 @@ function logJson(level, msg, extra = {}) {
   )
 }
 
+async function updateWindow(pool, label, sql) {
+  try {
+    const result = await pool.query(sql)
+    logJson('info', 'stamped', { table: label, rows: result.rowCount ?? 0 })
+    return { table: label, rows: result.rowCount ?? 0, ok: true }
+  } catch (err) {
+    logJson('error', 'stamp failed', {
+      table: label,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return { table: label, rows: 0, ok: false }
+  }
+}
+
 async function deleteWindow(pool, label, sql) {
   try {
     const result = await pool.query(sql)
@@ -318,6 +332,19 @@ async function main() {
           where received_at < now() - interval '90 days'`,
       ),
       purgeAccounts(pool),
+      // SAAS-PIVOT Day 5A (round-1 paranoia BLOCKER #2 closure) — stamp
+      // `lesson_completions.immutable_at = created_at + 48h` once the
+      // 48-hour window has elapsed. Arms the BEFORE DELETE trigger in
+      // mig 0092 so direct SQL DELETE on aged rows is blocked. NOT a
+      // delete — this is an additive UPDATE.
+      updateWindow(
+        pool,
+        'lesson_completions (stamp immutable_at)',
+        `update lesson_completions
+            set immutable_at = created_at + interval '48 hours'
+          where immutable_at is null
+            and created_at + interval '48 hours' <= now()`,
+      ),
     ])
 
     const allFailed = results.every((r) => !r.ok)
