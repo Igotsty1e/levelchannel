@@ -12,6 +12,7 @@ import { learnerHasActivePackageOfDuration } from '@/lib/billing/packages'
 import { accountHasPendingPackageGrantForDuration } from '@/lib/billing/packages'
 import { buildCloudPaymentsWidgetIntent } from '@/lib/payments/cloudpayments'
 import { getOrder } from '@/lib/payments/store'
+import { deriveTeacherAccountIdForOrder } from '@/lib/payments/teacher-derivation'
 import { getDbPool } from '@/lib/db/pool'
 import { withIdempotency } from '@/lib/security/idempotency'
 import {
@@ -117,6 +118,25 @@ export async function POST(request: Request, { params }: RouteParams) {
       packageId: pkg.id,
     }
 
+    // SAAS-PIVOT Epic 6 Day 6 — derive owning teacher account from
+    // the package. lesson_packages.teacher_id was backfilled in mig 0083
+    // and Day-4 mig 0076b enforces NOT NULL, so this is reliable;
+    // bootstrap fallback covers fresh-DB / test scenarios where the
+    // package was created without a teacher_id.
+    const teacherAccountId = await deriveTeacherAccountIdForOrder({
+      packageId: pkg.id,
+      packageSlug: pkg.slug,
+    })
+    if (!teacherAccountId) {
+      return {
+        status: 500,
+        body: {
+          error: 'teacher_resolution_failed',
+          message: 'Не удалось определить учителя пакета.',
+        },
+      }
+    }
+
     const receiptTokenPair = mintToken()
 
     // PKG-LEARNER-BUY LBL.0 — race-safe gate + INSERT. The lock is keyed
@@ -185,12 +205,12 @@ export async function POST(request: Request, { params }: RouteParams) {
         `insert into payment_orders
            (invoice_id, amount_rub, currency, description, provider, status,
             created_at, updated_at, paid_at, customer_email, receipt_email,
-            receipt, metadata, receipt_token_hash)
+            receipt, metadata, receipt_token_hash, teacher_account_id)
          values ($1, $2, 'RUB', $3, $4, $5,
                  now(), now(),
                  case when $5 = 'paid' then now() else null end,
                  $6, $6,
-                 $7::jsonb, $8::jsonb, $9)`,
+                 $7::jsonb, $8::jsonb, $9, $10::uuid)`,
         [
           invoiceId,
           amountRub,
@@ -221,6 +241,7 @@ export async function POST(request: Request, { params }: RouteParams) {
           }),
           JSON.stringify(metadata),
           receiptTokenPair.hash,
+          teacherAccountId,
         ],
       )
       await lockClient.query('commit')

@@ -33,7 +33,15 @@ type SearchParams = Promise<{
   status?: string
   q?: string
   page?: string
+  // SAAS-PIVOT Epic 6 Day 6 — optional teacher narrow-down. The list
+  // page renders a hidden input + a dropdown driven by
+  // /admin/teachers — for now `?teacher_id=<uuid>` is the API; the
+  // dropdown UI can land in a follow-up.
+  teacher_id?: string
 }>
+
+const UUID_PATTERN_LOCAL =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export default async function AdminPaymentsPage({
   searchParams,
@@ -45,12 +53,17 @@ export default async function AdminPaymentsPage({
   const status: PaymentStatus | 'all' =
     statusRaw && STATUSES.includes(statusRaw) ? statusRaw : 'all'
   const q = (sp.q ?? '').slice(0, 80)
+  const teacherId =
+    sp.teacher_id && UUID_PATTERN_LOCAL.test(sp.teacher_id)
+      ? sp.teacher_id
+      : null
   const page = Math.max(1, Number(sp.page ?? '1') || 1)
   const offset = (page - 1) * PAGE_SIZE
 
   const { orders, total } = await listPaymentOrdersForAdmin({
     status,
     email: q || undefined,
+    teacherAccountId: teacherId,
     limit: PAGE_SIZE,
     offset,
   })

@@ -77,6 +77,9 @@ export default async function AdminLayout({ children }: { children: ReactNode })
                 operator runbooks. */}
             <AdminNavLink href="/admin">Сводка</AdminNavLink>
             <AdminNavLink href="/admin/accounts">Учётные записи</AdminNavLink>
+            {/* SAAS-PIVOT Epic 6 Day 6 (2026-05-22) — multi-teacher overview. */}
+            <AdminNavLink href="/admin/teachers">Учителя</AdminNavLink>
+            <AdminNavLink href="/admin/learners">Ученики</AdminNavLink>
             <AdminNavLink href="/admin/pricing">Тарифы</AdminNavLink>
             <AdminNavLink href="/admin/packages">Пакеты занятий</AdminNavLink>
             <AdminNavLink href="/admin/slots">Занятия</AdminNavLink>

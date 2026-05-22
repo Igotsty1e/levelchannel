@@ -54,6 +54,10 @@ export async function createPayment(
     // order's metadata; the webhook handler reads this on `paid` and
     // writes the corresponding payment_allocations row.
     slotId?: string | null
+    // SAAS-PIVOT Epic 6 Day 6 — owning teacher account. Caller (e.g.
+    // app/api/payments/route.ts) derives from slot/package context or
+    // falls back to the bootstrap teacher. Required after mig 0094.
+    teacherAccountId?: string | null
   },
 ) {
   let order: PaymentOrder
@@ -74,6 +78,7 @@ export async function createPayment(
       personalDataConsent: options.personalDataConsent,
       customerComment: options.customerComment ?? null,
       slotId: options.slotId ?? null,
+      teacherAccountId: options.teacherAccountId ?? null,
     })
     // Epic-end paranoia BLOCKER #2 closure: pass the plain token into
     // the widget builder so the CloudPayments server-side success
@@ -87,6 +92,7 @@ export async function createPayment(
       personalDataConsent: options.personalDataConsent,
       customerComment: options.customerComment ?? null,
       slotId: options.slotId ?? null,
+      teacherAccountId: options.teacherAccountId ?? null,
     })
   }
 
@@ -133,6 +139,9 @@ export async function chargeWithSavedCard(params: {
   // server-side callback redirects the buyer back to /thank-you
   // without the plain token in the URL.
   accountId?: string
+  // SAAS-PIVOT Epic 6 Day 6 — owning teacher account (mig 0094).
+  // Caller derives + passes; falls back to bootstrap teacher.
+  teacherAccountId?: string | null
 }): Promise<ChargeWithSavedCardOutcome> {
   if (paymentConfig.provider !== 'cloudpayments') {
     return { kind: 'no_saved_card' }
@@ -149,7 +158,10 @@ export async function chargeWithSavedCard(params: {
     params.amountRub,
     params.customerEmail,
     invoiceId,
-    { personalDataConsent: params.personalDataConsent },
+    {
+      personalDataConsent: params.personalDataConsent,
+      teacherAccountId: params.teacherAccountId ?? null,
+    },
   )
 
   // Wave 6.1 #4 Phase 1.5 — mint receipt token for the one-click path
