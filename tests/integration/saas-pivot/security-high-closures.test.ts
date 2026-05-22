@@ -232,6 +232,71 @@ describe('SAAS-PIVOT security-audit HIGH-1 — /api/checkout/package/[slug] disa
     expect(orderRow.rows[0]?.teacher_account_id).toBe(teacherB.id)
   })
 
+  it('round-2 WARN#2 closure — same Idempotency-Key replayed across two teachers sharing a slug does NOT bridge tenants', async () => {
+    // Round-1 BLOCKER#1 closure pinned `pkg.id` into the
+    // `withIdempotency` scope. Verify at the integration layer: feed
+    // the same `Idempotency-Key` to two different teacher-owned
+    // packages that share a slug. The cache must miss on the second
+    // call (different scope → different cache key) and the second
+    // order must point at the second teacher.
+    const SLUG = 'audit-h1-idemp-replay'
+    const teacherA = await makeTeacher({
+      emailSuffix: 'h1-replay-a',
+      planSlug: 'operator-managed',
+    })
+    const teacherB = await makeTeacher({
+      emailSuffix: 'h1-replay-b',
+      planSlug: 'operator-managed',
+    })
+    const pkgA = await createPackageOwnedBy(teacherA.id, SLUG, 60, 100000)
+    const pkgB = await createPackageOwnedBy(teacherB.id, SLUG, 60, 200000)
+    const learner = await registerLearner(
+      'audit-h1-replay-learner@example.com',
+    )
+    const sharedKey = randomUUID()
+
+    const r1 = await checkoutPackageHandler(
+      buildRequest(
+        `/api/checkout/package/${SLUG}?packageId=${encodeURIComponent(pkgA.id)}`,
+        {
+          cookie: learner.cookie,
+          body: {},
+          headers: { 'Idempotency-Key': sharedKey },
+        },
+      ),
+      { params: Promise.resolve({ slug: SLUG }) },
+    )
+    expect(r1.status).toBe(200)
+    const body1 = await r1.json()
+    const order1 = await getDbPool().query<{ teacher_account_id: string }>(
+      `select teacher_account_id from payment_orders where invoice_id = $1`,
+      [body1.invoiceId],
+    )
+    expect(order1.rows[0]?.teacher_account_id).toBe(teacherA.id)
+
+    const r2 = await checkoutPackageHandler(
+      buildRequest(
+        `/api/checkout/package/${SLUG}?packageId=${encodeURIComponent(pkgB.id)}`,
+        {
+          cookie: learner.cookie,
+          body: {},
+          headers: { 'Idempotency-Key': sharedKey },
+        },
+      ),
+      { params: Promise.resolve({ slug: SLUG }) },
+    )
+    expect(r2.status).toBe(200)
+    const body2 = await r2.json()
+    // Different invoice means the second call was NOT a cache hit
+    // (which would have returned the first invoice id verbatim).
+    expect(body2.invoiceId).not.toBe(body1.invoiceId)
+    const order2 = await getDbPool().query<{ teacher_account_id: string }>(
+      `select teacher_account_id from payment_orders where invoice_id = $1`,
+      [body2.invoiceId],
+    )
+    expect(order2.rows[0]?.teacher_account_id).toBe(teacherB.id)
+  })
+
   it('round-1 BLOCKER#2 closure — buying a non-plan-4 teacher\'s package returns 422 plan_4_required', async () => {
     const SLUG = 'audit-h2-buyside'
     const teacher = await makeTeacher({
