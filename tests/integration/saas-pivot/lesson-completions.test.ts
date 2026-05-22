@@ -88,43 +88,38 @@ async function freshPastBookedSlot(
     [teacherId, slotMsk.toISOString(), learnerId, tariff.rows[0].id],
   )
   // Now backdate the slot so end_at <= now(). The CHECK on start_at
-  // only fires for the INSERT statement (`now()` is STABLE), and the
-  // domain-invariants in mig 0031 reject out-of-band start_at on
-  // UPDATE as well — so we land it at MSK 21:30 on the last business
-  // day (a fixed past-band valid value) minus a fresh random day
-  // offset so each test row gets a unique past slot.
-  const pastMs = Date.now() - 24 * 60 * 60_000
-  const pastAnchor = new Date(pastMs)
-  pastAnchor.setUTCMinutes(30, 0, 0)
-  // MSK 18:30 UTC = 21:30 MSK (within 06-22 band on a 30-min boundary).
+  // (mig 0031: 06:00-22:00 MSK) is enforced on UPDATE too, so we MUST
+  // land the new start_at inside the business band. Strategy: anchor
+  // at a random past day, set MSK hour to 06+random*15 hours (so band
+  // stays 06-21 MSK) on a 30-min boundary. Each call gets a unique
+  // (teacher_id, start_at) pair via the random day offset + random
+  // hour-within-band.
+  //
+  // NOTE: CHECK constraints are NOT bypassed by
+  // `session_replication_role='replica'` (that only suppresses
+  // triggers + FK validations). The previous attempt assumed
+  // otherwise — see commit history.
+  const daysBack = 1 + Math.floor(Math.random() * 60)
+  const hourMsk = 6 + Math.floor(Math.random() * 15) // 06..20 MSK
+  const minute = Math.random() < 0.5 ? 0 : 30
+  const anchor = new Date()
+  anchor.setUTCDate(anchor.getUTCDate() - daysBack)
+  // MSK hour H corresponds to UTC hour H-3 (MSK is UTC+3, no DST).
   const pastUtc = new Date(
     Date.UTC(
-      pastAnchor.getUTCFullYear(),
-      pastAnchor.getUTCMonth(),
-      pastAnchor.getUTCDate(),
-      18,
-      30,
+      anchor.getUTCFullYear(),
+      anchor.getUTCMonth(),
+      anchor.getUTCDate(),
+      hourMsk - 3,
+      minute,
       0,
       0,
     ),
   )
-  // Use distinct minute-offsets to avoid (teacher, start_at) collision.
-  pastUtc.setUTCMinutes(
-    pastUtc.getUTCMinutes() - 30 * Math.floor(Math.random() * 200),
+  await pool.query(
+    `update lesson_slots set start_at = $2, duration_minutes = 60 where id = $1`,
+    [inserted.rows[0].id, pastUtc.toISOString()],
   )
-  // Disable the domain-invariants trigger for the backdating UPDATE.
-  // The lesson_slots row was validated on INSERT; the test backdate is
-  // a fixture-only operation. We use SET session_replication_role
-  // briefly so the CHECK is not re-evaluated.
-  await pool.query(`set session session_replication_role = 'replica'`)
-  try {
-    await pool.query(
-      `update lesson_slots set start_at = $2, duration_minutes = 60 where id = $1`,
-      [inserted.rows[0].id, pastUtc.toISOString()],
-    )
-  } finally {
-    await pool.query(`set session session_replication_role = 'origin'`)
-  }
   return inserted.rows[0].id
 }
 
