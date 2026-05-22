@@ -97,12 +97,24 @@ async function bookedSlot(
   duration = 60,
 ): Promise<string> {
   const pool = getDbPool()
+  // Snap start to a 30-min boundary inside MSK 06-22 band to satisfy
+  // lesson_slots_start_30min_aligned + lesson_slots_start_in_business_hours.
+  // Callers pass arbitrary future ISOs; we round down to the nearest 30
+  // and clamp the MSK hour into [06,21].
+  const d = new Date(startIso)
+  d.setUTCMinutes(d.getUTCMinutes() < 30 ? 0 : 30, 0, 0)
+  // MSK = UTC+3. Force UTC hour to keep MSK in 09:00 (UTC 06) to
+  // avoid edge cases. Override if caller passed something far off.
+  const mskHourEstimate = (d.getUTCHours() + 3) % 24
+  if (mskHourEstimate < 6 || mskHourEstimate > 21) {
+    d.setUTCHours(9, d.getUTCMinutes(), 0, 0) // MSK 12:00
+  }
   const r = await pool.query(
     `insert into lesson_slots (id, teacher_account_id, start_at, duration_minutes,
                                status, learner_account_id, booked_at)
      values (gen_random_uuid(), $1, $2::timestamptz, $3, 'booked', $1, now())
      returning id`,
-    [teacherId, startIso, duration],
+    [teacherId, d.toISOString(), duration],
   )
   return String(r.rows[0].id)
 }
