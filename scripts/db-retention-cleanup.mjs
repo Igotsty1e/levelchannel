@@ -37,6 +37,12 @@
 //                             escalation, short enough to bound disk
 //                             pressure as the dedup row count grows
 //                             with every webhook over the years)
+//   lesson_completions      — SAAS-PIVOT Day 5B (2026-05-22): UPDATE
+//                             (not delete). Stamps immutable_at =
+//                             created_at + 48h once that timestamp
+//                             passes. Locks the un-mark window — the
+//                             BEFORE DELETE trigger in mig 0092 raises
+//                             when immutable_at IS NOT NULL.
 //   accounts (purge)        — anonymize rows where scheduled_purge_at
 //                             <= now() AND purged_at IS NULL. Email
 //                             becomes deleted-<uuid>@example.invalid;
@@ -80,13 +86,13 @@ function logJson(level, msg, extra = {}) {
   )
 }
 
-async function updateWindow(pool, label, sql) {
+async function deleteWindow(pool, label, sql) {
   try {
     const result = await pool.query(sql)
-    logJson('info', 'stamped', { table: label, rows: result.rowCount ?? 0 })
+    logJson('info', 'cleaned', { table: label, rows: result.rowCount ?? 0 })
     return { table: label, rows: result.rowCount ?? 0, ok: true }
   } catch (err) {
-    logJson('error', 'stamp failed', {
+    logJson('error', 'cleanup failed', {
       table: label,
       error: err instanceof Error ? err.message : String(err),
     })
@@ -94,9 +100,25 @@ async function updateWindow(pool, label, sql) {
   }
 }
 
-async function deleteWindow(pool, label, sql) {
+// SAAS-PIVOT Epic 5B Day 5B — daily immutability sweep for
+// lesson_completions. Stamps `immutable_at = created_at + 48 hours`
+// once that timestamp passes. The BEFORE DELETE trigger in mig 0092
+// raises 40006 when immutable_at IS NOT NULL, so the sweep is the
+// "lock the row" step that closes the 48h un-mark window. App-side
+// /api/teacher/lessons/[id]/uncomplete also evaluates the window
+// dynamically against created_at — both paths agree.
+//
+// Same logging shape as deleteWindow so dashboards reading
+// "rows cleaned per table" pick it up automatically.
+async function stampLessonCompletionsImmutable(pool) {
+  const label = 'lesson_completions (immutable_at)'
   try {
-    const result = await pool.query(sql)
+    const result = await pool.query(
+      `update lesson_completions
+          set immutable_at = created_at + interval '48 hours'
+        where immutable_at is null
+          and created_at + interval '48 hours' <= now()`,
+    )
     logJson('info', 'cleaned', { table: label, rows: result.rowCount ?? 0 })
     return { table: label, rows: result.rowCount ?? 0, ok: true }
   } catch (err) {
@@ -331,20 +353,12 @@ async function main() {
         `delete from webhook_deliveries
           where received_at < now() - interval '90 days'`,
       ),
+      // SAAS-PIVOT Epic 5B Day 5B (2026-05-22) — lesson_completions
+      // 48h immutability stamp. NOT a delete; an UPDATE that locks the
+      // un-mark window. The BEFORE DELETE trigger in mig 0092 uses
+      // immutable_at IS NOT NULL as one of the three guards.
+      stampLessonCompletionsImmutable(pool),
       purgeAccounts(pool),
-      // SAAS-PIVOT Day 5A (round-1 paranoia BLOCKER #2 closure) — stamp
-      // `lesson_completions.immutable_at = created_at + 48h` once the
-      // 48-hour window has elapsed. Arms the BEFORE DELETE trigger in
-      // mig 0092 so direct SQL DELETE on aged rows is blocked. NOT a
-      // delete — this is an additive UPDATE.
-      updateWindow(
-        pool,
-        'lesson_completions (stamp immutable_at)',
-        `update lesson_completions
-            set immutable_at = created_at + interval '48 hours'
-          where immutable_at is null
-            and created_at + interval '48 hours' <= now()`,
-      ),
     ])
 
     const allFailed = results.every((r) => !r.ok)

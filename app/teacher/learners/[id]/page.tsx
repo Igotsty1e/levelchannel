@@ -196,14 +196,15 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
           оплачено: {fmtRub(totalCovered)}
         </div>
         {balanceKopecks > 0 && (
-          <form
-            method="post"
-            action={`/api/teacher/learners/${learnerId}/settle`}
-            style={{ marginTop: 16 }}
-          >
-            <button
-              type="submit"
+          // SAAS-PIVOT Epic 5B Day 5B — wire to /settle page (was a
+          // disabled placeholder during Day 5A). The page hosts the
+          // amount input + per-completion checkboxes; POST lands on
+          // /api/teacher/learners/[id]/settle.
+          <div style={{ marginTop: 16 }}>
+            <Link
+              href={`/teacher/learners/${learnerId}/settle`}
               style={{
+                display: 'inline-block',
                 padding: '8px 16px',
                 background: 'var(--accent)',
                 color: 'var(--accent-fg)',
@@ -211,13 +212,12 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
                 borderRadius: 4,
                 cursor: 'pointer',
                 fontWeight: 600,
+                textDecoration: 'none',
               }}
-              disabled
-              title="Settle UI lands in Day 5B."
             >
-              Отметить оплату (Day 5B)
-            </button>
-          </form>
+              Отметить оплату
+            </Link>
+          </div>
         )}
       </section>
 
