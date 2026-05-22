@@ -47,12 +47,11 @@ vi.mock('@/lib/payments/provider', () => ({
 
 // SAAS-PIVOT Epic 6 Day 6: charge-token now calls deriveTeacherAccountIdForOrder
 // which hits getDbPool. Unit test runs without DATABASE_URL — mock the helper
-// to return null (no derivation → falls back to bootstrap, or stays null;
-// the test's chargeWithSavedCard mock returns 'no_saved_card' before
-// teacher_account_id matters).
+// to return a fake teacher_account_id so the route can proceed to the
+// chargeWithSavedCard layer the test actually exercises.
 vi.mock('@/lib/payments/teacher-derivation', () => ({
-  deriveTeacherAccountIdForOrder: vi.fn().mockResolvedValue(null),
-  isOperatorManagedTeacher: vi.fn().mockResolvedValue(false),
+  deriveTeacherAccountIdForOrder: vi.fn().mockResolvedValue('00000000-0000-0000-0000-000000000111'),
+  isOperatorManagedTeacher: vi.fn().mockResolvedValue(true),
 }))
 
 vi.mock('@/lib/payments/config', () => ({
