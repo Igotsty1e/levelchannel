@@ -395,10 +395,13 @@ describe('processOneTeacher — verdict paths', () => {
     // window backwards (= within candidate-set scope). The per-teacher
     // SELECT `start_at >= today_local_00:00 AT TIME ZONE` excludes it
     // from the slot list → empty_day branch.
+    // 23:30 MSK on a 30-min boundary stays inside the 24h past window
+    // regardless of MSK time of day (the previous "15 hours" was flaky
+    // when CI ran after ~15 UTC). Brought in from PR #425 merge.
     const yesterdaySlot = await getDbPool().query(
       `select (
          date_trunc('day', now() AT TIME ZONE 'Europe/Moscow')
-         - interval '1 day' + interval '15 hours'
+         - interval '1 day' + interval '23 hours 30 minutes'
        ) AT TIME ZONE 'Europe/Moscow' as ts`,
     )
     const startAt = new Date(String(yesterdaySlot.rows[0].ts)).toISOString()

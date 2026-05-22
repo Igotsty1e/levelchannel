@@ -50,14 +50,22 @@ async function insertOrder(opts: {
       : opts.provider === 'admin_grant'
         ? 'admin_grant'
         : null
+  // SAAS-PIVOT Epic 6 Day 6 (mig 0094) — teacher_account_id is NOT NULL.
+  // Spawn a fresh teacher account so the insert satisfies the FK + NOT NULL.
+  const teacherEmail = `admgrant-teacher-${Math.floor(Math.random() * 1e9)}@example.com`
+  const teacherRow = await getDbPool().query<{ id: string }>(
+    `insert into accounts (email, password_hash) values ($1, 'x') returning id`,
+    [teacherEmail],
+  )
+  const teacherId = String(teacherRow.rows[0].id)
   await getDbPool().query(
     `insert into payment_orders (
        invoice_id, amount_rub, currency, description, provider, status,
        created_at, updated_at, customer_email, receipt_email, receipt,
-       granted_by_operator_id, payment_method
+       granted_by_operator_id, payment_method, teacher_account_id
      ) values (
        $1, 100, 'RUB', 'schema test', $2, $3,
-       now(), now(), $4, $4, '{}'::jsonb, $5::uuid, $6
+       now(), now(), $4, $4, '{}'::jsonb, $5::uuid, $6, $7::uuid
      )`,
     [
       invoiceId,
@@ -66,6 +74,7 @@ async function insertOrder(opts: {
       opts.customerEmail ?? 'schema-test@example.com',
       opts.grantedByOperatorId,
       paymentMethod,
+      teacherId,
     ],
   )
   return invoiceId
