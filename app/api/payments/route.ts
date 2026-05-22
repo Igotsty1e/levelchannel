@@ -198,12 +198,25 @@ export async function POST(request: Request) {
     // Plan-4 gate: only operator-managed teachers accept money via the
     // platform. Non-plan-4 teachers (Free/Mid/Pro) handle billing
     // off-platform — sending money through here would orphan the funds.
+    //
+    // SAAS-PIVOT security-audit HIGH (2026-05-23) — round-1 WARN#5
+    // closure: this surface historically returned
+    // `error: 'teacher_not_operator_managed'`. The follow-up PR closing
+    // the HIGH-2/HIGH-4 audit findings standardised the new gates on
+    // `error: 'plan_4_required'`. To keep the contract uniform across
+    // every payment writer (custom-amount card, package buy, SBP,
+    // charge-token, teacher-side create), this surface also returns
+    // `plan_4_required` going forward. The `legacy_error` field
+    // preserves the old code for any external consumer that pinned on
+    // it (none in main, but cheap insurance) and is read by the
+    // integration test that pinned the old value.
     const isPlan4 = await isOperatorManagedTeacher(teacherAccountId)
     if (!isPlan4) {
       return {
         status: 422,
         body: {
-          error: 'teacher_not_operator_managed',
+          error: 'plan_4_required',
+          legacy_error: 'teacher_not_operator_managed',
           message:
             'Этот учитель не использует платформенную оплату. Оплатите занятия напрямую учителю.',
         },

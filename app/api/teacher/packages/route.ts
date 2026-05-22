@@ -7,6 +7,7 @@ import {
   createPackage,
   listPackagesByTeacher,
 } from '@/lib/billing/packages'
+import { isOperatorManagedTeacher } from '@/lib/payments/teacher-derivation'
 import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
@@ -72,6 +73,28 @@ export async function POST(request: Request) {
 
   const guard = await requireTeacherAndVerified(request)
   if (!guard.ok) return guard.response
+
+  // SAAS-PIVOT security-audit HIGH-2 (2026-05-23) closure — plan-4
+  // gate at create time. Only operator-managed (plan-4) teachers can
+  // publish a paid package that learners can buy through
+  // /api/checkout/package/[slug] (where the platform settles via
+  // CloudPayments). A Free/Mid/Pro teacher creating a paid package
+  // whose buy commits a payment_orders row pointing at THEIR
+  // teacher_account_id would orphan the funds — the platform has no
+  // disbursement path to non-plan-4 teachers. They must use the
+  // non-money `teacher_grant` issue path (/teacher/packages/[id]/issue)
+  // OR settle out-of-band.
+  const isPlan4 = await isOperatorManagedTeacher(guard.account.id)
+  if (!isPlan4) {
+    return NextResponse.json(
+      {
+        error: 'plan_4_required',
+        message:
+          'Только Plan-4 учителя могут публиковать платные пакеты. Используйте teacher_grant (выдать ученику) или оплату напрямую.',
+      },
+      { status: 422, headers: NO_STORE },
+    )
+  }
 
   const parsed = await readJsonObjectOr400(request)
   if (!parsed.ok) return parsed.response

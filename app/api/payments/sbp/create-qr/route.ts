@@ -23,7 +23,10 @@ import { createCloudPaymentsOrder } from '@/lib/payments/cloudpayments'
 import { resolveOrderAccountIdForCreate } from '@/lib/payments/order-account-resolver'
 import { createOrder, updateOrder } from '@/lib/payments/store'
 import { markOrderFailed } from '@/lib/payments/provider'
-import { deriveTeacherAccountIdForOrder } from '@/lib/payments/teacher-derivation'
+import {
+  deriveTeacherAccountIdForOrder,
+  isOperatorManagedTeacher,
+} from '@/lib/payments/teacher-derivation'
 import { withIdempotency } from '@/lib/security/idempotency'
 import {
   enforceRateLimit,
@@ -235,6 +238,22 @@ export async function POST(request: Request) {
         body: {
           error: 'teacher_resolution_failed',
           message: 'Не удалось определить учителя для платежа.',
+        },
+      }
+    }
+
+    // SAAS-PIVOT security-audit HIGH-4 (2026-05-23) closure — plan-4
+    // gate. Mirror /api/payments/route.ts:198-211: a deep-link
+    // ?t=<free-plan-teacher-slug> would otherwise create an SBP order
+    // pointing at a teacher with no platformed disbursement.
+    const isPlan4 = await isOperatorManagedTeacher(teacherAccountId)
+    if (!isPlan4) {
+      return {
+        status: 422,
+        body: {
+          error: 'plan_4_required',
+          message:
+            'Этот учитель не использует платформенную оплату. Оплатите занятия напрямую учителю.',
         },
       }
     }

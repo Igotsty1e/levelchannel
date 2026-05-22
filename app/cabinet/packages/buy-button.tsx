@@ -22,6 +22,14 @@ type Props = {
   slug: string
   titleRu: string
   amountRub: number
+  // SAAS-PIVOT security-audit HIGH-1 (2026-05-23) — multi-tenant
+  // disambiguation. The cabinet catalog still uses learner-wide
+  // `listActivePackages()` (no teacher filter), so two teachers shipping
+  // the same slug would otherwise both render with the same href and
+  // the server could not tell them apart. Threading the row's UUID via
+  // `?packageId=<uuid>` makes the buy POST deterministic — see
+  // app/api/checkout/package/[slug]/route.ts.
+  packageId: string
 }
 
 function uuid(): string {
@@ -31,7 +39,7 @@ function uuid(): string {
   return `idem-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
-export function BuyButton({ slug, titleRu, amountRub }: Props) {
+export function BuyButton({ slug, titleRu, amountRub, packageId }: Props) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -41,14 +49,17 @@ export function BuyButton({ slug, titleRu, amountRub }: Props) {
     if (!confirm(`Купить пакет «${titleRu}» за ${amountRub} ₽?`)) return
     setBusy(true)
     try {
-      const res = await fetch(`/api/checkout/package/${encodeURIComponent(slug)}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Idempotency-Key': uuid(),
+      const res = await fetch(
+        `/api/checkout/package/${encodeURIComponent(slug)}?packageId=${encodeURIComponent(packageId)}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': uuid(),
+          },
+          body: JSON.stringify({}),
         },
-        body: JSON.stringify({}),
-      })
+      )
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         setErr(

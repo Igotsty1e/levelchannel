@@ -236,6 +236,7 @@ export default async function CabinetPackagesPage() {
                     slug={pkg.slug}
                     titleRu={pkg.titleRu}
                     amountRub={pkg.amountKopecks / 100}
+                    packageId={pkg.id}
                   />
                 </article>
               ))}

@@ -9,6 +9,7 @@ export type { PostpaidDebtSlot, AccountPostpaidDebtSummary } from './debt'
 
 // Values
 export {
+  countPackagesBySlug,
   createPackage,
   ensureBootstrapTeacherAccount,
   getBootstrapTeacherAccountId,

@@ -7,12 +7,20 @@ import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-ev
 import { requireLearnerArchetypeAndVerified } from '@/lib/auth/guards'
 import { isLearnerArchetypeCandidate } from '@/lib/auth/learner-archetype'
 import { mintToken } from '@/lib/auth/tokens'
-import { getPackageBySlug } from '@/lib/billing/packages'
+import {
+  countPackagesBySlug,
+  getPackageById,
+  getPackageBySlug,
+  getPackageBySlugForTeacher,
+} from '@/lib/billing/packages'
 import { learnerHasActivePackageOfDuration } from '@/lib/billing/packages'
 import { accountHasPendingPackageGrantForDuration } from '@/lib/billing/packages'
 import { buildCloudPaymentsWidgetIntent } from '@/lib/payments/cloudpayments'
 import { getOrder } from '@/lib/payments/store'
-import { deriveTeacherAccountIdForOrder } from '@/lib/payments/teacher-derivation'
+import {
+  deriveTeacherAccountIdForOrder,
+  isOperatorManagedTeacher,
+} from '@/lib/payments/teacher-derivation'
 import { getDbPool } from '@/lib/db/pool'
 import { withIdempotency } from '@/lib/security/idempotency'
 import {
@@ -30,13 +38,26 @@ type RouteParams = { params: Promise<{ slug: string }> }
 //
 // Authoritative-source guarantees per design v9 trust-boundary
 // section: ALL fields written to payment_orders.metadata are server-
-// authored. Client request body is empty; nothing influences the row
-// except the URL param `slug` and the authenticated session.
+// authored. Client request body is empty; the row's resolution is
+// driven by:
+//   - URL param `slug` (always)
+//   - Optional `?packageId=<uuid>` (preferred — canonical row id,
+//     refused if it points at a different slug)
+//   - Optional `?teacher=<uuid>` (composite teacher,slug lookup)
+//   - Authenticated session (accountId, email)
 //
 //   metadata.accountId             = session.account.id
 //   metadata.packageSlug           = lesson_packages.slug (resolved row)
 //   metadata.packageDurationMinutes = lesson_packages.duration_minutes
+//   metadata.packageId             = lesson_packages.id (resolved row)
 //   customer_email                 = session.account.email (NEVER body)
+//
+// SAAS-PIVOT security-audit HIGH-1 (2026-05-23): without one of the
+// query disambiguators, the route refuses with 400
+// `package_slug_ambiguous` when two teachers share the same slug.
+// SAAS-PIVOT security-audit HIGH-2 (2026-05-23): refuses with 422
+// `plan_4_required` when the resolved package's owning teacher is
+// not on the operator-managed (plan-4) subscription.
 //
 // The webhook handler (/api/payments/webhooks/cloudpayments/pay) then
 // reads these fields and grants the package via dual-source ownership
@@ -72,7 +93,51 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
 
   const { slug } = await params
-  const pkg = await getPackageBySlug(slug)
+
+  // SAAS-PIVOT security-audit HIGH-1 (2026-05-23) closure — multi-
+  // tenant disambiguation. Mig 0089 retired global UNIQUE(slug) in
+  // favour of UNIQUE(teacher_id, slug). The legacy `getPackageBySlug`
+  // returns ONE row when multiple teachers ship the same slug, which
+  // is non-deterministic. Resolution order:
+  //   1. `?packageId=<uuid>` — direct row lookup (canonical, audit
+  //      recommends this over the slug). Slug from URL is verified
+  //      against the row's actual slug to refuse confused-deputy where
+  //      the client points one packageId at a different URL slug.
+  //   2. `?teacher=<uuid>` — disambiguating teacher scope; slug lookup
+  //      is composite (teacher_id, slug). UUID-typed.
+  //   3. Bare slug — only safe when the slug occurs at most once in
+  //      lesson_packages. `countPackagesBySlug` > 1 → 400
+  //      `package_slug_ambiguous` with explicit guidance.
+  const queryUrl = new URL(request.url)
+  const explicitPackageId = queryUrl.searchParams.get('packageId')
+  const explicitTeacherId = queryUrl.searchParams.get('teacher')
+  const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  let pkg: Awaited<ReturnType<typeof getPackageBySlug>> = null
+  if (explicitPackageId && UUID_RE.test(explicitPackageId)) {
+    pkg = await getPackageById(explicitPackageId)
+    if (pkg && pkg.slug !== slug) {
+      // Refuse confused-deputy: client supplied packageId pointing at
+      // a different slug than the URL claims. Treat as not-found so
+      // no information leaks about other packages.
+      pkg = null
+    }
+  } else if (explicitTeacherId && UUID_RE.test(explicitTeacherId)) {
+    pkg = await getPackageBySlugForTeacher(explicitTeacherId, slug)
+  } else {
+    const matchCount = await countPackagesBySlug(slug)
+    if (matchCount > 1) {
+      return NextResponse.json(
+        {
+          error: 'package_slug_ambiguous',
+          message:
+            'Этот slug пакета принадлежит нескольким учителям. Перейдите по ссылке вида ?packageId=<uuid> или ?teacher=<uuid>, чтобы выбрать нужного учителя.',
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    pkg = await getPackageBySlug(slug)
+  }
   if (!pkg || !pkg.isActive) {
     return NextResponse.json(
       { error: 'package_not_found' },
@@ -90,13 +155,20 @@ export async function POST(request: Request, { params }: RouteParams) {
   // here, and a constant 'checkout:package' scope would let one
   // Idempotency-Key replay across DIFFERENT packages AND different
   // accounts. The cache row then leaks another buyer's invoiceId and
-  // receiptToken. The scope strings below namespace the cache by
-  // (slug, accountId) so a same-key submit on /package/b with the
-  // /package/a cache entry is a miss, not a leak.
+  // receiptToken.
+  //
+  // SAAS-PIVOT security-audit HIGH-1 (2026-05-23) — round-1 BLOCKER:
+  // since mig 0089 retired global UNIQUE(slug), two teachers can ship
+  // the same `slug`. The previous scope `checkout:package:${slug}:${acct}`
+  // would let one Idempotency-Key replay across DIFFERENT teachers'
+  // packages that happen to share a slug. We now key on the RESOLVED
+  // `pkg.id` (UUID — unique per teacher) so the cache cannot bridge
+  // tenants. The slug is kept in the scope string for grep-ability
+  // and human readability but pkg.id is the load-bearing portion.
   const rawBody = await request.text()
   const accountId = session.account.id
   const customerEmail = session.account.email
-  const idempotencyScope = `checkout:package:${pkg.slug}:${accountId}`
+  const idempotencyScope = `checkout:package:${pkg.id}:${pkg.slug}:${accountId}`
 
   return withIdempotency(request, idempotencyScope, rawBody, async () => {
     const amountRub = (pkg.amountKopecks / 100).toFixed(2)
@@ -133,6 +205,27 @@ export async function POST(request: Request, { params }: RouteParams) {
         body: {
           error: 'teacher_resolution_failed',
           message: 'Не удалось определить учителя пакета.',
+        },
+      }
+    }
+
+    // SAAS-PIVOT security-audit HIGH-2 round-1 BLOCKER#2 closure
+    // (2026-05-23). The create-side gate on POST /api/teacher/packages
+    // refuses NEW packages by non-plan-4 teachers, but does not retire
+    // packages an non-plan-4 teacher might already own from before
+    // the gate landed (or that they shipped in a window where their
+    // subscription state flipped). Mirror the gate the audit demands
+    // on every money writer: refuse the BUY here if the owning teacher
+    // is non-plan-4. Same 422 `plan_4_required` contract as
+    // /api/teacher/packages POST + the SBP / charge-token surfaces.
+    const isPlan4 = await isOperatorManagedTeacher(teacherAccountId)
+    if (!isPlan4) {
+      return {
+        status: 422,
+        body: {
+          error: 'plan_4_required',
+          message:
+            'Этот учитель не использует платформенную оплату. Оплатите занятия напрямую учителю.',
         },
       }
     }

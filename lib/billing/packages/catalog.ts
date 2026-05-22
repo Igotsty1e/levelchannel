@@ -45,13 +45,26 @@ function rowToPackage(row: Record<string, unknown>): LessonPackage {
   }
 }
 
+// SAAS-PIVOT security-audit HIGH-2 round-1 BLOCKER#2 closure
+// (2026-05-23). The learner-facing catalog `/cabinet/packages` must
+// not show packages owned by non-plan-4 (Free/Mid/Pro) teachers: a
+// learner who clicks Buy on one of those would surface the new 422
+// `plan_4_required` gate in the checkout route — confusing UX AND
+// useless catalog real-estate. Filter the catalog at read time by
+// joining `teacher_subscriptions` and keeping only `plan_slug =
+// 'operator-managed' and state = 'active'` rows. The bootstrap
+// teacher is plan-4 (mig 0083), so legacy single-tenant catalogs are
+// unaffected.
 export async function listActivePackages(): Promise<LessonPackage[]> {
   const pool = getDbPool()
   const result = await pool.query(
-    `select ${PACKAGE_COLS}
-       from lesson_packages
-      where is_active = true
-      order by display_order asc, id asc`,
+    `select ${PACKAGE_COLS.split(',').map((c) => `lp.${c.trim()}`).join(', ')}
+       from lesson_packages lp
+       join teacher_subscriptions ts on ts.account_id = lp.teacher_id
+      where lp.is_active = true
+        and ts.plan_slug = 'operator-managed'
+        and ts.state = 'active'
+      order by lp.display_order asc, lp.id asc`,
   )
   return result.rows.map((r) => rowToPackage(r as Record<string, unknown>))
 }
@@ -61,12 +74,17 @@ export async function listActivePackagesByDuration(
   limit = 3,
 ): Promise<LessonPackage[]> {
   const pool = getDbPool()
+  // Same plan-4 catalog filter as `listActivePackages` — keep the
+  // two read surfaces consistent.
   const result = await pool.query(
-    `select ${PACKAGE_COLS}
-       from lesson_packages
-      where is_active = true
-        and duration_minutes = $1
-      order by display_order asc, id asc
+    `select ${PACKAGE_COLS.split(',').map((c) => `lp.${c.trim()}`).join(', ')}
+       from lesson_packages lp
+       join teacher_subscriptions ts on ts.account_id = lp.teacher_id
+      where lp.is_active = true
+        and lp.duration_minutes = $1
+        and ts.plan_slug = 'operator-managed'
+        and ts.state = 'active'
+      order by lp.display_order asc, lp.id asc
       limit $2`,
     [durationMinutes, Math.min(Math.max(limit, 1), 20)],
   )
@@ -85,6 +103,12 @@ export async function listActivePackagesByDuration(
  * and skip slug-based lookup entirely. Kept for the public catalog
  * endpoint and the URL-bound checkout flow (`/checkout/package/[slug]`)
  * where the operator-scoped guarantee is still implicit.
+ *
+ * SAAS-PIVOT security-audit HIGH-1 (2026-05-23) closure: callers that
+ * cannot tolerate cross-tenant ambiguity MUST first call
+ * `countPackagesBySlug` and surface 400 `package_slug_ambiguous` when
+ * more than one row matches; the route `/api/checkout/package/[slug]`
+ * does exactly that.
  */
 export async function getPackageBySlug(slug: string): Promise<LessonPackage | null> {
   const pool = getDbPool()
@@ -93,6 +117,20 @@ export async function getPackageBySlug(slug: string): Promise<LessonPackage | nu
     [slug],
   )
   return result.rows[0] ? rowToPackage(result.rows[0]) : null
+}
+
+// SAAS-PIVOT security-audit HIGH-1 (2026-05-23). Companion to
+// `getPackageBySlug`: returns the count of rows that share a slug so
+// the legacy global-slug callers (URL-bound public checkout) can fail
+// closed with `package_slug_ambiguous` when mig 0089 lets two teachers
+// own the same slug. Cheap COUNT — no row materialisation.
+export async function countPackagesBySlug(slug: string): Promise<number> {
+  const pool = getDbPool()
+  const result = await pool.query<{ count: string }>(
+    `select count(*)::text as count from lesson_packages where slug = $1`,
+    [slug],
+  )
+  return Number(result.rows[0]?.count ?? 0)
 }
 
 // SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — teacher-scoped catalog
