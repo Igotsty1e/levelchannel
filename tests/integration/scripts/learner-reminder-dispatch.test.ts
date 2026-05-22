@@ -304,10 +304,39 @@ async function setOperatorKey(key: string, value: string): Promise<void> {
  * sub-second after seed (slot drift is well inside the ±30s band).
  *
  * Min 5 (matches LEARNER_REMINDER_WINDOW_MINUTES.min in the schema);
- * if actualMinutes < 5 the seed is invalid for this test shape.
+ * Max 360 (matches LEARNER_REMINDER_WINDOW_MINUTES.max). When CI runs
+ * in late MSK hours and band-walk pushes the slot to next-day morning,
+ * actualMinutes can exceed 360 — the cron clamps the window and the
+ * slot becomes invisible. The clamp here is a defensive minimum; the
+ * test SHOULD use `slotIsWithinWindow()` below to skip cleanly when
+ * the band-walk overshoots.
  */
 function windowMinutesForSlot(actualMinutes: number): string {
-  return String(Math.max(5, actualMinutes))
+  return String(Math.min(360, Math.max(5, actualMinutes)))
+}
+
+// Returns true iff the picked slot is within the LEARNER_REMINDER_WINDOW_MINUTES
+// max (360). Tests that pre-set window per actualMinutes should skip when this
+// is false — band-walk pushed the slot too far for the cron to see it.
+function slotIsWithinWindow(actualMinutes: number): boolean {
+  return actualMinutes <= 360
+}
+
+// Helper: log + return-true if a test should skip because band-walk
+// overshoot pushed the slot past the 360-min WINDOW_MINUTES max. Used
+// by the 5 tests that pre-set the window per actualMinutes and assume
+// the cron will see the slot.
+function skipIfBandWalkOvershoot(
+  testName: string,
+  seeded: { actualMinutes: number },
+): boolean {
+  if (!slotIsWithinWindow(seeded.actualMinutes)) {
+    console.warn(
+      `[lrd-test] skipping ${testName}: slot at +${seeded.actualMinutes}min > 360 max window`,
+    )
+    return true
+  }
+  return false
 }
 
 // ----------------------------------------------------------------------
@@ -324,6 +353,7 @@ describe('learner-reminder-dispatch.mjs — happy path', () => {
       startInMinutes: 60,
       zoomUrl: 'https://meet.example.com/lesson-1',
     })
+    if (skipIfBandWalkOvershoot('happy-path', seeded)) return
     await setOperatorKey(
       'LEARNER_REMINDER_WINDOW_MINUTES',
       windowMinutesForSlot(seeded.actualMinutes),
@@ -362,6 +392,7 @@ describe('learner-reminder-dispatch.mjs — idempotency', () => {
       learnerId: learner,
       startInMinutes: 60,
     })
+    if (skipIfBandWalkOvershoot('test', seeded)) return
     await setOperatorKey(
       'LEARNER_REMINDER_WINDOW_MINUTES',
       windowMinutesForSlot(seeded.actualMinutes),
@@ -416,6 +447,7 @@ describe('learner-reminder-dispatch.mjs — master switch off', () => {
       learnerId: learner,
       startInMinutes: 60,
     })
+    if (skipIfBandWalkOvershoot('test', seeded)) return
     await setOperatorKey(
       'LEARNER_REMINDER_WINDOW_MINUTES',
       windowMinutesForSlot(seeded.actualMinutes),
@@ -446,6 +478,7 @@ describe('learner-reminder-dispatch.mjs — send failure', () => {
       learnerId: learner,
       startInMinutes: 60,
     })
+    if (skipIfBandWalkOvershoot('test', seeded)) return
     await setOperatorKey(
       'LEARNER_REMINDER_WINDOW_MINUTES',
       windowMinutesForSlot(seeded.actualMinutes),
@@ -475,6 +508,7 @@ describe('learner-reminder-dispatch.mjs — deletion-grace gate', () => {
       learnerId: learner,
       startInMinutes: 60,
     })
+    if (skipIfBandWalkOvershoot('test', seeded)) return
     await setOperatorKey(
       'LEARNER_REMINDER_WINDOW_MINUTES',
       windowMinutesForSlot(seeded.actualMinutes),
@@ -511,6 +545,7 @@ describe('learner-reminder-dispatch.mjs — catch-up replay (past_send_by)', () 
       learnerId: learner,
       startInMinutes: 5,
     })
+    if (skipIfBandWalkOvershoot('past_send_by', seeded)) return
     await setOperatorKey(
       'LEARNER_REMINDER_WINDOW_MINUTES',
       String(Math.min(360, seeded.actualMinutes + 30)),
@@ -551,6 +586,7 @@ describe('learner-reminder-dispatch.mjs — rate limit', () => {
         largestActual = seeded.actualMinutes
       }
     }
+    if (skipIfBandWalkOvershoot('rate-limit', { actualMinutes: largestActual })) return
     // Window covers all 5 (they all land in the same cell).
     await setOperatorKey(
       'LEARNER_REMINDER_WINDOW_MINUTES',
@@ -589,6 +625,7 @@ describe('learner-reminder-dispatch.mjs — FK ON DELETE RESTRICT', () => {
       learnerId: learner,
       startInMinutes: 60,
     })
+    if (skipIfBandWalkOvershoot('test', seeded)) return
     await setOperatorKey(
       'LEARNER_REMINDER_WINDOW_MINUTES',
       windowMinutesForSlot(seeded.actualMinutes),

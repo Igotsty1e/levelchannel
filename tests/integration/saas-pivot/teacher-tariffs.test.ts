@@ -52,7 +52,14 @@ vi.mock('@/lib/email/dispatch', () => ({
   sendPasswordResetEmail: vi.fn().mockResolvedValue({ ok: true }),
 }))
 
-async function makeTeacher(suffix: string): Promise<string> {
+// SAAS-PIVOT security-audit HIGH-2 (2026-05-23) closure: POST
+// /api/teacher/tariffs now requires plan-4 (operator-managed). Tests
+// seed teachers as plan-4 by default; the non-plan-4 scenario is
+// covered explicitly in `security-high-closures.test.ts`.
+async function makeTeacher(
+  suffix: string,
+  opts: { planSlug?: string | null } = {},
+): Promise<string> {
   const email = `tariff-${suffix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`.toLowerCase()
   const pool = getAuthPool()
   const r = await pool.query<{ id: string }>(
@@ -63,6 +70,16 @@ async function makeTeacher(suffix: string): Promise<string> {
   )
   const id = r.rows[0].id
   await grantAccountRole(id, 'teacher', null)
+  const planSlug = opts.planSlug === undefined ? 'operator-managed' : opts.planSlug
+  if (planSlug !== null) {
+    await pool.query(
+      `insert into teacher_subscriptions (account_id, plan_slug, state)
+         values ($1::uuid, $2, 'active')
+         on conflict (account_id) do update
+           set plan_slug = excluded.plan_slug, state = 'active'`,
+      [id, planSlug],
+    )
+  }
   return id
 }
 
