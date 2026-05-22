@@ -20,13 +20,17 @@ import { listLearnersForTeacher } from '@/lib/scheduling/teacher-learners'
 
 import { isLearnerArchetypeCandidate } from '@/lib/auth/learner-archetype'
 
+import { loadTeacherBlocks } from '@/lib/cabinet/teacher-blocks'
+
 import { BillingSections } from './billing-sections'
 import { LessonsSection } from './lessons-section'
 import { LogoutButton } from './logout-button'
 import { ResendVerifyButton } from './resend-verify-button'
+import { TeacherBlocksList } from './teacher-blocks-list'
 import { TeacherInviteSection } from './teacher-invite-section'
 import { TeacherLearnersSection } from './teacher-learners-section'
 import { TeacherSection } from './teacher-section'
+import { UnifiedTimeline } from './unified-timeline'
 
 // Server-side cabinet gate. Reads the session cookie directly (no HTTP
 // round-trip to /api/auth/me) and SSR-redirects to /login when unauth'd.
@@ -84,17 +88,17 @@ export default async function CabinetPage() {
 
   // SAAS-PIVOT Day 2 (2026-05-22) codex-paranoia round-2 WARN #3
   // closure — derive the cabinet's "primary teacher" from the n:m
-  // canonical array, not from the legacy single-value alias. For
-  // single-link learners these are identical; for multi-link learners
-  // (Q-7 invite redeem path) the alias may have been overwritten by
-  // last-redeem semantics, but the canonical array stays
-  // [first-linked, ...]. Booking blocks in the cabinet still consume
-  // a single "primary" teacher (v0 — Epic 7 polish adds the picker UI);
-  // sourcing it from assignedTeacherIds[0] keeps that v0 stable.
-  const primaryTeacherId = isLearner
-    ? (account.assignedTeacherIds[0] ?? null)
-    : null
-  const hasAnyTeacher = isLearner && account.assignedTeacherIds.length > 0
+  // canonical array, not from the legacy single-value alias.
+  //
+  // SAAS-PIVOT Day 7 (Epic 7 — multi-teacher polish): for 2+ active
+  // links we render a per-teacher block list + a unified timeline
+  // instead of the single-teacher LessonsSection. For 0/1 links the
+  // surface is unchanged from Day 2.
+  const teacherIds = isLearner ? account.assignedTeacherIds : []
+  const linkCount = teacherIds.length
+  const primaryTeacherId = isLearner ? (teacherIds[0] ?? null) : null
+  const hasAnyTeacher = isLearner && linkCount > 0
+  const isMultiTeacher = isLearner && linkCount >= 2
 
   const [
     profile,
@@ -104,10 +108,17 @@ export default async function CabinetPage() {
     teacherLearners,
     activePackages,
     postpaidRow,
+    // SAAS-PIVOT Day 7 (Epic 7) — per-teacher blocks fetched only for
+    // multi-link learners. Single-link learners keep the v1 surface
+    // (LessonsSection) unchanged. Zero-link learners get the empty-
+    // state hint, no blocks to render.
+    teacherBlocks,
   ] = await Promise.all([
     getAccountProfile(account.id),
     isLearner ? listSlotsForLearner(account.id, 20) : Promise.resolve([]),
-    isLearner && primaryTeacherId
+    // Single-teacher only — multi-teacher view defers slot discovery to
+    // /cabinet/book?teacher=<id> from the per-teacher block CTA.
+    isLearner && !isMultiTeacher && primaryTeacherId
       ? listOpenFutureSlots({
           teacherAccountId: primaryTeacherId,
           limit: 50,
@@ -124,6 +135,9 @@ export default async function CabinetPage() {
           [account.id],
         )
       : Promise.resolve({ rows: [] as Array<{ postpaid_allowed: boolean }> }),
+    isMultiTeacher
+      ? loadTeacherBlocks(account.id, teacherIds)
+      : Promise.resolve([]),
   ])
 
   // PKG-LEARNER-BUY epic-close WARN #3 — server SoT for "should the
@@ -206,29 +220,73 @@ export default async function CabinetPage() {
 
       {isLearner ? (
         <>
-          <LessonsSection
-            initialMine={mySlots}
-            initialAvailable={openSlots}
-            learnerTimezone={profile?.timezone ?? null}
-            emailVerified={isVerified}
-            initialPaidSlotIds={paidSlotIds}
-            initialRefundedSlotIds={refundedSlotIds}
-            hasAssignedTeacher={hasAnyTeacher}
-            assignedTeacherId={primaryTeacherId}
-            activePackages={activePackages.map((p) => ({
-              id: p.id,
-              titleSnapshot: p.titleSnapshot,
-              durationMinutes: p.durationMinutes,
-              countRemaining: p.countRemaining,
-              countInitial: p.countInitial,
-              expiresAt: p.expiresAt,
-            }))}
-            postpaidAllowed={postpaidAllowed}
-            billingWaveActive={
-              process.env.BILLING_WAVE_ACTIVE === 'true'
-            }
-            cancelWindowHours={getLearnerCancelWindowHours()}
-          />
+          {/* SAAS-PIVOT Day 7 — multi-teacher branch. 2+ active links:
+              show per-teacher blocks + unified timeline. The single-
+              teacher LessonsSection (booking CTA, paid pill, etc.) is
+              not rendered here; multi-link learners book via the
+              "Записаться к этому учителю" CTA per block which deep-
+              links into /cabinet/book?teacher=<id>. */}
+          {isMultiTeacher ? (
+            <>
+              <TeacherBlocksList
+                blocks={teacherBlocks}
+                learnerTimezone={profile?.timezone ?? null}
+              />
+              <UnifiedTimeline
+                learnerAccountId={account.id}
+                teacherLabelById={
+                  new Map(
+                    teacherBlocks.map((b) => [b.teacherId, b.teacherDisplayName]),
+                  )
+                }
+                learnerTimezone={profile?.timezone ?? null}
+              />
+            </>
+          ) : linkCount === 0 ? (
+            <div className="card" style={{ padding: 24, marginBottom: 24 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
+                Вас пока не пригласил ни один учитель
+              </h2>
+              <p
+                style={{
+                  color: 'var(--secondary)',
+                  fontSize: 14,
+                  lineHeight: 1.6,
+                  margin: 0,
+                }}
+              >
+                Попросите своего учителя выслать пригласительную ссылку —
+                после регистрации по ней вы окажетесь связаны и в этом
+                разделе появится ваше расписание. Если ссылка у вас уже
+                есть — откройте её в текущем браузере и подтвердите
+                согласие.
+              </p>
+            </div>
+          ) : (
+            <LessonsSection
+              initialMine={mySlots}
+              initialAvailable={openSlots}
+              learnerTimezone={profile?.timezone ?? null}
+              emailVerified={isVerified}
+              initialPaidSlotIds={paidSlotIds}
+              initialRefundedSlotIds={refundedSlotIds}
+              hasAssignedTeacher={hasAnyTeacher}
+              assignedTeacherId={primaryTeacherId}
+              activePackages={activePackages.map((p) => ({
+                id: p.id,
+                titleSnapshot: p.titleSnapshot,
+                durationMinutes: p.durationMinutes,
+                countRemaining: p.countRemaining,
+                countInitial: p.countInitial,
+                expiresAt: p.expiresAt,
+              }))}
+              postpaidAllowed={postpaidAllowed}
+              billingWaveActive={
+                process.env.BILLING_WAVE_ACTIVE === 'true'
+              }
+              cancelWindowHours={getLearnerCancelWindowHours()}
+            />
+          )}
 
           <BillingSections
             learnerTimezone={profile?.timezone ?? null}
