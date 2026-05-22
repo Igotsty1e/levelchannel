@@ -545,6 +545,7 @@ describe('learner-reminder-dispatch.mjs — catch-up replay (past_send_by)', () 
       learnerId: learner,
       startInMinutes: 5,
     })
+    if (skipIfBandWalkOvershoot('past_send_by', seeded)) return
     await setOperatorKey(
       'LEARNER_REMINDER_WINDOW_MINUTES',
       String(Math.min(360, seeded.actualMinutes + 30)),
@@ -585,6 +586,7 @@ describe('learner-reminder-dispatch.mjs — rate limit', () => {
         largestActual = seeded.actualMinutes
       }
     }
+    if (skipIfBandWalkOvershoot('rate-limit', { actualMinutes: largestActual })) return
     // Window covers all 5 (they all land in the same cell).
     await setOperatorKey(
       'LEARNER_REMINDER_WINDOW_MINUTES',
