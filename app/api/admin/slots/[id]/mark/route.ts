@@ -76,6 +76,17 @@ export async function POST(request: Request, { params }: RouteParams) {
       { status: 400, headers: NO_STORE },
     )
   }
+  // SAAS-PIVOT Day 5A — surface from the markLessonCompleted anti-
+  // spoof gate. Admin path passes the slot's own teacher_account_id
+  // so this branch is mostly defensive (concurrent UPDATE on the
+  // teacher_account_id between the helper's lookup and the eligibility
+  // check, etc.).
+  if (result.reason === 'wrong_teacher') {
+    return NextResponse.json(
+      { error: 'wrong_teacher', message: 'Учитель слота не совпадает.' },
+      { status: 400, headers: NO_STORE },
+    )
+  }
   // not_yet_started
   return NextResponse.json(
     {
