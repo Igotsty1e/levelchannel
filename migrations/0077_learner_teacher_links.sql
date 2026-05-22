@@ -11,9 +11,16 @@
 -- PK = (learner_account_id, teacher_account_id) — composite key
 -- enforces "at most one link between a given (learner, teacher) pair".
 -- A re-link after `unlinked_at IS NOT NULL` is modelled as
--- UPDATE-unlinked_at-back-to-NULL, not a second row (R2-2 invariant:
--- the redeem CTE is the SOLE link-creation path; it uses
--- INSERT ... ON CONFLICT (learner, teacher) DO UPDATE SET unlinked_at=NULL).
+-- UPDATE-unlinked_at-back-to-NULL, not a second row.
+--
+-- Day 2 writer inventory (2026-05-22): TWO writers update this table —
+-- (1) lib/auth/teacher-invites.ts redeemInviteAndBindLearnerAtomic
+--     (invite redeem, plan §2.5) — INSERT-or-revive on (learner, teacher).
+-- (2) lib/auth/accounts.ts setAssignedTeacher (operator reassign) —
+--     soft-unlinks other active links then INSERT-or-revive the target.
+-- Both writers serialise on a tx advisory lock keyed on learner uuid
+-- so concurrent operator reassign + invite redeem do not produce
+-- multi-link drift (codex-paranoia round-2 BLOCKER #1 closure).
 --
 -- ON DELETE CASCADE on learner_account_id: hard-delete of a learner
 -- account should clear their links (no orphans). ON DELETE RESTRICT on

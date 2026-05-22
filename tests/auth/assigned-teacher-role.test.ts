@@ -46,18 +46,21 @@ function mockRoles(roles: string[]) {
 function mockTxOk() {
   // SAAS-PIVOT Day 2 (2026-05-22) — the dual-write TX issues:
   //   1. begin
-  //   2. update accounts set assigned_teacher_id = $2 …
-  //   3. EITHER unassign branch:
+  //   2. pg_advisory_xact_lock(hashtext(...)) — round-2 BLOCKER #1
+  //      closure serialises operator reassign vs invite redeem.
+  //   3. update accounts set assigned_teacher_id = $2 …
+  //   4. EITHER unassign branch:
   //        update learner_teacher_links unlinked_at = now()
   //          where learner = $1 and unlinked_at is null
   //      OR assign branch (round-1 BLOCKER #1 closure):
   //        a. update learner_teacher_links unlinked_at = now()
   //             where learner = $1 and teacher <> $2 (soft-unlink old)
   //        b. insert into learner_teacher_links on conflict update
-  //   4. commit
+  //   5. commit
   clientQueryMock.mockImplementation(async (sql: string) => {
     if (sql.startsWith('begin')) return { rowCount: 0 }
     if (sql.startsWith('commit')) return { rowCount: 0 }
+    if (sql.includes('pg_advisory_xact_lock')) return { rowCount: 0 }
     if (sql.includes('update accounts')) return { rowCount: 1 }
     if (sql.includes('learner_teacher_links')) return { rowCount: 1 }
     throw new Error(`unexpected client query: ${sql}`)
@@ -92,18 +95,21 @@ describe('setAssignedTeacher — teacher-role guard + dual-write', () => {
     expect(clientQueryMock).not.toHaveBeenCalled()
   })
 
-  it('proceeds when target has teacher role (dual-write TX, soft-unlinks old links)', async () => {
+  it('proceeds when target has teacher role (dual-write TX, soft-unlinks old links, takes advisory lock)', async () => {
     mockRoles(['teacher'])
     mockTxOk()
     await setAssignedTeacher('learner-1', 'teacher-acct')
     // Role lookup on the pool.
     expect(poolQueryMock).toHaveBeenCalledTimes(1)
-    // begin + update accounts + soft-unlink old links + insert link + commit (5 calls).
-    expect(clientQueryMock).toHaveBeenCalledTimes(5)
+    // begin + advisory lock + update accounts + soft-unlink old links +
+    // insert link + commit (6 calls).
+    expect(clientQueryMock).toHaveBeenCalledTimes(6)
     // The release returned the client to the pool.
     expect(releaseMock).toHaveBeenCalledTimes(1)
-    // Verify both writers carry the (learner, teacher) tuple.
+    // Verify advisory lock is taken before any writes.
     const sqlByCall = clientQueryMock.mock.calls.map((c) => c[0] as string)
+    expect(sqlByCall[0]).toBe('begin')
+    expect(sqlByCall[1]).toContain('pg_advisory_xact_lock')
     expect(sqlByCall.some((s) => s.includes('update accounts'))).toBe(true)
     expect(
       sqlByCall.some(
@@ -121,14 +127,16 @@ describe('setAssignedTeacher — teacher-role guard + dual-write', () => {
     ).toBe(true)
   })
 
-  it('proceeds for unassign (teacherId=null) without role check, soft-unlinks links', async () => {
+  it('proceeds for unassign (teacherId=null) without role check, soft-unlinks links, takes advisory lock', async () => {
     mockTxOk()
     await setAssignedTeacher('learner-1', null)
     // No role lookup on the pool (target=null short-circuits).
     expect(poolQueryMock).not.toHaveBeenCalled()
-    // begin + update accounts + update links unlinked_at + commit.
-    expect(clientQueryMock).toHaveBeenCalledTimes(4)
+    // begin + advisory lock + update accounts + update links + commit (5 calls).
+    expect(clientQueryMock).toHaveBeenCalledTimes(5)
     const sqlByCall = clientQueryMock.mock.calls.map((c) => c[0] as string)
+    expect(sqlByCall[0]).toBe('begin')
+    expect(sqlByCall[1]).toContain('pg_advisory_xact_lock')
     expect(
       sqlByCall.some((s) => s.includes('update learner_teacher_links')),
     ).toBe(true)

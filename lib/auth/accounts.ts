@@ -405,15 +405,32 @@ export async function setAssignedTeacher(
   // truth at the reader layer; the legacy column stays through MVP for
   // the back-compat alias (mig 0084 post-MVP).
   //
-  // Race-safety: this writer is the operator-mutation surface
-  // (admin /accounts/[id] reassign). The invite-redeem path uses a
-  // distinct atomic-CTE writer in lib/auth/teacher-invites.ts; both
-  // ultimately INSERT into learner_teacher_links with ON CONFLICT
-  // semantics, so concurrent redeem + manual reassign cannot create
-  // duplicate (learner, teacher) rows (PK enforces uniqueness).
+  // Race-safety (codex-paranoia round-2 BLOCKER #1 closure,
+  // 2026-05-22): this writer (operator reassign) and the invite-redeem
+  // writer (lib/auth/teacher-invites.ts redeemInviteAndBindLearnerAtomic)
+  // both touch learner_teacher_links for the same learner. Without
+  // serialisation, READ COMMITTED admits a TOCTOU window: operator
+  // soft-unlinks "all but target" while a concurrent redeem inserts a
+  // third link in a not-yet-committed snapshot; both commit; the
+  // single-teacher operator semantics quietly drift back to multi-link.
+  //
+  // Defence: take a transaction-scoped advisory lock keyed on the
+  // learner's account uuid before any write. Invite redeem takes the
+  // SAME lock (see teacher-invites.ts), so concurrent invite redeem
+  // and operator reassign serialise. The PK on (learner, teacher) is
+  // still the unique-row guard; the lock is the multi-link-state
+  // serialiser.
+  //
+  // The lock key uses a 64-bit hash of the learner uuid (Postgres
+  // advisory locks take bigint). `hashtext()::bigint` is a fast,
+  // deterministic, collision-tolerant choice — collisions only mean
+  // two unrelated learners serialise their assigns, which is harmless.
   const client = await pool.connect()
   try {
     await client.query('begin')
+    await client.query('select pg_advisory_xact_lock(hashtext($1)::bigint)', [
+      `lc-saas-pivot:learner-teacher-links:${learnerId}`,
+    ])
     await client.query(
       `update accounts
           set assigned_teacher_id = $2,
