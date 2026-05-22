@@ -75,6 +75,12 @@ export const PAYMENT_AUDIT_EVENT_TYPES = [
   // load-bearing record is the package_purchases row +
   // payment_orders.description (reason, NOT NULL).
   'package.grant.operator-granted',
+  // SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — teacher-driven non-money
+  // grant lifecycle. Migration 0088 extends the CHECK constraint.
+  // Best-effort audit; load-bearing record is the package_purchases
+  // row + payment_orders row.
+  'package.grant.teacher-granted',
+  'package.grant.teacher-revoked',
 ] as const
 
 export type PaymentAuditEventType = (typeof PAYMENT_AUDIT_EVENT_TYPES)[number]
@@ -102,6 +108,13 @@ export type PaymentAuditActor =
   // 'admin:retry-grant' (which re-runs an existing paid order's grant)
   // so audit reads can grep these apart from money-flow recovery.
   | 'admin:grant'
+  // SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — teacher-cabinet driven
+  // grant + revoke actor labels (`teacher:grant`, `teacher:revoke`),
+  // and the admin override branch on the revoke route
+  // (`admin:revoke`).
+  | 'teacher:grant'
+  | 'teacher:revoke'
+  | 'admin:revoke'
 
 // Money helper moved to lib/payments/money.ts (Codex 2026-05-10
 // CONSOLIDATE — money helpers belong with payments, not audit).

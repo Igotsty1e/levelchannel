@@ -16,6 +16,9 @@ const STATUSES: Array<PaymentStatus | 'all'> = [
   'failed',
   'cancelled',
   'granted',
+  // SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — teacher_grant lifecycle.
+  'teacher_granted',
+  'teacher_revoked',
 ]
 
 const STATUS_LABEL: Record<PaymentStatus | 'all', string> = {
@@ -27,6 +30,9 @@ const STATUS_LABEL: Record<PaymentStatus | 'all', string> = {
   cancelled: 'отменены',
   // PKG-ADMIN-GRANT (2026-05-16) — non-money operator grants.
   granted: 'выданы админом',
+  // SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — teacher-driven grant lifecycle.
+  teacher_granted: 'выдан учителем',
+  teacher_revoked: 'отменён учителем',
 }
 
 type SearchParams = Promise<{

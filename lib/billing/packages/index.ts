@@ -10,10 +10,14 @@ export type { PostpaidDebtSlot, AccountPostpaidDebtSummary } from './debt'
 // Values
 export {
   createPackage,
+  ensureBootstrapTeacherAccount,
+  getBootstrapTeacherAccountId,
   getPackageById,
   getPackageBySlug,
+  getPackageBySlugForTeacher,
   listActivePackages,
   listActivePackagesByDuration,
+  listPackagesByTeacher,
   updatePackageMetadata,
 } from './catalog'
 

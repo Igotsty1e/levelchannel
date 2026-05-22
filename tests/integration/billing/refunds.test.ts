@@ -16,7 +16,12 @@ import {
 } from '@/lib/payments/allocations'
 
 import '../setup'
-import { buildRequest, extractSessionCookie, freshInvoiceId } from '../helpers'
+import {
+  buildRequest,
+  extractSessionCookie,
+  freshInvoiceId,
+  seedBootstrapTeacher,
+} from '../helpers'
 
 // Refund Phase 7 Stage B. The admin endpoint creates a reversal row
 // in payment_allocation_reversals; the SUM/anti-join in
@@ -371,12 +376,15 @@ describe('POST /api/admin/refunds', () => {
     )
     const learnerId = String(learner.rows[0].id)
 
+    // SAAS-PIVOT Epic 3 Day 4 (mig 0089): lesson_packages.teacher_id +
+    // package_purchases.teacher_id NOT NULL — attribute to bootstrap.
+    const pkgTeacherId = await seedBootstrapTeacher()
     const pkg = await pool.query(
       `insert into lesson_packages
-         (slug, title_ru, duration_minutes, count, amount_kopecks, is_active)
-       values ($1, '10x60 refund test', 60, 10, 350000, true)
+         (slug, title_ru, duration_minutes, count, amount_kopecks, is_active, teacher_id)
+       values ($1, '10x60 refund test', 60, 10, 350000, true, $2::uuid)
        returning id`,
-      [`refund-pkg-${Date.now()}`],
+      [`refund-pkg-${Date.now()}`, pkgTeacherId],
     )
     const pkgId = String(pkg.rows[0].id)
 
@@ -395,10 +403,10 @@ describe('POST /api/admin/refunds', () => {
     const purchase = await pool.query(
       `insert into package_purchases
          (account_id, package_id, payment_order_id, amount_kopecks, currency,
-          title_snapshot, duration_minutes, count_initial, expires_at)
-       values ($1, $2, $3, 350000, 'RUB', '10x60', 60, 10, now() + interval '180 days')
+          title_snapshot, duration_minutes, count_initial, expires_at, teacher_id)
+       values ($1, $2, $3, 350000, 'RUB', '10x60', 60, 10, now() + interval '180 days', $4::uuid)
        returning id`,
-      [learnerId, pkgId, orderId],
+      [learnerId, pkgId, orderId, pkgTeacherId],
     )
     const purchaseId = String(purchase.rows[0].id)
     await pool.query(

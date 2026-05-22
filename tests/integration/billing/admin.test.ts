@@ -15,7 +15,12 @@ import {
 import { getDbPool } from '@/lib/db/pool'
 
 import '../setup'
-import { buildRequest, extractSessionCookie, freshInvoiceId } from '../helpers'
+import {
+  buildRequest,
+  extractSessionCookie,
+  freshInvoiceId,
+  seedBootstrapTeacher,
+} from '../helpers'
 
 beforeAll(() => {
   process.env.BILLING_WAVE_ACTIVE = 'true'
@@ -213,9 +218,13 @@ describe('lesson_packages immutability trigger', () => {
     const learner = await regLearner()
     // Create package + purchase by learner
     const pool = getDbPool()
+    // SAAS-PIVOT Epic 3 Day 4 (mig 0089): lesson_packages.teacher_id +
+    // package_purchases.teacher_id NOT NULL — attribute to bootstrap.
+    const teacherId = await seedBootstrapTeacher()
     const pkgRow = await pool.query(
-      `insert into lesson_packages (slug, title_ru, duration_minutes, count, amount_kopecks)
-       values ('pr4-trigger-pkg', 'Trigger', 60, 5, 100000) returning id`,
+      `insert into lesson_packages (slug, title_ru, duration_minutes, count, amount_kopecks, teacher_id)
+       values ('pr4-trigger-pkg', 'Trigger', 60, 5, 100000, $1::uuid) returning id`,
+      [teacherId],
     )
     const pkgId = String(pkgRow.rows[0].id)
 
@@ -233,9 +242,9 @@ describe('lesson_packages immutability trigger', () => {
     await pool.query(
       `insert into package_purchases
          (account_id, package_id, payment_order_id, amount_kopecks,
-          title_snapshot, duration_minutes, count_initial, expires_at)
-       values ($1, $2, $3, 100000, 'Trigger', 60, 5, now() + interval '6 months')`,
-      [learner.accountId, pkgId, orderId],
+          title_snapshot, duration_minutes, count_initial, expires_at, teacher_id)
+       values ($1, $2, $3, 100000, 'Trigger', 60, 5, now() + interval '6 months', $4::uuid)`,
+      [learner.accountId, pkgId, orderId, teacherId],
     )
 
     // Now try to UPDATE the price. The trigger raises with SQLSTATE

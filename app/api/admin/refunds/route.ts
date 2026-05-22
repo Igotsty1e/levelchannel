@@ -120,26 +120,36 @@ export async function POST(request: Request) {
   // reversal against a 0-RUB synthetic order. Operators void admin
   // grants via PKG-ADMIN-VOID (follow-up wave), NOT this route.
   //
+  // SAAS-PIVOT Epic 3 Day 4 (2026-05-22, round-29 BLOCKER closure):
+  // Same rejection extended to 'teacher_grant' rows. Teacher-driven
+  // non-money grants are revoked via /teacher/packages/[id]/revoke
+  // (or /admin/teacher-grant/[id]/revoke for operator override),
+  // not via this refund route. Booking a reversal against either
+  // grant kind would corrupt the audit trail.
+  //
   // We DON'T 404 here on missing order — leave that to the existing
   // allocation_not_found path so the public contract for "no such
   // order" is preserved. Only refuse when the order EXISTS but is
-  // an admin_grant.
+  // a non-money provider.
   const providerRow = await pool.query(
     `select provider from payment_orders where invoice_id = $1`,
     [paymentOrderId],
   )
-  if (
-    providerRow.rows.length > 0
-    && providerRow.rows[0].provider === 'admin_grant'
-  ) {
-    return NextResponse.json(
-      {
-        error: 'cannot_refund_admin_grant',
-        message:
-          'This order is an admin grant (non-money flow). Use PKG-ADMIN-VOID instead — refund route is for money flow only.',
-      },
-      { status: 422, headers: NO_STORE },
-    )
+  if (providerRow.rows.length > 0) {
+    const provider = providerRow.rows[0].provider
+    if (provider === 'admin_grant' || provider === 'teacher_grant') {
+      return NextResponse.json(
+        {
+          error: 'non_money_order_not_refundable',
+          message:
+            provider === 'admin_grant'
+              ? 'Этот заказ — admin grant (не платный). Используйте PKG-ADMIN-VOID для отмены, а не маршрут возвратов.'
+              : 'Этот заказ не платный — для отмены воспользуйтесь revoke в кабинете учителя.',
+          provider,
+        },
+        { status: 422, headers: NO_STORE },
+      )
+    }
   }
 
   const client = await pool.connect()

@@ -37,16 +37,35 @@ async function insertOrder(opts: {
   status: string
   grantedByOperatorId: string | null
   customerEmail?: string
+  // SAAS-PIVOT Epic 3 Day 4 (mig 0090) — quadruple-CHECK requires
+  // payment_method symmetry. Callers that don't set it explicitly fall
+  // back to the bucket-default: 'admin_grant' for admin-grant rows,
+  // null otherwise (money path allows null).
+  paymentMethod?: string | null
 }): Promise<string> {
   const invoiceId = freshInvoiceId('lc_admgrant')
+  const paymentMethod =
+    opts.paymentMethod !== undefined
+      ? opts.paymentMethod
+      : opts.provider === 'admin_grant'
+        ? 'admin_grant'
+        : null
+  // SAAS-PIVOT Epic 6 Day 6 (mig 0094) — teacher_account_id is NOT NULL.
+  // Spawn a fresh teacher account so the insert satisfies the FK + NOT NULL.
+  const teacherEmail = `admgrant-teacher-${Math.floor(Math.random() * 1e9)}@example.com`
+  const teacherRow = await getDbPool().query<{ id: string }>(
+    `insert into accounts (email, password_hash) values ($1, 'x') returning id`,
+    [teacherEmail],
+  )
+  const teacherId = String(teacherRow.rows[0].id)
   await getDbPool().query(
     `insert into payment_orders (
        invoice_id, amount_rub, currency, description, provider, status,
        created_at, updated_at, customer_email, receipt_email, receipt,
-       granted_by_operator_id
+       granted_by_operator_id, payment_method, teacher_account_id
      ) values (
        $1, 100, 'RUB', 'schema test', $2, $3,
-       now(), now(), $4, $4, '{}'::jsonb, $5::uuid
+       now(), now(), $4, $4, '{}'::jsonb, $5::uuid, $6, $7::uuid
      )`,
     [
       invoiceId,
@@ -54,6 +73,8 @@ async function insertOrder(opts: {
       opts.status,
       opts.customerEmail ?? 'schema-test@example.com',
       opts.grantedByOperatorId,
+      paymentMethod,
+      teacherId,
     ],
   )
   return invoiceId
@@ -84,7 +105,7 @@ describe('payment_orders admin_grant triple-CHECK (migration 0051)', () => {
         status: 'paid',
         grantedByOperatorId: operatorId,
       }),
-    ).rejects.toThrow(/payment_orders_admin_grant_consistency/)
+    ).rejects.toThrow(/payment_orders_grant_consistency/)
   })
 
   it('rejects cloudpayments + paid + non-null operator (operator only on admin grants)', async () => {
@@ -95,7 +116,7 @@ describe('payment_orders admin_grant triple-CHECK (migration 0051)', () => {
         status: 'paid',
         grantedByOperatorId: operatorId,
       }),
-    ).rejects.toThrow(/payment_orders_admin_grant_consistency/)
+    ).rejects.toThrow(/payment_orders_grant_consistency/)
   })
 
   it('rejects admin_grant + granted + null operator (operator required on admin grants)', async () => {
@@ -105,7 +126,7 @@ describe('payment_orders admin_grant triple-CHECK (migration 0051)', () => {
         status: 'granted',
         grantedByOperatorId: null,
       }),
-    ).rejects.toThrow(/payment_orders_admin_grant_consistency/)
+    ).rejects.toThrow(/payment_orders_grant_consistency/)
   })
 
   it('rejects cloudpayments + granted (status granted is admin-grant-only)', async () => {
@@ -115,27 +136,33 @@ describe('payment_orders admin_grant triple-CHECK (migration 0051)', () => {
         status: 'granted',
         grantedByOperatorId: null,
       }),
-    ).rejects.toThrow(/payment_orders_admin_grant_consistency/)
+    ).rejects.toThrow(/payment_orders_grant_consistency/)
   })
 
   it('rejects unknown provider (taxonomy CHECK)', async () => {
+    // mig 0090 (Day 4) consolidated the provider-check into the
+    // quadruple-CHECK `payment_orders_grant_consistency`. An unknown
+    // provider now fails that combined invariant instead of the old
+    // standalone payment_orders_provider_check.
     await expect(
       insertOrder({
         provider: 'wechat_pay',
         status: 'paid',
         grantedByOperatorId: null,
       }),
-    ).rejects.toThrow(/payment_orders_provider_check/)
+    ).rejects.toThrow(/payment_orders_grant_consistency|payment_orders_provider_check/)
   })
 
   it('rejects unknown status (taxonomy CHECK)', async () => {
+    // mig 0090 (Day 4): see comment above. Same consolidation
+    // applies to the status taxonomy.
     await expect(
       insertOrder({
         provider: 'cloudpayments',
         status: 'refunded',
         grantedByOperatorId: null,
       }),
-    ).rejects.toThrow(/payment_orders_status_check/)
+    ).rejects.toThrow(/payment_orders_grant_consistency|payment_orders_status_check/)
   })
 
   it('paid_not_granted query does NOT include admin grants', async () => {

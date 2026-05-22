@@ -42,7 +42,9 @@ async function ensureSchema() {
           customer_comment text null,
           payment_method text null
             check (payment_method is null
-                   or payment_method in ('card', 'sbp', 'admin_grant'))
+                   or payment_method in (
+                     'card', 'sbp', 'admin_grant', 'teacher_grant'
+                   ))
         )
       `)
       // Legacy safety net for DBs that ran the older ensureSchema before
@@ -90,6 +92,10 @@ const KNOWN_PROVIDERS = new Set<PaymentOrder['provider']>([
   'cloudpayments',
   'mock',
   'admin_grant',
+  // SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — teacher-driven non-money
+  // grant. See lib/payments/types.ts PaymentProvider union for the
+  // semantics contract.
+  'teacher_grant',
 ])
 const KNOWN_STATUSES = new Set<PaymentOrder['status']>([
   'pending',
@@ -98,6 +104,9 @@ const KNOWN_STATUSES = new Set<PaymentOrder['status']>([
   'failed',
   'cancelled',
   'granted',
+  // SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — teacher_grant lifecycle.
+  'teacher_granted',
+  'teacher_revoked',
 ])
 
 // SBP-PAY (2026-05-19) — loud-fail accept-list for payment_method,
@@ -108,6 +117,9 @@ const KNOWN_PAYMENT_METHODS = new Set<NonNullable<PaymentOrder['paymentMethod']>
   'card',
   'sbp',
   'admin_grant',
+  // SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — teacher-driven non-money
+  // grant. Mirrors admin_grant slot.
+  'teacher_grant',
 ])
 
 function mapRowToOrder(row: Record<string, unknown>): PaymentOrder {
@@ -159,6 +171,8 @@ function mapRowToOrder(row: Record<string, unknown>): PaymentOrder {
       row.receipt_token_hash == null ? null : String(row.receipt_token_hash),
     grantedByOperatorId:
       row.granted_by_operator_id == null ? null : String(row.granted_by_operator_id),
+    grantedByTeacherId:
+      row.granted_by_teacher_id == null ? null : String(row.granted_by_teacher_id),
     paymentMethod: ((): PaymentOrder['paymentMethod'] => {
       if (row.payment_method == null) return null
       const value = String(row.payment_method) as NonNullable<PaymentOrder['paymentMethod']>
@@ -198,6 +212,7 @@ function toInsertValues(order: PaymentOrder) {
     order.receiptTokenHash ?? null,
     order.grantedByOperatorId ?? null,
     order.paymentMethod ?? null,
+    order.grantedByTeacherId ?? null,
     order.teacherAccountId ?? null,
   ]
 }
@@ -246,9 +261,10 @@ export async function createOrderPostgres(order: PaymentOrder) {
       receipt_token_hash,
       granted_by_operator_id,
       payment_method,
+      granted_by_teacher_id,
       teacher_account_id
     ) values (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18::jsonb,$19,$20,$21::uuid,$22,$23::uuid
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18::jsonb,$19,$20,$21::uuid,$22,$23::uuid,$24::uuid
     )`,
     toInsertValues(order),
   )
@@ -303,7 +319,8 @@ export async function updateOrderPostgres(
         receipt_token_hash = $20,
         granted_by_operator_id = $21::uuid,
         payment_method = $22,
-        teacher_account_id = $23::uuid
+        granted_by_teacher_id = $23::uuid,
+        teacher_account_id = $24::uuid
       where invoice_id = $1`,
       toInsertValues(next),
     )

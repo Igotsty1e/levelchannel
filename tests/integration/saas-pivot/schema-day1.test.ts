@@ -145,22 +145,39 @@ describe('SAAS-PIVOT Day 1 — pricing_tariffs.teacher_id + deleted_at (mig 0075
   })
 })
 
-describe('SAAS-PIVOT Day 1 — lesson_packages.teacher_id nullable (mig 0076a)', () => {
-  it('insert without teacher_id succeeds', async () => {
-    await getDbPool().query(
-      `insert into lesson_packages (slug, title_ru, duration_minutes, count, amount_kopecks)
-       values ('day1-pkg-' || floor(random() * 1e9)::text, 'Day-1 pkg', 60, 5, 7500)`,
+describe('SAAS-PIVOT Day 4 — lesson_packages.teacher_id NOT NULL (mig 0089)', () => {
+  // SAAS-PIVOT Epic 3 Day 4 (mig 0089) flipped lesson_packages.teacher_id
+  // to NOT NULL alongside the global-slug → composite-(teacher_id,slug)
+  // UNIQUE swap. The Day-1 "insert-without-teacher-id-succeeds" claim is
+  // historical; replaced by the NOT NULL assertion.
+  it('mig 0089: column is NOT NULL', async () => {
+    const result = await getDbPool().query<{ is_nullable: string }>(
+      `select is_nullable from information_schema.columns
+        where table_name = 'lesson_packages' and column_name = 'teacher_id'`,
     )
+    expect(result.rows).toEqual([{ is_nullable: 'NO' }])
+  })
+
+  it('mig 0089: INSERT without teacher_id fails NOT NULL', async () => {
+    await expect(
+      getDbPool().query(
+        `insert into lesson_packages (slug, title_ru, duration_minutes, count, amount_kopecks)
+         values ('day4-pkg-' || floor(random() * 1e9)::text, 'Day-4 pkg', 60, 5, 7500)`,
+      ),
+    ).rejects.toThrow(/teacher_id|null value|23502/i)
   })
 })
 
-describe('SAAS-PIVOT Day 1 — package_purchases.teacher_id nullable (mig 0076c)', () => {
-  it('teacher_id column exists and is nullable', async () => {
+describe('SAAS-PIVOT Day 4 — package_purchases.teacher_id NOT NULL (mig 0089)', () => {
+  // SAAS-PIVOT Epic 3 Day 4 (mig 0089) flipped package_purchases.teacher_id
+  // to NOT NULL together with the lesson_packages flip (one TX). The Day-1
+  // "nullable" claim is historical; replaced by NOT NULL assertion.
+  it('mig 0089: column is NOT NULL', async () => {
     const result = await getDbPool().query<{ is_nullable: string }>(
       `select is_nullable from information_schema.columns
         where table_name = 'package_purchases' and column_name = 'teacher_id'`,
     )
-    expect(result.rows).toEqual([{ is_nullable: 'YES' }])
+    expect(result.rows).toEqual([{ is_nullable: 'NO' }])
   })
 })
 

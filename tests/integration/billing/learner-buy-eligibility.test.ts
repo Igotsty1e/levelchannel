@@ -57,11 +57,14 @@ async function seedPurchase(opts: {
      )`,
     [seedInvoice],
   )
+  // SAAS-PIVOT Epic 3 Day 4 (mig 0089): package_purchases.teacher_id
+  // NOT NULL — inherit from the owning lesson_packages row.
   const res = await getDbPool().query(
     `insert into package_purchases (
        account_id, package_id, payment_order_id, amount_kopecks,
-       title_snapshot, duration_minutes, count_initial, expires_at, voided_at
-     ) values ($1, $2, $3, $4, $5, $6, $7, now() + $8::interval, $9)
+       title_snapshot, duration_minutes, count_initial, expires_at, voided_at, teacher_id
+     ) values ($1, $2, $3, $4, $5, $6, $7, now() + $8::interval, $9,
+               (select teacher_id from lesson_packages where id = $2::uuid))
      returning id`,
     [
       opts.accountId,
