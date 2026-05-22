@@ -9,15 +9,22 @@ const inter = Inter({
   display: 'swap',
 })
 
+// SAAS-PIVOT Epic 8 Day 7 (2026-05-22) — root-layout default metadata
+// flipped to the SaaS-positioning ("кабинет преподавателя"). The old
+// learner-targeted operator-instance copy ("8 лет опыта, 10 000+
+// часов преподавания") is dropped per owner decision 2026-05-21
+// ("только для учителей"). Per-route `metadata` exports (e.g.
+// `/pay`, `/offer`, `/privacy`) override these defaults as before.
 export const metadata: Metadata = {
-  title: 'LevelChannel — Индивидуальный английский под вашу цель',
+  title: 'LevelChannel — кабинет преподавателя',
   description:
-    'Индивидуальные онлайн-занятия по английскому 1:1. Подготовка к IELTS, английский для работы, разговорный английский. 8 лет опыта, 10 000+ часов преподавания.',
-  keywords: 'английский онлайн, репетитор английского, IELTS подготовка, индивидуальные занятия, английский для работы',
+    'Расписание, ученики и оплаты в одном кабинете. Личный кабинет для преподавателей английского и репетиторов. Бесплатный тариф навсегда.',
+  keywords:
+    'CRM для репетитора, расписание для преподавателя, онлайн-запись для репетитора, кабинет преподавателя английского',
   openGraph: {
-    title: 'LevelChannel — Индивидуальный английский под вашу цель',
+    title: 'LevelChannel — кабинет преподавателя',
     description:
-      'Индивидуальные занятия 1:1. 8 лет опыта, 10 000+ часов преподавания.',
+      'Расписание, ученики и оплаты — без Excel и переписок. Free тариф навсегда.',
     type: 'website',
   },
   icons: {

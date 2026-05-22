@@ -70,6 +70,8 @@ export {
 
 export {
   SlotTeacherRoleError,
+  TariffNotActiveError,
+  TariffOwnershipError,
   bulkCreateSlots,
   createSlot,
   deleteOpenSlot,
@@ -83,6 +85,7 @@ export { MAX_ZOOM_URL_LEN, validateZoomUrl } from './validation'
 export type { ZoomUrlValidationError } from './validation'
 
 export {
+  CancelAfterCompletionError,
   cancelLearnerSlot,
   cancelSlot,
   cancelSlotByTeacher,

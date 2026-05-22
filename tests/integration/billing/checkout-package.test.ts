@@ -311,11 +311,13 @@ describe('POST /api/checkout/package/[slug] — server-authored metadata', () =>
     )
     const ownedId = (
       await getDbPool().query(
+        // SAAS-PIVOT Epic 3 Day 4 (mig 0089): package_purchases.teacher_id
+        // NOT NULL — inherit from the package row's owning teacher.
         `insert into package_purchases (
            account_id, package_id, payment_order_id, amount_kopecks,
-           title_snapshot, duration_minutes, count_initial, expires_at
+           title_snapshot, duration_minutes, count_initial, expires_at, teacher_id
          ) values ($1, $2, $3,
-                   $4, $5, $6, $7, now() + interval '30 days')
+                   $4, $5, $6, $7, now() + interval '30 days', $8::uuid)
          returning id`,
         [
           learner.accountId,
@@ -325,6 +327,7 @@ describe('POST /api/checkout/package/[slug] — server-authored metadata', () =>
           pkg.titleRu,
           pkg.durationMinutes,
           pkg.count,
+          pkg.teacherId,
         ],
       )
     ).rows[0].id

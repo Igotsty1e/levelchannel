@@ -57,6 +57,9 @@ export function createCloudPaymentsOrder(
     // §0a BLOCKER#7 closure: additive change does not break existing
     // call-sites (§0b INFO#1 confirmation).
     paymentMethod?: PaymentMethod
+    // SAAS-PIVOT Epic 6 Day 6 (2026-05-22) — owning teacher account.
+    // Required at write-time after mig 0094 flips NOT NULL. Plan §2.8.
+    teacherAccountId?: string | null
   } = {},
 ): PaymentOrder {
   if (!isCloudPaymentsConfigured()) {
@@ -86,6 +89,7 @@ export function createCloudPaymentsOrder(
     // truth (§0a BLOCKER#6 + §0b BLOCKER#2 closures). metadata.payment_method
     // is intentionally NOT set anywhere.
     paymentMethod: options.paymentMethod ?? 'card',
+    teacherAccountId: options.teacherAccountId ?? null,
     metadata: {
       source: options.source || 'widget',
       rememberCard: Boolean(options.rememberCard),

@@ -11,7 +11,12 @@ import {
 import { getDbPool } from '@/lib/db/pool'
 
 import '../setup'
-import { buildRequest, extractSessionCookie, freshInvoiceId } from '../helpers'
+import {
+  buildRequest,
+  extractSessionCookie,
+  freshInvoiceId,
+  seedBootstrapTeacher,
+} from '../helpers'
 
 // Wave 59 — deletion-guard re-check.
 // Closes the contract gap from prepay-postpay-billing.md v9
@@ -129,20 +134,24 @@ describe('accountHasInFlightPackageGrant', () => {
       status: 'paid',
     })
     // Materialize the package_purchases row — Branch B closes.
+    // SAAS-PIVOT Epic 3 Day 4 (mig 0089): lesson_packages.teacher_id +
+    // package_purchases.teacher_id are NOT NULL. Use the bootstrap
+    // teacher (auto-seeded by setup.ts afterEach) as owner.
     const pool = getDbPool()
+    const teacherId = await seedBootstrapTeacher()
     const pkg = await pool.query(
       `insert into lesson_packages
-         (slug, title_ru, duration_minutes, count, amount_kopecks, is_active)
-       values ($1, 'guard test pkg', 60, 10, 350000, true)
+         (slug, title_ru, duration_minutes, count, amount_kopecks, is_active, teacher_id)
+       values ($1, 'guard test pkg', 60, 10, 350000, true, $2::uuid)
        returning id`,
-      [`guard-pkg-${Date.now()}`],
+      [`guard-pkg-${Date.now()}`, teacherId],
     )
     await pool.query(
       `insert into package_purchases
          (account_id, package_id, payment_order_id, amount_kopecks, currency,
-          title_snapshot, duration_minutes, count_initial, expires_at)
-       values ($1, $2, $3, 350000, 'RUB', '10x60', 60, 10, now() + interval '180 days')`,
-      [accountId, pkg.rows[0].id, invoiceId],
+          title_snapshot, duration_minutes, count_initial, expires_at, teacher_id)
+       values ($1, $2, $3, 350000, 'RUB', '10x60', 60, 10, now() + interval '180 days', $4::uuid)`,
+      [accountId, pkg.rows[0].id, invoiceId, teacherId],
     )
     const r = await accountHasInFlightPackageGrant(accountId)
     expect(r.inFlight).toBe(false)

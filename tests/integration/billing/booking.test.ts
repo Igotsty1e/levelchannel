@@ -220,10 +220,12 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
       [learner.accountId],
     )
     // Need a tariff with same duration on the slot.
+    // SAAS-PIVOT Epic 2 Day 3: teacher_id NOT NULL (mig 0088).
     const tariffRow = await getDbPool().query(
-      `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes)
-       values ('pr1-postpay-tariff', '60 мин test', 350000, 60)
+      `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes, teacher_id)
+       values ('pr1-postpay-tariff', '60 мин test', 350000, 60, $1)
        returning id`,
+      [teacher.accountId],
     )
     const tariffId = String(tariffRow.rows[0].id)
     const slotId = await makeOpenSlot(
@@ -331,10 +333,12 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
       ],
     )
     // Tariff for 60-min slot with postpaid path.
+    // SAAS-PIVOT Epic 2 Day 3: teacher_id NOT NULL (mig 0088).
     const tariffRow = await getDbPool().query(
-      `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes)
-       values ('pr1-mis-tariff', '60 мин mismatch', 350000, 60)
+      `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes, teacher_id)
+       values ('pr1-mis-tariff', '60 мин mismatch', 350000, 60, $1)
        returning id`,
+      [teacher.accountId],
     )
     const tariffId = String(tariffRow.rows[0].id)
     const slotId = await makeOpenSlot(
@@ -425,10 +429,12 @@ describe('PR 1 — slotIsPaidByAllocations (CASE-filtered SUM)', () => {
   it('allocation on a NON-paid order does NOT count toward paid total', async () => {
     const { admin, teacher, learner } = await setupTeacherAndLearner('pr1-paid-state')
     void learner
+    // SAAS-PIVOT Epic 2 Day 3: teacher_id NOT NULL (mig 0088).
     const tariffRow = await getDbPool().query(
-      `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes)
-       values ('pr1-paid-state-tariff', '60 мин', 350000, 60)
+      `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes, teacher_id)
+       values ('pr1-paid-state-tariff', '60 мин', 350000, 60, $1)
        returning id`,
+      [teacher.accountId],
     )
     const tariffId = String(tariffRow.rows[0].id)
     const slotId = await makeOpenSlot(

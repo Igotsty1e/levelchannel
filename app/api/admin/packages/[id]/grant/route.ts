@@ -12,6 +12,7 @@ import { isLearnerArchetypeCandidate } from '@/lib/auth/learner-archetype'
 import { getPackageById } from '@/lib/billing/packages'
 import { createPackagePurchase } from '@/lib/billing/packages'
 import { learnerHasActivePackageOfDuration } from '@/lib/billing/packages'
+import { deriveTeacherAccountIdForOrder } from '@/lib/payments/teacher-derivation'
 import { getDbPool } from '@/lib/db/pool'
 import { withIdempotency } from '@/lib/security/idempotency'
 import {
@@ -261,6 +262,21 @@ export async function POST(request: Request, { params }: RouteParams) {
           packageId: pkg.id,
         }
 
+        // SAAS-PIVOT Epic 6 Day 6 — derive owning teacher from package.
+        // Computed inside the TX so a concurrent lesson_packages mutation
+        // doesn't slip past the lock. Helper also has bootstrap fallback.
+        const teacherAccountId = await deriveTeacherAccountIdForOrder({
+          packageId: pkg.id,
+          packageSlug: pkg.slug,
+        })
+        if (!teacherAccountId) {
+          await lockClient.query('rollback')
+          return {
+            status: 500,
+            body: { error: 'teacher_resolution_failed' },
+          }
+        }
+
         // INSERT synthetic payment_orders row. paid_at stays NULL — an
         // admin grant is NOT a payment event, and the admin payments
         // detail page renders "Оплачен" off paid_at; setting it to
@@ -275,7 +291,8 @@ export async function POST(request: Request, { params }: RouteParams) {
              customer_email, receipt_email,
              receipt, metadata,
              granted_by_operator_id,
-             payment_method
+             payment_method,
+             teacher_account_id
            ) values (
              $1, $2, 'RUB', $3,
              'admin_grant', 'granted',
@@ -283,7 +300,8 @@ export async function POST(request: Request, { params }: RouteParams) {
              $4, $4,
              $5::jsonb, $6::jsonb,
              $7::uuid,
-             'admin_grant'
+             'admin_grant',
+             $8::uuid
            )`,
           [
             invoiceId,
@@ -293,6 +311,7 @@ export async function POST(request: Request, { params }: RouteParams) {
             JSON.stringify(receipt),
             JSON.stringify(metadata),
             auth.account.id,
+            teacherAccountId,
           ],
         )
 

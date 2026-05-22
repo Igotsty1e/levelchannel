@@ -16,7 +16,12 @@ import {
 } from '@/lib/payments/allocations'
 
 import '../setup'
-import { buildRequest, extractSessionCookie, freshInvoiceId } from '../helpers'
+import {
+  buildRequest,
+  extractSessionCookie,
+  freshInvoiceId,
+  seedBootstrapTeacher,
+} from '../helpers'
 
 // Refund Phase 7 Stage B. The admin endpoint creates a reversal row
 // in payment_allocation_reversals; the SUM/anti-join in
@@ -242,14 +247,9 @@ describe('POST /api/admin/refunds', () => {
     const admin = await regAdmin()
     const pool = getDbPool()
 
-    const tariff = await pool.query(
-      `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes)
-       values ($1, '60 мин', 100000, 60)
-       returning id`,
-      [`refund-paidstate-${Date.now()}`],
-    )
-    const tariffId = String(tariff.rows[0].id)
-
+    // SAAS-PIVOT Epic 2 Day 3 (mig 0088): pricing_tariffs.teacher_id is
+    // NOT NULL. Mint the teacher BEFORE the tariff so we can attribute
+    // ownership at insert time.
     const teacher = await pool.query(
       `insert into accounts (email, password_hash, email_verified_at)
        values ($1, 'dummy', now()) returning id`,
@@ -260,6 +260,14 @@ describe('POST /api/admin/refunds', () => {
       `insert into account_roles (account_id, role) values ($1, 'teacher')`,
       [teacherId],
     )
+
+    const tariff = await pool.query(
+      `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes, teacher_id)
+       values ($1, '60 мин', 100000, 60, $2)
+       returning id`,
+      [`refund-paidstate-${Date.now()}`, teacherId],
+    )
+    const tariffId = String(tariff.rows[0].id)
     const slotRes = await pool.query(
       `insert into lesson_slots
          (teacher_account_id, start_at, duration_minutes, status, tariff_id)
@@ -368,12 +376,15 @@ describe('POST /api/admin/refunds', () => {
     )
     const learnerId = String(learner.rows[0].id)
 
+    // SAAS-PIVOT Epic 3 Day 4 (mig 0089): lesson_packages.teacher_id +
+    // package_purchases.teacher_id NOT NULL — attribute to bootstrap.
+    const pkgTeacherId = await seedBootstrapTeacher()
     const pkg = await pool.query(
       `insert into lesson_packages
-         (slug, title_ru, duration_minutes, count, amount_kopecks, is_active)
-       values ($1, '10x60 refund test', 60, 10, 350000, true)
+         (slug, title_ru, duration_minutes, count, amount_kopecks, is_active, teacher_id)
+       values ($1, '10x60 refund test', 60, 10, 350000, true, $2::uuid)
        returning id`,
-      [`refund-pkg-${Date.now()}`],
+      [`refund-pkg-${Date.now()}`, pkgTeacherId],
     )
     const pkgId = String(pkg.rows[0].id)
 
@@ -392,10 +403,10 @@ describe('POST /api/admin/refunds', () => {
     const purchase = await pool.query(
       `insert into package_purchases
          (account_id, package_id, payment_order_id, amount_kopecks, currency,
-          title_snapshot, duration_minutes, count_initial, expires_at)
-       values ($1, $2, $3, 350000, 'RUB', '10x60', 60, 10, now() + interval '180 days')
+          title_snapshot, duration_minutes, count_initial, expires_at, teacher_id)
+       values ($1, $2, $3, 350000, 'RUB', '10x60', 60, 10, now() + interval '180 days', $4::uuid)
        returning id`,
-      [learnerId, pkgId, orderId],
+      [learnerId, pkgId, orderId, pkgTeacherId],
     )
     const purchaseId = String(purchase.rows[0].id)
     await pool.query(

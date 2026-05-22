@@ -7,6 +7,8 @@ import {
   type CreateSlotInput,
   createSlot,
   SlotTeacherRoleError,
+  TariffNotActiveError,
+  TariffOwnershipError,
 } from '@/lib/scheduling/slots'
 import {
   enforceRateLimit,
@@ -70,6 +72,34 @@ export async function POST(request: Request) {
       { status: 201, headers: NO_STORE },
     )
   } catch (err) {
+    if (err instanceof TariffNotActiveError) {
+      // SAAS-PIVOT Epic 2 Day 3 — soft-deleted or unknown tariff.
+      return NextResponse.json(
+        {
+          error:
+            err.reason === 'soft_deleted'
+              ? 'slot/tariffId/archived'
+              : 'slot/tariffId/unknown',
+          message:
+            err.reason === 'soft_deleted'
+              ? 'Этот тариф архивирован — выберите другой.'
+              : 'Тариф не найден.',
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    if (err instanceof TariffOwnershipError) {
+      // SAAS-PIVOT Epic 2 Day 3 — teacher tried to bind another
+      // teacher's tariff. 403 (not 400) — it's an authorization
+      // failure, not a malformed input.
+      return NextResponse.json(
+        {
+          error: 'slot/tariffId/wrong_teacher',
+          message: 'Этот тариф принадлежит другому учителю.',
+        },
+        { status: 403, headers: NO_STORE },
+      )
+    }
     if (err instanceof SlotTeacherRoleError) {
       // Should be unreachable: the guard already pinned `teacher`
       // role; the create function re-verifies as defense in depth.

@@ -1,10 +1,21 @@
 import { randomUUID } from 'node:crypto'
 
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
 import { getDbPool } from '@/lib/db/pool'
 
 import '../setup'
+
+// SAAS-PIVOT Epic 6 Day 6 (2026-05-22) — the integration setup
+// auto-seeds a bootstrap teacher (so /api/payments writers have a
+// fallback). This test file owns the bootstrap-existence invariants
+// directly (mig 0083 idempotency, no-bootstrap-on-fresh-DB), so we
+// wipe the auto-seeded marker before each test in this file.
+beforeEach(async () => {
+  await getDbPool().query(
+    `delete from accounts where teacher_account_migration_marker = 'bootstrap-2026-05-22'`,
+  )
+})
 
 // SAAS-PIVOT Epic 1 Day 1 schema invariants.
 //
@@ -114,17 +125,12 @@ describe('SAAS-PIVOT Day 1 — teacher_subscriptions (mig 0074)', () => {
   })
 })
 
-describe('SAAS-PIVOT Day 1 — pricing_tariffs.teacher_id nullable (mig 0075)', () => {
-  it('insert without teacher_id succeeds (Day-1 deferred flip)', async () => {
-    // duration_minutes is NOT NULL after mig 0046; supply 60 explicitly.
-    await getDbPool().query(
-      `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes)
-       values ('day1-tariff-' || floor(random() * 1e9)::text, 'Day-1 tariff', 1500, 60)`,
-    )
-    // No throw = pass.
-  })
-
-  it('deleted_at column exists and is nullable', async () => {
+describe('SAAS-PIVOT Day 1 — pricing_tariffs.teacher_id + deleted_at (mig 0075/0088)', () => {
+  // SAAS-PIVOT Epic 2 Day 3 (mig 0088) flipped pricing_tariffs.teacher_id
+  // to NOT NULL. The Day-1 "insert-without-teacher-id-succeeds" claim is
+  // historical — replaced by the NOT NULL assertion that lives in the
+  // teacher-tariffs.test.ts suite alongside the writer tests.
+  it('teacher_id is NOT NULL after mig 0088, deleted_at remains nullable', async () => {
     const result = await getDbPool().query<{ column_name: string; is_nullable: string }>(
       `select column_name, is_nullable
          from information_schema.columns
@@ -134,27 +140,44 @@ describe('SAAS-PIVOT Day 1 — pricing_tariffs.teacher_id nullable (mig 0075)', 
     )
     expect(result.rows).toEqual([
       { column_name: 'deleted_at', is_nullable: 'YES' },
-      { column_name: 'teacher_id', is_nullable: 'YES' },
+      { column_name: 'teacher_id', is_nullable: 'NO' },
     ])
   })
 })
 
-describe('SAAS-PIVOT Day 1 — lesson_packages.teacher_id nullable (mig 0076a)', () => {
-  it('insert without teacher_id succeeds', async () => {
-    await getDbPool().query(
-      `insert into lesson_packages (slug, title_ru, duration_minutes, count, amount_kopecks)
-       values ('day1-pkg-' || floor(random() * 1e9)::text, 'Day-1 pkg', 60, 5, 7500)`,
+describe('SAAS-PIVOT Day 4 — lesson_packages.teacher_id NOT NULL (mig 0089)', () => {
+  // SAAS-PIVOT Epic 3 Day 4 (mig 0089) flipped lesson_packages.teacher_id
+  // to NOT NULL alongside the global-slug → composite-(teacher_id,slug)
+  // UNIQUE swap. The Day-1 "insert-without-teacher-id-succeeds" claim is
+  // historical; replaced by the NOT NULL assertion.
+  it('mig 0089: column is NOT NULL', async () => {
+    const result = await getDbPool().query<{ is_nullable: string }>(
+      `select is_nullable from information_schema.columns
+        where table_name = 'lesson_packages' and column_name = 'teacher_id'`,
     )
+    expect(result.rows).toEqual([{ is_nullable: 'NO' }])
+  })
+
+  it('mig 0089: INSERT without teacher_id fails NOT NULL', async () => {
+    await expect(
+      getDbPool().query(
+        `insert into lesson_packages (slug, title_ru, duration_minutes, count, amount_kopecks)
+         values ('day4-pkg-' || floor(random() * 1e9)::text, 'Day-4 pkg', 60, 5, 7500)`,
+      ),
+    ).rejects.toThrow(/teacher_id|null value|23502/i)
   })
 })
 
-describe('SAAS-PIVOT Day 1 — package_purchases.teacher_id nullable (mig 0076c)', () => {
-  it('teacher_id column exists and is nullable', async () => {
+describe('SAAS-PIVOT Day 4 — package_purchases.teacher_id NOT NULL (mig 0089)', () => {
+  // SAAS-PIVOT Epic 3 Day 4 (mig 0089) flipped package_purchases.teacher_id
+  // to NOT NULL together with the lesson_packages flip (one TX). The Day-1
+  // "nullable" claim is historical; replaced by NOT NULL assertion.
+  it('mig 0089: column is NOT NULL', async () => {
     const result = await getDbPool().query<{ is_nullable: string }>(
       `select is_nullable from information_schema.columns
         where table_name = 'package_purchases' and column_name = 'teacher_id'`,
     )
-    expect(result.rows).toEqual([{ is_nullable: 'YES' }])
+    expect(result.rows).toEqual([{ is_nullable: 'NO' }])
   })
 })
 
@@ -317,24 +340,24 @@ describe('SAAS-PIVOT Day 1 — account_profiles.teacher_public_slug (mig 0086)',
   })
 })
 
-describe('SAAS-PIVOT Day 1 — payment_orders.teacher_account_id nullable (mig 0085)', () => {
-  it('does NOT break existing inserts that omit teacher_account_id', async () => {
-    const invoiceId = `lc_day1_${randomUUID().replace(/-/g, '').slice(0, 16)}`
-    await getDbPool().query(
-      `insert into payment_orders (
-         invoice_id, amount_rub, currency, description, provider, status,
-         created_at, updated_at, customer_email, receipt_email, receipt
-       ) values (
-         $1, 100, 'RUB', 'day-1 schema test', 'cloudpayments', 'pending',
-         now(), now(), 'day1@example.com', 'day1@example.com', '{}'::jsonb
-       )`,
-      [invoiceId],
-    )
-    const row = await getDbPool().query<{ teacher_account_id: string | null }>(
-      `select teacher_account_id from payment_orders where invoice_id = $1`,
-      [invoiceId],
-    )
-    expect(row.rows[0].teacher_account_id).toBeNull()
+describe('SAAS-PIVOT Day 6 — payment_orders.teacher_account_id NOT NULL (mig 0094)', () => {
+  // SAAS-PIVOT Epic 6 Day 6 (mig 0094) flipped teacher_account_id to
+  // NOT NULL after the Day-6 writer sweep. Day-1 "insert-without-id-succeeds"
+  // claim is historical; replaced by NOT NULL assertion.
+  it('mig 0094: INSERT without teacher_account_id fails NOT NULL', async () => {
+    const invoiceId = `lc_day6_${randomUUID().replace(/-/g, '').slice(0, 16)}`
+    await expect(
+      getDbPool().query(
+        `insert into payment_orders (
+           invoice_id, amount_rub, currency, description, provider, status,
+           created_at, updated_at, customer_email, receipt_email, receipt
+         ) values (
+           $1, 100, 'RUB', 'day-6 schema test', 'cloudpayments', 'pending',
+           now(), now(), 'day6@example.com', 'day6@example.com', '{}'::jsonb
+         )`,
+        [invoiceId],
+      ),
+    ).rejects.toThrow(/teacher_account_id|null value|23502/i)
   })
 
   it('accepts an explicit teacher_account_id', async () => {

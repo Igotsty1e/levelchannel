@@ -183,6 +183,8 @@ function mapRowToOrder(row: Record<string, unknown>): PaymentOrder {
       }
       return value
     })(),
+    teacherAccountId:
+      row.teacher_account_id == null ? null : String(row.teacher_account_id),
   }
 }
 
@@ -211,6 +213,7 @@ function toInsertValues(order: PaymentOrder) {
     order.grantedByOperatorId ?? null,
     order.paymentMethod ?? null,
     order.grantedByTeacherId ?? null,
+    order.teacherAccountId ?? null,
   ]
 }
 
@@ -258,9 +261,10 @@ export async function createOrderPostgres(order: PaymentOrder) {
       receipt_token_hash,
       granted_by_operator_id,
       payment_method,
-      granted_by_teacher_id
+      granted_by_teacher_id,
+      teacher_account_id
     ) values (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18::jsonb,$19,$20,$21::uuid,$22,$23::uuid
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18::jsonb,$19,$20,$21::uuid,$22,$23::uuid,$24::uuid
     )`,
     toInsertValues(order),
   )
@@ -315,7 +319,8 @@ export async function updateOrderPostgres(
         receipt_token_hash = $20,
         granted_by_operator_id = $21::uuid,
         payment_method = $22,
-        granted_by_teacher_id = $23::uuid
+        granted_by_teacher_id = $23::uuid,
+        teacher_account_id = $24::uuid
       where invoice_id = $1`,
       toInsertValues(next),
     )

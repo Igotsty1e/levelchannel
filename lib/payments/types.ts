@@ -126,6 +126,11 @@ export type PaymentOrder = {
   // `createCloudPaymentsOrder` / `createMockOrder` carries a value.
   // Webhook handler reads/writes this — NOT metadata.payment_method.
   paymentMethod?: PaymentMethod | null
+  // SAAS-PIVOT Epic 6 Day 6 (2026-05-22): owning teacher account.
+  // Day-1 (mig 0085) added column nullable; Day-6 (mig 0094) flips
+  // NOT NULL. Every writer derives from slot/package context or
+  // falls back to the bootstrap teacher. Plan §2.8.
+  teacherAccountId?: string | null
 }
 
 export type PublicPaymentOrder = Pick<

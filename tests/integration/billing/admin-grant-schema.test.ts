@@ -37,16 +37,27 @@ async function insertOrder(opts: {
   status: string
   grantedByOperatorId: string | null
   customerEmail?: string
+  // SAAS-PIVOT Epic 3 Day 4 (mig 0090) — quadruple-CHECK requires
+  // payment_method symmetry. Callers that don't set it explicitly fall
+  // back to the bucket-default: 'admin_grant' for admin-grant rows,
+  // null otherwise (money path allows null).
+  paymentMethod?: string | null
 }): Promise<string> {
   const invoiceId = freshInvoiceId('lc_admgrant')
+  const paymentMethod =
+    opts.paymentMethod !== undefined
+      ? opts.paymentMethod
+      : opts.provider === 'admin_grant'
+        ? 'admin_grant'
+        : null
   await getDbPool().query(
     `insert into payment_orders (
        invoice_id, amount_rub, currency, description, provider, status,
        created_at, updated_at, customer_email, receipt_email, receipt,
-       granted_by_operator_id
+       granted_by_operator_id, payment_method
      ) values (
        $1, 100, 'RUB', 'schema test', $2, $3,
-       now(), now(), $4, $4, '{}'::jsonb, $5::uuid
+       now(), now(), $4, $4, '{}'::jsonb, $5::uuid, $6
      )`,
     [
       invoiceId,
@@ -54,6 +65,7 @@ async function insertOrder(opts: {
       opts.status,
       opts.customerEmail ?? 'schema-test@example.com',
       opts.grantedByOperatorId,
+      paymentMethod,
     ],
   )
   return invoiceId
@@ -84,7 +96,7 @@ describe('payment_orders admin_grant triple-CHECK (migration 0051)', () => {
         status: 'paid',
         grantedByOperatorId: operatorId,
       }),
-    ).rejects.toThrow(/payment_orders_admin_grant_consistency/)
+    ).rejects.toThrow(/payment_orders_grant_consistency/)
   })
 
   it('rejects cloudpayments + paid + non-null operator (operator only on admin grants)', async () => {
@@ -95,7 +107,7 @@ describe('payment_orders admin_grant triple-CHECK (migration 0051)', () => {
         status: 'paid',
         grantedByOperatorId: operatorId,
       }),
-    ).rejects.toThrow(/payment_orders_admin_grant_consistency/)
+    ).rejects.toThrow(/payment_orders_grant_consistency/)
   })
 
   it('rejects admin_grant + granted + null operator (operator required on admin grants)', async () => {
@@ -105,7 +117,7 @@ describe('payment_orders admin_grant triple-CHECK (migration 0051)', () => {
         status: 'granted',
         grantedByOperatorId: null,
       }),
-    ).rejects.toThrow(/payment_orders_admin_grant_consistency/)
+    ).rejects.toThrow(/payment_orders_grant_consistency/)
   })
 
   it('rejects cloudpayments + granted (status granted is admin-grant-only)', async () => {
@@ -115,7 +127,7 @@ describe('payment_orders admin_grant triple-CHECK (migration 0051)', () => {
         status: 'granted',
         grantedByOperatorId: null,
       }),
-    ).rejects.toThrow(/payment_orders_admin_grant_consistency/)
+    ).rejects.toThrow(/payment_orders_grant_consistency/)
   })
 
   it('rejects unknown provider (taxonomy CHECK)', async () => {

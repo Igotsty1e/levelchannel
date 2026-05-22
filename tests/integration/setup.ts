@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll } from 'vitest'
 
+import { __resetBootstrapTeacherCacheForTesting } from '@/lib/auth/bootstrap-teacher'
 import { getAuthPool } from '@/lib/auth/pool'
 import { __resetRateLimitsForTesting } from '@/lib/security/rate-limit'
 
@@ -26,11 +27,12 @@ afterEach(async () => {
   // domain-orthogonal but small; truncating it here keeps cabinet
   // integration cases independent.
   // SAAS-PIVOT Day 1 (2026-05-22) fixture sweep — round-25 BLOCKER #2
-  // closure: add ONLY Day-1 tables here. `lesson_completions`,
-  // `lesson_settlements`, `lesson_settlement_completions` are deferred
-  // to Day 5A (Epic 5) — adding them now would fail TRUNCATE on tables
-  // that don't yet exist. Order respects FKs: child tables before
-  // parents (CASCADE handles incidental edges).
+  // closure: add Day-1 tables here.
+  // SAAS-PIVOT Day 5A (2026-05-22) — extend to include
+  // `lesson_completions`, `lesson_settlements`,
+  // `lesson_settlement_completions` (now exist in migrations 0092/0093).
+  // Order respects FKs: child tables before parents (CASCADE handles
+  // incidental edges).
   await pool.query(`
     truncate table
       account_consents,
@@ -43,6 +45,9 @@ afterEach(async () => {
       lesson_packages,
       payment_allocations,
       payment_orders,
+      lesson_settlement_completions,
+      lesson_settlements,
+      lesson_completions,
       lesson_slots,
       learner_teacher_links,
       teacher_invites,
@@ -88,9 +93,51 @@ afterEach(async () => {
       ('operator-managed', 'Operator-managed', 0, null, '{"money_flow_through_platform": true}'::jsonb)
     on conflict (slug) do nothing
   `)
+  // SAAS-PIVOT Epic 6 Day 6 (2026-05-22) — seed a baseline bootstrap
+  // teacher account with operator-managed plan so EVERY test that
+  // exercises /api/payments (or any writer that falls back to the
+  // bootstrap teacher) has a non-null teacher_account_id available.
+  // Tests that need to assert NO bootstrap (schema-day1.test.ts) own
+  // the no-bootstrap invariant directly and don't go through this
+  // setup path.
+  //
+  // Marker matches BOOTSTRAP_MARKER in lib/auth/bootstrap-teacher.ts.
+  await pool.query(`
+    insert into accounts (
+      id, email, password_hash, email_verified_at,
+      teacher_account_migration_marker, created_at, updated_at
+    ) values (
+      gen_random_uuid(),
+      'integration-bootstrap-' || gen_random_uuid() || '@levelchannel.internal',
+      '$argon2id$v=19$m=65536,t=3,p=4$placeholderplaceholderplaceholder$placeholderplaceholderplaceholderplaceholder',
+      now(),
+      'bootstrap-2026-05-22',
+      now(),
+      now()
+    )
+    on conflict do nothing
+  `)
+  await pool.query(`
+    insert into account_roles (account_id, role)
+    select id, 'teacher' from accounts
+     where teacher_account_migration_marker = 'bootstrap-2026-05-22'
+    on conflict (account_id, role) do nothing
+  `)
+  await pool.query(`
+    insert into teacher_subscriptions (account_id, plan_slug, state)
+    select id, 'operator-managed', 'active' from accounts
+     where teacher_account_migration_marker = 'bootstrap-2026-05-22'
+    on conflict (account_id) do update
+      set plan_slug = excluded.plan_slug,
+          state = excluded.state
+  `)
   // Reset in-memory and Postgres rate-limit buckets so per-IP and
   // per-email-hash counters don't leak across test cases.
   await __resetRateLimitsForTesting()
+  // SAAS-PIVOT Epic 2 Day 3 — drop the bootstrap-teacher cache so a
+  // per-test seeded marker row is observable immediately (otherwise
+  // the 30-second TTL would serve stale `null` from a previous test).
+  __resetBootstrapTeacherCacheForTesting()
 })
 
 afterAll(async () => {
