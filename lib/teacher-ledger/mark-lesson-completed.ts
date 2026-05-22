@@ -84,7 +84,29 @@ export async function markLessonCompleted(
   if (String(slot.teacher_account_id) !== params.teacherId) {
     throw new LessonCompletionEligibilityError('wrong_teacher', params.slotId)
   }
-  if (String(slot.status) !== 'booked') {
+  // Round-1 paranoia BLOCKER #1 closure: the duplicate-mark race causes
+  // the second writer to observe status ∈ ('completed','no_show_learner')
+  // because the first writer's forward trigger flipped it. In that case
+  // we must NOT throw — instead, short-circuit to a created=false return
+  // from the existing completion row. The §2.6 ON CONFLICT contract is
+  // preserved this way; the FOR UPDATE row lock serialises the two
+  // writers and the second one detects the idempotent re-entry.
+  const slotStatus = String(slot.status)
+  if (slotStatus === 'completed' || slotStatus === 'no_show_learner') {
+    const existing = await client.query(
+      `select id from lesson_completions where slot_id = $1`,
+      [params.slotId],
+    )
+    if (existing.rows.length === 1) {
+      return { completionId: String(existing.rows[0].id), created: false }
+    }
+    // Status flipped but no completion row: impossible under the
+    // contract (the trigger ONLY fires on insert). Surface as eligibility
+    // error so a corrupted state is loud.
+    throw new LessonCompletionEligibilityError('not_booked', params.slotId)
+  }
+  if (slotStatus !== 'booked') {
+    // open / cancelled / no_show_teacher — genuinely not eligible.
     throw new LessonCompletionEligibilityError('not_booked', params.slotId)
   }
   const startMs = new Date(String(slot.start_at)).getTime()

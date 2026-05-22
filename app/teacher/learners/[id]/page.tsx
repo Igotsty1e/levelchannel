@@ -243,8 +243,13 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
                 const createdMs = new Date(c.createdAt).getTime()
                 const elapsed = Date.now() - createdMs
                 const isImmutable = c.immutableAt !== null || elapsed >= 48 * 60 * 60 * 1000
-                const isFullyCovered = c.coveredKopecks >= c.amountKopecks
-                const canUncomplete = !isImmutable && !isFullyCovered
+                // Round-1 paranoia WARN #4 closure: ANY settlement coverage
+                // blocks uncomplete (the DB BEFORE DELETE trigger rejects on
+                // first lesson_settlement_completions row, partial or full).
+                // Previous gate used `>= amount` which surfaced an action
+                // that would deterministically 409 on partial coverage.
+                const hasAnySettlement = c.coveredKopecks > 0
+                const canUncomplete = !isImmutable && !hasAnySettlement
                 return (
                   <tr
                     key={c.id}

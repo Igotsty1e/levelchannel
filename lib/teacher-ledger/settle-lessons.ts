@@ -113,10 +113,13 @@ export async function settleLessonsInTx(
      where lc.teacher_id = $1
        and s.learner_account_id = $2
        ${where}
-     group by lc.id, lc.amount_kopecks, lc.created_at
+     group by lc.id, lc.amount_kopecks, lc.completed_at
     having coalesce(sum(lsc.amount_kopecks), 0) < lc.amount_kopecks
-     order by lc.created_at asc, lc.id asc
-     for update of lc
+     -- Round-1 paranoia WARN #5 closure: FIFO by lesson chronology
+     -- (completed_at = end_at of the slot at mark time), NOT by row
+     -- created_at (which is mark time). Teachers backfilling old slots
+     -- should still see their oldest debt extinguished first.
+     order by lc.completed_at asc, lc.id asc
   `
   args.push(params.learnerId)
   if (params.completionIds && params.completionIds.length > 0) {
