@@ -92,9 +92,20 @@ export async function settleLessonsInTx(
   client: PoolClient,
   params: SettleLessonsParams,
 ): Promise<SettleLessonsResult> {
+  // Audit HIGH closure: serialise concurrent settle calls for the same
+  // (teacher_id, learner_id) pair via tx-scoped advisory lock. The
+  // grouped SELECT below cannot carry `FOR UPDATE` (Postgres rejects it
+  // on aggregate/grouped results), so we lock at the pair level — same
+  // primitive Day 2 uses for learner_teacher_links writers
+  // (`lib/auth/teacher-scope.ts:setAssignedTeacher`). Two concurrent
+  // calls for (teacherA, learnerB) now serialise; calls for distinct
+  // pairs proceed in parallel.
+  await client.query(
+    `select pg_advisory_xact_lock(hashtextextended($1, 0))`,
+    [`lc-saas-pivot:settle-lessons:${params.teacherId}:${params.learnerId}`],
+  )
   // Candidate completions — outstanding ones for this learner × teacher.
-  // "Outstanding" = completion.amount_kopecks > sum(coverage). Read
-  // with FOR UPDATE so concurrent settle calls serialise per completion.
+  // "Outstanding" = completion.amount_kopecks > sum(coverage).
   const where = params.completionIds && params.completionIds.length > 0
     ? `and lc.id = any($3::uuid[])`
     : ''

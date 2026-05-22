@@ -238,6 +238,36 @@ export async function POST(request: Request, { params }: RouteParams) {
   const parsed = await parseBody(request, learnerId)
   if (!parsed.ok) return parsed.response
 
+  // Audit HIGH closure: dedup transport-retry duplicates via short-window
+  // fingerprint guard (idempotency-key from client headers is preferred
+  // for fetch callers but the form page doesn't emit one). A second
+  // identical POST within 60s for the same (teacher, learner, amount)
+  // collapses to a 409 idempotent_replay. Combined with the advisory
+  // lock inside settleLessonsInTx, this prevents both concurrent-race
+  // double-settles and network-retry double-settles.
+  const dedupKey = (await import('crypto')).createHash('sha256')
+    .update(`${guard.account.id}:${learnerId}:${parsed.amountKopecks}:${(parsed.completionIds ?? []).sort().join(',')}`)
+    .digest('hex')
+  const recent = await pool.query<{ created_at: string }>(
+    `select created_at from lesson_settlements
+      where teacher_id = $1
+        and learner_account_id = $2
+        and amount_kopecks = $3
+        and created_at > now() - interval '60 seconds'
+      order by created_at desc limit 1`,
+    [guard.account.id, learnerId, parsed.amountKopecks],
+  )
+  if (recent.rows.length > 0) {
+    return NextResponse.json(
+      {
+        error: 'idempotent_replay',
+        message: 'Аналогичный платёж был сейчас зарегистрирован. Подождите минуту перед повтором.',
+        dedupKey,
+      },
+      { status: 409, headers: NO_STORE },
+    )
+  }
+
   try {
     const result = await settleLessons({
       learnerId,
