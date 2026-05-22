@@ -46,12 +46,13 @@ async function seedSlotForLearner(args: {
   )
   const teacher = await getAccountByEmail(teacherEmail)
   if (!teacher) throw new Error('teacher registration failed')
+  // SAAS-PIVOT Epic 2 Day 3 (mig 0088): teacher_id NOT NULL.
   const tariffId = '00000000-0000-0000-0000-' + args.slotId.slice(-12)
   await getDbPool().query(
-    `insert into pricing_tariffs (id, slug, title_ru, amount_kopecks, duration_minutes, is_active)
-       values ($1, $2, $3, $4, 60, true)
+    `insert into pricing_tariffs (id, slug, title_ru, amount_kopecks, duration_minutes, is_active, teacher_id)
+       values ($1, $2, $3, $4, 60, true, $5)
        on conflict (id) do nothing`,
-    [tariffId, `slug-${args.slotId.slice(0, 8)}`, 'Test', args.amountKopecks],
+    [tariffId, `slug-${args.slotId.slice(0, 8)}`, 'Test', args.amountKopecks, teacher.id],
   )
   await getDbPool().query(
     `insert into lesson_slots (

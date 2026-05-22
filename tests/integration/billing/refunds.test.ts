@@ -242,14 +242,9 @@ describe('POST /api/admin/refunds', () => {
     const admin = await regAdmin()
     const pool = getDbPool()
 
-    const tariff = await pool.query(
-      `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes)
-       values ($1, '60 мин', 100000, 60)
-       returning id`,
-      [`refund-paidstate-${Date.now()}`],
-    )
-    const tariffId = String(tariff.rows[0].id)
-
+    // SAAS-PIVOT Epic 2 Day 3 (mig 0088): pricing_tariffs.teacher_id is
+    // NOT NULL. Mint the teacher BEFORE the tariff so we can attribute
+    // ownership at insert time.
     const teacher = await pool.query(
       `insert into accounts (email, password_hash, email_verified_at)
        values ($1, 'dummy', now()) returning id`,
@@ -260,6 +255,14 @@ describe('POST /api/admin/refunds', () => {
       `insert into account_roles (account_id, role) values ($1, 'teacher')`,
       [teacherId],
     )
+
+    const tariff = await pool.query(
+      `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes, teacher_id)
+       values ($1, '60 мин', 100000, 60, $2)
+       returning id`,
+      [`refund-paidstate-${Date.now()}`, teacherId],
+    )
+    const tariffId = String(tariff.rows[0].id)
     const slotRes = await pool.query(
       `insert into lesson_slots
          (teacher_account_id, start_at, duration_minutes, status, tariff_id)

@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll } from 'vitest'
 
+import { __resetBootstrapTeacherCacheForTesting } from '@/lib/auth/bootstrap-teacher'
 import { getAuthPool } from '@/lib/auth/pool'
 import { __resetRateLimitsForTesting } from '@/lib/security/rate-limit'
 
@@ -95,6 +96,10 @@ afterEach(async () => {
   // Reset in-memory and Postgres rate-limit buckets so per-IP and
   // per-email-hash counters don't leak across test cases.
   await __resetRateLimitsForTesting()
+  // SAAS-PIVOT Epic 2 Day 3 — drop the bootstrap-teacher cache so a
+  // per-test seeded marker row is observable immediately (otherwise
+  // the 30-second TTL would serve stale `null` from a previous test).
+  __resetBootstrapTeacherCacheForTesting()
 })
 
 afterAll(async () => {
