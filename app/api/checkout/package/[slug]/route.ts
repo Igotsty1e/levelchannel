@@ -7,7 +7,12 @@ import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-ev
 import { requireLearnerArchetypeAndVerified } from '@/lib/auth/guards'
 import { isLearnerArchetypeCandidate } from '@/lib/auth/learner-archetype'
 import { mintToken } from '@/lib/auth/tokens'
-import { getPackageBySlug } from '@/lib/billing/packages'
+import {
+  countPackagesBySlug,
+  getPackageById,
+  getPackageBySlug,
+  getPackageBySlugForTeacher,
+} from '@/lib/billing/packages'
 import { learnerHasActivePackageOfDuration } from '@/lib/billing/packages'
 import { accountHasPendingPackageGrantForDuration } from '@/lib/billing/packages'
 import { buildCloudPaymentsWidgetIntent } from '@/lib/payments/cloudpayments'
@@ -72,7 +77,51 @@ export async function POST(request: Request, { params }: RouteParams) {
   }
 
   const { slug } = await params
-  const pkg = await getPackageBySlug(slug)
+
+  // SAAS-PIVOT security-audit HIGH-1 (2026-05-23) closure — multi-
+  // tenant disambiguation. Mig 0089 retired global UNIQUE(slug) in
+  // favour of UNIQUE(teacher_id, slug). The legacy `getPackageBySlug`
+  // returns ONE row when multiple teachers ship the same slug, which
+  // is non-deterministic. Resolution order:
+  //   1. `?packageId=<uuid>` — direct row lookup (canonical, audit
+  //      recommends this over the slug). Slug from URL is verified
+  //      against the row's actual slug to refuse confused-deputy where
+  //      the client points one packageId at a different URL slug.
+  //   2. `?teacher=<uuid>` — disambiguating teacher scope; slug lookup
+  //      is composite (teacher_id, slug). UUID-typed.
+  //   3. Bare slug — only safe when the slug occurs at most once in
+  //      lesson_packages. `countPackagesBySlug` > 1 → 400
+  //      `package_slug_ambiguous` with explicit guidance.
+  const queryUrl = new URL(request.url)
+  const explicitPackageId = queryUrl.searchParams.get('packageId')
+  const explicitTeacherId = queryUrl.searchParams.get('teacher')
+  const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  let pkg: Awaited<ReturnType<typeof getPackageBySlug>> = null
+  if (explicitPackageId && UUID_RE.test(explicitPackageId)) {
+    pkg = await getPackageById(explicitPackageId)
+    if (pkg && pkg.slug !== slug) {
+      // Refuse confused-deputy: client supplied packageId pointing at
+      // a different slug than the URL claims. Treat as not-found so
+      // no information leaks about other packages.
+      pkg = null
+    }
+  } else if (explicitTeacherId && UUID_RE.test(explicitTeacherId)) {
+    pkg = await getPackageBySlugForTeacher(explicitTeacherId, slug)
+  } else {
+    const matchCount = await countPackagesBySlug(slug)
+    if (matchCount > 1) {
+      return NextResponse.json(
+        {
+          error: 'package_slug_ambiguous',
+          message:
+            'Этот slug пакета принадлежит нескольким учителям. Перейдите по ссылке вида ?packageId=<uuid> или ?teacher=<uuid>, чтобы выбрать нужного учителя.',
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    pkg = await getPackageBySlug(slug)
+  }
   if (!pkg || !pkg.isActive) {
     return NextResponse.json(
       { error: 'package_not_found' },

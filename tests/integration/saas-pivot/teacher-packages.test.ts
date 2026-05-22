@@ -45,7 +45,15 @@ const TEACHER_EMAIL_A = 'teacher-pkg-a@example.com'
 const TEACHER_EMAIL_B = 'teacher-pkg-b@example.com'
 const LEARNER_EMAIL = 'teacher-pkg-learner@example.com'
 
-async function makeTeacher(email: string): Promise<string> {
+// SAAS-PIVOT security-audit HIGH-2 (2026-05-23) closure: POST
+// /api/teacher/packages now requires plan-4 (operator-managed). Tests
+// seed teachers as plan-4 by default so the existing happy-path cases
+// keep passing; the explicit non-plan-4 scenario in
+// `security-high-closures.test.ts` flips this off.
+async function makeTeacher(
+  email: string,
+  opts: { planSlug?: string | null } = {},
+): Promise<string> {
   const pool = getAuthPool()
   const r = await pool.query<{ id: string }>(
     `insert into accounts (email, password_hash, email_verified_at)
@@ -55,6 +63,16 @@ async function makeTeacher(email: string): Promise<string> {
   )
   const id = r.rows[0].id
   await grantAccountRole(id, 'teacher', null)
+  const planSlug = opts.planSlug === undefined ? 'operator-managed' : opts.planSlug
+  if (planSlug !== null) {
+    await pool.query(
+      `insert into teacher_subscriptions (account_id, plan_slug, state)
+         values ($1::uuid, $2, 'active')
+         on conflict (account_id) do update
+           set plan_slug = excluded.plan_slug, state = 'active'`,
+      [id, planSlug],
+    )
+  }
   return id
 }
 

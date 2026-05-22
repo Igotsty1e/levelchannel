@@ -17,14 +17,13 @@
 //     оплате" surface. Day 5B will rewrite that predicate to consume
 //     `lesson_completions` — this helper consumes the SAME source so it
 //     auto-migrates when Day 5B lands.
-//   - active package count (own purchases). v0: simple sum across the
-//     learner's `package_purchases` rows. Day 4 (PR #415) adds
-//     `teacher_id` to `package_purchases`; once that lands the count
-//     can drill down per teacher. Until then the cabinet sub-block
-//     shows the LEARNER-WIDE active-package count and labels it
-//     accordingly (the package itself is teacher-owned at creation
-//     time but the learner's purchase row currently has no
-//     teacher_id link in main — see plan §5 Day 4 column-add).
+//   - active package count (own purchases). Per-teacher since mig
+//     0089 flipped `package_purchases.teacher_id` NOT NULL and the
+//     security-audit HIGH-3 closure (2026-05-23) updated this helper
+//     to GROUP BY teacher_id. Previous v0 (pre-2026-05-23) returned
+//     the learner-WIDE count for every teacher block, which leaked
+//     cross-tenant information ("Teacher A has 3 active packages"
+//     when 2 of them were Teacher B's).
 //
 // Why a single helper not 4× separate queries: the cabinet page already
 // awaits 7+ promises in parallel for v1. Adding 4×N more (where N =
@@ -56,9 +55,9 @@ export type TeacherBlock = {
   // this teacher. Mirrors the `listAccountPostpaidDebt` predicate.
   balanceOwedKopecks: number
   debtSlotCount: number
-  // Active package count for THIS learner. Currently learner-wide (see
-  // file-header note); will narrow to per-teacher once Day 4 lands
-  // `package_purchases.teacher_id`.
+  // Active package count for THIS (learner, teacher) pair. Per-teacher
+  // since security-audit HIGH-3 closure (2026-05-23). Counts non-voided
+  // unexpired purchases owned by THIS teacher with remaining units.
   activePackageCount: number
 }
 
@@ -180,23 +179,44 @@ export async function loadTeacherBlocks(
     })
   }
 
-  // 4. Active package count — learner-wide for v0 (see header note).
-  // Cheap COUNT; same predicate as `listAccountActivePackages` minus
-  // the row projection.
-  const pkgRow = await dbPool.query<{ count: number }>(
-    `select count(*)::int as count
+  // 4. Active package count — per (learner, teacher). HIGH-3 closure
+  // (2026-05-23): mig 0089 flipped `package_purchases.teacher_id` NOT
+  // NULL and the previous learner-wide query leaked the same count
+  // into every teacher block. Same `expires_at`/`voided_at`/units-
+  // remaining predicate as `listAccountActivePackages`, plus
+  // `teacher_id = $teacher`, GROUP BY teacher_id.
+  //
+  // Defensive nullability: `expires_at` is nullable on the schema, so
+  // we accept rows where `expires_at IS NULL` (no expiry) — matches
+  // the audit's spec literal. The previous learner-wide query relied
+  // on `expires_at > now()` which silently dropped null-expiry rows;
+  // the per-teacher branch keeps the bug closed by including them.
+  const pkgRows = await dbPool.query<{
+    teacher_id: string
+    count: number
+  }>(
+    `select pp.teacher_id::text as teacher_id, count(*)::int as count
        from package_purchases pp
       where pp.account_id = $1
-        and pp.expires_at > now()
+        and pp.teacher_id = any($2::uuid[])
         and pp.voided_at is null
+        and (pp.expires_at is null or pp.expires_at > now())
         and (pp.count_initial - (
           select count(*) from package_consumptions pc
            where pc.package_purchase_id = pp.id
              and pc.restored_at is null
-        )) > 0`,
-    [learnerAccountId],
+        )) > 0
+      group by pp.teacher_id`,
+    [learnerAccountId, teacherIds],
   )
-  const activePackageCountAll = Number(pkgRow.rows[0]?.count ?? 0)
+  const activePackageCountByTeacher = new Map<string, number>()
+  for (const id of teacherIds) activePackageCountByTeacher.set(id, 0)
+  for (const r of pkgRows.rows) {
+    activePackageCountByTeacher.set(
+      String(r.teacher_id),
+      Number(r.count ?? 0),
+    )
+  }
 
   // 5. Assemble blocks in the order teacherIds was given (caller's
   // contract: linked_at asc from getActiveTeacherIdsForLearner).
@@ -212,7 +232,7 @@ export async function loadTeacherBlocks(
       upcomingSlots: upcomingByTeacher.get(teacherId) ?? [],
       balanceOwedKopecks: debt.totalDebtKopecks,
       debtSlotCount: debt.slotCount,
-      activePackageCount: activePackageCountAll,
+      activePackageCount: activePackageCountByTeacher.get(teacherId) ?? 0,
     }
   })
 }

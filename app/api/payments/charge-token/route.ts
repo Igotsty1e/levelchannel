@@ -13,7 +13,10 @@ import {
 import { paymentConfig } from '@/lib/payments/config'
 import { buildPersonalDataConsentSnapshot } from '@/lib/legal/personal-data'
 import { chargeWithSavedCard } from '@/lib/payments/provider'
-import { deriveTeacherAccountIdForOrder } from '@/lib/payments/teacher-derivation'
+import {
+  deriveTeacherAccountIdForOrder,
+  isOperatorManagedTeacher,
+} from '@/lib/payments/teacher-derivation'
 import { appendCheckoutTelemetryEvent } from '@/lib/telemetry/store'
 import { withIdempotency } from '@/lib/security/idempotency'
 import {
@@ -152,6 +155,23 @@ export async function POST(request: Request) {
         body: {
           error: 'teacher_resolution_failed',
           message: 'Не удалось определить учителя для платежа.',
+        },
+      }
+    }
+
+    // SAAS-PIVOT security-audit HIGH-4 (2026-05-23) closure — plan-4
+    // gate. Mirror /api/payments/route.ts:198-211: a saved-card one-
+    // click against a deep-link ?t=<free-plan-teacher-slug> would
+    // otherwise charge the learner with funds bound to a teacher who
+    // has no platformed disbursement path.
+    const isPlan4 = await isOperatorManagedTeacher(teacherAccountId)
+    if (!isPlan4) {
+      return {
+        status: 422,
+        body: {
+          error: 'plan_4_required',
+          message:
+            'Этот учитель не использует платформенную оплату. Оплатите занятия напрямую учителю.',
         },
       }
     }

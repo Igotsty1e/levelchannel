@@ -85,6 +85,12 @@ export async function listActivePackagesByDuration(
  * and skip slug-based lookup entirely. Kept for the public catalog
  * endpoint and the URL-bound checkout flow (`/checkout/package/[slug]`)
  * where the operator-scoped guarantee is still implicit.
+ *
+ * SAAS-PIVOT security-audit HIGH-1 (2026-05-23) closure: callers that
+ * cannot tolerate cross-tenant ambiguity MUST first call
+ * `countPackagesBySlug` and surface 400 `package_slug_ambiguous` when
+ * more than one row matches; the route `/api/checkout/package/[slug]`
+ * does exactly that.
  */
 export async function getPackageBySlug(slug: string): Promise<LessonPackage | null> {
   const pool = getDbPool()
@@ -93,6 +99,20 @@ export async function getPackageBySlug(slug: string): Promise<LessonPackage | nu
     [slug],
   )
   return result.rows[0] ? rowToPackage(result.rows[0]) : null
+}
+
+// SAAS-PIVOT security-audit HIGH-1 (2026-05-23). Companion to
+// `getPackageBySlug`: returns the count of rows that share a slug so
+// the legacy global-slug callers (URL-bound public checkout) can fail
+// closed with `package_slug_ambiguous` when mig 0089 lets two teachers
+// own the same slug. Cheap COUNT — no row materialisation.
+export async function countPackagesBySlug(slug: string): Promise<number> {
+  const pool = getDbPool()
+  const result = await pool.query<{ count: string }>(
+    `select count(*)::text as count from lesson_packages where slug = $1`,
+    [slug],
+  )
+  return Number(result.rows[0]?.count ?? 0)
 }
 
 // SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — teacher-scoped catalog
