@@ -2,10 +2,12 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
+import { DigestPreviewTile } from '@/components/teacher/digest-preview-tile'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { countHiddenSlotsForTeacher } from '@/lib/calendar/hidden-slots'
 import { getGoogleIntegrationMeta } from '@/lib/calendar/integrations'
 import { getDbPool } from '@/lib/db/pool'
+import { getTeacherDigestPreview } from '@/lib/notifications/teacher-digest-preview'
 import { listActiveTariffs } from '@/lib/pricing/tariffs'
 
 import TeacherCalendarClient from './client'
@@ -63,6 +65,12 @@ export default async function TeacherPage() {
   const isCalendarConnected =
     integration?.syncState === 'active'
     || integration?.syncState === 'degraded'
+  // TASK-3 Sub-PR D — teacher-local today digest preview tile. Pure
+  // read; same SQL window as the daily digest cron at
+  // scripts/teacher-daily-digest.mjs so the dashboard, the 08:00
+  // email, and /admin/(gated)/settings/digest agree on "today".
+  // session.account.id is the trusted teacher; no body trust.
+  const digestPreview = await getTeacherDigestPreview(current.account.id)
 
   return (
     <>
@@ -129,6 +137,7 @@ export default async function TeacherPage() {
           .
         </div>
       ) : null}
+      <DigestPreviewTile preview={digestPreview} />
       <div
         style={{
           display: 'flex',
