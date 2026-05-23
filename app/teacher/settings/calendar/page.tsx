@@ -59,12 +59,21 @@ export default async function TeacherCalendarSettingsPage({
   // Either may throw in prod when env is missing — that's intentional
   // boot guard, but on the settings page we want to render the
   // diagnostic instead of crashing.
+  //
+  // TASK-6 (teacher-cabinet-polish sub-PR A): the DOM no longer exposes
+  // configError to the teacher (just a neutral "Скоро будет" tile). We
+  // still log the raw error server-side so ops can diagnose env drift
+  // from logs without depending on a teacher hitting "Подробнее".
   let configReady = false
   let configError: string | null = null
   try {
     configReady = getGoogleCalendarOauthConfig() !== null
   } catch (e) {
     configError = e instanceof Error ? e.message : String(e)
+    console.error(
+      '[teacher/settings/calendar] getGoogleCalendarOauthConfig threw',
+      { error: configError },
+    )
   }
 
   const integration = await getGoogleIntegrationMeta(session.account.id)
@@ -97,38 +106,62 @@ export default async function TeacherCalendarSettingsPage({
       >
         Синхронизация с Google Calendar
       </h1>
-      <p
-        style={{
-          color: 'var(--secondary)',
-          fontSize: 15,
-          margin: '0 0 24px 0',
-          lineHeight: 1.6,
-        }}
-      >
-        Подключите ваш Google Calendar к LevelChannel. Сейчас это
-        сохраняет связь с вашим календарём; автоматическая
-        синхронизация занятости и записей об уроках появится в
-        ближайших обновлениях.
-      </p>
+      {/* TASK-6 (teacher-cabinet-polish sub-PR A) — page-level intro
+          and CTA gate on configReady. When env is missing (configError
+          or !configReady) we suppress the contradictory "подключение
+          готово / Подключитесь сейчас" copy and show a single neutral
+          "Эта функция активируется" line above the connect-card's
+          "Скоро будет" tile. When configReady flips to true, the
+          original intro + CTA are restored without a second deploy. */}
+      {configReady ? (
+        <>
+          <p
+            style={{
+              color: 'var(--secondary)',
+              fontSize: 15,
+              margin: '0 0 24px 0',
+              lineHeight: 1.6,
+            }}
+          >
+            Подключите ваш Google Calendar к LevelChannel. Сейчас это
+            сохраняет связь с вашим календарём; автоматическая
+            синхронизация занятости и записей об уроках появится в
+            ближайших обновлениях.
+          </p>
 
-      <p
-        style={{
-          padding: '10px 14px',
-          background: 'rgba(125,180,255,0.08)',
-          border: '1px solid rgba(125,180,255,0.25)',
-          borderRadius: 8,
-          color: 'var(--secondary)',
-          fontSize: 13,
-          margin: '0 0 24px 0',
-          lineHeight: 1.5,
-        }}
-      >
-        ℹ Текущий статус интеграции: подключение готово, фоновая
-        синхронизация (чтение занятости из Google + запись уроков
-        обратно в Google + подсветка конфликтов) шипится отдельными
-        обновлениями. Подключитесь сейчас — как только синхронизация
-        включится, она автоматически заработает для вашего календаря.
-      </p>
+          <p
+            style={{
+              padding: '10px 14px',
+              background: 'rgba(125,180,255,0.08)',
+              border: '1px solid rgba(125,180,255,0.25)',
+              borderRadius: 8,
+              color: 'var(--secondary)',
+              fontSize: 13,
+              margin: '0 0 24px 0',
+              lineHeight: 1.5,
+            }}
+          >
+            ℹ Текущий статус интеграции: подключение готово, фоновая
+            синхронизация (чтение занятости из Google + запись уроков
+            обратно в Google + подсветка конфликтов) шипится отдельными
+            обновлениями. Подключитесь сейчас — как только синхронизация
+            включится, она автоматически заработает для вашего календаря.
+          </p>
+        </>
+      ) : (
+        <p
+          data-testid="calendar-coming-soon-intro"
+          style={{
+            color: 'var(--secondary)',
+            fontSize: 15,
+            margin: '0 0 24px 0',
+            lineHeight: 1.6,
+          }}
+        >
+          Эта функция активируется в ближайшем обновлении. Спасибо за
+          терпение.
+        </p>
+      )}
 
       {connected === '1' ? (
         <p

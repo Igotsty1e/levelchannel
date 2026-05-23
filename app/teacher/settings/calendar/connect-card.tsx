@@ -87,42 +87,17 @@ export function CalendarConnectCard({
     }
   }
 
-  if (configError) {
+  // TASK-6 (teacher-cabinet-polish sub-PR A) — both configError and
+  // !configReady branches render the same neutral "Скоро будет" tile.
+  // The raw configError detail stays out of the DOM (no operator email
+  // exposure, no stack-trace <details>) — it's logged server-side, and
+  // the boot-guard already surfaces config drift to ops via Sentry.
+  // When env vars flip on later (`configReady === true`), the connect
+  // branch below renders automatically — no second deploy needed.
+  if (configError || !configReady) {
     return (
       <div
-        style={{
-          padding: 16,
-          background: 'rgba(255,138,138,0.12)',
-          border: '1px solid rgba(255,138,138,0.4)',
-          borderRadius: 8,
-          color: '#ffb0b0',
-          fontSize: 14,
-          lineHeight: 1.5,
-        }}
-      >
-        ⚠ Интеграция не настроена на этом окружении. Напишите оператору.
-        <details style={{ marginTop: 8 }}>
-          <summary style={{ cursor: 'pointer', fontSize: 12 }}>
-            Подробнее
-          </summary>
-          <pre
-            style={{
-              fontSize: 11,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-              margin: '8px 0 0 0',
-            }}
-          >
-            {configError}
-          </pre>
-        </details>
-      </div>
-    )
-  }
-
-  if (!configReady) {
-    return (
-      <div
+        data-testid="calendar-coming-soon-tile"
         style={{
           padding: 16,
           background: 'var(--surface-2, rgba(255,255,255,0.03))',
@@ -130,9 +105,10 @@ export function CalendarConnectCard({
           borderRadius: 8,
           color: 'var(--secondary)',
           fontSize: 14,
+          lineHeight: 1.5,
         }}
       >
-        ℹ Интеграция временно недоступна на этом окружении (dev / staging).
+        🛠 Скоро будет — функция активируется в ближайшем обновлении.
       </div>
     )
   }
