@@ -3,8 +3,10 @@ import { redirect } from 'next/navigation'
 import type { ReactNode } from 'react'
 
 import { SiteHeader } from '@/components/site-header'
+import { TeacherCabinetNav } from '@/components/teacher/cabinet-nav'
 import { listAccountRoles } from '@/lib/auth/accounts'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { getGoogleIntegrationMeta } from '@/lib/calendar/integrations'
 
 // Wave A PR4 — teacher-facing calendar surface gate.
 //
@@ -55,6 +57,15 @@ export default async function TeacherLayout({
     redirect('/cabinet')
   }
 
+  // Sub-PR B (TASK-1) — SSR-derived calendar connection state for the
+  // top cabinet nav's Календарь dot. Source of truth = same predicate
+  // the inline status row used (`syncState ∈ ('active','degraded')`).
+  // Disconnected / null / errored row → dot shows "○ not connected".
+  const integration = await getGoogleIntegrationMeta(current.account.id)
+  const calendarConnected =
+    integration?.syncState === 'active'
+    || integration?.syncState === 'degraded'
+
   return (
     <>
       <SiteHeader />
@@ -65,6 +76,7 @@ export default async function TeacherLayout({
           padding: '32px 40px 96px',
         }}
       >
+        <TeacherCabinetNav calendarConnected={calendarConnected} />
         {children}
       </main>
     </>
