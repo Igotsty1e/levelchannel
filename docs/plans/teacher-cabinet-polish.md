@@ -1,6 +1,6 @@
 # Teacher cabinet polish (2026-05-23 — owner-requested)
 
-**Status:** SIGN-OFF round 6/N (off-protocol; 11 BLOCKERs + 3 WARNs closed across rounds 1-6) — ready for sub-PR implementation 2026-05-23.
+**Status:** SHIPPED 2026-05-23 — all 6 sub-PRs (A-F) merged to main via PRs #432/#433/#434/#435/#436/#437/#438. Plan-paranoia rounds 1-6 closed (11 BLOCKERs + 3 WARNs).
 **Author:** Claude (orchestrator-mode).
 **Owner context:** chat 2026-05-23 (RU). SaaS pivot Epic 8 shipped; the teacher cabinet at `/teacher` works but is rough. Owner wants a UX polish pass before opening to outside teachers.
 
