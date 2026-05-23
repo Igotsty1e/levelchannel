@@ -2,9 +2,11 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
+import { DigestPreviewTile } from '@/components/teacher/digest-preview-tile'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { countHiddenSlotsForTeacher } from '@/lib/calendar/hidden-slots'
 import { getDbPool } from '@/lib/db/pool'
+import { getTeacherDigestPreview } from '@/lib/notifications/teacher-digest-preview'
 import { listActiveTariffs } from '@/lib/pricing/tariffs'
 
 import TeacherCalendarClient from './client'
@@ -52,13 +54,16 @@ export default async function TeacherPage() {
   const tariffs = await listActiveTariffs({ teacherId: current.account.id })
   const conflictCount = await countTeacherConflicts(current.account.id)
   const hiddenCount = await countHiddenSlotsForTeacher(current.account.id)
-  // Sub-PR B (TASK-1) — the always-visible Google Calendar status row
-  // + the 3-link nav stop-gap (Календарь / Дайджест / Тарифы) that
-  // used to live here have been removed. Calendar connection state is
-  // now surfaced via the ●/○ dot in the layout's TeacherCabinetNav
-  // (`components/teacher/cabinet-nav.tsx`); the nav buttons replace
-  // the inline Link row. Conflict + hidden-slot banners stay — they
-  // are urgent-action surfaces, not navigation.
+  // Sub-PR B (TASK-1) removed the always-visible Google Calendar status
+  // row + the 3-link nav stop-gap — connection state now surfaces via
+  // the ●/○ dot in TeacherCabinetNav. Conflict + hidden-slot banners
+  // stay (urgent-action surfaces).
+  // Sub-PR D (TASK-3) — teacher-local today digest preview tile. Pure
+  // read; same SQL window as the daily digest cron at
+  // scripts/teacher-daily-digest.mjs so the dashboard, the 08:00
+  // email, and /admin/(gated)/settings/digest agree on "today".
+  // session.account.id is the trusted teacher; no body trust.
+  const digestPreview = await getTeacherDigestPreview(current.account.id)
 
   return (
     <>
@@ -125,6 +130,7 @@ export default async function TeacherPage() {
           .
         </div>
       ) : null}
+      <DigestPreviewTile preview={digestPreview} />
       <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 8 }}>
         Мой календарь
       </h1>

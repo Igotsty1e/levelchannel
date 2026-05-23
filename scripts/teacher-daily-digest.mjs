@@ -188,6 +188,18 @@ export async function selectCandidateTeachers(db, maxAttempts, rateLimit) {
  * Per-teacher booked-slots query for the teacher's local calendar day
  * (§1.3). Inclusive of morning-already-passed slots (R3-BLOCKER 4).
  *
+ * SQL PARITY CONTRACT (teacher-cabinet-polish 2026-05-23, Sub-PR D):
+ * the window predicate below MUST stay aligned 1:1 with the dashboard
+ * preview helper at `lib/notifications/teacher-digest-preview.ts`
+ * (`getTeacherDigestPreview`). The dashboard tile, the 08:00 digest
+ * email, and the operator preview at `/admin/(gated)/settings/digest`
+ * all answer "what counts as today" through the same boundary:
+ *   start_at >= today_local_00:00 AT TIME ZONE teacher_tz
+ *   AND start_at < tomorrow_local_00:00 AT TIME ZONE teacher_tz
+ * Drift here = the dashboard shows lessons the email omits (or vice
+ * versa). If this SQL changes, change the helper too. Parity test:
+ * `tests/integration/teacher-cabinet-polish/digest-preview-cron-parity.test.ts`.
+ *
  * @param {import('pg').Pool | import('pg').PoolClient} db
  * @param {string} teacherAccountId
  * @param {string} todayLocalYmd  'YYYY-MM-DD'
