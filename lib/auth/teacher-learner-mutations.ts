@@ -29,6 +29,7 @@ import {
   normalizeAccountEmail,
 } from '@/lib/auth/accounts'
 import { getAuthPool } from '@/lib/auth/pool'
+import { computeDisplayNameForStorage } from '@/lib/auth/profile-name'
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -47,6 +48,8 @@ export class TeacherRenameLearnerError extends Error {
       | 'wrong_archetype'
       | 'displayName_empty'
       | 'displayName_too_long'
+      | 'firstName_too_long'
+      | 'lastName_too_long'
       | 'email_invalid'
       | 'email_in_use'
       | 'noop',
@@ -58,17 +61,23 @@ export class TeacherRenameLearnerError extends Error {
 }
 
 export type RenameLearnerInput = {
-  // `undefined` means "do not touch". Passing `null` is NOT supported —
-  // display_name / email cannot be cleared via this surface. The route
-  // layer rejects null explicitly so callers can't shoot themselves in
-  // the foot.
+  // `undefined` means "do not touch". Passing `null` is NOT supported
+  // for displayName (back-compat with the rename surface — clearing
+  // the display_name has no UX). firstName/lastName accept null to
+  // explicitly clear that half of the name.
   displayName?: string
+  // TASK-5 (mig 0095) — first_name / last_name. When EITHER is passed,
+  // the helper recomputes display_name via computeDisplayNameForStorage.
+  firstName?: string | null
+  lastName?: string | null
   email?: string
 }
 
 export type RenameLearnerResult = {
   updated: {
-    displayName?: string
+    displayName?: string | null
+    firstName?: string | null
+    lastName?: string | null
     email?: string
   }
   // The actor's view of what changed (for the audit log line). Empty
@@ -76,6 +85,8 @@ export type RenameLearnerResult = {
   // but the helper is defensive).
   previous: {
     displayName: string | null
+    firstName: string | null
+    lastName: string | null
     email: string
   }
 }
@@ -106,6 +117,34 @@ export async function renameLearnerByTeacher(
     normalisedDisplayName = trimmed
   }
 
+  // TASK-5 (mig 0095) — first/last name. null clears that half;
+  // empty string also maps to null (storage CHECK rejects ''). The
+  // 60-char cap matches the CHECK in mig 0095.
+  const normaliseHalfName = (
+    v: string | null | undefined,
+  ): string | null | undefined => {
+    if (v === undefined) return undefined
+    if (v === null) return null
+    const t = v.trim()
+    return t.length === 0 ? null : t
+  }
+  const normalisedFirstName = normaliseHalfName(input.firstName)
+  if (
+    normalisedFirstName !== undefined &&
+    normalisedFirstName !== null &&
+    normalisedFirstName.length > 60
+  ) {
+    throw new TeacherRenameLearnerError('firstName_too_long')
+  }
+  const normalisedLastName = normaliseHalfName(input.lastName)
+  if (
+    normalisedLastName !== undefined &&
+    normalisedLastName !== null &&
+    normalisedLastName.length > 60
+  ) {
+    throw new TeacherRenameLearnerError('lastName_too_long')
+  }
+
   let normalisedEmail: string | undefined
   if (input.email !== undefined) {
     const candidate = normalizeAccountEmail(input.email)
@@ -115,10 +154,15 @@ export async function renameLearnerByTeacher(
     normalisedEmail = candidate
   }
 
-  if (normalisedDisplayName === undefined && normalisedEmail === undefined) {
+  if (
+    normalisedDisplayName === undefined &&
+    normalisedFirstName === undefined &&
+    normalisedLastName === undefined &&
+    normalisedEmail === undefined
+  ) {
     throw new TeacherRenameLearnerError(
       'noop',
-      'nothing to update — pass displayName and/or email',
+      'nothing to update — pass displayName / firstName / lastName / email',
     )
   }
 
@@ -138,12 +182,15 @@ export async function renameLearnerByTeacher(
     )
 
     // Anti-spoof gate 1: learner is in this teacher's ACTIVE roster.
-    // We also re-fetch the learner's current display_name + email
-    // (for the audit "previous" snapshot) in one round-trip.
+    // We also re-fetch the learner's current display_name + first_name
+    // + last_name + email (for the audit "previous" snapshot AND the
+    // computeDisplayNameForStorage merge) in one round-trip.
     const guard = await client.query<{
       in_link: boolean
       email: string
       display_name: string | null
+      first_name: string | null
+      last_name: string | null
       has_admin: boolean
       has_teacher: boolean
     }>(
@@ -156,6 +203,8 @@ export async function renameLearnerByTeacher(
          ) as in_link,
          a.email,
          p.display_name,
+         p.first_name,
+         p.last_name,
          exists (
            select 1 from account_roles where account_id = $1 and role = 'admin'
          ) as has_admin,
@@ -194,7 +243,12 @@ export async function renameLearnerByTeacher(
       throw new TeacherRenameLearnerError('wrong_archetype')
     }
 
-    const updated: { displayName?: string; email?: string } = {}
+    const updated: {
+      displayName?: string | null
+      firstName?: string | null
+      lastName?: string | null
+      email?: string
+    } = {}
 
     if (normalisedEmail !== undefined && normalisedEmail !== row.email) {
       // Uniqueness check. UNIQUE index on accounts.email exists at the
@@ -233,20 +287,69 @@ export async function renameLearnerByTeacher(
       updated.email = normalisedEmail
     }
 
-    if (normalisedDisplayName !== undefined) {
+    // TASK-5 (mig 0095) — figure out the effective name write.
+    //
+    // Merge rule:
+    //   - If input.firstName / input.lastName provided → those win
+    //     (null clears that half). Recompute display_name from the
+    //     final (firstName ?? existing, lastName ?? existing) pair.
+    //   - Else if input.displayName provided → legacy single-field
+    //     write; first/last unchanged.
+    //
+    // The single TX writes all touched columns at once.
+    const wantsNameUpdate =
+      normalisedFirstName !== undefined ||
+      normalisedLastName !== undefined ||
+      normalisedDisplayName !== undefined
+
+    if (wantsNameUpdate) {
+      const effectiveFirstName =
+        normalisedFirstName !== undefined ? normalisedFirstName : row.first_name
+      const effectiveLastName =
+        normalisedLastName !== undefined ? normalisedLastName : row.last_name
+      const recomputedDisplayName =
+        normalisedFirstName !== undefined || normalisedLastName !== undefined
+          ? computeDisplayNameForStorage({
+              firstName: effectiveFirstName,
+              lastName: effectiveLastName,
+            })
+          : normalisedDisplayName ?? row.display_name
+
       // Upsert profile — a fresh learner may not have a row yet
       // (the cabinet creates one on first PATCH). We deliberately do
       // NOT use upsertAccountProfile() here because that helper would
       // open ITS OWN pool connection and break the single-TX guarantee.
       await client.query(
-        `insert into account_profiles (account_id, display_name)
-             values ($1, $2)
+        `insert into account_profiles (account_id, display_name, first_name, last_name)
+             values ($1, $2, $3, $4)
          on conflict (account_id) do update
              set display_name = excluded.display_name,
-                 updated_at = now()`,
-        [learnerId, normalisedDisplayName],
+                 first_name   = excluded.first_name,
+                 last_name    = excluded.last_name,
+                 updated_at   = now()`,
+        [
+          learnerId,
+          recomputedDisplayName,
+          effectiveFirstName,
+          effectiveLastName,
+        ],
       )
-      updated.displayName = normalisedDisplayName
+      if (normalisedDisplayName !== undefined) {
+        updated.displayName = normalisedDisplayName
+      } else if (
+        normalisedFirstName !== undefined ||
+        normalisedLastName !== undefined
+      ) {
+        // Surface the recomputed display_name so the route can echo
+        // the storage value back to the form.
+        updated.displayName = recomputedDisplayName
+      }
+      if (normalisedFirstName !== undefined) {
+        updated.firstName = normalisedFirstName
+      }
+      if (normalisedLastName !== undefined) {
+        updated.lastName = normalisedLastName
+      }
     }
 
     await client.query('commit')
@@ -279,6 +382,8 @@ export async function renameLearnerByTeacher(
       updated,
       previous: {
         displayName: row.display_name,
+        firstName: row.first_name,
+        lastName: row.last_name,
         email: row.email,
       },
     }

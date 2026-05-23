@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { listAccountRoles } from '@/lib/auth/accounts'
+import { formatProfileNameForRender } from '@/lib/auth/profile-name'
 import { getDbPool } from '@/lib/db/pool'
 
 import { TeacherEditForm } from './edit-form'
@@ -27,6 +28,8 @@ type TeacherDetail = {
   renewalAt: string | null
   publicSlug: string | null
   displayName: string | null
+  firstName: string | null
+  lastName: string | null
   commissionRate: number | null
 }
 
@@ -42,13 +45,17 @@ async function loadTeacherDetail(
     renewal_at: string | null
     public_slug: string | null
     display_name: string | null
+    first_name: string | null
+    last_name: string | null
   }>(
     `select a.email,
             sub.plan_slug,
             sub.state,
             sub.renewal_at::text as renewal_at,
             p.teacher_public_slug as public_slug,
-            p.display_name
+            p.display_name,
+            p.first_name,
+            p.last_name
        from accounts a
        left join teacher_subscriptions sub on sub.account_id = a.id
        left join account_profiles p on p.account_id = a.id
@@ -71,6 +78,8 @@ async function loadTeacherDetail(
     renewalAt: row.renewal_at,
     publicSlug: row.public_slug,
     displayName: row.display_name,
+    firstName: row.first_name,
+    lastName: row.last_name,
     commissionRate: null,
   }
 }
@@ -228,7 +237,12 @@ export default async function AdminTeacherDetailPage({
         {teacher.email}
       </h1>
       <p style={{ color: 'var(--secondary)', fontSize: 13, marginBottom: 24 }}>
-        {teacher.displayName ?? '—'} · slug:{' '}
+        {formatProfileNameForRender({
+          firstName: teacher.firstName,
+          lastName: teacher.lastName,
+          displayName: teacher.displayName,
+          fallbackEmail: '—',
+        })} · slug:{' '}
         {teacher.publicSlug ? (
           <code style={{ fontSize: 12 }}>{teacher.publicSlug}</code>
         ) : (

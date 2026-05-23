@@ -230,6 +230,11 @@ async function purgeAccounts(pool) {
         await client.query(
           `update account_profiles
               set display_name = null,
+                  -- TASK-5 (mig 0095) — null first_name/last_name on
+                  -- purge so 152-FZ erasure is complete (display_name
+                  -- alone is no longer the full picture).
+                  first_name = null,
+                  last_name = null,
                   timezone = null,
                   locale = null,
                   updated_at = now()

@@ -69,15 +69,28 @@ export default async function BookPage() {
   if (teacherId) {
     // Resolve teacher account id → display name. Tiny direct query;
     // keeps us out of cross-cabinet queries.
+    // TASK-5 (mig 0095) — prefer first/last name when present, fall
+    // back to display_name, then email.
     const pool = await import('@/lib/db/pool').then((m) => m.getDbPool())
+    const { formatProfileNameForRender } = await import(
+      '@/lib/auth/profile-name'
+    )
     const r = await pool.query(
-      `select coalesce(p.display_name, a.email) as name
+      `select a.email, p.display_name, p.first_name, p.last_name
          from accounts a
          left join account_profiles p on p.account_id = a.id
         where a.id = $1`,
       [teacherId],
     )
-    teacherDisplayName = r.rows[0]?.name ? String(r.rows[0].name) : null
+    const row = r.rows[0]
+    teacherDisplayName = row
+      ? formatProfileNameForRender({
+          firstName: row.first_name ? String(row.first_name) : null,
+          lastName: row.last_name ? String(row.last_name) : null,
+          displayName: row.display_name ? String(row.display_name) : null,
+          fallbackEmail: row.email ? String(row.email) : '',
+        })
+      : null
   }
 
   return (

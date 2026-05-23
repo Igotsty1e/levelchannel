@@ -75,16 +75,28 @@ export async function loadTeacherBlocks(
     id: string
     email: string
     display_name: string | null
+    first_name: string | null
+    last_name: string | null
   }>(
-    `select a.id, a.email, p.display_name
+    `select a.id, a.email, p.display_name, p.first_name, p.last_name
        from accounts a
        left join account_profiles p on p.account_id = a.id
       where a.id = any($1::uuid[])`,
     [teacherIds],
   )
+  // TASK-5 (mig 0095) — first/last name preferred, then display_name,
+  // then email.
+  const { formatProfileNameForRender } = await import(
+    '@/lib/auth/profile-name'
+  )
   const teacherLabel = new Map<string, string>()
   for (const r of teacherRows.rows) {
-    const label = (r.display_name ?? '').trim() || String(r.email)
+    const label = formatProfileNameForRender({
+      firstName: r.first_name ? String(r.first_name) : null,
+      lastName: r.last_name ? String(r.last_name) : null,
+      displayName: r.display_name ? String(r.display_name) : null,
+      fallbackEmail: String(r.email),
+    })
     teacherLabel.set(String(r.id), label)
   }
 

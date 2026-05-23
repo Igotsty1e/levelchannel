@@ -45,6 +45,7 @@ import {
   PROBE_NAMES,
   VERDICT_KINDS,
 } from './lib/probe-runs.mjs'
+import { formatProfileNameForRender } from './lib/profile-name.mjs'
 import { renderTeacherDailyDigestEmail } from './lib/teacher-daily-digest-template.mjs'
 import { renderTeacherDailyDigestTelegram } from './lib/teacher-daily-digest-telegram-template.mjs'
 import { runTeacherTelegramBlock } from './lib/teacher-daily-digest-telegram.mjs'
@@ -144,6 +145,8 @@ export async function selectCandidateTeachers(db, maxAttempts, rateLimit) {
             a.email         as account_email,
             coalesce(p.timezone, 'Europe/Moscow') as raw_tz,
             p.display_name  as display_name,
+            p.first_name    as first_name,
+            p.last_name     as last_name,
             (now() AT TIME ZONE coalesce(p.timezone, 'Europe/Moscow'))::date
               as their_today_local
        from current_teachers ct
@@ -173,15 +176,34 @@ export async function selectCandidateTeachers(db, maxAttempts, rateLimit) {
       rateLimit + CANDIDATE_OVERFETCH_BUFFER,
     ],
   )
-  return r.rows.map((row) => ({
-    accountId: String(row.account_id),
-    accountEmail: row.account_email ? String(row.account_email) : '',
-    rawTz: String(row.raw_tz),
-    displayName: row.display_name ? String(row.display_name) : null,
-    theirTodayLocal: new Date(String(row.their_today_local))
-      .toISOString()
-      .slice(0, 10),
-  }))
+  return r.rows.map((row) => {
+    const accountEmail = row.account_email ? String(row.account_email) : ''
+    const displayName = row.display_name ? String(row.display_name) : null
+    const firstName = row.first_name ? String(row.first_name) : null
+    const lastName = row.last_name ? String(row.last_name) : null
+    // TASK-5 (mig 0095) — greeting uses formatProfileNameForRender
+    // (first/last/displayName/email). The cron's template treats a
+    // null displayName as "drop greeting"; we pass null when neither
+    // first/last nor display_name resolves to a real name (the
+    // formatter would return the email, which is wrong shape for the
+    // greeting line).
+    const fullName = formatProfileNameForRender({
+      firstName,
+      lastName,
+      displayName,
+      fallbackEmail: '',
+    })
+    const greetingDisplayName = fullName.trim().length > 0 ? fullName : null
+    return {
+      accountId: String(row.account_id),
+      accountEmail,
+      rawTz: String(row.raw_tz),
+      displayName: greetingDisplayName,
+      theirTodayLocal: new Date(String(row.their_today_local))
+        .toISOString()
+        .slice(0, 10),
+    }
+  })
 }
 
 /**
@@ -243,16 +265,32 @@ export async function loadLearnerLabels(db, learnerAccountIds) {
   const result = new Map()
   if (learnerAccountIds.length === 0) return result
   const r = await db.query(
-    `select a.id, a.email, p.display_name
+    `select a.id, a.email, p.display_name, p.first_name, p.last_name
        from accounts a
        left join account_profiles p on p.account_id = a.id
       where a.id = any($1::uuid[])`,
     [learnerAccountIds],
   )
   for (const row of r.rows) {
+    const email = String(row.email || '')
+    const displayName = row.display_name ? String(row.display_name) : null
+    const firstName = row.first_name ? String(row.first_name) : null
+    const lastName = row.last_name ? String(row.last_name) : null
+    // TASK-5 (mig 0095) — learner label uses formatProfileNameForRender
+    // for first/last/displayName precedence. Pass empty string as the
+    // fallback so the renderer's pickLearnerLabel keeps its own
+    // email-fallback decision (we don't want to override "show email"
+    // with "show display_name" here).
+    const fullName = formatProfileNameForRender({
+      firstName,
+      lastName,
+      displayName,
+      fallbackEmail: '',
+    })
+    const labelName = fullName.trim().length > 0 ? fullName : null
     result.set(String(row.id), {
-      email: String(row.email || ''),
-      displayName: row.display_name ? String(row.display_name) : null,
+      email,
+      displayName: labelName,
     })
   }
   return result

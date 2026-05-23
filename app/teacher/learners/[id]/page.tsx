@@ -2,6 +2,7 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 
+import { formatProfileNameForRender } from '@/lib/auth/profile-name'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getDbPool } from '@/lib/db/pool'
 
@@ -88,8 +89,10 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
     id: string
     email: string
     display_name: string | null
+    first_name: string | null
+    last_name: string | null
   }>(
-    `select a.id, a.email, p.display_name
+    `select a.id, a.email, p.display_name, p.first_name, p.last_name
        from accounts a
        left join account_profiles p on p.account_id = a.id
       where a.id = $1`,
@@ -99,6 +102,12 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
     notFound()
   }
   const learner = learnerRow.rows[0]
+  const learnerNameForRender = formatProfileNameForRender({
+    firstName: learner.first_name,
+    lastName: learner.last_name,
+    displayName: learner.display_name,
+    fallbackEmail: learner.email,
+  })
 
   // Completions for this teacher × learner. JOIN slots for start_at +
   // duration. LEFT JOIN settlement coverage so partially-settled rows
@@ -168,7 +177,7 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
         </Link>
       </div>
       <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>
-        {learner.display_name || learner.email}
+        {learnerNameForRender}
       </h1>
       <p style={{ color: 'var(--secondary)', marginBottom: 24 }}>
         {learner.email}
@@ -176,7 +185,8 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
 
       <RenameLearnerForm
         learnerId={learnerId}
-        initialDisplayName={learner.display_name ?? ''}
+        initialFirstName={learner.first_name ?? ''}
+        initialLastName={learner.last_name ?? ''}
         initialEmail={learner.email}
       />
 

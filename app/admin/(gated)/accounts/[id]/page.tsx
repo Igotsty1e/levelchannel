@@ -334,7 +334,9 @@ export default async function AdminAccountDetailPage({ params }: RouteParams) {
       <Section title="Профиль">
         {profile ? (
           <>
-            <Field label="Имя">{profile.displayName ?? '—'}</Field>
+            <Field label="Имя">{profile.firstName ?? '—'}</Field>
+            <Field label="Фамилия">{profile.lastName ?? '—'}</Field>
+            <Field label="Отображаемое имя">{profile.displayName ?? '—'}</Field>
             <Field label="Часовой пояс">{profile.timezone ?? '—'}</Field>
             <Field label="Язык">{profile.locale ?? '—'}</Field>
             <Field label="Обновлён">{formatDateTime(profile.updatedAt)}</Field>

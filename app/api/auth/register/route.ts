@@ -8,6 +8,8 @@ import {
   grantAccountRole,
 } from '@/lib/auth/accounts'
 import { recordConsent } from '@/lib/auth/consents'
+import { computeDisplayNameForStorage } from '@/lib/auth/profile-name'
+import { upsertAccountProfile } from '@/lib/auth/profiles'
 import {
   redeemInviteAndBindLearnerAtomic,
   verifyInviteToken,
@@ -57,6 +59,8 @@ export async function POST(request: Request) {
     personalDataConsentAccepted?: boolean
     role?: string
     inviteToken?: string
+    firstName?: string | null
+    lastName?: string | null
   }
   try {
     body = await request.json()
@@ -163,6 +167,41 @@ export async function POST(request: Request) {
     // surface — worse than a fail-fast 5xx that prompts retry.
     if (requestedRole === 'teacher') {
       await grantAccountRole(account.id, 'teacher', null)
+    }
+
+    // TASK-5 (mig 0095) — best-effort post-create profile UPSERT for
+    // firstName/lastName carried in the register body. Round-2
+    // BLOCKER #5: register stays non-transactional; failure here logs
+    // but does NOT fail the register (the formatter falls back to
+    // email at render time, and the cabinet's first PATCH lazily
+    // creates the profile row otherwise).
+    const rawFirstName =
+      typeof body.firstName === 'string' ? body.firstName.trim() : ''
+    const rawLastName =
+      typeof body.lastName === 'string' ? body.lastName.trim() : ''
+    if (rawFirstName.length > 0 || rawLastName.length > 0) {
+      const firstName = rawFirstName.length > 0 ? rawFirstName.slice(0, 60) : null
+      const lastName = rawLastName.length > 0 ? rawLastName.slice(0, 60) : null
+      try {
+        // upsertAccountProfile validates length + computes the storage
+        // display_name server-side. We pass firstName + lastName as the
+        // canonical inputs; the writer derives display_name from them.
+        await upsertAccountProfile(account.id, {
+          firstName,
+          lastName,
+          // Pass displayName explicitly so the writer treats this PATCH
+          // as a full name-write (idempotent with the recompute path).
+          displayName: computeDisplayNameForStorage({ firstName, lastName }),
+        })
+      } catch (err) {
+        // Log + continue — the account exists, the formatter handles
+        // missing profile gracefully. Operator alert lives in the auth
+        // audit pipeline; we surface a structured line here.
+        console.warn('[auth.register] best-effort profile UPSERT failed', {
+          accountId: account.id,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
     }
 
     // SAAS-4 (2026-05-18) — atomic redeem-and-bind if the body

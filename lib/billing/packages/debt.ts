@@ -98,6 +98,11 @@ export type AccountPostpaidDebtSummary = {
   accountId: string
   email: string
   displayName: string | null
+  // TASK-5 (mig 0095) — first/last name. Optional to keep callers
+  // compiling without churn; the admin debt summary page uses
+  // formatProfileNameForRender to combine first/last/displayName.
+  firstName?: string | null
+  lastName?: string | null
   // Total of `expected_amount_kopecks` for the account's debt slots
   // — slots with a null tariff (legacy / operator-priced) contribute 0
   // and are surfaced via `slotsWithoutTariff` so the operator can
@@ -163,6 +168,8 @@ export async function listAccountsWithPostpaidDebtAggregate(opts?: {
      select a.id as account_id,
             a.email,
             ap.display_name,
+            ap.first_name,
+            ap.last_name,
             coalesce(sum(ds.expected_amount_kopecks), 0)::bigint as total_debt_kopecks,
             count(*)::int as slot_count,
             count(*) filter (where ds.expected_amount_kopecks is null)::int as slots_without_tariff,
@@ -170,7 +177,7 @@ export async function listAccountsWithPostpaidDebtAggregate(opts?: {
        from debt_slots ds
        join accounts a on a.id = ds.learner_account_id
        left join account_profiles ap on ap.account_id = a.id
-      group by a.id, a.email, ap.display_name
+      group by a.id, a.email, ap.display_name, ap.first_name, ap.last_name
      having coalesce(sum(ds.expected_amount_kopecks), 0) >= $1
       order by total_debt_kopecks desc, oldest_debt_slot_at asc`,
     [minKopecks],
@@ -179,6 +186,8 @@ export async function listAccountsWithPostpaidDebtAggregate(opts?: {
     accountId: String(r.account_id),
     email: String(r.email),
     displayName: r.display_name ? String(r.display_name) : null,
+    firstName: r.first_name ? String(r.first_name) : null,
+    lastName: r.last_name ? String(r.last_name) : null,
     totalDebtKopecks: Number(r.total_debt_kopecks),
     slotCount: Number(r.slot_count),
     slotsWithoutTariff: Number(r.slots_without_tariff),

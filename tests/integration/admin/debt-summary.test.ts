@@ -256,7 +256,7 @@ describe('GET /api/admin/debt-summary', () => {
     const text = await res.text()
     const lines = text.trim().split('\n')
     expect(lines[0]).toBe(
-      'account_id,email,display_name,total_debt_kopecks,total_debt_rub,slot_count,slots_without_tariff,oldest_debt_slot_at',
+      'account_id,email,display_name,first_name,last_name,total_debt_kopecks,total_debt_rub,slot_count,slots_without_tariff,oldest_debt_slot_at',
     )
     expect(lines.length).toBeGreaterThan(1)
   })

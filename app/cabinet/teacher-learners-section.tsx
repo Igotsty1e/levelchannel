@@ -8,6 +8,7 @@
 // view. Today this block answers "who am I teaching, how often" —
 // the load-bearing question the teacher asks every Monday morning.
 
+import { formatProfileNameForRender } from '@/lib/auth/profile-name'
 import type { TeacherLearnerSummary } from '@/lib/scheduling/teacher-learners'
 
 export function TeacherLearnersSection({
@@ -39,7 +40,15 @@ export function TeacherLearnersSection({
       </p>
 
       <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-        {learners.map((l) => (
+        {learners.map((l) => {
+          const renderedName = formatProfileNameForRender({
+            firstName: l.firstName ?? null,
+            lastName: l.lastName ?? null,
+            displayName: l.displayName,
+            fallbackEmail: l.learnerEmail,
+          })
+          const hasName = renderedName !== l.learnerEmail
+          return (
           <li
             key={l.learnerId}
             style={{
@@ -52,8 +61,8 @@ export function TeacherLearnersSection({
           >
             <div>
               <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2 }}>
-                {l.displayName || l.learnerEmail}
-                {l.displayName ? (
+                {renderedName}
+                {hasName ? (
                   <span
                     style={{
                       color: 'var(--secondary)',
@@ -100,7 +109,8 @@ export function TeacherLearnersSection({
               ) : null}
             </div>
           </li>
-        ))}
+          )
+        })}
       </ul>
     </div>
   )
