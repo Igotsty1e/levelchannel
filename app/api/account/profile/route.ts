@@ -38,6 +38,8 @@ export async function GET(request: Request) {
       profile: profile ?? {
         accountId: auth.account.id,
         displayName: null,
+        firstName: null,
+        lastName: null,
         timezone: null,
         locale: null,
         createdAt: null,
@@ -71,6 +73,28 @@ export async function PATCH(request: Request) {
       )
     }
     update.displayName = raw.displayName as string | null
+  }
+  // TASK-5 (mig 0095) — firstName / lastName. Both optional; null
+  // clears, omitted keeps. When passed, the writer recomputes the
+  // storage display_name via computeDisplayNameForStorage (NULL on
+  // empty).
+  if ('firstName' in raw) {
+    if (raw.firstName !== null && typeof raw.firstName !== 'string') {
+      return NextResponse.json(
+        { error: 'firstName must be string or null.' },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    update.firstName = raw.firstName as string | null
+  }
+  if ('lastName' in raw) {
+    if (raw.lastName !== null && typeof raw.lastName !== 'string') {
+      return NextResponse.json(
+        { error: 'lastName must be string or null.' },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    update.lastName = raw.lastName as string | null
   }
   if ('timezone' in raw) {
     if (raw.timezone !== null && typeof raw.timezone !== 'string') {

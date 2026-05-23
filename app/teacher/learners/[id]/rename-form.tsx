@@ -7,31 +7,36 @@ import { useState } from 'react'
 //
 // Plan: owner-requested 2026-05-23.
 //
-// Two independent fields (display_name + email). The user can save
-// either or both. POSTs to `/api/teacher/learners/[id]/rename`.
+// TASK-5 (mig 0095) — firstName + lastName inputs replace the single
+// `displayName` field. Both optional; null clears. Email separately.
+// POSTs to `/api/teacher/learners/[id]/rename`.
 //
 // Client-side validation is a HINT only — the route is the authority.
 // We surface server-side errors verbatim via `data.message`.
 
 export function RenameLearnerForm({
   learnerId,
-  initialDisplayName,
+  initialFirstName,
+  initialLastName,
   initialEmail,
 }: {
   learnerId: string
-  initialDisplayName: string
+  initialFirstName: string
+  initialLastName: string
   initialEmail: string
 }) {
   const router = useRouter()
-  const [displayName, setDisplayName] = useState(initialDisplayName)
+  const [firstName, setFirstName] = useState(initialFirstName)
+  const [lastName, setLastName] = useState(initialLastName)
   const [email, setEmail] = useState(initialEmail)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [savedAt, setSavedAt] = useState<string | null>(null)
 
-  const dirtyDisplayName = displayName.trim() !== initialDisplayName.trim()
+  const dirtyFirstName = firstName.trim() !== initialFirstName.trim()
+  const dirtyLastName = lastName.trim() !== initialLastName.trim()
   const dirtyEmail = email.trim().toLowerCase() !== initialEmail.trim().toLowerCase()
-  const canSave = (dirtyDisplayName || dirtyEmail) && !busy
+  const canSave = (dirtyFirstName || dirtyLastName || dirtyEmail) && !busy
 
   // Soft client-side hint regex — server has the authoritative check.
   const emailLooksOk = !dirtyEmail || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
@@ -42,8 +47,13 @@ export function RenameLearnerForm({
     setErr(null)
     setSavedAt(null)
     try {
-      const body: Record<string, string> = {}
-      if (dirtyDisplayName) body.displayName = displayName.trim()
+      const body: Record<string, string | null> = {}
+      if (dirtyFirstName) {
+        body.firstName = firstName.trim() === '' ? null : firstName.trim()
+      }
+      if (dirtyLastName) {
+        body.lastName = lastName.trim() === '' ? null : lastName.trim()
+      }
       if (dirtyEmail) body.email = email.trim()
       const res = await fetch(`/api/teacher/learners/${learnerId}/rename`, {
         method: 'POST',
@@ -91,15 +101,32 @@ export function RenameLearnerForm({
         Меняет имя и/или email только для этого ученика. Пароль и другие
         данные ученик меняет в своём личном кабинете самостоятельно.
       </p>
-      <Field label="Имя">
-        <input
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
-          placeholder="Иван"
-          style={inputStyle}
-          maxLength={60}
-        />
-      </Field>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 12,
+        }}
+      >
+        <Field label="Имя">
+          <input
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
+            placeholder="Иван"
+            style={inputStyle}
+            maxLength={60}
+          />
+        </Field>
+        <Field label="Фамилия">
+          <input
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value)}
+            placeholder="Петров"
+            style={inputStyle}
+            maxLength={60}
+          />
+        </Field>
+      </div>
       <Field label="Email">
         <input
           value={email}

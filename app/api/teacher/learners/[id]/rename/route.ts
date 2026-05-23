@@ -68,10 +68,11 @@ export async function POST(request: Request, { params }: RouteParams) {
   if (!parsed.ok) return parsed.response
   const body = parsed.body
 
-  // Body shape: `{ displayName?: string, email?: string }`. We accept
-  // strings only — passing `null` is rejected, because clearing the
-  // display_name or email via this surface is not a supported workflow
-  // (the cabinet has its own self-service editor).
+  // Body shape: `{ displayName?: string, firstName?: string|null,
+  //                lastName?: string|null, email?: string }`.
+  // displayName: legacy single-field path; string only.
+  // firstName/lastName: TASK-5 (mig 0095); string OR null (null clears).
+  // email: string only (clearing not supported).
   let displayName: string | undefined
   if ('displayName' in body) {
     if (typeof body.displayName !== 'string') {
@@ -84,6 +85,34 @@ export async function POST(request: Request, { params }: RouteParams) {
       )
     }
     displayName = body.displayName
+  }
+
+  let firstName: string | null | undefined
+  if ('firstName' in body) {
+    if (body.firstName !== null && typeof body.firstName !== 'string') {
+      return NextResponse.json(
+        {
+          error: 'firstName_invalid',
+          message: 'firstName должен быть строкой или null.',
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    firstName = body.firstName as string | null
+  }
+
+  let lastName: string | null | undefined
+  if ('lastName' in body) {
+    if (body.lastName !== null && typeof body.lastName !== 'string') {
+      return NextResponse.json(
+        {
+          error: 'lastName_invalid',
+          message: 'lastName должен быть строкой или null.',
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    lastName = body.lastName as string | null
   }
 
   let email: string | undefined
@@ -100,11 +129,16 @@ export async function POST(request: Request, { params }: RouteParams) {
     email = body.email
   }
 
-  if (displayName === undefined && email === undefined) {
+  if (
+    displayName === undefined &&
+    firstName === undefined &&
+    lastName === undefined &&
+    email === undefined
+  ) {
     return NextResponse.json(
       {
         error: 'noop',
-        message: 'Передайте displayName и/или email.',
+        message: 'Передайте displayName / firstName / lastName / email.',
       },
       { status: 400, headers: NO_STORE },
     )
@@ -114,7 +148,7 @@ export async function POST(request: Request, { params }: RouteParams) {
     const result = await renameLearnerByTeacher(
       guard.account.id,
       learnerId,
-      { displayName, email },
+      { displayName, firstName, lastName, email },
     )
     return NextResponse.json(
       { ok: true, updated: result.updated },
@@ -167,6 +201,22 @@ export async function POST(request: Request, { params }: RouteParams) {
             {
               error: 'displayName_too_long',
               message: 'Имя не длиннее 60 символов.',
+            },
+            { status: 400, headers: NO_STORE },
+          )
+        case 'firstName_too_long':
+          return NextResponse.json(
+            {
+              error: 'firstName_too_long',
+              message: 'Имя не длиннее 60 символов.',
+            },
+            { status: 400, headers: NO_STORE },
+          )
+        case 'lastName_too_long':
+          return NextResponse.json(
+            {
+              error: 'lastName_too_long',
+              message: 'Фамилия не длиннее 60 символов.',
             },
             { status: 400, headers: NO_STORE },
           )

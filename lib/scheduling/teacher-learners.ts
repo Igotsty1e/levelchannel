@@ -16,6 +16,12 @@ export type TeacherLearnerSummary = {
   learnerId: string
   learnerEmail: string
   displayName: string | null
+  // TASK-5 (mig 0095) — first_name / last_name. Optional on the type
+  // so older callers still compile. UI sweep uses
+  // formatProfileNameForRender({ firstName, lastName, displayName,
+  // fallbackEmail: learnerEmail }).
+  firstName?: string | null
+  lastName?: string | null
   isAssigned: boolean
   upcomingCount: number
   completedCount: number
@@ -69,6 +75,8 @@ export async function listLearnersForTeacher(
      select a.id as learner_id,
             a.email as learner_email,
             p.display_name,
+            p.first_name,
+            p.last_name,
             (al.learner_account_id is not null) as is_assigned,
             coalesce(st.upcoming_count, 0)::int as upcoming_count,
             coalesce(cs.completed_count, 0)::int as completed_count,
@@ -94,6 +102,8 @@ export async function listLearnersForTeacher(
     learnerId: String(row.learner_id),
     learnerEmail: String(row.learner_email),
     displayName: row.display_name ? String(row.display_name) : null,
+    firstName: row.first_name ? String(row.first_name) : null,
+    lastName: row.last_name ? String(row.last_name) : null,
     isAssigned: Boolean(row.is_assigned),
     upcomingCount: Number(row.upcoming_count),
     completedCount: Number(row.completed_count),

@@ -2,6 +2,7 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 
+import { formatProfileNameForRender } from '@/lib/auth/profile-name'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getDbPool } from '@/lib/db/pool'
 
@@ -85,8 +86,10 @@ export default async function TeacherSettlePage({ params }: PageProps) {
     id: string
     email: string
     display_name: string | null
+    first_name: string | null
+    last_name: string | null
   }>(
-    `select a.id, a.email, p.display_name
+    `select a.id, a.email, p.display_name, p.first_name, p.last_name
        from accounts a
        left join account_profiles p on p.account_id = a.id
       where a.id = $1`,
@@ -96,6 +99,12 @@ export default async function TeacherSettlePage({ params }: PageProps) {
     notFound()
   }
   const learner = learnerRow.rows[0]
+  const learnerNameForRender = formatProfileNameForRender({
+    firstName: learner.first_name,
+    lastName: learner.last_name,
+    displayName: learner.display_name,
+    fallbackEmail: learner.email,
+  })
 
   // FIFO list (oldest first) of completions that still have remaining
   // balance. Mirrors the candidate query in settleLessons so the UI
@@ -168,7 +177,7 @@ export default async function TeacherSettlePage({ params }: PageProps) {
         Отметить оплату
       </h1>
       <p style={{ color: 'var(--secondary)', marginBottom: 24 }}>
-        {learner.display_name || learner.email} ·{' '}
+        {learnerNameForRender} ·{' '}
         долг {fmtRub(totalRemaining)}
       </p>
 

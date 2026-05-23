@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { AuthShell } from '@/components/auth-shell'
 import { AuthInfoBox } from '@/components/auth-form-bits'
 import { listAccountRoles } from '@/lib/auth/accounts'
+import { formatProfileNameForRender } from '@/lib/auth/profile-name'
 import { getAccountProfile } from '@/lib/auth/profiles'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { listAccountActivePackages } from '@/lib/billing/packages'
@@ -146,7 +147,12 @@ export default async function CabinetPage() {
   const canBuyPackages = isLearner
     ? await isLearnerArchetypeCandidate(account.id)
     : false
-  const greetingName = profile?.displayName?.trim() || account.email
+  const greetingName = formatProfileNameForRender({
+    firstName: profile?.firstName ?? null,
+    lastName: profile?.lastName ?? null,
+    displayName: profile?.displayName ?? null,
+    fallbackEmail: account.email,
+  })
   // Wave 52 — pass two sets to <LessonsSection>: "paid" + "refunded".
   // A refunded slot needs a distinct neutral pill, not the yellow
   // "оплатить" CTA which would suggest the learner needs to pay again.

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 
 import type { AccountProfile } from '@/lib/auth/profiles'
+import { formatProfileNameForRender } from '@/lib/auth/profile-name'
 // Pulling TIMEZONE_OPTIONS from the DB-backed profiles module would
 // drag pg into the client bundle (Module not found: 'tls'); use the
 // pure constants module instead.
@@ -15,9 +16,13 @@ export function ProfileEditor({
   initialProfile: AccountProfile | null
   fallbackEmail: string
 }) {
-  const [displayName, setDisplayName] = useState(
-    initialProfile?.displayName ?? '',
-  )
+  // TASK-5 (2026-05-23) — two distinct inputs (firstName + lastName).
+  // Storage display_name is recomputed server-side from these two
+  // fields. The initial values come from the new mig 0095 columns;
+  // back-compat: if both are null but a legacy display_name exists,
+  // splitting is server-side already (mig 0095 backfill).
+  const [firstName, setFirstName] = useState(initialProfile?.firstName ?? '')
+  const [lastName, setLastName] = useState(initialProfile?.lastName ?? '')
   // Default to Europe/Moscow when profile has no tz yet (most learners
   // are RU). The dropdown's options are curated IANA names; saving any
   // other string is now refused server-side. safeTimezone() clamps
@@ -30,6 +35,14 @@ export function ProfileEditor({
   const [err, setErr] = useState<string | null>(null)
   const [savedAt, setSavedAt] = useState<string | null>(null)
 
+  // Live preview of what the saved name will render as.
+  const previewName = formatProfileNameForRender({
+    firstName,
+    lastName,
+    displayName: initialProfile?.displayName ?? null,
+    fallbackEmail,
+  })
+
   async function onSave() {
     setBusy(true)
     setErr(null)
@@ -39,13 +52,14 @@ export function ProfileEditor({
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          displayName: displayName.trim() === '' ? null : displayName.trim(),
+          firstName: firstName.trim() === '' ? null : firstName.trim(),
+          lastName: lastName.trim() === '' ? null : lastName.trim(),
           timezone: timezone.trim() === '' ? null : timezone.trim(),
         }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => null)
-        setErr(data?.message || data?.error || `HTTP `)
+        setErr(data?.message || data?.error || `HTTP ${res.status}`)
       } else {
         setSavedAt(new Date().toLocaleTimeString('ru-RU'))
       }
@@ -72,15 +86,43 @@ export function ProfileEditor({
         Имя нужно, чтобы система обращалась к вам по имени, а не по адресу
         <span style={{ marginLeft: 4, color: 'var(--text)' }}>{fallbackEmail}</span>.
       </p>
-      <Field label="Имя">
-        <input
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
-          placeholder="Иван"
-          style={inputStyle}
-          maxLength={60}
-        />
-      </Field>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 12,
+          marginBottom: 12,
+        }}
+      >
+        <Field label="Имя">
+          <input
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
+            placeholder="Иван"
+            style={inputStyle}
+            maxLength={60}
+          />
+        </Field>
+        <Field label="Фамилия">
+          <input
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value)}
+            placeholder="Петров"
+            style={inputStyle}
+            maxLength={60}
+          />
+        </Field>
+      </div>
+      <p
+        style={{
+          color: 'var(--secondary)',
+          fontSize: 12,
+          marginBottom: 16,
+        }}
+      >
+        Как мы будем к вам обращаться:{' '}
+        <span style={{ color: 'var(--text)' }}>{previewName}</span>
+      </p>
       <Field label="Часовой пояс">
         <select
           value={timezone}

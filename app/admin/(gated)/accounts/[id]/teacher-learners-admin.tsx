@@ -16,6 +16,7 @@
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 
+import { formatProfileNameForRender } from '@/lib/auth/profile-name'
 import type { TeacherLearnerSummary } from '@/lib/scheduling/teacher-learners'
 
 type Candidate = { id: string; email: string }
@@ -99,7 +100,15 @@ export function TeacherLearnersAdmin({
         </p>
       ) : (
         <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-          {currentLearners.map((l) => (
+          {currentLearners.map((l) => {
+            const renderedName = formatProfileNameForRender({
+              firstName: l.firstName ?? null,
+              lastName: l.lastName ?? null,
+              displayName: l.displayName,
+              fallbackEmail: l.learnerEmail,
+            })
+            const hasName = renderedName !== l.learnerEmail
+            return (
             <li
               key={l.learnerId}
               style={{
@@ -114,8 +123,8 @@ export function TeacherLearnersAdmin({
             >
               <div>
                 <div style={{ fontWeight: 500 }}>
-                  {l.displayName || l.learnerEmail}
-                  {l.displayName ? (
+                  {renderedName}
+                  {hasName ? (
                     <span
                       style={{
                         color: 'var(--secondary)',
@@ -162,7 +171,8 @@ export function TeacherLearnersAdmin({
                 <span style={{ width: 80 }} />
               )}
             </li>
-          ))}
+            )
+          })}
         </ul>
       )}
 

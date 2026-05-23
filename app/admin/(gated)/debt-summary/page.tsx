@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+import { formatProfileNameForRender } from '@/lib/auth/profile-name'
 import { listAccountsWithPostpaidDebtAggregate } from '@/lib/billing/packages'
 
 export const dynamic = 'force-dynamic'
@@ -156,7 +157,12 @@ export default async function AdminDebtSummaryPage({
                     href={`/admin/accounts/${r.accountId}`}
                     style={{ color: 'var(--text)' }}
                   >
-                    {r.displayName ?? '—'}
+                    {formatProfileNameForRender({
+                      firstName: r.firstName,
+                      lastName: r.lastName,
+                      displayName: r.displayName,
+                      fallbackEmail: '—',
+                    })}
                   </Link>
                 </Td>
                 <Td>
