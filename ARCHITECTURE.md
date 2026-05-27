@@ -28,8 +28,10 @@ The critical-path inventory (`docs/critical-path.md`) lists the 25 load-bearing 
 
 ### Frontend
 
-- [`app/page.tsx`](app/page.tsx) - server wrapper for the main page; reads the public legal profile on the server and passes it into the client landing component so the home route does not depend on client-side `NEXT_PUBLIC_LEGAL_*` env evaluation
-- [`components/home/home-page-client.tsx`](components/home/home-page-client.tsx) - client landing implementation: hero, sections, analytics hooks, sticky header, footer with the server-provided legal profile, and a defensive `IntersectionObserver` fallback for browsers where the API is missing or throws
+- [`app/page.tsx`](app/page.tsx) - server wrapper for the public 1:1 English-teacher landing at `/`; reads the public legal profile on the server and passes it into the client landing component so the home route does not depend on client-side `NEXT_PUBLIC_LEGAL_*` env evaluation
+- [`components/home/home-page-client.tsx`](components/home/home-page-client.tsx) - client implementation of the restored public landing about Anastasia: hero, teaching formats, results, teacher section, pricing CTA, analytics hooks, sticky header, footer with the server-provided legal profile, and a defensive `IntersectionObserver` fallback for browsers where the API is missing or throws
+- [`app/saas/page.tsx`](app/saas/page.tsx) - temporary test surface for the teacher SaaS landing; server wrapper that reuses the same public legal profile as `/` but sets route-level `noindex` metadata
+- [`components/home/teacher-landing-client.tsx`](components/home/teacher-landing-client.tsx) - client implementation of the teacher-acquisition SaaS landing moved off `/` onto `/saas`
 - [`components/payments/pricing-section.tsx`](components/payments/pricing-section.tsx) - payment UI with a free amount and an e-mail, mandatory consent checkbox on personal-data processing, payment creation, status polling, widget launch, and a saved last-success confirmation on the main page
 - [`app/thank-you/page.tsx`](app/thank-you/page.tsx) - payment confirmation page
 - [`app/offer/page.tsx`](app/offer/page.tsx) - public oferta

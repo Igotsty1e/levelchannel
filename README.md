@@ -10,7 +10,7 @@ It is aimed at small education businesses that need a direct landing-to-payment 
 
 MVP, in active development.
 
-**SaaS-pivot shipped 2026-05-22:** the platform pivoted from a single-tenant payment site (one teacher) to a multi-tenant CRM for English tutors. New teachers self-onboard at `/register?role=teacher`; the public landing at `/` is teacher-acquisition. The original CloudPayments money-flow stays only for plan-4 (operator-managed) teachers — Free/Mid/Pro teachers handle payments out-of-band. Plan document: [`docs/plans/saas-pivot-master.md`](docs/plans/saas-pivot-master.md).
+**SaaS-pivot shipped 2026-05-22:** the platform pivoted from a single-tenant payment site (one teacher) to a multi-tenant CRM for English tutors. New teachers self-onboard at `/register?role=teacher`; the SaaS landing currently lives at `/saas` as a test surface, while `/` serves the public 1:1 English-teacher landing. The original CloudPayments money-flow stays only for plan-4 (operator-managed) teachers — Free/Mid/Pro teachers handle payments out-of-band. Plan document: [`docs/plans/saas-pivot-master.md`](docs/plans/saas-pivot-master.md).
 
 ## Problem it solves
 

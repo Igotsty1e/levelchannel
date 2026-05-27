@@ -15,7 +15,7 @@
 // focused on real database work.
 //
 // What this pins:
-//   1. The page renders without throwing (server-component `HomePage`
+//   1. The page renders without throwing (server-component `SaasPage`
 //      logs the `landing_view` line and returns the client island).
 //   2. The hero copy is teacher-targeted (value prop language).
 //   3. A `/register?role=teacher` deep-link is present.
@@ -42,11 +42,11 @@ vi.mock('next/link', () => {
   }
 })
 
-import HomePage from '@/app/page'
+import SaasPage from '@/app/saas/page'
 
-describe('SAAS-PIVOT Epic 8 — teacher-acquisition landing (/)', () => {
+describe('SAAS-PIVOT Epic 8 — teacher-acquisition landing (/saas)', () => {
   it('renders the teacher-targeted value prop in the hero', () => {
-    render(HomePage())
+    render(SaasPage())
     // h1 carries the value prop. Two-line clause split across spans —
     // the visible accessible name concatenates them.
     const h1 = screen.getByRole('heading', { level: 1 })
@@ -55,7 +55,7 @@ describe('SAAS-PIVOT Epic 8 — teacher-acquisition landing (/)', () => {
   })
 
   it('deep-links to /register?role=teacher from the primary CTAs', () => {
-    const { container } = render(HomePage())
+    const { container } = render(SaasPage())
     // At least one CTA must be the teacher-register deep-link. The
     // hero, header, "how it works", final-CTA, and the Free pricing
     // tier all share this destination.
@@ -66,14 +66,14 @@ describe('SAAS-PIVOT Epic 8 — teacher-acquisition landing (/)', () => {
   })
 
   it('preserves the /pay legacy learner-payment route in the footer', () => {
-    const { container } = render(HomePage())
+    const { container } = render(SaasPage())
     const payLink = container.querySelector('a[href="/pay"]')
     expect(payLink).not.toBeNull()
     expect(payLink?.textContent ?? '').toMatch(/Перейти к оплате/i)
   })
 
   it('shows the four pricing tiers with plan-correct CTA semantics', () => {
-    const { container } = render(HomePage())
+    const { container } = render(SaasPage())
     // Tier names appear as h3 inside the pricing section.
     expect(screen.getByText('Free')).toBeTruthy()
     expect(screen.getByText('Mid')).toBeTruthy()
@@ -101,7 +101,7 @@ describe('SAAS-PIVOT Epic 8 — teacher-acquisition landing (/)', () => {
   })
 
   it('respects heading hierarchy (one h1 at the hero; h2 per section; h3 sub-headings)', () => {
-    render(HomePage())
+    render(SaasPage())
     const h1s = screen.getAllByRole('heading', { level: 1 })
     expect(h1s.length).toBe(1)
     const h2s = screen.getAllByRole('heading', { level: 2 })
@@ -115,7 +115,7 @@ describe('SAAS-PIVOT Epic 8 — teacher-acquisition landing (/)', () => {
   })
 
   it('mentions the Free tier as the entry CTA copy', () => {
-    render(HomePage())
+    render(SaasPage())
     // Several CTAs share the "Начать бесплатно" / "Создать кабинет
     // бесплатно" copy — at least one must surface.
     const freeCtas = screen.getAllByText(/Начать бесплатно|Создать кабинет бесплатно?/i)
@@ -123,7 +123,7 @@ describe('SAAS-PIVOT Epic 8 — teacher-acquisition landing (/)', () => {
   })
 
   it('renders the comparison block with the research-§5.8 categories', () => {
-    const { container } = render(HomePage())
+    const { container } = render(SaasPage())
     // Pin the comparison categories the research doc spelled out. Each
     // appears inside an <h2>-titled "Чем мы отличаемся" section, so we
     // assert the rows under #comparison only — "Excel" leaks into the
@@ -138,21 +138,21 @@ describe('SAAS-PIVOT Epic 8 — teacher-acquisition landing (/)', () => {
 
   it('emits the server-side landing_view log line', () => {
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
-    HomePage()
+    SaasPage()
     const fired = spy.mock.calls.some(
       (args) =>
         typeof args[0] === 'string' &&
         args[0].includes('[landing] view') &&
         args[1] &&
         typeof args[1] === 'object' &&
-        (args[1] as Record<string, unknown>).page === '/',
+        (args[1] as Record<string, unknown>).page === '/saas',
     )
     expect(fired).toBe(true)
     spy.mockRestore()
   })
 
   it('keeps the footer hint that this landing is teacher-targeted', () => {
-    render(HomePage())
+    render(SaasPage())
     // Plan §3 Epic 8 + owner decision 2026-05-21 "только для учителей":
     // we need to make clear to a wandering learner that this isn't the
     // page they're looking for, and point them to /pay.
