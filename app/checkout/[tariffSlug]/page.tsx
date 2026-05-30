@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import Script from 'next/script'
 
+import { BrandMark } from '@/components/brand/brand-mark'
 import { SESSION_COOKIE_NAME } from '@/lib/auth/sessions'
 import { listAllTariffs } from '@/lib/pricing/tariffs'
 import { getSlotById } from '@/lib/scheduling/slots'
@@ -118,11 +119,12 @@ export default async function CheckoutPage({
             style={{
               color: 'var(--text)',
               textDecoration: 'none',
-              fontWeight: 700,
-              fontSize: 18,
+              display: 'inline-flex',
+              alignItems: 'center',
             }}
+            aria-label="LevelChannel — на главную"
           >
-            LevelChannel
+            <BrandMark variant="full" width={150} />
           </Link>
           <Link
             href={backHref}

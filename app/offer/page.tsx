@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 
+import { BrandMark } from '@/components/brand/brand-mark'
 import { PERSONAL_DATA_CONSENT_PATH } from '@/lib/legal/personal-data'
 import {
   LEGAL_BANK_ACCOUNT,
@@ -33,9 +34,8 @@ export default function OfferPage() {
       {/* Header */}
       <div style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '0 24px' }}>
         <div style={{ maxWidth: 800, margin: '0 auto', height: 60, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}>
-            <span style={{ fontSize: 28, fontWeight: 900, fontStyle: 'italic', background: ACCENT, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', letterSpacing: '-0.04em', lineHeight: 1 }}>L</span>
-            <span style={{ fontWeight: 700, fontSize: 17, color: '#fff', letterSpacing: '-0.01em' }}>evel<span style={{ background: ACCENT, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Channel</span></span>
+          <Link href="/" style={{ display: 'inline-flex', alignItems: 'center', textDecoration: 'none', color: '#F5F5F7' }} aria-label="LevelChannel — на главную">
+            <BrandMark variant="full" width={150} />
           </Link>
           <Link
             href="/"

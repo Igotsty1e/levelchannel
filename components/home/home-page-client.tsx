@@ -4,6 +4,8 @@ import React, { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 
+import { BrandMark } from '@/components/brand/brand-mark'
+
 const TELEGRAM_URL = 'https://t.me/anastasiia_englishcoach'
 
 type HomePageLegalProfile = {
@@ -140,26 +142,8 @@ function Header() {
       }}
     >
       <div className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span
-            style={{
-              fontSize: 32,
-              fontWeight: 900,
-              fontStyle: 'italic',
-              lineHeight: 1,
-              background: 'linear-gradient(135deg, #C87878 0%, #E8A890 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-              letterSpacing: '-0.04em',
-              flexShrink: 0,
-            }}
-          >
-            L
-          </span>
-          <span style={{ fontWeight: 700, fontSize: 18, letterSpacing: '-0.01em' }}>
-            evel<span className="gradient-text">Channel</span>
-          </span>
+        <div style={{ display: 'flex', alignItems: 'center', color: '#F5F5F7' }}>
+          <BrandMark variant="full" width={170} />
         </div>
 
         <nav style={{ display: 'flex', gap: 32, alignItems: 'center' }} className="hidden md:flex">
@@ -900,26 +884,8 @@ function Footer({ legalProfile }: { legalProfile: HomePageLegalProfile }) {
           }}
         >
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-              <div
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 8,
-                  background: 'linear-gradient(135deg, #C87878, #E8A890)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontWeight: 800,
-                  color: '#fff',
-                  fontSize: 16,
-                }}
-              >
-                L
-              </div>
-              <span style={{ fontWeight: 700, fontSize: 17 }}>
-                Level<span className="gradient-text">Channel</span>
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, color: '#F5F5F7' }}>
+              <BrandMark variant="full" width={160} />
             </div>
             <p style={{ fontSize: 14, color: '#A1A1AA', lineHeight: 1.65 }}>
               Индивидуальные онлайн-занятия по английскому языку 1:1

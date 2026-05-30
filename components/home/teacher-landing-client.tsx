@@ -40,6 +40,8 @@
 import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
 
+import { BrandMark } from '@/components/brand/brand-mark'
+
 type TeacherLandingLegalProfile = {
   legalBankAccount: string
   legalBankBik: string
@@ -164,27 +166,8 @@ function Header() {
           height: 68,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span
-            aria-hidden="true"
-            style={{
-              fontSize: 32,
-              fontWeight: 900,
-              fontStyle: 'italic',
-              lineHeight: 1,
-              background: 'linear-gradient(135deg, #C87878 0%, #E8A890 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-              letterSpacing: '-0.04em',
-              flexShrink: 0,
-            }}
-          >
-            L
-          </span>
-          <span style={{ fontWeight: 700, fontSize: 18, letterSpacing: '-0.01em' }}>
-            evel<span className="gradient-text">Channel</span>
-          </span>
+        <div style={{ display: 'flex', alignItems: 'center', color: '#F5F5F7' }}>
+          <BrandMark variant="full" width={170} />
         </div>
 
         <nav
@@ -1178,27 +1161,8 @@ function Footer({ legalProfile }: { legalProfile: TeacherLandingLegalProfile }) 
           }}
         >
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-              <div
-                aria-hidden="true"
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 8,
-                  background: 'linear-gradient(135deg, #C87878, #E8A890)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontWeight: 800,
-                  color: '#fff',
-                  fontSize: 16,
-                }}
-              >
-                L
-              </div>
-              <span style={{ fontWeight: 700, fontSize: 17 }}>
-                Level<span className="gradient-text">Channel</span>
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, color: '#F5F5F7' }}>
+              <BrandMark variant="full" width={160} />
             </div>
             <p style={{ fontSize: 14, color: '#A1A1AA', lineHeight: 1.65 }}>
               Личный кабинет для преподавателей: расписание, ученики, оплаты.
