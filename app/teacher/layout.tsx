@@ -57,6 +57,18 @@ export default async function TeacherLayout({
     redirect('/cabinet')
   }
 
+  // SAAS-OFFER bundle Sub-A.2 round-1 BLOCKER#2 closure (2026-05-30) —
+  // the SSR consent-gate hookup is DELIBERATELY DEFERRED to the
+  // follow-up Sub-A.3/A.5 PR that also ships the /api/teacher/** route
+  // swap, register-flow refactor, and backfill script. Wiring the gate
+  // here without the perimeter would leave a non-uniform enforcement
+  // surface: cabinet SSR would redirect non-consenting teachers to
+  // /saas-offer-accept while teacher API mutations stayed open. The
+  // SAAS_OFFER_GATE_ENABLED operator setting ships in this PR for the
+  // standalone /saas-offer-accept and /saas-offer-awaiting routes only
+  // (they evaluate the gate before rendering); the cabinet entry stays
+  // gate-blind until the perimeter is complete.
+
   // Sub-PR B (TASK-1) — SSR-derived calendar connection state for the
   // top cabinet nav's Календарь dot. Source of truth = same predicate
   // the inline status row used (`syncState ∈ ('active','degraded')`).

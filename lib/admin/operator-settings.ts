@@ -49,7 +49,14 @@ export type ProbeName =
 // (R3 INFO#6 closure: partition-by-membership, not name prefix).
 export type ChannelScope = 'telegram'
 
-export type SettingScope = ProbeName | ChannelScope
+// SAAS-OFFER bundle (Sub-A.2-3-5, 2026-05-30) — gate scopes for
+// flag-controlled product knobs. NOT probes (no dedup, no rolling
+// window), NOT channels (no delivery transport). Sentinel partition
+// for the SAAS_OFFER_GATE_ENABLED knob; future product gates land
+// here too.
+export type GateScope = 'saas-offer-gate'
+
+export type SettingScope = ProbeName | ChannelScope | GateScope
 
 type SettingSchemaInt = {
   kind: 'int'
@@ -340,6 +347,41 @@ export const SETTING_SCHEMA = {
     description:
       'master switch (1=on/0=off) for the learner Telegram channel; OFF by default — flip after BotFather setup + webhook registration. Per-learner opt-in still required (accounts.learner_telegram_enabled=true after /start <code> handshake).',
     scope: 'learner-reminders',
+  },
+  // SAAS-OFFER bundle (Sub-A.2 foundation, 2026-05-30) — single gate
+  // flag for the SaaS-оферта consent layer.
+  //
+  // CURRENT enforcement perimeter (what flag=1 actually controls in
+  // the foundation PR):
+  //   - /saas-offer-accept (interstitial) — evaluates the gate before
+  //     rendering; redirects to /teacher if 'ok', /saas-offer-awaiting
+  //     if 'awaiting_publication'.
+  //   - /saas-offer-awaiting — evaluates the gate to bounce non-
+  //     awaiting cases out.
+  //
+  // DEFERRED to follow-up Sub-A.3/A.5 PR (the route swap):
+  //   - SSR redirect on cabinet entry (app/teacher/layout.tsx hookup).
+  //   - 24+ /api/teacher/** mutating routes (route-swap to the
+  //     requireTeacherWithCurrentSaasOfferConsent wrapper).
+  //   - Telegram webhook teacher-branch consume path.
+  //   - Calendar OAuth callback inline gate check.
+  //   - /register teacher self-reg consent capture.
+  //   - Admin-side backfill script (scripts/saas-offer-backfill.mjs).
+  //
+  // Flipping this flag to 1 BEFORE the follow-up PR lands is safe
+  // (foundation gate predicate exists; the unhooked surfaces just
+  // stay open). But for the FULL enforcement contract documented in
+  // docs/plans/saas-offer-and-landing-redesign.md, both this flag AND
+  // the follow-up route swap must be present.
+  SAAS_OFFER_GATE_ENABLED: {
+    kind: 'int',
+    default: 0,
+    min: 0,
+    max: 1,
+    envName: 'SAAS_OFFER_GATE_ENABLED',
+    description:
+      'master switch (1=on/0=off) for the SaaS-оферта consent gate. FOUNDATION scope (this PR): /saas-offer-accept + /saas-offer-awaiting evaluate the gate. FULL enforcement perimeter (teacher self-reg + cabinet entry + /api/teacher/** mutations + Telegram + Calendar OAuth) lands in the follow-up Sub-A.3/A.5 PR. Default OFF — flip after the follow-up PR lands AND legal-rf v1 is published via /admin/legal AND optional backfill is run via scripts/saas-offer-backfill.mjs.',
+    scope: 'saas-offer-gate',
   },
 } as const satisfies Record<string, SettingSchema>
 

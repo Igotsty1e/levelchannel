@@ -20,9 +20,12 @@ Any change to these files or paths is treated as legal-sensitive:
 | `app/offer/page.tsx` | Public oferta (публичная оферта) |
 | `app/privacy/page.tsx` | Public privacy policy (политика обработки ПДн) |
 | `app/consent/personal-data/page.tsx` | Public consent text used at checkout |
+| `app/saas/offer/page.tsx` | Public SaaS оферта (DB-canonical render) |
+| `app/saas-offer-accept/page.tsx` | Existing-teacher SaaS оферта acceptance interstitial |
 | `lib/legal/**` | Server-side legal SoT (consent versions, snapshot helpers) |
 | `docs/legal/**` | Future legal-only doc surface |
-| `app/{offer,privacy,consent}/**` | Catches new legal pages added under the same trees |
+| `app/{offer,privacy,consent,saas/offer,saas-offer-accept}/**` | Catches new legal pages added under the same trees |
+| `app/api/teacher/saas-offer-accept/**` | Server-side consent capture for the interstitial |
 
 If you find yourself editing a file that carries legal commitments but
 is not in the list above (e.g. a new `app/dpa/page.tsx`), update the
