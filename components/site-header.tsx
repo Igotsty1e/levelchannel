@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
+import { BrandMark } from '@/components/brand/brand-mark'
+
 type AuthState =
   | { kind: 'loading' }
   | { kind: 'guest' }
@@ -78,12 +80,12 @@ export function SiteHeader() {
           style={{
             color: 'var(--text)',
             textDecoration: 'none',
-            fontWeight: 700,
-            fontSize: 16,
-            letterSpacing: 0.2,
+            display: 'inline-flex',
+            alignItems: 'center',
           }}
+          aria-label="LevelChannel — на главную"
         >
-          LevelChannel
+          <BrandMark variant="full" width={150} />
         </Link>
 
         <nav style={{ display: 'flex', alignItems: 'center', gap: 14 }}>

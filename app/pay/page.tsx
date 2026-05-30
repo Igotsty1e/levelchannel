@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import Script from 'next/script'
 
+import { BrandMark } from '@/components/brand/brand-mark'
 import { PricingSection } from '@/components/payments/pricing-section'
 import { SESSION_COOKIE_NAME } from '@/lib/auth/sessions'
 
@@ -74,11 +75,12 @@ export default async function PayPage() {
             style={{
               color: 'var(--text)',
               textDecoration: 'none',
-              fontWeight: 700,
-              fontSize: 18,
+              display: 'inline-flex',
+              alignItems: 'center',
             }}
+            aria-label="LevelChannel — на главную"
           >
-            LevelChannel
+            <BrandMark variant="full" width={150} />
           </Link>
           <Link
             href={backHref}
