@@ -21,6 +21,7 @@ const ALLOWED_KINDS = new Set<LegalDocKind>([
   'offer',
   'privacy',
   'personal_data',
+  'saas_offer',
 ])
 
 // Wave 19 — admin Versions surface.
@@ -40,7 +41,10 @@ export async function GET(request: Request) {
   const kind = url.searchParams.get('kind') as LegalDocKind | null
   if (!kind || !ALLOWED_KINDS.has(kind)) {
     return NextResponse.json(
-      { error: 'kind query param required (offer | privacy | personal_data)' },
+      {
+        error:
+          'kind query param required (offer | privacy | personal_data | saas_offer)',
+      },
       { status: 400, headers: NO_STORE },
     )
   }
@@ -73,7 +77,10 @@ export async function POST(request: Request) {
       : null
   if (!docKind) {
     return NextResponse.json(
-      { error: 'docKind must be one of: offer, privacy, personal_data' },
+      {
+        error:
+          'docKind must be one of: offer, privacy, personal_data, saas_offer',
+      },
       { status: 400, headers: NO_STORE },
     )
   }
@@ -83,6 +90,24 @@ export async function POST(request: Request) {
   if (!versionLabel || versionLabel.length > 32) {
     return NextResponse.json(
       { error: 'versionLabel must be 1..32 chars (e.g. "v2", "2026-05-15")' },
+      { status: 400, headers: NO_STORE },
+    )
+  }
+  // SAAS-OFFER bundle round-1 BLOCKER#1 closure — the `v0-placeholder-*`
+  // prefix is the gate's hard-reject signal (per evaluateSaasOfferGate in
+  // lib/auth/guards.ts + /saas-offer-accept SSR guard). The placeholder
+  // body ships ONLY as the migration 0096 seed; admin must NOT publish a
+  // new version with this prefix or the gate would lock all teachers in
+  // perpetual `awaiting_publication` state. Reserved prefix applies across
+  // ALL doc_kinds (defence-in-depth — the gate predicate only knows
+  // saas_offer today; widening the placeholder convention is one rule).
+  if (versionLabel.startsWith('v0-placeholder-')) {
+    return NextResponse.json(
+      {
+        error: 'version_label_reserved_prefix',
+        message:
+          'Префикс "v0-placeholder-" зарезервирован под seed-строки миграций — выберите другую метку версии.',
+      },
       { status: 400, headers: NO_STORE },
     )
   }

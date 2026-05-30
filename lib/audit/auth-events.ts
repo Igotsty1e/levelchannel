@@ -24,6 +24,17 @@ export const AUTH_AUDIT_EVENT_TYPES = [
   'auth.invite.created',
   'auth.invite.revoked',
   'auth.invite.redeemed',
+  // SAAS-OFFER bundle Sub-A.2 round-1 WARN#5 closure (2026-05-30) —
+  // mirror of the auth_audit_events.event_type CHECK widened by mig
+  // 0096. The accept handler (app/api/teacher/saas-offer-accept) will
+  // write `saas_offer_accepted` events in the follow-up wave (this
+  // foundation PR ships only the schema + types; the route writes a
+  // consent row via recordConsent, not yet an audit row). The
+  // `_backfilled` event fires from scripts/saas-offer-backfill.mjs in
+  // Sub-A.5. Pinning both here closes the drift hazard between SQL
+  // CHECK and TS allowlist before the writer paths land.
+  'auth.teacher.saas_offer_accepted',
+  'auth.teacher.saas_offer_backfilled',
 ] as const
 
 export type AuthAuditEventType = (typeof AUTH_AUDIT_EVENT_TYPES)[number]

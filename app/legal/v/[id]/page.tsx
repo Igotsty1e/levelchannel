@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
+import { LegalBodyRenderer } from '@/lib/legal/render-body'
 import { getLegalVersionById } from '@/lib/legal/versions'
 
 export const dynamic = 'force-dynamic'
@@ -10,11 +11,13 @@ const KIND_LABEL: Record<string, string> = {
   offer: 'Публичная оферта',
   privacy: 'Политика обработки персональных данных',
   personal_data: 'Согласие на обработку персональных данных',
+  saas_offer: 'SaaS-оферта',
 }
 const KIND_LIVE_PATH: Record<string, string> = {
   offer: '/offer',
   privacy: '/privacy',
   personal_data: '/consent/personal-data',
+  saas_offer: '/saas/offer',
 }
 
 const UUID_PATTERN =
@@ -100,71 +103,8 @@ export default async function LegalVersionPage({ params }: RouteParams) {
         Version ID: {version.id}
       </p>
 
-      <BodyRenderer markdown={version.bodyMd} />
+      <LegalBodyRenderer markdown={version.bodyMd} />
       </main>
     </>
-  )
-}
-
-function BodyRenderer({ markdown }: { markdown: string }) {
-  // Minimal-safe renderer. We do NOT pull in a markdown library. for
-  // legal text the only constructs we need are:
-  //   1. paragraphs separated by blank lines,
-  //   2. **bold** inline,
-  //   3. # / ## / ### heading lines.
-  // Everything else passes as escaped text. Anything HTML-shaped
-  // gets escaped (no XSS surface from operator input).
-  const blocks = markdown
-    .replace(/\r\n/g, '\n')
-    .split(/\n{2,}/)
-    .map((b) => b.trim())
-    .filter(Boolean)
-
-  return (
-    <article
-      style={{ fontSize: 15, lineHeight: 1.7, color: 'var(--text)' }}
-    >
-      {blocks.map((block, i) => {
-        const headingMatch = /^(#{1,3})\s+(.+)$/.exec(block)
-        if (headingMatch) {
-          const level = headingMatch[1].length
-          const text = headingMatch[2]
-          if (level === 1) {
-            return (
-              <h2 key={i} style={{ fontSize: 22, fontWeight: 700, margin: '28px 0 12px' }}>
-                {text}
-              </h2>
-            )
-          }
-          if (level === 2) {
-            return (
-              <h3 key={i} style={{ fontSize: 18, fontWeight: 600, margin: '24px 0 10px' }}>
-                {text}
-              </h3>
-            )
-          }
-          return (
-            <h4 key={i} style={{ fontSize: 16, fontWeight: 600, margin: '20px 0 8px' }}>
-              {text}
-            </h4>
-          )
-        }
-        return (
-          <p key={i} style={{ margin: '12px 0' }}>
-            {renderInline(block)}
-          </p>
-        )
-      })}
-    </article>
-  )
-}
-
-function renderInline(text: string): React.ReactNode[] {
-  // Split on **bold** markers; preserve everything else as plain
-  // text. The split keeps the captured groups; even-indexed parts
-  // are literal, odd-indexed are bolded.
-  const parts = text.split(/\*\*(.+?)\*\*/g)
-  return parts.map((part, i) =>
-    i % 2 === 1 ? <strong key={i}>{part}</strong> : <span key={i}>{part}</span>,
   )
 }

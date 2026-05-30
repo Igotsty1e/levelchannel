@@ -18,6 +18,7 @@ const KINDS: KindLabel[] = [
     label: 'Согласие на обработку ПДн',
     humanPath: '/consent/personal-data',
   },
+  { kind: 'saas_offer', label: 'SaaS-оферта', humanPath: '/saas/offer' },
 ]
 
 type Props = {

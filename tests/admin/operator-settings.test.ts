@@ -92,6 +92,11 @@ describe('SETTING_SCHEMA invariants', () => {
       'teacher-daily-digest',
       // BCS-DEF-4 (2026-05-19) — learner lesson reminder scheduler.
       'learner-reminders',
+      // SAAS-OFFER bundle (Sub-A.2-3-5, 2026-05-30) — product gate
+      // scope. Not a probe (no dedup window, no rolling alert), not a
+      // channel (no delivery transport). Sentinel partition for
+      // flag-controlled product knobs.
+      'saas-offer-gate',
     ])
     for (const [key, schema] of Object.entries(TS_SCHEMA)) {
       expect(validScopes.has(schema.scope), `${key}.scope is valid`).toBe(true)
@@ -180,36 +185,73 @@ describe('SETTING_SCHEMA invariants', () => {
     ])
   })
 
+  // SAAS-OFFER bundle (Sub-A.2-3-5, 2026-05-30) — single-knob gate.
+  it('saas-offer-gate scope has the single expected gate knob', () => {
+    const gateKeys = Object.entries(TS_SCHEMA)
+      .filter(([, s]) => s.scope === 'saas-offer-gate')
+      .map(([k]) => k)
+      .sort()
+    expect(gateKeys).toEqual(['SAAS_OFFER_GATE_ENABLED'])
+  })
+
+  it('SAAS_OFFER_GATE_ENABLED defaults to OFF', () => {
+    // Sub-A.2-3-5 contract — gate is INERT until operator publishes
+    // legal-rf-signed v1 via /admin/legal AND (optionally) runs
+    // scripts/saas-offer-backfill.mjs.
+    expect(TS_SCHEMA.SAAS_OFFER_GATE_ENABLED.default).toBe(0)
+  })
+
   it('channel-scope keys are DISJOINT from probe-scope keys (scope-set-based partition)', () => {
     // R3 INFO#6 closure: invariant via scope membership, NOT name
     // prefix. Future channel scopes (slack, sms) inherit automatically.
     // BCS-DEF-4: 'learner-reminders' counts as a probe-shaped scope
     // here even though it's not in the runtime `PROBE_NAMES` iteration.
+    // SAAS-OFFER bundle (Sub-A.2-3-5, 2026-05-30) round-1 INFO#8
+    // closure: extended to assert saas-offer-gate scope is disjoint
+    // from BOTH probe-scope AND channel-scope partitions.
     const probeNames = new Set([
       'auth-flow',
       'calendar-pathology',
       'webhook-flow',
       'conflict-unresolved',
       'learner-reminders',
+      'teacher-daily-digest',
     ])
-    const telegramKeys = new Set(
-      Object.entries(TS_SCHEMA)
-        .filter(([, s]) => s.scope === 'telegram')
-        .map(([k]) => k),
-    )
+    const channelNames = new Set(['telegram'])
+    const gateNames = new Set(['saas-offer-gate'])
     const probeKeys = new Set(
       Object.entries(TS_SCHEMA)
         .filter(([, s]) => probeNames.has(s.scope))
         .map(([k]) => k),
     )
-    // Empty intersection.
-    for (const k of telegramKeys) {
+    const channelKeys = new Set(
+      Object.entries(TS_SCHEMA)
+        .filter(([, s]) => channelNames.has(s.scope))
+        .map(([k]) => k),
+    )
+    const gateKeys = new Set(
+      Object.entries(TS_SCHEMA)
+        .filter(([, s]) => gateNames.has(s.scope))
+        .map(([k]) => k),
+    )
+    // Three-way empty intersections.
+    for (const k of channelKeys) {
       expect(probeKeys.has(k), `${k} must not be in any probe scope`).toBe(
         false,
       )
+      expect(gateKeys.has(k), `${k} must not be in any gate scope`).toBe(false)
     }
     for (const k of probeKeys) {
-      expect(telegramKeys.has(k), `${k} must not be in telegram scope`).toBe(
+      expect(channelKeys.has(k), `${k} must not be in any channel scope`).toBe(
+        false,
+      )
+      expect(gateKeys.has(k), `${k} must not be in any gate scope`).toBe(false)
+    }
+    for (const k of gateKeys) {
+      expect(probeKeys.has(k), `${k} must not be in any probe scope`).toBe(
+        false,
+      )
+      expect(channelKeys.has(k), `${k} must not be in any channel scope`).toBe(
         false,
       )
     }

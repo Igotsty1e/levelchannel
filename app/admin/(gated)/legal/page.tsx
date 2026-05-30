@@ -23,10 +23,11 @@ export const metadata = {
 // chain ultimately points at.
 
 export default async function AdminLegalPage() {
-  const [offer, privacy, personalData] = await Promise.all([
+  const [offer, privacy, personalData, saasOffer] = await Promise.all([
     listLegalVersions('offer', 50),
     listLegalVersions('privacy', 50),
     listLegalVersions('personal_data', 50),
+    listLegalVersions('saas_offer', 50),
   ])
 
   return (
@@ -50,7 +51,12 @@ export default async function AdminLegalPage() {
       </p>
 
       <LegalVersionsManager
-        initial={{ offer, privacy, personal_data: personalData }}
+        initial={{
+          offer,
+          privacy,
+          personal_data: personalData,
+          saas_offer: saasOffer,
+        }}
       />
     </>
   )

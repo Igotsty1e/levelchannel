@@ -7,6 +7,7 @@ export type ConsentKind =
   | 'offer'
   | 'marketing_opt_in'
   | 'parent_consent'
+  | 'saas_offer'
 
 export type AccountConsent = {
   id: string

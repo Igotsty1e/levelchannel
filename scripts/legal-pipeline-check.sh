@@ -33,6 +33,11 @@ LEGAL_PATHS=(
   "app/offer/page.tsx"
   "app/privacy/page.tsx"
   "app/consent/personal-data/page.tsx"
+  # SAAS-OFFER bundle (Sub-A.2-3-5) — the SaaS оферта public render,
+  # the existing-teacher accept interstitial, and its capture POST.
+  # Each renders / writes the v1 body that flows from legal-rf-router.
+  "app/saas/offer/page.tsx"
+  "app/saas-offer-accept/page.tsx"
 )
 
 # Path prefixes that are entirely legal scope.
@@ -46,6 +51,13 @@ LEGAL_PREFIXES=(
   # legal_document_versions. Mirror the JSX content that already went
   # through legal-rf cascade; future edits must too.
   "scripts/legal-v1-templates/"
+  # SAAS-OFFER bundle (Sub-A.2-3-5) — every edit to the public render,
+  # the interstitial, or the consent-capture POST goes through
+  # legal-rf-router. Lands BEFORE the route files so the trailer guard
+  # is live the moment a route file is born.
+  "app/saas/offer/"
+  "app/saas-offer-accept/"
+  "app/api/teacher/saas-offer-accept/"
 )
 
 TRAILER_KEY="Legal-Pipeline-Verified"

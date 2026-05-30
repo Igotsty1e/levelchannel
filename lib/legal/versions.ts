@@ -10,7 +10,11 @@
 
 import { getDbPool } from '@/lib/db/pool'
 
-export type LegalDocKind = 'offer' | 'privacy' | 'personal_data'
+export type LegalDocKind =
+  | 'offer'
+  | 'privacy'
+  | 'personal_data'
+  | 'saas_offer'
 
 export type LegalDocumentVersion = {
   id: string

@@ -254,6 +254,17 @@ export const SETTING_SCHEMA = Object.freeze({
       'master switch (1=on/0=off) for the learner Telegram channel; OFF by default — flip after BotFather setup + webhook registration. Per-learner opt-in still required (accounts.learner_telegram_enabled=true after /start <code> handshake).',
     scope: 'learner-reminders',
   }),
+  // SAAS-OFFER bundle (Sub-A.2 foundation, 2026-05-30) — mirror of the TS twin.
+  SAAS_OFFER_GATE_ENABLED: Object.freeze({
+    kind: 'int',
+    default: 0,
+    min: 0,
+    max: 1,
+    envName: 'SAAS_OFFER_GATE_ENABLED',
+    description:
+      'master switch (1=on/0=off) for the SaaS-оферта consent gate. FOUNDATION scope (this PR): /saas-offer-accept + /saas-offer-awaiting evaluate the gate. FULL enforcement perimeter (teacher self-reg + cabinet entry + /api/teacher/** mutations + Telegram + Calendar OAuth) lands in the follow-up Sub-A.3/A.5 PR. Default OFF — flip after the follow-up PR lands AND legal-rf v1 is published via /admin/legal AND optional backfill is run via scripts/saas-offer-backfill.mjs.',
+    scope: 'saas-offer-gate',
+  }),
 })
 
 const INTEGER_PATTERN = /^\d+$/

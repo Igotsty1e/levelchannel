@@ -377,6 +377,12 @@ describe('TINV.8 — teacher invite-link integration', () => {
     expect(def).toContain("'auth.invite.created'")
     expect(def).toContain("'auth.invite.revoked'")
     expect(def).toContain("'auth.invite.redeemed'")
+    // SAAS-OFFER bundle (Sub-A.2-3-5, 2026-05-30) round-2 WARN#1 closure —
+    // mig 0096 widened the CHECK with two new event types; pin both here
+    // so a future drop accidentally silently breaking the SQL CHECK
+    // surfaces as a failing drift test.
+    expect(def).toContain("'auth.teacher.saas_offer_accepted'")
+    expect(def).toContain("'auth.teacher.saas_offer_backfilled'")
   })
 })
 
