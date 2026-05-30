@@ -1,17 +1,13 @@
-<svg width="80" height="80" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LevelChannel mark only">
+<svg width="80" height="80" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LevelChannel mark — sine wave tilted upward 28°">
   <defs>
     <linearGradient id="gradOmark" x1="0" y1="1" x2="1" y2="0">
       <stop offset="0%" stop-color="#C87878"/>
       <stop offset="100%" stop-color="#E8A890"/>
     </linearGradient>
   </defs>
-  <g fill="none" stroke="url(#gradOmark)" stroke-linecap="round" stroke-linejoin="round">
-    <path
-      d="M 10 60
-         Q 24 30, 40 40
-         Q 56 50, 70 20"
-      stroke-width="6"/>
-    <circle cx="10" cy="60" r="6.5" fill="url(#gradOmark)" stroke="none"/>
-    <circle cx="70" cy="20" r="6.5" fill="url(#gradOmark)" stroke="none"/>
+  <g transform="translate(6,66) rotate(-28)" stroke="url(#gradOmark)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 0 0 Q 12 -22 24 0 T 48 0 T 72 0" stroke-width="6"/>
+    <circle cx="0" cy="0" r="6" fill="url(#gradOmark)" stroke="none"/>
+    <circle cx="72" cy="0" r="6" fill="url(#gradOmark)" stroke="none"/>
   </g>
 </svg>
