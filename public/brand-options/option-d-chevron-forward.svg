@@ -11,6 +11,6 @@
     <path d="M 20 38 L 30 28 L 40 38"/>
   </g>
   <text x="64" y="50" font-family="Inter, -apple-system, sans-serif" font-size="28" font-weight="700" letter-spacing="-0.02em" fill="#F5F5F7">
-    <tspan>level</tspan><tspan fill="url(#gradD)" font-weight="800">Channel</tspan>
+    <tspan>Level</tspan><tspan fill="url(#gradD)" font-weight="800">Channel</tspan>
   </text>
 </svg>
