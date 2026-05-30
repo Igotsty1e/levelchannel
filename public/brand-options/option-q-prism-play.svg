@@ -1,0 +1,15 @@
+<svg width="320" height="80" viewBox="0 0 320 80" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LevelChannel — Option Q: prism play triangle (channel/streaming)">
+  <defs>
+    <linearGradient id="gradQ" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#C87878"/>
+      <stop offset="100%" stop-color="#E8A890"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(14,18)">
+    <path d="M 0 0 L 38 22 L 0 44 Z" fill="url(#gradQ)" opacity="0.25"/>
+    <path d="M 10 12 L 30 22 L 10 32 Z" fill="url(#gradQ)"/>
+  </g>
+  <text x="62" y="50" font-family="Inter, -apple-system, sans-serif" font-size="28" font-weight="700" letter-spacing="-0.02em" fill="#F5F5F7">
+    <tspan>Level</tspan><tspan fill="url(#gradQ)" font-weight="800">Channel</tspan>
+  </text>
+</svg>

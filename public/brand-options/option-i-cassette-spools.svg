@@ -1,0 +1,18 @@
+<svg width="320" height="80" viewBox="0 0 320 80" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LevelChannel — Option I: cassette spools (channel/tape nostalgia)">
+  <defs>
+    <linearGradient id="gradI" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#C87878"/>
+      <stop offset="100%" stop-color="#E8A890"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(14,40)">
+    <circle cx="6" cy="0" r="9" fill="none" stroke="url(#gradI)" stroke-width="2"/>
+    <circle cx="6" cy="0" r="2.5" fill="url(#gradI)"/>
+    <circle cx="32" cy="0" r="9" fill="none" stroke="url(#gradI)" stroke-width="2"/>
+    <circle cx="32" cy="0" r="2.5" fill="url(#gradI)"/>
+    <rect x="6" y="-1.6" width="26" height="3.2" fill="url(#gradI)" opacity="0.5"/>
+  </g>
+  <text x="68" y="50" font-family="Inter, -apple-system, sans-serif" font-size="28" font-weight="700" letter-spacing="-0.02em" fill="#F5F5F7">
+    <tspan>Level</tspan><tspan fill="url(#gradI)" font-weight="800">Channel</tspan>
+  </text>
+</svg>
