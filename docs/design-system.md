@@ -324,6 +324,172 @@ translates at fast duration (a static thumb loses the affordance).
 
 ---
 
+## 8.LANDING. Tier-1 SaaS landing motion library
+
+**Scope:** `.saas-chrome` class (per SAAS-1-5A precedent — tokens MUST NOT bleed into cabinet/admin/`/`/`/offer`). Activates on `/saas` and child routes only. Adds to §8 tokens; doesn't replace them.
+
+**Brief constraint:** owner asked for "МАКСИМАЛЬНО ЩЕДРО" — scroll-driven, magnetic cursor, parallax, micro-interactions (Bruno Simon / Lando Norris benchmark). Lighthouse Performance ≥90 hard floor. `prefers-reduced-motion` MUST collapse every theatrical effect to a static fallback.
+
+### 8.LANDING.1 Theatrical durations
+
+```css
+.saas-chrome {
+  --landing-duration-fast: 180ms;        /* micro-interaction settle */
+  --landing-duration-base: 240ms;        /* card hover lift, FAQ open */
+  --landing-duration-slow: 420ms;        /* section reveal, hero text in */
+  --landing-duration-theatrical: 720ms;  /* WebGL hero entrance, parallax depth */
+  --landing-stagger-step: 60ms;          /* between siblings in a row/grid */
+}
+```
+
+`theatrical` is reserved for hero entrance + once-per-page reveals; never for hover.
+
+### 8.LANDING.2 Generous easings
+
+```css
+.saas-chrome {
+  /* Hero reveals, headline appear */
+  --ease-out-expo:  cubic-bezier(0.16, 1, 0.3, 1);
+  /* Card hover lift, button press release — slight overshoot */
+  --ease-out-back:  cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Spring-feel for magnetic cursor settle */
+  --ease-spring-soft: cubic-bezier(0.5, 1.5, 0.5, 1);
+  /* Asymmetric exit — slow start, fast end */
+  --ease-in-quart:  cubic-bezier(0.5, 0, 0.75, 0);
+}
+```
+
+### 8.LANDING.3 Scroll-trigger primitives
+
+A section becomes visible when its top crosses 75% of viewport height. Triggers a stagger reveal of its children.
+
+```css
+.saas-chrome [data-scroll-trigger] {
+  opacity: 0;
+  transform: translateY(48px);
+  transition:
+    opacity var(--landing-duration-slow) var(--ease-out-expo),
+    transform var(--landing-duration-slow) var(--ease-out-expo);
+}
+.saas-chrome [data-scroll-trigger].is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.saas-chrome [data-scroll-trigger] > *:nth-child(1) { transition-delay: 0ms; }
+.saas-chrome [data-scroll-trigger] > *:nth-child(2) { transition-delay: var(--landing-stagger-step); }
+.saas-chrome [data-scroll-trigger] > *:nth-child(3) { transition-delay: calc(var(--landing-stagger-step) * 2); }
+.saas-chrome [data-scroll-trigger] > *:nth-child(4) { transition-delay: calc(var(--landing-stagger-step) * 3); }
+.saas-chrome [data-scroll-trigger] > *:nth-child(5) { transition-delay: calc(var(--landing-stagger-step) * 4); }
+.saas-chrome [data-scroll-trigger] > *:nth-child(6) { transition-delay: calc(var(--landing-stagger-step) * 5); }
+```
+
+JS implementation: a single `IntersectionObserver` shared across all triggers, threshold = 0.25. Add `is-visible` once; never remove (re-triggering on scroll back up is "cheap-feeling").
+
+### 8.LANDING.4 Magnetic cursor primitives
+
+For CTA buttons and the logo mark. Cursor enters within a radius → element translates a fraction of the cursor delta. Releases on leave with spring settle.
+
+```css
+.saas-chrome [data-magnetic] {
+  --magnetic-radius: 96px;        /* activation zone around element */
+  --magnetic-max-disp: 12px;      /* max element offset */
+  --magnetic-snap-ms: 320ms;      /* settle duration on cursor leave */
+  transition: transform var(--magnetic-snap-ms) var(--ease-spring-soft);
+  will-change: transform;
+}
+/* Active follow drives transform via JS inline style — no transition then. */
+.saas-chrome [data-magnetic].is-following {
+  transition: none;
+}
+```
+
+JS contract:
+- Single `mousemove` listener on each magnetic element parent.
+- `delta = (cursor - center) * 0.18` (18% of distance to cursor; clamped to `--magnetic-max-disp`).
+- On enter zone: add `is-following`; write `transform: translate3d(deltaX, deltaY, 0)` inline.
+- On leave zone: remove `is-following`; transform animates back to 0,0 via the spring transition.
+
+### 8.LANDING.5 3D card tilt on hover
+
+For feature cards. Cursor over card → card tilts toward cursor with subtle gloss/spotlight.
+
+```css
+.saas-chrome [data-tilt] {
+  --tilt-max-rot: 8deg;
+  --tilt-perspective: 1200px;
+  transform-style: preserve-3d;
+  perspective: var(--tilt-perspective);
+  transition: transform var(--landing-duration-fast) var(--ease-out-back);
+  will-change: transform;
+}
+.saas-chrome [data-tilt]:hover {
+  transform: scale(1.02);
+}
+.saas-chrome [data-tilt] .tilt-inner {
+  transition: transform var(--landing-duration-fast) var(--ease-out-back);
+  transform-style: preserve-3d;
+}
+/* JS sets rotateX/rotateY inline on .tilt-inner based on cursor pos. */
+```
+
+### 8.LANDING.6 Hero type-scale
+
+Reserved for the `/saas` hero only; never use these sizes elsewhere.
+
+```css
+.saas-chrome {
+  --hero-h1-desktop: clamp(64px, 7vw, 96px);  /* big screens */
+  --hero-h1-tablet:  clamp(48px, 6vw, 64px);  /* iPad portrait */
+  --hero-h1-mobile:  clamp(36px, 9vw, 48px);  /* phone */
+  --hero-h1-leading: 0.95;                    /* tight */
+  --hero-h1-track:   -0.04em;                 /* tight letter-spacing for big sizes */
+  --hero-subtitle:   clamp(18px, 1.6vw, 22px);
+  --hero-subtitle-leading: 1.5;
+}
+```
+
+### 8.LANDING.7 Parallax depth layers
+
+3 layers for the hero: background (slowest), midground (mid), foreground (fastest, near 1:1).
+
+```css
+.saas-chrome [data-parallax="bg"]   { will-change: transform; }  /* 0.3x scroll */
+.saas-chrome [data-parallax="mid"]  { will-change: transform; }  /* 0.6x scroll */
+.saas-chrome [data-parallax="fg"]   { will-change: transform; }  /* 0.9x scroll */
+```
+
+JS contract: single `scroll` listener (passive), `requestAnimationFrame`-throttled. Applies `transform: translate3d(0, scrollY * factor, 0)` per layer.
+
+### 8.LANDING.8 Reduced-motion fallback (MANDATORY)
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  .saas-chrome [data-scroll-trigger],
+  .saas-chrome [data-scroll-trigger] > *,
+  .saas-chrome [data-magnetic],
+  .saas-chrome [data-tilt],
+  .saas-chrome [data-tilt] .tilt-inner,
+  .saas-chrome [data-parallax] {
+    /* Strip all transitions, transforms, and animations */
+    transition: none !important;
+    transform: none !important;
+    animation: none !important;
+    opacity: 1 !important;
+  }
+}
+```
+
+Every JS handler ALSO checks `window.matchMedia('(prefers-reduced-motion: reduce)').matches` at attach time and short-circuits attach if true. No idle event listeners for users who opted out.
+
+### 8.LANDING.9 Performance budget
+
+- Initial JS for hero animation: ≤200KB (code-split, dynamic `import()`).
+- Three.js hero is OPTIONAL — gated by Sub-B.1 performance prototype validating Lighthouse Performance ≥85 on mobile slow-4G.
+- If WebGL hero fails the budget: fallback = vanilla CSS hero with `data-parallax` + `data-scroll-trigger` only.
+- All non-hero animations are CSS-driven (no JS framework cost beyond a tiny IO listener).
+
+---
+
 ## 9. Primitive components
 
 Each primitive ships under `lib/ui/primitives/`, typed, server-
