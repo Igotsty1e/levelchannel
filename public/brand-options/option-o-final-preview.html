@@ -103,11 +103,10 @@
     <div class="anim-explainer">
       <strong>Тайминг (auto-plays at load):</strong>
       <ul>
-        <li>0.0s → 0.2s: ghost-trail начинает рисоваться</li>
-        <li>0.2s → 1.6s: основная линия draws left-to-right (1.4s, ease-out)</li>
-        <li>0.2s → 0.5s: левая точка pop-in</li>
-        <li>1.4s → 2.0s: wordmark fade-in</li>
-        <li>1.6s → 1.9s: правая точка pop-in (с glow filter)</li>
+        <li>0.0s → 0.3s: ОБЕ точки pop-in одновременно (левая + правая с glow)</li>
+        <li>0.3s → 1.7s: ghost-trail draws between dots</li>
+        <li>0.4s → 1.6s: основная линия draws L→R, соединяет точки</li>
+        <li>1.7s → 2.3s: wordmark fades in (после полной сборки знака)</li>
         <li>2.0s+: бесконечный gentle pulse на обеих точках (3.6s cycle)</li>
       </ul>
     </div>
