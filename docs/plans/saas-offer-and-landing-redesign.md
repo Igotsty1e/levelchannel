@@ -855,3 +855,42 @@ If a skill name above does NOT exist under `~/.claude/commands/design-with-claud
 ---
 
 — END OF ROUND-7-CLOSURE DRAFT, plan-paranoia round 8 pending —
+
+---
+
+## 8. Update 2026-05-30 — Operator-managed tier deferred + ФНС API removed (post-Sub-A.1 v1)
+
+Two material owner decisions captured mid-session, AFTER plan-paranoia SIGN-OFF (round 11) AND after Sub-A.1 v1 draft was produced:
+
+1. **"Давай пока уберем в дальний беклог часть про прием платежей за учителей. Его надо продумать отдельно."** — Operator-managed tier is DEFERRED to a future epic with its own plan doc. At launch, tariffs are **Free / Mid / Pro only** (LevelChannel subscription, no money flow between learner and teacher through the platform).
+
+2. **"Зачем нам ФНС апи?"** — ФНС API integration is REMOVED entirely. With Operator-managed out of scope, the platform does NOT process learner→teacher payments, so it cannot be a tax agent under 422-ФЗ, so the НПД-status verification API is not needed. Teachers retain their own tax responsibility under their own contract with learners (off-platform).
+
+### Scope deltas
+
+| Area | Before update | After update |
+|---|---|---|
+| Epic A — оферта tier coverage | Free / Mid / Pro / Operator-managed | Free / Mid / Pro only |
+| Sub-A.1 deliverable (legal-rf draft) | v1 with §3.4 Operator-managed (agency contract ГК 1005, НПД-only requirement, 10% commission, чек 54-ФЗ) | **v2 needed** — drop §3.4 entirely + references to Operator-managed throughout §2.1, §2.2, §5.1.1, §5.1.5, §5.2.2, §5.3.2, §5.3.4. Re-run `legal-rf-qa` on v2. |
+| Sub-A.2-3-5 bundle code | Unchanged | Unchanged. Schema/gate/migration code does NOT depend on tier count. |
+| Sub-A.5 backfill (Q-A.6) | Unchanged | Unchanged. |
+| Sub-B.3 landing Pricing section | 4 tier cards (Free / Mid / Pro / Operator-managed) | 3 tier cards (Free / Mid / Pro) |
+| `tests/saas-pivot/landing.test.tsx` pricing pins | 4 cards asserted | 3 cards asserted — remove the Operator-managed assertion |
+| ФНС API integration | Mentioned in legal §3.4.5 + §3.4.7 (НПД chek automation) | DROPPED entirely |
+| Brand mark (Q-B.5) | TBD between Option A (single brand) vs Option B (SaaS-only) | **Option A — единый бренд везде. Final mark = Option O v6 (ascending sine wave + two endpoint dots), see Sub-B.1 close-out PR.** |
+
+### What this means for downstream sub-PRs
+
+- **Sub-A.1 v2:** legal-rf-router → legal-rf-commercial → legal-rf-qa second pass. v2 file `docs/legal/saas-drafts/saas-offer-draft-v2-operator-deferred.md` REPLACES v1 as the source of truth for admin publication.
+- **Sub-A.2-3-5 bundle:** no code change vs original plan. The gate/migration/consent code is tier-count-agnostic.
+- **Sub-B.3 landing Pricing:** 3 cards instead of 4. CTA states preserved per §3.5 launch gate (Mid disabled, Pro mailto). Operator-managed card removed.
+- **Sub-B.2 copy:** value-prop hierarchy excludes Operator-managed framing. No mention of "мы держим деньги учеников".
+- **Critical-path inventory:** unchanged. `lib/admin/operator-settings.ts` still in scope for the bundle PR (SAAS_OFFER_GATE_ENABLED flag).
+
+### Paranoia treatment
+
+Plan-doc body above remains valid as the implementation contract for Epic A code and Epic B structure. This Update §8 is a **scope-cut**, not a new design — Operator-managed was already isolated as a separate tier in §3.4 and §2.B. Removal does NOT invalidate the SIGN-OFF for the rest of the plan.
+
+For Sub-A.1 v2 regeneration, the legal-rf chain runs anew on the reduced scope; that does not require plan-paranoia re-run. The Sub-A.2-3-5 bundle still runs full `/codex-paranoia wave` per §6 (critical-path crossing on `lib/admin/operator-settings.ts`).
+
+Captured in auto-memory: `saas_offer_landing_wave_status.md` + `levelchannel_brand_mark_option_o.md`.
