@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Option O — финальный брендовый знак LevelChannel</title>
+<style>
+  body {
+    margin: 0;
+    background: #0B0B0D;
+    color: #F5F5F7;
+    font-family: -apple-system, Inter, system-ui, sans-serif;
+    padding: 48px;
+    min-height: 100vh;
+    box-sizing: border-box;
+  }
+  h1 { font-weight: 700; letter-spacing: -0.02em; margin: 0 0 6px; font-size: 24px; }
+  p.intro { color: #A1A1AA; margin: 0 0 40px; font-size: 14px; max-width: 720px; line-height: 1.55; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; max-width: 1120px; margin-bottom: 32px; }
+  .card {
+    background: #141416;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 20px;
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .card.featured {
+    border-color: rgba(216,138,130,0.35);
+    background: linear-gradient(135deg, #1a1417 0%, #141416 60%);
+    box-shadow: 0 12px 40px rgba(216,138,130,0.12);
+  }
+  .label { color: #A1A1AA; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .label.win { color: #E8A890; font-weight: 700; }
+  .name { font-size: 17px; font-weight: 600; margin-top: -6px; }
+  .desc { color: #A1A1AA; font-size: 13px; line-height: 1.55; }
+  .stage {
+    background: #0B0B0D;
+    border: 1px dashed rgba(255,255,255,0.07);
+    border-radius: 14px;
+    padding: 28px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 110px;
+  }
+  .replay {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(216,138,130,0.18);
+    color: #E8A890;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    cursor: pointer;
+    border: 1px solid rgba(216,138,130,0.3);
+  }
+  .stage-wrap { position: relative; }
+  .scale-row { display: flex; gap: 32px; align-items: center; justify-content: center; }
+  .scale-row > div { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .scale-row .sz { font-size: 11px; color: #6E6E76; }
+  .favicon { width: 16px; height: 16px; }
+  .favicon.lg { width: 32px; height: 32px; }
+  .favicon.xl { width: 64px; height: 64px; }
+  .anim-explainer {
+    color: #A1A1AA;
+    font-size: 12px;
+    line-height: 1.55;
+    padding: 16px 18px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+  }
+  .anim-explainer ul { padding-left: 18px; margin: 6px 0 0; }
+  .anim-explainer li { margin: 4px 0; }
+</style>
+</head>
+<body>
+
+<h1>Option O — Ascending Sine Wave</h1>
+<p class="intro">Брендовый знак LevelChannel. Левая точка ниже, правая выше — посыл движения вверх (level up). Используется на обоих лендингах (<code>/</code> Анастасия и <code>/saas</code> teacher) — единый бренд.</p>
+
+<div class="row">
+
+  <div class="card">
+    <div class="label">Static</div>
+    <div class="name">Финальная статика</div>
+    <div class="stage">
+      <img src="option-o-sine-wave.svg" alt="static sine wave" style="width:280px">
+    </div>
+    <div class="desc">Используется на header, footer, всех cabinet/admin surfaces, всех transactional страницах (/pay, /checkout, /t/[slug]/pay). Этим заменяется текущий "L" wordmark.</div>
+  </div>
+
+  <div class="card featured">
+    <div class="label win">Animated · Hero entrance</div>
+    <div class="name">С анимацией</div>
+    <div class="stage stage-wrap">
+      <img src="option-o-sine-wave-animated.svg?v=1" alt="animated sine wave" id="anim" style="width:280px">
+      <span class="replay" onclick="document.getElementById('anim').src='option-o-sine-wave-animated.svg?v='+Date.now()">Replay</span>
+    </div>
+    <div class="desc">Используется на первом экране /saas hero и /, при первой загрузке + после prefers-reduced-motion check. Дальше — статика.</div>
+    <div class="anim-explainer">
+      <strong>Тайминг (auto-plays at load):</strong>
+      <ul>
+        <li>0.0s → 0.3s: ОБЕ точки pop-in одновременно (левая + правая с glow)</li>
+        <li>0.3s → 1.7s: ghost-trail draws between dots</li>
+        <li>0.4s → 1.6s: основная линия draws L→R, соединяет точки</li>
+        <li>1.7s → 2.3s: wordmark fades in (после полной сборки знака)</li>
+        <li>2.0s+: бесконечный gentle pulse на обеих точках (3.6s cycle)</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+
+<div class="row">
+  <div class="card">
+    <div class="label">Scale check — favicon-friendly</div>
+    <div class="name">Силуэт на разных размерах</div>
+    <div class="scale-row">
+      <div><img class="favicon" src="option-o-mark-only.svg" alt="mark 16"><div class="sz">16 × 16</div></div>
+      <div><img class="favicon lg" src="option-o-mark-only.svg" alt="mark 32"><div class="sz">32 × 32</div></div>
+      <div><img class="favicon xl" src="option-o-mark-only.svg" alt="mark 64"><div class="sz">64 × 64</div></div>
+    </div>
+    <div class="desc">Mark-only вариант (без wordmark) для favicon, PWA manifest, OG image. Сохраняет движение вверх даже в 16 × 16.</div>
+  </div>
+
+  <div class="card">
+    <div class="label">Scope</div>
+    <div class="name">Единый бренд</div>
+    <div class="desc">
+      <strong>Где применяется (Option A scope из плана):</strong>
+      <ul style="padding-left:18px;margin:8px 0 0">
+        <li><code>public/favicon.svg</code> — root favicon</li>
+        <li><code>components/site-header.tsx</code> — shared header</li>
+        <li><code>components/home/home-page-client.tsx</code> — / Анастасия landing</li>
+        <li><code>components/home/teacher-landing-client.tsx</code> + Sub-B.3 replacement — /saas</li>
+        <li><code>app/offer/page.tsx</code> — оферта 1:1 (header only)</li>
+        <li><code>app/pay/page.tsx</code> — payment hub</li>
+        <li><code>app/checkout/[tariffSlug]/page.tsx</code> — checkout</li>
+        <li><code>app/t/[slug]/pay/page.tsx</code> — teacher-pay page</li>
+        <li>Sub-A.2-3-5 /saas/offer + /saas-offer-accept + /saas-offer-awaiting</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

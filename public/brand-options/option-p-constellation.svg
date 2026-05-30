@@ -1,0 +1,23 @@
+<svg width="320" height="80" viewBox="0 0 320 80" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LevelChannel — Option P: constellation (connected nodes / network)">
+  <defs>
+    <linearGradient id="gradP" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#C87878"/>
+      <stop offset="100%" stop-color="#E8A890"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(14,20)" stroke="url(#gradP)" stroke-width="1.4" fill="url(#gradP)">
+    <line x1="6"  y1="6"  x2="22" y2="14" opacity="0.55"/>
+    <line x1="22" y1="14" x2="38" y2="6"  opacity="0.55"/>
+    <line x1="6"  y1="34" x2="22" y2="14" opacity="0.55"/>
+    <line x1="38" y1="6"  x2="38" y2="32" opacity="0.55"/>
+    <line x1="22" y1="14" x2="38" y2="32" opacity="0.55"/>
+    <circle cx="6"  cy="6"  r="3"/>
+    <circle cx="22" cy="14" r="4.5"/>
+    <circle cx="38" cy="6"  r="3"/>
+    <circle cx="6"  cy="34" r="3"/>
+    <circle cx="38" cy="32" r="3"/>
+  </g>
+  <text x="62" y="50" font-family="Inter, -apple-system, sans-serif" font-size="28" font-weight="700" letter-spacing="-0.02em" fill="#F5F5F7">
+    <tspan>Level</tspan><tspan fill="url(#gradP)" font-weight="800">Channel</tspan>
+  </text>
+</svg>
