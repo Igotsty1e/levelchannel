@@ -1,0 +1,17 @@
+<svg width="320" height="80" viewBox="0 0 320 80" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LevelChannel — Option L: isometric cube (depth)">
+  <defs>
+    <linearGradient id="gradL" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#C87878"/>
+      <stop offset="100%" stop-color="#E8A890"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(14,16)">
+    <path d="M 18 0 L 36 10 L 36 28 L 18 38 L 0 28 L 0 10 Z" fill="url(#gradL)" opacity="0.18"/>
+    <path d="M 18 0 L 36 10 L 18 20 L 0 10 Z" fill="url(#gradL)" opacity="0.95"/>
+    <path d="M 18 20 L 36 10 L 36 28 L 18 38 Z" fill="url(#gradL)" opacity="0.55"/>
+    <path d="M 18 20 L 0 10 L 0 28 L 18 38 Z" fill="url(#gradL)" opacity="0.35"/>
+  </g>
+  <text x="62" y="50" font-family="Inter, -apple-system, sans-serif" font-size="28" font-weight="700" letter-spacing="-0.02em" fill="#F5F5F7">
+    <tspan>Level</tspan><tspan fill="url(#gradL)" font-weight="800">Channel</tspan>
+  </text>
+</svg>

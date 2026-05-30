@@ -1,0 +1,72 @@
+<svg width="320" height="80" viewBox="0 0 320 80" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LevelChannel — Option O animated: both dots present, wave connects, then wordmark">
+  <defs>
+    <linearGradient id="gradOanim" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#C87878"/>
+      <stop offset="100%" stop-color="#E8A890"/>
+    </linearGradient>
+    <filter id="glowO" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Mark group: original O sine path, tilted -28° for upward motion -->
+  <g transform="translate(12,52) rotate(-28)" fill="none" stroke="url(#gradOanim)" stroke-linecap="round" stroke-linejoin="round">
+
+    <!-- BOTH endpoint dots present from the very start (pop-in 0.0s → 0.3s) -->
+    <circle cx="0" cy="0" r="0" fill="url(#gradOanim)" stroke="none">
+      <animate attributeName="r" from="0" to="3.4" dur="0.3s" begin="0s" fill="freeze"/>
+      <animate attributeName="r" values="3.4; 4.2; 3.4" dur="2.4s" begin="2.0s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="48" cy="0" r="0" fill="url(#gradOanim)" stroke="none" filter="url(#glowO)">
+      <animate attributeName="r" from="0" to="3.4" dur="0.3s" begin="0s" fill="freeze"/>
+      <animate attributeName="r" values="3.4; 4.6; 3.4" dur="2.4s" begin="2.0s" repeatCount="indefinite"/>
+    </circle>
+
+    <!-- Faint ghost trail (starts after dots are settled) -->
+    <path
+      d="M 0 0 Q 8 -14 16 0 T 32 0 T 48 0"
+      stroke-width="6"
+      opacity="0.18"
+      stroke-dasharray="90"
+      stroke-dashoffset="90">
+      <animate
+        attributeName="stroke-dashoffset"
+        from="90"
+        to="0"
+        dur="1.4s"
+        begin="0.3s"
+        fill="freeze"/>
+      <animate
+        attributeName="opacity"
+        values="0.18; 0.32; 0.18"
+        dur="3.6s"
+        begin="1.7s"
+        repeatCount="indefinite"/>
+    </path>
+
+    <!-- Main path connecting the two dots -->
+    <path
+      d="M 0 0 Q 8 -14 16 0 T 32 0 T 48 0"
+      stroke-width="3"
+      stroke-dasharray="90"
+      stroke-dashoffset="90">
+      <animate
+        attributeName="stroke-dashoffset"
+        from="90"
+        to="0"
+        dur="1.2s"
+        begin="0.4s"
+        fill="freeze"/>
+    </path>
+  </g>
+
+  <!-- Wordmark: fades in AFTER mark (both dots + wave) is fully assembled -->
+  <text x="72" y="50" font-family="Inter, -apple-system, sans-serif" font-size="28" font-weight="700" letter-spacing="-0.02em" fill="#F5F5F7" opacity="0">
+    <tspan>Level</tspan><tspan fill="url(#gradOanim)" font-weight="800">Channel</tspan>
+    <animate attributeName="opacity" from="0" to="1" dur="0.6s" begin="1.7s" fill="freeze"/>
+  </text>
+</svg>
