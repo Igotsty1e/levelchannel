@@ -5,7 +5,7 @@
       <stop offset="100%" stop-color="#E8A890"/>
     </linearGradient>
   </defs>
-  <g transform="translate(12,58) rotate(-28)" stroke="url(#gradO)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <g transform="translate(12,52) rotate(-28)" stroke="url(#gradO)" fill="none" stroke-linecap="round" stroke-linejoin="round">
     <path d="M 0 0 Q 8 -14 16 0 T 32 0 T 48 0" stroke-width="3"/>
     <circle cx="0" cy="0" r="3.4" fill="url(#gradO)" stroke="none"/>
     <circle cx="48" cy="0" r="3.4" fill="url(#gradO)" stroke="none"/>

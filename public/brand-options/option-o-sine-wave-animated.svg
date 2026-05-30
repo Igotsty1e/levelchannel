@@ -14,7 +14,7 @@
   </defs>
 
   <!-- Mark group: original O sine path, tilted -28° for upward motion -->
-  <g transform="translate(12,58) rotate(-28)" fill="none" stroke="url(#gradOanim)" stroke-linecap="round" stroke-linejoin="round">
+  <g transform="translate(12,52) rotate(-28)" fill="none" stroke="url(#gradOanim)" stroke-linecap="round" stroke-linejoin="round">
 
     <!-- Faint ghost trail -->
     <path
