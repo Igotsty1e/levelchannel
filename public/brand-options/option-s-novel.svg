@@ -1,0 +1,23 @@
+<svg width="320" height="80" viewBox="0 0 320 80" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LevelChannel — Option S: tuning peg with chord string (level + channel)">
+  <defs>
+    <linearGradient id="gradS" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#C87878"/>
+      <stop offset="100%" stop-color="#E8A890"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(10,16)">
+    <!-- chord string: horizontal line that pierces the peg and points into the wordmark baseline -->
+    <line x1="2" y1="26" x2="52" y2="26" stroke="url(#gradS)" stroke-width="2" stroke-linecap="round"/>
+    <!-- tuning peg: outer ring -->
+    <circle cx="22" cy="26" r="17" fill="none" stroke="url(#gradS)" stroke-width="3"/>
+    <!-- three level-notches at A1/A2/B1-style depths, asymmetric on the right side -->
+    <line x1="34" y1="16" x2="39" y2="16" stroke="url(#gradS)" stroke-width="3" stroke-linecap="round"/>
+    <line x1="36" y1="26" x2="44" y2="26" stroke="url(#gradS)" stroke-width="3" stroke-linecap="round"/>
+    <line x1="34" y1="36" x2="40" y2="36" stroke="url(#gradS)" stroke-width="3" stroke-linecap="round"/>
+    <!-- center pivot dot -->
+    <circle cx="22" cy="26" r="2.5" fill="url(#gradS)"/>
+  </g>
+  <text x="68" y="50" font-family="Inter, -apple-system, sans-serif" font-size="28" font-weight="700" letter-spacing="-0.02em" fill="#F5F5F7">
+    <tspan>Level</tspan><tspan fill="url(#gradS)" font-weight="800">Channel</tspan>
+  </text>
+</svg>
