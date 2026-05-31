@@ -640,3 +640,151 @@ html, body {
   text-decoration: underline;
   font-size: 14px;
 }
+
+/* Teacher cabinet navigation — mobile-first restructure (2026-05-31).
+   Desktop (>=768px): горизонтальный nav сверху.
+   Mobile (<768px): sticky bottom nav. */
+
+.cabinet-nav-desktop {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.cabinet-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.cabinet-nav-link:hover,
+.cabinet-nav-link:focus-visible {
+  color: var(--text);
+  background: var(--border);
+}
+.cabinet-nav-mobile {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .cabinet-nav-desktop {
+    display: none;
+  }
+  .cabinet-nav-mobile {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    display: flex;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    padding: 8px 4px calc(8px + env(safe-area-inset-bottom));
+    backdrop-filter: blur(12px);
+  }
+  .cabinet-nav-mobile-link {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 4px;
+    text-decoration: none;
+    transition: color 0.12s ease;
+    min-height: 56px;
+  }
+  .cabinet-nav-mobile-link[data-active='true'] {
+    color: var(--text);
+  }
+  body[data-cabinet='teacher'] main {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+}
+
+/* Mobile-friendly learners card list (replaces table on small screens). */
+.learner-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.learner-card {
+  display: block;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  text-decoration: none;
+  color: var(--text);
+  transition: border-color 0.12s ease, transform 0.12s ease;
+}
+.learner-card:hover,
+.learner-card:focus-visible {
+  border-color: rgba(232, 168, 144, 0.4);
+}
+.learner-card-stats {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--secondary);
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.learner-card-stat strong {
+  color: var(--text);
+  margin-right: 4px;
+}
+
+/* Settings hub card grid. */
+.settings-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+.settings-hub-card {
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  text-decoration: none;
+  color: var(--text);
+  transition: border-color 0.12s ease, transform 0.12s ease;
+  min-height: 110px;
+}
+.settings-hub-card:hover,
+.settings-hub-card:focus-visible {
+  border-color: rgba(232, 168, 144, 0.4);
+  transform: translateY(-2px);
+}
+.settings-hub-card-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.settings-hub-card-desc {
+  font-size: 13px;
+  color: var(--secondary);
+  line-height: 1.5;
+}
+
+/* Teacher cabinet padding — учитывает sticky bottom nav на mobile. */
+.teacher-cabinet-main {
+  padding: 32px 40px 96px;
+}
+.teacher-cabinet-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+@media (max-width: 767px) {
+  .teacher-cabinet-main {
+    padding: 16px 16px calc(96px + env(safe-area-inset-bottom));
+  }
+}

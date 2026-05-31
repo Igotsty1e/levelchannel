@@ -215,8 +215,8 @@ function TeacherTariffRow({
           <DurationSelect value={duration} onChange={setDuration} />
         </div>
         <div>
-          <Label title="Меньшее число — выше в списке тарифов при создании слота.">
-            Порядок
+          <Label title="Меньшее число — выше в списке цен при создании слота.">
+            Позиция в списке
           </Label>
           <Input
             type="number"
@@ -523,7 +523,7 @@ function NewTariffForm({
           <DurationSelect value={duration} onChange={setDuration} />
         </div>
         <div>
-          <Label title="Меньшее число — выше в списке.">Порядок</Label>
+          <Label title="Меньшее число — выше в списке.">Позиция в списке</Label>
           <Input
             type="number"
             step="1"

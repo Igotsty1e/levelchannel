@@ -66,8 +66,20 @@ export default async function TeacherSubscriptionPage() {
 
   return (
     <>
+      <div style={{ marginBottom: 16 }}>
+        <a
+          href="/teacher/settings"
+          style={{
+            color: 'var(--secondary)',
+            textDecoration: 'none',
+            fontSize: 14,
+          }}
+        >
+          ← Назад в настройки
+        </a>
+      </div>
       <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>
-        Подписка
+        Подписка на платформу
       </h1>
       <TeacherSubscriptionClient active={active} tariffs={tariffs} />
     </>

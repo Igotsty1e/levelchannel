@@ -43,8 +43,20 @@ export default async function TeacherPackagesPage() {
 
   return (
     <>
+      <div style={{ marginBottom: 16 }}>
+        <a
+          href="/teacher/settings"
+          style={{
+            color: 'var(--secondary)',
+            textDecoration: 'none',
+            fontSize: 14,
+          }}
+        >
+          ← Назад в настройки
+        </a>
+      </div>
       <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 8 }}>
-        Мои пакеты
+        Пакеты уроков
       </h1>
       <p
         style={{
@@ -55,9 +67,8 @@ export default async function TeacherPackagesPage() {
         }}
       >
         Каталог пакетов уроков, которые вы выпускаете. После первой
-        покупки экономические поля (цена, длительность, количество)
-        становятся неизменяемыми. Чтобы поменять цену — деактивируйте
-        старый пакет и создайте новый.
+        покупки цена, длительность и количество занятий фиксируются —
+        чтобы поменять, создайте новый пакет и архивируйте старый.
       </p>
       <TeacherPackagesEditor initialPackages={view} />
     </>
