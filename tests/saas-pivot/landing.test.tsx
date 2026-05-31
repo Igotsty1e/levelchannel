@@ -21,7 +21,7 @@
 //   3. A `/register?role=teacher` deep-link is present.
 //   4. The pricing block surfaces all four tiers with the correct CTA
 //      semantics (Free CTA links to teacher-register; Mid is "Скоро";
-//      Pro has the mailto CTA; Operator-managed has the mailto CTA).
+//      Pro has the mailto CTA; Operator-managed deferred per plan-doc §8).
 //   5. The `/pay` legacy link is preserved in the footer (the route is
 //      kept per plan §3 Epic 8 — plan-4 learner-payment surface).
 //   6. Headings respect h1 → h2 → h3 hierarchy.
@@ -50,7 +50,7 @@ describe('SAAS-PIVOT Epic 8 — teacher-acquisition landing (/saas)', () => {
     // h1 carries the value prop. Two-line clause split across spans —
     // the visible accessible name concatenates them.
     const h1 = screen.getByRole('heading', { level: 1 })
-    expect(h1.textContent ?? '').toMatch(/Расписание, ученики и оплаты/i)
+    expect(h1.textContent ?? '').toMatch(/Расписание, ученики и балансы/i)
     expect(h1.textContent ?? '').toMatch(/в одном кабинете/i)
   })
 
@@ -72,13 +72,16 @@ describe('SAAS-PIVOT Epic 8 — teacher-acquisition landing (/saas)', () => {
     expect(payLink?.textContent ?? '').toMatch(/Перейти к оплате/i)
   })
 
-  it('shows the four pricing tiers with plan-correct CTA semantics', () => {
+  it('shows the three pricing tiers with plan-correct CTA semantics', () => {
+    // C1 Sub-B.2 copy pass (2026-05-31) — Operator-managed tier deferred
+    // per plan-doc §8 Update. Tiers reduced from 4 to 3 (Free / Mid / Pro).
     const { container } = render(SaasPage())
     // Tier names appear as h3 inside the pricing section.
     expect(screen.getByText('Free')).toBeTruthy()
     expect(screen.getByText('Mid')).toBeTruthy()
     expect(screen.getByText('Pro')).toBeTruthy()
-    expect(screen.getByText('Платежи через платформу')).toBeTruthy()
+    // Negative pin — Operator-managed tier must NOT reappear here.
+    expect(screen.queryByText('Платежи через платформу')).toBeNull()
 
     // Mid is "Скоро" and rendered as a disabled <button>, per plan
     // §3 Epic 8 — public Mid self-serve upgrade is Epic 4-DEFERRED.
@@ -91,12 +94,11 @@ describe('SAAS-PIVOT Epic 8 — teacher-acquisition landing (/saas)', () => {
     const proMailto = container.querySelector(
       'a[href^="mailto:ops@levelchannel.ru"][href*="%D0%A0%D0%B0%D0%BD%D0%BD%D0%B8%D0%B9"]',
     )
-    // Decode-agnostic fallback: at least one mailto link must mention
-    // ops@levelchannel.ru — covers Pro and Operator-managed.
+    // At least Pro mailto link must mention ops@levelchannel.ru.
     const anyOpsMailto = Array.from(
       container.querySelectorAll('a[href^="mailto:ops@levelchannel.ru"]'),
     )
-    expect(anyOpsMailto.length).toBeGreaterThanOrEqual(2)
+    expect(anyOpsMailto.length).toBeGreaterThanOrEqual(1)
     void proMailto
   })
 

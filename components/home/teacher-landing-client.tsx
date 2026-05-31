@@ -23,7 +23,7 @@
 //   4. How it works (3 steps — self-onboard, invite learners, plan-4)
 //   5. Features (teacher cabinet snapshot — research §5.5 surface list)
 //   6. Pricing (Free CTA, Mid "Скоро", Pro "Запросить ранний доступ",
-//      Operator-managed "Связаться")
+//      — Mid/Pro CTAs stay disabled/mailto until recurrent flow ships)
 //   7. Social proof / trust (research-based framing, NO fake quotes)
 //   8. Comparison (vs Excel/Telegram/Calendar — research §5.8)
 //   9. Final CTA → /register?role=teacher
@@ -54,7 +54,7 @@ type TeacherLandingLegalProfile = {
 // Two primary CTA destinations (deep-link contract):
 //   - REGISTER_HREF deep-links the teacher branch of /register
 //     (Day 2 PR #413 activated the ?role=teacher query param).
-//   - SUPPORT_EMAIL is the ops contact for Pro/Operator-managed plans
+//   - SUPPORT_EMAIL is the ops contact for Pro plan early-access requests
 //     (Mid/Pro public self-serve upgrade is Epic 4-DEFERRED).
 const REGISTER_HREF = '/register?role=teacher'
 const SUPPORT_EMAIL = 'ops@levelchannel.ru'
@@ -279,7 +279,7 @@ function Hero() {
               marginBottom: 24,
             }}
           >
-            Расписание, ученики и оплаты —{' '}
+            Расписание, ученики и балансы —{' '}
             <span className="gradient-text">в одном кабинете</span>, а не в Excel и переписках
           </h1>
 
@@ -293,9 +293,9 @@ function Hero() {
               maxWidth: 620,
             }}
           >
-            Личный кабинет для преподавателей английского и репетиторов: открывайте слоты, ведите
-            учеников, считайте балансы и пакеты. Ученик сам выбирает время — вы освобождаете часы
-            от переписок «когда вам удобно?».
+            Личный кабинет для репетитора с 1–5 учениками, который растёт вместе с практикой.
+            Открывайте слоты, ведите учеников, считайте балансы и пакеты. Ученик сам выбирает время —
+            вы освобождаете часы от переписок «когда вам удобно?».
           </p>
 
           <ul
@@ -415,8 +415,8 @@ function Problem() {
               margin: '12px auto 0',
             }}
           >
-            Чтобы вести 10–30 учеников без хаоса, нужен один источник правды по расписанию, оплатам
-            и пакетам.
+            Чтобы вести 1–5 первых учеников без хаоса, и спокойно дорасти до 30, нужен один источник
+            правды по расписанию, балансам и пакетам.
           </p>
         </div>
 
@@ -464,9 +464,9 @@ function HowItWorks() {
     },
     {
       n: '03',
-      title: 'По желанию — подключите платежи',
+      title: 'Ведите учеников и расписание в кабинете',
       desc:
-        'Бесплатный тариф работает без денег внутри платформы. Если хотите, чтобы оплата и чеки шли через нас (тариф «Платежи через платформу») — напишите, оператор подключит.',
+        'Один источник правды по слотам, балансам и пакетам уроков. Free хватает для одного ученика, а с ростом практики — Mid и Pro. Деньги за уроки приходят к вам напрямую, мимо платформы.',
     },
   ]
 
@@ -578,8 +578,8 @@ function Features() {
       desc: 'Родитель видит расписание ребёнка, статус оплаты и оставшиеся уроки в пакете.',
     },
     {
-      title: 'Платежи через платформу — по запросу',
-      desc: 'Тариф «Платежи через платформу» подключает CloudPayments и фискализацию. Оператор настраивает.',
+      title: 'Самозанятый, ИП или физлицо — без разницы',
+      desc: 'Налоговый статус Учителя на доступ к кабинету не влияет. Платёжные отношения с учениками вы ведёте сами, привычным способом — мы только организуем расписание и учёт.',
     },
   ]
 
@@ -629,7 +629,7 @@ function Pricing() {
   //   - Free: «Начать бесплатно» CTA → /register?role=teacher
   //   - Mid (300₽/мес, 5 учеников): «Скоро» — Epic 4-DEFERRED (no public self-serve upgrade in MVP)
   //   - Pro (800₽/мес, 30 учеников): «Запросить ранний доступ» — mailto:ops@levelchannel.ru
-  //   - Operator-managed (плата за использование): «Связаться» — mailto
+  //   (Operator-managed deferred — план-док §8 Update 2026-05-30)
   // The plan ALSO clarifies (§3 Epic 8 + DB seed): operator can manually
   // upgrade a teacher to plan-4 via /admin/teachers/[id]/plan — that's
   // the only paid path live in MVP. Mid/Pro stay "Скоро" until the
@@ -689,24 +689,6 @@ function Pricing() {
       badge: 'Ранний доступ',
       highlight: true,
     },
-    {
-      name: 'Платежи через платформу',
-      price: 'По запросу',
-      period: 'плата за использование',
-      limit: 'без лимита учеников',
-      bullets: [
-        'Платежи внутри платформы',
-        'CloudPayments / СБП',
-        'Чеки и фискализация',
-        'Подключает оператор',
-      ],
-      ctaLabel: 'Связаться',
-      ctaHref: `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Тариф «Платежи через платформу»')}`,
-      ctaEvent: 'landing_cta_operator_managed_click',
-      ctaKind: 'secondary' as const,
-      badge: null,
-      highlight: false,
-    },
   ]
 
   return (
@@ -733,8 +715,8 @@ function Pricing() {
               margin: '12px auto 0',
             }}
           >
-            Free навсегда. Mid и Pro — для растущей практики. Платежи через платформу — когда нужны
-            чеки и фискализация.
+            Free — навсегда, для одного ученика. Mid — для первых 5. Pro — когда учеников становится
+            больше. Платите только за активных.
           </p>
         </div>
 
