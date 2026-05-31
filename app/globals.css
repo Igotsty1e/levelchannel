@@ -243,11 +243,16 @@ body {
   transform: translateY(-4px);
 }
 
-/* Fade-in animation */
+/* Fade-in animation. Sub-B.3 C2 Tier-1 polish 2026-05-31 — easing
+   обновлён с linear на cubic-bezier(0.16, 1, 0.3, 1) (ease-out-expo)
+   для более natural slide-in. Длительность 720ms — попадает в
+   tier-1 «theatrical» window из docs/design-system.md §8. */
 .fade-in {
   opacity: 0;
-  transform: translateY(24px);
-  transition: opacity 0.6s ease, transform 0.6s ease;
+  transform: translateY(28px);
+  transition:
+    opacity 0.72s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.72s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .fade-in.visible {
   opacity: 1;
@@ -255,11 +260,64 @@ body {
 }
 
 /* Stagger delays */
-.delay-100 { transition-delay: 0.1s; }
-.delay-200 { transition-delay: 0.2s; }
-.delay-300 { transition-delay: 0.3s; }
-.delay-400 { transition-delay: 0.4s; }
-.delay-500 { transition-delay: 0.5s; }
+.delay-100 { transition-delay: 0.08s; }
+.delay-200 { transition-delay: 0.18s; }
+.delay-300 { transition-delay: 0.30s; }
+.delay-400 { transition-delay: 0.44s; }
+.delay-500 { transition-delay: 0.60s; }
+
+/* Hero brand reveal — visible сразу, SMIL внутри SVG отвечает за
+   secondary timing. CSS только обеспечивает entrance fade на сам
+   контейнер чтобы SMIL не выглядел «выстреливающим» при load. */
+.hero-brand-reveal {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: hero-brand-reveal-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.05s forwards;
+}
+@keyframes hero-brand-reveal-in {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Pricing card polish — мягкий lift + ободок-gradient при hover. */
+.pricing-card {
+  transition:
+    transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.4s ease,
+    box-shadow 0.4s ease;
+}
+.pricing-card:hover {
+  transform: translateY(-6px);
+  border-color: rgba(232, 168, 144, 0.35);
+  box-shadow: 0 24px 48px -24px rgba(200, 120, 120, 0.18);
+}
+
+/* Reduced motion — wide guard на все decorative animations. Hero
+   brand SVG имеет свой own media query внутри <defs>; здесь
+   глобальные CSS-animations и transitions выключаются для
+   пользователей с системной настройкой prefers-reduced-motion. */
+@media (prefers-reduced-motion: reduce) {
+  .fade-in {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+  .hero-brand-reveal {
+    opacity: 1 !important;
+    transform: none !important;
+    animation: none !important;
+  }
+  .pricing-card,
+  .card {
+    transition: none !important;
+  }
+  .pricing-card:hover,
+  .card:hover {
+    transform: none !important;
+  }
+}
 
 /* Section */
 .section {
