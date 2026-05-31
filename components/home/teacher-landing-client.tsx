@@ -41,6 +41,7 @@ import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
 
 import { BrandMark } from '@/components/brand/brand-mark'
+import { BrandMarkAnimated } from '@/components/brand/brand-mark-animated'
 
 type TeacherLandingLegalProfile = {
   legalBankAccount: string
@@ -264,6 +265,11 @@ function Hero() {
 
       <div className="container" style={{ position: 'relative', zIndex: 1 }}>
         <div style={{ maxWidth: 760 }}>
+          {/* Hero brand reveal — SMIL анимация запускается при mount.
+              Sub-B.3 C2 Tier-1 polish 2026-05-31. */}
+          <div className="hero-brand-reveal" style={{ marginBottom: 28, color: '#F5F5F7' }}>
+            <BrandMarkAnimated width={260} ariaLabel="LevelChannel" />
+          </div>
           <div className="fade-in">
             <span className="section-label">LevelChannel для преподавателей</span>
           </div>
@@ -730,7 +736,7 @@ function Pricing() {
           {tiers.map((t, i) => (
             <div
               key={t.name}
-              className={`card fade-in delay-${Math.min((i + 1) * 100, 400)}`}
+              className={`card pricing-card fade-in delay-${Math.min((i + 1) * 100, 400)}`}
               style={{
                 padding: '28px 24px',
                 display: 'flex',
