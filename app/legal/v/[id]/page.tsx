@@ -12,12 +12,14 @@ const KIND_LABEL: Record<string, string> = {
   privacy: 'Политика обработки персональных данных',
   personal_data: 'Согласие на обработку персональных данных',
   saas_offer: 'SaaS-оферта',
+  saas_processor_terms: 'Приложение № 1 — Условия поручения оператора учителю',
 }
 const KIND_LIVE_PATH: Record<string, string> = {
   offer: '/offer',
   privacy: '/privacy',
   personal_data: '/consent/personal-data',
   saas_offer: '/saas/offer',
+  saas_processor_terms: '/saas/processor-terms',
 }
 
 const UUID_PATTERN =

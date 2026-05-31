@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { SiteHeader } from '@/components/site-header'
 import { TeacherCabinetNav } from '@/components/teacher/cabinet-nav'
 import { listAccountRoles } from '@/lib/auth/accounts'
+import { evaluateSaasOfferGate } from '@/lib/auth/guards'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getGoogleIntegrationMeta } from '@/lib/calendar/integrations'
 
@@ -57,17 +58,23 @@ export default async function TeacherLayout({
     redirect('/cabinet')
   }
 
-  // SAAS-OFFER bundle Sub-A.2 round-1 BLOCKER#2 closure (2026-05-30) —
-  // the SSR consent-gate hookup is DELIBERATELY DEFERRED to the
-  // follow-up Sub-A.3/A.5 PR that also ships the /api/teacher/** route
-  // swap, register-flow refactor, and backfill script. Wiring the gate
-  // here without the perimeter would leave a non-uniform enforcement
-  // surface: cabinet SSR would redirect non-consenting teachers to
-  // /saas-offer-accept while teacher API mutations stayed open. The
-  // SAAS_OFFER_GATE_ENABLED operator setting ships in this PR for the
-  // standalone /saas-offer-accept and /saas-offer-awaiting routes only
-  // (they evaluate the gate before rendering); the cabinet entry stays
-  // gate-blind until the perimeter is complete.
+  // SAAS-OFFER A1 follow-up (2026-05-31) — SSR consent-gate hookup.
+  // Sub-A.2 deferred this with BLOCKER#2 to avoid non-uniform
+  // perimeter. A1 ships SSR redirect; 24-route swap + register flow
+  // + backfill script идут отдельным PR (A1.1). Pragmatic safety:
+  // SAAS_OFFER_GATE_ENABLED OFF by default, so unhooked /api/teacher/**
+  // route surface остаётся gate-blind при flag=0 (текущее prod-
+  // состояние). При операторской флипа на 1, SSR cabinet entry
+  // редиректит non-consenting teachers на /saas-offer-accept; API
+  // routes остаются открытыми до A1.1 (это known gap, документирован
+  // в plan-doc A1.1 scope).
+  const saasOfferVerdict = await evaluateSaasOfferGate(current.account.id)
+  if (saasOfferVerdict.kind === 'awaiting_publication') {
+    redirect('/saas-offer-awaiting')
+  }
+  if (saasOfferVerdict.kind === 'consent_required') {
+    redirect('/saas-offer-accept')
+  }
 
   // Sub-PR B (TASK-1) — SSR-derived calendar connection state for the
   // top cabinet nav's Календарь dot. Source of truth = same predicate

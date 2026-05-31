@@ -38,6 +38,10 @@ LEGAL_PATHS=(
   # Each renders / writes the v1 body that flows from legal-rf-router.
   "app/saas/offer/page.tsx"
   "app/saas-offer-accept/page.tsx"
+  # SAAS-OFFER A1 follow-up — Приложение № 1 «Условия поручения
+  # оператора учителю» public render (mig 0097 + legal-rf-qa SIGN-OFF
+  # round 1/3).
+  "app/saas/processor-terms/page.tsx"
 )
 
 # Path prefixes that are entirely legal scope.
@@ -58,6 +62,8 @@ LEGAL_PREFIXES=(
   "app/saas/offer/"
   "app/saas-offer-accept/"
   "app/api/teacher/saas-offer-accept/"
+  # SAAS-OFFER A1 follow-up — Приложение № 1.
+  "app/saas/processor-terms/"
 )
 
 TRAILER_KEY="Legal-Pipeline-Verified"

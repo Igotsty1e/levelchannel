@@ -23,12 +23,14 @@ export const metadata = {
 // chain ultimately points at.
 
 export default async function AdminLegalPage() {
-  const [offer, privacy, personalData, saasOffer] = await Promise.all([
-    listLegalVersions('offer', 50),
-    listLegalVersions('privacy', 50),
-    listLegalVersions('personal_data', 50),
-    listLegalVersions('saas_offer', 50),
-  ])
+  const [offer, privacy, personalData, saasOffer, saasProcessorTerms] =
+    await Promise.all([
+      listLegalVersions('offer', 50),
+      listLegalVersions('privacy', 50),
+      listLegalVersions('personal_data', 50),
+      listLegalVersions('saas_offer', 50),
+      listLegalVersions('saas_processor_terms', 50),
+    ])
 
   return (
     <>
@@ -56,6 +58,7 @@ export default async function AdminLegalPage() {
           privacy,
           personal_data: personalData,
           saas_offer: saasOffer,
+          saas_processor_terms: saasProcessorTerms,
         }}
       />
     </>

@@ -90,6 +90,8 @@ export default async function AdminLayout({ children }: { children: ReactNode })
             <AdminNavLink href="/admin/settings/alerts">Уведомления оператора</AdminNavLink>
             {/* BCS-DEF-5 (2026-05-19) — daily 08:00 teacher lesson digest. */}
             <AdminNavLink href="/admin/settings/digest">Утренний дайджест</AdminNavLink>
+            {/* SAAS-OFFER A1 (2026-05-31) — гейт SaaS-оферты flag. */}
+            <AdminNavLink href="/admin/settings/saas-offer">SaaS-оферта (гейт)</AdminNavLink>
             <AdminNavLink href="/admin/reconciliation">Сверка платежей</AdminNavLink>
           </nav>
           <p

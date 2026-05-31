@@ -19,6 +19,11 @@ const KINDS: KindLabel[] = [
     humanPath: '/consent/personal-data',
   },
   { kind: 'saas_offer', label: 'SaaS-оферта', humanPath: '/saas/offer' },
+  {
+    kind: 'saas_processor_terms',
+    label: 'Приложение № 1 — Условия поручения',
+    humanPath: '/saas/processor-terms',
+  },
 ]
 
 type Props = {

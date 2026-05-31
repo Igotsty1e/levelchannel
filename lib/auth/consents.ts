@@ -8,6 +8,7 @@ export type ConsentKind =
   | 'marketing_opt_in'
   | 'parent_consent'
   | 'saas_offer'
+  | 'saas_processor_terms'
 
 export type AccountConsent = {
   id: string

@@ -22,6 +22,7 @@ Any change to these files or paths is treated as legal-sensitive:
 | `app/consent/personal-data/page.tsx` | Public consent text used at checkout |
 | `app/saas/offer/page.tsx` | Public SaaS оферта (DB-canonical render) |
 | `app/saas-offer-accept/page.tsx` | Existing-teacher SaaS оферта acceptance interstitial |
+| `app/saas/processor-terms/page.tsx` | Public Приложение № 1 «Условия поручения оператора учителю» (DB-canonical render) |
 | `lib/legal/**` | Server-side legal SoT (consent versions, snapshot helpers) |
 | `docs/legal/**` | Future legal-only doc surface |
 | `app/{offer,privacy,consent,saas/offer,saas-offer-accept}/**` | Catches new legal pages added under the same trees |
