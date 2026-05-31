@@ -63,9 +63,13 @@ describe('SAAS-4 lib/auth/teacher-invites.ts DB primitives', () => {
 })
 
 describe('SAAS-4 /api/teacher/invites endpoints', () => {
-  it('POST route gated by requireTeacherAndVerified + origin check', () => {
+  it('POST route gated by teacher consent guard + origin check', () => {
+    // A1.1 (2026-05-31) — swapped from requireTeacherAndVerified to
+    // requireTeacherWithCurrentSaasOfferConsent (saas_offer consent
+    // gate perimeter). Wrapper composes requireTeacherAndVerified
+    // internally.
     const src = read('app/api/teacher/invites/route.ts')
-    expect(src).toMatch(/requireTeacherAndVerified/)
+    expect(src).toMatch(/requireTeacherWithCurrentSaasOfferConsent/)
     expect(src).toMatch(/enforceTrustedBrowserOrigin/)
   })
 

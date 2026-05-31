@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
 import { readJsonObjectOr400 } from '@/lib/api/json-body'
-import { requireTeacherAndVerified } from '@/lib/auth/guards'
+import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import {
   TeacherRenameLearnerError,
   renameLearnerByTeacher,
@@ -41,7 +41,7 @@ export async function POST(request: Request, { params }: RouteParams) {
   const originGate = enforceTrustedBrowserOrigin(request)
   if (originGate) return originGate
 
-  const guard = await requireTeacherAndVerified(request)
+  const guard = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!guard.ok) return guard.response
 
   // Rate-limit AFTER auth so anonymous probes don't burn the teacher's

@@ -8,6 +8,7 @@ import {
   grantAccountRole,
 } from '@/lib/auth/accounts'
 import { recordConsent } from '@/lib/auth/consents'
+import { isSaasOfferGateEnabled as isSaasOfferGateEnabledForRegister } from '@/lib/auth/guards'
 import { computeDisplayNameForStorage } from '@/lib/auth/profile-name'
 import { upsertAccountProfile } from '@/lib/auth/profiles'
 import {
@@ -57,6 +58,8 @@ export async function POST(request: Request) {
     email?: string
     password?: string
     personalDataConsentAccepted?: boolean
+    saasOfferConsentAccepted?: boolean
+    saasOfferConsentVersionId?: string
     role?: string
     inviteToken?: string
     firstName?: string | null
@@ -121,6 +124,66 @@ export async function POST(request: Request) {
       { error: 'Подтвердите согласие на обработку персональных данных.' },
       { status: 400, headers: NO_STORE },
     )
+  }
+
+  // SAAS-OFFER A1.1 (2026-05-31) — teacher self-reg gate.
+  // Round-1 WARN#4 closure (2026-05-31) — REQUIRE non-placeholder
+  // saas_processor_terms наряду с saas_offer. Без обоих живых
+  // документов v2 §6.3.2 (ссылка на Приложение № 1) ведёт в 404
+  // и правовое основание поручения теряется. Не оставляем «offer-
+  // only consent cohort» которая никогда не re-gated при publish
+  // processor_terms позже — enforce ordering в коде, не ops-discipline.
+  let saasOfferLiveVersion: Awaited<
+    ReturnType<typeof getCurrentLegalVersion>
+  > = null
+  let saasProcessorTermsLiveVersion: Awaited<
+    ReturnType<typeof getCurrentLegalVersion>
+  > = null
+  if (
+    requestedRole === 'teacher'
+    && invitePayload === null
+    && (await isSaasOfferGateEnabledForRegister())
+  ) {
+    if (body.saasOfferConsentAccepted !== true) {
+      return NextResponse.json(
+        { error: 'Подтвердите согласие с условиями SaaS-оферты.' },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    saasOfferLiveVersion = await getCurrentLegalVersion('saas_offer')
+    if (
+      !saasOfferLiveVersion
+      || saasOfferLiveVersion.versionLabel.startsWith('v0-placeholder-')
+    ) {
+      return NextResponse.json(
+        { error: 'saas_offer_awaiting_publication' },
+        { status: 503, headers: NO_STORE },
+      )
+    }
+    saasProcessorTermsLiveVersion = await getCurrentLegalVersion(
+      'saas_processor_terms',
+    )
+    if (
+      !saasProcessorTermsLiveVersion
+      || saasProcessorTermsLiveVersion.versionLabel.startsWith('v0-placeholder-')
+    ) {
+      // Приложение № 1 ещё не опубликовано — register блокируется,
+      // operator должен опубликовать оба документа.
+      return NextResponse.json(
+        { error: 'saas_offer_awaiting_publication' },
+        { status: 503, headers: NO_STORE },
+      )
+    }
+    const submittedId =
+      typeof body.saasOfferConsentVersionId === 'string'
+        ? body.saasOfferConsentVersionId.trim()
+        : ''
+    if (submittedId !== saasOfferLiveVersion.id) {
+      return NextResponse.json(
+        { error: 'saas_offer_version_changed' },
+        { status: 409, headers: NO_STORE },
+      )
+    }
   }
 
   const email = emailValidation.email
@@ -268,6 +331,23 @@ export async function POST(request: Request) {
       ip: getClientIp(request),
       userAgent: request.headers.get('user-agent') || null,
     })
+    // SAAS-OFFER A1.1 — teacher self-reg with active gate: write
+    // saas_offer consent с combinedVersion = saas_offer + processor_terms
+    // (Приложение Q5 recommendation). Round-1 WARN#4 closure: гейт
+    // вверху уже REQUIRED обе версии non-placeholder; здесь нет fallback
+    // на saas_offer-only — combinedVersion всегда содержит обе.
+    if (saasOfferLiveVersion && saasProcessorTermsLiveVersion) {
+      const combinedVersion = `saas_offer:${saasOfferLiveVersion.versionLabel}+processor_terms:${saasProcessorTermsLiveVersion.versionLabel}`
+      await recordConsent({
+        accountId: account.id,
+        documentKind: 'saas_offer',
+        documentVersion: combinedVersion,
+        documentPath: '/saas/offer',
+        legalDocumentVersionId: saasOfferLiveVersion.id,
+        ip: getClientIp(request),
+        userAgent: request.headers.get('user-agent') || null,
+      })
+    }
     const { token } = await createEmailVerification(account.id)
     await sendVerifyEmail(email, token)
     await recordAuthAuditEvent({

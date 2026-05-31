@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
-import { requireTeacherAndVerified } from '@/lib/auth/guards'
+import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import { deleteEvent } from '@/lib/calendar/google/push'
 import { withTokenRetry, type CallResult } from '@/lib/calendar/token-retry'
 import { enqueuePullJob } from '@/lib/calendar/pull-worker'
@@ -53,7 +53,7 @@ export async function POST(request: Request, { params }: RouteParams) {
   )
   if (rl) return rl
 
-  const auth = await requireTeacherAndVerified(request)
+  const auth = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!auth.ok) return auth.response
 
   const { id: slotId } = await params

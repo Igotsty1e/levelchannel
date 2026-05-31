@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
+import { evaluateSaasOfferGate } from '@/lib/auth/guards'
 import { getAuthPool } from '@/lib/auth/pool'
 import { resolveOperatorSettingsForProbe } from '@/lib/admin/operator-settings'
 import { takeRateLimit } from '@/lib/security/rate-limit'
@@ -265,6 +266,24 @@ async function handleStart(
       await client.query('rollback')
       await replySafe(chatId, 'Аккаунт недоступен.')
       return
+    }
+
+    // A1.1 round-1 BLOCKER#2 closure (2026-05-31) — saas_offer consent
+    // gate inline check на teacher-branch. Этот path mutates
+    // accounts.teacher_telegram_enabled/chat_id, что является
+    // teacher-state mutation — должна попадать в gate perimeter.
+    // Учитель без current consent не должен биндить Telegram, даже
+    // если у него есть валидный bind code.
+    if (kind === 'teacher') {
+      const verdict = await evaluateSaasOfferGate(accountId)
+      if (verdict.kind !== 'ok') {
+        await client.query('rollback')
+        await replySafe(
+          chatId,
+          'Завершите подтверждение SaaS-оферты в кабинете LevelChannel перед привязкой Telegram.',
+        )
+        return
+      }
     }
 
     // Consume + bind. Branch on kind for the correct table + columns.

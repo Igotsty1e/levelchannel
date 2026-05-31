@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
 import { recordAuthAuditEvent } from '@/lib/audit/auth-events'
-import { requireTeacherAndVerified } from '@/lib/auth/guards'
+import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import { revokeInvite } from '@/lib/auth/teacher-invites'
 import { enforceAccountRateLimit } from '@/lib/security/account-rate-limit'
 import {
@@ -27,7 +27,7 @@ export async function POST(
   const origin = enforceTrustedBrowserOrigin(request)
   if (origin) return origin
 
-  const auth = await requireTeacherAndVerified(request)
+  const auth = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!auth.ok) return auth.response
 
   const rl = await enforceAccountRateLimit(

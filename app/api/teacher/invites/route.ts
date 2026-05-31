@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
 import { recordAuthAuditEvent } from '@/lib/audit/auth-events'
-import { requireTeacherAndVerified } from '@/lib/auth/guards'
+import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import {
   createInviteForTeacher,
   listInvitesForTeacher,
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
   const origin = enforceTrustedBrowserOrigin(request)
   if (origin) return origin
 
-  const auth = await requireTeacherAndVerified(request)
+  const auth = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!auth.ok) return auth.response
   const teacherAccountId = auth.account.id
 
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const auth = await requireTeacherAndVerified(request)
+  const auth = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!auth.ok) return auth.response
 
   // Lighter rate-limit on list — read-only, used by the cabinet UI poll.

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
-import { requireTeacherAndVerified } from '@/lib/auth/guards'
+import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import { getGoogleCalendarOauthConfig } from '@/lib/calendar/google/config'
 import { buildAuthorizationUrl } from '@/lib/calendar/google/oauth'
 import { generateOauthState } from '@/lib/calendar/google/state'
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
   )
   if (rl) return rl
 
-  const auth = await requireTeacherAndVerified(request)
+  const auth = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!auth.ok) return auth.response
 
   let config

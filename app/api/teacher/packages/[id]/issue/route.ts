@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
-import { requireTeacherAndVerified } from '@/lib/auth/guards'
+import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import { issueTeacherPackageGrant } from '@/lib/billing/teacher-grant'
 import { withIdempotency } from '@/lib/security/idempotency'
 import {
@@ -49,7 +49,7 @@ export async function POST(request: Request, { params }: RouteParams) {
   )
   if (rl) return rl
 
-  const guard = await requireTeacherAndVerified(request)
+  const guard = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!guard.ok) return guard.response
 
   const { id: packageId } = await params

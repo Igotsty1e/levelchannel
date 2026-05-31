@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
-import { requireTeacherAndVerified } from '@/lib/auth/guards'
+import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import { cancelSlotByTeacher } from '@/lib/scheduling/slots'
 import {
   enforceRateLimit,
@@ -35,7 +35,7 @@ export async function POST(request: Request, { params }: RouteParams) {
   )
   if (rl) return rl
 
-  const guard = await requireTeacherAndVerified(request)
+  const guard = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!guard.ok) return guard.response
 
   // An empty body is acceptable (cancelling an open slot doesn't need

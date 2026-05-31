@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { listAccountRoles } from '@/lib/auth/accounts'
+import { evaluateSaasOfferGate } from '@/lib/auth/guards'
 import { getCurrentSession } from '@/lib/auth/sessions'
 import { setupChannelForIntegration } from '@/lib/calendar/channel-renewer'
 import { getGoogleCalendarOauthConfig } from '@/lib/calendar/google/config'
@@ -120,6 +121,17 @@ export async function GET(request: Request) {
   }
   if (!session.account.emailVerifiedAt) {
     return redirectToSettings(origin, { error: 'email_unverified' })
+  }
+
+  // SAAS-OFFER A1.1 (2026-05-31) — inline SaaS-оферта consent gate.
+  // OAuth callback doesn't go through requireTeacherWithCurrentSaasOfferConsent
+  // wrapper because it needs to redirect (not return JSON).
+  const saasOfferVerdict = await evaluateSaasOfferGate(session.account.id)
+  if (saasOfferVerdict.kind === 'awaiting_publication') {
+    return redirectToSettings(origin, { error: 'saas_offer_awaiting_publication' })
+  }
+  if (saasOfferVerdict.kind === 'consent_required') {
+    return redirectToSettings(origin, { error: 'saas_offer_consent_required' })
   }
 
   // Exchange code → tokens.

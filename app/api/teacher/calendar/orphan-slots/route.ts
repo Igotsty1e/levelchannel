@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
-import { requireTeacherAndVerified } from '@/lib/auth/guards'
+import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import { listOrphanSelfSlotsForTeacher } from '@/lib/calendar/orphan-cleanup'
 import { enforceRateLimit } from '@/lib/security/request'
 
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
   )
   if (rl) return rl
 
-  const guard = await requireTeacherAndVerified(request)
+  const guard = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!guard.ok) return guard.response
 
   const slots = await listOrphanSelfSlotsForTeacher(guard.account.id)

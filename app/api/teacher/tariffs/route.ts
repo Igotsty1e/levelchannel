@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
 import { readJsonObjectOr400 } from '@/lib/api/json-body'
-import { requireTeacherAndVerified } from '@/lib/auth/guards'
+import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import { isOperatorManagedTeacher } from '@/lib/payments/teacher-derivation'
 import {
   createTariffForTeacher,
@@ -47,7 +47,7 @@ export async function GET(request: Request) {
   const rl = await enforceRateLimit(request, 'teacher:tariffs:ip', 60, 60_000)
   if (rl) return rl
 
-  const guard = await requireTeacherAndVerified(request)
+  const guard = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!guard.ok) return guard.response
 
   const url = new URL(request.url)
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
   const rl = await enforceRateLimit(request, 'teacher:tariffs:ip', 30, 60_000)
   if (rl) return rl
 
-  const guard = await requireTeacherAndVerified(request)
+  const guard = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!guard.ok) return guard.response
 
   // SAAS-PIVOT security-audit HIGH-2 (2026-05-23) closure — plan-4

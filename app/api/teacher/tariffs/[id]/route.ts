@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
 import { readJsonObjectOr400 } from '@/lib/api/json-body'
-import { requireTeacherAndVerified } from '@/lib/auth/guards'
+import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import {
   type TariffPatch,
   getTariffForTeacher,
@@ -34,7 +34,7 @@ export async function GET(request: Request, { params }: RouteParams) {
   const rl = await enforceRateLimit(request, 'teacher:tariffs:ip', 60, 60_000)
   if (rl) return rl
 
-  const guard = await requireTeacherAndVerified(request)
+  const guard = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!guard.ok) return guard.response
 
   const tariff = await getTariffForTeacher(id, guard.account.id, {
@@ -57,7 +57,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   const rl = await enforceRateLimit(request, 'teacher:tariffs:ip', 30, 60_000)
   if (rl) return rl
 
-  const guard = await requireTeacherAndVerified(request)
+  const guard = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!guard.ok) return guard.response
 
   const parsed = await readJsonObjectOr400(request)
@@ -138,7 +138,7 @@ export async function DELETE(request: Request, { params }: RouteParams) {
   const rl = await enforceRateLimit(request, 'teacher:tariffs:ip', 30, 60_000)
   if (rl) return rl
 
-  const guard = await requireTeacherAndVerified(request)
+  const guard = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!guard.ok) return guard.response
 
   const result = await softDeleteTariffForTeacher(id, guard.account.id)
