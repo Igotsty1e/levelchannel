@@ -45,16 +45,41 @@ export function TeacherPackagesEditor({
     }
   }
 
+  function deriveSlug(title: string): string {
+    // Cabinet polish (2026-05-31) — slug автогенерируется из titleRu,
+    // чтобы учитель не возился с техническим полем. Транслит cyrillic
+    // → latin + non-alphanumeric → '-' + 8-char random suffix для
+    // уникальности.
+    const cyr2lat: Record<string, string> = {
+      а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'yo', ж: 'zh',
+      з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o',
+      п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'c',
+      ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu',
+      я: 'ya',
+    }
+    const base = title
+      .toLowerCase()
+      .split('')
+      .map((ch) => cyr2lat[ch] ?? ch)
+      .join('')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 32) || 'pkg'
+    const rnd = Math.random().toString(36).slice(2, 10)
+    return `${base}-${rnd}`
+  }
+
   async function submitCreate() {
     setBusy(true)
     setError(null)
     setInfo(null)
     try {
+      const computedSlug = draft.slug.trim() || deriveSlug(draft.titleRu)
       const r = await fetch('/api/teacher/packages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          slug: draft.slug.trim(),
+          slug: computedSlug,
           titleRu: draft.titleRu.trim(),
           descriptionRu: draft.descriptionRu.trim() || null,
           durationMinutes: Number(draft.durationMinutes),
@@ -132,17 +157,6 @@ export function TeacherPackagesEditor({
           }}
         >
           <label style={labelStyle}>
-            Slug
-            <input
-              style={inputStyle}
-              value={draft.slug}
-              onChange={(e) =>
-                setDraft({ ...draft, slug: e.target.value })
-              }
-              placeholder="lessons-10-60min"
-            />
-          </label>
-          <label style={labelStyle}>
             Название (RU)
             <input
               style={inputStyle}
@@ -190,7 +204,7 @@ export function TeacherPackagesEditor({
             />
           </label>
           <label style={labelStyle}>
-            Порядок отображения
+            Позиция в списке
             <input
               type="number"
               style={inputStyle}
@@ -262,16 +276,7 @@ export function TeacherPackagesEditor({
             >
               <div>
                 <div style={{ fontWeight: 600, fontSize: 14 }}>
-                  {p.titleRu}{' '}
-                  <span
-                    style={{
-                      color: 'var(--secondary)',
-                      fontWeight: 400,
-                      fontSize: 12,
-                    }}
-                  >
-                    ({p.slug})
-                  </span>
+                  {p.titleRu}
                 </div>
                 <div
                   style={{ color: 'var(--secondary)', fontSize: 12, marginTop: 4 }}

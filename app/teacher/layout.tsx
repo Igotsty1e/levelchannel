@@ -89,14 +89,15 @@ export default async function TeacherLayout({
     <>
       <SiteHeader />
       <main
+        className="teacher-cabinet-main"
+        data-cabinet="teacher"
         style={{
           minHeight: 'calc(100vh - 56px)',
           background: 'var(--bg)',
-          padding: '32px 40px 96px',
         }}
       >
         <TeacherCabinetNav calendarConnected={calendarConnected} />
-        {children}
+        <div className="teacher-cabinet-inner">{children}</div>
       </main>
     </>
   )

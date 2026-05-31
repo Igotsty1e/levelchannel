@@ -1,20 +1,19 @@
 'use client'
 
-// Teacher cabinet polish — Sub-PR B (TASK-1).
-//
-// Plan: docs/plans/teacher-cabinet-polish.md §3 Sub-PR B.
-//
-// Top-level cabinet nav shown on every /teacher/* route. Lives BELOW
-// <SiteHeader /> (rendered by app/teacher/layout.tsx, ABOVE the page
-// children). Active-route highlight is computed client-side via
-// usePathname() — that's the only reason this leaf is `'use client'`;
-// the parent layout stays server-side and feeds calendarConnected as
-// SSR-derived prop.
-//
-// The Календарь button carries a connection-state dot (● connected /
-// ○ not) per round-5 BLOCKER #1 closure / Q11. The dot replaces the
-// inline status row that used to live at the top of /teacher/page.tsx
-// — single source of truth for calendar connection visibility.
+/**
+ * Teacher cabinet nav — Mobile-first restructure (2026-05-31).
+ *
+ * 4 main sections instead of 6 cluttered ones:
+ *   1. Главная   — /teacher (новый home: ближайшие занятия, invite, ученики)
+ *   2. Календарь — /teacher/calendar (бывший /teacher)
+ *   3. Ученики   — /teacher/learners
+ *   4. Настройки — /teacher/settings (hub для Профиль/Цены занятий/Пакеты уроков/Подписка/Календарь/Уведомления)
+ *
+ * Mobile (<768px): sticky bottom nav, 4 кнопки с иконкой+подписью.
+ * Desktop (≥768px): горизонтальный nav сверху.
+ *
+ * Calendar connection dot (●/○) — теперь на «Календарь» пункте.
+ */
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -22,17 +21,25 @@ import { usePathname } from 'next/navigation'
 type NavItem = {
   href: string
   label: string
-  /** If true, show ●/○ connection-state dot before label. */
+  /** SVG-glyph icon shown on mobile bottom nav. */
+  icon: string
+  /** Highlight as active when pathname starts with `href/`. */
+  prefixMatch?: boolean
+  /** Pass calendar-connected state from SSR. */
   showCalendarDot?: boolean
 }
 
 const NAV_ITEMS: ReadonlyArray<NavItem> = [
-  { href: '/teacher', label: 'Календарь', showCalendarDot: true },
-  { href: '/teacher/learners', label: 'Ученики' },
-  { href: '/teacher/packages', label: 'Пакеты' },
-  { href: '/teacher/tariffs', label: 'Тарифы' },
-  { href: '/teacher/subscription', label: 'Подписка' },
-  { href: '/teacher/profile', label: 'Профиль' },
+  { href: '/teacher', label: 'Главная', icon: '⌂' },
+  {
+    href: '/teacher/calendar',
+    label: 'Календарь',
+    icon: '▦',
+    prefixMatch: true,
+    showCalendarDot: true,
+  },
+  { href: '/teacher/learners', label: 'Ученики', icon: '☰', prefixMatch: true },
+  { href: '/teacher/settings', label: 'Настройки', icon: '⚙', prefixMatch: true },
 ]
 
 type Props = {
@@ -41,82 +48,112 @@ type Props = {
   calendarConnected: boolean
 }
 
-/**
- * Returns true when `pathname` should highlight `href` as the active
- * route. Exact match for the dashboard (`/teacher`) so visiting a
- * deeper route doesn't keep Календарь lit; prefix match for the
- * sub-routes so e.g. `/teacher/learners/abc` still highlights Ученики.
- */
-function isActive(pathname: string | null, href: string): boolean {
+function isActive(pathname: string | null, item: NavItem): boolean {
   if (!pathname) return false
-  if (href === '/teacher') {
-    return pathname === '/teacher'
-  }
-  return pathname === href || pathname.startsWith(`${href}/`)
+  if (!item.prefixMatch) return pathname === item.href
+  return pathname === item.href || pathname.startsWith(`${item.href}/`)
 }
 
 export function TeacherCabinetNav({ calendarConnected }: Props) {
   const pathname = usePathname()
 
   return (
-    <nav
-      aria-label="Учительский кабинет"
-      data-testid="teacher-cabinet-nav"
-      style={{
-        display: 'flex',
-        gap: 8,
-        flexWrap: 'wrap',
-        marginBottom: 20,
-        padding: '8px 0',
-        borderBottom: '1px solid var(--border)',
-      }}
-    >
-      {NAV_ITEMS.map((item) => {
-        const active = isActive(pathname, item.href)
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            aria-current={active ? 'page' : undefined}
-            data-active={active ? 'true' : 'false'}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '8px 14px',
-              borderRadius: 8,
-              fontSize: 14,
-              fontWeight: active ? 600 : 500,
-              textDecoration: 'none',
-              color: active ? 'var(--text)' : 'var(--secondary)',
-              background: active ? 'var(--border)' : 'transparent',
-              border: '1px solid',
-              borderColor: active ? 'var(--border)' : 'transparent',
-              transition: 'background 0.12s ease, color 0.12s ease',
-            }}
-          >
-            {item.showCalendarDot ? (
+    <>
+      {/* Desktop / tablet — горизонтальный nav над контентом (≥768px). */}
+      <nav
+        aria-label="Учительский кабинет"
+        data-testid="teacher-cabinet-nav"
+        className="cabinet-nav-desktop"
+      >
+        {NAV_ITEMS.map((item) => {
+          const active = isActive(pathname, item)
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={active ? 'page' : undefined}
+              data-active={active ? 'true' : 'false'}
+              className="cabinet-nav-link"
+              style={{
+                color: active ? 'var(--text)' : 'var(--secondary)',
+                background: active ? 'var(--border)' : 'transparent',
+                fontWeight: active ? 600 : 500,
+              }}
+            >
+              {item.showCalendarDot ? (
+                <span
+                  aria-label={
+                    calendarConnected
+                      ? 'Google Calendar подключён'
+                      : 'Google Calendar не подключён'
+                  }
+                  data-testid="cabinet-nav-calendar-dot"
+                  data-connected={calendarConnected ? 'true' : 'false'}
+                  style={{
+                    color: calendarConnected ? '#9bdf9b' : '#ff8a8a',
+                    fontSize: 12,
+                    lineHeight: 1,
+                    marginRight: 4,
+                  }}
+                >
+                  {calendarConnected ? '●' : '○'}
+                </span>
+              ) : null}
+              {item.label}
+            </Link>
+          )
+        })}
+      </nav>
+
+      {/* Mobile — sticky bottom nav (<768px). 4 иконки + подписи. */}
+      <nav
+        aria-label="Кабинет (мобильное меню)"
+        data-testid="teacher-cabinet-nav-mobile"
+        className="cabinet-nav-mobile"
+      >
+        {NAV_ITEMS.map((item) => {
+          const active = isActive(pathname, item)
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={active ? 'page' : undefined}
+              data-active={active ? 'true' : 'false'}
+              className="cabinet-nav-mobile-link"
+              style={{ color: active ? 'var(--text)' : 'var(--secondary)' }}
+            >
               <span
-                aria-label={
-                  calendarConnected
-                    ? 'Google Calendar подключён'
-                    : 'Google Calendar не подключён'
-                }
-                data-testid="cabinet-nav-calendar-dot"
-                data-connected={calendarConnected ? 'true' : 'false'}
+                aria-hidden="true"
                 style={{
-                  color: calendarConnected ? '#9bdf9b' : '#ff8a8a',
-                  fontSize: 12,
+                  fontSize: 22,
                   lineHeight: 1,
+                  marginBottom: 4,
+                  position: 'relative',
                 }}
               >
-                {calendarConnected ? '●' : '○'}
+                {item.icon}
+                {item.showCalendarDot ? (
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      position: 'absolute',
+                      top: -2,
+                      right: -6,
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      background: calendarConnected ? '#9bdf9b' : '#ff8a8a',
+                    }}
+                  />
+                ) : null}
               </span>
-            ) : null}
-            {item.label}
-          </Link>
-        )
-      })}
-    </nav>
+              <span style={{ fontSize: 11, fontWeight: active ? 600 : 500 }}>
+                {item.label}
+              </span>
+            </Link>
+          )
+        })}
+      </nav>
+    </>
   )
 }

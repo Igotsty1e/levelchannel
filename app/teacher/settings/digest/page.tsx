@@ -63,19 +63,19 @@ export default async function TeacherDigestSettingsPage() {
         }}
       >
         <Link
-          href="/teacher"
+          href="/teacher/settings"
           style={{
             color: 'var(--secondary)',
             textDecoration: 'none',
             fontSize: 14,
           }}
         >
-          ← Назад в календарь
+          ← Назад в настройки
         </Link>
       </div>
 
       <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>
-        Утренний дайджест занятий
+        Уведомления и сводка занятий
       </h1>
       <p
         style={{

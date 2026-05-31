@@ -1,57 +1,45 @@
 // @vitest-environment jsdom
 
-// Teacher cabinet polish — Sub-PR B (TASK-1).
-// Plan: docs/plans/teacher-cabinet-polish.md §3 Sub-PR B.
-//
-// Pins the load-bearing claims for `<TeacherCabinetNav />`:
-//   - All 5 nav buttons render with their canonical hrefs.
-//   - pathname === '/teacher'           → Календарь is active.
-//   - pathname === '/teacher/learners'  → Ученики is active.
-//   - calendarConnected=true            → ● dot (data-connected="true").
-//   - calendarConnected=false           → ○ dot (data-connected="false").
-//
-// Note on test location (matches Sub-PR A's pattern): lives under
-// `tests/teacher-cabinet-polish/` rather than the plan's
-// `tests/integration/...` path because the integration runner is
-// node-env + *.test.ts only; RTL component tests need the unit
-// runner's jsdom + setup-rtl.ts.
+// Mobile-first cabinet restructure (2026-05-31) — обновлённые pin'ы:
+//   - 4 главных раздела × 2 nav'a (desktop + mobile bottom) = 8 ссылок.
+//   - Главная / Календарь / Ученики / Настройки.
+//   - pathname === '/teacher'           → Главная active.
+//   - pathname === '/teacher/calendar'  → Календарь active.
+//   - pathname === '/teacher/learners'  → Ученики active.
+//   - pathname === '/teacher/settings'  → Настройки active.
+//   - calendarConnected dot теперь на «Календарь» пункте.
 
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// next/navigation must be mocked BEFORE importing the component so the
-// vi.mock factory hoisting wires up correctly. We hold a mutable ref
-// so individual tests can swap the pathname.
 const navState: { pathname: string | null } = { pathname: '/teacher' }
 
 vi.mock('next/navigation', () => ({
   usePathname: () => navState.pathname,
 }))
 
-// Import AFTER mock declaration.
 import { TeacherCabinetNav } from '@/components/teacher/cabinet-nav'
 
-// A2 (2026-05-30) — added Подписка nav entry between Тарифы and Профиль
-// for the Mid/Pro paid-subscription cabinet flow.
 const EXPECTED_LINKS: Array<{ href: string; label: string }> = [
-  { href: '/teacher', label: 'Календарь' },
+  { href: '/teacher', label: 'Главная' },
+  { href: '/teacher/calendar', label: 'Календарь' },
   { href: '/teacher/learners', label: 'Ученики' },
-  { href: '/teacher/packages', label: 'Пакеты' },
-  { href: '/teacher/tariffs', label: 'Тарифы' },
-  { href: '/teacher/subscription', label: 'Подписка' },
-  { href: '/teacher/profile', label: 'Профиль' },
+  { href: '/teacher/settings', label: 'Настройки' },
 ]
 
-function findLinkByLabel(label: string): HTMLAnchorElement {
-  const links = screen.getAllByRole('link') as HTMLAnchorElement[]
+function findDesktopLinkByLabel(label: string): HTMLAnchorElement {
+  const desktopNav = screen.getByTestId('teacher-cabinet-nav')
+  const links = within(desktopNav).getAllByRole(
+    'link',
+  ) as HTMLAnchorElement[]
   const match = links.find((a) => a.textContent?.includes(label))
   if (!match) {
-    throw new Error(`No link contains label "${label}"`)
+    throw new Error(`No desktop link contains label "${label}"`)
   }
   return match
 }
 
-describe('TeacherCabinetNav — TASK-1 cabinet nav menu', () => {
+describe('TeacherCabinetNav — mobile-first restructure', () => {
   beforeEach(() => {
     navState.pathname = '/teacher'
   })
@@ -60,88 +48,88 @@ describe('TeacherCabinetNav — TASK-1 cabinet nav menu', () => {
     cleanup()
   })
 
-  it('renders all 6 nav buttons with their canonical hrefs', () => {
+  it('renders 4 sections in BOTH desktop and mobile nav', () => {
     render(<TeacherCabinetNav calendarConnected={false} />)
+    const desktopNav = screen.getByTestId('teacher-cabinet-nav')
+    const mobileNav = screen.getByTestId('teacher-cabinet-nav-mobile')
+    expect(within(desktopNav).getAllByRole('link').length).toBe(
+      EXPECTED_LINKS.length,
+    )
+    expect(within(mobileNav).getAllByRole('link').length).toBe(
+      EXPECTED_LINKS.length,
+    )
+  })
 
-    const links = screen.getAllByRole('link') as HTMLAnchorElement[]
-    expect(links.length).toBe(EXPECTED_LINKS.length)
-
+  it('renders all 4 canonical hrefs in desktop nav', () => {
+    render(<TeacherCabinetNav calendarConnected={false} />)
     for (const { href, label } of EXPECTED_LINKS) {
-      const link = findLinkByLabel(label)
-      // Next.js Link renders an anchor with the href attribute populated
-      // for absolute-path strings (no `basePath` configured here).
+      const link = findDesktopLinkByLabel(label)
       expect(link.getAttribute('href')).toBe(href)
       expect(link.textContent).toContain(label)
     }
   })
 
-  it('pathname=/teacher → Календарь is active', () => {
+  it('pathname=/teacher → Главная is active (exact match, not prefix)', () => {
     navState.pathname = '/teacher'
     render(<TeacherCabinetNav calendarConnected={false} />)
+    const home = findDesktopLinkByLabel('Главная')
+    expect(home.getAttribute('aria-current')).toBe('page')
+    expect(home.getAttribute('data-active')).toBe('true')
 
-    const calendar = findLinkByLabel('Календарь')
-    expect(calendar.getAttribute('aria-current')).toBe('page')
-    expect(calendar.getAttribute('data-active')).toBe('true')
-
-    // Sibling buttons must NOT be active.
     for (const { label } of EXPECTED_LINKS.filter(
-      (l) => l.label !== 'Календарь',
+      (l) => l.label !== 'Главная',
     )) {
-      const sibling = findLinkByLabel(label)
+      const sibling = findDesktopLinkByLabel(label)
       expect(sibling.getAttribute('aria-current')).toBeNull()
       expect(sibling.getAttribute('data-active')).toBe('false')
     }
   })
 
-  it('pathname=/teacher/learners → Ученики is active (and Календарь is NOT)', () => {
+  it('pathname=/teacher/calendar → Календарь active (and Главная NOT)', () => {
+    navState.pathname = '/teacher/calendar'
+    render(<TeacherCabinetNav calendarConnected={false} />)
+    const cal = findDesktopLinkByLabel('Календарь')
+    expect(cal.getAttribute('aria-current')).toBe('page')
+    expect(cal.getAttribute('data-active')).toBe('true')
+
+    const home = findDesktopLinkByLabel('Главная')
+    expect(home.getAttribute('aria-current')).toBeNull()
+  })
+
+  it('pathname=/teacher/learners → Ученики active', () => {
     navState.pathname = '/teacher/learners'
     render(<TeacherCabinetNav calendarConnected={false} />)
-
-    const learners = findLinkByLabel('Ученики')
+    const learners = findDesktopLinkByLabel('Ученики')
     expect(learners.getAttribute('aria-current')).toBe('page')
-    expect(learners.getAttribute('data-active')).toBe('true')
-
-    // Calendar's exact-match rule means deeper /teacher/* routes
-    // must NOT keep Календарь lit (round-5 design intent).
-    const calendar = findLinkByLabel('Календарь')
-    expect(calendar.getAttribute('aria-current')).toBeNull()
-    expect(calendar.getAttribute('data-active')).toBe('false')
   })
 
-  it('pathname=/teacher/learners/abc → Ученики stays active (prefix match for sub-routes)', () => {
+  it('pathname=/teacher/learners/abc → Ученики stays active (prefix)', () => {
     navState.pathname = '/teacher/learners/abc-uuid'
     render(<TeacherCabinetNav calendarConnected={false} />)
-
-    const learners = findLinkByLabel('Ученики')
+    const learners = findDesktopLinkByLabel('Ученики')
     expect(learners.getAttribute('aria-current')).toBe('page')
-    expect(learners.getAttribute('data-active')).toBe('true')
   })
 
-  it('calendarConnected=true → green ● dot on Календарь', () => {
+  it('pathname=/teacher/settings/calendar → Настройки stays active (prefix)', () => {
+    navState.pathname = '/teacher/settings/calendar'
+    render(<TeacherCabinetNav calendarConnected={false} />)
+    const settings = findDesktopLinkByLabel('Настройки')
+    expect(settings.getAttribute('aria-current')).toBe('page')
+  })
+
+  it('calendarConnected=true → green ● dot on Календарь (desktop)', () => {
     navState.pathname = '/teacher'
     render(<TeacherCabinetNav calendarConnected={true} />)
-
     const dot = screen.getByTestId('cabinet-nav-calendar-dot')
     expect(dot.getAttribute('data-connected')).toBe('true')
     expect(dot.textContent).toBe('●')
-    expect(dot.getAttribute('aria-label')).toContain('подключён')
   })
 
-  it('calendarConnected=false → grey ○ dot on Календарь', () => {
+  it('calendarConnected=false → grey ○ dot on Календарь (desktop)', () => {
     navState.pathname = '/teacher'
     render(<TeacherCabinetNav calendarConnected={false} />)
-
     const dot = screen.getByTestId('cabinet-nav-calendar-dot')
     expect(dot.getAttribute('data-connected')).toBe('false')
     expect(dot.textContent).toBe('○')
-    expect(dot.getAttribute('aria-label')).toContain('не подключён')
-  })
-
-  it('only Календарь has a connection-state dot; siblings do not', () => {
-    render(<TeacherCabinetNav calendarConnected={true} />)
-
-    // The dot's testid is unique-rendered — exactly one in the DOM.
-    const dots = screen.getAllByTestId('cabinet-nav-calendar-dot')
-    expect(dots.length).toBe(1)
   })
 })

@@ -105,15 +105,30 @@ export default async function TeacherProfilePage() {
     getAccountProfile(account.id),
   ])
 
+  // Mobile-first cabinet restructure (2026-05-31) — TariffComparisonCard
+  // (план Free/Mid/Pro) удалён с профиля; подписка теперь живёт
+  // ИСКЛЮЧИТЕЛЬНО на /teacher/subscription. Тут показываем компактный
+  // статус подписки + ссылку на полное управление.
+  void plans
+  void currentPlanSlug
+
   return (
     <>
+      <div style={{ marginBottom: 16 }}>
+        <a
+          href="/teacher/settings"
+          style={{
+            color: 'var(--secondary)',
+            textDecoration: 'none',
+            fontSize: 14,
+          }}
+        >
+          ← Назад в настройки
+        </a>
+      </div>
       <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>
         Профиль
       </h1>
-      <TariffComparisonCard
-        plans={plans}
-        currentPlanSlug={currentPlanSlug}
-      />
       <ProfileEditor initialProfile={profile} fallbackEmail={account.email} />
     </>
   )

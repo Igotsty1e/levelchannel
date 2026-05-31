@@ -29,7 +29,8 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export const metadata = {
-  title: 'Мои тарифы — LevelChannel',
+  title: 'Цены занятий — LevelChannel',
+  robots: { index: false, follow: false },
 }
 
 type SearchParams = { params?: never; searchParams: Promise<{ archived?: string }> }
@@ -50,8 +51,20 @@ export default async function TeacherTariffsPage({ searchParams }: SearchParams)
 
   return (
     <>
+      <div style={{ marginBottom: 16 }}>
+        <a
+          href="/teacher/settings"
+          style={{
+            color: 'var(--secondary)',
+            textDecoration: 'none',
+            fontSize: 14,
+          }}
+        >
+          ← Назад в настройки
+        </a>
+      </div>
       <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 8 }}>
-        Мои тарифы
+        Цены занятий
       </h1>
       <p
         style={{
@@ -61,12 +74,9 @@ export default async function TeacherTariffsPage({ searchParams }: SearchParams)
           lineHeight: 1.6,
         }}
       >
-        Каждый тариф — это стоимость одного занятия фиксированной
-        длительности. После того как тариф привязан хотя бы к одному
-        слоту, изменить его цену и длительность нельзя — заведите
-        новый тариф. Архивирование скрывает тариф из форм создания
-        слотов, но не удаляет историю — слоты с архивным тарифом
-        продолжают видеть его название и цену в журнале.
+        Здесь задаются цены отдельных занятий. Если цена уже
+        использовалась в занятиях, создайте новую цену и архивируйте
+        старую.
       </p>
       <TeacherTariffEditor
         initialTariffs={tariffs}
