@@ -640,7 +640,20 @@ function Pricing() {
   // upgrade a teacher to plan-4 via /admin/teachers/[id]/plan — that's
   // the only paid path live in MVP. Mid/Pro stay "Скоро" until the
   // public self-serve upgrade ships post-MVP.
-  const tiers = [
+  type Tier = {
+    name: string
+    price: string
+    period: string
+    limit: string
+    bullets: string[]
+    ctaLabel: string
+    ctaHref: string | null
+    ctaEvent: string | null
+    ctaKind: 'primary' | 'secondary' | 'disabled'
+    badge: string | null
+    highlight: boolean
+  }
+  const tiers: Tier[] = [
     {
       name: 'Free',
       price: '0 ₽',
@@ -655,8 +668,8 @@ function Pricing() {
       ctaLabel: 'Начать бесплатно',
       ctaHref: REGISTER_HREF,
       ctaEvent: 'landing_cta_register_click_pricing_free',
-      ctaKind: 'primary' as const,
-      badge: null as string | null,
+      ctaKind: 'primary',
+      badge: null,
       highlight: false,
     },
     {
@@ -670,11 +683,18 @@ function Pricing() {
         'Балансы и долги',
         'Родительский доступ',
       ],
-      ctaLabel: 'Скоро',
-      ctaHref: null,
-      ctaEvent: null,
-      ctaKind: 'disabled' as const,
-      badge: 'Скоро',
+      // A2 (2026-05-30) — public self-serve activation. CTA сначала ведёт
+      // на /register?role=teacher&intent=mid: если уже есть аккаунт,
+      // регистрация подбрасывает на /teacher/subscription, где работает
+      // одноразовый платёж через CloudPayments.
+      ctaLabel: 'Подписаться',
+      // A2: гость → /login (через /teacher/layout.tsx гейт) → возвращается
+      // на /teacher/subscription. Уже-залогиненный учитель — сразу видит
+      // карточки тарифов.
+      ctaHref: '/teacher/subscription',
+      ctaEvent: 'landing_cta_mid_subscribe_click',
+      ctaKind: 'primary',
+      badge: null,
       highlight: false,
     },
     {
@@ -686,13 +706,13 @@ function Pricing() {
         'Всё из Mid',
         'Расширенные отчёты',
         'Приоритетная поддержка',
-        'Запросить ранний доступ',
+        'Прямые ответы оператора',
       ],
-      ctaLabel: 'Запросить ранний доступ',
-      ctaHref: `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Pro — ранний доступ')}`,
-      ctaEvent: 'landing_cta_pro_early_access_click',
-      ctaKind: 'secondary' as const,
-      badge: 'Ранний доступ',
+      ctaLabel: 'Подписаться',
+      ctaHref: '/teacher/subscription',
+      ctaEvent: 'landing_cta_pro_subscribe_click',
+      ctaKind: 'primary',
+      badge: 'Популярный',
       highlight: true,
     },
   ]
@@ -873,14 +893,16 @@ function Pricing() {
             lineHeight: 1.6,
           }}
         >
-          Тарифы Mid и Pro — в публичном self-serve пока недоступны. Пишите{' '}
+          Mid и Pro — одноразовый платёж за 30 дней. Автосписаний нет: чтобы
+          продлить, оплатите подписку ещё раз. Отменить можно в любой момент —
+          доступ сохранится до конца оплаченного периода. Вопросы —{' '}
           <a
             href={`mailto:${SUPPORT_EMAIL}`}
             style={{ color: '#E89A90', textDecoration: 'underline' }}
           >
             {SUPPORT_EMAIL}
-          </a>{' '}
-          — подключим вручную.
+          </a>
+          .
         </p>
       </div>
     </section>

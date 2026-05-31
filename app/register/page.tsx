@@ -42,20 +42,33 @@ export default function RegisterPage() {
     versionLabel: string
     isPlaceholder: boolean
   } | null>(null)
+  // A1.1 round-1 WARN#3 closure — loading-флаг блокирует submit ДО
+  // получения /api/legal/current response. Без него teacher мог успеть
+  // нажать «Создать» до окончания fetch и получить server-side 503/400.
+  const [saasOfferLoading, setSaasOfferLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   const isTeacherSelfReg = !inviteToken && role === 'teacher'
 
   useEffect(() => {
-    if (!isTeacherSelfReg) return
+    if (!isTeacherSelfReg) {
+      setSaasOfferLoading(false)
+      return
+    }
     let cancelled = false
+    setSaasOfferLoading(true)
     fetch('/api/legal/current?kind=saas_offer')
       .then((r) => (r.ok ? r.json() : null))
       .then((v) => {
-        if (!cancelled && v) setSaasOfferVersion(v)
+        if (cancelled) return
+        if (v) setSaasOfferVersion(v)
+        setSaasOfferLoading(false)
       })
-      .catch(() => {})
+      .catch(() => {
+        if (cancelled) return
+        setSaasOfferLoading(false)
+      })
     return () => {
       cancelled = true
     }
@@ -67,6 +80,10 @@ export default function RegisterPage() {
     setError(null)
     if (!consent) {
       setError('Подтвердите согласие на обработку персональных данных.')
+      return
+    }
+    if (isTeacherSelfReg && saasOfferLoading) {
+      setError('Загружаем условия SaaS-оферты, подождите секунду…')
       return
     }
     if (isTeacherSelfReg && saasOfferVersion && !saasOfferAgreed) {

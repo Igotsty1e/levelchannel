@@ -296,16 +296,37 @@ export type SaasOfferGateVerdict =
 //   distinguish bootstrap-missing-table from steady-state DB errors.
 // Exported so callers outside the guard module (notably /api/auth/register)
 // can short-circuit the gate check when the flag is OFF.
+//
+// A1.1 round-1 WARN#5 closure (2026-05-31) — fail-CLOSED policy.
+// Sub-A.2 foundation kept fail-open semantics, потому что в тот момент
+// гейт был инертен и неподключён к enforcement perimeter. A1.1
+// подключил гейт к 24 teacher API ручкам + register flow. На
+// enforcement perimeter fail-open означает: DB outage → все 25 ручек
+// silently bypass gate, как будто flag=0. Это не безопасное поведение
+// в проде где operator явно включил flag=1.
+//
+// Новая семантика: если env-override SAAS_OFFER_GATE_ENABLED=1 явно
+// задан, fail-CLOSED (return true) при DB read failure — гейт
+// продолжает работать, /api/teacher/** mutations отвечают 503
+// saas_offer_awaiting_publication, что выглядит как «system busy»
+// для пользователя но НЕ открывает perimeter. При env=0 или unset
+// продолжаем fail-open (gate инертен по умолчанию).
 export async function isSaasOfferGateEnabled(): Promise<boolean> {
   try {
     const resolved = await resolveOperatorSetting('SAAS_OFFER_GATE_ENABLED')
     return resolved.value === 1
   } catch (err) {
+    const rawEnv = process.env.SAAS_OFFER_GATE_ENABLED
+    const envSaysOn = rawEnv && String(rawEnv).trim() === '1'
     // eslint-disable-next-line no-console
-    console.warn('[saas-offer-gate] flag read failed; defaulting to OFF', {
-      err: err instanceof Error ? err.message : String(err),
-    })
-    return false
+    console.warn(
+      '[saas-offer-gate] flag read failed; falling back to env',
+      {
+        err: err instanceof Error ? err.message : String(err),
+        envSaysOn,
+      },
+    )
+    return Boolean(envSaysOn)
   }
 }
 

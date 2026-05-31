@@ -126,15 +126,17 @@ export async function POST(request: Request) {
     )
   }
 
-  // SAAS-OFFER A1.1 (2026-05-31) — teacher self-reg gate. Only fires
-  // for explicit role=teacher path (invite-flow forces role=student).
-  // Gate behaviour:
-  //   - body.saasOfferConsentAccepted must be true → else 400.
-  //   - live saas_offer version must be non-placeholder → else 503.
-  //   - submitted saasOfferConsentVersionId must equal live id → else
-  //     409 saas_offer_version_changed (TOCTOU defence per plan-doc
-  //     round-10 BLOCKER#1).
+  // SAAS-OFFER A1.1 (2026-05-31) — teacher self-reg gate.
+  // Round-1 WARN#4 closure (2026-05-31) — REQUIRE non-placeholder
+  // saas_processor_terms наряду с saas_offer. Без обоих живых
+  // документов v2 §6.3.2 (ссылка на Приложение № 1) ведёт в 404
+  // и правовое основание поручения теряется. Не оставляем «offer-
+  // only consent cohort» которая никогда не re-gated при publish
+  // processor_terms позже — enforce ordering в коде, не ops-discipline.
   let saasOfferLiveVersion: Awaited<
+    ReturnType<typeof getCurrentLegalVersion>
+  > = null
+  let saasProcessorTermsLiveVersion: Awaited<
     ReturnType<typeof getCurrentLegalVersion>
   > = null
   if (
@@ -153,6 +155,20 @@ export async function POST(request: Request) {
       !saasOfferLiveVersion
       || saasOfferLiveVersion.versionLabel.startsWith('v0-placeholder-')
     ) {
+      return NextResponse.json(
+        { error: 'saas_offer_awaiting_publication' },
+        { status: 503, headers: NO_STORE },
+      )
+    }
+    saasProcessorTermsLiveVersion = await getCurrentLegalVersion(
+      'saas_processor_terms',
+    )
+    if (
+      !saasProcessorTermsLiveVersion
+      || saasProcessorTermsLiveVersion.versionLabel.startsWith('v0-placeholder-')
+    ) {
+      // Приложение № 1 ещё не опубликовано — register блокируется,
+      // operator должен опубликовать оба документа.
       return NextResponse.json(
         { error: 'saas_offer_awaiting_publication' },
         { status: 503, headers: NO_STORE },
@@ -316,21 +332,12 @@ export async function POST(request: Request) {
       userAgent: request.headers.get('user-agent') || null,
     })
     // SAAS-OFFER A1.1 — teacher self-reg with active gate: write
-    // saas_offer consent. documentVersion encodes BOTH SaaS-оферта и
-    // Приложение № 1 («Условия поручения») per Приложение Q5
-    // recommendation (`saas_offer:vN+processor_terms:vM` shape). When
-    // active saas_processor_terms version is also non-placeholder,
-    // bundle its label into the string; else fall back to saas_offer
-    // only — Приложение публикуется ВМЕСТЕ с офертой operator'om.
-    if (saasOfferLiveVersion) {
-      const processorTermsLive = await getCurrentLegalVersion(
-        'saas_processor_terms',
-      ).catch(() => null)
-      const combinedVersion =
-        processorTermsLive
-        && !processorTermsLive.versionLabel.startsWith('v0-placeholder-')
-          ? `saas_offer:${saasOfferLiveVersion.versionLabel}+processor_terms:${processorTermsLive.versionLabel}`
-          : `saas_offer:${saasOfferLiveVersion.versionLabel}`
+    // saas_offer consent с combinedVersion = saas_offer + processor_terms
+    // (Приложение Q5 recommendation). Round-1 WARN#4 closure: гейт
+    // вверху уже REQUIRED обе версии non-placeholder; здесь нет fallback
+    // на saas_offer-only — combinedVersion всегда содержит обе.
+    if (saasOfferLiveVersion && saasProcessorTermsLiveVersion) {
+      const combinedVersion = `saas_offer:${saasOfferLiveVersion.versionLabel}+processor_terms:${saasProcessorTermsLiveVersion.versionLabel}`
       await recordConsent({
         accountId: account.id,
         documentKind: 'saas_offer',

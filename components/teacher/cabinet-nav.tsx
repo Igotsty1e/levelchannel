@@ -31,6 +31,7 @@ const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { href: '/teacher/learners', label: 'Ученики' },
   { href: '/teacher/packages', label: 'Пакеты' },
   { href: '/teacher/tariffs', label: 'Тарифы' },
+  { href: '/teacher/subscription', label: 'Подписка' },
   { href: '/teacher/profile', label: 'Профиль' },
 ]
 

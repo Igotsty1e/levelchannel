@@ -62,7 +62,11 @@ async function main() {
   }
   const offer = offerLive.rows[0]
 
-  // 2. Получаем live saas_processor_terms (если есть).
+  // 2. Получаем live saas_processor_terms. Round-1 WARN#4 closure —
+  // backfill требует ОБЕ версии non-placeholder. Не пишем «offer-only
+  // consent cohort» которая никогда не re-gated при publish
+  // processor_terms позже. Если processor_terms ещё placeholder — exit
+  // с указанием опубликовать Приложение № 1.
   const processorLive = await pool.query(
     `SELECT id, version_label
        FROM legal_document_versions
@@ -72,22 +76,20 @@ async function main() {
       ORDER BY effective_from DESC
       LIMIT 1`,
   )
-  const processor = processorLive.rows[0] ?? null
+  if (processorLive.rows.length === 0) {
+    console.error(
+      'saas_processor_terms live version не опубликована (или только placeholder). Опубликуйте Приложение № 1 через /admin/legal до backfill.',
+    )
+    process.exit(4)
+  }
+  const processor = processorLive.rows[0]
 
-  const combinedVersion = processor
-    ? `saas_offer:${offer.version_label}+processor_terms:${processor.version_label}`
-    : `saas_offer:${offer.version_label}`
+  const combinedVersion = `saas_offer:${offer.version_label}+processor_terms:${processor.version_label}`
 
   console.log(`live saas_offer: ${offer.version_label} (id=${offer.id})`)
-  if (processor) {
-    console.log(
-      `live saas_processor_terms: ${processor.version_label} (id=${processor.id})`,
-    )
-  } else {
-    console.log(
-      `live saas_processor_terms: ОТСУТСТВУЕТ — backfill пишет только saas_offer.`,
-    )
-  }
+  console.log(
+    `live saas_processor_terms: ${processor.version_label} (id=${processor.id})`,
+  )
   console.log(`combinedVersion: ${combinedVersion}`)
   console.log(`mode: ${DRY_RUN ? 'DRY-RUN' : 'APPLY'}`)
   if (LIMIT) console.log(`limit: ${LIMIT} teachers`)
@@ -132,27 +134,37 @@ async function main() {
         inserted++
         continue
       }
-      await pool.query('BEGIN')
-      await pool.query(
-        `INSERT INTO account_consents
-           (id, account_id, document_kind, document_version, document_path,
-            accepted_at, ip, user_agent, legal_document_version_id)
-         VALUES (gen_random_uuid(), $1, 'saas_offer', $2, '/saas/offer',
-                 now(), NULL, NULL, $3)`,
-        [t.id, combinedVersion, offer.id],
-      )
-      await pool.query(
-        `INSERT INTO auth_audit_events
-           (event_type, account_id, email_hash, payload)
-         VALUES ('auth.teacher.saas_offer_backfilled', $1, '',
-                 jsonb_build_object('combinedVersion', $2::text))`,
-        [t.id, combinedVersion],
-      )
-      await pool.query('COMMIT')
-      inserted++
-      console.log(`inserted consent for ${t.email}`)
+      // Round-1 BLOCKER#1 — pinned client transaction. pg.Pool.query()
+      // runs each statement on potentially different connections, so
+      // BEGIN/COMMIT/ROLLBACK are useless. Pin via pool.connect().
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
+        await client.query(
+          `INSERT INTO account_consents
+             (id, account_id, document_kind, document_version, document_path,
+              accepted_at, ip, user_agent, legal_document_version_id)
+           VALUES (gen_random_uuid(), $1, 'saas_offer', $2, '/saas/offer',
+                   now(), NULL, NULL, $3)`,
+          [t.id, combinedVersion, offer.id],
+        )
+        await client.query(
+          `INSERT INTO auth_audit_events
+             (event_type, account_id, email_hash, payload)
+           VALUES ('auth.teacher.saas_offer_backfilled', $1, '',
+                   jsonb_build_object('combinedVersion', $2::text))`,
+          [t.id, combinedVersion],
+        )
+        await client.query('COMMIT')
+        inserted++
+        console.log(`inserted consent for ${t.email}`)
+      } catch (txErr) {
+        await client.query('ROLLBACK').catch(() => {})
+        throw txErr
+      } finally {
+        client.release()
+      }
     } catch (e) {
-      await pool.query('ROLLBACK').catch(() => {})
       errors++
       console.error(`error for ${t.email}: ${e.message}`)
     }

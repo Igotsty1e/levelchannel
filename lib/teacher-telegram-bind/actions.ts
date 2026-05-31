@@ -17,6 +17,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { listAccountRoles } from '@/lib/auth/accounts'
+import { evaluateSaasOfferGate } from '@/lib/auth/guards'
 import { getAuthPool } from '@/lib/auth/pool'
 import { lookupSession, SESSION_COOKIE_NAME } from '@/lib/auth/sessions'
 import { resolveOperatorSettingsForProbe } from '@/lib/admin/operator-settings'
@@ -60,6 +61,16 @@ export async function requestTeacherTelegramBindCode(): Promise<TeacherIssueBind
   // grant.
   const roles = await listAccountRoles(accountId)
   if (!roles.includes('teacher')) {
+    return { ok: false, error: 'not_teacher' }
+  }
+
+  // A1.1 round-1 BLOCKER#2 closure (2026-05-31) — saas_offer consent
+  // gate inline check на teacher action. Issuance side: non-consenting
+  // teacher не должен получать bind code. Webhook consume side gates
+  // отдельно (см. app/api/telegram/webhook/route.ts), но issuance
+  // блокирует раньше — user не получит код в кабинете без consent.
+  const saasVerdict = await evaluateSaasOfferGate(accountId)
+  if (saasVerdict.kind !== 'ok') {
     return { ok: false, error: 'not_teacher' }
   }
 
