@@ -73,8 +73,9 @@ describe('SAAS-PIVOT Epic 8 — teacher-acquisition landing (/saas)', () => {
   })
 
   it('shows the three pricing tiers with plan-correct CTA semantics', () => {
-    // C1 Sub-B.2 copy pass (2026-05-31) — Operator-managed tier deferred
-    // per plan-doc §8 Update. Tiers reduced from 4 to 3 (Free / Mid / Pro).
+    // A2 (2026-05-30) — Mid/Pro CTAs activated: both route to
+    // /teacher/subscription (через /teacher/layout.tsx гейт, гость
+    // получит /login). «Скоро» buttons и Pro mailto early-access ушли.
     const { container } = render(SaasPage())
     // Tier names appear as h3 inside the pricing section.
     expect(screen.getByText('Free')).toBeTruthy()
@@ -83,23 +84,21 @@ describe('SAAS-PIVOT Epic 8 — teacher-acquisition landing (/saas)', () => {
     // Negative pin — Operator-managed tier must NOT reappear here.
     expect(screen.queryByText('Платежи через платформу')).toBeNull()
 
-    // Mid is "Скоро" and rendered as a disabled <button>, per plan
-    // §3 Epic 8 — public Mid self-serve upgrade is Epic 4-DEFERRED.
-    const skoroButtons = Array.from(container.querySelectorAll('button[disabled]')).filter(
-      (b) => (b.textContent ?? '').trim() === 'Скоро',
+    // Both Mid and Pro now route to /teacher/subscription as primary CTAs.
+    const subscriptionLinks = Array.from(
+      container.querySelectorAll('a[href="/teacher/subscription"]'),
     )
-    expect(skoroButtons.length).toBe(1)
-
-    // Pro CTA opens a mailto with the early-access subject.
-    const proMailto = container.querySelector(
-      'a[href^="mailto:ops@levelchannel.ru"][href*="%D0%A0%D0%B0%D0%BD%D0%BD%D0%B8%D0%B9"]',
+    expect(subscriptionLinks.length).toBeGreaterThanOrEqual(2)
+    // «Подписаться» label is present on both Mid and Pro tier CTAs.
+    const subscribeButtons = subscriptionLinks.filter(
+      (a) => (a.textContent ?? '').trim() === 'Подписаться',
     )
-    // At least Pro mailto link must mention ops@levelchannel.ru.
-    const anyOpsMailto = Array.from(
-      container.querySelectorAll('a[href^="mailto:ops@levelchannel.ru"]'),
-    )
-    expect(anyOpsMailto.length).toBeGreaterThanOrEqual(1)
-    void proMailto
+    expect(subscribeButtons.length).toBeGreaterThanOrEqual(2)
+    // No more disabled "Скоро" CTA in the pricing tiers.
+    const skoroButtons = Array.from(
+      container.querySelectorAll('button[disabled]'),
+    ).filter((b) => (b.textContent ?? '').trim() === 'Скоро')
+    expect(skoroButtons.length).toBe(0)
   })
 
   it('respects heading hierarchy (one h1 at the hero; h2 per section; h3 sub-headings)', () => {
