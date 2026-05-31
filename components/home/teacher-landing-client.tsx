@@ -181,37 +181,14 @@ function Header() {
             ['Цены', '#pricing'],
             ['Чем мы отличаемся', '#comparison'],
           ].map(([label, href]) => (
-            <a
-              key={href}
-              href={href}
-              style={{
-                color: '#A1A1AA',
-                fontSize: 14,
-                fontWeight: 500,
-                textDecoration: 'none',
-                transition: 'color 0.2s',
-              }}
-              onMouseEnter={(e) => ((e.target as HTMLElement).style.color = '#fff')}
-              onMouseLeave={(e) => ((e.target as HTMLElement).style.color = '#A1A1AA')}
-            >
+            <a key={href} href={href} className="landing-link">
               {label}
             </a>
           ))}
         </nav>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <Link
-            href="/login"
-            style={{
-              color: '#A1A1AA',
-              fontSize: 14,
-              fontWeight: 500,
-              textDecoration: 'none',
-              transition: 'color 0.2s',
-            }}
-            onMouseEnter={(e) => ((e.target as HTMLElement).style.color = '#fff')}
-            onMouseLeave={(e) => ((e.target as HTMLElement).style.color = '#A1A1AA')}
-          >
+          <Link href="/login" className="landing-link">
             Войти
           </Link>
           <PrimaryCTA size="sm" label="Начать бесплатно" event="landing_cta_register_click_header" />
@@ -266,9 +243,15 @@ function Hero() {
       <div className="container" style={{ position: 'relative', zIndex: 1 }}>
         <div style={{ maxWidth: 760 }}>
           {/* Hero brand reveal — SMIL анимация запускается при mount.
-              Sub-B.3 C2 Tier-1 polish 2026-05-31. */}
-          <div className="hero-brand-reveal" style={{ marginBottom: 28, color: '#F5F5F7' }}>
-            <BrandMarkAnimated width={260} ariaLabel="LevelChannel" />
+              Sub-B.3 C2 Tier-1 polish 2026-05-31. Decorative — brand
+              name уже звучит в section-label + h1 ниже, поэтому SVG
+              скрыт от screen reader (W1 closure). */}
+          <div
+            className="hero-brand-reveal"
+            style={{ marginBottom: 28, color: '#F5F5F7' }}
+            aria-hidden="true"
+          >
+            <BrandMarkAnimated width={260} ariaLabel="" />
           </div>
           <div className="fade-in">
             <span className="section-label">LevelChannel для преподавателей</span>
@@ -477,7 +460,7 @@ function HowItWorks() {
   ]
 
   return (
-    <section id="how-it-works" className="section">
+    <section id="how-it-works" className="section" tabIndex={-1}>
       <div className="container">
         <div className="fade-in" style={{ textAlign: 'center', marginBottom: 56 }}>
           <span className="section-label">Как это работает</span>
@@ -590,7 +573,12 @@ function Features() {
   ]
 
   return (
-    <section id="features" className="section" style={{ background: 'rgba(255,255,255,0.015)' }}>
+    <section
+      id="features"
+      className="section"
+      style={{ background: 'rgba(255,255,255,0.015)' }}
+      tabIndex={-1}
+    >
       <div className="container">
         <div className="fade-in" style={{ textAlign: 'center', marginBottom: 56 }}>
           <span className="section-label">Возможности</span>
@@ -718,7 +706,7 @@ function Pricing() {
   ]
 
   return (
-    <section id="pricing" className="section">
+    <section id="pricing" className="section" tabIndex={-1}>
       <div className="container">
         <div className="fade-in" style={{ textAlign: 'center', marginBottom: 56 }}>
           <span className="section-label">Цены</span>
@@ -868,11 +856,12 @@ function Pricing() {
                   style={{
                     width: '100%',
                     justifyContent: 'center',
-                    opacity: 0.55,
+                    opacity: 0.78,
                     cursor: 'not-allowed',
                   }}
                   disabled
                   aria-disabled="true"
+                  aria-label={`Тариф ${t.name} — скоро будет доступен`}
                 >
                   {t.ctaLabel}
                 </button>
@@ -886,7 +875,7 @@ function Pricing() {
           style={{
             textAlign: 'center',
             marginTop: 32,
-            color: '#71717A',
+            color: '#A1A1AA',
             fontSize: 13,
             maxWidth: 640,
             margin: '32px auto 0',
@@ -1020,7 +1009,12 @@ function Comparison() {
   ]
 
   return (
-    <section id="comparison" className="section" style={{ background: 'rgba(255,255,255,0.015)' }}>
+    <section
+      id="comparison"
+      className="section"
+      style={{ background: 'rgba(255,255,255,0.015)' }}
+      tabIndex={-1}
+    >
       <div className="container">
         <div className="fade-in" style={{ textAlign: 'center', marginBottom: 56 }}>
           <span className="section-label">Чем мы отличаемся</span>
@@ -1183,7 +1177,7 @@ function Footer({ legalProfile }: { legalProfile: TeacherLandingLegalProfile }) 
             <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: '#fff' }}>
               Реквизиты
             </h3>
-            <div style={{ fontSize: 13, color: '#71717A', lineHeight: 2 }}>
+            <div style={{ fontSize: 13, color: '#A1A1AA', lineHeight: 2 }}>
               <div>ИП {legalProfile.legalOperatorDisplay}</div>
               <div>ИНН: {legalProfile.legalOperatorTaxId}</div>
               <div>ОГРНИП: {legalProfile.legalOperatorOgrn}</div>
@@ -1287,10 +1281,10 @@ function Footer({ legalProfile }: { legalProfile: TeacherLandingLegalProfile }) 
             gap: 12,
           }}
         >
-          <p style={{ fontSize: 13, color: '#52525B' }}>
+          <p style={{ fontSize: 13, color: '#A1A1AA' }}>
             © {new Date().getFullYear()} LevelChannel. Все права защищены.
           </p>
-          <p style={{ fontSize: 13, color: '#52525B' }}>г. Москва</p>
+          <p style={{ fontSize: 13, color: '#A1A1AA' }}>г. Москва</p>
         </div>
       </div>
     </footer>
@@ -1311,8 +1305,12 @@ export function TeacherLandingClient({
 
   return (
     <>
+      {/* C3 a11y — skip-to-content per WCAG 2.4.1 Bypass Blocks. */}
+      <a href="#main-content" className="skip-link">
+        Перейти к содержанию
+      </a>
       <Header />
-      <main>
+      <main id="main-content" tabIndex={-1}>
         <Hero />
         <Problem />
         <HowItWorks />
