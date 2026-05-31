@@ -22,6 +22,7 @@ const ALLOWED_KINDS = new Set<LegalDocKind>([
   'privacy',
   'personal_data',
   'saas_offer',
+  'saas_processor_terms',
 ])
 
 // Wave 19 — admin Versions surface.
@@ -43,7 +44,7 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         error:
-          'kind query param required (offer | privacy | personal_data | saas_offer)',
+          'kind query param required (offer | privacy | personal_data | saas_offer | saas_processor_terms)',
       },
       { status: 400, headers: NO_STORE },
     )
@@ -79,7 +80,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          'docKind must be one of: offer, privacy, personal_data, saas_offer',
+          'docKind must be one of: offer, privacy, personal_data, saas_offer, saas_processor_terms',
       },
       { status: 400, headers: NO_STORE },
     )

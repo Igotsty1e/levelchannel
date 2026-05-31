@@ -15,6 +15,7 @@ export type LegalDocKind =
   | 'privacy'
   | 'personal_data'
   | 'saas_offer'
+  | 'saas_processor_terms'
 
 export type LegalDocumentVersion = {
   id: string
