@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
-import { requireTeacherAndVerified } from '@/lib/auth/guards'
+import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import { getDbPool } from '@/lib/db/pool'
 import {
   enforceRateLimit,
@@ -49,7 +49,7 @@ export async function POST(request: Request, { params }: RouteParams) {
   )
   if (rl) return rl
 
-  const guard = await requireTeacherAndVerified(request)
+  const guard = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!guard.ok) return guard.response
 
   if (!UUID_PATTERN.test(id)) {

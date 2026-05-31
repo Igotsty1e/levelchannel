@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
-import { requireTeacherAndVerified } from '@/lib/auth/guards'
+import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import { listHiddenSlotsForTeacher } from '@/lib/calendar/hidden-slots'
 import { enforceRateLimit } from '@/lib/security/request'
 
@@ -13,7 +13,7 @@ import { enforceRateLimit } from '@/lib/security/request'
 // silently hiding from the booking calendar. Read-only; mutations
 // (cancel/move) go through the existing teacher slot routes.
 //
-// Auth: requireTeacherAndVerified — the surface is meaningless for
+// Auth: requireTeacherWithCurrentSaasOfferConsent — the surface is meaningless for
 // non-teacher accounts, and the verified gate matches the rest of
 // the teacher API set.
 //
@@ -36,7 +36,7 @@ export async function GET(request: Request) {
   )
   if (rl) return rl
 
-  const guard = await requireTeacherAndVerified(request)
+  const guard = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!guard.ok) return guard.response
 
   const slots = await listHiddenSlotsForTeacher({

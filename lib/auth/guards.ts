@@ -294,7 +294,9 @@ export type SaasOfferGateVerdict =
 //
 //   The log line surfaces the runtime path so operator alerting can
 //   distinguish bootstrap-missing-table from steady-state DB errors.
-async function isSaasOfferGateEnabled(): Promise<boolean> {
+// Exported so callers outside the guard module (notably /api/auth/register)
+// can short-circuit the gate check when the flag is OFF.
+export async function isSaasOfferGateEnabled(): Promise<boolean> {
   try {
     const resolved = await resolveOperatorSetting('SAAS_OFFER_GATE_ENABLED')
     return resolved.value === 1

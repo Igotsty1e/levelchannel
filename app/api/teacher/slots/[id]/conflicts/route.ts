@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
-import { requireTeacherAndVerified } from '@/lib/auth/guards'
+import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import { listConflictsForSlot } from '@/lib/calendar/conflict-detector'
 import { getSlotById } from '@/lib/scheduling/slots'
 import { enforceRateLimit } from '@/lib/security/request'
@@ -26,7 +26,7 @@ export async function GET(request: Request, { params }: RouteParams) {
   )
   if (rl) return rl
 
-  const auth = await requireTeacherAndVerified(request)
+  const auth = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!auth.ok) return auth.response
 
   const { id } = await params

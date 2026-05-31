@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
-import { requireTeacherAndVerified } from '@/lib/auth/guards'
+import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import {
   moveOpenSlotByTeacher,
   validateSlotStartMsk,
@@ -35,7 +35,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   const rl = await enforceRateLimit(request, 'teacher:slots:move:ip', 60, 60_000)
   if (rl) return rl
 
-  const guard = await requireTeacherAndVerified(request)
+  const guard = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!guard.ok) return guard.response
 
   // Move requires a body (newStartAt). Empty body → 400 below.

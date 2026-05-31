@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { FormEvent, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 
 import { AuthShell } from '@/components/auth-shell'
 import { AuthErrorBox, AuthField, authInputStyle } from '@/components/auth-form-bits'
@@ -32,8 +32,34 @@ export default function RegisterPage() {
   // An invited learner has role pre-locked to student.
   const [role, setRole] = useState<'student' | 'teacher'>(initialRole)
   const [consent, setConsent] = useState(false)
+  // SAAS-OFFER A1.1 (2026-05-31) — отдельный saas_offer checkbox для
+  // teacher self-reg. Только видим при role=teacher && !inviteToken.
+  // Версия выкачивается с /api/legal/current?kind=saas_offer для
+  // TOCTOU-pinning (предотвращение race между form render и submit).
+  const [saasOfferAgreed, setSaasOfferAgreed] = useState(false)
+  const [saasOfferVersion, setSaasOfferVersion] = useState<{
+    id: string
+    versionLabel: string
+    isPlaceholder: boolean
+  } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+
+  const isTeacherSelfReg = !inviteToken && role === 'teacher'
+
+  useEffect(() => {
+    if (!isTeacherSelfReg) return
+    let cancelled = false
+    fetch('/api/legal/current?kind=saas_offer')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((v) => {
+        if (!cancelled && v) setSaasOfferVersion(v)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [isTeacherSelfReg])
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -43,6 +69,10 @@ export default function RegisterPage() {
       setError('Подтвердите согласие на обработку персональных данных.')
       return
     }
+    if (isTeacherSelfReg && saasOfferVersion && !saasOfferAgreed) {
+      setError('Подтвердите согласие с условиями SaaS-оферты.')
+      return
+    }
     setSubmitting(true)
     const result = await postAuthJson('/api/auth/register', {
       email: email.trim(),
@@ -50,9 +80,33 @@ export default function RegisterPage() {
       personalDataConsentAccepted: true,
       role: inviteToken ? 'student' : role,
       ...(inviteToken ? { inviteToken } : {}),
+      ...(isTeacherSelfReg && saasOfferVersion
+        ? {
+            saasOfferConsentAccepted: saasOfferAgreed,
+            saasOfferConsentVersionId: saasOfferVersion.id,
+          }
+        : {}),
     })
     if (result.ok) {
       router.push(`/verify-pending?email=${encodeURIComponent(email.trim())}`)
+      return
+    }
+    if (result.error === 'saas_offer_version_changed') {
+      // Operator опубликовал новую версию между mount и submit. Перетянем
+      // version-id и попросим заново согласиться.
+      setError(
+        'Условия SaaS-оферты обновились. Перечитайте новую версию и подтвердите ещё раз.',
+      )
+      fetch('/api/legal/current?kind=saas_offer')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((v) => {
+          if (v) {
+            setSaasOfferVersion(v)
+            setSaasOfferAgreed(false)
+          }
+        })
+        .catch(() => {})
+      setSubmitting(false)
       return
     }
     setError(result.error)
@@ -199,10 +253,6 @@ export default function RegisterPage() {
           />
           <span>
             Я согласен(на) с{' '}
-            <Link href="/offer" style={{ color: 'var(--text)' }} target="_blank">
-              офертой
-            </Link>
-            ,{' '}
             <Link href="/privacy" style={{ color: 'var(--text)' }} target="_blank">
               политикой обработки персональных данных
             </Link>{' '}
@@ -213,6 +263,49 @@ export default function RegisterPage() {
             .
           </span>
         </label>
+
+        {isTeacherSelfReg && saasOfferVersion && !saasOfferVersion.isPlaceholder ? (
+          <label
+            style={{
+              display: 'flex',
+              gap: 12,
+              alignItems: 'flex-start',
+              color: 'var(--secondary)',
+              fontSize: 14,
+              lineHeight: 1.5,
+              marginTop: -8,
+              marginBottom: 24,
+              cursor: 'pointer',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={saasOfferAgreed}
+              onChange={(e) => setSaasOfferAgreed(e.target.checked)}
+              disabled={submitting}
+              style={{ marginTop: 3, width: 18, height: 18, accentColor: '#C87878' }}
+            />
+            <span>
+              Я согласен(на) с условиями{' '}
+              <Link
+                href="/saas/offer"
+                style={{ color: 'var(--text)' }}
+                target="_blank"
+              >
+                SaaS-оферты LevelChannel
+              </Link>{' '}
+              и{' '}
+              <Link
+                href="/saas/processor-terms"
+                style={{ color: 'var(--text)' }}
+                target="_blank"
+              >
+                Приложением № 1 (Условия поручения оператора учителю)
+              </Link>{' '}
+              (версия {saasOfferVersion.versionLabel}).
+            </span>
+          </label>
+        ) : null}
 
         {error ? <AuthErrorBox>{error}</AuthErrorBox> : null}
 

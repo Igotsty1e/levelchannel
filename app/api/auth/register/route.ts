@@ -8,6 +8,7 @@ import {
   grantAccountRole,
 } from '@/lib/auth/accounts'
 import { recordConsent } from '@/lib/auth/consents'
+import { isSaasOfferGateEnabled as isSaasOfferGateEnabledForRegister } from '@/lib/auth/guards'
 import { computeDisplayNameForStorage } from '@/lib/auth/profile-name'
 import { upsertAccountProfile } from '@/lib/auth/profiles'
 import {
@@ -57,6 +58,8 @@ export async function POST(request: Request) {
     email?: string
     password?: string
     personalDataConsentAccepted?: boolean
+    saasOfferConsentAccepted?: boolean
+    saasOfferConsentVersionId?: string
     role?: string
     inviteToken?: string
     firstName?: string | null
@@ -121,6 +124,50 @@ export async function POST(request: Request) {
       { error: 'Подтвердите согласие на обработку персональных данных.' },
       { status: 400, headers: NO_STORE },
     )
+  }
+
+  // SAAS-OFFER A1.1 (2026-05-31) — teacher self-reg gate. Only fires
+  // for explicit role=teacher path (invite-flow forces role=student).
+  // Gate behaviour:
+  //   - body.saasOfferConsentAccepted must be true → else 400.
+  //   - live saas_offer version must be non-placeholder → else 503.
+  //   - submitted saasOfferConsentVersionId must equal live id → else
+  //     409 saas_offer_version_changed (TOCTOU defence per plan-doc
+  //     round-10 BLOCKER#1).
+  let saasOfferLiveVersion: Awaited<
+    ReturnType<typeof getCurrentLegalVersion>
+  > = null
+  if (
+    requestedRole === 'teacher'
+    && invitePayload === null
+    && (await isSaasOfferGateEnabledForRegister())
+  ) {
+    if (body.saasOfferConsentAccepted !== true) {
+      return NextResponse.json(
+        { error: 'Подтвердите согласие с условиями SaaS-оферты.' },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    saasOfferLiveVersion = await getCurrentLegalVersion('saas_offer')
+    if (
+      !saasOfferLiveVersion
+      || saasOfferLiveVersion.versionLabel.startsWith('v0-placeholder-')
+    ) {
+      return NextResponse.json(
+        { error: 'saas_offer_awaiting_publication' },
+        { status: 503, headers: NO_STORE },
+      )
+    }
+    const submittedId =
+      typeof body.saasOfferConsentVersionId === 'string'
+        ? body.saasOfferConsentVersionId.trim()
+        : ''
+    if (submittedId !== saasOfferLiveVersion.id) {
+      return NextResponse.json(
+        { error: 'saas_offer_version_changed' },
+        { status: 409, headers: NO_STORE },
+      )
+    }
   }
 
   const email = emailValidation.email
@@ -268,6 +315,32 @@ export async function POST(request: Request) {
       ip: getClientIp(request),
       userAgent: request.headers.get('user-agent') || null,
     })
+    // SAAS-OFFER A1.1 — teacher self-reg with active gate: write
+    // saas_offer consent. documentVersion encodes BOTH SaaS-оферта и
+    // Приложение № 1 («Условия поручения») per Приложение Q5
+    // recommendation (`saas_offer:vN+processor_terms:vM` shape). When
+    // active saas_processor_terms version is also non-placeholder,
+    // bundle its label into the string; else fall back to saas_offer
+    // only — Приложение публикуется ВМЕСТЕ с офертой operator'om.
+    if (saasOfferLiveVersion) {
+      const processorTermsLive = await getCurrentLegalVersion(
+        'saas_processor_terms',
+      ).catch(() => null)
+      const combinedVersion =
+        processorTermsLive
+        && !processorTermsLive.versionLabel.startsWith('v0-placeholder-')
+          ? `saas_offer:${saasOfferLiveVersion.versionLabel}+processor_terms:${processorTermsLive.versionLabel}`
+          : `saas_offer:${saasOfferLiveVersion.versionLabel}`
+      await recordConsent({
+        accountId: account.id,
+        documentKind: 'saas_offer',
+        documentVersion: combinedVersion,
+        documentPath: '/saas/offer',
+        legalDocumentVersionId: saasOfferLiveVersion.id,
+        ip: getClientIp(request),
+        userAgent: request.headers.get('user-agent') || null,
+      })
+    }
     const { token } = await createEmailVerification(account.id)
     await sendVerifyEmail(email, token)
     await recordAuthAuditEvent({
