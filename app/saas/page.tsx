@@ -11,9 +11,9 @@ import {
 import { TeacherLandingClient } from '@/components/home/teacher-landing-client'
 
 export const metadata: Metadata = {
-  title: 'LevelChannel для преподавателей — тестовый SaaS-лендинг',
+  title: 'LevelChannel — кабинет для репетитора',
   description:
-    'Тестовый SaaS-лендинг для преподавателей: расписание, ученики и оплаты в одном кабинете.',
+    'Расписание, ученики, балансы и пакеты — в одном кабинете. Free навсегда; Mid и Pro — когда учеников становится больше.',
   robots: {
     index: false,
     follow: false,
@@ -23,9 +23,9 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: 'LevelChannel — кабинет преподавателя',
+    title: 'LevelChannel — кабинет для репетитора',
     description:
-      'Тестовый SaaS-лендинг для преподавателей. Расписание, ученики и оплаты в одном кабинете.',
+      'Расписание, ученики, балансы и пакеты — в одном кабинете. Free навсегда; Mid и Pro — когда учеников становится больше.',
     type: 'website',
   },
 }
