@@ -12,12 +12,19 @@
  *   4. 1.7 → 2.3s: wordmark «LevelChannel» проявляется.
  *   5. 2.0s+: бесконечный мягкий pulse на обеих точках (3.6s цикл).
  *
- * Реализация — SMIL внутри SVG; никаких JS-зависимостей.
- * `prefers-reduced-motion: reduce` → SVG отдаёт сразу финальное
- * состояние без анимации (через CSS-фолбэк).
+ * Реализация — SMIL внутри SVG; никаких JS-зависимостей кроме
+ * matchMedia для prefers-reduced-motion.
+ *
+ * C3 a11y closure (2026-05-31) — CSS `animation: none` НЕ управляет
+ * SMIL `<animate>` элементами (SMIL живёт вне CSS animation engine).
+ * Поэтому при `prefers-reduced-motion: reduce` мы рендерим статичный
+ * `<BrandMark variant="full" />` вместо анимированной версии — это
+ * единственный честный способ заглушить SMIL.
  */
 
-import type { CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
+
+import { BrandMark } from '@/components/brand/brand-mark'
 
 export type BrandMarkAnimatedProps = {
   width?: number
@@ -32,6 +39,35 @@ export function BrandMarkAnimated({
   style,
   ariaLabel = 'LevelChannel',
 }: BrandMarkAnimatedProps) {
+  const [reduceMotion, setReduceMotion] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const mql = window.matchMedia('(prefers-reduced-motion: reduce)')
+    setReduceMotion(mql.matches)
+    const onChange = (e: MediaQueryListEvent) => setReduceMotion(e.matches)
+    if (typeof mql.addEventListener === 'function') {
+      mql.addEventListener('change', onChange)
+      return () => mql.removeEventListener('change', onChange)
+    }
+    // Safari < 14 fallback.
+    mql.addListener(onChange)
+    return () => mql.removeListener(onChange)
+  }, [])
+
+  // Reduced-motion → static mark. SMIL не отключается через CSS, поэтому
+  // единственный честный путь — рендерить незанимированную версию.
+  if (reduceMotion) {
+    return (
+      <BrandMark
+        variant="full"
+        width={width}
+        className={className}
+        style={style}
+        ariaLabel={ariaLabel}
+      />
+    )
+  }
+
   const h = width * (80 / 320)
   return (
     <svg
@@ -48,18 +84,6 @@ export function BrandMarkAnimated({
           <stop offset="0%" stopColor="#C87878" />
           <stop offset="100%" stopColor="#E8A890" />
         </linearGradient>
-        <style>{`
-          @media (prefers-reduced-motion: reduce) {
-            .brand-anim-dot,
-            .brand-anim-path,
-            .brand-anim-ghost,
-            .brand-anim-text {
-              animation: none !important;
-              opacity: 1 !important;
-              stroke-dashoffset: 0 !important;
-            }
-          }
-        `}</style>
       </defs>
       <g
         transform="translate(12,52) rotate(-28)"
