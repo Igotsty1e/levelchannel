@@ -115,6 +115,12 @@ export type PaymentAuditActor =
   | 'teacher:grant'
   | 'teacher:revoke'
   | 'admin:revoke'
+  // A2 (2026-05-30) — teacher Mid/Pro paid subscription init route +
+  // the webhook branch that activates it on pay.processed. Distinct
+  // from `webhook:cloudpayments:pay` so an operator can grep saas-
+  // subscription activations apart from package grants.
+  | 'teacher:subscribe'
+  | 'webhook:cloudpayments:pay:saas-subscription'
 
 // Money helper moved to lib/payments/money.ts (Codex 2026-05-10
 // CONSOLIDATE — money helpers belong with payments, not audit).

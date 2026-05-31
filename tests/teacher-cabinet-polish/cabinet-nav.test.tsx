@@ -31,11 +31,14 @@ vi.mock('next/navigation', () => ({
 // Import AFTER mock declaration.
 import { TeacherCabinetNav } from '@/components/teacher/cabinet-nav'
 
+// A2 (2026-05-30) — added Подписка nav entry between Тарифы and Профиль
+// for the Mid/Pro paid-subscription cabinet flow.
 const EXPECTED_LINKS: Array<{ href: string; label: string }> = [
   { href: '/teacher', label: 'Календарь' },
   { href: '/teacher/learners', label: 'Ученики' },
   { href: '/teacher/packages', label: 'Пакеты' },
   { href: '/teacher/tariffs', label: 'Тарифы' },
+  { href: '/teacher/subscription', label: 'Подписка' },
   { href: '/teacher/profile', label: 'Профиль' },
 ]
 
@@ -57,7 +60,7 @@ describe('TeacherCabinetNav — TASK-1 cabinet nav menu', () => {
     cleanup()
   })
 
-  it('renders all 5 nav buttons with their canonical hrefs', () => {
+  it('renders all 6 nav buttons with their canonical hrefs', () => {
     render(<TeacherCabinetNav calendarConnected={false} />)
 
     const links = screen.getAllByRole('link') as HTMLAnchorElement[]

@@ -1,6 +1,11 @@
 import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
 import { getAccountByEmail } from '@/lib/auth/accounts'
 import { processPackageGrant } from '@/lib/billing/package-grant'
+import {
+  createOrRenewTeacherSubscription,
+  findSubscriptionByPaymentOrderId,
+  getSubscriptionTariff,
+} from '@/lib/billing/teacher-subscription'
 import { sendOperatorPaymentNotification } from '@/lib/email/dispatch'
 import { recordAllocation } from '@/lib/payments/allocations'
 import { handleCloudPaymentsWebhook } from '@/lib/payments/cloudpayments-route'
@@ -177,6 +182,75 @@ export async function POST(request: Request) {
           invoiceId: order.invoiceId,
           error: err instanceof Error ? err.message : String(err),
         })
+        throw err
+      }
+
+      // A2 — saas teacher-subscription branch.
+      //
+      // If the order's metadata names a saas_subscription_{mid,pro}
+      // productKind, activate or renew the teacher's subscription row.
+      // Idempotency: check by payment_order_id first; if the order was
+      // already applied (e.g. CloudPayments re-fired the webhook), the
+      // second call is a no-op.
+      //
+      // teacher_account_id on the order is the canonical owning teacher
+      // (set at create-time from session.account.id). It is preferred
+      // over metadata.accountId. Both should agree by construction.
+      try {
+        const fullOrderForSub = await getOrder(order.invoiceId)
+        const productKind = fullOrderForSub?.metadata?.productKind
+        const isSaasSub =
+          typeof productKind === 'string' &&
+          productKind.startsWith('saas_subscription_')
+        if (isSaasSub) {
+          const tier = productKind.replace('saas_subscription_', '')
+          const tariff = getSubscriptionTariff(tier)
+          const teacherAccountId =
+            (typeof fullOrderForSub?.teacherAccountId === 'string'
+              ? fullOrderForSub.teacherAccountId
+              : null) ??
+            (typeof fullOrderForSub?.metadata?.accountId === 'string'
+              ? (fullOrderForSub.metadata.accountId as string)
+              : null)
+          if (!tariff || !teacherAccountId) {
+            console.warn('[teacher.subscription] webhook missing tier or accountId', {
+              invoiceId: order.invoiceId,
+              productKind,
+              teacherAccountId,
+            })
+          } else {
+            const existing = await findSubscriptionByPaymentOrderId(order.invoiceId)
+            if (!existing) {
+              await createOrRenewTeacherSubscription({
+                accountId: teacherAccountId,
+                tier: tariff.tier,
+                amountKopecks: tariff.amountKopecks,
+                paymentOrderId: order.invoiceId,
+                cpToken:
+                  typeof payload.Token === 'string' && payload.Token.length > 0
+                    ? payload.Token
+                    : null,
+              })
+              await recordPaymentAuditEvent({
+                eventType: 'webhook.pay.processed',
+                invoiceId: order.invoiceId,
+                customerEmail: order.customerEmail,
+                amountKopecks: tariff.amountKopecks,
+                toStatus: order.status,
+                actor: 'webhook:cloudpayments:pay:saas-subscription',
+                payload: { tier: tariff.tier, productKind },
+              })
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(
+          '[teacher.subscription] webhook handler threw, will retry:',
+          {
+            invoiceId: order.invoiceId,
+            error: err instanceof Error ? err.message : String(err),
+          },
+        )
         throw err
       }
     }
