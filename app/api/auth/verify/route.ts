@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server'
 
 import { recordAuthAuditEvent } from '@/lib/audit/auth-events'
-import { getAccountById, markAccountVerified } from '@/lib/auth/accounts'
+import {
+  getAccountById,
+  listAccountRoles,
+  markAccountVerified,
+} from '@/lib/auth/accounts'
 import {
   buildSessionCookie,
   createSession,
@@ -66,8 +70,23 @@ export async function GET(request: Request) {
     })
   }
 
+  // 2026-05-31 — role-aware post-verify landing. Mirrors the role
+  // gates in `app/teacher/layout.tsx`: an admin lands on /admin/slots,
+  // a teacher (incl. hybrid teacher+learner) lands on /teacher, and
+  // everyone else (learners, freshly-registered accounts with no role
+  // yet) lands on /cabinet. Previously every verified account bounced
+  // through /cabinet first, which then re-redirected teachers via the
+  // teacher layout — making the post-verify experience feel broken for
+  // self-registered teachers.
+  const roles = await listAccountRoles(consumed.accountId)
+  const landing = roles.includes('admin')
+    ? '/admin/slots'
+    : roles.includes('teacher')
+      ? '/teacher'
+      : '/cabinet'
+
   const response = NextResponse.redirect(
-    `${paymentConfig.siteUrl}/cabinet`,
+    `${paymentConfig.siteUrl}${landing}`,
     { status: 303 },
   )
   response.headers.set('Set-Cookie', buildSessionCookie(cookieValue, isProd))

@@ -31,12 +31,6 @@ export const metadata: Metadata = {
 }
 
 export default function SaasPage() {
-  console.log('[landing] view', {
-    ts: new Date().toISOString(),
-    page: '/saas',
-    epic: 'saas-pivot-epic-8-temp-surface',
-  })
-
   return (
     <TeacherLandingClient
       legalProfile={{

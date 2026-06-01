@@ -121,7 +121,7 @@ export function TariffComparisonCard({
       aria-label="Сравнение тарифов"
       style={containerStyle}
     >
-      <h2 style={headingStyle}>Тарифы</h2>
+      <h2 style={headingStyle}>Цены занятий</h2>
       <p style={subheadingStyle}>
         Сейчас вы на тарифе{' '}
         <strong style={{ color: 'var(--text)' }}>
