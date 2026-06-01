@@ -15,6 +15,14 @@ Active plan-doc work (not yet shipped) lives in `docs/plans/*.md` without an ent
 
 - **`teacher-cabinet-polish.md`** — 6-task UX polish over the SaaS-pivot cabinet (6 paranoia rounds, 383 lines). Status: SHIPPED. Sub-PRs: A calendar text fix → B cabinet nav menu → C profile tariff card → D digest preview tile → E learners list → F firstName/lastName globally. Migration 0095.
 
+## 2026-06-01..02 T3 tariffs+packages learner-scope (7 PRs)
+
+- **`tariffs-packages-learner-scope.md`** — per-learner tariffs/packages binding via junction tables. Status: SHIPPED 2026-06-02. Plan-mode SIGN-OFF round 10/N (user-authorized cap extension) + epic-end wave-mode SIGN-OFF round 1/3 (3 BLOCKER + 1 WARN closed inline). Sub-PRs: PKG-TEACHER-SCOPE companion (#470) → A foundation mig 0102 (#471) → B booking snapshot reads (#472) → C anonymous endpoint filter (#473) → D teacher API (#474) → E learner filter (#475) → epic-end fix-PR closes round-1 leaks across booking-days/times + checkout + package_required hint (#476). One follow-up tracked: archive contract (lesson_packages.deleted_at writer + bulk-revoke). Migration 0102.
+
+## 2026-06-01 admin-dashboard wave (1 PR)
+
+- **`admin-dashboard.md`** — operational metrics + sparklines + cohort funnel + health banner at /admin/dashboard. Status: SHIPPED. Codex-paranoia wave-mode SIGN-OFF round 2/3 (3 BLOCKER + 5 WARN + 1 INFO closed). No migration.
+
 ## Pre-pivot waves (older, smaller plans)
 
 - **`teacher-self-reg-invite.md`** (SAAS-3+4, 2026-05-18) — HMAC-signed teacher invite flow + register-with-invite atomicity.

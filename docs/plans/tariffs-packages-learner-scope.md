@@ -1,6 +1,6 @@
 ---
 title: Tariffs + packages → learner-scoped binding
-status: SIGN-OFF — codex-paranoia round 10/N (user-authorized cap extension); 0 BLOCKER, 1 WARN + 2 INFO closed inline. Ready for Sub-PR phasing.
+status: SHIPPED 2026-06-02 — all sub-PRs (#470–#475) + epic-end fix-PR (#476) merged to main. Plan-mode SIGN-OFF round 10/N + epic-end wave-mode SIGN-OFF round 1/3 (3 BLOCKER + 1 WARN closed inline). One follow-up tracked: archive contract for lesson_packages.deleted_at writer + bulk-revoke (deferred per fix-PR #476 R1-WARN#2 closure note).
 date: 2026-06-01
 owner: claude-orchestrator (after T1 «per-learner payment method» wave)
 ---
