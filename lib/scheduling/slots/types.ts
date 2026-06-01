@@ -246,6 +246,11 @@ export type BookSlotResult =
         // time window AND the teacher's integration is active and
         // recently pulled. Learner UI surfaces "слот занят у учителя".
         | 'external_conflict'
+        // mig 0101 — teacher не выбрал способ оплаты для (teacher,
+        // learner) пары в learner_billing_preferences. Booking blocked;
+        // UI показывает «учитель не выбрал способ оплаты, свяжитесь с
+        // ним».
+        | 'payment_method_not_set'
       // For package_required: the matching active packages the
       // learner can buy (capped at top 3 by display_order). Empty
       // array = no matching package for this slot's duration.
