@@ -35,6 +35,17 @@ export const AUTH_AUDIT_EVENT_TYPES = [
   // CHECK and TS allowlist before the writer paths land.
   'auth.teacher.saas_offer_accepted',
   'auth.teacher.saas_offer_backfilled',
+  // T3 Sub-PR A (2026-06-01) — mirror SQL CHECK extensions.
+  // Closes the pre-existing drift surfaced by codex-paranoia rounds 6+7
+  // (R6-WARN#3 + R7-WARN#2): two events live in SQL since mig 0100/0101
+  // but were missing from this TS tuple; plus 4 new T3 events shipped
+  // by mig 0102.
+  'auth.onboarding.reset',          // mig 0100
+  'auth.billing.method_changed',    // mig 0101
+  'auth.tariff_access.granted',     // mig 0102 (T3)
+  'auth.tariff_access.revoked',     // mig 0102 (T3)
+  'auth.package_access.granted',    // mig 0102 (T3)
+  'auth.package_access.revoked',    // mig 0102 (T3)
 ] as const
 
 export type AuthAuditEventType = (typeof AUTH_AUDIT_EVENT_TYPES)[number]
