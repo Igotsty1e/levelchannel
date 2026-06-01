@@ -27,6 +27,7 @@
     "pg": "^8.20.0",
     "react": "^18",
     "react-dom": "^18",
+    "recharts": "^3.8.1",
     "resend": "^6.12.2"
   },
   "overrides": {

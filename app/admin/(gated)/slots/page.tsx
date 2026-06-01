@@ -15,10 +15,30 @@ export const runtime = 'nodejs'
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
 
-export default async function AdminSlotsPage() {
+const VALID_STATUS_FILTERS = new Set([
+  'open',
+  'booked',
+  'cancelled',
+  'completed',
+  'no_show_teacher',
+  'no_show_learner',
+])
+
+type PageProps = {
+  searchParams: Promise<{ status?: string }>
+}
+
+export default async function AdminSlotsPage({ searchParams }: PageProps) {
+  // Dashboard drill-down lands here with `?status=<x>`. Validate against
+  // an allowlist; unknown values fall back to 'all'.
+  const sp = await searchParams
+  const status = sp.status && VALID_STATUS_FILTERS.has(sp.status)
+    ? (sp.status as 'open' | 'booked' | 'cancelled' | 'completed' | 'no_show_teacher' | 'no_show_learner')
+    : 'all'
+
   const [teachers, slots, tariffs, learners, conflictCount] = await Promise.all([
     listAccountsByRole('teacher'),
-    listAllSlotsForAdmin({ status: 'all', limit: 200 }),
+    listAllSlotsForAdmin({ status, limit: 200 }),
     // teacher-scope: admin-global — operator picks "as which teacher"
     // in the slot-create form, so the dropdown lists every teacher's
     // active tariffs. SAAS-PIVOT Epic 6 adds a teacher-filter chip;
