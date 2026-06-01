@@ -368,6 +368,7 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
 describe('PR 1 — restorePackageConsumption (idempotent + race-safe)', () => {
   it('two concurrent restores → exactly one succeeds, second is no-op', async () => {
     const { admin, teacher, learner } = await setupTeacherAndLearner('pr1-restore')
+    await setPairPaymentMethod(teacher.accountId, learner.accountId, 'prepaid_packages')
     const pkg = await seedPackage({
       slug: 'pr1-restore-pkg',
       durationMinutes: 60,
