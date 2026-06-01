@@ -3,11 +3,15 @@
 // мобильного, видит ближайшие занятия, может пригласить ученика,
 // открыть полный календарь / список учеников.
 //
-// 3 блока на главной (плюс банер ближайшего занятия):
+// 4 блока на главной (плюс банер ближайшего занятия):
 //   1. Ближайшие занятия    — превью + кнопка «Открыть календарь»
-//   2. Пригласить ученика   — TeacherInviteSection (переиспользуем
+//   2. Дайджест на сегодня   — DigestPreviewTile (Sub-PR D из
+//                              teacher-cabinet-polish): today_local
+//                              список занятий + ссылка на настройки
+//                              дайджеста
+//   3. Пригласить ученика   — TeacherInviteSection (переиспользуем
 //                              блок из /cabinet)
-//   3. Мои ученики           — компактный список + кнопка «Все ученики»
+//   4. Мои ученики           — компактный список + кнопка «Все ученики»
 //
 // Бывший контент /teacher (full-week calendar) переехал в
 // /teacher/calendar. Настройки календаря / интеграции / дайджест
@@ -18,8 +22,10 @@ import { redirect } from 'next/navigation'
 
 import { TeacherInviteSection } from '@/app/cabinet/teacher-invite-section'
 import { TeacherLearnersSection } from '@/app/cabinet/teacher-learners-section'
+import { DigestPreviewTile } from '@/components/teacher/digest-preview-tile'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getDbPool } from '@/lib/db/pool'
+import { getTeacherDigestPreview } from '@/lib/notifications/teacher-digest-preview'
 import { listLearnersForTeacher } from '@/lib/scheduling/teacher-learners'
 
 export const dynamic = 'force-dynamic'
@@ -114,9 +120,10 @@ export default async function TeacherHomePage() {
   const teacherAccountId = current.account.id
   const isVerified = Boolean(current.account.emailVerifiedAt)
 
-  const [upcomingSlots, allLearners] = await Promise.all([
+  const [upcomingSlots, allLearners, digestPreview] = await Promise.all([
     listUpcomingSlotsForTeacher(teacherAccountId, 3),
     listLearnersForTeacher(teacherAccountId),
+    getTeacherDigestPreview(teacherAccountId),
   ])
 
   // На главной показываем максимум 5 ближайших учеников; полный
@@ -183,6 +190,12 @@ export default async function TeacherHomePage() {
           Открыть календарь
         </Link>
       </section>
+
+      {/* Дайджест на сегодня — Sub-PR D из teacher-cabinet-polish.
+          Превью today_local списка занятий, тот же предикат, что и у
+          08:00 cron-дайджеста. Между «Ближайшие занятия» и «Пригласить
+          ученика». */}
+      <DigestPreviewTile preview={digestPreview} />
 
       {/* Блок 2: Пригласить ученика — переиспользуем компонент из /cabinet */}
       <TeacherInviteSection isVerified={isVerified} />
