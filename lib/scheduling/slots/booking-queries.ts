@@ -114,6 +114,10 @@ export async function listOpenBookingDays(params: {
   fromYmd: string
   toYmd: string
   tz: string
+  /** T3 epic-end R1-BLOCKER#2 closure (2026-06-02): viewer for the
+   *  private-tariff visibility filter. `null` / undefined excludes
+   *  private-tariff slots entirely. */
+  viewerAccountId?: string | null
 }): Promise<string[]> {
   if (!UUID_PATTERN.test(params.teacherAccountId)) return []
   // Belt-and-suspenders: route already validated, but a direct caller
@@ -125,13 +129,34 @@ export async function listOpenBookingDays(params: {
   const result = await pool.query(
     `select distinct to_char(s.start_at at time zone $4, 'YYYY-MM-DD') as ymd
        from lesson_slots s
+       left join pricing_tariffs t on t.id = s.tariff_id
       where s.status = 'open'
         and s.teacher_account_id = $1
         and s.start_at >= ($2::date at time zone $4)
         and s.start_at <  (($3::date + 1) at time zone $4)
         and s.start_at > now()
+        and (
+          s.tariff_id is null
+          or t.visibility = 'catalog'
+          or (
+            t.visibility = 'private'
+            and $5::uuid is not null
+            and exists (
+              select 1 from learner_tariff_access lta
+               where lta.tariff_id = t.id
+                 and lta.learner_account_id = $5::uuid
+                 and lta.revoked_at is null
+            )
+          )
+        )
       order by ymd asc`,
-    [params.teacherAccountId, params.fromYmd, params.toYmd, params.tz],
+    [
+      params.teacherAccountId,
+      params.fromYmd,
+      params.toYmd,
+      params.tz,
+      params.viewerAccountId ?? null,
+    ],
   )
   return result.rows.map((r) => String(r.ymd))
 }
@@ -144,6 +169,8 @@ export async function listOpenBookingTimes(params: {
   ymd: string
   tz: string
   limit?: number
+  /** T3 epic-end R1-BLOCKER#2 closure — viewer for visibility filter. */
+  viewerAccountId?: string | null
 }): Promise<LessonSlot[]> {
   if (!UUID_PATTERN.test(params.teacherAccountId)) return []
   if (!isValidYmd(params.ymd)) return []
@@ -168,9 +195,29 @@ export async function listOpenBookingTimes(params: {
         and s.start_at >= ($2::date at time zone $3)
         and s.start_at <  (($2::date + 1) at time zone $3)
         and s.start_at > now()
+        and (
+          s.tariff_id is null
+          or t.visibility = 'catalog'
+          or (
+            t.visibility = 'private'
+            and $5::uuid is not null
+            and exists (
+              select 1 from learner_tariff_access lta
+               where lta.tariff_id = t.id
+                 and lta.learner_account_id = $5::uuid
+                 and lta.revoked_at is null
+            )
+          )
+        )
       order by s.start_at asc
       limit $4`,
-    [params.teacherAccountId, params.ymd, params.tz, limit],
+    [
+      params.teacherAccountId,
+      params.ymd,
+      params.tz,
+      limit,
+      params.viewerAccountId ?? null,
+    ],
   )
   return result.rows.map((r) =>
     rowToSlot(r, {

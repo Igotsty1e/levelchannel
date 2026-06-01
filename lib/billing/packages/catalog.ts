@@ -104,24 +104,57 @@ export async function listActivePackages(
   return result.rows.map((r) => rowToPackage(r as Record<string, unknown>))
 }
 
+/**
+ * T3 epic-end paranoia R1-BLOCKER#3 closure (2026-06-02): teacher-scope
+ * + visibility filter. Called by the booking flow's `package_required`
+ * hint after a learner without a matching package books a prepaid-method
+ * slot. The hint must only surface packages the learner could actually
+ * buy: same teacher as the slot, catalog or granted-private, not soft-deleted.
+ *
+ * - `teacherAccountId` set → filter to that teacher.
+ * - `viewerAccountId` set → include private packages where viewer has
+ *   an active learner_package_access row. `null` → only catalog.
+ */
 export async function listActivePackagesByDuration(
   durationMinutes: number,
   limit = 3,
+  scope?: {
+    teacherAccountId?: string | null
+    viewerAccountId?: string | null
+  },
 ): Promise<LessonPackage[]> {
   const pool = getDbPool()
-  // Same plan-4 catalog filter as `listActivePackages` — keep the
-  // two read surfaces consistent.
   const result = await pool.query(
     `select ${PACKAGE_COLS.split(',').map((c) => `lp.${c.trim()}`).join(', ')}
        from lesson_packages lp
        join teacher_subscriptions ts on ts.account_id = lp.teacher_id
       where lp.is_active = true
+        and lp.deleted_at is null
         and lp.duration_minutes = $1
         and ts.plan_slug = 'operator-managed'
         and ts.state = 'active'
+        and ($3::uuid is null or lp.teacher_id = $3::uuid)
+        and (
+          lp.visibility = 'catalog'
+          or (
+            lp.visibility = 'private'
+            and $4::uuid is not null
+            and exists (
+              select 1 from learner_package_access lpa
+               where lpa.package_id = lp.id
+                 and lpa.learner_account_id = $4::uuid
+                 and lpa.revoked_at is null
+            )
+          )
+        )
       order by lp.display_order asc, lp.id asc
       limit $2`,
-    [durationMinutes, Math.min(Math.max(limit, 1), 20)],
+    [
+      durationMinutes,
+      Math.min(Math.max(limit, 1), 20),
+      scope?.teacherAccountId ?? null,
+      scope?.viewerAccountId ?? null,
+    ],
   )
   return result.rows.map((r) => rowToPackage(r as Record<string, unknown>))
 }

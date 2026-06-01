@@ -145,6 +145,29 @@ export async function POST(request: Request, { params }: RouteParams) {
     )
   }
 
+  // T3 epic-end paranoia R1-BLOCKER#1 (2026-06-02): visibility gate.
+  // Private packages must NOT be purchasable by learners outside the
+  // learner_package_access junction. Returns 404 (same shape as a
+  // missing package) so the private-package slug space stays opaque.
+  if (pkg.visibility === 'private') {
+    const { getDbPool } = await import('@/lib/db/pool')
+    const access = await getDbPool().query<{ exists: boolean }>(
+      `select exists (
+         select 1 from learner_package_access
+          where package_id = $1
+            and learner_account_id = $2
+            and revoked_at is null
+       ) as exists`,
+      [pkg.id, session.account.id],
+    )
+    if (!access.rows[0]?.exists) {
+      return NextResponse.json(
+        { error: 'package_not_found' },
+        { status: 404, headers: NO_STORE },
+      )
+    }
+  }
+
   // Wave 45 — wrap money-moving init in withIdempotency. A duplicate
   // submit (network retry, double-click, etc.) would otherwise mint a
   // second pending order under the same idempotency-key, both pointing

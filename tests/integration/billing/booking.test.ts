@@ -302,17 +302,23 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
   it('learner with payment_method=prepaid_packages, no package → 402 package_required', async () => {
     const { admin, teacher, learner } = await setupTeacherAndLearner('pr1-no-pkg')
     await setPairPaymentMethod(teacher.accountId, learner.accountId, 'prepaid_packages')
-    // No teacherId here on purpose — `listActivePackagesByDuration` (which
-    // populates the 402 `availablePackages` hint) filters to teachers with
-    // `operator-managed` subscriptions; the per-test teacher doesn't have
-    // one, the bootstrap does. Falling back to bootstrap keeps the hint
-    // populated. This test doesn't exercise the consume teacher-scope
-    // check (it's about the no-package path).
+    // T3 epic-end R1-BLOCKER#3 (2026-06-02): listActivePackagesByDuration
+    // is now teacher-scoped; the hint surfaces packages from the slot's
+    // teacher only. Seed the per-test teacher with operator-managed
+    // subscription + seed the package owned by that teacher.
+    await getDbPool().query(
+      `insert into teacher_subscriptions (account_id, plan_slug, state)
+       values ($1, 'operator-managed', 'active')
+       on conflict (account_id) do update
+         set plan_slug = excluded.plan_slug, state = excluded.state`,
+      [teacher.accountId],
+    )
     await seedPackage({
       slug: 'pr1-matching-60',
       durationMinutes: 60,
       count: 10,
       amountKopecks: 35000_00,
+      teacherId: teacher.accountId,
     })
     const slotId = await makeOpenSlot(
       admin.cookie,
