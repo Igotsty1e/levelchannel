@@ -60,6 +60,12 @@ export async function markLessonCompleted(
   // /move / a concurrent mark for the same slot. The tariff_id JOIN
   // is read in the same statement so the eligibility gate + amount
   // snapshot evaluate atomically against the locked row.
+  // T3 Sub-PR B (2026-06-01) — settlement amount comes from
+  // s.snapshot_amount_kopecks (frozen at booking time, mig 0102 §d),
+  // NOT live pricing_tariffs.amount_kopecks. Falls back to the live
+  // tariff price ONLY for legacy slots that pre-date mig 0102 backfill
+  // (which itself only filled status ∈ {booked, completed, cancelled,
+  // no_show_*} — open slots get snapshot via the BEFORE trigger).
   const slotResult = await client.query(
     `select s.id,
             s.teacher_account_id,
@@ -67,6 +73,7 @@ export async function markLessonCompleted(
             s.start_at,
             s.duration_minutes,
             s.tariff_id,
+            s.snapshot_amount_kopecks,
             t.amount_kopecks as tariff_amount_kopecks
        from lesson_slots s
        left join pricing_tariffs t on t.id = s.tariff_id
@@ -116,8 +123,22 @@ export async function markLessonCompleted(
     throw new LessonCompletionEligibilityError('not_yet_ended', params.slotId)
   }
 
+  // T3 Sub-PR B: read the snapshot first (frozen at booking time).
+  // The trigger guarantees NOT NULL for any row that ever entered the
+  // booked state, so for an eligible 'booked' slot this is always set.
+  //
+  // R1-WARN#3: the COALESCE fallback to live tariff is a TEMPORARY
+  // legacy crutch — plan §"Downstream paths" says settlement reads
+  // should treat NULL as a bug signal once the backfill has fully
+  // landed in prod. TODO follow-up after one prod wave of observation:
+  // drop the COALESCE, raise on NULL, and let any unexpected NULL
+  // surface as a hard error instead of silently using live tariff.
   const amountKopecks =
-    slot.tariff_amount_kopecks != null ? Number(slot.tariff_amount_kopecks) : 0
+    slot.snapshot_amount_kopecks != null
+      ? Number(slot.snapshot_amount_kopecks)
+      : slot.tariff_amount_kopecks != null
+        ? Number(slot.tariff_amount_kopecks)
+        : 0
   const completedAt = new Date(endMs).toISOString()
 
   // Step 3: INSERT ... ON CONFLICT (slot_id) DO NOTHING RETURNING id.

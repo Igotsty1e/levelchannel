@@ -46,11 +46,15 @@ export async function validatePaymentSlotBinding(args: {
   learnerAccountId: string
   amountRub: number
 }): Promise<SlotBindingVerdict> {
+  // T3 Sub-PR B (2026-06-01) — slot-binding amount-match reads the
+  // booking snapshot, not live tariff. Falls back to live tariff for
+  // legacy rows whose snapshot is NULL (pre-mig-0102 backfill miss).
   const pool = getDbPool()
   const result = await pool.query(
     `select s.learner_account_id,
             s.status,
             s.tariff_id,
+            s.snapshot_amount_kopecks,
             t.amount_kopecks as tariff_amount_kopecks
        from lesson_slots s
        left join pricing_tariffs t on t.id = s.tariff_id
@@ -83,10 +87,13 @@ export async function validatePaymentSlotBinding(args: {
   // amount (legacy / ad-hoc) — operator decided that at slot-create
   // time. Slots WITH a tariff must match the requested amount within
   // a 1-kopeck rounding tolerance.
+  // T3 Sub-PR B: prefer snapshot, fall back to live tariff for legacy rows.
   const tariffAmountKopecks =
-    row.tariff_amount_kopecks !== null && row.tariff_amount_kopecks !== undefined
-      ? Number(row.tariff_amount_kopecks)
-      : null
+    row.snapshot_amount_kopecks !== null && row.snapshot_amount_kopecks !== undefined
+      ? Number(row.snapshot_amount_kopecks)
+      : row.tariff_amount_kopecks !== null && row.tariff_amount_kopecks !== undefined
+        ? Number(row.tariff_amount_kopecks)
+        : null
 
   if (tariffAmountKopecks !== null) {
     const requestedKopecks = Math.round(args.amountRub * 100)

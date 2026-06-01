@@ -40,8 +40,11 @@ export async function slotIsPaidByAllocations(
 ): Promise<SlotPaidStatus | null> {
   const pool = getDbPool()
   const result = await pool.query(
+    // T3 Sub-PR B (2026-06-01) R1-WARN#2 closure: expected_amount_kopecks
+    // reads booking snapshot, not live tariff. Stays aligned with
+    // lib/billing/packages/debt.ts (per the SoT contract).
     `select s.id as slot_id,
-            t.amount_kopecks as expected_amount_kopecks,
+            coalesce(s.snapshot_amount_kopecks, t.amount_kopecks) as expected_amount_kopecks,
             coalesce(sum(
               case when o.invoice_id is not null
                        and coalesce(rev.refunded_sum, 0) < a.amount_kopecks
