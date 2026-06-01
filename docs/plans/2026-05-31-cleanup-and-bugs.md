@@ -143,13 +143,19 @@ multi-teacher support) → redirect на `/cabinet`.
 - `app/api/auth/login/redeem-invite/route.ts` — optional dedicated route ИЛИ
   inline в login route (simpler).
 
-**Атомарность:** `BEGIN; SELECT FROM teacher_invites WHERE id = $1 AND
-used_at IS NULL AND revoked_at IS NULL AND expires_at > now() FOR UPDATE;
-UPDATE teacher_invites SET used_at = now(), used_by_account_id = $2 WHERE id
-= $1; INSERT INTO learner_teacher_links (learner_account_id,
-teacher_account_id) VALUES ($2, $teacher_account_id) ON CONFLICT DO NOTHING;
-COMMIT;` — same pattern что register flow (`teacher_invites` redeem atomicity
-из `docs/plans/teacher-self-reg-invite.md`).
+**Атомарность:** Helper `lib/auth/invite-redeem.ts` вызывает existing
+`redeemInviteAndBindLearnerAtomic(inviteId, learnerAccountId)` из
+`lib/auth/teacher-invites.ts:399-441` — same helper что register flow
+использует. Гарантирует:
+- `pg_advisory_xact_lock(hashtext('lc-saas-pivot:learner-teacher-links:<learner_uuid>'))`
+  — anti-race с concurrent redeem от разных учителей.
+- Dual-write `accounts.assigned_teacher_id` (legacy column нужен до
+  post-MVP `0084_drop_assigned_teacher_id`).
+- Anti-spoof verify что inviter всё ещё teacher.
+- INSERT в `learner_teacher_links` с `ON CONFLICT DO NOTHING`.
+
+⚠️ **НЕ inline CTE** — round-3 WARN #4 явно запретил дублировать логику.
+Drift риск vs helper update path.
 
 **Anti-enumeration:** на expired/revoked token — return generic «не удалось
 войти, попробуйте обновить ссылку», не «токен expired» (валидный security

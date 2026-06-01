@@ -35,8 +35,11 @@ slot'а, persistence schema, recovery surfaces, mobile/a11y considerations.
   1. Профиль заполнен: `account_profiles.display_name IS NOT NULL`.
   2. Создан хотя бы один тариф: `SELECT 1 FROM pricing_tariffs WHERE
      teacher_id = $1 LIMIT 1`.
-  3. Подключён календарь: `getGoogleIntegrationMeta(teacher_id).status =
-     'connected'` (или 'degraded').
+  3. Подключён календарь: `getGoogleIntegrationMeta(teacher_id)?.syncState ===
+     'active' || ...?.syncState === 'degraded'`. ⚠️ Реальное поле —
+     `syncState` (camelCase), enum `'active' | 'degraded' | 'disconnected'`
+     (verified — `lib/calendar/integrations.ts:34`). Никаких `.status` /
+     `'connected'` / `'errored'` нет.
   4. Отправлено хотя бы одно приглашение: `SELECT 1 FROM teacher_invites
      WHERE teacher_account_id = $1 LIMIT 1`. ⚠️ Колонка
      **`teacher_account_id`** (verified — `migrations/0057_teacher_invites.sql:23`).
@@ -221,7 +224,7 @@ slot'а, persistence schema, recovery surfaces, mobile/a11y considerations.
 #### `ct-onboarding-reset-from-settings`
 
 - **Surfaces (debug-style):**
-  1. `/teacher/settings/profile` (footer of settings hub) — «Показать
+  1. `/teacher/settings` footer (under HUB_ITEMS) (footer of settings hub) — «Показать
      подсказки снова» button (visible для teacher-role).
   2. `/cabinet/profile` (внизу страницы) — та же кнопка (visible для
      learner-role).
@@ -376,7 +379,7 @@ JSONB (mig 0067) — schema-flexible, type-safe via TS whitelist.
 ### §3.1 «Показать подсказки снова» button
 
 Surfaces:
-1. `/teacher/settings/profile` (footer of settings hub) — для teacher-role.
+1. `/teacher/settings` footer (under HUB_ITEMS) (footer of settings hub) — для teacher-role.
 2. `/cabinet/profile` (внизу страницы) — для learner-role.
 
 Button POST `/api/onboarding-state/reset` → helper `resetOnboardingState()` →
@@ -401,9 +404,12 @@ decision; не входит в Sub-PR A scope.
 - **Validation:** account exists в `accounts` table → если нет, exit 1.
 - **Action:** `UPDATE account_onboarding_state SET dismissed_hints = '{}'::jsonb
   WHERE account_id = $1`.
-- **Audit:** INSERT в `payment_audit_events` row (event_type =
-  `support.onboarding_reset`, actor = operator email из env
-  `OPERATOR_EMAIL`, target = account_id).
+- **Audit:** INSERT в `auth_audit_events` (НЕ `payment_audit_events` — там
+  `invoice_id NOT NULL` + FK на `payment_orders`, не подходит для
+  non-payment событий). Расширить existing CHECK constraint новым
+  `event_type = 'auth.onboarding.reset'` через mig 0099 (pattern из
+  mig 0057:47 — drop+re-add). Actor = operator email из env
+  `OPERATOR_EMAIL`, target = account_id.
 - **Auth gate:** implicit — SSH-доступ к VPS + `DATABASE_URL` env (pattern из
   `scripts/db-retention-cleanup.mjs`, `scripts/teacher-daily-digest.mjs`).
 - **Status:** ships в Sub-PR A с тем же contract что existing scripts.
@@ -460,12 +466,13 @@ overlay'ит tooltip (intentional — toast — это feedback на actor).
 
 | State | Color | Trigger condition |
 |-------|-------|-------------------|
-| Connected | green | `getGoogleIntegrationMeta(teacher_id).status = 'connected'` |
-| Pending | amber | OAuth flow в процессе ИЛИ initial sync running |
-| Failed | red | `syncState = 'errored'` ИЛИ `token_revoked` |
+| Connected | green | `getGoogleIntegrationMeta(teacher_id)?.syncState === 'active'` |
+| Pending | amber | row отсутствует (`getGoogleIntegrationMeta() === null`) OR `syncState === 'degraded'` |
+| Failed | red | `syncState === 'disconnected'` (verified — enum `lib/calendar/integrations.ts:34`) OR `lastError !== null` |
 
-⚠️ **Backend gap (round-2 WARN #14):** `syncState='errored'` — это новое
-state, которое требует backend changes в `getGoogleIntegrationMeta`. Если
+⚠️ **Backend reality (closes round-3 BLOCKER #1):** `getGoogleIntegrationMeta`
+возвращает `{ syncState: 'active'\|'degraded'\|'disconnected', lastError, ... }`.
+Никаких `.status` / `'connected'` / `'errored'` нет в enum. Если
 Sub-PR B ships без backend — dot никогда не покажет red. Owner decision: или
 (a) defer tri-state на Sub-PR D вместе с backend, или (b) ship Sub-PR B
 backend extension одновременно. **Default:** (a) — Sub-PR B рендерит
