@@ -146,8 +146,11 @@ export async function loadTeacherBlocks(
     total_debt_kopecks: string | number | null
     slot_count: number
   }>(
+    // T3 Sub-PR B (2026-06-01) R1-WARN#1 closure: debt aggregate reads
+    // snapshot first (frozen at booking time, mig 0102 §d). Fallback to
+    // live tariff preserves behavior for legacy rows the backfill missed.
     `select s.teacher_account_id,
-            coalesce(sum(t.amount_kopecks), 0)::bigint as total_debt_kopecks,
+            coalesce(sum(coalesce(s.snapshot_amount_kopecks, t.amount_kopecks)), 0)::bigint as total_debt_kopecks,
             count(*)::int as slot_count
        from lesson_slots s
        left join pricing_tariffs t

@@ -126,8 +126,13 @@ export async function markLessonCompleted(
   // T3 Sub-PR B: read the snapshot first (frozen at booking time).
   // The trigger guarantees NOT NULL for any row that ever entered the
   // booked state, so for an eligible 'booked' slot this is always set.
-  // The COALESCE keeps backward compat for the rare pre-mig-0102
-  // legacy row that the backfill might have missed.
+  //
+  // R1-WARN#3: the COALESCE fallback to live tariff is a TEMPORARY
+  // legacy crutch — plan §"Downstream paths" says settlement reads
+  // should treat NULL as a bug signal once the backfill has fully
+  // landed in prod. TODO follow-up after one prod wave of observation:
+  // drop the COALESCE, raise on NULL, and let any unexpected NULL
+  // surface as a hard error instead of silently using live tariff.
   const amountKopecks =
     slot.snapshot_amount_kopecks != null
       ? Number(slot.snapshot_amount_kopecks)
