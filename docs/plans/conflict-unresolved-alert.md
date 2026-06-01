@@ -1,6 +1,6 @@
 # BCS-DEF-1 — Operator email alerts on unresolved external calendar conflicts >2h
 
-**Status:** DRAFT 2026-05-19 (round-2 paranoia revised — operator-only MVP with per-teacher cap and accounts deep-link).
+**Status:** SHIPPED 2026-05-19 — PR #316 merged (`21380f9`) and follow-up paranoia closures (`322913f` / `ddad7a0` / `f88b3c7` / `8920f4f` / `9e32c26`) + test-fillout PRs #366 / #374 (`d3f2021` / `3b9249a`) + #364 (`20f7b98`). Operator-only MVP shipped: BCS-DEF-1 conflict-alerts probe wires `runConflictDetectionForTeacher` to operator email alerts on unresolved `external_conflict_at` >2h with per-teacher cap + accounts deep-link. Telegram fan-out followed in BCS-DEF-1-TG (PR #386); fan-out per-teacher dropped (PR #381) — covered by `/teacher` banner. Round-3 BLOCK closed mechanically per §0e (plan-text drift only, no design flaw).
 **Wave name:** `bcs-def-1-conflict-alerts` (one-PR epic — both paranoia checkpoints collapsed onto the same PR).
 **Trigger:** Backlog item "BCS-DEF-1" — operator needs notification within an actionable window when a learner booking overlaps a new external (Google Calendar) busy interval that hasn't been resolved manually. Prereq closed 2026-05-17 (PR #251 wired `runConflictDetectionForTeacher` into pull-worker so `external_conflict_at` actually gets stamped on prod).
 **Author:** Claude (autonomous).

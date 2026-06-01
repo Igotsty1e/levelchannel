@@ -1,6 +1,6 @@
 # SAAS-1-FOLLOWUP-KEYBOARD — Arrow-key grid navigation + Enter-to-create on `/admin/slots` Calendar
 
-**Status:** DRAFT 2026-05-18, awaiting `/codex-paranoia plan`.
+**Status:** SHIPPED 2026-05-19 — PR #354 merged (`05ca383`) + follow-up paranoia fixes PRs #359 (`780d7d7`) + #361 (`346fe04`) + regression pins PR #364 (`20f7b98`). `/admin/slots` Calendar grid (`components/calendar/Grid.tsx`) now fully keyboard-operable per WCAG 2.1 SC 2.1.1 + WAI-ARIA `grid` pattern: Tab into grid, Arrow keys cell-by-cell, Enter/Space opens `PaintConfirmModal` on empty cells or invokes `SlotBlock` click handler, Home/End/PageUp/PageDown for row/column extremes, focus visible via `--focus-ring-*` tokens.
 **Wave name:** SAAS-1-FOLLOWUP-KEYBOARD (out-of-scope follow-up extracted from `docs/plans/calendar-apple-redesign.md`; SAAS-1 was visual-only).
 **Trigger:** Per backlog — "Today empty cells expose only mouse handlers on `role='gridcell'` (`components/calendar/Grid.tsx:227-228`); the primary operator action is unreachable from keyboard / screen-reader. Required to close WCAG 2.1 Operable; foundation work for accessibility wave."
 

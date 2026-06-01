@@ -1,6 +1,6 @@
 # SAAS-INFRA-1 — Add jsdom + React Testing Library to vitest unit suite
 
-**Status:** DRAFT 2026-05-18, awaiting `/codex-paranoia plan`.
+**Status:** SHIPPED 2026-05-19 — PR #346 merged (`6d3bc81`) + follow-up `engines.node` bump in PR #360 (`815c341`). `jsdom` + `@testing-library/react` + `@testing-library/jest-dom` added to vitest unit suite; `tests/setup-rtl.ts` wired via `vitest.config.ts`. Unblocked SAAS-1 `SlotBlock` palette-class render coverage + cabinet-profile Server Component render coverage + future SaaS-tier component coverage.
 **Wave name:** SAAS-INFRA-1 (infra-only; ships standalone, no functional code change).
 **Trigger:** Per backlog — "Today `vitest.config.ts` is `environment: 'node'` and `package.json` carries no RTL/jsdom dep; pure-function tests are the only currently-supported shape. Blocking: SlotBlock palette-class component render coverage (deferred from SAAS-1), cabinet-profile-page Server Component render coverage (deferred from SAAS-5)."
 

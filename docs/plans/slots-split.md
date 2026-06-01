@@ -1,6 +1,6 @@
 # Wave 17: split `lib/scheduling/slots.ts`
 
-**Status:** design v3, 2026-05-11. v2 paused after Codex round 2 NEEDS-FURTHER-REVISION; v3 absorbs all 6 findings (2 CRITICAL + 2 HIGH + 2 MEDIUM). Ready for Codex round 3.
+**Status:** SHIPPED 2026-05-11 — PR #151 merged (`6216146`). `lib/scheduling/slots.ts` (1700-line god-module flagged by Codex Wave 13 Pass 1 #9) split into 9-file folder `lib/scheduling/slots/` (`internal.ts`, `types.ts`, `validation.ts`, `queries.ts`, `mutations-write.ts`, `mutations-cancel.ts`, `booking.ts`, `booking-queries.ts`, `lifecycle.ts`, facade `index.ts`). Public import path `@/lib/scheduling/slots` preserved via facade. Bit-for-bit identical behavior; ~40 callers untouched; dynamic billing imports preserved verbatim (`bookSlot` + cancel ops still `await import(...)` billing modules at call time). SAAS-1 5.F pure-function seam follow-up shipped PR #313 (`5174260`).
 
 ## Why
 

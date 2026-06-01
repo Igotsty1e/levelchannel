@@ -1,6 +1,6 @@
 # BCS-ADMIN-UX — admin tooling coverage review
 
-**Status:** DISCOVERY (drafted 2026-05-15 by Claude — Codex adversarial review pending; pre-empts code execution on BCS-DEF-1/2/3/4/5).
+**Status:** SHIPPED 2026-05-15…2026-05-20 — discovery roadmap implicitly closed through downstream waves. BCS-DEF-1 conflict-alerts (PR #316), BCS-DEF-1-TG Telegram fan-out (PR #386), BCS-DEF-2 conflict-feed dashboard (PR #389), BCS-DEF-3 zoomUrl on slots (PR #281), BCS-DEF-4 learner reminders (PR #392), BCS-DEF-4-TG learner Telegram (PR #405), BCS-DEF-5 daily teacher digest (PR #393), BCS-DEF-5-TG digest Telegram (PR #407), BCS-DEF-7 synctoken pull (PRs #352 + #390), POLICY-KNOBS env-tunable cancel window (PR #270), ALERTS-EDITOR Sub-PRs A/B/C (epic close PR #276), PKG-RECON paid_not_granted UI (PR #226), PKG-LEARNER-BUY `/cabinet/packages` (PR #240). Operator no longer needs SSH or raw SQL to run platform — discovery delivered. Plan-doc retained as historical inventory.
 **Trigger:** Product owner observed during 2026-05-15 session that the package catalog has no end-user-visible purchase or operator-sale UI, and asked: *«добавь себе в БКЛ дополнительный Round … для анализа клиентского опыта и понимания того, какие инструменты настройки нам нужно добавить в админку»*.
 
 ## 1. Goal
