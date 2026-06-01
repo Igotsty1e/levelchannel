@@ -390,13 +390,18 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
   it('pending package order in flight → 409 pending_package_grant', async () => {
     const { admin, teacher, learner } = await setupTeacherAndLearner('pr1-pending')
     await setPairPaymentMethod(teacher.accountId, learner.accountId, 'postpaid')
-    // Insert a pending package order matching this duration.
+    // Insert a pending package order matching this (account, duration, teacher).
+    // PKG-TEACHER-SCOPE: teacher_account_id is now explicit on the pending
+    // row because accountHasPendingPackageGrantForDuration now scopes by
+    // teacher; trigger fallback to bootstrap would set the wrong teacher.
     await getDbPool().query(
       `insert into payment_orders
          (invoice_id, amount_rub, currency, description, provider, status,
-          created_at, updated_at, customer_email, receipt_email, receipt, metadata)
+          created_at, updated_at, customer_email, receipt_email, receipt,
+          metadata, teacher_account_id)
        values ($1, '3500.00', 'RUB', 'Pending package', 'mock', 'pending',
-               now(), now(), 'test@example.com', 'test@example.com', '{}'::jsonb, $2::jsonb)`,
+               now(), now(), 'test@example.com', 'test@example.com', '{}'::jsonb,
+               $2::jsonb, $3)`,
       [
         freshInvoiceId('lc_pending'),
         JSON.stringify({
@@ -404,6 +409,7 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
           packageSlug: 'pr1-pending-pkg',
           packageDurationMinutes: 60,
         }),
+        teacher.accountId,
       ],
     )
     const slotId = await makeOpenSlot(

@@ -221,10 +221,12 @@ export async function POST(request: Request, { params }: RouteParams) {
         )
 
         // Anti-stacking gate (default REJECT, override via allowStacking).
+        // PKG-TEACHER-SCOPE: per-pair gate, not global.
         if (!allowStacking) {
           const ownedActive = await learnerHasActivePackageOfDuration(
             targetAccountId,
             pkg.durationMinutes,
+            pkg.teacherId,
           )
           if (ownedActive) {
             await lockClient.query('commit')

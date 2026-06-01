@@ -148,9 +148,11 @@ export async function issueTeacherPackageGrant(args: {
     )
 
     if (!args.allowStacking) {
+      // PKG-TEACHER-SCOPE: per-pair gate.
       const ownedActive = await learnerHasActivePackageOfDuration(
         args.learnerAccountId,
         pkg.durationMinutes,
+        pkg.teacherId,
       )
       if (ownedActive) {
         await lockClient.query('commit')

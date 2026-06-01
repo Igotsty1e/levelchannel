@@ -256,10 +256,11 @@ export async function POST(request: Request, { params }: RouteParams) {
       )
 
       // Gate 1: pending order in the last 15 min for the same
-      // (account, duration)? Existing helper.
+      // (account, duration, teacher)? PKG-TEACHER-SCOPE: per-pair gate.
       const hasPending = await accountHasPendingPackageGrantForDuration(
         accountId,
         pkg.durationMinutes,
+        pkg.teacherId,
       )
       if (hasPending) {
         await lockClient.query('commit')
@@ -274,10 +275,14 @@ export async function POST(request: Request, { params }: RouteParams) {
       }
 
       // Gate 2: account already owns an active package of the same
-      // duration with units remaining? New LBL.0 helper.
+      // duration with units remaining? PKG-TEACHER-SCOPE: scoped to
+      // pkg.teacherId so the gate applies per-pair (teacher, learner),
+      // not globally per-learner — buying from teacher B when you
+      // already have an active package from teacher A is allowed.
       const ownedActive = await learnerHasActivePackageOfDuration(
         accountId,
         pkg.durationMinutes,
+        pkg.teacherId,
       )
       if (ownedActive) {
         await lockClient.query('commit')

@@ -30,6 +30,7 @@ export type ActiveOwnedPackage = {
 export async function learnerHasActivePackageOfDuration(
   accountId: string,
   durationMinutes: number,
+  teacherId?: string,
 ): Promise<ActiveOwnedPackage | null> {
   // Epic-end paranoia round 1 BLOCKER #1 closure: the count_remaining
   // > 0 filter MUST be in SQL, not in JS. The earlier shape
@@ -40,6 +41,12 @@ export async function learnerHasActivePackageOfDuration(
   // stacking gate falsely admits a third buy. Fix: filter
   // `count_remaining > 0` in SQL via a duplicated correlated subquery,
   // then LIMIT 1.
+  //
+  // PKG-TEACHER-SCOPE (2026-06-01): teacherId is now passed by every
+  // caller in the writer surface so the anti-stacking gate is per-pair:
+  // a learner with a 60-min package from teacher A does NOT have it
+  // count as "already owns" when buying a 60-min package from teacher B.
+  // Optional for backward compat with reader-only call-sites.
   const pool = getDbPool()
   const result = await pool.query(
     `select pp.id,
@@ -57,6 +64,7 @@ export async function learnerHasActivePackageOfDuration(
         and pp.duration_minutes = $2::int
         and pp.voided_at is null
         and pp.expires_at > now()
+        and ($3::uuid is null or pp.teacher_id = $3::uuid)
         and pp.count_initial - (
           select count(*) from package_consumptions pc
            where pc.package_purchase_id = pp.id
@@ -64,7 +72,7 @@ export async function learnerHasActivePackageOfDuration(
         ) > 0
       order by pp.expires_at asc
       limit 1`,
-    [accountId, durationMinutes],
+    [accountId, durationMinutes, teacherId ?? null],
   )
   if (result.rows.length === 0) return null
   const row = result.rows[0] as Record<string, unknown>

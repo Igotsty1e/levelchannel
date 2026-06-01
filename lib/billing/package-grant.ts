@@ -247,9 +247,11 @@ export async function processPackageGrant(
       return { kind: 'already_granted' }
     }
 
+    // PKG-TEACHER-SCOPE: per-pair gate.
     const ownedActive = await learnerHasActivePackageOfDuration(
       accountId,
       pkg.durationMinutes,
+      pkg.teacherId,
     )
     if (ownedActive) {
       // Commit so the audit row written below is not blocked behind
