@@ -1,6 +1,6 @@
 # SAAS-1 5.A — Token scoping under `.saas-chrome` class selector
 
-**Status:** DRAFT 2026-05-18, awaiting `/codex-paranoia plan`.
+**Status:** SHIPPED 2026-05-19 — PR #341 merged (`10e35d7`). SaaS design-token block landed under `.saas-chrome` class selector in `app/globals.css`; tokens (color/typography/spacing/radii/shadows/motion/focus-ring) attached to admin chrome + auth chrome + cabinet (via `AuthShell`) without leaking to `/pay`, `/checkout/[tariffSlug]`, marketing landing, `/offer`, `/privacy`, `/consent/personal-data`. Plan-doc retained as historical paranoia continuity for `calendar-apple-redesign.md` §5.A.
 **Wave name:** SAAS-1 5.A (extracted sub-PR of `docs/plans/calendar-apple-redesign.md` §5.A).
 **Trigger:** The Apple-redesign plan §5.A drafted the scoping spec inline but never extracted it into its own plan-doc. Without an isolated plan-doc the change is hidden inside a multi-sub-PR wave and never independently paranoia-reviewed.
 

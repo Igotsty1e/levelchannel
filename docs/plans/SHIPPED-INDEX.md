@@ -20,8 +20,10 @@ Active plan-doc work (not yet shipped) lives in `docs/plans/*.md` without an ent
 - **`teacher-self-reg-invite.md`** (SAAS-3+4, 2026-05-18) — HMAC-signed teacher invite flow + register-with-invite atomicity.
 - **`bcs-def-5-tg-teacher-telegram-reminders.md`** (BCS-DEF-5-TG, 2026-05-19) — teacher digest Telegram channel.
 - **`bcs-def-1-tg-telegram-alerts.md`** + **`bcs-def-1-tg-testsend.md`** — operator probe Telegram channel.
-- **`bcs-def-4-tg-telegram-reminders.md`** — learner reminder Telegram channel.
-- **`bcs-def-2-conflict-feed-revive.md`** (BCS-DEF-2, 2026-05-19) — /admin/slots/conflicts dashboard revive.
+- **`bcs-def-4-tg-telegram-reminders.md`** (BCS-DEF-4-TG, 2026-05-20, PR #405) — learner reminder Telegram channel + bind handshake.
+- **`conflict-feed.md`** (BCS-DEF-2, 2026-05-19, PR #389) — /admin/slots/conflicts dashboard revive.
+- **`conflict-unresolved-alert.md`** (BCS-DEF-1, 2026-05-19, PR #316) — operator email alerts on unresolved external calendar conflicts >2h (+ Telegram fan-out via BCS-DEF-1-TG PR #386).
+- **`admin-ux-coverage.md`** (BCS-ADMIN-UX discovery, 2026-05-15…2026-05-20) — operator-knob inventory; closed implicitly through BCS-DEF-1/2/3/4/5 + POLICY-KNOBS + ALERTS-EDITOR + PKG-RECON + PKG-LEARNER-BUY shipped waves.
 - **`bcs-def-7-synctoken-pull.md`** — Google calendar synctoken pull.
 - **`pay-sbp-removal-and-cp-ready-gate.md`** (SBP-PAY, 2026-05-20) — operator-gated SBP rollback.
 - **`receipt-3ds-token.md`** — 3DS /thank-you receipt-token gate.
@@ -29,7 +31,23 @@ Active plan-doc work (not yet shipped) lives in `docs/plans/*.md` without an ent
 - **`pkg-recon.md`** — paid_not_granted reconciliation UI.
 - **`alerts-editor.md`** + **`alerts-obs.md`** — operator-tunable alert thresholds.
 - **`policy-knobs.md`** — operator knob conventions.
-- **`sec-4-channel-token-encryption.md`** — calendar channel_token encryption.
+- **`sec-4-channel-token-encryption.md`** (2026-05-17/18 audit wave) — calendar channel_token encryption.
+
+## SAAS-1 calendar / design-system wave (2026-05-18/19)
+
+- **`calendar-apple-redesign.md`** (SAAS-1, 2026-05-18, PR #289) — `/admin/slots` 1h grid + Apple-Calendar visual language. Sub-PRs below.
+- **`saas-1-5a-token-scoping.md`** (SAAS-1 5.A, 2026-05-19, PR #341) — SaaS design-token block scoped under `.saas-chrome` class selector.
+- **`saas-1-followup-keyboard.md`** (SAAS-1-FOLLOWUP-KEYBOARD, 2026-05-19, PR #354 + #359 + #361 + #364) — arrow-key grid navigation + Enter-to-create on `/admin/slots` Calendar.
+- **`saas-infra-1-jsdom-rtl.md`** (SAAS-INFRA-1, 2026-05-19, PR #346 + #360) — jsdom + RTL added to vitest unit suite.
+
+## Foundational pre-2026-05 waves (kept for git blame continuity)
+
+- **`csp-hardening.md`** (CSP hardening, CLOSED 2026-05-09) — Content-Security-Policy lockdown for production.
+- **`prepay-postpay-billing.md`** (billing wave, PR #118 + follow-ups) — prepaid/postpaid billing model + package consumption SoT.
+- **`calendar-ui.md`** (Wave A, 2026-05-08) — base `/admin/slots` calendar UI before SAAS-1 redesign.
+- **`booking-calendly-style.md`** (BCS-* base, 2026-05-09…2026-05-15) — Calendly-style booking flow + downstream BCS-DEF-1..7 waves.
+- **`cabinet-profile-button.md`** (2026-05-18, PR #287) — `/cabinet/profile` button + page.
+- **`slots-split.md`** (Wave 17, 2026-05-11, PR #151) — `lib/scheduling/slots.ts` split into 9-file folder facade.
 
 ## How to use this index
 

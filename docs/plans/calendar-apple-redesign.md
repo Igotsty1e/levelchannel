@@ -1,6 +1,6 @@
 # Calendar Apple-redesign — `/admin/slots` grid 1h + Apple aesthetic
 
-**Status:** DRAFT 2026-05-18, awaiting `/codex-paranoia plan`.
+**Status:** SHIPPED 2026-05-18/19 — PR #289 merged (`f77ab7f`) shipped the Apple-Calendar 1h grid presentation; SAAS-1 sub-PRs followed: 5.A token-scoping PR #341 (`10e35d7`), 5.D palette extraction PR #304 (`24b5c5d`), 5.F drag-math seam PR #313 (`5174260`). `/admin/slots` Calendar tab now renders 1h rows with sticky day headers, today-column tint, half-hour dotted sub-tick, current-time indicator, accent-tinted 3px-bordered event chips, translucent drag ghost. Data model unchanged (slots stay 30-min-aligned).
 **Wave name:** SAAS-1.
 **Trigger:** Product-owner request 2026-05-18 — operators report the current
 30-min grid feels dense and unrelated to the new design system. Reference:
