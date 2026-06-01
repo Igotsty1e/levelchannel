@@ -137,18 +137,10 @@ describe('SAAS-PIVOT Epic 8 — teacher-acquisition landing (/saas)', () => {
     expect(sectionText).toMatch(/Google Calendar/)
   })
 
-  it('emits the server-side landing_view log line', () => {
+  it('does not emit any console.log lines (prod hygiene — 2026-05-31 fix)', () => {
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
     SaasPage()
-    const fired = spy.mock.calls.some(
-      (args) =>
-        typeof args[0] === 'string' &&
-        args[0].includes('[landing] view') &&
-        args[1] &&
-        typeof args[1] === 'object' &&
-        (args[1] as Record<string, unknown>).page === '/saas',
-    )
-    expect(fired).toBe(true)
+    expect(spy).not.toHaveBeenCalled()
     spy.mockRestore()
   })
 
