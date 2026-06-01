@@ -214,6 +214,32 @@ export async function bookSlot(
     }
     const slot = rowToSlot(slotResult.rows[0])
 
+    // T3 epic-end R1-BLOCKER#2 closure (2026-06-02): private-tariff
+    // visibility gate. If the slot is bound to a tariff with
+    // visibility='private', the learner must have an active
+    // learner_tariff_access row. Without it, fall through to the
+    // same not_found shape so private tariffs don't enumerate via
+    // booking probes.
+    if (slot.tariffId) {
+      const tariffGate = await client.query<{ private_no_access: boolean }>(
+        `select (
+           t.visibility = 'private'
+           and not exists (
+             select 1 from learner_tariff_access lta
+              where lta.tariff_id = t.id
+                and lta.learner_account_id = $2::uuid
+                and lta.revoked_at is null
+           )
+         ) as private_no_access
+           from pricing_tariffs t where t.id = $1::uuid`,
+        [slot.tariffId, learnerAccountId],
+      )
+      if (tariffGate.rows[0]?.private_no_access) {
+        await client.query('rollback')
+        return { ok: false, reason: 'not_found' }
+      }
+    }
+
     // Step 3: read per-pair payment_method. Default 'none' = booking blocked.
     const method = await getPaymentMethodForPairTx(
       client,
@@ -275,7 +301,17 @@ export async function bookSlot(
 
     // Step 6: branch on method.
     if (method === 'prepaid_packages') {
-      const matching = await listActivePackagesByDuration(slot.durationMinutes, 3)
+      // T3 epic-end R1-BLOCKER#3 closure: scope the hint to packages
+      // the learner could actually buy (same teacher + catalog OR
+      // granted-private).
+      const matching = await listActivePackagesByDuration(
+        slot.durationMinutes,
+        3,
+        {
+          teacherAccountId: slot.teacherAccountId,
+          viewerAccountId: learnerAccountId,
+        },
+      )
       await client.query('rollback')
       return {
         ok: false,

@@ -109,6 +109,8 @@ export async function GET(request: Request) {
     teacherAccountId: teacherId,
     ymd,
     tz,
+    // T3 epic-end R1-BLOCKER#2: viewer for visibility filter.
+    viewerAccountId: auth.account.id,
   })
 
   return NextResponse.json(

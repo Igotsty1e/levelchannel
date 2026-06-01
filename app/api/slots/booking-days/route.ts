@@ -119,6 +119,9 @@ export async function GET(request: Request) {
     fromYmd: fromYmd!,
     toYmd: toYmd!,
     tz,
+    // T3 epic-end R1-BLOCKER#2: pass learner viewer for private-tariff
+    // visibility filter.
+    viewerAccountId: auth.account.id,
   })
 
   return NextResponse.json(

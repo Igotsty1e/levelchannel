@@ -44,18 +44,28 @@ export async function listOpenFutureSlots(params: {
   //     viewers (viewerAccountId = null) always fail this branch.
   args.push(params.viewerAccountId ?? null)
   const viewerParamIdx = args.length
+  // T3 epic-end R1-WARN#1: also gate on tariff is_active + not soft-deleted
+  // per plan §"WARN fixes — applied" (the authoritative visibility filter
+  // is `deleted_at IS NULL AND is_active = true`). Inactive/archived
+  // tariffs surfaced as bookable was a real drift before this closure.
   where += ` and (
     s.tariff_id is null
     or t.id is null
-    or t.visibility = 'catalog'
     or (
-      t.visibility = 'private'
-      and $${viewerParamIdx}::uuid is not null
-      and exists (
-        select 1 from learner_tariff_access lta
-         where lta.tariff_id = t.id
-           and lta.learner_account_id = $${viewerParamIdx}::uuid
-           and lta.revoked_at is null
+      t.is_active = true
+      and t.deleted_at is null
+      and (
+        t.visibility = 'catalog'
+        or (
+          t.visibility = 'private'
+          and $${viewerParamIdx}::uuid is not null
+          and exists (
+            select 1 from learner_tariff_access lta
+             where lta.tariff_id = t.id
+               and lta.learner_account_id = $${viewerParamIdx}::uuid
+               and lta.revoked_at is null
+          )
+        )
       )
     )
   )`
