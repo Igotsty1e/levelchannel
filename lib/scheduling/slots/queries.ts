@@ -11,6 +11,17 @@ export async function listOpenFutureSlots(params: {
   fromIso?: string
   toIso?: string
   limit?: number
+  /** T3 Sub-PR C (2026-06-02): viewer's account id for visibility filter.
+   *  - `null` / undefined → anonymous: exclude any slot whose tariff is
+   *    `visibility='private'` (or the tariff is missing/deleted/inactive).
+   *  - account id → authenticated viewer: include private-tariff slots
+   *    only if the viewer has an active `learner_tariff_access` row for
+   *    that tariff (matches lta.revoked_at IS NULL and the pair's
+   *    learner_account_id = viewer).
+   *  Catalog tariffs (visibility='catalog') are visible to everyone;
+   *  the gate fires only on private tariffs.
+   */
+  viewerAccountId?: string | null
 }): Promise<LessonSlot[]> {
   const pool = getDbPool()
   const limit = Math.min(Math.max(params.limit ?? 200, 1), 500)
@@ -24,6 +35,30 @@ export async function listOpenFutureSlots(params: {
     args.push(params.teacherAccountId)
     where += ` and teacher_account_id = $${args.length}`
   }
+  // T3 Sub-PR C visibility gate:
+  //   - if tariff_id is NULL → slot has no tariff → always visible
+  //     (legacy / operator-priced slots).
+  //   - if tariff.visibility = 'catalog' → public → always visible.
+  //   - if tariff.visibility = 'private' → visible only if there's an
+  //     active learner_tariff_access row for (viewer, tariff). Anonymous
+  //     viewers (viewerAccountId = null) always fail this branch.
+  args.push(params.viewerAccountId ?? null)
+  const viewerParamIdx = args.length
+  where += ` and (
+    s.tariff_id is null
+    or t.id is null
+    or t.visibility = 'catalog'
+    or (
+      t.visibility = 'private'
+      and $${viewerParamIdx}::uuid is not null
+      and exists (
+        select 1 from learner_tariff_access lta
+         where lta.tariff_id = t.id
+           and lta.learner_account_id = $${viewerParamIdx}::uuid
+           and lta.revoked_at is null
+      )
+    )
+  )`
   args.push(limit)
   const result = await pool.query(
     `select s.id, s.teacher_account_id, s.start_at, s.duration_minutes,

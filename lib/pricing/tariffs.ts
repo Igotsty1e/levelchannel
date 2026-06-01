@@ -25,6 +25,10 @@ export type PricingTariff = {
   // Historical slot reads MUST still JOIN unfiltered (price/title
   // snapshot survives archive).
   deletedAt: string | null
+  // T3 (mig 0102): per-learner ACL discriminator. 'catalog' = visible
+  // to everyone (default for pre-T3 tariffs); 'private' = restricted
+  // to learners with an active learner_tariff_access row.
+  visibility: 'catalog' | 'private'
   createdAt: string
   updatedAt: string
 }
@@ -161,6 +165,8 @@ function rowToTariff(row: Record<string, unknown>): PricingTariff {
       row.deleted_at === null || row.deleted_at === undefined
         ? null
         : new Date(String(row.deleted_at)).toISOString(),
+    visibility:
+      row.visibility === 'private' ? 'private' : 'catalog',
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
   }
@@ -170,7 +176,7 @@ function rowToTariff(row: Record<string, unknown>): PricingTariff {
 // can't drift away from the SELECT list silently.
 const TARIFF_COLS = `id, slug, title_ru, description_ru, amount_kopecks,
        duration_minutes, currency, is_active, display_order,
-       teacher_id, deleted_at, created_at, updated_at`
+       teacher_id, deleted_at, visibility, created_at, updated_at`
 
 // SAAS-PIVOT Epic 2 Day 3 — admin-global view. By default hides
 // soft-deleted rows (matches the operator's "show me my active catalog"
