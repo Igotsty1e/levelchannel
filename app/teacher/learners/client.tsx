@@ -20,6 +20,15 @@ type LearnerRow = {
   completedCount: number
   cancelledCount: number
   noShowCount: number
+  // mig 0101 — выбранный учителем метод оплаты. 'none' = booking
+  // блокируется до выбора. Read-only здесь; toggle на детальной странице.
+  paymentMethod: 'postpaid' | 'prepaid_packages' | 'none'
+}
+
+const PAYMENT_METHOD_LABEL: Record<LearnerRow['paymentMethod'], string> = {
+  postpaid: 'постоплата',
+  prepaid_packages: 'пакеты',
+  none: 'не выбран',
 }
 
 type Filter = 'active' | 'archive' | 'all'
@@ -205,6 +214,18 @@ export function LearnersListClient({ learners }: { learners: LearnerRow[] }) {
                           <strong>{l.noShowCount}</strong>не пришёл
                         </span>
                       ) : null}
+                      <span
+                        className="learner-card-stat"
+                        style={{
+                          color:
+                            l.paymentMethod === 'none'
+                              ? 'var(--accent, #c2811e)'
+                              : undefined,
+                        }}
+                        title="Способ оплаты — выбирается на странице ученика"
+                      >
+                        оплата: {PAYMENT_METHOD_LABEL[l.paymentMethod]}
+                      </span>
                     </div>
                   </Link>
                 </li>

@@ -76,6 +76,22 @@ async function setupTeacherAndLearner(prefix: string) {
   return { admin, teacher, learner }
 }
 
+// mig 0101 — replaces `update accounts set postpaid_allowed = ...` tests.
+async function setPairPaymentMethod(
+  teacherId: string,
+  learnerId: string,
+  method: 'postpaid' | 'prepaid_packages' | 'none',
+) {
+  await getDbPool().query(
+    `insert into learner_billing_preferences
+       (teacher_account_id, learner_account_id, payment_method)
+     values ($1::uuid, $2::uuid, $3)
+     on conflict (teacher_account_id, learner_account_id) do update
+       set payment_method = excluded.payment_method`,
+    [teacherId, learnerId, method],
+  )
+}
+
 async function makeOpenSlot(
   adminCookie: string,
   teacherAccountId: string,
@@ -137,6 +153,7 @@ async function seedPaidOrder(
 describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)', () => {
   it('learner with active matching package → 200 prepaid; consumption row inserted', async () => {
     const { admin, teacher, learner } = await setupTeacherAndLearner('pr1-prepay')
+    await setPairPaymentMethod(teacher.accountId, learner.accountId, 'prepaid_packages')
     const pkg = await seedPackage({
       slug: 'pr1-prepay-pkg',
       durationMinutes: 60,
@@ -184,8 +201,9 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
     expect(purchases[0].countRemaining).toBe(4)
   })
 
-  it('learner without package, postpaid_allowed=false → 402 package_required', async () => {
+  it('learner with payment_method=prepaid_packages, no package → 402 package_required', async () => {
     const { admin, teacher, learner } = await setupTeacherAndLearner('pr1-no-pkg')
+    await setPairPaymentMethod(teacher.accountId, learner.accountId, 'prepaid_packages')
     await seedPackage({
       slug: 'pr1-matching-60',
       durationMinutes: 60,
@@ -213,12 +231,9 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
     expect(body.availablePackages[0].durationMinutes).toBe(60)
   })
 
-  it('learner without package, postpaid_allowed=true, slot has tariff → 200 postpaid', async () => {
+  it('learner with payment_method=postpaid, slot has tariff → 200 postpaid', async () => {
     const { admin, teacher, learner } = await setupTeacherAndLearner('pr1-postpay')
-    await getDbPool().query(
-      `update accounts set postpaid_allowed = true where id = $1`,
-      [learner.accountId],
-    )
+    await setPairPaymentMethod(teacher.accountId, learner.accountId, 'postpaid')
     // Need a tariff with same duration on the slot.
     // SAAS-PIVOT Epic 2 Day 3: teacher_id NOT NULL (mig 0088).
     const tariffRow = await getDbPool().query(
@@ -247,12 +262,9 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
     expect(consumption).toBeNull() // postpaid path = no consumption row
   })
 
-  it('learner without package, postpaid_allowed=true, slot has NO tariff → 402 tariff_required', async () => {
+  it('learner with payment_method=postpaid, slot has NO tariff → 402 tariff_required', async () => {
     const { admin, teacher, learner } = await setupTeacherAndLearner('pr1-no-tariff')
-    await getDbPool().query(
-      `update accounts set postpaid_allowed = true where id = $1`,
-      [learner.accountId],
-    )
+    await setPairPaymentMethod(teacher.accountId, learner.accountId, 'postpaid')
     const slotId = await makeOpenSlot(
       admin.cookie,
       teacher.accountId,
@@ -273,10 +285,7 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
 
   it('pending package order in flight → 409 pending_package_grant', async () => {
     const { admin, teacher, learner } = await setupTeacherAndLearner('pr1-pending')
-    await getDbPool().query(
-      `update accounts set postpaid_allowed = true where id = $1`,
-      [learner.accountId],
-    )
+    await setPairPaymentMethod(teacher.accountId, learner.accountId, 'postpaid')
     // Insert a pending package order matching this duration.
     await getDbPool().query(
       `insert into payment_orders
@@ -312,10 +321,7 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
 
   it('pending package order with MISMATCHED duration → postpaid path applies (gate filtered)', async () => {
     const { admin, teacher, learner } = await setupTeacherAndLearner('pr1-mis-dur')
-    await getDbPool().query(
-      `update accounts set postpaid_allowed = true where id = $1`,
-      [learner.accountId],
-    )
+    await setPairPaymentMethod(teacher.accountId, learner.accountId, 'postpaid')
     // Pending package for 90-min duration.
     await getDbPool().query(
       `insert into payment_orders
@@ -362,6 +368,7 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
 describe('PR 1 — restorePackageConsumption (idempotent + race-safe)', () => {
   it('two concurrent restores → exactly one succeeds, second is no-op', async () => {
     const { admin, teacher, learner } = await setupTeacherAndLearner('pr1-restore')
+    await setPairPaymentMethod(teacher.accountId, learner.accountId, 'prepaid_packages')
     const pkg = await seedPackage({
       slug: 'pr1-restore-pkg',
       durationMinutes: 60,

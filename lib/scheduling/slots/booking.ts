@@ -160,33 +160,31 @@ export async function bookSlot(
     return classifyBookSlotFailure(slotId, learnerAccountId, expectedTeacherId)
   }
 
-  // New billing path. One transaction, six steps.
+  // New billing path. Per-pair payment_method (mig 0101).
+  // accounts.postpaid_allowed дропнут — выбор делает учитель в
+  // learner_billing_preferences. See docs/plans/per-learner-payment-method.md.
   const { consumePackageUnit } = await import('@/lib/billing/consumption')
   const {
     accountHasPendingPackageGrantForDuration,
     listActivePackagesByDuration,
   } = await import('@/lib/billing/packages')
+  const { getPaymentMethodForPairTx } = await import(
+    '@/lib/billing/learner-payment-method'
+  )
 
   const pool = getDbPool()
   const client = await pool.connect()
   try {
     await client.query('begin')
 
-    // Step 1: lock the account row to read postpaid_allowed live.
-    const accountRow = await client.query(
-      `select postpaid_allowed from accounts where id = $1 for share`,
-      [learnerAccountId],
-    )
-    const postpaidAllowed = Boolean(accountRow.rows[0]?.postpaid_allowed)
-
-    // Step 2: per-account advisory lock for strict FIFO + serialized
+    // Step 1: per-account advisory lock for strict FIFO + serialized
     // consumption. Cross-learner concurrency is unaffected.
     await client.query(
       `select pg_advisory_xact_lock(hashtext('pkg_consume:' || $1::text))`,
       [learnerAccountId],
     )
 
-    // Step 3: atomic slot reservation (existing pattern, sticky client).
+    // Step 2: atomic slot reservation (existing pattern, sticky client).
     const slotResult = await client.query(
       `update lesson_slots
           set status = 'booked',
@@ -216,7 +214,18 @@ export async function bookSlot(
     }
     const slot = rowToSlot(slotResult.rows[0])
 
-    // Step 4: try package consumption.
+    // Step 3: read per-pair payment_method. Default 'none' = booking blocked.
+    const method = await getPaymentMethodForPairTx(
+      client,
+      slot.teacherAccountId,
+      learnerAccountId,
+    )
+    if (method === 'none') {
+      await client.query('rollback')
+      return { ok: false, reason: 'payment_method_not_set' }
+    }
+
+    // Step 4: try package consumption (same code path regardless of method).
     const consume = await consumePackageUnit(client, {
       accountId: learnerAccountId,
       slotId: slot.id,
@@ -224,8 +233,6 @@ export async function bookSlot(
       actor,
     })
     if (consume.ok) {
-      // Read derived count_remaining inside the txn so the response
-      // reflects the post-consumption state authoritatively.
       const remaining = await client.query(
         `select pp.count_initial - (
                   select count(*) from package_consumptions pc
@@ -249,11 +256,8 @@ export async function bookSlot(
       }
     }
 
-    // Step 5: pending-package gate. Refuse postpaid fallback if the
-    // learner has a recent pending package order matching this slot's
-    // duration. Avoids the race where they pay for a package, book
-    // a slot before the webhook fires, and the slot enters postpaid
-    // debt while the paid grant materializes moments later.
+    // Step 5: pending-package gate. Refuse postpaid fallback if the learner
+    // has a recent pending package order matching this slot's duration.
     const hasPending = await accountHasPendingPackageGrantForDuration(
       learnerAccountId,
       slot.durationMinutes,
@@ -263,8 +267,8 @@ export async function bookSlot(
       return { ok: false, reason: 'pending_package_grant' }
     }
 
-    // Step 6: postpaid eligibility.
-    if (!postpaidAllowed) {
+    // Step 6: branch on method.
+    if (method === 'prepaid_packages') {
       const matching = await listActivePackagesByDuration(slot.durationMinutes, 3)
       await client.query('rollback')
       return {
@@ -278,13 +282,12 @@ export async function bookSlot(
         })),
       }
     }
+
+    // method === 'postpaid' — slot booked, debt surfaces at completion.
     if (!slot.tariffId) {
       await client.query('rollback')
       return { ok: false, reason: 'tariff_required' }
     }
-
-    // Postpaid path — slot stays booked with no consumption, debt
-    // surfaces at completion.
     const tariff = await client.query(
       `select amount_kopecks, currency from pricing_tariffs where id = $1`,
       [slot.tariffId],

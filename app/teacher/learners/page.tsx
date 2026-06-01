@@ -56,6 +56,7 @@ export default async function TeacherLearnersListPage() {
           completedCount: l.completedCount,
           cancelledCount: l.cancelledCount,
           noShowCount: l.noShowCount,
+          paymentMethod: l.paymentMethod,
         }))}
       />
     </div>

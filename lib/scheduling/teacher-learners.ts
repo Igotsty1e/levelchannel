@@ -27,6 +27,10 @@ export type TeacherLearnerSummary = {
   completedCount: number
   cancelledCount: number
   noShowCount: number
+  // mig 0101 — per-pair payment method выбранный учителем. 'none' = не
+  // выбран (default) — booking блокируется до выбора. NULL не бывает,
+  // SQL ниже coalesces к 'none'.
+  paymentMethod: 'postpaid' | 'prepaid_packages' | 'none'
 }
 
 export async function listLearnersForTeacher(
@@ -71,6 +75,11 @@ export async function listLearnersForTeacher(
          from learner_teacher_links
         where teacher_account_id = $1
           and unlinked_at is null
+     ),
+     billing_prefs as (
+       select learner_account_id, payment_method
+         from learner_billing_preferences
+        where teacher_account_id = $1
      )
      select a.id as learner_id,
             a.email as learner_email,
@@ -84,12 +93,14 @@ export async function listLearnersForTeacher(
             (
               coalesce(cs.no_show_learner_count, 0)
               + coalesce(st.no_show_teacher_count, 0)
-            )::int as no_show_count
+            )::int as no_show_count,
+            coalesce(bp.payment_method, 'none') as payment_method
        from accounts a
        left join account_profiles p on p.account_id = a.id
        left join stats st on st.learner_id = a.id
        left join completion_stats cs on cs.learner_id = a.id
        left join active_links al on al.learner_account_id = a.id
+       left join billing_prefs bp on bp.learner_account_id = a.id
       where al.learner_account_id is not null
          or st.learner_id is not null
          or cs.learner_id is not null
@@ -109,5 +120,6 @@ export async function listLearnersForTeacher(
     completedCount: Number(row.completed_count),
     cancelledCount: Number(row.cancelled_count),
     noShowCount: Number(row.no_show_count),
+    paymentMethod: (String(row.payment_method) as 'postpaid' | 'prepaid_packages' | 'none'),
   }))
 }

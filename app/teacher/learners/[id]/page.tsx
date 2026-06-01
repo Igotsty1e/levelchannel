@@ -6,6 +6,7 @@ import { formatProfileNameForRender } from '@/lib/auth/profile-name'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getDbPool } from '@/lib/db/pool'
 
+import { PaymentMethodToggle } from './payment-method-toggle'
 import { RenameLearnerForm } from './rename-form'
 import UncompleteButton from './uncomplete-button'
 
@@ -144,6 +145,22 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
     [teacherId, learnerId],
   )
 
+  // mig 0101 — read current payment_method для (teacher, learner) пары.
+  // Default 'none' if no row.
+  const billingPrefsResult = await pool.query<{ payment_method: string }>(
+    `select payment_method from learner_billing_preferences
+       where teacher_account_id = $1::uuid
+         and learner_account_id = $2::uuid
+       limit 1`,
+    [teacherId, learnerId],
+  )
+  const currentPaymentMethod =
+    (billingPrefsResult.rows[0]?.payment_method as
+      | 'postpaid'
+      | 'prepaid_packages'
+      | 'none'
+      | undefined) ?? 'none'
+
   const completions: CompletionRow[] = completionsResult.rows.map((r) => ({
     id: String(r.id),
     slotId: String(r.slot_id),
@@ -188,6 +205,11 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
         initialFirstName={learner.first_name ?? ''}
         initialLastName={learner.last_name ?? ''}
         initialEmail={learner.email}
+      />
+
+      <PaymentMethodToggle
+        learnerId={learnerId}
+        initialMethod={currentPaymentMethod}
       />
 
       <section
