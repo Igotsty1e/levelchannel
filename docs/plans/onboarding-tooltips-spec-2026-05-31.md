@@ -267,7 +267,7 @@ Persistence: каждый, требующий dismiss-once, добавляет k
 
 ### §2.1 Schema
 
-- **New table:** `account_onboarding_state` (mig 0099_account_onboarding_state.sql).
+- **New table:** `account_onboarding_state` (mig 0100_account_onboarding_state.sql).
 - **Schema:**
   ```sql
   create table if not exists account_onboarding_state (
@@ -284,7 +284,7 @@ Persistence: каждый, требующий dismiss-once, добавляет k
   - Совместимо с pattern `teacher_account_daily_digests.diagnostics` JSONB
     (mig 0067).
 
-### §2.2 Migration `migrations/0099_account_onboarding_state.sql`
+### §2.2 Migration `migrations/0100_account_onboarding_state.sql`
 
 Минимальный contract:
 - `CREATE TABLE` + PK + default `'{}'::jsonb` для `dismissed_hints`.
@@ -315,8 +315,8 @@ export async function resetOnboardingState(accountId: string): Promise<void>
 — это вызовет ACCESS EXCLUSIVE lock и hang SSR query, который параллельно
 читает `lesson_slots` / `lesson_completions` (см. memory
 `postgres_create_table_locks_during_active_tx.md`). Schema создаётся только
-миграцией `migrations/0099_account_onboarding_state.sql`. Если попадаем на
-старую DB без mig 0099 → graceful 500 / fall-through на default state, не
+миграцией `migrations/0100_account_onboarding_state.sql`. Если попадаем на
+старую DB без mig 0100 → graceful 500 / fall-through на default state, не
 CREATE TABLE.
 
 **Whitelist:** новый файл `lib/onboarding/keys.ts` экспортирует:
@@ -407,7 +407,7 @@ decision; не входит в Sub-PR A scope.
 - **Audit:** INSERT в `auth_audit_events` (НЕ `payment_audit_events` — там
   `invoice_id NOT NULL` + FK на `payment_orders`, не подходит для
   non-payment событий). Расширить existing CHECK constraint новым
-  `event_type = 'auth.onboarding.reset'` через mig 0099 (pattern из
+  `event_type = 'auth.onboarding.reset'` через mig 0100 (pattern из
   mig 0057:47 — drop+re-add). Actor = operator email из env
   `OPERATOR_EMAIL`, target = account_id.
 - **Auth gate:** implicit — SSH-доступ к VPS + `DATABASE_URL` env (pattern из
@@ -489,7 +489,7 @@ A (foundation, no parallel work safe)
 ├── A0.1 pre-req: <DangerZone /> mount on /teacher/profile (separate PR)
 ├── A0.2 pre-req: verify-email role-aware redirect (SHIPPED in PR #458 ✓)
 ├── A0.3 pre-req: /login?invite=<token> redeem (DEFERRED to plan G)
-├── mig 0099_account_onboarding_state.sql
+├── mig 0100_account_onboarding_state.sql
 ├── lib/onboarding/keys.ts (whitelist)
 ├── lib/onboarding/state.ts (helper, NO DDL)
 ├── app/api/onboarding-state/reset/route.ts
