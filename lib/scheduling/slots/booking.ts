@@ -226,11 +226,15 @@ export async function bookSlot(
     }
 
     // Step 4: try package consumption (same code path regardless of method).
+    // PKG-TEACHER-SCOPE (2026-06-01): pass slot.teacherAccountId so a
+    // learner's package from teacher A doesn't get consumed against
+    // teacher B's slot.
     const consume = await consumePackageUnit(client, {
       accountId: learnerAccountId,
       slotId: slot.id,
       durationMinutes: slot.durationMinutes,
       actor,
+      expectedTeacherId: slot.teacherAccountId,
     })
     if (consume.ok) {
       const remaining = await client.query(

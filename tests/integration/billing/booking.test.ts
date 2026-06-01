@@ -114,6 +114,7 @@ async function seedPackage(opts: {
   durationMinutes: number
   count: number
   amountKopecks: number
+  teacherId?: string
 }) {
   return createPackage({
     slug: opts.slug,
@@ -121,30 +122,36 @@ async function seedPackage(opts: {
     durationMinutes: opts.durationMinutes,
     count: opts.count,
     amountKopecks: opts.amountKopecks,
+    teacherId: opts.teacherId,
   })
 }
 
 async function seedPaidOrder(
   accountId: string,
   amountKopecks: number,
+  teacherAccountId?: string,
 ): Promise<string> {
   // Create a fake paid order so package_purchases.payment_order_id FK
-  // resolves. Production path is /checkout/package + webhook, which
-  // PR 2 ships; for PR 1 we just need a paid_orders row to anchor.
+  // resolves. PKG-TEACHER-SCOPE (2026-06-01): teacherAccountId is now
+  // passed explicitly when known. Previously this INSERT relied on the
+  // mig 0094 BEFORE-INSERT trigger fallback to bootstrap; that path
+  // works only if bootstrap was created by a prior call. Now we set
+  // teacher_account_id directly from the test's teacher.
   const invoiceId = freshInvoiceId()
   const amountRub = (amountKopecks / 100).toFixed(2)
   await getDbPool().query(
     `insert into payment_orders
        (invoice_id, amount_rub, currency, description, provider, status,
         created_at, updated_at, paid_at, customer_email, receipt_email,
-        receipt, metadata)
+        receipt, metadata, teacher_account_id)
      values ($1, $2, 'RUB', 'Test package order', 'mock', 'paid',
              now(), now(), now(), 'test@example.com', 'test@example.com',
-             '{}'::jsonb, $3::jsonb)`,
+             '{}'::jsonb, $3::jsonb, $4)`,
     [
       invoiceId,
       amountRub,
       JSON.stringify({ accountId, packageSlug: 'test-pkg' }),
+      teacherAccountId ?? null,
     ],
   )
   return invoiceId
@@ -159,8 +166,9 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
       durationMinutes: 60,
       count: 5,
       amountKopecks: 10000_00,
+      teacherId: teacher.accountId,
     })
-    const orderId = await seedPaidOrder(learner.accountId, 10000_00)
+    const orderId = await seedPaidOrder(learner.accountId, 10000_00, teacher.accountId)
     const pool = getDbPool()
     const client = await pool.connect()
     try {
@@ -201,9 +209,105 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
     expect(purchases[0].countRemaining).toBe(4)
   })
 
+  it('PKG-TEACHER-SCOPE: learner with package from teacher A cannot consume against teacher B slot', async () => {
+    // Closes the prod multi-teacher package leak (T3 paranoia round-1 B2):
+    // before the fix, consumePackageUnit selected by (account_id, duration)
+    // only, so a learner's package from teacher A would silently debit when
+    // they booked a slot from teacher B.
+    //
+    // Setup minimises registrations to stay under the 5/min IP rate limit:
+    // - admin, teacherA, learner go through register/login (3 calls).
+    // - teacherB is seeded directly via SQL with role + subscription so
+    //   the slot can be owned by them without burning rate-limit budget.
+    const { admin, teacher: teacherA, learner } =
+      await setupTeacherAndLearner('pkg-ts-fix')
+    const pool = getDbPool()
+    const teacherBRes = await pool.query<{ id: string }>(
+      `insert into accounts (email, password_hash, email_verified_at)
+       values ($1, 'dummy', now()) returning id`,
+      [`pkg-ts-fix-teacherb-${Date.now()}@example.com`],
+    )
+    const teacherBId = String(teacherBRes.rows[0].id)
+    await pool.query(
+      `insert into account_roles (account_id, role) values ($1, 'teacher')`,
+      [teacherBId],
+    )
+    await pool.query(
+      `insert into teacher_subscriptions (account_id, plan_slug, state)
+       values ($1, 'operator-managed', 'active')
+       on conflict (account_id) do nothing`,
+      [teacherBId],
+    )
+    // Link teacherB ↔ learner so learner can book teacherB slots.
+    await pool.query(
+      `insert into learner_teacher_links (teacher_account_id, learner_account_id)
+       values ($1, $2) on conflict do nothing`,
+      [teacherBId, learner.accountId],
+    )
+    await setPairPaymentMethod(teacherBId, learner.accountId, 'prepaid_packages')
+    // Package from teacher A.
+    const pkgA = await seedPackage({
+      slug: 'pkg-ts-fix-pkga',
+      durationMinutes: 60,
+      count: 5,
+      amountKopecks: 10000_00,
+      teacherId: teacherA.accountId,
+    })
+    const orderId = await seedPaidOrder(
+      learner.accountId,
+      10000_00,
+      teacherA.accountId,
+    )
+    const client = await pool.connect()
+    try {
+      await createPackagePurchase(client, {
+        accountId: learner.accountId,
+        packageId: pkgA.id,
+        paymentOrderId: orderId,
+        amountKopecks: 10000_00,
+        titleSnapshot: pkgA.titleRu,
+        durationMinutes: 60,
+        countInitial: 5,
+        expiresAt: new Date(Date.now() + 180 * 24 * 60 * 60_000),
+      })
+    } finally {
+      client.release()
+    }
+    // Slot owned by teacher B; learner tries to book it.
+    const slotId = await makeOpenSlot(
+      admin.cookie,
+      teacherBId,
+      futureSlotIso(60 * 24 * 3),
+      60,
+    )
+    const r = await bookHandler(
+      buildRequest(
+        `/api/slots/${slotId}/book?teacher=${encodeURIComponent(teacherBId)}`,
+        { cookie: learner.cookie, body: {} },
+      ),
+      { params: Promise.resolve({ id: slotId }) },
+    )
+    // Without the fix: consume silently debits teacher A's package against
+    // teacher B's slot, booking returns 200, purchase.countRemaining=4.
+    // With the fix: consume returns no_eligible (teacher mismatch), booking
+    // falls through to package_required.
+    expect(r.status).toBe(402)
+    const body = await r.json()
+    expect(body.error).toBe('package_required')
+    const purchases = await listAccountActivePackages(learner.accountId)
+    expect(purchases.length).toBe(1)
+    expect(purchases[0].countRemaining).toBe(5)
+  })
+
   it('learner with payment_method=prepaid_packages, no package → 402 package_required', async () => {
     const { admin, teacher, learner } = await setupTeacherAndLearner('pr1-no-pkg')
     await setPairPaymentMethod(teacher.accountId, learner.accountId, 'prepaid_packages')
+    // No teacherId here on purpose — `listActivePackagesByDuration` (which
+    // populates the 402 `availablePackages` hint) filters to teachers with
+    // `operator-managed` subscriptions; the per-test teacher doesn't have
+    // one, the bootstrap does. Falling back to bootstrap keeps the hint
+    // populated. This test doesn't exercise the consume teacher-scope
+    // check (it's about the no-package path).
     await seedPackage({
       slug: 'pr1-matching-60',
       durationMinutes: 60,
@@ -374,8 +478,9 @@ describe('PR 1 — restorePackageConsumption (idempotent + race-safe)', () => {
       durationMinutes: 60,
       count: 2,
       amountKopecks: 10000_00,
+      teacherId: teacher.accountId,
     })
-    const orderId = await seedPaidOrder(learner.accountId, 10000_00)
+    const orderId = await seedPaidOrder(learner.accountId, 10000_00, teacher.accountId)
     const pool = getDbPool()
     const client = await pool.connect()
     let purchaseId: string
