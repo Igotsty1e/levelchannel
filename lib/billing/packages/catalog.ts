@@ -21,11 +21,16 @@ export type LessonPackage = {
   // added the column nullable; mig 0076b in Day 4 flipped NOT NULL).
   // String at the TS layer; UUID at the DB layer.
   teacherId: string
+  // T3 (mig 0102): per-learner ACL discriminator.
+  visibility: 'catalog' | 'private'
+  // T3 (mig 0102): soft-delete tombstone.
+  deletedAt: string | null
 }
 
 const PACKAGE_COLS =
   'id, slug, title_ru, description_ru, duration_minutes, count, amount_kopecks, ' +
-  'currency, is_active, display_order, created_at, updated_at, teacher_id'
+  'currency, is_active, display_order, created_at, updated_at, teacher_id, ' +
+  'visibility, deleted_at'
 
 function rowToPackage(row: Record<string, unknown>): LessonPackage {
   return {
@@ -42,6 +47,11 @@ function rowToPackage(row: Record<string, unknown>): LessonPackage {
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
     teacherId: String(row.teacher_id),
+    visibility: row.visibility === 'private' ? 'private' : 'catalog',
+    deletedAt:
+      row.deleted_at === null || row.deleted_at === undefined
+        ? null
+        : new Date(String(row.deleted_at)).toISOString(),
   }
 }
 
@@ -55,16 +65,41 @@ function rowToPackage(row: Record<string, unknown>): LessonPackage {
 // 'operator-managed' and state = 'active'` rows. The bootstrap
 // teacher is plan-4 (mig 0083), so legacy single-tenant catalogs are
 // unaffected.
-export async function listActivePackages(): Promise<LessonPackage[]> {
+/**
+ * T3 Sub-PR E (2026-06-02): per-viewer visibility filter.
+ * - `viewerAccountId === null` / undefined → only `visibility='catalog'`
+ *   packages (anonymous viewer, e.g. public catalog or pre-auth surfaces).
+ * - `viewerAccountId` set → catalog packages PLUS private packages where
+ *   the viewer has an active `learner_package_access` row.
+ * Also adds `deleted_at IS NULL` symmetrically with the tariff side.
+ */
+export async function listActivePackages(
+  viewerAccountId?: string | null,
+): Promise<LessonPackage[]> {
   const pool = getDbPool()
   const result = await pool.query(
     `select ${PACKAGE_COLS.split(',').map((c) => `lp.${c.trim()}`).join(', ')}
        from lesson_packages lp
        join teacher_subscriptions ts on ts.account_id = lp.teacher_id
       where lp.is_active = true
+        and lp.deleted_at is null
         and ts.plan_slug = 'operator-managed'
         and ts.state = 'active'
+        and (
+          lp.visibility = 'catalog'
+          or (
+            lp.visibility = 'private'
+            and $1::uuid is not null
+            and exists (
+              select 1 from learner_package_access lpa
+               where lpa.package_id = lp.id
+                 and lpa.learner_account_id = $1::uuid
+                 and lpa.revoked_at is null
+            )
+          )
+        )
       order by lp.display_order asc, lp.id asc`,
+    [viewerAccountId ?? null],
   )
   return result.rows.map((r) => rowToPackage(r as Record<string, unknown>))
 }

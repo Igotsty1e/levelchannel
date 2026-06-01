@@ -52,8 +52,12 @@ export default async function CabinetPackagesPage() {
   const canBuy = await isLearnerArchetypeCandidate(account.id)
   if (!canBuy) redirect('/cabinet')
 
+  // T3 Sub-PR E (2026-06-02) — learner-side visibility filter.
+  // Pass viewer's account id so private packages where this learner
+  // has an active `learner_package_access` row are included; private
+  // packages without an active grant are hidden.
   const [catalog, owned] = await Promise.all([
-    listActivePackages(),
+    listActivePackages(account.id),
     listAccountActivePackages(account.id),
   ])
 
