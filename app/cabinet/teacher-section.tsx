@@ -1,8 +1,7 @@
 import Link from 'next/link'
 
 import type { LessonSlot } from '@/lib/scheduling/slots'
-
-const TZ_DEFAULT = 'Europe/Moscow'
+import { TZ_DEFAULT, safeTz } from '@/lib/util/tz'
 
 type Props = {
   initialSlots: LessonSlot[]
@@ -18,16 +17,8 @@ type Props = {
 // populate the schedule.
 
 function fmt(iso: string, tz: string): string {
-  const candidate = tz
-  let safeTz = TZ_DEFAULT
-  try {
-    new Intl.DateTimeFormat('ru-RU', { timeZone: candidate })
-    safeTz = candidate
-  } catch {
-    safeTz = TZ_DEFAULT
-  }
   return new Date(iso).toLocaleString('ru-RU', {
-    timeZone: safeTz,
+    timeZone: safeTz(tz),
     weekday: 'short',
     day: '2-digit',
     month: 'short',

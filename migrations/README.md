@@ -41,6 +41,20 @@ Run it once on each environment (local dev, staging, prod) to bring the
 bookkeeping in sync. After that, every new schema change ships as a new
 file in this directory and is rolled out via the same command.
 
+## Skipped numbers (intentionally)
+
+The numbering jumps over `0059`, `0076b`, `0078`, `0079`, `0080`, `0084`,
+`0086`, `0087`. These slots were reserved during plan-doc design and the
+work either landed under a different number (e.g. `0076b` → real file
+`0089_lesson_packages_unique_flip_and_not_null.sql`) or was dropped before
+the migration was authored. The runner is happy with the gaps —
+lexicographic order still works. New migrations pick the next free slot
+after the highest existing number; do NOT backfill old gaps.
+
+If you spot stale references to a skipped number in source comments (e.g.
+«flipped by mig 0076b»), file them as comment-hygiene issues — they don't
+affect runtime.
+
 ## Out of scope (intentionally)
 
 - `down` / rollback migrations. Schema changes are additive; reverting a
