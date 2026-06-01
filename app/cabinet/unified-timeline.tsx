@@ -14,17 +14,7 @@
 
 import { listSlotsForLearner } from '@/lib/scheduling/slots'
 
-const TZ_DEFAULT = 'Europe/Moscow'
-
-function safeTz(tz: string | null): string {
-  const candidate = tz ?? TZ_DEFAULT
-  try {
-    new Intl.DateTimeFormat('ru-RU', { timeZone: candidate })
-    return candidate
-  } catch {
-    return TZ_DEFAULT
-  }
-}
+import { TZ_DEFAULT, safeTz } from '@/lib/util/tz'
 
 function fmtSlot(iso: string, tz: string): string {
   return new Date(iso).toLocaleString('ru-RU', {
