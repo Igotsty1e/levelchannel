@@ -5,7 +5,7 @@ import { notFound } from 'next/navigation'
 import Script from 'next/script'
 
 import { BrandMark } from '@/components/brand/brand-mark'
-import { SESSION_COOKIE_NAME } from '@/lib/auth/sessions'
+import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { listAllTariffs } from '@/lib/pricing/tariffs'
 import { getSlotById } from '@/lib/scheduling/slots'
 
@@ -69,6 +69,32 @@ export default async function CheckoutPage({
     (t) => t.slug === tariffSlug && t.isActive,
   )
   if (!tariff) notFound()
+
+  // T3 Sub-PR C (2026-06-02) — anonymous endpoint visibility gate.
+  // Private tariffs (mig 0102 §a) must NOT enumerate to viewers who
+  // are not in the learner_tariff_access junction. Anonymous viewers
+  // see 404 — same shape as a missing/archived tariff (no enumeration
+  // of the private-tariff space). Authenticated viewers with no
+  // active access row also see 404 so a learner can't probe other
+  // teachers' private tariff slugs.
+  if (tariff.visibility === 'private') {
+    const cookieStore = await cookies()
+    const cookieValue = cookieStore.get(SESSION_COOKIE_NAME)?.value ?? null
+    const session = cookieValue ? await lookupSession(cookieValue) : null
+    const viewerId = session?.account.id ?? null
+    if (!viewerId) notFound()
+    const { getDbPool } = await import('@/lib/db/pool')
+    const access = await getDbPool().query<{ exists: boolean }>(
+      `select exists (
+         select 1 from learner_tariff_access
+          where tariff_id = $1
+            and learner_account_id = $2
+            and revoked_at is null
+       ) as exists`,
+      [tariff.id, viewerId],
+    )
+    if (!access.rows[0]?.exists) notFound()
+  }
 
   // Optional slot binding. Validates the slot exists; we DON'T assert
   // ownership here on the server because the cabinet-bound flow

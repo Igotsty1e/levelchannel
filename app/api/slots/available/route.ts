@@ -119,10 +119,17 @@ export async function GET(request: Request) {
     teacherFilter = teacherFromQuery
   }
 
+  // T3 Sub-PR C (2026-06-02) — anonymous endpoint filter: private-
+  // tariff slots are excluded from anonymous responses; authenticated
+  // learners see them only if they have an active learner_tariff_access
+  // row. Catalog tariffs (the default for every pre-T3 tariff) are
+  // visible to everyone. Behavior-preserving for the public marketing
+  // surface; closes the leak surfaced by T3 paranoia round-1 BLOCKER#3.
   const slots = await listOpenFutureSlots({
     teacherAccountId: teacherFilter,
     fromIso: from ?? undefined,
     toIso: to ?? undefined,
+    viewerAccountId: session?.account.id ?? null,
   })
 
   // Both anonymous and authenticated learners receive the public DTO.
