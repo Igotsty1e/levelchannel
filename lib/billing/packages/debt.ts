@@ -43,10 +43,13 @@ export async function listAccountPostpaidDebt(
   // billable-event record. INNER JOIN over lesson_completions filters
   // to "actually billable" rows; we still surface s.status for the UI
   // (cabinet shows "проведено" vs "не пришёл" label).
+  // T3 Sub-PR B: expected_amount_kopecks reads the booking-time snapshot
+  // (mig 0102 §d). Falls back to live tariff for pre-mig legacy rows
+  // whose backfill might be missing.
   const result = await pool.query(
     `select s.id, s.start_at, s.duration_minutes, s.status, s.tariff_id,
             t.slug as tariff_slug,
-            t.amount_kopecks as expected_amount_kopecks,
+            coalesce(s.snapshot_amount_kopecks, t.amount_kopecks) as expected_amount_kopecks,
             s.legacy_grandfathered
        from lesson_slots s
        join lesson_completions lc on lc.slot_id = s.id
@@ -136,11 +139,12 @@ export async function listAccountsWithPostpaidDebtAggregate(opts?: {
     // lesson_completions, not lesson_slots.status. Same JOIN as the
     // per-account query above. Mirrors the predicate so the per-account
     // and aggregate views stay consistent.
+    // T3 Sub-PR B: snapshot-aware expected amount.
     `with debt_slots as (
        select s.learner_account_id,
               s.id as slot_id,
               s.start_at,
-              t.amount_kopecks as expected_amount_kopecks
+              coalesce(s.snapshot_amount_kopecks, t.amount_kopecks) as expected_amount_kopecks
          from lesson_slots s
          join lesson_completions lc on lc.slot_id = s.id
          left join pricing_tariffs t
