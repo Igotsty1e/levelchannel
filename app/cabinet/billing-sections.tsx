@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
+import { TZ_DEFAULT } from '@/lib/util/tz'
+
 // Billing wave PR 3 — cabinet sections for prepaid packages and
 // postpaid debt. Two parallel containers, no merged ledger.
 //
@@ -37,8 +39,6 @@ type PostpaidDebt = {
   expectedAmountKopecks: number | null
   legacyGrandfathered: boolean
 }
-
-const TZ_DEFAULT = 'Europe/Moscow'
 
 function safeFmtTime(iso: string, tz: string): string {
   try {

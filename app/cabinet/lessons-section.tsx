@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 import type { LessonSlot } from '@/lib/scheduling/slots'
+import { safeTz } from '@/lib/util/tz'
 
 // Wave 18 — billing-preview banner inside BookConfirmModal needs to
 // know which packages this learner has and whether they're allowed
@@ -56,8 +57,6 @@ type Props = {
   // #3 closure in docs/plans/policy-knobs.md.
   cancelWindowHours: number
 }
-
-const TZ_DEFAULT = 'Europe/Moscow'
 
 function fmt(slotIso: string, tz: string): string {
   return new Date(slotIso).toLocaleString('ru-RU', {
@@ -126,15 +125,7 @@ export function LessonsSection({
   // Defensive: if a pre-whitelist profile carries a bad value, fall
   // back to Europe/Moscow rather than crash the cabinet on the first
   // Date.toLocaleString call.
-  const tz = (() => {
-    const candidate = learnerTimezone ?? TZ_DEFAULT
-    try {
-      new Intl.DateTimeFormat('ru-RU', { timeZone: candidate })
-      return candidate
-    } catch {
-      return TZ_DEFAULT
-    }
-  })()
+  const tz = safeTz(learnerTimezone)
   const [mine, setMine] = useState<LessonSlot[]>(initialMine)
   const [available, setAvailable] = useState<LessonSlot[]>(initialAvailable)
   const paidSet = new Set(initialPaidSlotIds)

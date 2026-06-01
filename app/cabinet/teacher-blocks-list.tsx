@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
+import { TZ_DEFAULT, safeTz } from '@/lib/util/tz'
+
 // SAAS-PIVOT Epic 7 Day 7 — per-teacher block list on /cabinet for
 // multi-teacher learners. One card per active link, with:
 //   - teacher name + soft-divider
@@ -36,18 +38,6 @@ type TeacherBlock = {
 type Props = {
   blocks: TeacherBlock[]
   learnerTimezone: string | null
-}
-
-const TZ_DEFAULT = 'Europe/Moscow'
-
-function safeTz(tz: string | null): string {
-  const candidate = tz ?? TZ_DEFAULT
-  try {
-    new Intl.DateTimeFormat('ru-RU', { timeZone: candidate })
-    return candidate
-  } catch {
-    return TZ_DEFAULT
-  }
 }
 
 function fmtSlot(iso: string, tz: string): string {
