@@ -43,6 +43,12 @@ export async function consumePackageUnit(
     slotId: string
     durationMinutes: number
     actor: ConsumePackageActor
+    /** PKG-TEACHER-SCOPE (2026-06-01) — slot's teacher_account_id.
+     * Required so a learner with packages from teachers A AND B
+     * cannot consume A's package against B's slot. Without this
+     * predicate the FIFO scan returned A's purchase when B's slot
+     * was being booked — silent cross-teacher debit. */
+    expectedTeacherId: string
   },
 ): Promise<ConsumePackageResult> {
   // Find the earliest-expiring package with capacity. Lock the row
@@ -53,6 +59,7 @@ export async function consumePackageUnit(
        from package_purchases pp
       where pp.account_id = $1
         and pp.duration_minutes = $2
+        and pp.teacher_id = $3
         and pp.expires_at > now()
         -- Refund Phase 7 follow-up. A voided purchase (refunded) MUST
         -- NOT be re-consumed. Migration 0038 adds the column; nullable
@@ -66,7 +73,7 @@ export async function consumePackageUnit(
       order by pp.expires_at asc, pp.id
       limit 1
       for update`,
-    [args.accountId, args.durationMinutes],
+    [args.accountId, args.durationMinutes, args.expectedTeacherId],
   )
   if (eligible.rows.length === 0) {
     return { ok: false, reason: 'no_eligible_package' }

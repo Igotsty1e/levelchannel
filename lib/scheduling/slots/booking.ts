@@ -226,11 +226,15 @@ export async function bookSlot(
     }
 
     // Step 4: try package consumption (same code path regardless of method).
+    // PKG-TEACHER-SCOPE (2026-06-01): pass slot.teacherAccountId so a
+    // learner's package from teacher A doesn't get consumed against
+    // teacher B's slot.
     const consume = await consumePackageUnit(client, {
       accountId: learnerAccountId,
       slotId: slot.id,
       durationMinutes: slot.durationMinutes,
       actor,
+      expectedTeacherId: slot.teacherAccountId,
     })
     if (consume.ok) {
       const remaining = await client.query(
@@ -257,10 +261,12 @@ export async function bookSlot(
     }
 
     // Step 5: pending-package gate. Refuse postpaid fallback if the learner
-    // has a recent pending package order matching this slot's duration.
+    // has a recent pending package order matching this slot's
+    // (duration, teacher) pair. PKG-TEACHER-SCOPE: per-pair gate.
     const hasPending = await accountHasPendingPackageGrantForDuration(
       learnerAccountId,
       slot.durationMinutes,
+      slot.teacherAccountId,
     )
     if (hasPending) {
       await client.query('rollback')

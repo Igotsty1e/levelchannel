@@ -180,9 +180,16 @@ export async function listPackagePurchasesByIds(
 // Helper: does this account have a PENDING package order matching
 // the given duration in the last 15 minutes? Used by the booking
 // flow's pending-package gate (Codex round 2 HIGH 2).
+//
+// PKG-TEACHER-SCOPE (2026-06-01): teacherId is now passed by callers
+// so a pending 60-min package order from teacher A doesn't falsely
+// block a checkout/booking related to teacher B's 60-min package.
+// The mig 0094 NOT NULL teacher_account_id column gives us a direct
+// predicate. Optional for backward compat.
 export async function accountHasPendingPackageGrantForDuration(
   accountId: string,
   durationMinutes: number,
+  teacherId?: string,
 ): Promise<boolean> {
   const pool = getDbPool()
   const result = await pool.query(
@@ -191,10 +198,11 @@ export async function accountHasPendingPackageGrantForDuration(
       where metadata->>'accountId' = $1::text
         and metadata->>'packageSlug' is not null
         and metadata->>'packageDurationMinutes' = $2::text
+        and ($3::uuid is null or teacher_account_id = $3::uuid)
         and status in ('pending', '3ds_required')
         and created_at > now() - interval '15 minutes'
       limit 1`,
-    [accountId, durationMinutes],
+    [accountId, durationMinutes, teacherId ?? null],
   )
   return result.rows.length > 0
 }
