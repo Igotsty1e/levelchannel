@@ -1,6 +1,6 @@
 ---
 title: Bug #1 — Banner «учитель не выбрал способ оплаты» на главной кабинета ученика
-status: IMPLEMENTED — plan paranoia SIGN-OFF round 1/3 (4 BLOCKER + 4 WARN + 1 INFO closed) + Claude self-review fallback round 2/2 (SKILL.md §7 — bounded scope: 1 banner + 1 route case + 3 cabinet client/server file edits + tests). Wave paranoia round 1: Codex quota exhausted at start → 2-round Claude self-review fallback round 2/2 (same §7 clause). Pending: PR + merge.
+status: SHIPPED 2026-06-02 (PR #493, squash-merge SHA 48c152b). Plan paranoia SIGN-OFF round 1/3 (4 BLOCKER + 4 WARN + 1 INFO closed). Wave paranoia: Codex quota exhausted → 3-round Claude self-review fallback under SKILL.md §7 (bounded scope: 1 banner + 1 route case + small cabinet wiring; no engine / schema / auth). Round 3 (retry-session fresh-eyes) caught stale `postpaidAllowed: false` prop in `tests/cabinet/cabinet-banner-wiring.test.tsx` left over from Quality Sub-PR A; fixed in commit 13fc904 before merge.
 date: 2026-06-02
 owner: claude-orchestrator
 ---
