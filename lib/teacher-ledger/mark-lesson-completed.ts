@@ -39,6 +39,7 @@ export type LessonCompletionEligibilityReason =
   | 'wrong_teacher'
   | 'not_booked'
   | 'not_yet_ended'
+  | 'missing_snapshot'
 
 export class LessonCompletionEligibilityError extends Error {
   public readonly reason: LessonCompletionEligibilityReason
@@ -57,15 +58,17 @@ export async function markLessonCompleted(
   params: MarkLessonCompletedParams,
 ): Promise<MarkLessonCompletedResult> {
   // Step 1: FOR UPDATE row lock on lesson_slots. Anti-race vs cancel
-  // /move / a concurrent mark for the same slot. The tariff_id JOIN
-  // is read in the same statement so the eligibility gate + amount
-  // snapshot evaluate atomically against the locked row.
-  // T3 Sub-PR B (2026-06-01) — settlement amount comes from
-  // s.snapshot_amount_kopecks (frozen at booking time, mig 0102 §d),
-  // NOT live pricing_tariffs.amount_kopecks. Falls back to the live
-  // tariff price ONLY for legacy slots that pre-date mig 0102 backfill
-  // (which itself only filled status ∈ {booked, completed, cancelled,
-  // no_show_*} — open slots get snapshot via the BEFORE trigger).
+  // /move / a concurrent mark for the same slot. Settlement amount
+  // comes from s.snapshot_amount_kopecks (frozen at booking time, mig
+  // 0102 §d).
+  //
+  // The BEFORE trigger only fills snapshot_amount_kopecks when
+  // tariff_id IS NOT NULL (mig 0102 §d). Admin-created slots without
+  // a tariff (free demos, ad-hoc lessons) are legitimate and settle
+  // with amount=0. The contract bug we DO catch: tariff_id is set
+  // but snapshot is NULL — that means the trigger or backfill missed
+  // a row, which should surface loudly instead of silently using
+  // live tariff price.
   const slotResult = await client.query(
     `select s.id,
             s.teacher_account_id,
@@ -73,10 +76,8 @@ export async function markLessonCompleted(
             s.start_at,
             s.duration_minutes,
             s.tariff_id,
-            s.snapshot_amount_kopecks,
-            t.amount_kopecks as tariff_amount_kopecks
+            s.snapshot_amount_kopecks
        from lesson_slots s
-       left join pricing_tariffs t on t.id = s.tariff_id
       where s.id = $1
       for update of s`,
     [params.slotId],
@@ -123,22 +124,16 @@ export async function markLessonCompleted(
     throw new LessonCompletionEligibilityError('not_yet_ended', params.slotId)
   }
 
-  // T3 Sub-PR B: read the snapshot first (frozen at booking time).
-  // The trigger guarantees NOT NULL for any row that ever entered the
-  // booked state, so for an eligible 'booked' slot this is always set.
-  //
-  // R1-WARN#3: the COALESCE fallback to live tariff is a TEMPORARY
-  // legacy crutch — plan §"Downstream paths" says settlement reads
-  // should treat NULL as a bug signal once the backfill has fully
-  // landed in prod. TODO follow-up after one prod wave of observation:
-  // drop the COALESCE, raise on NULL, and let any unexpected NULL
-  // surface as a hard error instead of silently using live tariff.
+  if (slot.snapshot_amount_kopecks == null && slot.tariff_id != null) {
+    // Tariff is set but snapshot missing — contract bug (trigger or
+    // backfill missed a row). Raise instead of silently using live
+    // tariff price.
+    throw new LessonCompletionEligibilityError('missing_snapshot', params.slotId)
+  }
   const amountKopecks =
     slot.snapshot_amount_kopecks != null
       ? Number(slot.snapshot_amount_kopecks)
-      : slot.tariff_amount_kopecks != null
-        ? Number(slot.tariff_amount_kopecks)
-        : 0
+      : 0
   const completedAt = new Date(endMs).toISOString()
 
   // Step 3: INSERT ... ON CONFLICT (slot_id) DO NOTHING RETURNING id.
