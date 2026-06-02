@@ -87,6 +87,20 @@ export async function POST(request: Request, { params }: RouteParams) {
       { status: 400, headers: NO_STORE },
     )
   }
+  // 2026-06-02 — markLessonCompleted now surfaces a hard error when
+  // a tariffed slot has NULL snapshot_amount_kopecks (trigger / backfill
+  // contract bug). Operator-facing message: ask them to escalate to
+  // engineering — this is not a user-actionable failure.
+  if (result.reason === 'missing_snapshot') {
+    return NextResponse.json(
+      {
+        error: 'missing_snapshot',
+        message:
+          'Не удалось отметить слот: у него выставлен тариф, но снимок цены пуст. Сообщите разработке (slot id в логах).',
+      },
+      { status: 500, headers: NO_STORE },
+    )
+  }
   // not_yet_started
   return NextResponse.json(
     {

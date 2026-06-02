@@ -41,6 +41,7 @@ export async function markSlotLifecycle(
         | 'not_booked'
         | 'not_yet_started'
         | 'wrong_teacher'
+        | 'missing_snapshot'
     }
 > {
   if (!UUID_PATTERN.test(slotId)) return { ok: false, reason: 'not_found' }
@@ -104,6 +105,9 @@ export async function markSlotLifecycle(
         if (e.reason === 'wrong_teacher') return { ok: false, reason: 'wrong_teacher' }
         if (e.reason === 'not_booked') return { ok: false, reason: 'not_booked' }
         if (e.reason === 'not_yet_ended') return { ok: false, reason: 'not_yet_started' }
+        if (e.reason === 'missing_snapshot') {
+          return { ok: false, reason: 'missing_snapshot' }
+        }
       }
       throw e
     }

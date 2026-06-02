@@ -422,6 +422,132 @@ describe('SAAS-PIVOT Day 5A — lesson_completions schema + triggers', () => {
     expect(Number(count.rows[0].c)).toBe(1)
   })
 
+  // 2026-06-02 — replace the legacy COALESCE → tariff_amount fallback
+  // in markLessonCompleted with a narrower contract:
+  // - Tariff is set but snapshot is NULL → contract bug (trigger or
+  //   backfill missed a row). Raise missing_snapshot eligibility error.
+  // - No tariff at all (admin-created free/demo slots) → legitimate;
+  //   settle with amount=0.
+  it('markLessonCompleted: tariff set + NULL snapshot → missing_snapshot eligibility error', async () => {
+    const teacherId = await freshAccount('5a-teacher-nullsnap')
+    const learnerId = await freshAccount('5a-learner-nullsnap')
+    const slotId = await freshPastBookedSlot(teacherId, learnerId)
+
+    const pool = getDbPool()
+    // Force the contract violation on a pinned client so that SET
+    // session_replication_role='replica', the UPDATE that wipes the
+    // snapshot, and the reset all land on the SAME backend session.
+    // (R1-BLOCKER#2 closure — using pool.query for these would route
+    // the three statements through different connections, silently
+    // letting the trigger run and leaving 'replica' set on a random
+    // pool worker for later tests.)
+    const setupClient = await pool.connect()
+    try {
+      await setupClient.query("set session session_replication_role = 'replica'")
+      await setupClient.query(
+        `update lesson_slots set snapshot_amount_kopecks = NULL where id = $1`,
+        [slotId],
+      )
+      await setupClient.query("set session session_replication_role = 'origin'")
+    } finally {
+      setupClient.release()
+    }
+
+    const client = await pool.connect()
+    try {
+      await client.query('begin')
+      let caught: LessonCompletionEligibilityError | null = null
+      try {
+        await markLessonCompleted(client, {
+          slotId,
+          teacherId,
+          wasNoShow: false,
+          markedByAccountId: teacherId,
+        })
+      } catch (e) {
+        caught =
+          e instanceof LessonCompletionEligibilityError ? e : null
+        if (!caught) throw e
+      }
+      expect(caught).not.toBeNull()
+      expect(caught!.reason).toBe('missing_snapshot')
+      await client.query('rollback')
+    } finally {
+      client.release()
+    }
+  })
+
+  it('markLessonCompleted: no tariff (admin free-lesson) → settles with amount=0', async () => {
+    const teacherId = await freshAccount('5a-teacher-notariff')
+    const learnerId = await freshAccount('5a-learner-notariff')
+    const pool = getDbPool()
+    // Insert a past, booked slot with NO tariff_id (admin-create
+    // shape — no tariff means snapshot stays NULL via the BEFORE
+    // trigger's IS NULL short-circuit). Backdate so end_at <= now().
+    const futureMs = Date.now() + 60 * 60_000 * (1 + Math.floor(Math.random() * 1000))
+    const slotMsk = new Date(
+      Date.UTC(
+        new Date(futureMs).getUTCFullYear(),
+        new Date(futureMs).getUTCMonth(),
+        new Date(futureMs).getUTCDate() + 7,
+        3 + Math.floor(Math.random() * 16),
+        Math.random() < 0.5 ? 0 : 30,
+        0,
+        0,
+      ),
+    )
+    const inserted = await pool.query<{ id: string }>(
+      `insert into lesson_slots
+         (teacher_account_id, start_at, duration_minutes, status,
+          learner_account_id, booked_at, tariff_id)
+       values ($1, $2, 60, 'booked', $3, now(), NULL)
+       returning id`,
+      [teacherId, slotMsk.toISOString(), learnerId],
+    )
+    const slotId = inserted.rows[0].id
+    // Backdate into past business band (06-21 MSK).
+    const daysBack = 1 + Math.floor(Math.random() * 60)
+    const hourMsk = 6 + Math.floor(Math.random() * 15)
+    const minute = Math.random() < 0.5 ? 0 : 30
+    const anchor = new Date()
+    anchor.setUTCDate(anchor.getUTCDate() - daysBack)
+    const pastUtc = new Date(
+      Date.UTC(
+        anchor.getUTCFullYear(),
+        anchor.getUTCMonth(),
+        anchor.getUTCDate(),
+        hourMsk - 3,
+        minute,
+        0,
+        0,
+      ),
+    )
+    await pool.query(
+      `update lesson_slots set start_at = $2, duration_minutes = 60 where id = $1`,
+      [slotId, pastUtc.toISOString()],
+    )
+
+    const client = await pool.connect()
+    try {
+      await client.query('begin')
+      const result = await markLessonCompleted(client, {
+        slotId,
+        teacherId,
+        wasNoShow: false,
+        markedByAccountId: teacherId,
+      })
+      expect(result.created).toBe(true)
+      const completion = await client.query<{ amount_kopecks: string }>(
+        `select amount_kopecks from lesson_completions where id = $1`,
+        [result.completionId],
+      )
+      expect(Number(completion.rows[0].amount_kopecks)).toBe(0)
+      await client.query('rollback')
+    } finally {
+      client.release()
+    }
+  })
+
   it('cancelSlot on status=completed → throws CancelAfterCompletionError', async () => {
     const teacherId = await freshAccount('5a-teacher-cxcompl')
     const learnerId = await freshAccount('5a-learner-cxcompl')
