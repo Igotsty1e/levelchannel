@@ -3,21 +3,56 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { AuthShell } from '@/components/auth-shell'
+import { resolveOperatorSettingsForProbe } from '@/lib/admin/operator-settings'
 import { listAccountRoles } from '@/lib/auth/accounts'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getActiveTeacherForLearner } from '@/lib/auth/teacher-scope'
-import { getDbPool } from '@/lib/db/pool'
+import {
+  derivePullStatus,
+  derivePushStatus,
+  type PullStatus,
+  type PushStatus,
+} from '@/lib/calendar/derive-status'
+import { getGoogleIntegrationMeta } from '@/lib/calendar/integrations'
 
-// BCS-C.5 — learner read-only "your teacher uses Google Calendar"
-// landing. Today the page only tells the learner whether their
-// assigned teacher has an active integration. Future BCS-DEF-4
-// (lesson reminders) will add per-user notification toggles here.
+// Plan: docs/plans/cabinet-stale-future-labels.md §A.
+// Learner-side state-aware view of teacher's Google Calendar
+// integration. Renders different copy per (pullStatus × pushStatus)
+// to avoid lying about what actually works.
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export const metadata = {
   title: 'Календарь — настройки — LevelChannel',
+}
+
+function pullCopy(status: PullStatus): string {
+  switch (status) {
+    case 'no_integration':
+      return 'Учитель пока не подключал Google Calendar. Время в расписании показывается как есть, без проверки занятости в чужом календаре.'
+    case 'disconnected':
+      return 'Учитель отключил Google Calendar. Время в расписании показывается как есть.'
+    case 'active_fresh':
+      return 'Когда учитель занят в Google Calendar другим делом, эти занятия автоматически исчезают из расписания — вы не сможете записаться на занятое время. ✓ Работает сейчас.'
+    case 'active_stale':
+      return 'Учитель подключил Google Calendar, но синхронизация сейчас отстаёт. Пока синхронизация не восстановится, занятое в Google время может не скрываться автоматически.'
+    case 'degraded':
+      return 'Учитель подключил Google Calendar, но Google сейчас отвечает с ошибками. Пока ошибки не пройдут, занятое в Google время может не скрываться автоматически.'
+  }
+}
+
+function pushCopy(status: PushStatus): string {
+  switch (status) {
+    case 'works':
+      return 'Когда вы записываетесь, бронь сразу появляется у учителя в Google Calendar.'
+    case 'no_write_calendar':
+      return 'Бронь у учителя в Google Calendar не появится: учитель пока не выбрал, в какой календарь писать.'
+    case 'disconnected':
+      return 'Бронь у учителя в Google Calendar не появится: учитель отключил интеграцию.'
+    case 'no_integration':
+      return 'Бронь у учителя в Google Calendar не появится: учитель пока не подключал Google Calendar.'
+  }
 }
 
 export default async function LearnerCalendarSettingsPage() {
@@ -27,35 +62,26 @@ export default async function LearnerCalendarSettingsPage() {
   const session = await lookupSession(cookieValue)
   if (!session) redirect('/login')
 
-  // Codex C.ui review: mirror the cabinet/page.tsx auth matrix. Admin →
-  // /admin (no learner workflow there). Teacher-only → /teacher. Learner
-  // (incl. legacy "no role" archetype) sees this page. Hybrid
-  // teacher+learner keeps learner access.
   const roles = await listAccountRoles(session.account.id)
   if (roles.includes('admin')) redirect('/admin')
   if (roles.includes('teacher') && !roles.includes('student')) {
     redirect('/teacher')
   }
 
-  // SAAS-PIVOT Day 2 (2026-05-22) — n:m teacher context (plan §2.5).
-  // For multi-link learners, this read-only "your teacher uses Google
-  // Calendar" landing currently shows the FIRST teacher's sync state
-  // (back-compat semantics). A future polish (Epic 7) can render
-  // per-teacher cards; for v0 the single-teacher shape is preserved.
   const resolved = await getActiveTeacherForLearner(session.account.id)
   const teacherId = resolved.teacherId ?? session.account.assignedTeacherId
-  let teacherSyncState: string | null = null
-  if (teacherId) {
-    const pool = getDbPool()
-    const r = await pool.query(
-      'select sync_state from teacher_calendar_integrations where account_id = $1',
-      [teacherId],
-    )
-    teacherSyncState = r.rows[0]?.sync_state ?? null
-  }
 
-  const isTeacherConnected =
-    teacherSyncState === 'active' || teacherSyncState === 'degraded'
+  const integration = teacherId
+    ? await getGoogleIntegrationMeta(teacherId)
+    : null
+  const pullStatus = derivePullStatus(integration)
+  const pushStatus = derivePushStatus(integration)
+
+  const operatorSettings = await resolveOperatorSettingsForProbe(
+    'learner-reminders',
+  )
+  const operatorMasterSwitchOn =
+    operatorSettings.LEARNER_REMINDERS_EMAIL_ENABLED?.value === 1
 
   return (
     <AuthShell>
@@ -92,29 +118,17 @@ export default async function LearnerCalendarSettingsPage() {
             Учитель пока не назначен. После того как оператор привяжет
             вас, здесь появится информация о его расписании.
           </p>
-        ) : isTeacherConnected ? (
+        ) : (
           <>
-            <p
-              role="status"
-              style={{
-                padding: '12px 16px',
-                background: 'rgba(155,223,155,0.15)',
-                color: '#9bdf9b',
-                borderRadius: 8,
-                margin: '0 0 16px 0',
-                fontSize: 14,
-              }}
-            >
-              ✓ Ваш учитель подключил Google Calendar к LevelChannel.
-            </p>
             <h2
               style={{
                 fontSize: 16,
                 fontWeight: 600,
-                margin: '24px 0 8px 0',
+                margin: '8px 0',
               }}
+              data-testid="calendar-section-heading"
             >
-              Что это значит (по мере включения)
+              Как сейчас работает синхронизация
             </h2>
             <ul
               style={{
@@ -125,44 +139,14 @@ export default async function LearnerCalendarSettingsPage() {
                 margin: 0,
               }}
             >
-              <li>
-                Когда учитель занят в Google Calendar другим делом, эти
-                занятия будут автоматически исчезать из расписания — вы
-                не сможете записаться на занятое время. Эта часть
-                включится в ближайших обновлениях.
-              </li>
-              <li>
-                Когда вы записываетесь на занятие, учитель будет сразу
-                видеть его в своём календаре — вероятность «забыли про
-                занятие» снизится почти до нуля. Эта часть тоже шипится
-                отдельно.
-              </li>
-              <li>
-                Сейчас подключение учителя только зафиксировано — фоновая
-                синхронизация включается в следующих обновлениях.
-              </li>
-              <li>
-                Никаких ваших календарей мы не подключаем. Это интеграция
-                со стороны учителя.
-              </li>
+              <li data-testid="calendar-pull-copy">{pullCopy(pullStatus)}</li>
+              <li data-testid="calendar-push-copy">{pushCopy(pushStatus)}</li>
             </ul>
           </>
-        ) : (
-          <p
-            style={{
-              color: 'var(--secondary)',
-              fontSize: 14,
-              lineHeight: 1.6,
-            }}
-          >
-            Сейчас ваш учитель ведёт расписание вручную через
-            LevelChannel. Возможно, он подключит синхронизацию с Google
-            Calendar позже — тогда вы увидите это здесь. На бронирование
-            занятий это никак не влияет.
-          </p>
         )}
 
         <p
+          data-testid="calendar-reminder-footer"
           style={{
             color: 'var(--secondary)',
             fontSize: 12,
@@ -170,8 +154,9 @@ export default async function LearnerCalendarSettingsPage() {
             lineHeight: 1.5,
           }}
         >
-          Напоминания о начале занятия и подключение собственного календаря
-          ученика — пока в работе. Добавим следующими версиями.
+          {operatorMasterSwitchOn
+            ? '✓ Email-напоминания приходят перед занятиями.'
+            : 'Email-напоминания временно выключены оператором.'}
         </p>
       </div>
     </AuthShell>

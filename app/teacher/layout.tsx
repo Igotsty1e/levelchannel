@@ -7,6 +7,7 @@ import { TeacherCabinetNav } from '@/components/teacher/cabinet-nav'
 import { listAccountRoles } from '@/lib/auth/accounts'
 import { evaluateSaasOfferGate } from '@/lib/auth/guards'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { isCalendarConnected } from '@/lib/calendar/derive-status'
 import { getGoogleIntegrationMeta } from '@/lib/calendar/integrations'
 
 // Wave A PR4 — teacher-facing calendar surface gate.
@@ -76,14 +77,11 @@ export default async function TeacherLayout({
     redirect('/saas-offer-accept')
   }
 
-  // Sub-PR B (TASK-1) — SSR-derived calendar connection state for the
-  // top cabinet nav's Календарь dot. Source of truth = same predicate
-  // the inline status row used (`syncState ∈ ('active','degraded')`).
-  // Disconnected / null / errored row → dot shows "○ not connected".
+  // SSR-derived calendar connection state for the top cabinet nav's
+  // Календарь dot. Centralized via isCalendarConnected (same predicate
+  // as the state-aware copy on the settings page).
   const integration = await getGoogleIntegrationMeta(current.account.id)
-  const calendarConnected =
-    integration?.syncState === 'active'
-    || integration?.syncState === 'degraded'
+  const calendarConnected = isCalendarConnected(integration)
 
   return (
     <>

@@ -3,6 +3,12 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import {
+  derivePullStatus,
+  derivePushStatus,
+  type PullStatus,
+  type PushStatus,
+} from '@/lib/calendar/derive-status'
 import { getGoogleCalendarOauthConfig } from '@/lib/calendar/google/config'
 import { getGoogleIntegrationMeta } from '@/lib/calendar/integrations'
 import { listOrphanSelfSlotsForTeacher } from '@/lib/calendar/orphan-cleanup'
@@ -36,6 +42,44 @@ function paramString(
   if (!v) return defaultValue
   if (Array.isArray(v)) return v[0] ?? defaultValue
   return v
+}
+
+function teacherIntroCopy(pull: PullStatus, push: PushStatus): string {
+  if (pull === 'active_fresh' && push === 'works') {
+    return 'Подключите ваш Google Calendar — мы учитываем вашу занятость в расписании и записываем туда же забронированные занятия. ✓ Работает сейчас.'
+  }
+  if (pull === 'active_fresh' && push === 'no_write_calendar') {
+    return 'Подключение установлено: занятость учитывается. Выберите календарь для записи занятий в настройках выше.'
+  }
+  if (pull === 'active_stale') {
+    return 'Подключение установлено, но синхронизация сейчас отстаёт. Восстановится автоматически — мы повторим запрос через минуту.'
+  }
+  if (pull === 'degraded') {
+    return 'Подключение установлено, но Google сейчас отвечает с ошибками. Учитываем последние известные занятия — синхронизация восстановится автоматически.'
+  }
+  if (pull === 'disconnected') {
+    return 'Интеграция отключена. Расписание не учитывает занятия из вашего Google Calendar. Подключитесь снова, чтобы возобновить синхронизацию.'
+  }
+  // no_integration
+  return 'Подключите ваш Google Calendar — мы будем учитывать вашу занятость в расписании и записывать туда же забронированные занятия.'
+}
+
+function bullet1Suffix(pull: PullStatus): string | null {
+  if (pull === 'no_integration' || pull === 'disconnected') return null
+  if (pull === 'active_fresh') return '✓ Работает сейчас.'
+  return 'Сейчас синхронизация отстаёт — может срабатывать с задержкой.'
+}
+
+function bullet2Suffix(push: PushStatus): string | null {
+  if (push === 'no_integration' || push === 'disconnected') return null
+  if (push === 'works') return '✓ Работает сейчас.'
+  return 'Выберите календарь для записи в настройках выше.'
+}
+
+function bullet3Suffix(pull: PullStatus): string | null {
+  if (pull === 'no_integration' || pull === 'disconnected') return null
+  if (pull === 'active_fresh') return '✓ Работает сейчас.'
+  return 'Сейчас синхронизация отстаёт — конфликты могут подсвечиваться с задержкой.'
 }
 
 export default async function TeacherCalendarSettingsPage({
@@ -79,6 +123,8 @@ export default async function TeacherCalendarSettingsPage({
   const integration = await getGoogleIntegrationMeta(session.account.id)
   const isConnected = integration?.syncState === 'active'
     || integration?.syncState === 'degraded'
+  const pullStatus = derivePullStatus(integration)
+  const pushStatus = derivePushStatus(integration)
 
   // BCS-G.4 — orphan-self slots (stale binding from a prior epoch).
   // Surfaced when present so the teacher can clear the local link.
@@ -114,40 +160,17 @@ export default async function TeacherCalendarSettingsPage({
           "Скоро будет" tile. When configReady flips to true, the
           original intro + CTA are restored without a second deploy. */}
       {configReady ? (
-        <>
-          <p
-            style={{
-              color: 'var(--secondary)',
-              fontSize: 15,
-              margin: '0 0 24px 0',
-              lineHeight: 1.6,
-            }}
-          >
-            Подключите ваш Google Calendar к LevelChannel. Сейчас это
-            сохраняет связь с вашим календарём; автоматическая
-            синхронизация занятости и записей об уроках появится в
-            ближайших обновлениях.
-          </p>
-
-          <p
-            style={{
-              padding: '10px 14px',
-              background: 'rgba(125,180,255,0.08)',
-              border: '1px solid rgba(125,180,255,0.25)',
-              borderRadius: 8,
-              color: 'var(--secondary)',
-              fontSize: 13,
-              margin: '0 0 24px 0',
-              lineHeight: 1.5,
-            }}
-          >
-            ℹ Текущий статус интеграции: подключение готово, фоновая
-            синхронизация (чтение занятости из Google + запись уроков
-            обратно в Google + подсветка конфликтов) шипится отдельными
-            обновлениями. Подключитесь сейчас — как только синхронизация
-            включится, она автоматически заработает для вашего календаря.
-          </p>
-        </>
+        <p
+          data-testid="teacher-calendar-intro"
+          style={{
+            color: 'var(--secondary)',
+            fontSize: 15,
+            margin: '0 0 24px 0',
+            lineHeight: 1.6,
+          }}
+        >
+          {teacherIntroCopy(pullStatus, pushStatus)}
+        </p>
       ) : (
         <p
           data-testid="calendar-coming-soon-intro"
@@ -222,13 +245,14 @@ export default async function TeacherCalendarSettingsPage({
         }}
       >
         <h2
+          data-testid="teacher-calendar-list-heading"
           style={{
             fontSize: 18,
             fontWeight: 600,
             margin: '0 0 12px 0',
           }}
         >
-          Как будет работать (по мере включения)
+          Как работает интеграция с Google Calendar
         </h2>
         <ul
           style={{
@@ -239,34 +263,37 @@ export default async function TeacherCalendarSettingsPage({
             lineHeight: 1.7,
           }}
         >
+          {bullet1Suffix(pullStatus) ? (
+            <li data-testid="teacher-bullet-read">
+              <strong style={{ color: 'var(--text)' }}>Читаем</strong>{' '}
+              события из вашего календаря в окне «сегодня → +30 дней». Если
+              на это время уже что-то запланировано, ваше свободное время в
+              LevelChannel перестаёт показываться ученику — пока вы не
+              освободите время в Google. {bullet1Suffix(pullStatus)}
+            </li>
+          ) : null}
+          {bullet2Suffix(pushStatus) ? (
+            <li data-testid="teacher-bullet-write">
+              <strong style={{ color: 'var(--text)' }}>Записываем</strong>{' '}
+              каждое забронированное занятие в ваш календарь как обычное
+              событие «LC: имя ученика, 19:00–19:50». Удалите его в Google —
+              мы покажем баннер «вы удалили занятие, отменить его в
+              LevelChannel?». {bullet2Suffix(pushStatus)}
+            </li>
+          ) : null}
+          {bullet3Suffix(pullStatus) ? (
+            <li data-testid="teacher-bullet-conflicts">
+              <strong style={{ color: 'var(--text)' }}>Конфликты</strong>{' '}
+              (вы создали другую встречу поверх уже забронированного занятия)
+              мы видим и подсвечиваем красным на главной — вы решаете
+              вручную: отменить занятие, перенести его или удалить чужое
+              событие в Google. {bullet3Suffix(pullStatus)}
+            </li>
+          ) : null}
           <li>
-            <strong style={{ color: 'var(--text)' }}>Будем читать</strong>{' '}
-            события из вашего календаря в окне «сегодня → +30 дней». Если
-            на это время уже что-то запланировано, ваш свободный слот в
-            LevelChannel перестанет показываться ученику — пока вы не
-            освободите время в Google. Эта часть включится в одном из
-            следующих обновлений.
-          </li>
-          <li>
-            <strong style={{ color: 'var(--text)' }}>Будем записывать</strong>{' '}
-            каждый забронированный урок в ваш календарь как обычное событие
-            «LC: имя ученика, 19:00–19:50». Удалите его в Google — мы
-            покажем баннер «вы удалили урок, отменить его в LevelChannel?».
-            Эта часть тоже шипится отдельным обновлением.
-          </li>
-          <li>
-            <strong style={{ color: 'var(--text)' }}>Конфликты</strong>{' '}
-            (вы создали другую встречу поверх уже забронированного урока)
-            мы будем видеть и подсвечивать красным на главной — вы решаете
-            вручную: отменить урок, перенести его или удалить чужое
-            событие в Google. Эта часть появится вместе с фоновой
-            синхронизацией.
-          </li>
-          <li>
-            <strong style={{ color: 'var(--text)' }}>Сейчас подключение</strong>{' '}
-            фиксирует связь с вашим аккаунтом Google: токены сохраняются
-            в зашифрованном виде, отзыв доступа в любой момент кнопкой
-            «Отключить». Реальные синхронизации событий — следующие шаги.
+            <strong style={{ color: 'var(--text)' }}>Подключение</strong>{' '}
+            даёт LevelChannel защищённый доступ к вашему календарю Google.
+            Отозвать доступ — в любой момент кнопкой «Отключить».
           </li>
           <li>
             <strong style={{ color: 'var(--text)' }}>Отключение</strong>{' '}
@@ -278,8 +305,8 @@ export default async function TeacherCalendarSettingsPage({
             <strong style={{ color: 'var(--text)' }}>Что мы не делаем:</strong>{' '}
             не читаем заголовки событий ваших учеников и других людей за
             пределами окна «сегодня → +30 дней», не передаём данные
-            третьим сторонам, не храним ваш пароль Google (доступ —
-            только OAuth-токены, и они зашифрованы у нас в базе).
+            третьим сторонам, не храним ваш пароль Google — соединение
+            установлено напрямую с Google по защищённому каналу.
           </li>
         </ul>
       </section>
@@ -333,9 +360,9 @@ export default async function TeacherCalendarSettingsPage({
             Что произойдёт, если я двину урок в Google?
           </summary>
           <p style={{ color: 'var(--secondary)', fontSize: 14, lineHeight: 1.6 }}>
-            В LevelChannel слот остаётся забронированным на исходное время.
+            В LevelChannel занятие остаётся забронированным на исходное время.
             Мы покажем баннер: «вы изменили это событие в Google» — вы
-            выбираете, переносить ли урок и в LevelChannel.
+            выбираете, переносить ли занятие и в LevelChannel.
           </p>
         </details>
         <details style={{ marginBottom: 12 }}>
