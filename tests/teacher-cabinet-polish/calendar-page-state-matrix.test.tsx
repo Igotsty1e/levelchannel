@@ -218,7 +218,38 @@ describe('/teacher/settings/calendar — list block "Как работает"', 
     ).toBe('Как работает интеграция с Google Calendar')
   })
 
-  it('active_fresh + works → all 3 dynamic bullets visible with "✓ Работает сейчас"', async () => {
+  const BULLET_READ_FRESH =
+    'Читаем события из вашего календаря в окне «сегодня → +30 дней». Если на это время уже что-то запланировано, ваше свободное время в LevelChannel перестаёт показываться ученику — пока вы не освободите время в Google. ✓ Работает сейчас.'
+  const BULLET_READ_STALE =
+    'Читаем события из вашего календаря в окне «сегодня → +30 дней». Если на это время уже что-то запланировано, ваше свободное время в LevelChannel перестаёт показываться ученику — пока вы не освободите время в Google. Сейчас синхронизация отстаёт — может срабатывать с задержкой.'
+  const BULLET_WRITE_WORKS =
+    'Записываем каждое забронированное занятие в ваш календарь как обычное событие «LC: имя ученика, 19:00–19:50». Удалите его в Google — мы покажем баннер «вы удалили занятие, отменить его в LevelChannel?». ✓ Работает сейчас.'
+  const BULLET_WRITE_NO_CAL =
+    'Записываем каждое забронированное занятие в ваш календарь как обычное событие «LC: имя ученика, 19:00–19:50». Удалите его в Google — мы покажем баннер «вы удалили занятие, отменить его в LevelChannel?». Выберите календарь для записи в настройках выше.'
+  const BULLET_CONFLICTS_FRESH =
+    'Конфликты (вы создали другую встречу поверх уже забронированного занятия) мы видим и подсвечиваем красным на главной — вы решаете вручную: отменить занятие, перенести его или удалить чужое событие в Google. ✓ Работает сейчас.'
+  const BULLET_CONFLICTS_STALE =
+    'Конфликты (вы создали другую встречу поверх уже забронированного занятия) мы видим и подсвечиваем красным на главной — вы решаете вручную: отменить занятие, перенести его или удалить чужое событие в Google. Сейчас синхронизация отстаёт — конфликты могут подсвечиваться с задержкой.'
+
+  // textContent normalises whitespace from JSX literal but preserves the strong-tag
+  // children with a leading space — match the rendered shape exactly.
+  function readBullet() {
+    return (
+      screen.getByTestId('teacher-bullet-read').textContent ?? ''
+    ).replace(/\s+/g, ' ').trim()
+  }
+  function writeBullet() {
+    return (
+      screen.getByTestId('teacher-bullet-write').textContent ?? ''
+    ).replace(/\s+/g, ' ').trim()
+  }
+  function conflictBullet() {
+    return (
+      screen.getByTestId('teacher-bullet-conflicts').textContent ?? ''
+    ).replace(/\s+/g, ' ').trim()
+  }
+
+  it('active_fresh + works → all 3 dynamic bullets exact-match the "works now" copies', async () => {
     integrationMock.mockResolvedValue(
       record({
         syncState: 'active',
@@ -227,18 +258,12 @@ describe('/teacher/settings/calendar — list block "Как работает"', 
       }),
     )
     await renderPage()
-    expect(screen.getByTestId('teacher-bullet-read').textContent).toMatch(
-      /✓ Работает сейчас/,
-    )
-    expect(screen.getByTestId('teacher-bullet-write').textContent).toMatch(
-      /✓ Работает сейчас/,
-    )
-    expect(screen.getByTestId('teacher-bullet-conflicts').textContent).toMatch(
-      /✓ Работает сейчас/,
-    )
+    expect(readBullet()).toBe(BULLET_READ_FRESH)
+    expect(writeBullet()).toBe(BULLET_WRITE_WORKS)
+    expect(conflictBullet()).toBe(BULLET_CONFLICTS_FRESH)
   })
 
-  it('active_fresh + no_write_calendar → write bullet says "Выберите календарь"', async () => {
+  it('active_fresh + no_write_calendar → write bullet exact-match "no calendar" copy; conflict still works (independent axes)', async () => {
     integrationMock.mockResolvedValue(
       record({
         syncState: 'active',
@@ -247,13 +272,8 @@ describe('/teacher/settings/calendar — list block "Как работает"', 
       }),
     )
     await renderPage()
-    expect(screen.getByTestId('teacher-bullet-write').textContent).toMatch(
-      /Выберите календарь для записи/,
-    )
-    // conflict bullet still says works (post-pull, independent of push)
-    expect(screen.getByTestId('teacher-bullet-conflicts').textContent).toMatch(
-      /✓ Работает сейчас/,
-    )
+    expect(writeBullet()).toBe(BULLET_WRITE_NO_CAL)
+    expect(conflictBullet()).toBe(BULLET_CONFLICTS_FRESH)
   })
 
   it('disconnected → dynamic bullets hidden', async () => {
@@ -264,7 +284,7 @@ describe('/teacher/settings/calendar — list block "Как работает"', 
     expect(screen.queryByTestId('teacher-bullet-conflicts')).toBeNull()
   })
 
-  it('active_stale → bullets visible with "может срабатывать с задержкой"', async () => {
+  it('active_stale → read + conflict bullets exact-match stale copies', async () => {
     integrationMock.mockResolvedValue(
       record({
         syncState: 'active',
@@ -272,12 +292,8 @@ describe('/teacher/settings/calendar — list block "Как работает"', 
       }),
     )
     await renderPage()
-    expect(screen.getByTestId('teacher-bullet-read').textContent).toMatch(
-      /может срабатывать с задержкой/,
-    )
-    expect(screen.getByTestId('teacher-bullet-conflicts').textContent).toMatch(
-      /конфликты могут подсвечиваться с задержкой/,
-    )
+    expect(readBullet()).toBe(BULLET_READ_STALE)
+    expect(conflictBullet()).toBe(BULLET_CONFLICTS_STALE)
   })
 })
 
