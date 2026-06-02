@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server'
 
+import {
+  enforceRateLimit,
+  enforceTrustedBrowserOrigin,
+} from '@/lib/security/request'
 import { NO_STORE } from '@/lib/api/http-headers'
+import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import {
   grantLearnerTariffAccess,
   revokeLearnerTariffAccess,
 } from '@/lib/billing/learner-tariff-access'
-import { lookupSession, SESSION_COOKIE_NAME } from '@/lib/auth/sessions'
-import { listAccountRoles } from '@/lib/auth/accounts'
 import { getDbPool } from '@/lib/db/pool'
 
 export const runtime = 'nodejs'
@@ -22,50 +25,15 @@ const UUID_PATTERN =
 //
 // DELETE /api/teacher/tariffs/[id]/access?learnerId=<uuid> — revoke.
 //
-// Plan: docs/plans/tariffs-packages-learner-scope.md §API surface +
-// §"R2-self #13" (bulk path validates first; this endpoint is the
-// single-learner shape — bulk PATCH /learners variant lands later).
+// Plan: docs/plans/tariffs-packages-learner-scope.md §API surface.
 //
-// Auth: caller must be the teacher who owns the tariff. The DB
-// ownership trigger enforces this redundantly; the route's role
-// check fail-fasts on session-level role.
-
-async function readSessionAndTeacher(
-  request: Request,
-): Promise<{ teacherId: string } | { error: NextResponse }> {
-  const cookieHeader = request.headers.get('cookie') ?? ''
-  const m = cookieHeader.match(
-    new RegExp(`(?:^|; )${SESSION_COOKIE_NAME}=([^;]+)`),
-  )
-  const cookieValue = m ? decodeURIComponent(m[1]) : null
-  if (!cookieValue) {
-    return {
-      error: NextResponse.json(
-        { error: 'not_authenticated' },
-        { status: 401, headers: NO_STORE },
-      ),
-    }
-  }
-  const session = await lookupSession(cookieValue)
-  if (!session) {
-    return {
-      error: NextResponse.json(
-        { error: 'not_authenticated' },
-        { status: 401, headers: NO_STORE },
-      ),
-    }
-  }
-  const roles = await listAccountRoles(session.account.id)
-  if (!roles.includes('teacher')) {
-    return {
-      error: NextResponse.json(
-        { error: 'wrong_role' },
-        { status: 403, headers: NO_STORE },
-      ),
-    }
-  }
-  return { teacherId: session.account.id }
-}
+// 2026-06-02 (security-audit Sub-PR 1, F1 closure): swapped the
+// inline session+role check onto the canonical
+// `requireTeacherWithCurrentSaasOfferConsent` guard +
+// `enforceTrustedBrowserOrigin` + `enforceRateLimit`, matching the
+// rest of /api/teacher/* (A1.1 #455). The DB ownership trigger
+// enforces tariff↔teacher binding redundantly; the
+// `assertTeacherOwnsTariff` SELECT below is the fast 404 path.
 
 async function assertTeacherOwnsTariff(
   teacherId: string,
@@ -82,6 +50,19 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const originGate = enforceTrustedBrowserOrigin(request)
+  if (originGate) return originGate
+  const rl = await enforceRateLimit(
+    request,
+    'teacher:tariff-access:ip',
+    30,
+    60_000,
+  )
+  if (rl) return rl
+  const guard = await requireTeacherWithCurrentSaasOfferConsent(request)
+  if (!guard.ok) return guard.response
+  const teacherId = guard.account.id
+
   const { id: tariffId } = await params
   if (!UUID_PATTERN.test(tariffId)) {
     return NextResponse.json(
@@ -89,9 +70,7 @@ export async function POST(
       { status: 400, headers: NO_STORE },
     )
   }
-  const auth = await readSessionAndTeacher(request)
-  if ('error' in auth) return auth.error
-  if (!(await assertTeacherOwnsTariff(auth.teacherId, tariffId))) {
+  if (!(await assertTeacherOwnsTariff(teacherId, tariffId))) {
     return NextResponse.json(
       { error: 'tariff_not_owned' },
       { status: 404, headers: NO_STORE },
@@ -128,11 +107,11 @@ export async function POST(
   }
   try {
     const granted = await grantLearnerTariffAccess(null, {
-      teacherId: auth.teacherId,
+      teacherId: teacherId,
       learnerAccountId: learnerId,
       tariffId,
       overrideAmountKopecks: override,
-      grantedByAccountId: auth.teacherId,
+      grantedByAccountId: teacherId,
     })
     return NextResponse.json(
       { ok: true, access: granted },
@@ -160,6 +139,19 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const originGate = enforceTrustedBrowserOrigin(request)
+  if (originGate) return originGate
+  const rl = await enforceRateLimit(
+    request,
+    'teacher:tariff-access:ip',
+    30,
+    60_000,
+  )
+  if (rl) return rl
+  const guard = await requireTeacherWithCurrentSaasOfferConsent(request)
+  if (!guard.ok) return guard.response
+  const teacherId = guard.account.id
+
   const { id: tariffId } = await params
   if (!UUID_PATTERN.test(tariffId)) {
     return NextResponse.json(
@@ -167,9 +159,7 @@ export async function DELETE(
       { status: 400, headers: NO_STORE },
     )
   }
-  const auth = await readSessionAndTeacher(request)
-  if ('error' in auth) return auth.error
-  if (!(await assertTeacherOwnsTariff(auth.teacherId, tariffId))) {
+  if (!(await assertTeacherOwnsTariff(teacherId, tariffId))) {
     return NextResponse.json(
       { error: 'tariff_not_owned' },
       { status: 404, headers: NO_STORE },
@@ -184,7 +174,7 @@ export async function DELETE(
     )
   }
   const revoked = await revokeLearnerTariffAccess(null, {
-    teacherId: auth.teacherId,
+    teacherId: teacherId,
     learnerAccountId: learnerId,
     tariffId,
   })

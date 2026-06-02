@@ -12,12 +12,21 @@
 //   409 — { error: 'debt_open' } если переключение postpaid→packages
 //         с открытым postpaid-долгом (Q1 invariant в helper)
 //   422 — invalid method value
+//
+// 2026-06-02 (security-audit Sub-PR 1, F1 closure): swapped the
+// inline session+role check onto the canonical
+// `requireTeacherWithCurrentSaasOfferConsent` guard +
+// `enforceTrustedBrowserOrigin` + `enforceRateLimit`, matching the
+// rest of /api/teacher/* (A1.1 #455).
 
-import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 
-import { listAccountRoles } from '@/lib/auth/accounts'
-import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import {
+  enforceRateLimit,
+  enforceTrustedBrowserOrigin,
+} from '@/lib/security/request'
+import { NO_STORE } from '@/lib/api/http-headers'
+import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import {
   setPaymentMethodForPair,
   type PaymentMethod,
@@ -61,42 +70,49 @@ export async function PATCH(
   request: Request,
   ctx: { params: Promise<{ id: string }> },
 ) {
-  const cookieStore = await cookies()
-  const cookieValue = cookieStore.get(SESSION_COOKIE_NAME)?.value ?? null
-  if (!cookieValue) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-  }
-  const current = await lookupSession(cookieValue)
-  if (!current) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-  }
-  const roles = await listAccountRoles(current.account.id)
-  if (!roles.includes('teacher')) {
-    return NextResponse.json({ error: 'not_teacher' }, { status: 403 })
-  }
+  const originGate = enforceTrustedBrowserOrigin(request)
+  if (originGate) return originGate
+  const rl = await enforceRateLimit(
+    request,
+    'teacher:learner-billing:ip',
+    30,
+    60_000,
+  )
+  if (rl) return rl
+  const guard = await requireTeacherWithCurrentSaasOfferConsent(request)
+  if (!guard.ok) return guard.response
+  const teacherId = guard.account.id
 
   const { id: learnerId } = await ctx.params
   if (!/^[0-9a-f-]{36}$/i.test(learnerId)) {
-    return NextResponse.json({ error: 'invalid_learner_id' }, { status: 422 })
+    return NextResponse.json(
+      { error: 'invalid_learner_id' },
+      { status: 422, headers: NO_STORE },
+    )
   }
 
   let body: unknown = null
   try {
     body = await request.json()
   } catch {
-    return NextResponse.json({ error: 'invalid_json' }, { status: 422 })
+    return NextResponse.json(
+      { error: 'invalid_json' },
+      { status: 422, headers: NO_STORE },
+    )
   }
   const method = (body as { method?: unknown })?.method
   if (!isValidMethod(method)) {
     return NextResponse.json(
       { error: 'invalid_method', valid: VALID_METHODS },
-      { status: 422 },
+      { status: 422, headers: NO_STORE },
     )
   }
 
-  const teacherId = current.account.id
   if (!(await isTeacherOfLearner(teacherId, learnerId))) {
-    return NextResponse.json({ error: 'not_your_learner' }, { status: 403 })
+    return NextResponse.json(
+      { error: 'not_your_learner' },
+      { status: 403, headers: NO_STORE },
+    )
   }
 
   const result = await setPaymentMethodForPair({
@@ -108,14 +124,21 @@ export async function PATCH(
 
   if (!result.ok) {
     return NextResponse.json(
-      { error: result.reason, message: 'Closes postpaid debt before switching to prepaid packages.' },
-      { status: 409 },
+      {
+        error: result.reason,
+        message:
+          'Closes postpaid debt before switching to prepaid packages.',
+      },
+      { status: 409, headers: NO_STORE },
     )
   }
 
-  return NextResponse.json({
-    ok: true,
-    previousMethod: result.previousMethod,
-    method: result.method,
-  })
+  return NextResponse.json(
+    {
+      ok: true,
+      previousMethod: result.previousMethod,
+      method: result.method,
+    },
+    { headers: NO_STORE },
+  )
 }
