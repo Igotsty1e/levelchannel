@@ -1,6 +1,6 @@
 ---
 title: Cabinet — обновить «скоро появится» лейблы под уже отгруженный функционал
-status: SIGN-OFF — codex-paranoia round 10/3 (cap extended per user authorization «делай полноценно по нормальному»); R10-WARN#1 OAuth-jargon closure applied post-sign-off per protocol
+status: SHIPPED — PR #480 merged 2026-06-02. Plan paranoia SIGN-OFF round 10/3; wave paranoia SIGN-OFF round 2/3.
 date: 2026-06-02
 owner: claude-orchestrator
 ---

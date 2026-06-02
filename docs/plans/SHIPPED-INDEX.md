@@ -19,6 +19,10 @@ Active plan-doc work (not yet shipped) lives in `docs/plans/*.md` without an ent
 
 - **`tariffs-packages-learner-scope.md`** — per-learner tariffs/packages binding via junction tables. Status: SHIPPED 2026-06-02. Plan-mode SIGN-OFF round 10/N (user-authorized cap extension) + epic-end wave-mode SIGN-OFF round 1/3 (3 BLOCKER + 1 WARN closed inline). Sub-PRs: PKG-TEACHER-SCOPE companion (#470) → A foundation mig 0102 (#471) → B booking snapshot reads (#472) → C anonymous endpoint filter (#473) → D teacher API (#474) → E learner filter (#475) → epic-end fix-PR closes round-1 leaks across booking-days/times + checkout + package_required hint (#476). One follow-up tracked: archive contract (lesson_packages.deleted_at writer + bulk-revoke). Migration 0102.
 
+## 2026-06-02 cabinet-stale-future-labels (1 PR)
+
+- **`cabinet-stale-future-labels.md`** — state-aware Google Calendar copy on `/cabinet/settings/calendar` + `/teacher/settings/calendar`, kills «по мере включения / в ближайших обновлениях» teasers over already-shipped pull/push/sync features. Status: SHIPPED 2026-06-02 (PR #480). Plan-mode paranoia SIGN-OFF round 10/3 (cap extended per «делай полноценно по нормальному») + wave-mode SIGN-OFF round 2/3 (1 BLOCKER teacherIntroCopy collapse + 3 WARN copy-style/NaN-guard closed inline). New helper `lib/calendar/derive-status.ts` (5 pull-states × 4 push-states). Sweep `слот`/`токены`/`OAuth-токены` on touched surfaces. Drops «Скоро здесь появится» on `/cabinet/page.tsx`.
+
 ## 2026-06-01 admin-dashboard wave (1 PR)
 
 - **`admin-dashboard.md`** — operational metrics + sparklines + cohort funnel + health banner at /admin/dashboard. Status: SHIPPED. Codex-paranoia wave-mode SIGN-OFF round 2/3 (3 BLOCKER + 5 WARN + 1 INFO closed). No migration.
