@@ -7,7 +7,7 @@
 Cross-cutting security primitives every authenticated/money-moving route depends on:
 - **Idempotency** — `withIdempotency` is the wrapper around money-moving + admin mutator routes. Same-key sequential replay returns cached response.
 - **Rate-limit** — shared-store via Postgres `rate_limit_buckets` (migration 0016) with in-memory fallback. Atomic upsert, fixed-window semantics.
-- **Origin checks** — `enforceTrustedBrowserOrigin` (Same-Origin / Sec-Fetch-Site filter).
+- **Origin checks** — `enforceTrustedBrowserOrigin` (Same-Origin / `Sec-Fetch-Site` filter). **Accepted-gap (security-audit-2026-06-02 F10):** when BOTH `Origin` and `Sec-Fetch-Site` headers are absent (curl without `-H Origin:`, pre-modern browsers), the gate passes — anonymous mutation routes rely on per-IP + per-email-hash rate-limit as the load-bearing defense. Pinned by `tests/security/origin-gate-no-headers.test.ts`; trade-off in `SECURITY.md §Accepted security gaps`.
 - **Invoice ID validation** — `validateInvoiceId` shape check; rejects path-traversal + non-prefix invoices.
 
 ## Files
