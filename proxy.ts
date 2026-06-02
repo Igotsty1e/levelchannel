@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/nextjs'
 import { type NextRequest, NextResponse } from 'next/server'
 
 import { assembleCsp, generateNonce } from '@/lib/security/csp'
@@ -73,6 +74,19 @@ export function proxy(request: NextRequest) {
         `request will continue without per-request CSP. ` +
         `Static security headers from next.config.js still apply.`,
     )
+    // F6 (security-audit-2026-06-02 Sub-PR 3) — surface the CSP
+    // fallback to Sentry so the operator sees it without tailing
+    // journald. Wrapped in try/catch so a Sentry failure can't take
+    // down the proxy itself. The `surface` tag lets Sentry alerts key
+    // off csp-fallback specifically.
+    try {
+      Sentry.captureException(err, { tags: { surface: 'csp-fallback' } })
+    } catch {
+      // Sentry init may not have run on this edge instance, or the
+      // SDK may have its own internal error. Either way, do not
+      // re-throw from the catch — the console.error above is the
+      // operator's backstop.
+    }
     // No CSP header on fallback path. The browser falls back to its
     // default-permissive behavior; static next.config.js headers
     // (HSTS, X-Frame-Options, X-Content-Type-Options, etc.) still

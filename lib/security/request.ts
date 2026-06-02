@@ -54,12 +54,70 @@ function getAllowedOrigins() {
 // Local dev: no nginx, so `X-Real-IP` is unset → returns `unknown`.
 // That's fine — rate-limit buckets keyed by `unknown` clamp local
 // abuse to a single bucket, which is the desired behaviour.
+//
+// F5 (security-audit-2026-06-02 Sub-PR 3) — observability layer.
+// In production, an `X-Real-IP`-absent request signals an nginx config
+// drift: every IP-keyed rate-limit bucket collapses into a single
+// `'unknown'` shared bucket (DoS amplifier). We emit a structured
+// `console.warn` so the operator picks it up via journald. Throttled
+// to one log line per `REAL_IP_WARN_WINDOW_MS` window to avoid
+// flooding. Return value is unchanged — pure observability.
+
+const REAL_IP_WARN_WINDOW_MS = 60_000
+let lastRealIpMissingWarnAt = 0
+
+function warnIfRealIpMissingInProd(request: Request) {
+  if (process.env.NODE_ENV !== 'production') {
+    return
+  }
+  // X-Real-IP present → nothing to flag (that's the nginx happy path).
+  // X-Real-IP absent but cf-connecting-ip present → STILL warn: the
+  // current prod has no Cloudflare in front, so a request that lands
+  // with only cf-connecting-ip and no X-Real-IP also signals nginx
+  // drift. If/when a real CF edge is fronted, revisit this branch
+  // (then cf-connecting-ip alone becomes the new trusted anchor and
+  // shouldn't fire the warn). The companion test pins this contract:
+  // tests/security/get-client-ip-warn.test.ts §"warns even when only
+  // cf-connecting-ip is present".
+  if (request.headers.get('x-real-ip')) {
+    return
+  }
+  const now = Date.now()
+  if (now - lastRealIpMissingWarnAt < REAL_IP_WARN_WINDOW_MS) {
+    return
+  }
+  lastRealIpMissingWarnAt = now
+  // Structured JSON so journald + log shipper can parse. Tag with a
+  // grep-able prefix matching the project convention (see proxy.ts
+  // `[proxy/csp]`).
+  console.warn(
+    JSON.stringify({
+      tag: '[security/getClientIp]',
+      event: 'x_real_ip_missing',
+      message:
+        'X-Real-IP header absent in production; per-IP rate-limit buckets ' +
+        'collapse to the shared "unknown" key. Check nginx proxy_set_header ' +
+        'X-Real-IP $remote_addr in the levelchannel.ru server block.',
+      hasCfConnectingIp: Boolean(request.headers.get('cf-connecting-ip')),
+      throttleWindowMs: REAL_IP_WARN_WINDOW_MS,
+    }),
+  )
+}
+
 export function getClientIp(request: Request) {
+  warnIfRealIpMissingInProd(request)
   return (
     request.headers.get('x-real-ip') ||
     request.headers.get('cf-connecting-ip') ||
     'unknown'
   )
+}
+
+// Test-only: reset the warn throttle so each test starts from a
+// deterministic state. Not exported for prod callers — the throttle
+// is intentionally process-lifetime in production.
+export function __resetGetClientIpWarnThrottleForTests() {
+  lastRealIpMissingWarnAt = 0
 }
 
 export async function enforceRateLimit(
