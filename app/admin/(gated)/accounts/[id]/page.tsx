@@ -12,7 +12,6 @@ import {
 import { getAccountProfile } from '@/lib/auth/profiles'
 import { getActiveTeacherIdsForLearner } from '@/lib/auth/teacher-scope'
 import { listAccountActivePackages, listAccountPostpaidDebt } from '@/lib/billing/packages'
-import { getDbPool } from '@/lib/db/pool'
 import { listLearnersForTeacher } from '@/lib/scheduling/teacher-learners'
 
 import { TeacherAssignment } from './teacher-assignment'
@@ -30,18 +29,13 @@ export default async function AdminAccountDetailPage({ params }: RouteParams) {
   const account = await getAccountById(id)
   if (!account) notFound()
 
-  const [roles, profile, teachers, postpaidRow, packages, debt] = await Promise.all([
+  const [roles, profile, teachers, packages, debt] = await Promise.all([
     listAccountRoles(account.id),
     getAccountProfile(account.id),
     listAccountsByRole('teacher'),
-    getDbPool().query(
-      'select postpaid_allowed from accounts where id = $1',
-      [account.id],
-    ),
     listAccountActivePackages(account.id),
     listAccountPostpaidDebt(account.id),
   ])
-  const postpaidAllowed = Boolean(postpaidRow.rows[0]?.postpaid_allowed)
 
   // Wave 14.1 — admin viewing a teacher account should NOT see the
   // learner-flow blocks (Учитель / Биллинг). Those are about
@@ -266,18 +260,6 @@ export default async function AdminAccountDetailPage({ params }: RouteParams) {
 
       {!account.purgedAt && isLearnerView ? (
         <Section title="Биллинг">
-          <Field label="Оплата после занятия разрешена">
-            <span style={{ color: postpaidAllowed ? '#9bdf9b' : '#ff8a8a' }}>
-              {postpaidAllowed ? 'да' : 'нет'}
-            </span>{' '}
-            <AdminActionButton
-              endpoint={`/api/admin/accounts/${account.id}/postpaid`}
-              body={{ allowed: !postpaidAllowed }}
-              variant="ghost"
-            >
-              {postpaidAllowed ? 'Запретить' : 'Разрешить'}
-            </AdminActionButton>
-          </Field>
           <Field label="Активные пакеты">
             {packages.length === 0 ? (
               <span style={{ color: 'var(--secondary)' }}>—</span>

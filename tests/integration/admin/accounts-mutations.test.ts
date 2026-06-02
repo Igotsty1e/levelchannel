@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import { POST as disableHandler } from '@/app/api/admin/accounts/[id]/disable/route'
 import { POST as roleHandler } from '@/app/api/admin/accounts/[id]/role/route'
-import { POST as postpaidHandler } from '@/app/api/admin/accounts/[id]/postpaid/route'
 import { POST as loginHandler } from '@/app/api/auth/login/route'
 import { POST as registerHandler } from '@/app/api/auth/register/route'
 import {
@@ -15,10 +14,13 @@ import { getDbPool } from '@/lib/db/pool'
 import '../setup'
 import { buildRequest, extractSessionCookie } from '../helpers'
 
-// AUDIT-CODE-1 (2026-05-17) — coverage for /api/admin/accounts/[id]/{disable,role,postpaid}.
+// AUDIT-CODE-1 (2026-05-17) — coverage for /api/admin/accounts/[id]/{disable,role}.
 // Existing surfaces had zero integration coverage. This file fills
 // the auth gates + idempotency contract; the lib helpers
 // (disableAccount, grantAccountRole, ...) have their own unit tests.
+//
+// Quality Sub-PR A (2026-06-02): the /api/admin/accounts/[id]/postpaid
+// describe block was removed along with the deleted endpoint.
 
 async function makeAdmin(prefix: string): Promise<{ cookie: string; accountId: string }> {
   const email = `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`
@@ -266,84 +268,3 @@ describe('POST /api/admin/accounts/[id]/role', () => {
   })
 })
 
-describe('POST /api/admin/accounts/[id]/postpaid', () => {
-  it('anonymous → 401', async () => {
-    const target = await makeLearner('postpaid-anon-target')
-    const res = await postpaidHandler(
-      buildRequest(`/api/admin/accounts/${target.accountId}/postpaid`, {
-        body: { allowed: true },
-      }),
-      { params: Promise.resolve({ id: target.accountId }) },
-    )
-    expect(res.status).toBe(401)
-  })
-
-  it('admin toggles postpaid_allowed → 200 + column updated', async () => {
-    const admin = await makeAdmin('postpaid-admin')
-    const target = await makeLearner('postpaid-target')
-    const res = await postpaidHandler(
-      buildRequest(`/api/admin/accounts/${target.accountId}/postpaid`, {
-        cookie: admin.cookie,
-        body: { allowed: true },
-        headers: { 'Idempotency-Key': `postpaid-${Date.now()}` },
-      }),
-      { params: Promise.resolve({ id: target.accountId }) },
-    )
-    expect(res.status).toBe(200)
-    const json = await res.json()
-    expect(json.postpaidAllowed).toBe(true)
-  })
-
-  it('post-merge WARN #3: idempotent replay returns cached response WITHOUT re-applying postpaid update', async () => {
-    const admin = await makeAdmin('postpaid-idemp-admin')
-    const target = await makeLearner('postpaid-idemp-target')
-    const key = `postpaid-idemp-${Date.now()}`
-
-    const r1 = await postpaidHandler(
-      buildRequest(`/api/admin/accounts/${target.accountId}/postpaid`, {
-        cookie: admin.cookie,
-        body: { allowed: true },
-        headers: { 'Idempotency-Key': key },
-      }),
-      { params: Promise.resolve({ id: target.accountId }) },
-    )
-    expect(r1.status).toBe(200)
-
-    // Reset BETWEEN replays to make the cached behavior observable.
-    const pool = getDbPool()
-    await pool.query(
-      `update accounts set postpaid_allowed = false where id = $1`,
-      [target.accountId],
-    )
-
-    const r2 = await postpaidHandler(
-      buildRequest(`/api/admin/accounts/${target.accountId}/postpaid`, {
-        cookie: admin.cookie,
-        body: { allowed: true },
-        headers: { 'Idempotency-Key': key },
-      }),
-      { params: Promise.resolve({ id: target.accountId }) },
-    )
-    expect(r2.status).toBe(200)
-    expect(r2.headers.get('Idempotency-Replay')).toBe('true')
-
-    // Cached replay must NOT have re-applied the UPDATE.
-    const after = await pool.query(
-      `select postpaid_allowed from accounts where id = $1`,
-      [target.accountId],
-    )
-    expect(after.rows[0].postpaid_allowed).toBe(false)
-  })
-
-  it('invalid uuid → 400', async () => {
-    const { cookie } = await makeAdmin('postpaid-bad-id')
-    const res = await postpaidHandler(
-      buildRequest(`/api/admin/accounts/not-a-uuid/postpaid`, {
-        cookie,
-        body: { allowed: true },
-      }),
-      { params: Promise.resolve({ id: 'not-a-uuid' }) },
-    )
-    expect(res.status).toBe(400)
-  })
-})

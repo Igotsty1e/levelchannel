@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { POST as postpaidHandler } from '@/app/api/admin/accounts/[id]/postpaid/route'
 import {
   GET as listPackagesHandler,
   POST as createPackageHandler,
@@ -63,81 +62,11 @@ async function regLearner() {
   return { accountId: created!.id }
 }
 
-describe('POST /api/admin/accounts/[id]/postpaid', () => {
-  it('admin can flip postpaid_allowed true → false → true', async () => {
-    const admin = await regAdmin()
-    const learner = await regLearner()
-
-    let r = await postpaidHandler(
-      buildRequest(`/api/admin/accounts/${learner.accountId}/postpaid`, {
-        cookie: admin.cookie,
-        body: { allowed: true },
-      }),
-      { params: Promise.resolve({ id: learner.accountId }) },
-    )
-    expect(r.status).toBe(200)
-    expect((await r.json()).postpaidAllowed).toBe(true)
-
-    r = await postpaidHandler(
-      buildRequest(`/api/admin/accounts/${learner.accountId}/postpaid`, {
-        cookie: admin.cookie,
-        body: { allowed: false },
-      }),
-      { params: Promise.resolve({ id: learner.accountId }) },
-    )
-    expect(r.status).toBe(200)
-    expect((await r.json()).postpaidAllowed).toBe(false)
-  })
-
-  it('non-admin → 403', async () => {
-    const learner = await regLearner()
-    const otherEmail = `pr4-other-${Date.now()}@example.com`
-    await registerHandler(
-      buildRequest('/api/auth/register', {
-        body: {
-          email: otherEmail,
-          password: 'StrongPassword123',
-          personalDataConsentAccepted: true,
-        },
-      }),
-    )
-    const otherLogin = await loginHandler(
-      buildRequest('/api/auth/login', {
-        body: { email: otherEmail, password: 'StrongPassword123' },
-      }),
-    )
-    const cookie = extractSessionCookie(
-      otherLogin.headers.get('Set-Cookie'),
-    )!
-    const r = await postpaidHandler(
-      buildRequest(`/api/admin/accounts/${learner.accountId}/postpaid`, {
-        cookie,
-        body: { allowed: true },
-      }),
-      { params: Promise.resolve({ id: learner.accountId }) },
-    )
-    expect([401, 403]).toContain(r.status)
-  })
-
-  it('unknown accountId → 404', async () => {
-    const admin = await regAdmin()
-    const r = await postpaidHandler(
-      buildRequest(
-        '/api/admin/accounts/00000000-0000-0000-0000-000000000000/postpaid',
-        {
-          cookie: admin.cookie,
-          body: { allowed: true },
-        },
-      ),
-      {
-        params: Promise.resolve({
-          id: '00000000-0000-0000-0000-000000000000',
-        }),
-      },
-    )
-    expect(r.status).toBe(404)
-  })
-})
+// Quality Sub-PR A (2026-06-02): the
+// describe('POST /api/admin/accounts/[id]/postpaid', ...) block was
+// removed along with the deleted endpoint. The dead column
+// accounts.postpaid_allowed is dropped in mig 0103; per-pair payment
+// method now lives in learner_billing_preferences (mig 0101).
 
 describe('POST /api/admin/packages — create', () => {
   it('admin creates a package; GET returns it', async () => {
