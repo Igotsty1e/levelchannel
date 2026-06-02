@@ -129,8 +129,21 @@ async function renderPage() {
   render(jsx)
 }
 
-describe('/teacher/settings/calendar — intro copy by (pull × push)', () => {
-  it('active_fresh + works → "✓ Работает сейчас"', async () => {
+describe('/teacher/settings/calendar — intro copy by (pull × push), exact-match pins', () => {
+  const ACTIVE_FRESH_WORKS_COPY =
+    'Подключите ваш Google Calendar — мы учитываем вашу занятость в расписании и записываем туда же забронированные занятия. ✓ Работает сейчас.'
+  const ACTIVE_FRESH_NO_WRITE_COPY =
+    'Подключение установлено: занятость учитывается. Выберите календарь для записи занятий в настройках выше.'
+  const ACTIVE_STALE_COPY =
+    'Подключение установлено, но синхронизация сейчас отстаёт. Восстановится автоматически — мы повторим запрос через минуту.'
+  const DEGRADED_COPY =
+    'Подключение установлено, но Google сейчас отвечает с ошибками. Учитываем последние известные занятия — синхронизация восстановится автоматически.'
+  const DISCONNECTED_COPY =
+    'Интеграция отключена. Расписание не учитывает занятия из вашего Google Calendar. Подключитесь снова, чтобы возобновить синхронизацию.'
+  const NO_INTEGRATION_COPY =
+    'Подключите ваш Google Calendar — мы будем учитывать вашу занятость в расписании и записывать туда же забронированные занятия.'
+
+  it('active_fresh + works → exact golden copy', async () => {
     integrationMock.mockResolvedValue(
       record({
         syncState: 'active',
@@ -139,12 +152,12 @@ describe('/teacher/settings/calendar — intro copy by (pull × push)', () => {
       }),
     )
     await renderPage()
-    expect(screen.getByTestId('teacher-calendar-intro').textContent).toMatch(
-      /✓ Работает сейчас/,
+    expect(screen.getByTestId('teacher-calendar-intro').textContent).toBe(
+      ACTIVE_FRESH_WORKS_COPY,
     )
   })
 
-  it('active_fresh + no_write_calendar → "Выберите календарь для записи"', async () => {
+  it('active_fresh + no_write_calendar → exact pull-healthy, push-broken copy', async () => {
     integrationMock.mockResolvedValue(
       record({
         syncState: 'active',
@@ -153,12 +166,12 @@ describe('/teacher/settings/calendar — intro copy by (pull × push)', () => {
       }),
     )
     await renderPage()
-    expect(screen.getByTestId('teacher-calendar-intro').textContent).toMatch(
-      /Выберите календарь для записи занятий/,
+    expect(screen.getByTestId('teacher-calendar-intro').textContent).toBe(
+      ACTIVE_FRESH_NO_WRITE_COPY,
     )
   })
 
-  it('active_stale → "синхронизация сейчас отстаёт"', async () => {
+  it('active_stale → exact stale copy', async () => {
     integrationMock.mockResolvedValue(
       record({
         syncState: 'active',
@@ -166,32 +179,33 @@ describe('/teacher/settings/calendar — intro copy by (pull × push)', () => {
       }),
     )
     await renderPage()
-    expect(screen.getByTestId('teacher-calendar-intro').textContent).toMatch(
-      /синхронизация сейчас отстаёт/,
+    expect(screen.getByTestId('teacher-calendar-intro').textContent).toBe(
+      ACTIVE_STALE_COPY,
     )
   })
 
-  it('degraded → "синхронизация сейчас отстаёт"', async () => {
+  it('degraded → exact degraded copy (distinct from stale)', async () => {
     integrationMock.mockResolvedValue(record({ syncState: 'degraded' }))
     await renderPage()
-    expect(screen.getByTestId('teacher-calendar-intro').textContent).toMatch(
-      /синхронизация сейчас отстаёт/,
+    expect(screen.getByTestId('teacher-calendar-intro').textContent).toBe(
+      DEGRADED_COPY,
     )
   })
 
-  it('no_integration → call-to-action without teaser', async () => {
+  it('no_integration → exact CTA copy (no teaser)', async () => {
     integrationMock.mockResolvedValue(null)
     await renderPage()
-    const intro = screen.getByTestId('teacher-calendar-intro').textContent ?? ''
-    expect(intro).toMatch(/Подключите ваш Google Calendar/)
-    expect(intro).not.toMatch(/появится в ближайших обновлениях/)
+    expect(screen.getByTestId('teacher-calendar-intro').textContent).toBe(
+      NO_INTEGRATION_COPY,
+    )
   })
 
-  it('disconnected → call-to-action without teaser', async () => {
+  it('disconnected → exact "Интеграция отключена" copy (distinct from no_integration)', async () => {
     integrationMock.mockResolvedValue(record({ syncState: 'disconnected' }))
     await renderPage()
-    const intro = screen.getByTestId('teacher-calendar-intro').textContent ?? ''
-    expect(intro).toMatch(/Подключите ваш Google Calendar/)
+    expect(screen.getByTestId('teacher-calendar-intro').textContent).toBe(
+      DISCONNECTED_COPY,
+    )
   })
 })
 

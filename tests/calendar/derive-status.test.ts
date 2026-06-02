@@ -73,6 +73,12 @@ describe('derivePullStatus', () => {
       'active_stale',
     )
   })
+
+  it('returns active_stale when last_pulled_at is unparseable (NaN guard)', () => {
+    expect(
+      derivePullStatus(record({ lastPulledAt: 'not-a-date' }), now),
+    ).toBe('active_stale')
+  })
 })
 
 describe('derivePushStatus', () => {

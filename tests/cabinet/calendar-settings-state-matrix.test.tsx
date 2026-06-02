@@ -138,24 +138,48 @@ async function renderPage() {
   render(jsx)
 }
 
-describe('/cabinet/settings/calendar — pull-axis copy', () => {
-  it('no_integration → "Учитель пока не подключал Google Calendar"', async () => {
+const PULL_COPY = {
+  no_integration:
+    'Учитель пока не подключал Google Calendar. Время в расписании показывается как есть, без проверки занятости в чужом календаре.',
+  disconnected:
+    'Учитель отключил Google Calendar. Время в расписании показывается как есть.',
+  active_fresh:
+    'Когда учитель занят в Google Calendar другим делом, эти занятия автоматически исчезают из расписания — вы не сможете записаться на занятое время. ✓ Работает сейчас.',
+  active_stale:
+    'Учитель подключил Google Calendar, но синхронизация сейчас отстаёт. Пока синхронизация не восстановится, занятое в Google время может не скрываться автоматически.',
+  degraded:
+    'Учитель подключил Google Calendar, но Google сейчас отвечает с ошибками. Пока ошибки не пройдут, занятое в Google время может не скрываться автоматически.',
+}
+
+const PUSH_COPY = {
+  works:
+    'Когда вы записываетесь, бронь сразу появляется у учителя в Google Calendar.',
+  no_write_calendar:
+    'Бронь у учителя в Google Calendar не появится: учитель пока не выбрал, в какой календарь писать.',
+  disconnected:
+    'Бронь у учителя в Google Calendar не появится: учитель отключил интеграцию.',
+  no_integration:
+    'Бронь у учителя в Google Calendar не появится: учитель пока не подключал Google Calendar.',
+}
+
+describe('/cabinet/settings/calendar — pull-axis copy (exact-match)', () => {
+  it('no_integration', async () => {
     integrationMock.mockResolvedValue(null)
     await renderPage()
-    expect(screen.getByTestId('calendar-pull-copy').textContent).toMatch(
-      /Учитель пока не подключал Google Calendar/,
+    expect(screen.getByTestId('calendar-pull-copy').textContent).toBe(
+      PULL_COPY.no_integration,
     )
   })
 
-  it('disconnected → "Учитель отключил Google Calendar"', async () => {
+  it('disconnected', async () => {
     integrationMock.mockResolvedValue(record({ syncState: 'disconnected' }))
     await renderPage()
-    expect(screen.getByTestId('calendar-pull-copy').textContent).toMatch(
-      /Учитель отключил Google Calendar/,
+    expect(screen.getByTestId('calendar-pull-copy').textContent).toBe(
+      PULL_COPY.disconnected,
     )
   })
 
-  it('active_fresh → "✓ Работает сейчас"', async () => {
+  it('active_fresh', async () => {
     integrationMock.mockResolvedValue(
       record({
         syncState: 'active',
@@ -163,12 +187,12 @@ describe('/cabinet/settings/calendar — pull-axis copy', () => {
       }),
     )
     await renderPage()
-    expect(screen.getByTestId('calendar-pull-copy').textContent).toMatch(
-      /✓ Работает сейчас/,
+    expect(screen.getByTestId('calendar-pull-copy').textContent).toBe(
+      PULL_COPY.active_fresh,
     )
   })
 
-  it('active_stale → "синхронизация сейчас отстаёт"', async () => {
+  it('active_stale', async () => {
     integrationMock.mockResolvedValue(
       record({
         syncState: 'active',
@@ -176,54 +200,54 @@ describe('/cabinet/settings/calendar — pull-axis copy', () => {
       }),
     )
     await renderPage()
-    expect(screen.getByTestId('calendar-pull-copy').textContent).toMatch(
-      /синхронизация сейчас отстаёт/,
+    expect(screen.getByTestId('calendar-pull-copy').textContent).toBe(
+      PULL_COPY.active_stale,
     )
   })
 
-  it('degraded → "Google сейчас отвечает с ошибками"', async () => {
+  it('degraded', async () => {
     integrationMock.mockResolvedValue(record({ syncState: 'degraded' }))
     await renderPage()
-    expect(screen.getByTestId('calendar-pull-copy').textContent).toMatch(
-      /Google сейчас отвечает с ошибками/,
+    expect(screen.getByTestId('calendar-pull-copy').textContent).toBe(
+      PULL_COPY.degraded,
     )
   })
 })
 
-describe('/cabinet/settings/calendar — push-axis copy', () => {
-  it('works → "бронь сразу появляется"', async () => {
+describe('/cabinet/settings/calendar — push-axis copy (exact-match)', () => {
+  it('works', async () => {
     integrationMock.mockResolvedValue(record({ writeCalendarId: 'primary' }))
     await renderPage()
-    expect(screen.getByTestId('calendar-push-copy').textContent).toMatch(
-      /бронь сразу появляется у учителя в Google Calendar/,
+    expect(screen.getByTestId('calendar-push-copy').textContent).toBe(
+      PUSH_COPY.works,
     )
   })
 
-  it('no_write_calendar → "учитель пока не выбрал, в какой календарь писать"', async () => {
+  it('no_write_calendar', async () => {
     integrationMock.mockResolvedValue(
       record({ syncState: 'active', writeCalendarId: null }),
     )
     await renderPage()
-    expect(screen.getByTestId('calendar-push-copy').textContent).toMatch(
-      /учитель пока не выбрал, в какой календарь писать/,
+    expect(screen.getByTestId('calendar-push-copy').textContent).toBe(
+      PUSH_COPY.no_write_calendar,
     )
   })
 
-  it('disconnected → "учитель отключил интеграцию"', async () => {
+  it('disconnected', async () => {
     integrationMock.mockResolvedValue(
       record({ syncState: 'disconnected', writeCalendarId: 'primary' }),
     )
     await renderPage()
-    expect(screen.getByTestId('calendar-push-copy').textContent).toMatch(
-      /учитель отключил интеграцию/,
+    expect(screen.getByTestId('calendar-push-copy').textContent).toBe(
+      PUSH_COPY.disconnected,
     )
   })
 
-  it('no_integration → "учитель пока не подключал Google Calendar"', async () => {
+  it('no_integration', async () => {
     integrationMock.mockResolvedValue(null)
     await renderPage()
-    expect(screen.getByTestId('calendar-push-copy').textContent).toMatch(
-      /учитель пока не подключал Google Calendar/,
+    expect(screen.getByTestId('calendar-push-copy').textContent).toBe(
+      PUSH_COPY.no_integration,
     )
   })
 })
@@ -270,7 +294,7 @@ describe('/cabinet/settings/calendar — footer', () => {
 })
 
 describe('/cabinet/settings/calendar — cross-axis permutations', () => {
-  it('active_fresh + works → golden state, both copy strings positive', async () => {
+  it('active_fresh + works → golden state, exact copy both axes', async () => {
     integrationMock.mockResolvedValue(
       record({
         syncState: 'active',
@@ -279,15 +303,15 @@ describe('/cabinet/settings/calendar — cross-axis permutations', () => {
       }),
     )
     await renderPage()
-    expect(screen.getByTestId('calendar-pull-copy').textContent).toMatch(
-      /✓ Работает сейчас/,
+    expect(screen.getByTestId('calendar-pull-copy').textContent).toBe(
+      PULL_COPY.active_fresh,
     )
-    expect(screen.getByTestId('calendar-push-copy').textContent).toMatch(
-      /бронь сразу появляется/,
+    expect(screen.getByTestId('calendar-push-copy').textContent).toBe(
+      PUSH_COPY.works,
     )
   })
 
-  it('active_fresh + no_write_calendar → pull healthy, push not', async () => {
+  it('active_fresh + no_write_calendar → pull healthy, push broken (independent axes)', async () => {
     integrationMock.mockResolvedValue(
       record({
         syncState: 'active',
@@ -296,22 +320,22 @@ describe('/cabinet/settings/calendar — cross-axis permutations', () => {
       }),
     )
     await renderPage()
-    expect(screen.getByTestId('calendar-pull-copy').textContent).toMatch(
-      /✓ Работает сейчас/,
+    expect(screen.getByTestId('calendar-pull-copy').textContent).toBe(
+      PULL_COPY.active_fresh,
     )
-    expect(screen.getByTestId('calendar-push-copy').textContent).toMatch(
-      /учитель пока не выбрал, в какой календарь писать/,
+    expect(screen.getByTestId('calendar-push-copy').textContent).toBe(
+      PUSH_COPY.no_write_calendar,
     )
   })
 
-  it('no_integration → both axes consistent ("пока не подключал")', async () => {
+  it('no_integration → both axes consistent (exact strings)', async () => {
     integrationMock.mockResolvedValue(null)
     await renderPage()
-    expect(screen.getByTestId('calendar-pull-copy').textContent).toMatch(
-      /Учитель пока не подключал Google Calendar/,
+    expect(screen.getByTestId('calendar-pull-copy').textContent).toBe(
+      PULL_COPY.no_integration,
     )
-    expect(screen.getByTestId('calendar-push-copy').textContent).toMatch(
-      /учитель пока не подключал Google Calendar/,
+    expect(screen.getByTestId('calendar-push-copy').textContent).toBe(
+      PUSH_COPY.no_integration,
     )
   })
 })

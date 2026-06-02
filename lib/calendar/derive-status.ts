@@ -42,6 +42,7 @@ export function derivePullStatus(
   // syncState === 'active'
   if (!integration.lastPulledAt) return 'active_stale'
   const lastPulled = new Date(integration.lastPulledAt).getTime()
+  if (!Number.isFinite(lastPulled)) return 'active_stale'
   const ageMs = now.getTime() - lastPulled
   if (ageMs > PULL_FRESHNESS_TTL_MS) return 'active_stale'
   return 'active_fresh'
