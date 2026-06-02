@@ -1,6 +1,7 @@
 // A2 — Mid/Pro teacher-subscription SSR cabinet page.
 //
 // Plan: docs/plans/saas-offer-and-landing-redesign.md A2.
+// Polish: docs/plans/bug-4-tariff-naming-and-ui.md Sub-PR B (2026-06-02).
 //
 // Reads the teacher's current subscription row + the Mid/Pro catalogue,
 // renders <TeacherSubscriptionClient /> with the two states (active vs
@@ -47,6 +48,7 @@ export default async function TeacherSubscriptionPage() {
       amountKopecks: tariff.amountKopecks,
       learnerLimit: tariff.learnerLimit ?? 0,
       description: tariff.description,
+      features: [...tariff.features],
     }
   })
 
@@ -61,6 +63,10 @@ export default async function TeacherSubscriptionPage() {
           periodEnd: row.periodEnd,
           amountKopecks: row.amountKopecks,
           cancelledAt: row.cancelledAt,
+          features:
+            row.planSlug === 'mid'
+              ? [...SAAS_SUBSCRIPTION_TARIFFS.mid.features]
+              : [...SAAS_SUBSCRIPTION_TARIFFS.pro.features],
         }
       : null
 
