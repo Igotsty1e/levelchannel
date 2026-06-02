@@ -297,36 +297,59 @@ export type SaasOfferGateVerdict =
 // Exported so callers outside the guard module (notably /api/auth/register)
 // can short-circuit the gate check when the flag is OFF.
 //
-// A1.1 round-1 WARN#5 closure (2026-05-31) — fail-CLOSED policy.
-// Sub-A.2 foundation kept fail-open semantics, потому что в тот момент
-// гейт был инертен и неподключён к enforcement perimeter. A1.1
-// подключил гейт к 24 teacher API ручкам + register flow. На
-// enforcement perimeter fail-open означает: DB outage → все 25 ручек
-// silently bypass gate, как будто flag=0. Это не безопасное поведение
-// в проде где operator явно включил flag=1.
+// security-audit-2026-06-02 F3a closure (round-N paranoia SIGN-OFF) —
+// truly fail-CLOSED policy.
 //
-// Новая семантика: если env-override SAAS_OFFER_GATE_ENABLED=1 явно
-// задан, fail-CLOSED (return true) при DB read failure — гейт
-// продолжает работать, /api/teacher/** mutations отвечают 503
-// saas_offer_awaiting_publication, что выглядит как «system busy»
-// для пользователя но НЕ открывает perimeter. При env=0 или unset
-// продолжаем fail-open (gate инертен по умолчанию).
+// Prior contract (A1.1 round-1 WARN#5, kept fail-CLOSED ONLY when env
+// override `SAAS_OFFER_GATE_ENABLED=1` was explicitly set) was wrong
+// for the canonical prod state: operator flips the flag via admin UI,
+// which writes to `operator_settings` table; env stays unset. On a DB
+// blip `resolveOperatorSetting` swallows the error INTERNALLY (inner
+// catch in operator-settings.ts) and falls through to env/default.
+// Outer catch here never fires → return false → all 24 perimeter
+// routes silently bypass the gate.
+//
+// New contract: `resolveOperatorSetting` now surfaces `dbErrored: true`
+// on a non-undefined-table runtime DB failure. When that's set AND the
+// env override is not explicitly '0', we fail-CLOSED (return true).
+// Trade-off: brief 503 / awaiting-publication banner on a real DB blip
+// even when the flag is genuinely off in DB. Upside: no silent
+// perimeter bypass on the canonical prod state.
 export async function isSaasOfferGateEnabled(): Promise<boolean> {
   try {
     const resolved = await resolveOperatorSetting('SAAS_OFFER_GATE_ENABLED')
+    if (resolved.dbErrored) {
+      // Distinguish env-explicit-off from absent: only an explicit '0'
+      // env override stays fail-OPEN (operator-asserted "the gate is
+      // off, regardless of DB state"). Anything else → fail-CLOSED.
+      const rawEnv = (process.env.SAAS_OFFER_GATE_ENABLED ?? '').trim()
+      const envExplicitlyOff = rawEnv === '0'
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[saas-offer-gate] DB read failed; fail-CLOSED',
+        {
+          envExplicitlyOff,
+          source: resolved.source,
+        },
+      )
+      return !envExplicitlyOff
+    }
     return resolved.value === 1
   } catch (err) {
-    const rawEnv = process.env.SAAS_OFFER_GATE_ENABLED
-    const envSaysOn = rawEnv && String(rawEnv).trim() === '1'
+    // Defensive — resolveOperatorSetting should not throw at all (it
+    // swallows DB errors and returns dbErrored=true). If it does, treat
+    // as a worse-than-DB-blip and still fail-CLOSED unless env says off.
+    const rawEnv = (process.env.SAAS_OFFER_GATE_ENABLED ?? '').trim()
+    const envExplicitlyOff = rawEnv === '0'
     // eslint-disable-next-line no-console
     console.warn(
-      '[saas-offer-gate] flag read failed; falling back to env',
+      '[saas-offer-gate] resolver threw unexpectedly; fail-CLOSED',
       {
         err: err instanceof Error ? err.message : String(err),
-        envSaysOn,
+        envExplicitlyOff,
       },
     )
-    return Boolean(envSaysOn)
+    return !envExplicitlyOff
   }
 }
 
