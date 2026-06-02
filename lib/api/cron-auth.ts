@@ -19,6 +19,8 @@
 
 import { NextResponse } from 'next/server'
 
+import { constantTimeEqual } from '@/lib/security/constant-time'
+
 import { NO_STORE } from '@/lib/api/http-headers'
 
 const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
@@ -87,11 +89,7 @@ export function requireCronSecret(request: Request): Response | null {
   return null
 }
 
-function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false
-  let diff = 0
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
-  }
-  return diff === 0
-}
+// 2026-06-02 (security-audit Sub-PR 2): primitive moved to
+// `lib/security/constant-time.ts` so the Telegram webhook secret
+// check + any future secret-token compare can use the same
+// implementation.
