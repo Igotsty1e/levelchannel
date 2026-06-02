@@ -4,6 +4,7 @@ import { NO_STORE } from '@/lib/api/http-headers'
 import { evaluateSaasOfferGate } from '@/lib/auth/guards'
 import { getAuthPool } from '@/lib/auth/pool'
 import { resolveOperatorSettingsForProbe } from '@/lib/admin/operator-settings'
+import { constantTimeEqual } from '@/lib/security/constant-time'
 import { takeRateLimit } from '@/lib/security/rate-limit'
 import {
   redactTelegramSecret,
@@ -56,7 +57,11 @@ export async function POST(request: Request) {
     )
   }
   const presented = request.headers.get('x-telegram-bot-api-secret-token') ?? ''
-  if (presented !== expectedSecret) {
+  // 2026-06-02 (security-audit Sub-PR 2, F2 closure): constant-time
+  // compare. `!==` short-circuits at first byte mismatch which is a
+  // wall-clock side-channel — real exploitability against Telegram is
+  // bounded but the project standard is constant-time (cron-auth.ts:80).
+  if (!constantTimeEqual(presented, expectedSecret)) {
     return NextResponse.json(
       { error: 'invalid_secret' },
       { status: 401, headers: NO_STORE },
