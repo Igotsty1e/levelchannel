@@ -180,6 +180,26 @@ export async function POST(request: Request, { params }: RouteParams) {
       { status: 402, headers: NO_STORE },
     )
   }
+  // Bug #1 (2026-06-02). When the teacher has not picked a payment
+  // method for this learner (`learner_billing_preferences.payment_
+  // method = 'none'`, or no row), the cabinet home renders the
+  // missing-payment-method banner instead of the «Открыть календарь»
+  // CTA. A stale tab / deep-link / direct API caller still reaches
+  // here; we surface the same verbatim message so confirm-form.tsx
+  // does not display the misleading generic 409 «Это время только
+  // что забронировал кто-то другой». 422 (Unprocessable Entity)
+  // — request well-formed, precondition not met by another party.
+  // Plan: docs/plans/bug-1-payment-method-banner.md §E.
+  if (result.reason === 'payment_method_not_set') {
+    return NextResponse.json(
+      {
+        error: 'payment_method_not_set',
+        message:
+          'Вы пока не можете забронировать занятие. Учитель должен выбрать модель оплаты за занятия.',
+      },
+      { status: 422, headers: NO_STORE },
+    )
+  }
   if (result.reason === 'pending_package_grant') {
     return NextResponse.json(
       {

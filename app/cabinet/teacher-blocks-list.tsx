@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
+import { MissingPaymentMethodBanner } from '@/components/cabinet/missing-payment-method-banner'
 import { TZ_DEFAULT, safeTz } from '@/lib/util/tz'
 
 // SAAS-PIVOT Epic 7 Day 7 — per-teacher block list on /cabinet for
@@ -33,11 +34,19 @@ type TeacherBlock = {
   balanceOwedKopecks: number
   debtSlotCount: number
   activePackageCount: number
+  // Bug #1 (2026-06-02). Per-pair payment method from
+  // learner_billing_preferences. When 'none', the «Записаться к этому
+  // учителю» CTA is replaced with the missing-payment-method banner.
+  paymentMethod: 'postpaid' | 'prepaid_packages' | 'none'
 }
 
 type Props = {
   blocks: TeacherBlock[]
   learnerTimezone: string | null
+  // Bug #1: server-side SoT used to decide whether the banner shows
+  // its second paragraph («не нужно ничего покупать заранее…»). Same
+  // value used to gate «Купить пакет» CTA in `billing-sections.tsx`.
+  canBuyPackages: boolean
 }
 
 function fmtSlot(iso: string, tz: string): string {
@@ -55,7 +64,11 @@ function fmtRub(kopecks: number): string {
   return `${(kopecks / 100).toLocaleString('ru-RU')}\u00a0₽`
 }
 
-export function TeacherBlocksList({ blocks, learnerTimezone }: Props) {
+export function TeacherBlocksList({
+  blocks,
+  learnerTimezone,
+  canBuyPackages,
+}: Props) {
   const router = useRouter()
   const tz = safeTz(learnerTimezone)
   const [armed, setArmed] = useState<string | null>(null)
@@ -258,21 +271,28 @@ export function TeacherBlocksList({ blocks, learnerTimezone }: Props) {
               </span>
             </div>
 
-            <Link
-              href={`/cabinet/book?teacher=${encodeURIComponent(b.teacherId)}`}
-              style={{
-                display: 'inline-block',
-                padding: '8px 16px',
-                background: 'var(--accent)',
-                color: 'var(--accent-contrast)',
-                borderRadius: 999,
-                textDecoration: 'none',
-                fontSize: 13,
-                fontWeight: 600,
-              }}
-            >
-              Записаться к этому учителю
-            </Link>
+            {b.paymentMethod === 'none' ? (
+              <MissingPaymentMethodBanner
+                variant="per-teacher"
+                canBuyPackages={canBuyPackages}
+              />
+            ) : (
+              <Link
+                href={`/cabinet/book?teacher=${encodeURIComponent(b.teacherId)}`}
+                style={{
+                  display: 'inline-block',
+                  padding: '8px 16px',
+                  background: 'var(--accent)',
+                  color: 'var(--accent-contrast)',
+                  borderRadius: 999,
+                  textDecoration: 'none',
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+              >
+                Записаться к этому учителю
+              </Link>
+            )}
           </div>
         ))}
       </div>

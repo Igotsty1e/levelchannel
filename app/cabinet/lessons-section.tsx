@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
+import { MissingPaymentMethodBanner } from '@/components/cabinet/missing-payment-method-banner'
 import type { LessonSlot } from '@/lib/scheduling/slots'
 import { safeTz } from '@/lib/util/tz'
 
@@ -65,6 +66,15 @@ type Props = {
   // in vitest config — gap intentionally documented per round-2 WARN
   // #3 closure in docs/plans/policy-knobs.md.
   cancelWindowHours: number
+  // Bug #1 (2026-06-02). Server-derived: true when the assigned
+  // teacher has not picked a payment method for this learner
+  // (`learner_billing_preferences.payment_method = 'none'`, or no row).
+  // Replaces the «Открыть календарь» CTA with the missing-payment-
+  // method banner. Plan: docs/plans/bug-1-payment-method-banner.md.
+  paymentMethodNotSet: boolean
+  // Bug #1: same SoT as the «Купить пакет» CTA gate in billing-
+  // sections. Used by the banner's second-paragraph copy.
+  canBuyPackages: boolean
 }
 
 function fmt(slotIso: string, tz: string): string {
@@ -118,6 +128,8 @@ export function LessonsSection({
   activePackages,
   billingWaveActive,
   cancelWindowHours,
+  paymentMethodNotSet,
+  canBuyPackages,
 }: Props) {
   const effectiveCancelWindowHours =
     Number.isFinite(cancelWindowHours)
@@ -430,6 +442,8 @@ export function LessonsSection({
       <BookingCta
         emailVerified={emailVerified}
         hasAssignedTeacher={hasAssignedTeacher}
+        paymentMethodNotSet={paymentMethodNotSet}
+        canBuyPackages={canBuyPackages}
       />
     </>
   )
@@ -447,9 +461,14 @@ export function LessonsSection({
 function BookingCta({
   emailVerified,
   hasAssignedTeacher,
+  paymentMethodNotSet,
+  canBuyPackages,
 }: {
   emailVerified: boolean
   hasAssignedTeacher: boolean
+  // Bug #1 — see Props on LessonsSection.
+  paymentMethodNotSet: boolean
+  canBuyPackages: boolean
 }) {
   const params = useSearchParams()
   const justBooked = params.get('booked') === '1'
@@ -514,6 +533,16 @@ function BookingCta({
         <p style={{ color: '#ffcfcf', fontSize: 13, margin: 0 }}>
           Чтобы записаться, сначала подтвердите e-mail (см. баннер выше).
         </p>
+      ) : paymentMethodNotSet ? (
+        // Bug #1 (2026-06-02): show the missing-payment-method banner
+        // in place of the «Открыть календарь» CTA. Booking-side gate
+        // in lib/scheduling/slots/booking.ts:249-252 remains as
+        // defense-in-depth. Plan: docs/plans/bug-1-payment-method-
+        // banner.md.
+        <MissingPaymentMethodBanner
+          variant="single"
+          canBuyPackages={canBuyPackages}
+        />
       ) : (
         <>
           <p

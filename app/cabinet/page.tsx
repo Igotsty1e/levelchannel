@@ -8,6 +8,7 @@ import { listAccountRoles } from '@/lib/auth/accounts'
 import { formatProfileNameForRender } from '@/lib/auth/profile-name'
 import { getAccountProfile } from '@/lib/auth/profiles'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { getPaymentMethodForPair } from '@/lib/billing/learner-payment-method'
 import { listAccountActivePackages } from '@/lib/billing/packages'
 import { listSlotPaymentState } from '@/lib/payments/allocations'
 import {
@@ -124,6 +125,14 @@ export default async function CabinetPage() {
     // (LessonsSection) unchanged. Zero-link learners get the empty-
     // state hint, no blocks to render.
     teacherBlocks,
+    // Bug #1 (2026-06-02). Single-link learner only: derive
+    // paymentMethodNotSet so the cabinet renders the missing-payment-
+    // method banner above the «Открыть календарь» CTA instead of
+    // letting the learner discover the booking-side reject inside
+    // the Calendly confirm screen. Multi-link learners get this per-
+    // block via loadTeacherBlocks (single SoT). Plan: docs/plans/bug-
+    // 1-payment-method-banner.md §A + §D.
+    primaryTeacherPaymentMethod,
   ] = await Promise.all([
     getAccountProfile(account.id),
     isLearner ? listSlotsForLearner(account.id, 20) : Promise.resolve([]),
@@ -143,6 +152,9 @@ export default async function CabinetPage() {
     isMultiTeacher
       ? loadTeacherBlocks(account.id, teacherIds)
       : Promise.resolve([]),
+    isLearner && !isMultiTeacher && primaryTeacherId
+      ? getPaymentMethodForPair(primaryTeacherId, account.id)
+      : Promise.resolve('none' as const),
   ])
 
   // PKG-LEARNER-BUY epic-close WARN #3 — server SoT for "should the
@@ -169,6 +181,15 @@ export default async function CabinetPage() {
     if (state === 'paid') paidSlotIds.push(slotId)
     else refundedSlotIds.push(slotId)
   }
+  // Bug #1 (2026-06-02). For single-link learners only — this is the
+  // input to BookingCta's banner short-circuit. Multi-link learners
+  // already carry their per-block paymentMethod on TeacherBlock.
+  const paymentMethodNotSet =
+    isLearner
+    && !isMultiTeacher
+    && Boolean(primaryTeacherId)
+    && primaryTeacherPaymentMethod === 'none'
+
   return (
     <AuthShell>
       <div
@@ -239,6 +260,7 @@ export default async function CabinetPage() {
               <TeacherBlocksList
                 blocks={teacherBlocks}
                 learnerTimezone={profile?.timezone ?? null}
+                canBuyPackages={canBuyPackages}
               />
               <UnifiedTimeline
                 learnerAccountId={account.id}
@@ -292,6 +314,8 @@ export default async function CabinetPage() {
                 process.env.BILLING_WAVE_ACTIVE === 'true'
               }
               cancelWindowHours={getLearnerCancelWindowHours()}
+              paymentMethodNotSet={paymentMethodNotSet}
+              canBuyPackages={canBuyPackages}
             />
           )}
 
