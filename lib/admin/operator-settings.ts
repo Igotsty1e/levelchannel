@@ -393,6 +393,14 @@ export type ResolvedSetting = {
   source: SettingSource
   rawDb: string | null
   rawEnv: string | null
+  // F3a closure (security-audit-2026-06-02): true when the DB read
+  // raised a non-undefined-table runtime error (pool exhaustion, network
+  // blip, replica lag if ever introduced). Callers whose security
+  // posture must be fail-CLOSED on DB blips (e.g. isSaasOfferGateEnabled)
+  // consult this instead of relying on a thrown exception — the inner
+  // catch in resolveOperatorSetting swallows the throw so the OUTER
+  // caller would never see it without this signal.
+  dbErrored: boolean
 }
 
 const INTEGER_PATTERN = /^\d+$/
@@ -431,6 +439,7 @@ export async function resolveOperatorSetting<K extends SettingKey>(
   const schema = SETTING_SCHEMA[key]
   let rawDb: string | null = null
   let rawEnv: string | null = null
+  let dbErrored = false
   try {
     const pool = getDbPool()
     const r = await pool.query(
@@ -441,13 +450,17 @@ export async function resolveOperatorSetting<K extends SettingKey>(
       rawDb = String(r.rows[0].value)
       const v = validate(schema, rawDb)
       if (v !== null) {
-        return { value: v, source: 'db', rawDb, rawEnv: null }
+        return { value: v, source: 'db', rawDb, rawEnv: null, dbErrored: false }
       }
       // eslint-disable-next-line no-console
       console.warn('[operator-settings] DB row invalid', { key, rawDb })
     }
   } catch (err) {
     if (!isUndefinedTableError(err)) {
+      // F3a closure: signal the runtime DB error to callers. The
+      // undefined-table case (fresh boot / migration ordering) is
+      // benign — env/default fallback is the documented behaviour.
+      dbErrored = true
       // eslint-disable-next-line no-console
       console.warn('[operator-settings] DB read failed', {
         key,
@@ -460,10 +473,10 @@ export async function resolveOperatorSetting<K extends SettingKey>(
   if (rawEnv && rawEnv.length > 0) {
     const v = validate(schema, rawEnv)
     if (v !== null) {
-      return { value: v, source: 'env', rawDb, rawEnv }
+      return { value: v, source: 'env', rawDb, rawEnv, dbErrored }
     }
   }
-  return { value: schema.default, source: 'default', rawDb, rawEnv }
+  return { value: schema.default, source: 'default', rawDb, rawEnv, dbErrored }
 }
 
 // Per-probe snapshot. ONE round-trip reads all keys for the probe;
@@ -477,6 +490,7 @@ export async function resolveOperatorSettingsForProbe(
     (k) => SETTING_SCHEMA[k].scope === probeName,
   )
   const dbValues = new Map<string, string>()
+  let dbErrored = false
   try {
     const pool = getDbPool()
     const r = await pool.query(
@@ -488,6 +502,7 @@ export async function resolveOperatorSettingsForProbe(
     }
   } catch (err) {
     if (!isUndefinedTableError(err)) {
+      dbErrored = true
       // eslint-disable-next-line no-console
       console.warn('[operator-settings] snapshot DB read failed', {
         probeName,
@@ -504,18 +519,18 @@ export async function resolveOperatorSettingsForProbe(
     if (rawDb !== null) {
       const v = validate(schema, rawDb)
       if (v !== null) {
-        out[k] = { value: v, source: 'db', rawDb, rawEnv }
+        out[k] = { value: v, source: 'db', rawDb, rawEnv, dbErrored: false }
         continue
       }
     }
     if (rawEnv && rawEnv.length > 0) {
       const v = validate(schema, rawEnv)
       if (v !== null) {
-        out[k] = { value: v, source: 'env', rawDb, rawEnv }
+        out[k] = { value: v, source: 'env', rawDb, rawEnv, dbErrored }
         continue
       }
     }
-    out[k] = { value: schema.default, source: 'default', rawDb, rawEnv }
+    out[k] = { value: schema.default, source: 'default', rawDb, rawEnv, dbErrored }
   }
   return out
 }
@@ -539,6 +554,7 @@ export async function resolveChannelSettings(
     (k) => (SETTING_SCHEMA[k].scope as SettingScope) === channel,
   )
   const dbValues = new Map<string, string>()
+  let dbErrored = false
   try {
     const pool = getDbPool()
     const r = await pool.query(
@@ -550,6 +566,7 @@ export async function resolveChannelSettings(
     }
   } catch (err) {
     if (!isUndefinedTableError(err)) {
+      dbErrored = true
       // eslint-disable-next-line no-console
       console.warn('[operator-settings] channel snapshot DB read failed', {
         channel,
@@ -566,18 +583,18 @@ export async function resolveChannelSettings(
     if (rawDb !== null) {
       const v = validate(schema, rawDb)
       if (v !== null) {
-        out[k] = { value: v, source: 'db', rawDb, rawEnv }
+        out[k] = { value: v, source: 'db', rawDb, rawEnv, dbErrored: false }
         continue
       }
     }
     if (rawEnv && rawEnv.length > 0) {
       const v = validate(schema, rawEnv)
       if (v !== null) {
-        out[k] = { value: v, source: 'env', rawDb, rawEnv }
+        out[k] = { value: v, source: 'env', rawDb, rawEnv, dbErrored }
         continue
       }
     }
-    out[k] = { value: schema.default, source: 'default', rawDb, rawEnv }
+    out[k] = { value: schema.default, source: 'default', rawDb, rawEnv, dbErrored }
   }
   return out
 }
@@ -768,6 +785,10 @@ export async function listOperatorSettingsForAdmin(
       source,
       rawDb,
       rawEnv,
+      // Admin reader rethrows on non-undefined-table errors (see catch
+      // above), so by the time we build this shape any DB error has
+      // already been propagated. Therefore dbErrored is always false here.
+      dbErrored: false,
       updatedAt: dbRow
         ? new Date(String(dbRow.updated_at)).toISOString()
         : null,

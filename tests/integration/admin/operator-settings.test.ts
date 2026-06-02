@@ -115,6 +115,51 @@ describe('resolveOperatorSetting (resolver chain)', () => {
     expect(r.source).toBe('default')
     expect(r.value).toBe(0.3)
   })
+
+  // security-audit-2026-06-02 Sub-PR 0 — R1-WARN#1 closure (e2e
+  // coverage of the dbErrored=true branch). A real DB throw during the
+  // SELECT must surface dbErrored=true on the returned ResolvedSetting.
+  // Simulated by pointing getDbPool at a closed pool via a temporary
+  // env override of DATABASE_URL — too invasive for this suite — so we
+  // exercise it by SELECTing under a transaction that's been rolled
+  // back: instead, force a syntax error by mocking the pool query.
+  it('surfaces dbErrored=true when the SELECT throws a non-undefined-table error', async () => {
+    const pool = getDbPool()
+    const realQuery = pool.query.bind(pool)
+    // Replace pool.query for ONE call: throw a runtime error (not
+    // undefined-table). Restore immediately after.
+    let calls = 0
+    ;(pool as unknown as { query: typeof pool.query }).query =
+      (async (...args: Parameters<typeof pool.query>) => {
+        calls += 1
+        if (calls === 1) {
+          const err = new Error('pool exhausted (test-injected)')
+          ;(err as Error & { code?: string }).code = '57P03'
+          throw err
+        }
+        return realQuery(...args)
+      }) as typeof pool.query
+    try {
+      const r = await resolveOperatorSetting(
+        'SAAS_OFFER_GATE_ENABLED',
+        {} as unknown as NodeJS.ProcessEnv,
+      )
+      expect(r.dbErrored).toBe(true)
+      // No env override → default applied, source='default'.
+      expect(r.source).toBe('default')
+      expect(r.value).toBe(0)
+    } finally {
+      ;(pool as unknown as { query: typeof pool.query }).query = realQuery
+    }
+  })
+
+  it('surfaces dbErrored=false on a normal (no-row) read', async () => {
+    const r = await resolveOperatorSetting(
+      'SAAS_OFFER_GATE_ENABLED',
+      {} as unknown as NodeJS.ProcessEnv,
+    )
+    expect(r.dbErrored).toBe(false)
+  })
 })
 
 describe('resolveOperatorSettingsForProbe (snapshot)', () => {
