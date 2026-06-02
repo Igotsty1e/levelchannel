@@ -486,7 +486,10 @@ export async function refundTransaction(
 // JSON-error handling stays consistent with chargeWithSavedToken /
 // confirmThreeDs / refundTransaction.
 
-export type CloudPaymentsSbpQrRequest = {
+// Quality Sub-PR A (2026-06-02) — F3: dropped `export` on these two
+// types. They have no external consumers; the wrapper `createSbpQr`
+// uses them locally.
+type CloudPaymentsSbpQrRequest = {
   amount: number
   invoiceId: string
   accountId: string
@@ -498,7 +501,7 @@ export type CloudPaymentsSbpQrRequest = {
   jsonData?: string
 }
 
-export type CloudPaymentsSbpQrResult =
+type CloudPaymentsSbpQrResult =
   | {
       kind: 'success'
       transactionId: string

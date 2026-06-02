@@ -376,7 +376,6 @@ The route docstrings above lean toward "load-bearing context" rather than comple
 | `app/api/admin/accounts/[id]/cancel-deletion` | POST | clear `scheduled_purge_at` (operator-side undelete during grace) |
 | `app/api/admin/accounts/[id]/disable` | POST | toggle `disabled_at` + revoke sessions (`withIdempotency`) |
 | `app/api/admin/accounts/[id]/role` | POST | grant / revoke admin / teacher / student role (`withIdempotency`) |
-| `app/api/admin/accounts/[id]/postpaid` | POST | toggle `postpaid_allowed` (`withIdempotency`) |
 | `app/api/admin/accounts/[id]/teacher` | POST | bind a teacher to a learner (assigned-teacher contract) |
 | `app/api/admin/pricing` + `[id]` | GET/POST/PATCH/DELETE | tariff CRUD; hard-delete refused when slots reference; price + duration immutable post-purchase |
 | `app/api/admin/packages` + `[id]` | GET/POST/PATCH/DELETE | package CRUD; economic fields immutable after first purchase (0033 trigger) |

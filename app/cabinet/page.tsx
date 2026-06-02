@@ -9,7 +9,6 @@ import { formatProfileNameForRender } from '@/lib/auth/profile-name'
 import { getAccountProfile } from '@/lib/auth/profiles'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { listAccountActivePackages } from '@/lib/billing/packages'
-import { getDbPool } from '@/lib/db/pool'
 import { listSlotPaymentState } from '@/lib/payments/allocations'
 import {
   listOpenFutureSlots,
@@ -120,7 +119,6 @@ export default async function CabinetPage() {
     teacherSlots,
     teacherLearners,
     activePackages,
-    postpaidRow,
     // SAAS-PIVOT Day 7 (Epic 7) — per-teacher blocks fetched only for
     // multi-link learners. Single-link learners keep the v1 surface
     // (LessonsSection) unchanged. Zero-link learners get the empty-
@@ -142,12 +140,6 @@ export default async function CabinetPage() {
     // Wave 18 — billing context for the BookConfirmModal preview.
     // Only loaded for learners; pure read, no mutation.
     isLearner ? listAccountActivePackages(account.id) : Promise.resolve([]),
-    isLearner
-      ? getDbPool().query(
-          'select postpaid_allowed from accounts where id = $1',
-          [account.id],
-        )
-      : Promise.resolve({ rows: [] as Array<{ postpaid_allowed: boolean }> }),
     isMultiTeacher
       ? loadTeacherBlocks(account.id, teacherIds)
       : Promise.resolve([]),
@@ -177,8 +169,6 @@ export default async function CabinetPage() {
     if (state === 'paid') paidSlotIds.push(slotId)
     else refundedSlotIds.push(slotId)
   }
-  const postpaidAllowed = Boolean(postpaidRow.rows[0]?.postpaid_allowed)
-
   return (
     <AuthShell>
       <div
@@ -298,7 +288,6 @@ export default async function CabinetPage() {
                 countInitial: p.countInitial,
                 expiresAt: p.expiresAt,
               }))}
-              postpaidAllowed={postpaidAllowed}
               billingWaveActive={
                 process.env.BILLING_WAVE_ACTIVE === 'true'
               }

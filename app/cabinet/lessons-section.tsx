@@ -8,11 +8,21 @@ import type { LessonSlot } from '@/lib/scheduling/slots'
 import { safeTz } from '@/lib/util/tz'
 
 // Wave 18 — billing-preview banner inside BookConfirmModal needs to
-// know which packages this learner has and whether they're allowed
-// postpaid. Server hands those down through here verbatim. expiresAt
-// is included so the modal can pick the SAME package the server will
-// actually consume (FIFO by expires_at asc, matching consumePackageUnit
-// in lib/billing/consumption.ts).
+// know which packages this learner has. Server hands those down through
+// here verbatim. expiresAt is included so the modal can pick the SAME
+// package the server will actually consume (FIFO by expires_at asc,
+// matching consumePackageUnit in lib/billing/consumption.ts).
+//
+// Quality Sub-PR A (2026-06-02): dropped the `postpaidAllowed` prop +
+// the BookConfirmModal postpaid-preview banner that depended on it.
+// The advisory banner read accounts.postpaid_allowed which became a
+// dead column after mig 0101 (booking gates per-pair via
+// learner_billing_preferences). The booking server-side gate already
+// rejects ineligible bookings with structured reasons
+// (payment_method_not_set / package_required / pending_package_grant),
+// so the lying banner was removed wholesale. A per-pair preview is a
+// follow-up sub-epic — the modal stays silent on the postpaid case
+// until then.
 export type LearnerActivePackage = {
   id: string
   titleSnapshot: string
@@ -42,7 +52,6 @@ type Props = {
   // case (the existing «учитель не назначен» hint already covers).
   assignedTeacherId: string | null
   activePackages: LearnerActivePackage[]
-  postpaidAllowed: boolean
   // Wave 18 — server-side BILLING_WAVE_ACTIVE flag. When false,
   // the booking endpoint goes through the legacy single-statement
   // path with no package/postpaid logic. The preview banner then
@@ -107,7 +116,6 @@ export function LessonsSection({
   hasAssignedTeacher,
   assignedTeacherId,
   activePackages,
-  postpaidAllowed,
   billingWaveActive,
   cancelWindowHours,
 }: Props) {
