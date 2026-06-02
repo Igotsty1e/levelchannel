@@ -7,7 +7,7 @@
 //   - Профиль                — личные данные, часовой пояс, опасные действия
 //   - Цены занятий           — был «Тарифы» (/teacher/tariffs)
 //   - Пакеты уроков          — был «Пакеты» (/teacher/packages)
-//   - Подписка на платформу  — Free/Mid/Pro (/teacher/subscription)
+//   - Подписка на платформу  — Стартовый/Базовый/Расширенный (/teacher/subscription)
 //   - Календарь и интеграции — /teacher/settings/calendar
 //   - Уведомления            — /teacher/settings/digest (сводка занятий)
 import Link from 'next/link'
@@ -45,7 +45,7 @@ const HUB_ITEMS: ReadonlyArray<HubItem> = [
   {
     href: '/teacher/subscription',
     title: 'Подписка на платформу',
-    description: 'Тариф LevelChannel — Free / Mid / Pro.',
+    description: 'Тариф LevelChannel — Стартовый / Базовый / Расширенный.',
   },
   {
     href: '/teacher/settings/calendar',

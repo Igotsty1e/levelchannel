@@ -27,24 +27,26 @@ import {
   type TariffComparisonPlan,
 } from '@/components/teacher/tariff-comparison-card'
 
+// bug-4 Sub-PR A (2026-06-02): Russian public titles per mig 0103.
+// Slugs unchanged; only the rendered titleRu flipped.
 const PLANS: TariffComparisonPlan[] = [
   {
     slug: 'free',
-    titleRu: 'Free',
+    titleRu: 'Стартовый',
     priceKopecksMonthly: 0,
     learnerLimit: 1,
     features: {},
   },
   {
     slug: 'mid',
-    titleRu: 'Mid',
+    titleRu: 'Базовый',
     priceKopecksMonthly: 30000,
     learnerLimit: 5,
     features: {},
   },
   {
     slug: 'pro',
-    titleRu: 'Pro',
+    titleRu: 'Расширенный',
     priceKopecksMonthly: 80000,
     learnerLimit: 30,
     features: {},
@@ -200,6 +202,6 @@ describe('TariffComparisonCard — TASK-2 profile tariff card', () => {
     render(<TariffComparisonCard plans={PLANS} currentPlanSlug="mid" />)
     const root = screen.getByTestId('tariff-comparison-card')
     expect(root.textContent).toContain('Сейчас вы на тарифе')
-    expect(root.textContent).toContain('Mid')
+    expect(root.textContent).toContain('Базовый')
   })
 })

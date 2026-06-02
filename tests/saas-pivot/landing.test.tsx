@@ -76,13 +76,21 @@ describe('SAAS-PIVOT Epic 8 — teacher-acquisition landing (/saas)', () => {
     // A2 (2026-05-30) — Mid/Pro CTAs activated: both route to
     // /teacher/subscription (через /teacher/layout.tsx гейт, гость
     // получит /login). «Скоро» buttons и Pro mailto early-access ушли.
+    // bug-4 Sub-PR A (2026-06-02): public titles renamed to Russian
+    // (Стартовый / Базовый / Расширенный); slugs unchanged.
     const { container } = render(SaasPage())
     // Tier names appear as h3 inside the pricing section.
-    expect(screen.getByText('Free')).toBeTruthy()
-    expect(screen.getByText('Mid')).toBeTruthy()
-    expect(screen.getByText('Pro')).toBeTruthy()
+    expect(screen.getByText('Стартовый')).toBeTruthy()
+    expect(screen.getByText('Базовый')).toBeTruthy()
+    expect(screen.getByText('Расширенный')).toBeTruthy()
     // Negative pin — Operator-managed tier must NOT reappear here.
     expect(screen.queryByText('Платежи через платформу')).toBeNull()
+    // Negative pin — old English names must NOT appear as standalone
+    // headings in the pricing section. Defensive against a partial
+    // rename leaking the word back into the rendered output.
+    expect(screen.queryByText('Free')).toBeNull()
+    expect(screen.queryByText('Mid')).toBeNull()
+    expect(screen.queryByText('Pro')).toBeNull()
 
     // Both Mid and Pro now route to /teacher/subscription as primary CTAs.
     const subscriptionLinks = Array.from(

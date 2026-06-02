@@ -107,11 +107,15 @@ function formatTs(iso: string | null): string {
   return new Date(iso).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })
 }
 
+// bug-4 Sub-PR A (2026-06-02): admin labels carry both the new public
+// Russian title AND the canonical DB slug so the operator can grep
+// logs by either form. operator-managed stays untouched (not a public
+// tier).
 const PLAN_LABEL: Record<string, string> = {
-  free: 'Free',
-  mid: 'Mid',
-  pro: 'Pro',
-  'operator-managed': 'Plan-4 (operator)',
+  free: 'Стартовый (free)',
+  mid: 'Базовый (mid)',
+  pro: 'Расширенный (pro)',
+  'operator-managed': 'Operator-managed (operator-managed)',
 }
 
 export default async function AdminTeachersPage() {

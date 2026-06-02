@@ -8,11 +8,14 @@ import { useRouter } from 'next/navigation'
 // orthogonal (a plan-toggle audit-row should be independent of a slug
 // rename).
 
+// bug-4 Sub-PR A (2026-06-02): admin options carry both the new public
+// Russian title AND the canonical DB slug (matching PLAN_LABEL in
+// app/admin/(gated)/teachers/page.tsx). operator-managed stays untouched.
 const PLAN_OPTIONS = [
-  { slug: 'free', label: 'Free' },
-  { slug: 'mid', label: 'Mid' },
-  { slug: 'pro', label: 'Pro' },
-  { slug: 'operator-managed', label: 'Plan-4 (operator)' },
+  { slug: 'free', label: 'Стартовый (free)' },
+  { slug: 'mid', label: 'Базовый (mid)' },
+  { slug: 'pro', label: 'Расширенный (pro)' },
+  { slug: 'operator-managed', label: 'Operator-managed (operator-managed)' },
 ]
 
 export function TeacherEditForm({

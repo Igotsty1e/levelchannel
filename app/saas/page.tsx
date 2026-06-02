@@ -13,7 +13,7 @@ import { TeacherLandingClient } from '@/components/home/teacher-landing-client'
 export const metadata: Metadata = {
   title: 'LevelChannel — кабинет для репетитора',
   description:
-    'Расписание, ученики, балансы и пакеты — в одном кабинете. Free навсегда; Mid и Pro — когда учеников становится больше.',
+    'Расписание, ученики, балансы и пакеты — в одном кабинете. «Стартовый» навсегда; «Базовый» и «Расширенный» — когда учеников становится больше.',
   robots: {
     index: false,
     follow: false,
@@ -25,7 +25,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'LevelChannel — кабинет для репетитора',
     description:
-      'Расписание, ученики, балансы и пакеты — в одном кабинете. Free навсегда; Mid и Pro — когда учеников становится больше.',
+      'Расписание, ученики, балансы и пакеты — в одном кабинете. «Стартовый» навсегда; «Базовый» и «Расширенный» — когда учеников становится больше.',
     type: 'website',
   },
 }
