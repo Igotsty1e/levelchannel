@@ -35,6 +35,8 @@
 
 import { getDbPool } from '@/lib/db/pool'
 
+import { ACTIVE_INTEGRATION_GATE_SQL } from './freshness-sql'
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -63,11 +65,10 @@ export async function listHiddenSlotsForTeacher(opts: {
 
   const pool = getDbPool()
   // BCS-G retro Codex round 1 WARN #4 — mirror the booking-side gate
-  // predicate exactly. `lib/scheduling/slots/booking.ts:BUSY_OVERLAP_GATE_SQL`
-  // only blocks bookings when the teacher's integration is
-  // `sync_state='active'` AND `last_pulled_at >= now() - interval '10 minutes'`
-  // (the freshness TTL). Counting overlaps under `degraded` / stale
-  // / `disconnected` would surface "hidden slots" that learners can
+  // predicate exactly. See `lib/calendar/freshness-sql.ts` for the
+  // shared `tci.sync_state='active' AND last_pulled_at >= now() - 10min`
+  // constant. Counting overlaps under `degraded` / stale /
+  // `disconnected` would surface "hidden slots" that learners can
   // actually still book → false alarm in the teacher UI.
   const result = await pool.query(
     `with slot_overlaps as (
@@ -84,8 +85,7 @@ export async function listHiddenSlotsForTeacher(opts: {
            on b.teacher_account_id = s.teacher_account_id
          join teacher_calendar_integrations tci
            on tci.account_id = s.teacher_account_id
-          and tci.sync_state = 'active'
-          and tci.last_pulled_at >= now() - interval '10 minutes'
+          and ${ACTIVE_INTEGRATION_GATE_SQL}
         where s.teacher_account_id = $1
           and s.status = 'open'
           and s.start_at > now()
@@ -131,7 +131,8 @@ export async function countHiddenSlotsForTeacher(
 ): Promise<number> {
   if (!UUID_PATTERN.test(teacherAccountId)) return 0
   const pool = getDbPool()
-  // BCS-G retro Codex round 1 WARN #4 — same booking-side gate.
+  // BCS-G retro Codex round 1 WARN #4 — same booking-side gate via
+  // `lib/calendar/freshness-sql.ts`.
   const result = await pool.query(
     `select count(distinct s.id)::int as n
        from lesson_slots s
@@ -139,8 +140,7 @@ export async function countHiddenSlotsForTeacher(
          on b.teacher_account_id = s.teacher_account_id
        join teacher_calendar_integrations tci
          on tci.account_id = s.teacher_account_id
-        and tci.sync_state = 'active'
-        and tci.last_pulled_at >= now() - interval '10 minutes'
+        and ${ACTIVE_INTEGRATION_GATE_SQL}
       where s.teacher_account_id = $1
         and s.status = 'open'
         and s.start_at > now()

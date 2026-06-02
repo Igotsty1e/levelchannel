@@ -260,12 +260,16 @@ export async function POST(request: Request) {
 
       return {
         status: 200,
-        // Wave 6.1 #4 Phase 1.5 — receiptToken is the plain (server-
-        // generated, 32-byte random) token whose sha256 hash lives on
-        // the row's `receipt_token_hash` column. Phase 2 will gate
-        // `/api/payments/[invoiceId]/{,cancel,stream}` on it; for now
-        // it's returned to the client so the UI can start threading
-        // it ahead of the gate. Treat as confidential like a session
+        // Wave 6.1 #4 — receiptToken is the plain (server-generated,
+        // 32-byte random) token whose sha256 hash lives on the row's
+        // `receipt_token_hash` column. The
+        // `/api/payments/[invoiceId]/{,cancel,stream}` gate is shipped
+        // (see `evaluateReceiptGate` calls in
+        // `app/api/payments/[invoiceId]/route.ts:53`,
+        // `app/api/payments/[invoiceId]/cancel/route.ts:59`,
+        // `app/api/payments/[invoiceId]/stream/route.ts:84`); the
+        // token is returned here so the client can thread it on
+        // subsequent calls. Treat as confidential like a session
         // cookie — never log, never leak in URLs without HTTPS.
         body: { order, checkoutIntent, receiptToken },
       }

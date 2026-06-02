@@ -2,6 +2,7 @@
 // Dynamic billing imports preserved verbatim — the legacy fast path
 // when BILLING_WAVE_ACTIVE !== 'true' must NOT load billing modules.
 
+import { ACTIVE_INTEGRATION_GATE_SQL } from '@/lib/calendar/freshness-sql'
 import { getDbPool } from '@/lib/db/pool'
 
 import {
@@ -59,14 +60,16 @@ export type BookSlotOptions = {
 // The gate is silent on slots whose teacher has no integration row
 // at all — `EXISTS` returns false → no busy rows considered → the
 // atomic UPDATE behaves identically to the pre-BCS-D path.
+// Predicate (`tci.sync_state='active' AND last_pulled_at >= now() - 10min`)
+// is the shared read-side gate constant in
+// `lib/calendar/freshness-sql.ts`. Do not inline a copy here.
 const BUSY_OVERLAP_GATE_SQL = `
   and not exists (
     select 1
       from teacher_external_busy_intervals b
       join teacher_calendar_integrations tci
         on tci.account_id = b.teacher_account_id
-       and tci.sync_state = 'active'
-       and tci.last_pulled_at >= now() - interval '10 minutes'
+       and ${ACTIVE_INTEGRATION_GATE_SQL}
      where b.teacher_account_id = lesson_slots.teacher_account_id
        and b.is_own_event = false
        and tstzrange(b.start_at, b.end_at, '[)')
@@ -387,13 +390,14 @@ async function classifyBookSlotFailure(
   // window. The latter surfaces as `external_conflict` so the learner
   // UI can show a specific message instead of the generic 409.
   if (String(row.status) === 'open') {
+    // Read-side freshness gate is the shared constant from
+    // `lib/calendar/freshness-sql.ts`.
     const overlap = await pool.query(
       `select 1
          from teacher_external_busy_intervals b
          join teacher_calendar_integrations tci
            on tci.account_id = b.teacher_account_id
-          and tci.sync_state = 'active'
-          and tci.last_pulled_at >= now() - interval '10 minutes'
+          and ${ACTIVE_INTEGRATION_GATE_SQL}
         where b.teacher_account_id = $1
           and b.is_own_event = false
           and tstzrange(b.start_at, b.end_at, '[)')
