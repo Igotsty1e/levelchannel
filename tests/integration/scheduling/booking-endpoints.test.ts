@@ -11,6 +11,7 @@ import {
   markAccountVerified,
 } from '@/lib/auth/accounts'
 import { getDbPool } from '@/lib/db/pool'
+import { createTariffForTeacher } from '@/lib/pricing/tariffs'
 
 import '../setup'
 import {
@@ -353,6 +354,84 @@ describe('BCS-B.2 — GET /api/slots/booking-times', () => {
     expect(slot).toHaveProperty('durationMinutes')
     expect(slot).not.toHaveProperty('teacherEmail')
     expect(slot).not.toHaveProperty('notes')
+  })
+
+  // Bug #3 fix (2026-06-02) — anti-hardcode pin. The booking-times API
+  // must surface the REAL slot.durationMinutes and the REAL tariff
+  // title from pricing_tariffs, not the placeholder «50 мин» /
+  // «Занятие по английскому» that lived on /cabinet/book[/ymd] before
+  // this fix. Seeds a tariff with title 'Индивидуальный урок 60 мин'
+  // and duration 60, binds a slot to it, and asserts the wire DTO
+  // carries both real values (NOT the placeholders).
+  it('returns real tariff title + duration on the wire (Bug #3 pin)', async () => {
+    const teacher = await registerAndCookie('t-times-bug3@example.com', {
+      verifyEmail: true,
+      role: 'teacher',
+    })
+    const admin = await registerAndCookie('a-times-bug3@example.com', {
+      verifyEmail: true,
+      role: 'admin',
+    })
+    const learner = await registerAndCookie('l-times-bug3@example.com', {
+      verifyEmail: true,
+    })
+    await assignTeacher(learner.accountId, teacher.accountId)
+
+    // Seed a tariff with a concrete, recognisable title + duration.
+    // Slug is teacher-prefixed to dodge the global UNIQUE on slug.
+    const tariff = await createTariffForTeacher({
+      teacherId: teacher.accountId,
+      slug: `bug3-${teacher.accountId.slice(0, 8)}`,
+      titleRu: 'Индивидуальный урок 60 мин',
+      amountKopecks: 250_000,
+      durationMinutes: 60,
+    })
+    expect(tariff.titleRu).toBe('Индивидуальный урок 60 мин')
+    expect(tariff.durationMinutes).toBe(60)
+
+    const startAt = futureIsoMinutes(60 * 26)
+    const created = await adminCreateHandler(
+      buildRequest('/api/admin/slots', {
+        cookie: admin.cookie,
+        body: {
+          teacherAccountId: teacher.accountId,
+          startAt,
+          durationMinutes: 60,
+          tariffId: tariff.id,
+        },
+      }),
+    )
+    expect([200, 201]).toContain(created.status)
+    const slotJson = await created.json()
+    const startDate = new Date(slotJson.slot.startAt)
+    const mskYmd = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Moscow',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(startDate)
+
+    const res = await bookingTimesHandler(
+      buildRequest(
+        `/api/slots/booking-times?ymd=${mskYmd}&tz=Europe/Moscow`,
+        { cookie: learner.cookie },
+      ),
+    )
+    expect(res.status).toBe(200)
+    const json = await res.json()
+    expect(Array.isArray(json.slots)).toBe(true)
+    const bug3Slot = (json.slots as Array<{
+      id: string
+      durationMinutes: number
+      tariffTitleRu?: string | null
+    }>).find((s) => s.id === slotJson.slot.id)
+    expect(bug3Slot).toBeTruthy()
+    // Real duration from the slot snapshot — explicit anti-placeholder.
+    expect(bug3Slot!.durationMinutes).toBe(60)
+    expect(bug3Slot!.durationMinutes).not.toBe(50)
+    // Real tariff title via the booking-times SQL join.
+    expect(bug3Slot!.tariffTitleRu).toBe('Индивидуальный урок 60 мин')
+    expect(bug3Slot!.tariffTitleRu).not.toBe('Занятие по английскому')
   })
 
   it('empty slots when teacher has none on that day', async () => {

@@ -137,27 +137,22 @@ export default async function BookDayPage({
           }}
         />
 
+        {/*
+          Bug #3 fix (2026-06-02): dropped hardcoded duration
+          subheader — different slots can carry different tariffs,
+          so duration is now rendered per slot inside TimeList from
+          the real `durationMinutes` field on the public DTO.
+        */}
         <h2
           style={{
             fontSize: 18,
             fontWeight: 600,
             textAlign: 'center',
-            margin: '8px 0',
+            margin: '8px 0 16px 0',
           }}
         >
           Выберите время
         </h2>
-        <p
-          style={{
-            fontSize: 13,
-            color: 'var(--secondary)',
-            textAlign: 'center',
-            marginTop: 0,
-            marginBottom: 16,
-          }}
-        >
-          Длительность: 50 мин
-        </p>
 
         <TimeList
           ymd={ymd}
