@@ -17,15 +17,28 @@ import type { PricingTariff } from '@/lib/pricing/tariffs'
 //   3. The session's teacher_account_id is bound at the server (via
 //      requireTeacherAndVerified guard); the client NEVER passes it.
 
+// Free-tier 1pkg+1tariff unlock (2026-06-02). Plan:
+// docs/plans/free-tier-1pkg-1tariff-unlock.md §4.
+//   - `writeCap` < 0 → unlimited; always show form.
+//   - `writeCap` >= 0 → finite cap. Hint above; hide form at cap.
 export function TeacherTariffEditor({
   initialTariffs,
   showArchived,
+  writeCap,
+  currentActiveCount,
 }: {
   initialTariffs: PricingTariff[]
   showArchived: boolean
+  /** -1 = unlimited (operator-managed); 0 = no creates; 1+ = literal cap. */
+  writeCap: number
+  /** Server-counted deleted_at IS NULL tariffs. */
+  currentActiveCount: number
 }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const isUnlimited = writeCap < 0
+  const atCap = !isUnlimited && currentActiveCount >= writeCap
+  const noCreatesAtAll = !isUnlimited && writeCap === 0
 
   async function postJson(
     method: 'POST' | 'PATCH' | 'DELETE',
@@ -78,6 +91,53 @@ export function TeacherTariffEditor({
         </div>
       ) : null}
 
+      {!isUnlimited && writeCap > 0 && (
+        <div
+          style={{
+            padding: '10px 14px',
+            background: 'rgba(80, 140, 200, 0.08)',
+            border: '1px solid rgba(120, 170, 220, 0.25)',
+            borderRadius: 8,
+            fontSize: 13,
+            lineHeight: 1.5,
+            color: 'var(--text)',
+          }}
+        >
+          На вашем тарифе доступно тарифов: {writeCap}. Использовано: {currentActiveCount}.
+          Чтобы создавать больше — свяжитесь с оператором LevelChannel.
+        </div>
+      )}
+      {noCreatesAtAll && (
+        <div
+          style={{
+            padding: '10px 14px',
+            background: 'rgba(80, 140, 200, 0.08)',
+            border: '1px solid rgba(120, 170, 220, 0.25)',
+            borderRadius: 8,
+            fontSize: 13,
+            lineHeight: 1.5,
+            color: 'var(--text)',
+          }}
+        >
+          Создание тарифов недоступно на вашем тарифе. Перейдите на тариф с тарифами или свяжитесь с оператором LevelChannel.
+        </div>
+      )}
+      {!noCreatesAtAll && atCap && (
+        <div
+          style={{
+            padding: '10px 14px',
+            background: 'rgba(255, 203, 107, 0.08)',
+            border: '1px solid rgba(255, 203, 107, 0.35)',
+            borderRadius: 8,
+            fontSize: 13,
+            lineHeight: 1.5,
+            color: 'var(--text)',
+          }}
+        >
+          Лимит тарифов исчерпан. Архивируйте старый тариф, чтобы создать новый.
+        </div>
+      )}
+
       {active.map((t) => (
         <TeacherTariffRow
           key={t.id}
@@ -97,13 +157,15 @@ export function TeacherTariffEditor({
         />
       ))}
 
-      <NewTariffForm
-        onCreate={async (input) => {
-          const r = await postJson('POST', '/api/teacher/tariffs', input)
-          return r.ok
-        }}
-        busy={busy}
-      />
+      {!atCap && !noCreatesAtAll && (
+        <NewTariffForm
+          onCreate={async (input) => {
+            const r = await postJson('POST', '/api/teacher/tariffs', input)
+            return r.ok
+          }}
+          busy={busy}
+        />
+      )}
 
       <div style={{ marginTop: 24, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
         <Link

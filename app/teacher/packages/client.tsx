@@ -1,5 +1,6 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
 type TeacherPackage = {
@@ -18,15 +19,34 @@ type TeacherPackage = {
 // SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — teacher cabinet packages
 // editor. Mirrors the admin packages editor shape but targets
 // /api/teacher/packages instead of /api/admin/packages.
+//
+// Free-tier 1pkg+1tariff unlock (2026-06-02). Plan:
+// docs/plans/free-tier-1pkg-1tariff-unlock.md §4.
+//   - `writeCap` < 0 → unlimited (operator-managed); always show form.
+//   - `writeCap` >= 0 → finite cap from TIER_WRITE_CAPS. Show capacity
+//     hint above the form. Hide form when currentActiveCount >= cap;
+//     show "Лимит исчерпан. Архивируйте..." message instead.
+// After create/toggle the editor calls router.refresh() to re-pull caps
+// (server-rendered SSR re-derives writeCap + currentActiveCount).
 export function TeacherPackagesEditor({
   initialPackages,
+  writeCap,
+  currentActiveCount,
 }: {
   initialPackages: TeacherPackage[]
+  /** -1 = unlimited (operator-managed); 0 = no creates; 1+ = literal cap. */
+  writeCap: number
+  /** Server-counted is_active=true AND deleted_at IS NULL packages. */
+  currentActiveCount: number
 }) {
+  const router = useRouter()
   const [packages, setPackages] = useState<TeacherPackage[]>(initialPackages)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
+  const isUnlimited = writeCap < 0
+  const atCap = !isUnlimited && currentActiveCount >= writeCap
+  const noCreatesAtAll = !isUnlimited && writeCap === 0
   const [draft, setDraft] = useState({
     slug: '',
     titleRu: '',
@@ -104,6 +124,7 @@ export function TeacherPackagesEditor({
         displayOrder: 100,
       })
       await refresh()
+      router.refresh()
     } finally {
       setBusy(false)
     }
@@ -130,6 +151,7 @@ export function TeacherPackagesEditor({
           : `Пакет ${body.package.slug} архивирован`,
       )
       await refresh()
+      router.refresh()
     } finally {
       setBusy(false)
     }
@@ -137,6 +159,53 @@ export function TeacherPackagesEditor({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {!isUnlimited && writeCap > 0 && (
+        <div
+          style={{
+            padding: '10px 14px',
+            background: 'rgba(80, 140, 200, 0.08)',
+            border: '1px solid rgba(120, 170, 220, 0.25)',
+            borderRadius: 8,
+            fontSize: 13,
+            lineHeight: 1.5,
+            color: 'var(--text)',
+          }}
+        >
+          На вашем тарифе доступно пакетов: {writeCap}. Использовано: {currentActiveCount}.
+          Чтобы создавать больше — свяжитесь с оператором LevelChannel.
+        </div>
+      )}
+      {noCreatesAtAll && (
+        <div
+          style={{
+            padding: '10px 14px',
+            background: 'rgba(80, 140, 200, 0.08)',
+            border: '1px solid rgba(120, 170, 220, 0.25)',
+            borderRadius: 8,
+            fontSize: 13,
+            lineHeight: 1.5,
+            color: 'var(--text)',
+          }}
+        >
+          Создание пакетов недоступно на вашем тарифе. Перейдите на тариф с пакетами или свяжитесь с оператором LevelChannel.
+        </div>
+      )}
+      {!noCreatesAtAll && atCap && (
+        <div
+          style={{
+            padding: '10px 14px',
+            background: 'rgba(255, 203, 107, 0.08)',
+            border: '1px solid rgba(255, 203, 107, 0.35)',
+            borderRadius: 8,
+            fontSize: 13,
+            lineHeight: 1.5,
+            color: 'var(--text)',
+          }}
+        >
+          Лимит пакетов исчерпан. Архивируйте старый пакет, чтобы создать новый.
+        </div>
+      )}
+      {!atCap && !noCreatesAtAll && (
       <section
         style={{
           padding: 16,
@@ -246,6 +315,17 @@ export function TeacherPackagesEditor({
           </p>
         )}
       </section>
+      )}
+      {(atCap || noCreatesAtAll) && (error || info) && (
+        <div>
+          {error && (
+            <p style={{ color: '#ff8a8a', fontSize: 13 }}>{error}</p>
+          )}
+          {info && (
+            <p style={{ color: '#9bdf9b', fontSize: 13 }}>{info}</p>
+          )}
+        </div>
+      )}
 
       <section>
         <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>

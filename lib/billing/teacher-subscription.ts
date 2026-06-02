@@ -328,3 +328,88 @@ export function getSubscriptionTariff(
   }
   return null
 }
+
+// ─────────────────────────────────────────────────────────────────
+// Free-tier (Стартовый) 1pkg+1tariff unlock — 2026-06-02.
+//
+// Plan: docs/plans/free-tier-1pkg-1tariff-unlock.md §3 (Helper shape).
+//
+// Tier write caps: how many ACTIVE packages / tariffs a teacher can
+// create through /api/teacher/packages and /api/teacher/tariffs given
+// their current subscription tier. Buyer-side (`/api/checkout/...`,
+// `/api/payments/...`) gates are SEPARATE — they still 422 for
+// non-operator-managed teachers (the architectural escape valve so
+// free-tier packages can't be sold through the platform).
+//
+// Semantics of the cap counters:
+//   - packages: `count(*) WHERE teacher_id=$1 AND is_active=true AND
+//     deleted_at IS NULL` (R3-BLOCKER#1 closure — the teacher
+//     /teacher/packages UI's "Архивировать" button toggles is_active
+//     and that's the in-UI cap escape).
+//   - tariffs: `count(*) WHERE teacher_id=$1 AND deleted_at IS NULL`
+//     (tariffs have an explicit soft-delete UI write path).
+//
+// `operator-managed` is unlimited (Infinity); free=1; mid/pro=0 (out
+// of scope for the 2026-06-02 unlock — only Стартовый opens up).
+//
+// Helper: `resolveTeacherWriteCaps(teacherAccountId)` reads
+// `teacher_subscriptions` JOIN `teacher_subscription_plans`, returns
+// `{ maxPackages: 0, maxTariffs: 0 }` when no row exists OR
+// `state !== 'active'` (R1-BLOCKER#4 closure — suspended/cancelled
+// rows don't grant write caps). Mirrors the `isOperatorManagedTeacher`
+// contract in `lib/payments/teacher-derivation.ts`.
+// ─────────────────────────────────────────────────────────────────
+
+export type TierWriteCaps = {
+  /** 0 = no creates; Infinity = unlimited. */
+  maxPackages: number
+  maxTariffs: number
+}
+
+/** Empty caps used when there's no active subscription row. */
+const EMPTY_CAPS: TierWriteCaps = { maxPackages: 0, maxTariffs: 0 }
+
+/**
+ * Per-tier write caps. Single source of truth for /teacher/packages
+ * and /teacher/tariffs POST gates.
+ *
+ * Owner can adjust the values WITHOUT a DB migration — limits live in
+ * code only.
+ */
+export const TIER_WRITE_CAPS: Readonly<Record<string, TierWriteCaps>> = {
+  free: { maxPackages: 1, maxTariffs: 1 },
+  mid: { maxPackages: 0, maxTariffs: 0 },
+  pro: { maxPackages: 0, maxTariffs: 0 },
+  'operator-managed': {
+    maxPackages: Number.POSITIVE_INFINITY,
+    maxTariffs: Number.POSITIVE_INFINITY,
+  },
+}
+
+/**
+ * Resolve the per-tier write caps for a given teacher.
+ *
+ * - No `teacher_subscriptions` row → `{ maxPackages: 0, maxTariffs: 0 }`.
+ * - Row with `state !== 'active'` → `{ maxPackages: 0, maxTariffs: 0 }`
+ *   (suspended/cancelled subscriptions do not grant write caps).
+ * - Row with `state = 'active'` → looks up `plan_slug` in `TIER_WRITE_CAPS`;
+ *   unknown slug falls through to `EMPTY_CAPS` (defensive — admin can
+ *   add a slug to the DB without it accidentally granting writes).
+ */
+export async function resolveTeacherWriteCaps(
+  teacherAccountId: string,
+): Promise<TierWriteCaps> {
+  const pool = getDbPool()
+  const result = await pool.query<{ plan_slug: string; state: string }>(
+    `select plan_slug, state
+       from teacher_subscriptions
+      where account_id = $1::uuid
+      limit 1`,
+    [teacherAccountId],
+  )
+  const row = result.rows[0]
+  if (!row) return EMPTY_CAPS
+  if (row.state !== 'active') return EMPTY_CAPS
+  const caps = TIER_WRITE_CAPS[row.plan_slug]
+  return caps ?? EMPTY_CAPS
+}
