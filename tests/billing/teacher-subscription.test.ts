@@ -26,16 +26,28 @@ describe('SAAS_SUBSCRIPTION_TARIFFS', () => {
     expect(SAAS_SUBSCRIPTION_TARIFFS.pro.learnerLimit).toBe(30)
   })
 
-  it('titles match the public SaaS landing copy', () => {
-    expect(SAAS_SUBSCRIPTION_TARIFFS.mid.titleRu).toBe('Mid')
-    expect(SAAS_SUBSCRIPTION_TARIFFS.pro.titleRu).toBe('Pro')
+  it('titles match the public SaaS landing copy (Russian names per bug-4 Sub-PR A)', () => {
+    expect(SAAS_SUBSCRIPTION_TARIFFS.mid.titleRu).toBe('Базовый')
+    expect(SAAS_SUBSCRIPTION_TARIFFS.pro.titleRu).toBe('Расширенный')
   })
 
   it('descriptions include the tier name and 30-day period', () => {
-    expect(SAAS_SUBSCRIPTION_TARIFFS.mid.description).toContain('Mid')
+    expect(SAAS_SUBSCRIPTION_TARIFFS.mid.description).toContain('Базовый')
     expect(SAAS_SUBSCRIPTION_TARIFFS.mid.description).toContain('30 дней')
-    expect(SAAS_SUBSCRIPTION_TARIFFS.pro.description).toContain('Pro')
+    expect(SAAS_SUBSCRIPTION_TARIFFS.pro.description).toContain('Расширенный')
     expect(SAAS_SUBSCRIPTION_TARIFFS.pro.description).toContain('30 дней')
+  })
+
+  it('exposes UI feature-bullets for the subscription page (bug-4 Sub-PR A)', () => {
+    expect(SAAS_SUBSCRIPTION_TARIFFS.mid.features.length).toBeGreaterThanOrEqual(3)
+    expect(SAAS_SUBSCRIPTION_TARIFFS.pro.features.length).toBeGreaterThanOrEqual(3)
+    // Pro card should reference the smaller tier in its first bullet
+    // («Базового», genitive of «Базовый»).
+    expect(
+      SAAS_SUBSCRIPTION_TARIFFS.pro.features.some((b) =>
+        /Базов(ый|ого)/.test(b),
+      ),
+    ).toBe(true)
   })
 })
 

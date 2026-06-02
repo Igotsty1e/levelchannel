@@ -82,14 +82,18 @@ afterEach(async () => {
   // SAAS-PIVOT Day 1 (2026-05-22) — re-seed teacher_subscription_plans
   // baseline rows (mig 0073 INSERTs four canonical slugs; TRUNCATE
   // above wipes them between tests). Same pattern as the legal
-  // re-seed above. Tests that need a teacher with a Mid/Pro/Free/Plan-4
-  // subscription depend on this baseline.
+  // re-seed above. Tests that need a teacher with a
+  // Стартовый/Базовый/Расширенный/Operator-managed subscription depend
+  // on this baseline.
+  //
+  // bug-4 Sub-PR A (2026-06-02): Russian public titles flipped per mig
+  // 0103 (Free→Стартовый, Mid→Базовый, Pro→Расширенный); slugs unchanged.
   await pool.query(`
     insert into teacher_subscription_plans (slug, title_ru, price_kopecks_monthly, learner_limit, features)
     values
-      ('free', 'Free', 0, 1, '{}'::jsonb),
-      ('mid', 'Mid', 30000, 5, '{}'::jsonb),
-      ('pro', 'Pro', 80000, 30, '{}'::jsonb),
+      ('free', 'Стартовый', 0, 1, '{}'::jsonb),
+      ('mid', 'Базовый', 30000, 5, '{}'::jsonb),
+      ('pro', 'Расширенный', 80000, 30, '{}'::jsonb),
       ('operator-managed', 'Operator-managed', 0, null, '{"money_flow_through_platform": true}'::jsonb)
     on conflict (slug) do nothing
   `)

@@ -269,9 +269,13 @@ export async function findSubscriptionByPaymentOrderId(
 }
 
 /**
- * Catalogue lookup for A2 tariffs. Single source of truth: the
- * `teacher_subscription_plans` reference table (mig 0073), so any
- * future repricing edits the row, not the application.
+ * Catalogue lookup for A2 tariffs. Single source of truth for app-side
+ * UI / checkout intent: the rows mirror `teacher_subscription_plans`
+ * (mig 0073 + rename mig 0103) but additionally carry UI bullets that
+ * the subscription page uses to render the "what's included" block.
+ *
+ * bug-4 Sub-PR A (2026-06-02): renamed public Russian titles from
+ * Mid/Pro to Базовый/Расширенный per owner request. DB slugs unchanged.
  */
 export type SubscriptionTariff = {
   tier: TeacherSubscriptionTier
@@ -279,24 +283,40 @@ export type SubscriptionTariff = {
   amountKopecks: number
   learnerLimit: number | null
   description: string
+  /** UI bullets shown on /teacher/subscription cards + active-state "что входит" block. */
+  features: ReadonlyArray<string>
 }
 
 export const SAAS_SUBSCRIPTION_TARIFFS: Readonly<Record<TeacherSubscriptionTier, SubscriptionTariff>> = {
   mid: {
     tier: 'mid',
-    titleRu: 'Mid',
+    titleRu: 'Базовый',
     amountKopecks: 30000,
     learnerLimit: 5,
     description:
-      'Подписка LevelChannel «Mid» — кабинет учителя, расписание, до 5 учеников. Период 30 дней.',
+      'Подписка LevelChannel «Базовый» — кабинет учителя, расписание, до 5 учеников. Период 30 дней.',
+    features: [
+      'Расписание и слоты',
+      'До 5 активных учеников',
+      'Пакеты и абонементы',
+      'Балансы и долги',
+      'Родительский доступ',
+    ],
   },
   pro: {
     tier: 'pro',
-    titleRu: 'Pro',
+    titleRu: 'Расширенный',
     amountKopecks: 80000,
     learnerLimit: 30,
     description:
-      'Подписка LevelChannel «Pro» — кабинет учителя, расписание, до 30 учеников. Период 30 дней.',
+      'Подписка LevelChannel «Расширенный» — кабинет учителя, расписание, до 30 учеников. Период 30 дней.',
+    features: [
+      'Всё из «Базового»',
+      'До 30 активных учеников',
+      'Расширенные отчёты',
+      'Приоритетная поддержка',
+      'Прямые ответы оператора',
+    ],
   },
 }
 
