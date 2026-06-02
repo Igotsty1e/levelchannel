@@ -5,9 +5,11 @@ import { NextResponse } from 'next/server'
 import { NO_STORE } from '@/lib/api/http-headers'
 import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
-import { isOperatorManagedTeacher } from '@/lib/payments/teacher-derivation'
+import { resolveTeacherWriteCaps } from '@/lib/billing/teacher-subscription'
+import { getDbPool } from '@/lib/db/pool'
 import {
-  createTariffForTeacher,
+  countActiveTariffsForTeacherTx,
+  createTariffForTeacherTx,
   listTariffsForTeacher,
   validateTariffInput,
 } from '@/lib/pricing/tariffs'
@@ -68,25 +70,6 @@ export async function POST(request: Request) {
   const guard = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!guard.ok) return guard.response
 
-  // SAAS-PIVOT security-audit HIGH-2 (2026-05-23) closure — plan-4
-  // gate at create time. Same rationale as
-  // /api/teacher/packages POST: a non-plan-4 teacher's tariff that
-  // gets booked + paid through the platform would orphan the funds,
-  // because /checkout/[tariffSlug] resolves teacher_account_id via
-  // the tariff's owning teacher and the platform has no disbursement
-  // path to non-plan-4 teachers.
-  const isPlan4 = await isOperatorManagedTeacher(guard.account.id)
-  if (!isPlan4) {
-    return NextResponse.json(
-      {
-        error: 'plan_4_required',
-        message:
-          'Только Plan-4 учителя могут публиковать платные тарифы. Используйте оплату напрямую.',
-      },
-      { status: 422, headers: NO_STORE },
-    )
-  }
-
   const parsed = await readJsonObjectOr400(request)
   if (!parsed.ok) return parsed.response
   const raw = parsed.body
@@ -126,38 +109,102 @@ export async function POST(request: Request) {
     )
   }
 
-  // Slug synthesis. Retry up to 3 times on UNIQUE collision (extremely
-  // unlikely with 8 random hex chars per duration bucket, but cheap
-  // insurance). On exhausted retries we surface a server error rather
-  // than a 4xx — a 4-collision streak is operational, not user input.
+  // Free-tier 1pkg+1tariff unlock (2026-06-02). Plan:
+  // docs/plans/free-tier-1pkg-1tariff-unlock.md §3.
+  //
+  // Replaces the old `isOperatorManagedTeacher` gate. Same shape as
+  // /api/teacher/packages POST: open a TX, take advisory_xact_lock,
+  // check cap, count active, create. On cap=0 → 422
+  // plan_upgrade_required; on count>=cap → 422 tier_write_cap_reached.
+  //
+  // Slug collision retry: now nested inside the TX. The collision
+  // path rolls back the TX and re-opens a new one, because aborting
+  // mid-TX poisons the connection. Three attempts max.
+  const pool = getDbPool()
+
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const slug = synthesiseSlug(durationMinutes)
+    const client = await pool.connect()
     try {
-      const tariff = await createTariffForTeacher({
-        teacherId: guard.account.id, // anti-spoof: bound from session
-        slug,
-        titleRu,
-        descriptionRu,
-        amountKopecks,
-        durationMinutes,
-        isActive,
-        displayOrder,
-      })
-      return NextResponse.json(
-        { tariff },
-        { status: 201, headers: NO_STORE },
+      await client.query('begin')
+      await client.query(
+        `select pg_advisory_xact_lock(hashtext('tier-cap:' || $1::text))`,
+        [guard.account.id],
       )
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'unknown'
-      if (message.includes('pricing_tariffs_slug_unique')) {
-        // try again with a fresh nonce
-        continue
+      const caps = await resolveTeacherWriteCaps(guard.account.id)
+      if (caps.maxTariffs <= 0) {
+        await client.query('rollback')
+        return NextResponse.json(
+          {
+            error: 'plan_upgrade_required',
+            message:
+              'Создание тарифов недоступно на вашем тарифе. Перейдите на тариф с тарифами или свяжитесь с оператором LevelChannel.',
+          },
+          { status: 422, headers: NO_STORE },
+        )
       }
-      console.error('[teacher.tariffs.create] unexpected error', err)
+      const current = await countActiveTariffsForTeacherTx(
+        client,
+        guard.account.id,
+      )
+      if (current >= caps.maxTariffs) {
+        await client.query('rollback')
+        const tier: 'free' = 'free'
+        return NextResponse.json(
+          {
+            error: 'tier_write_cap_reached',
+            message:
+              'Лимит тарифов на тарифе исчерпан. Архивируйте старый тариф, чтобы создать новый.',
+            cap: caps.maxTariffs,
+            current,
+            tier,
+          },
+          { status: 422, headers: NO_STORE },
+        )
+      }
+      const slug = synthesiseSlug(durationMinutes)
+      try {
+        const tariff = await createTariffForTeacherTx(client, {
+          teacherId: guard.account.id, // anti-spoof: bound from session
+          slug,
+          titleRu,
+          descriptionRu,
+          amountKopecks,
+          durationMinutes,
+          isActive,
+          displayOrder,
+        })
+        await client.query('commit')
+        return NextResponse.json(
+          { tariff },
+          { status: 201, headers: NO_STORE },
+        )
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'unknown'
+        if (message.includes('pricing_tariffs_slug_unique')) {
+          // Roll back + try again with a fresh TX + nonce.
+          await client.query('rollback')
+          continue
+        }
+        await client.query('rollback')
+        console.error('[teacher.tariffs.create] unexpected error', err)
+        return NextResponse.json(
+          { error: 'internal_error' },
+          { status: 500, headers: NO_STORE },
+        )
+      }
+    } catch (err) {
+      try {
+        await client.query('rollback')
+      } catch {
+        // already in failed state
+      }
+      console.error('[teacher.tariffs.create] tx error', err)
       return NextResponse.json(
         { error: 'internal_error' },
         { status: 500, headers: NO_STORE },
       )
+    } finally {
+      client.release()
     }
   }
   return NextResponse.json(

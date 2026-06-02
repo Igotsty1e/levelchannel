@@ -367,8 +367,14 @@ describe('SAAS-PIVOT security-audit HIGH-1 — /api/checkout/package/[slug] disa
   })
 })
 
-describe('SAAS-PIVOT security-audit HIGH-2 — POST /api/teacher/tariffs plan-4 gate', () => {
-  it('rejects a free-plan teacher with 422 plan_4_required', async () => {
+describe('SAAS-PIVOT security-audit HIGH-2 — POST /api/teacher/tariffs tier write-cap', () => {
+  // Free-tier 1pkg+1tariff unlock (2026-06-02). Plan:
+  // docs/plans/free-tier-1pkg-1tariff-unlock.md. The original HIGH-2
+  // contract («free → 422 plan_4_required») is replaced with the new
+  // tier-write-cap contract: free accepts FIRST create (201) and rejects
+  // SECOND (422 tier_write_cap_reached). Mid/Pro remain capped (422
+  // plan_upgrade_required) and operator-managed remains unlimited.
+  it('accepts a free-plan teacher\'s FIRST create with 201; rejects SECOND with 422 tier_write_cap_reached', async () => {
     const { POST: teacherTariffsPost } = await import(
       '@/app/api/teacher/tariffs/route'
     )
@@ -377,22 +383,36 @@ describe('SAAS-PIVOT security-audit HIGH-2 — POST /api/teacher/tariffs plan-4 
       planSlug: 'free',
     })
     const cookie = await teacherCookie(teacher.id)
-    const r = await teacherTariffsPost(
+    const r1 = await teacherTariffsPost(
       buildRequest('/api/teacher/tariffs', {
         cookie,
         body: {
-          titleRu: 'Should be rejected',
+          titleRu: 'Free demo tariff #1',
           amountKopecks: 100000,
           durationMinutes: 60,
         },
       }),
     )
-    expect(r.status).toBe(422)
-    const body = await r.json()
-    expect(body.error).toBe('plan_4_required')
+    expect(r1.status).toBe(201)
+
+    const r2 = await teacherTariffsPost(
+      buildRequest('/api/teacher/tariffs', {
+        cookie,
+        body: {
+          titleRu: 'Free demo tariff #2 (over cap)',
+          amountKopecks: 100000,
+          durationMinutes: 60,
+        },
+      }),
+    )
+    expect(r2.status).toBe(422)
+    const body = await r2.json()
+    expect(body.error).toBe('tier_write_cap_reached')
+    expect(body.cap).toBe(1)
+    expect(body.current).toBe(1)
   })
 
-  it('accepts a plan-4 teacher with 201', async () => {
+  it('accepts a plan-4 (operator-managed) teacher with 201', async () => {
     const { POST: teacherTariffsPost } = await import(
       '@/app/api/teacher/tariffs/route'
     )
@@ -415,31 +435,51 @@ describe('SAAS-PIVOT security-audit HIGH-2 — POST /api/teacher/tariffs plan-4 
   })
 })
 
-describe('SAAS-PIVOT security-audit HIGH-2 — POST /api/teacher/packages plan-4 gate', () => {
-  it('rejects a free-plan teacher with 422 plan_4_required', async () => {
+describe('SAAS-PIVOT security-audit HIGH-2 — POST /api/teacher/packages tier write-cap', () => {
+  // Free-tier 1pkg+1tariff unlock (2026-06-02). See above test block.
+  it('accepts a free-plan teacher\'s FIRST create with 201; rejects SECOND with 422 tier_write_cap_reached', async () => {
     const teacher = await makeTeacher({
       emailSuffix: 'h2-free',
       planSlug: 'free',
     })
     const cookie = await teacherCookie(teacher.id)
-    const r = await teacherPackagesPost(
+    const r1 = await teacherPackagesPost(
       buildRequest('/api/teacher/packages', {
         cookie,
         body: {
-          slug: 'h2-free-pkg',
-          titleRu: 'Should be rejected',
+          slug: 'h2-free-pkg-1',
+          titleRu: 'Free demo #1',
           durationMinutes: 60,
           count: 10,
           amountKopecks: 100000,
         },
       }),
     )
-    expect(r.status).toBe(422)
-    const body = await r.json()
-    expect(body.error).toBe('plan_4_required')
+    expect(r1.status).toBe(201)
+
+    const r2 = await teacherPackagesPost(
+      buildRequest('/api/teacher/packages', {
+        cookie,
+        body: {
+          slug: 'h2-free-pkg-2',
+          titleRu: 'Free demo #2 (over cap)',
+          durationMinutes: 60,
+          count: 10,
+          amountKopecks: 100000,
+        },
+      }),
+    )
+    expect(r2.status).toBe(422)
+    const body = await r2.json()
+    expect(body.error).toBe('tier_write_cap_reached')
+    expect(body.cap).toBe(1)
+    expect(body.current).toBe(1)
   })
 
-  it('rejects a teacher with NO subscription row at all with 422 plan_4_required', async () => {
+  it('rejects a teacher with NO subscription row at all with 422 plan_upgrade_required', async () => {
+    // R9 in the plan-doc: no row → cap=0 → 422. After the rename
+    // from plan_4_required to plan_upgrade_required, the error code
+    // changes but the gate behaviour is identical.
     const teacher = await makeTeacher({
       emailSuffix: 'h2-none',
       planSlug: null,
@@ -459,7 +499,7 @@ describe('SAAS-PIVOT security-audit HIGH-2 — POST /api/teacher/packages plan-4
     )
     expect(r.status).toBe(422)
     const body = await r.json()
-    expect(body.error).toBe('plan_4_required')
+    expect(body.error).toBe('plan_upgrade_required')
   })
 
   it('accepts a plan-4 (operator-managed) teacher with 201', async () => {

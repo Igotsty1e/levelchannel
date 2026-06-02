@@ -3,10 +3,13 @@ import { NextResponse } from 'next/server'
 import { NO_STORE } from '@/lib/api/http-headers'
 import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
+import { countActivePackagesByTeacherTx } from '@/lib/billing/packages'
 import {
   getPackageById,
   updatePackageMetadata,
 } from '@/lib/billing/packages'
+import { resolveTeacherWriteCaps } from '@/lib/billing/teacher-subscription'
+import { getDbPool } from '@/lib/db/pool'
 import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
@@ -118,6 +121,85 @@ export async function PATCH(request: Request, { params }: RouteParams) {
         },
         { status: 400, headers: NO_STORE },
       )
+    }
+  }
+
+  // R1-BLOCKER closure (free-tier-1pkg-1tariff wave paranoia, 2026-06-03):
+  // PATCH must enforce the same write-cap as POST when reactivating
+  // (isActive=false → isActive=true). Without this, a free teacher
+  // could create→archive→create→reactivate to bypass the cap. Wrap
+  // in the same advisory lock used by POST so concurrent reactivate
+  // + create can't both win.
+  const willReactivate = patch.isActive === true && !existing.isActive
+  if (willReactivate) {
+    const client = await getDbPool().connect()
+    try {
+      await client.query('begin')
+      await client.query(
+        `select pg_advisory_xact_lock(hashtext('tier-cap:' || $1::text))`,
+        [guard.account.id],
+      )
+      const caps = await resolveTeacherWriteCaps(guard.account.id)
+      // R2-BLOCKER closure (wave-paranoia): mirror POST's cap=0 →
+      // plan_upgrade_required branch so downgraded / no-subscription
+      // teachers reactivating get the same code + copy as create.
+      if (caps.maxPackages === 0) {
+        await client.query('rollback')
+        return NextResponse.json(
+          {
+            error: 'plan_upgrade_required',
+            message:
+              'Создание и реактивация пакетов недоступны на текущем тарифе. Свяжитесь с оператором LevelChannel.',
+          },
+          { status: 422, headers: NO_STORE },
+        )
+      }
+      const activeCount = await countActivePackagesByTeacherTx(
+        client,
+        guard.account.id,
+      )
+      if (activeCount >= caps.maxPackages) {
+        await client.query('rollback')
+        return NextResponse.json(
+          {
+            error: 'tier_write_cap_reached',
+            message:
+              'Лимит активных пакетов исчерпан. Архивируйте другой пакет, чтобы реактивировать этот.',
+            cap: caps.maxPackages,
+            current: activeCount,
+          },
+          { status: 422, headers: NO_STORE },
+        )
+      }
+      // Cap fine — perform the update inside the same TX so the lock
+      // serialises any concurrent create/reactivate against this row's
+      // count check.
+      const updated = await updatePackageMetadata(id, patch, client)
+      await client.query('commit')
+      if (!updated) {
+        return NextResponse.json(
+          { error: 'not_found' },
+          { status: 404, headers: NO_STORE },
+        )
+      }
+      return NextResponse.json(
+        { package: updated },
+        { status: 200, headers: NO_STORE },
+      )
+    } catch (err) {
+      await client.query('rollback').catch(() => {})
+      const msg = err instanceof Error ? err.message : 'unknown'
+      console.warn('[teacher.packages.update] reactivate-path error', {
+        teacherId: guard.account.id,
+        id,
+        error: msg,
+      })
+      return NextResponse.json(
+        { error: 'internal_error' },
+        { status: 500, headers: NO_STORE },
+      )
+    } finally {
+      client.release()
     }
   }
 

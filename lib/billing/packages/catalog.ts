@@ -393,6 +393,99 @@ export async function listPackagesByTeacher(
   return result.rows.map((r) => rowToPackage(r as Record<string, unknown>))
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Free-tier 1pkg+1tariff unlock — 2026-06-02.
+//
+// Plan: docs/plans/free-tier-1pkg-1tariff-unlock.md §3+§4.
+//
+// `countActivePackagesByTeacher` returns the active catalogue size
+// for a teacher (the "cap denominator" the tier-write-cap gate
+// compares against). Active = `is_active = true AND deleted_at IS
+// NULL`. This shape is the unified rule per R3+R4-BLOCKER closures
+// in the plan: the package UI's "Архивировать" button toggles
+// is_active=false; the row stays in DB but no longer counts toward
+// the cap, so "archive → create new" works seamlessly inside the
+// free tier's 1-package budget.
+//
+// `countActivePackagesByTeacherTx` is the same query bound to a
+// pre-opened `PoolClient` — used by the route handler inside the
+// advisory-lock TX so the count + create are serialized against
+// concurrent POSTs from the same teacher.
+// ─────────────────────────────────────────────────────────────────
+
+import type { PoolClient } from 'pg'
+
+export async function countActivePackagesByTeacher(
+  teacherId: string,
+): Promise<number> {
+  const pool = getDbPool()
+  const result = await pool.query<{ count: string }>(
+    `select count(*)::text as count
+       from lesson_packages
+      where teacher_id = $1::uuid
+        and is_active = true
+        and deleted_at is null`,
+    [teacherId],
+  )
+  return Number(result.rows[0]?.count ?? 0)
+}
+
+export async function countActivePackagesByTeacherTx(
+  client: PoolClient,
+  teacherId: string,
+): Promise<number> {
+  const result = await client.query<{ count: string }>(
+    `select count(*)::text as count
+       from lesson_packages
+      where teacher_id = $1::uuid
+        and is_active = true
+        and deleted_at is null`,
+    [teacherId],
+  )
+  return Number(result.rows[0]?.count ?? 0)
+}
+
+/**
+ * TX-aware variant of `createPackage`. Caller MUST pass an explicit
+ * `teacherId` (no bootstrap fallback inside a TX — the route handler
+ * always has session.account.id available). Used by the route handler
+ * inside the advisory-lock TX so the count + insert are serialized.
+ */
+export async function createPackageTx(
+  client: PoolClient,
+  input: {
+    slug: string
+    titleRu: string
+    descriptionRu?: string | null
+    durationMinutes: number
+    count: number
+    amountKopecks: number
+    isActive?: boolean
+    displayOrder?: number
+    teacherId: string
+  },
+): Promise<LessonPackage> {
+  const result = await client.query(
+    `insert into lesson_packages
+       (slug, title_ru, description_ru, duration_minutes, count, amount_kopecks,
+        is_active, display_order, teacher_id)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9::uuid)
+     returning ${PACKAGE_COLS}`,
+    [
+      input.slug,
+      input.titleRu,
+      input.descriptionRu ?? null,
+      input.durationMinutes,
+      input.count,
+      input.amountKopecks,
+      input.isActive ?? true,
+      input.displayOrder ?? 100,
+      input.teacherId,
+    ],
+  )
+  return rowToPackage(result.rows[0])
+}
+
 // Wave 15 — admin metadata edit. The DB trigger
 // `lesson_packages_economic_fields_immutable` refuses any UPDATE
 // touching amount_kopecks / duration_minutes / count / currency
@@ -408,8 +501,9 @@ export async function updatePackageMetadata(
     isActive?: boolean
     displayOrder?: number
   },
+  clientArg?: PoolClient,
 ): Promise<LessonPackage | null> {
-  const pool = getDbPool()
+  const pool = clientArg ?? getDbPool()
   const sets: string[] = []
   const args: (string | number | boolean | null)[] = [id]
   if (patch.titleRu !== undefined) {

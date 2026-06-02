@@ -4,10 +4,12 @@ import { NO_STORE } from '@/lib/api/http-headers'
 import { readJsonObjectOr400 } from '@/lib/api/json-body'
 import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import {
-  createPackage,
+  countActivePackagesByTeacherTx,
+  createPackageTx,
   listPackagesByTeacher,
 } from '@/lib/billing/packages'
-import { isOperatorManagedTeacher } from '@/lib/payments/teacher-derivation'
+import { resolveTeacherWriteCaps } from '@/lib/billing/teacher-subscription'
+import { getDbPool } from '@/lib/db/pool'
 import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
@@ -74,28 +76,6 @@ export async function POST(request: Request) {
   const guard = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!guard.ok) return guard.response
 
-  // SAAS-PIVOT security-audit HIGH-2 (2026-05-23) closure — plan-4
-  // gate at create time. Only operator-managed (plan-4) teachers can
-  // publish a paid package that learners can buy through
-  // /api/checkout/package/[slug] (where the platform settles via
-  // CloudPayments). A Free/Mid/Pro teacher creating a paid package
-  // whose buy commits a payment_orders row pointing at THEIR
-  // teacher_account_id would orphan the funds — the platform has no
-  // disbursement path to non-plan-4 teachers. They must use the
-  // non-money `teacher_grant` issue path (/teacher/packages/[id]/issue)
-  // OR settle out-of-band.
-  const isPlan4 = await isOperatorManagedTeacher(guard.account.id)
-  if (!isPlan4) {
-    return NextResponse.json(
-      {
-        error: 'plan_4_required',
-        message:
-          'Только Plan-4 учителя могут публиковать платные пакеты. Используйте teacher_grant (выдать ученику) или оплату напрямую.',
-      },
-      { status: 422, headers: NO_STORE },
-    )
-  }
-
   const parsed = await readJsonObjectOr400(request)
   if (!parsed.ok) return parsed.response
   const body = parsed.body
@@ -132,8 +112,68 @@ export async function POST(request: Request) {
     )
   }
 
+  // Free-tier 1pkg+1tariff unlock (2026-06-02). Plan:
+  // docs/plans/free-tier-1pkg-1tariff-unlock.md §3.
+  //
+  // Replaces the old `isOperatorManagedTeacher` gate. Now tier-aware:
+  //   - free → maxPackages=1 (can create 1 demo package).
+  //   - mid/pro → maxPackages=0 (cap=0, returns plan_upgrade_required).
+  //   - operator-managed → maxPackages=Infinity.
+  //   - no row / non-active state → maxPackages=0 (same as mid/pro).
+  //
+  // Buyer-side gates in /api/checkout/package/[slug],
+  // /api/payments/sbp/create-qr, /api/payments/charge-token are
+  // UNCHANGED — they still 422 plan_4_required for non-operator-managed
+  // teachers. The free-tier package is a structural template the
+  // teacher can issue via teacher_grant or settle out-of-band; it can
+  // NOT be sold through the platform. This is the architectural escape
+  // valve that makes the unlock safe.
+  //
+  // Race condition mitigation (R1-BLOCKER#2 closure): open a TX +
+  // pg_advisory_xact_lock keyed on `tier-cap:<teacherId>` so two
+  // concurrent POSTs from the same teacher are serialized. The count +
+  // insert run on the same client; rollback on cap-exceeded so the
+  // INSERT never lands.
+  const pool = getDbPool()
+  const client = await pool.connect()
   try {
-    const pkg = await createPackage({
+    await client.query('begin')
+    await client.query(
+      `select pg_advisory_xact_lock(hashtext('tier-cap:' || $1::text))`,
+      [guard.account.id],
+    )
+    const caps = await resolveTeacherWriteCaps(guard.account.id)
+    if (caps.maxPackages <= 0) {
+      await client.query('rollback')
+      return NextResponse.json(
+        {
+          error: 'plan_upgrade_required',
+          message:
+            'Создание пакетов недоступно на вашем тарифе. Перейдите на тариф с пакетами или свяжитесь с оператором LevelChannel.',
+        },
+        { status: 422, headers: NO_STORE },
+      )
+    }
+    const current = await countActivePackagesByTeacherTx(client, guard.account.id)
+    if (current >= caps.maxPackages) {
+      await client.query('rollback')
+      // Tier slug for the body (free is the only finite-cap tier in
+      // 2026-06-02; mid/pro hit the cap=0 branch above; operator-
+      // managed never hits this branch).
+      const tier: 'free' = 'free'
+      return NextResponse.json(
+        {
+          error: 'tier_write_cap_reached',
+          message:
+            'Лимит пакетов на тарифе исчерпан. Архивируйте старый пакет, чтобы создать новый.',
+          cap: caps.maxPackages,
+          current,
+          tier,
+        },
+        { status: 422, headers: NO_STORE },
+      )
+    }
+    const pkg = await createPackageTx(client, {
       slug,
       titleRu,
       descriptionRu:
@@ -148,11 +188,17 @@ export async function POST(request: Request) {
           : DEFAULT_DISPLAY_ORDER,
       teacherId: guard.account.id,
     })
+    await client.query('commit')
     return NextResponse.json(
       { package: pkg },
       { status: 201, headers: NO_STORE },
     )
   } catch (err) {
+    try {
+      await client.query('rollback')
+    } catch {
+      // ignore — already in a failed state
+    }
     const msg = err instanceof Error ? err.message : 'unknown'
     const code = (err as { code?: string } | null)?.code ?? ''
     if (
@@ -178,5 +224,7 @@ export async function POST(request: Request) {
       { error: 'internal_error' },
       { status: 500, headers: NO_STORE },
     )
+  } finally {
+    client.release()
   }
 }

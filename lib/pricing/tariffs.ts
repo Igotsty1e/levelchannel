@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
+import type { PoolClient } from 'pg'
+
 import { getDbPool } from '@/lib/db/pool'
 
 export type PricingTariff = {
@@ -257,6 +259,125 @@ export async function listTariffsForTeacher(
     [teacherId],
   )
   return result.rows.map(rowToTariff)
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Free-tier 1pkg+1tariff unlock — 2026-06-02.
+//
+// Plan: docs/plans/free-tier-1pkg-1tariff-unlock.md §3+§4.
+//
+// `countActiveTariffsForTeacher` returns the active catalogue size
+// for a teacher. Active = `deleted_at IS NULL` (the tariff UI has an
+// explicit "Архивировать" button that writes deleted_at; archived
+// tariffs no longer count toward the cap, so "archive → create new"
+// works inside the free tier's 1-tariff budget).
+//
+// `countActiveTariffsForTeacherTx` is the same query bound to a
+// pre-opened `PoolClient` — used by the route handler inside the
+// advisory-lock TX so the count + create are serialized against
+// concurrent POSTs from the same teacher.
+//
+// Note: we intentionally do NOT filter by `is_active=true` here
+// because pricing_tariffs.is_active controls visibility in
+// /admin/pricing (admin can deactivate a tariff while keeping it
+// "owned" by the teacher); the teacher cap should reflect the
+// teacher's owned catalogue, which is bounded by deleted_at only.
+// ─────────────────────────────────────────────────────────────────
+
+export async function countActiveTariffsForTeacher(
+  teacherId: string,
+): Promise<number> {
+  if (!UUID_PATTERN.test(teacherId)) return 0
+  const pool = getDbPool()
+  const result = await pool.query<{ count: string }>(
+    `select count(*)::text as count
+       from pricing_tariffs
+      where teacher_id = $1::uuid
+        and deleted_at is null`,
+    [teacherId],
+  )
+  return Number(result.rows[0]?.count ?? 0)
+}
+
+export async function countActiveTariffsForTeacherTx(
+  client: PoolClient,
+  teacherId: string,
+): Promise<number> {
+  if (!UUID_PATTERN.test(teacherId)) return 0
+  const result = await client.query<{ count: string }>(
+    `select count(*)::text as count
+       from pricing_tariffs
+      where teacher_id = $1::uuid
+        and deleted_at is null`,
+    [teacherId],
+  )
+  return Number(result.rows[0]?.count ?? 0)
+}
+
+/**
+ * TX-aware variant of `createTariffForTeacher`. Caller MUST pass an
+ * explicit `teacherId`. Used by /api/teacher/tariffs POST inside the
+ * advisory-lock TX so the count + insert are serialized.
+ *
+ * Performs the same validation as `createTariffForTeacher`; raises
+ * before the INSERT if validation fails. Caller commits/rolls back
+ * the TX.
+ */
+export async function createTariffForTeacherTx(
+  client: PoolClient,
+  input: {
+    teacherId: string
+    slug: string
+    titleRu: string
+    descriptionRu?: string | null
+    amountKopecks: number
+    durationMinutes: number
+    isActive?: boolean
+    displayOrder?: number
+  },
+): Promise<PricingTariff> {
+  if (!UUID_PATTERN.test(input.teacherId)) {
+    throw new Error('tariff validation failed: teacherId/invalid')
+  }
+  const validation = validateTariffInput({
+    slug: input.slug,
+    titleRu: input.titleRu,
+    descriptionRu: input.descriptionRu ?? undefined,
+    amountKopecks: input.amountKopecks,
+    durationMinutes: input.durationMinutes,
+    isActive: input.isActive,
+    displayOrder: input.displayOrder,
+  })
+  if (validation) {
+    throw new Error(
+      `tariff validation failed: ${validation.field}/${validation.reason}`,
+    )
+  }
+  if (!Number.isInteger(input.durationMinutes)) {
+    throw new Error(
+      'tariff validation failed: durationMinutes/required_integer',
+    )
+  }
+  const id = randomUUID()
+  const result = await client.query(
+    `insert into pricing_tariffs (
+       id, slug, title_ru, description_ru, amount_kopecks,
+       duration_minutes, is_active, display_order, teacher_id
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     returning ${TARIFF_COLS}`,
+    [
+      id,
+      input.slug,
+      input.titleRu.trim(),
+      input.descriptionRu ?? null,
+      input.amountKopecks,
+      input.durationMinutes,
+      input.isActive ?? true,
+      input.displayOrder ?? 0,
+      input.teacherId,
+    ],
+  )
+  return rowToTariff(result.rows[0])
 }
 
 export async function getTariffById(id: string): Promise<PricingTariff | null> {

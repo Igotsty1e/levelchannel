@@ -2,7 +2,11 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
-import { listTariffsForTeacher } from '@/lib/pricing/tariffs'
+import { resolveTeacherWriteCaps } from '@/lib/billing/teacher-subscription'
+import {
+  countActiveTariffsForTeacher,
+  listTariffsForTeacher,
+} from '@/lib/pricing/tariffs'
 
 import { TeacherTariffEditor } from './tariff-editor'
 
@@ -45,9 +49,18 @@ export default async function TeacherTariffsPage({ searchParams }: SearchParams)
   const sp = await searchParams
   const showArchived = sp.archived === '1'
 
-  const tariffs = await listTariffsForTeacher(current.account.id, {
-    includeArchived: showArchived,
-  })
+  const [tariffs, caps, currentActiveCount] = await Promise.all([
+    listTariffsForTeacher(current.account.id, {
+      includeArchived: showArchived,
+    }),
+    resolveTeacherWriteCaps(current.account.id),
+    countActiveTariffsForTeacher(current.account.id),
+  ])
+
+  // Free-tier 1pkg+1tariff unlock (2026-06-02). Plan:
+  // docs/plans/free-tier-1pkg-1tariff-unlock.md §4 (UI data contract).
+  // -1 = unlimited (operator-managed); 0+ = literal cap.
+  const writeCap = Number.isFinite(caps.maxTariffs) ? caps.maxTariffs : -1
 
   return (
     <>
@@ -81,6 +94,8 @@ export default async function TeacherTariffsPage({ searchParams }: SearchParams)
       <TeacherTariffEditor
         initialTariffs={tariffs}
         showArchived={showArchived}
+        writeCap={writeCap}
+        currentActiveCount={currentActiveCount}
       />
     </>
   )
