@@ -1,5 +1,16 @@
 # Pre-paid packages + Post-paid debt — billing model wave
 
+> **2026-06-02 — Quality Sub-PR B retirement note.** The
+> `BILLING_WAVE_ACTIVE` feature flag described throughout this plan
+> (env-toggle, restart semantics, integration-test stubs, dashboard
+> revert procedure) has been retired. The billing-aware booking path
+> is now always-on in `lib/scheduling/slots/booking.ts`; the legacy
+> single-statement fast path was deleted. After mig 0101 it could no
+> longer honour the per-pair payment-method contract, so leaving it
+> alive risked a silent money leak in prod and a silent billing skip
+> in tests. The plan body is retained verbatim as historical record;
+> any mention of the flag below is no longer load-bearing.
+
 **Status:** plan v9 (post Codex round 8). **Codex SIGN-OFF: APPROVED (round 9, no new findings).**
 
 Self-paranoia review by Claude (round 10): one factual fix — referenced function name was `scheduleAccountDeletion` in earlier rounds; the actual function in `lib/auth/accounts.ts:392` is `requestAccountDeletion`. Updated throughout. Otherwise no further blockers found in the doc.

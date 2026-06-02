@@ -1,6 +1,11 @@
 // Wave 39: bookSlot + private classifyBookSlotFailure helper.
-// Dynamic billing imports preserved verbatim — the legacy fast path
-// when BILLING_WAVE_ACTIVE !== 'true' must NOT load billing modules.
+// Quality Sub-PR B (2026-06-02): BILLING_WAVE_ACTIVE retired — the
+// legacy fast path was a no-billing booking that would have leaked
+// money in prod (mig 0101 made per-pair payment_method the SoT) and
+// silently skipped billing in tests. bookSlot now always runs the
+// per-pair payment-method gated path. Billing modules are still
+// dynamically imported per the original wave-1 contract to keep the
+// route's module graph slim, but the gating env var is gone.
 
 import { ACTIVE_INTEGRATION_GATE_SQL } from '@/lib/calendar/freshness-sql'
 import { getDbPool } from '@/lib/db/pool'
@@ -40,9 +45,9 @@ export type BookSlotOptions = {
 }
 
 // BCS-D.5 — atomic overlap-vs-busy-cache check inside the booking
-// UPDATE. Inlined SQL fragment used in both the legacy and the
-// billing-path queries so the gate is evaluated as part of the
-// re-asserted WHERE, not as a separate read.
+// UPDATE. Inlined SQL fragment used in the slot-reservation query so
+// the gate is evaluated as part of the re-asserted WHERE, not as a
+// separate read.
 //
 // F3 freshness contract (plan §4.2 + §4.4): busy-cache blocks a
 // booking ONLY when the teacher's integration is currently
@@ -89,25 +94,18 @@ const BUSY_OVERLAP_GATE_SQL = `
 // so a learner can never book a slot where they are listed as the
 // teacher.
 //
-// Billing wave PR 1 — when `BILLING_WAVE_ACTIVE=true`, the booking
-// flow ALSO runs through the package/postpaid pipeline:
-//   1. SELECT FOR SHARE on accounts to read postpaid_allowed
-//      consistently inside the txn.
-//   2. Per-account advisory lock for FIFO + serialized consumption.
-//   3. The atomic slot UPDATE (existing pattern).
+// Billing pipeline (always-on since Quality Sub-PR B, 2026-06-02):
+//   1. Per-account advisory lock for FIFO + serialized consumption.
+//   2. The atomic slot UPDATE (existing pattern).
+//   3. Read per-pair payment_method (mig 0101 SoT).
 //   4. Try package consumption (lib/billing/consumption.ts).
 //   5. Pending-package gate (Codex round 2 HIGH 2): if a package
 //      order matching this slot's duration is in flight, refuse
 //      postpaid fallback.
 //   6. Postpaid eligibility — slot stays booked with no consumption,
-//      enters postpaid debt at completion. Requires postpaid_allowed
-//      AND tariff_id on the slot.
+//      enters postpaid debt at completion. Requires payment_method
+//      === 'postpaid' AND tariff_id on the slot.
 // On any failure path the slot UPDATE is rolled back via tx.
-//
-// When `BILLING_WAVE_ACTIVE` is not 'true', behaviour is exactly
-// the legacy single-statement atomic booking (no billing checks,
-// no consumption). This lets existing tests continue to exercise
-// the booking path without per-test billing setup.
 export async function bookSlot(
   slotId: string,
   learnerAccountId: string,
@@ -115,7 +113,6 @@ export async function bookSlot(
   options: BookSlotOptions = {},
 ): Promise<BookSlotResult> {
   if (!UUID_PATTERN.test(slotId)) return { ok: false, reason: 'not_found' }
-  const billingActive = process.env.BILLING_WAVE_ACTIVE === 'true'
   // BCS-B.1: agenda is set ONLY on learner-initiated booking. Admin
   // book-as-operator path passes nothing → null. Operator typing on
   // behalf of the learner is out of scope; the cabinet UI captures it.
@@ -131,39 +128,7 @@ export async function bookSlot(
       ? options.expectedTeacherId
       : null
 
-  // Legacy fast path — preserved bit-for-bit when the wave is off.
-  if (!billingActive) {
-    const pool = getDbPool()
-    const result = await pool.query(
-      `update lesson_slots
-          set status = 'booked',
-              learner_account_id = $2,
-              booked_at = now(),
-              agenda = $4,
-              updated_at = now(),
-              events = $3::jsonb || events
-        where id = $1
-          and status = 'open'
-          and start_at > now()
-          and teacher_account_id <> $2
-          and ($5::uuid is null or teacher_account_id = $5::uuid)
-          ${BUSY_OVERLAP_GATE_SQL}
-        returning ${SLOT_COLUMNS}`,
-      [
-        slotId,
-        learnerAccountId,
-        appendEventSql('slot.booked', actor, { learnerAccountId }),
-        agenda,
-        expectedTeacherId,
-      ],
-    )
-    if (result.rows[0]) {
-      return { ok: true, slot: rowToSlot(result.rows[0]), billing: { kind: 'legacy' } }
-    }
-    return classifyBookSlotFailure(slotId, learnerAccountId, expectedTeacherId)
-  }
-
-  // New billing path. Per-pair payment_method (mig 0101).
+  // Per-pair payment_method (mig 0101).
   // accounts.postpaid_allowed дропнут — выбор делает учитель в
   // learner_billing_preferences. See docs/plans/per-learner-payment-method.md.
   const { consumePackageUnit } = await import('@/lib/billing/consumption')

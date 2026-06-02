@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import {
   GET as listPackagesHandler,
@@ -20,14 +20,6 @@ import {
   freshInvoiceId,
   seedBootstrapTeacher,
 } from '../helpers'
-
-beforeAll(() => {
-  process.env.BILLING_WAVE_ACTIVE = 'true'
-})
-
-afterAll(() => {
-  delete process.env.BILLING_WAVE_ACTIVE
-})
 
 async function regAdmin() {
   const email = `pr4-admin-${Date.now()}@example.com`

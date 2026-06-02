@@ -29,7 +29,6 @@ beforeAll(() => {
   // process.env writes don't get restored if a later afterAll throws,
   // and PAYMENTS_PROVIDER/PAYMENTS_ALLOW_MOCK_CONFIRM were never
   // restored at all in the prior version.
-  vi.stubEnv('BILLING_WAVE_ACTIVE', 'true')
   vi.stubEnv('PAYMENTS_PROVIDER', 'mock')
   vi.stubEnv('PAYMENTS_ALLOW_MOCK_CONFIRM', 'true')
 })

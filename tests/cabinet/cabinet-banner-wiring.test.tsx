@@ -56,7 +56,6 @@ function lessonsProps(overrides: Partial<LessonsProps> = {}): LessonsProps {
     hasAssignedTeacher: true,
     assignedTeacherId: 'teacher-1',
     activePackages: [],
-    billingWaveActive: false,
     cancelWindowHours: 24,
     paymentMethodNotSet: false,
     canBuyPackages: false,

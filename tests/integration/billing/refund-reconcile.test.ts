@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { POST as loginHandler } from '@/app/api/auth/login/route'
 import { POST as registerHandler } from '@/app/api/auth/register/route'
@@ -22,14 +22,6 @@ import { buildRequest, extractSessionCookie, freshInvoiceId } from '../helpers'
 //      payment.refund.gateway.webhook event.
 //   2. pending older than threshold → mark error with a diagnostic
 //      message; operator manually checks the CP dashboard.
-
-beforeAll(() => {
-  process.env.BILLING_WAVE_ACTIVE = 'true'
-})
-
-afterAll(() => {
-  delete process.env.BILLING_WAVE_ACTIVE
-})
 
 async function regAdmin() {
   const email = `reconcile-admin-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`

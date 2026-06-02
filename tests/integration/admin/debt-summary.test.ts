@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { GET as debtSummaryHandler } from '@/app/api/admin/debt-summary/route'
 import { POST as loginHandler } from '@/app/api/auth/login/route'
@@ -20,14 +20,6 @@ import { buildRequest, extractSessionCookie, freshInvoiceId } from '../helpers'
 // consumption AND has no allocation against a paid order that is not
 // fully refunded. The aggregate sums `expected_amount_kopecks` per
 // account.
-
-beforeAll(() => {
-  process.env.BILLING_WAVE_ACTIVE = 'true'
-})
-
-afterAll(() => {
-  delete process.env.BILLING_WAVE_ACTIVE
-})
 
 async function adminCookie() {
   const email = `debt-admin-${Date.now()}@example.com`

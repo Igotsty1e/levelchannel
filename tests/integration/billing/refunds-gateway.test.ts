@@ -43,7 +43,6 @@ function mockCpNetworkError() {
 }
 
 beforeAll(() => {
-  vi.stubEnv('BILLING_WAVE_ACTIVE', 'true')
   vi.stubEnv('BILLING_REFUND_GATEWAY_ENABLED', 'true')
   vi.stubEnv('CLOUDPAYMENTS_PUBLIC_ID', 'test-public-id')
   vi.stubEnv('CLOUDPAYMENTS_API_SECRET', 'test-api-secret')

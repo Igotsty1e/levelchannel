@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { POST as refundsHandler } from '@/app/api/admin/refunds/route'
 import { POST as loginHandler } from '@/app/api/auth/login/route'
@@ -28,14 +28,6 @@ import {
 // slotIsPaidByAllocations + listSlotPaidStatus + listAccountPostpaidDebt
 // then drops the reversed allocation. Stage A wired the SQL; this
 // suite verifies the end-to-end behaviour at the route layer.
-
-beforeAll(() => {
-  process.env.BILLING_WAVE_ACTIVE = 'true'
-})
-
-afterAll(() => {
-  delete process.env.BILLING_WAVE_ACTIVE
-})
 
 async function regAdmin() {
   const email = `refund-admin-${Date.now()}@example.com`

@@ -53,11 +53,6 @@ type Props = {
   // case (the existing «учитель не назначен» hint already covers).
   assignedTeacherId: string | null
   activePackages: LearnerActivePackage[]
-  // Wave 18 — server-side BILLING_WAVE_ACTIVE flag. When false,
-  // the booking endpoint goes through the legacy single-statement
-  // path with no package/postpaid logic. The preview banner then
-  // would lie, so we hide it.
-  billingWaveActive: boolean
   // POLICY-KNOBS (2026-05-17) — minimum hours-until-start required
   // for a learner self-service cancel. Materialised by the server
   // component from getLearnerCancelWindowHours(). Default 24, env-
@@ -126,7 +121,6 @@ export function LessonsSection({
   hasAssignedTeacher,
   assignedTeacherId,
   activePackages,
-  billingWaveActive,
   cancelWindowHours,
   paymentMethodNotSet,
   canBuyPackages,

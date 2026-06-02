@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { POST as adminCreateHandler } from '@/app/api/admin/slots/route'
 import { POST as bookHandler } from '@/app/api/slots/[id]/book/route'
@@ -33,18 +33,9 @@ import {
 } from '../helpers'
 
 // Billing wave PR 1 — booking flow with package consumption.
-//
-// Tests boot with BILLING_WAVE_ACTIVE=true so the new path runs.
-// Existing booking tests do NOT set this and continue to use the
-// legacy path (no package check, no postpaid gate).
-
-beforeAll(() => {
-  process.env.BILLING_WAVE_ACTIVE = 'true'
-})
-
-afterAll(() => {
-  delete process.env.BILLING_WAVE_ACTIVE
-})
+// Quality Sub-PR B (2026-06-02): BILLING_WAVE_ACTIVE retired; the
+// booking flow always runs the billing-aware path. Previously this
+// suite stubbed BILLING_WAVE_ACTIVE=true to opt in.
 
 async function reg(
   email: string,
@@ -157,7 +148,7 @@ async function seedPaidOrder(
   return invoiceId
 }
 
-describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)', () => {
+describe('PR 1 — booking with package consumption', () => {
   it('learner with active matching package → 200 prepaid; consumption row inserted', async () => {
     const { admin, teacher, learner } = await setupTeacherAndLearner('pr1-prepay')
     await setPairPaymentMethod(teacher.accountId, learner.accountId, 'prepaid_packages')

@@ -224,10 +224,12 @@ export type BulkCreateResult = {
   skippedConflicts: string[] // startAt values that hit the unique constraint
 }
 
+// Quality Sub-PR B (2026-06-02): `kind: 'legacy'` retired alongside the
+// BILLING_WAVE_ACTIVE flag. New `bookSlot` always returns either
+// `prepaid` (package consumed) or `postpaid` (debt at completion).
 export type BookSlotBilling =
   | { kind: 'prepaid'; packagePurchaseId: string; countRemainingAfter: number; expiresAt: string }
   | { kind: 'postpaid'; tariffId: string; amountKopecks: number; currency: string }
-  | { kind: 'legacy' }
 
 export type BookSlotResult =
   | { ok: true; slot: LessonSlot; billing: BookSlotBilling }

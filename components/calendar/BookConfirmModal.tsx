@@ -58,10 +58,6 @@ export type BookConfirmModalProps = {
   // it differs from MSK, the modal shows both wall times.
   learnerTimezone: string
   activePackages?: BookConfirmActivePackage[]
-  // When false, the server takes the legacy non-billing booking path
-  // (BILLING_WAVE_ACTIVE !== 'true'); preview banner is hidden so
-  // it can't lie about a package that won't fire.
-  billingWaveActive?: boolean
   onClose: () => void
   // Fired on 200 (success) — parent runs refetch + close.
   onBooked: () => void
@@ -77,7 +73,6 @@ export function BookConfirmModal({
   emailVerified,
   learnerTimezone,
   activePackages,
-  billingWaveActive,
   onClose,
   onBooked,
   onConflict,
@@ -234,7 +229,7 @@ export function BookConfirmModal({
           </p>
         ) : null}
 
-        {canBook && billingWaveActive && matchingPackage ? (
+        {canBook && matchingPackage ? (
           <BillingPreview
             tone="package"
             title="Будет списано занятие из пакета"

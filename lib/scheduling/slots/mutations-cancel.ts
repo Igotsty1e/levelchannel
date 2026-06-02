@@ -1,8 +1,9 @@
 // Wave 39: cancel write paths extracted from slots.ts.
-// Dynamically imports @/lib/billing/consumption per design v3 —
-// preserved verbatim so the legacy fast path
-// (BILLING_WAVE_ACTIVE !== 'true') still avoids loading billing
-// modules entirely.
+// Quality Sub-PR B (2026-06-02): the historical BILLING_WAVE_ACTIVE
+// guard was retired alongside booking.ts. Dynamic import of
+// @/lib/billing/consumption is retained per design v3 — it keeps the
+// cancel route's module graph slim by deferring the billing-module
+// load to the call path that actually restores a consumption.
 //
 // SAAS-PIVOT Day 5A (2026-05-22): cancel-after-completion contract.
 // Cancel writers reject when status ∈ ('completed', 'no_show_learner')

@@ -45,7 +45,6 @@ vi.mock('@/lib/email/dispatch', () => ({
 }))
 
 beforeAll(() => {
-  vi.stubEnv('BILLING_WAVE_ACTIVE', 'true')
   vi.stubEnv('PAYMENTS_PROVIDER', 'mock')
   vi.stubEnv('PAYMENTS_ALLOW_MOCK_CONFIRM', 'true')
   // SBP create-qr is operator-disabled by default; flip it on for the
@@ -66,7 +65,6 @@ afterAll(() => {
   process.env.PAYMENTS_PROVIDER = 'mock'
   process.env.PAYMENTS_ALLOW_MOCK_CONFIRM = 'true'
   delete process.env.SBP_ENABLED
-  delete process.env.BILLING_WAVE_ACTIVE
 })
 
 async function makeTeacher(opts: {

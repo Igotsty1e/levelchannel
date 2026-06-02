@@ -41,7 +41,6 @@ beforeAll(() => {
   // import time, so a late stub here would only patch the signer
   // while the webhook verifier keeps the test-env-defined value
   // ('test_api_secret' from tests/setup-env.ts), causing 401.
-  vi.stubEnv('BILLING_WAVE_ACTIVE', 'true')
   vi.stubEnv('PAYMENTS_PROVIDER', 'cloudpayments')
   vi.stubEnv('PAYMENTS_ALLOW_MOCK_CONFIRM', '')
 })

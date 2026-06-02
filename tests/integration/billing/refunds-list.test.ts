@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import {
   POST as refundsHandler,
@@ -22,14 +22,6 @@ import { buildRequest, extractSessionCookie, freshInvoiceId } from '../helpers'
 // payment_allocation_reversals rows newest-first with operator email
 // joined. The POST handler in the same route is exercised by
 // `refunds.test.ts` and `refunds-gateway.test.ts`.
-
-beforeAll(() => {
-  process.env.BILLING_WAVE_ACTIVE = 'true'
-})
-
-afterAll(() => {
-  delete process.env.BILLING_WAVE_ACTIVE
-})
 
 async function regAdmin() {
   const email = `refund-list-admin-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`

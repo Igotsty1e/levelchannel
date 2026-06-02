@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { POST as adminCreateHandler } from '@/app/api/admin/slots/route'
 import { POST as bookHandler } from '@/app/api/slots/[id]/book/route'
@@ -33,14 +33,9 @@ import {
 //     generic 409 «Это время только что забронировал кто-то другой».
 //
 // Plan: docs/plans/bug-1-payment-method-banner.md §Tests Test 3.
-
-beforeAll(() => {
-  process.env.BILLING_WAVE_ACTIVE = 'true'
-})
-
-afterAll(() => {
-  delete process.env.BILLING_WAVE_ACTIVE
-})
+// 2026-06-02: BILLING_WAVE_ACTIVE retired (Quality Sub-PR B); no env
+// stub needed — the legacy fast-path branch no longer exists in
+// booking.ts and the new path is always-on.
 
 async function reg(
   email: string,

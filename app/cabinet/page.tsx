@@ -310,9 +310,6 @@ export default async function CabinetPage() {
                 countInitial: p.countInitial,
                 expiresAt: p.expiresAt,
               }))}
-              billingWaveActive={
-                process.env.BILLING_WAVE_ACTIVE === 'true'
-              }
               cancelWindowHours={getLearnerCancelWindowHours()}
               paymentMethodNotSet={paymentMethodNotSet}
               canBuyPackages={canBuyPackages}
