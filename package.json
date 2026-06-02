@@ -28,7 +28,7 @@
     "react": "^18",
     "react-dom": "^18",
     "recharts": "^3.8.1",
-    "resend": "^6.12.2"
+    "resend": "^6.12.4"
   },
   "overrides": {
     "postcss": "8.5.10"
