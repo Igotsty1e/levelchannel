@@ -274,15 +274,19 @@ function SingleCreate({
               onChange={(e) => setTime(e.target.value)}
             />
           </Field>
+          {/* T2 (2026-06-02) fix: was a number input with step="15", which
+              made a single up-arrow click on the default 60-min value land
+              on 75 — a non-standard duration that then displayed verbatim
+              in the booking modal. Replaced with an explicit select of
+              blessed lesson durations. */}
           <Field label="Длительность, мин">
-            <Input
-              type="number"
-              min="15"
-              max="180"
-              step="15"
-              value={duration}
-              onChange={(e) => setDuration(e.target.value)}
-            />
+            <Select value={duration} onChange={(v) => setDuration(v)}>
+              <option value="30">30</option>
+              <option value="45">45</option>
+              <option value="60">60</option>
+              <option value="90">90</option>
+              <option value="120">120</option>
+            </Select>
           </Field>
           <Field label="Заметки (опц.)">
             <Input
@@ -506,15 +510,15 @@ function BulkCreate({
             onChange={(e) => setWeeks(e.target.value)}
           />
         </Field>
+        {/* T2 fix: same step-15 trap as the single-create form. */}
         <Field label="Длительность, мин">
-          <Input
-            type="number"
-            min="15"
-            max="180"
-            step="15"
-            value={duration}
-            onChange={(e) => setDuration(e.target.value)}
-          />
+          <Select value={duration} onChange={(v) => setDuration(v)}>
+            <option value="30">30</option>
+            <option value="45">45</option>
+            <option value="60">60</option>
+            <option value="90">90</option>
+            <option value="120">120</option>
+          </Select>
         </Field>
         <Field label="Заметки (опц.)">
           <Input
