@@ -27,6 +27,10 @@ Active plan-doc work (not yet shipped) lives in `docs/plans/*.md` without an ent
 
 - **`admin-dashboard.md`** — operational metrics + sparklines + cohort funnel + health banner at /admin/dashboard. Status: SHIPPED. Codex-paranoia wave-mode SIGN-OFF round 2/3 (3 BLOCKER + 5 WARN + 1 INFO closed). No migration.
 
+## 2026-06-02 bug-1-payment-method-banner (1 PR)
+
+- **`bug-1-payment-method-banner.md`** — cabinet home banner shown BEFORE the calendar entry whenever the assigned teacher has not picked a payment method in `learner_billing_preferences`. Status: SHIPPED 2026-06-02 (PR #493, squash SHA 48c152b). Plan paranoia SIGN-OFF round 1/3 (4 BLOCKER + 4 WARN + 1 INFO closed). Wave paranoia: Codex quota exhausted → 3-round Claude self-review fallback under SKILL.md §7. New `components/cabinet/missing-payment-method-banner.tsx` (single / per-teacher variants, optional second paragraph when `canBuyPackages=true`). `lib/cabinet/teacher-blocks.ts` `TeacherBlock` gains `paymentMethod`. `app/cabinet/page.tsx` derives `paymentMethodNotSet` server-side; `lessons-section.tsx` short-circuit chain gains the banner branch; `teacher-blocks-list.tsx` per-block banner. `app/api/slots/[id]/book/route.ts` maps `payment_method_not_set` → 422 with verbatim copy so stale-tab learners see the honest message instead of the generic 409. Booking server-side gate in `lib/scheduling/slots/booking.ts:249-252` untouched (defense-in-depth per task). Copy uses «занятие» throughout.
+
 ## Pre-pivot waves (older, smaller plans)
 
 - **`teacher-self-reg-invite.md`** (SAAS-3+4, 2026-05-18) — HMAC-signed teacher invite flow + register-with-invite atomicity.
