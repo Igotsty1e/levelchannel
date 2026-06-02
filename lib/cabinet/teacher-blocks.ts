@@ -36,6 +36,7 @@
 // Read-only. No mutations. SSR-safe (no client imports).
 
 import { getAuthPool } from '@/lib/auth/pool'
+import type { PaymentMethod } from '@/lib/billing/learner-payment-method'
 import { getDbPool } from '@/lib/db/pool'
 
 export type TeacherBlock = {
@@ -59,6 +60,13 @@ export type TeacherBlock = {
   // since security-audit HIGH-3 closure (2026-05-23). Counts non-voided
   // unexpired purchases owned by THIS teacher with remaining units.
   activePackageCount: number
+  // Bug #1 (2026-06-02). Per-pair payment method from
+  // `learner_billing_preferences`. Default 'none' when no row exists
+  // (matches `getPaymentMethodForPair`'s contract). The cabinet uses
+  // this to render the «учитель не выбрал способ оплаты» banner above
+  // the per-block «Записаться» CTA. Plan: docs/plans/bug-1-payment-
+  // method-banner.md.
+  paymentMethod: PaymentMethod
 }
 
 export async function loadTeacherBlocks(
@@ -233,7 +241,33 @@ export async function loadTeacherBlocks(
     )
   }
 
-  // 5. Assemble blocks in the order teacherIds was given (caller's
+  // 5. Per-pair payment method (Bug #1, 2026-06-02). Same SoT as the
+  // booking-side `getPaymentMethodForPair` helper — keep the predicate
+  // single. `learner_billing_preferences` lives in the main DB (mig
+  // 0101), so this query goes through `dbPool`, not `authPool`. A
+  // missing row collapses to 'none' to match the helper's default.
+  const paymentMethodRows = await dbPool.query<{
+    teacher_account_id: string
+    payment_method: string
+  }>(
+    `select teacher_account_id, payment_method
+       from learner_billing_preferences
+      where learner_account_id = $1::uuid
+        and teacher_account_id = any($2::uuid[])`,
+    [learnerAccountId, teacherIds],
+  )
+  const paymentMethodByTeacher = new Map<string, PaymentMethod>()
+  for (const id of teacherIds) paymentMethodByTeacher.set(id, 'none')
+  for (const r of paymentMethodRows.rows) {
+    const raw = String(r.payment_method)
+    if (raw === 'postpaid' || raw === 'prepaid_packages' || raw === 'none') {
+      paymentMethodByTeacher.set(String(r.teacher_account_id), raw)
+    }
+    // Unknown / future enum values silently collapse to the existing
+    // 'none' default — better to over-block than to under-block.
+  }
+
+  // 6. Assemble blocks in the order teacherIds was given (caller's
   // contract: linked_at asc from getActiveTeacherIdsForLearner).
   return teacherIds.map((teacherId) => {
     const debt = debtByTeacher.get(teacherId) ?? {
@@ -248,6 +282,7 @@ export async function loadTeacherBlocks(
       balanceOwedKopecks: debt.totalDebtKopecks,
       debtSlotCount: debt.slotCount,
       activePackageCount: activePackageCountByTeacher.get(teacherId) ?? 0,
+      paymentMethod: paymentMethodByTeacher.get(teacherId) ?? 'none',
     }
   })
 }
