@@ -1,6 +1,6 @@
 # Bug 4 — Tariff naming + subscription-screen polish
 
-Status: PLAN (paranoia round 2 pending)
+Status: Sub-PR A SHIPPED (1fd631e via PR #490) · Sub-PR B IMPL in progress (2026-06-02)
 
 Owner: Иван
 Driver: Claude (this session)
@@ -387,3 +387,135 @@ No BLOCKERs identified. Proceeding to implementation.
   entirely with Sub-PR C drop).
 - **Round 1 → Round 2**: removed mention of `scripts/saas-go-live.mjs`
   as part of legal guardrail check.
+
+## Sub-PR B — `/teacher/subscription` UI polish (impl addendum, 2026-06-02)
+
+Sub-PR A shipped as 1fd631e (PR #490, squash-merged) — `SAAS_SUBSCRIPTION_TARIFFS`
+now carries `features: ReadonlyArray<string>` per tier; titles flipped
+to «Базовый» / «Расширенный»; mig 0103 updated `title_ru` in DB; landing
++ admin labels + settings hub-card all flipped. Sub-PR B builds on top.
+
+### Existing surface inventory (Sub-PR B scope)
+
+```
+rg "TeacherSubscriptionClient|teacher-subscription-(tiers|active|tier|subscribe|cancel)|/teacher/subscription" --type ts --type tsx
+```
+
+| # | File | Disposition |
+|---|---|---|
+| 1 | `app/teacher/subscription/page.tsx` (SSR, 87 lines pre) | **refactor — Sub-PR B** (pass `features` through to client; no auth changes) |
+| 2 | `app/teacher/subscription/client.tsx` (363 lines pre) | **refactor — Sub-PR B** (active surface + pick-tier surface visual rebuild) |
+| 3 | `lib/billing/teacher-subscription.ts` `SAAS_SUBSCRIPTION_TARIFFS` | **READ only** (Sub-PR A already added `features`) |
+| 4 | `tests/teacher-cabinet-polish/subscription-ui-*.test.tsx` | **new (2 files)** — pin the new visual contract |
+| 5 | `/api/teacher/subscribe`, `/api/teacher/subscription/cancel` | **UNTOUCHED** (no behavioural change) |
+| 6 | `components/payments/pricing-section.tsx` `Window.cp` global | **UNTOUCHED** (still single declaration, reused via `unknown` cast) |
+
+Negative check: `rg "subscription-ui-(active|pick-tier)"` → only the 2 new tests after this PR.
+
+### Reproduction (Sub-PR B)
+
+1. Учитель в роли «без активной подписки» открывает `/teacher/subscription`.
+2. Видит после Sub-PR A: правильные русские названия «Базовый» / «Расширенный»,
+   но визуал — сухие минимальные карточки в один ряд без иерархии, без feature-bullets,
+   без выделения рекомендуемого тарифа. Заголовок «Выберите тариф» дублирует
+   header страницы.
+3. Учитель в роли «с активной подпиской» открывает `/teacher/subscription`.
+4. Видит после Sub-PR A: голый `<dl>` (Тариф / Цена / Период), без объяснения
+   что входит в тариф. На вопрос «а что мне даёт мой текущий тариф?»
+   страница не отвечает.
+
+### Fix (Sub-PR B)
+
+**Pick-a-tier surface**:
+- Drop duplicated `<h2>Выберите тариф</h2>` — page-level `<h1>Подписка
+  на платформу` уже несёт смысл.
+- Двухкарточный grid (`minmax(240px, 1fr)` → 1 col на узких экранах, 2 col
+  от ~540px container width).
+- Каждая карточка: title (h3, 20px/700) → price row («NNN ₽» 24px/700 +
+  «/ 30 дней» secondary) → limit-line («До N активных учеников») →
+  feature-bullets `<ul>` (5 bullets из `tariffs[].features` = catalogue
+  SoT, set by Sub-PR A) → «Подписаться» button.
+- «Расширенный» (pro) карточка дополнительно несёт:
+  - `border: var(--accent)` + thin `box-shadow` ring,
+  - абсолютно-позиционированный badge «Популярный» (top-right corner),
+  - solid-accent кнопка вместо outline.
+- Лид-текст (`<p>`) поясняет место «Стартового» — он бесплатный
+  default after register, не purchasable на этой странице.
+
+**Active surface**:
+- Header row: «● Текущий тариф» (uppercase accent badge) → `<h2>` titleRu
+  (26px/700) → price+period.
+- Two-column grid:
+  - «Что входит в тариф» → `<ul>` из `active.features` (catalogue SoT).
+  - «Период и оплата» → `<dl>` с «Период оплачен до» + (optional)
+    «Подписка отменена N — доступ до конца оплаченного периода».
+- Кнопка «Отменить подписку» в footer (только если `cancelled_at == null`).
+
+**A11y**:
+- Декоративные unicode-bullets («●») обёрнуты в `<span aria-hidden="true">`
+  чтобы скринридер не зачитывал «black large circle». Текст остаётся.
+
+**Mobile-first**:
+- Оба grid'а `auto-fit minmax(220-240px, 1fr)` — естественно стекаются
+  в один столбец на <540px viewport. `padding` карточек 20-24px —
+  читаемо на 360px.
+
+### What is NOT in Sub-PR B
+
+- НЕ трогаем `/api/teacher/subscribe` или `/api/teacher/subscription/cancel`.
+- НЕ меняем CloudPayments widget glue (handle{Subscribe,Cancel,Widget}).
+- НЕ меняем catalogue SoT (Sub-PR A собственность).
+- НЕ меняем pricing-section на /saas landing — это другая поверхность.
+- НЕ меняем admin labels — Sub-PR A собственность.
+
+### Tests (Sub-PR B)
+
+- `tests/teacher-cabinet-polish/subscription-ui-pick-tier.test.tsx` (5 tests):
+  ровно 2 карточки (Стартового нет), Pro badge «Популярный» (mid badge null),
+  feature-bullets рендерятся, кнопки «Подписаться» disabled до загрузки CP,
+  цены отформатированы как «NNN ₽» + «30 дней».
+- `tests/teacher-cabinet-polish/subscription-ui-active.test.tsx` (5 tests):
+  «Текущий тариф» badge, titleRu rendering, «Что входит» bullets, cancel
+  button visible when `cancelled_at == null`, hidden when set + surfaces
+  cancellation date with access-end hint.
+- Both files `// @vitest-environment jsdom`, use `@testing-library/react`.
+
+### Self-review fresh-eyes pass (Claude, 2026-06-02, Codex quota note)
+
+Per `~/.claude/skills/codex-paranoia/SKILL.md` §7, Sub-PR B fits the
+"single-page UI polish (no auth/payment/schema changes)" fallback profile:
+catalogue is read-only here, no API routes touched, no DB writes,
+no auth boundary edits. Plan paranoia round-2 (Codex quota) fallback
+applies recursively to Sub-PR B impl.
+
+Fresh-eyes findings (all closed before commit):
+1. **a11y (WARN, fixed)** — decorative «●» bullets needed `aria-hidden="true"`.
+   Fixed in both `currentBadgeStyle` and `featureBulletStyle` callsites.
+2. **mobile (INFO, accepted)** — single-column stacking on <540px viewports
+   is intended behaviour, `auto-fit minmax(240px, 1fr)` is the standard mobile-first
+   primitive (matches `app/teacher/learners/page.tsx`).
+3. **disabled button affordance (INFO, accepted)** — CP-widget-loading hides
+   behind the existing «Готовим оплату…» text on click; the brief disabled
+   state pre-script-ready is rare on broadband and not a regression.
+4. **CloudPayments race (INFO, accepted)** — `openWidget` and `handleCancel`
+   already had `e instanceof Error` guards from A2 baseline; Sub-PR B doesn't
+   change the contract.
+5. **Test affordance (INFO, accepted)** — `data-highlight="true"|"false"`
+   added on tier card for QA / future visual regression hooks.
+
+Wave checkpoint runs once at epic-end after Sub-PR B merges — per
+codex-paranoia §"unit is the EPIC", BOTH sub-PRs reviewed as one diff
+range. If Codex quota recovers, full Codex pass; else self-review fallback
+trailer documented.
+
+### Definition of done (Sub-PR B)
+
+- [x] `app/teacher/subscription/{page,client}.tsx` updated.
+- [x] `tests/teacher-cabinet-polish/subscription-ui-{active,pick-tier}.test.tsx`
+  added; 10 tests pass under jsdom.
+- [x] Wider unit suite (`tests/teacher-cabinet-polish/`) — 50/50 green.
+- [x] `npm run build` green.
+- [ ] PR opened, CI green, trailer `Codex-Paranoia: SUB-WAVE self-reviewed
+  (epic bug-4-tariff-naming-and-ui); epic-end review pending`.
+- [ ] Squash-merge with `--admin --delete-branch`.
+- [ ] Epic-end paranoia wave on `1fd631e..<sub-PR-B-SHA>` after merge.
