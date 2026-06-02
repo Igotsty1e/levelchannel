@@ -121,6 +121,17 @@ export default async function BookPage() {
               {teacherDisplayName}
             </p>
           ) : null}
+          {/*
+            Bug #3 fix (2026-06-02): the original h1 + duration line
+            were hardcoded placeholders from the BCS-B.frontend wave —
+            neither value was sourced from any tariff/slot row. Real
+            per-slot title + duration come from the tariff snapshot
+            on the slot, surfaced on screen 2 (`/cabinet/book/[ymd]`)
+            where the learner sees specific slots. Screen 1 just sets
+            up the day picker — it has no tariff context yet
+            (different days may carry different tariffs), so we
+            render a neutral product label here.
+          */}
           <h1
             style={{
               fontSize: 26,
@@ -130,7 +141,7 @@ export default async function BookPage() {
               color: 'var(--text-strong, #1a1a2e)',
             }}
           >
-            Занятие по английскому
+            Запись на занятие
           </h1>
           <div
             style={{
@@ -141,7 +152,6 @@ export default async function BookPage() {
               color: 'var(--secondary)',
             }}
           >
-            <div>🕒 50 мин</div>
             <div>📹 Ссылку на встречу пришлёт учитель — обычно за день до занятия.</div>
           </div>
         </div>
