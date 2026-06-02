@@ -148,6 +148,48 @@ do work.
     contract, no learner data leaks since open slots carry teacher +
     tariff + timing only).
 
+## Accepted security gaps (security-audit-2026-06-02)
+
+The findings below were classified [INFO] during the 2026-06-02
+audit and are documented here as accepted gaps. Each line names the
+trade-off and the load-bearing mitigation.
+
+- **Register / login symmetric-work drift (F3).** The new-email
+  branch in `/api/auth/register` performs more DB writes than the
+  existing-email branch (`grantAccountRole`, `recordConsent`,
+  `createEmailVerification`, etc.). The bcrypt cost dominates (~250ms
+  vs ~5-10ms of DB writes), so the wall-clock difference is bounded;
+  rate-limit (5/min/IP + 3/h/email-hash) prices a timing-channel
+  enumeration into many days per bit. Original `/plan-eng-review` D1
+  symmetric-work invariant is **relaxed** as of 2026-06-02 — the
+  rate-limit posture is the load-bearing defense.
+- **Receipt-token SSE query-param transport (F7).** SSE endpoints
+  can only carry the token in `?token=` (no headers on EventSource).
+  Token is single-use, TTL-bounded, and scoped to one
+  `payment_orders.receipt_token_hash`. **Operator action:** an
+  nginx `log_format` rule that strips `?token=` from the access log
+  is the documented mitigation; the snippet is a follow-up to land
+  in `OPERATIONS.md`. Until then the token's short TTL + single-use
+  scope is the load-bearing defense.
+- **Receipt-token query-param access-log exposure (F8).** Same as
+  F7. Header transport is preferred where possible; the nginx-snippet
+  follow-up applies here too.
+- **/api/auth/verify GET creates a session on click (F9).**
+  Intentional UX (avoids the verify-then-log-in double-step). Token
+  is single-use, TTL-bounded, consumed atomically. Anyone who
+  recovers the URL from history/referer/clipboard within the TTL
+  before consumption gets the session. The trade-off is pinned
+  HERE (not in `app/api/auth/verify/route.ts` — that file's
+  comments describe the no-origin click-through path, not the
+  URL-leak window this accepted gap covers).
+- **Origin header absence silently passes (F10).** Anonymous
+  mutation routes (`/api/auth/{register,login,reset-request,reset-confirm}`)
+  rely on per-IP + per-email-hash rate-limit as the load-bearing
+  defense against no-Origin / no-Sec-Fetch CLI-style attacks.
+  `enforceTrustedBrowserOrigin` is intentionally permissive on the
+  no-headers case; tightening would break legit non-browser callers.
+  Pinned by `tests/security/origin-gate-no-headers.test.ts`.
+
 ## Protected assets
 
 - order statuses
