@@ -72,6 +72,13 @@ function rowToPackage(row: Record<string, unknown>): LessonPackage {
  * - `viewerAccountId` set → catalog packages PLUS private packages where
  *   the viewer has an active `learner_package_access` row.
  * Also adds `deleted_at IS NULL` symmetrically with the tariff side.
+ *
+ * Bug #2 fix (2026-06-02, plan docs/plans/bug-2-packages-scoped-to-teacher.md):
+ * authenticated viewers must ALSO be filtered by `learner_teacher_links`
+ * (active) so a fresh learner with zero links sees ZERO packages, and a
+ * learner linked to teacher A does NOT see teacher B/C/D's catalog
+ * packages. Anonymous branch (zero callers today, contract preserved)
+ * still returns catalog from every operator-managed teacher.
  */
 export async function listActivePackages(
   viewerAccountId?: string | null,
@@ -86,15 +93,31 @@ export async function listActivePackages(
         and ts.plan_slug = 'operator-managed'
         and ts.state = 'active'
         and (
-          lp.visibility = 'catalog'
+          -- Anonymous viewer: legacy catalog-only contract (zero live
+          -- callers today; preserved for back-compat).
+          ($1::uuid is null and lp.visibility = 'catalog')
           or (
-            lp.visibility = 'private'
-            and $1::uuid is not null
+            -- Authenticated viewer: filter by active learner-teacher
+            -- link first (Bug #2 closure), then by visibility +
+            -- per-package grant.
+            $1::uuid is not null
             and exists (
-              select 1 from learner_package_access lpa
-               where lpa.package_id = lp.id
-                 and lpa.learner_account_id = $1::uuid
-                 and lpa.revoked_at is null
+              select 1 from learner_teacher_links ltl
+               where ltl.teacher_account_id = lp.teacher_id
+                 and ltl.learner_account_id = $1::uuid
+                 and ltl.unlinked_at is null
+            )
+            and (
+              lp.visibility = 'catalog'
+              or (
+                lp.visibility = 'private'
+                and exists (
+                  select 1 from learner_package_access lpa
+                   where lpa.package_id = lp.id
+                     and lpa.learner_account_id = $1::uuid
+                     and lpa.revoked_at is null
+                )
+              )
             )
           )
         )
