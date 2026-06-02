@@ -87,6 +87,18 @@ export default async function CabinetPage() {
     redirect('/admin')
   }
 
+  // 2026-06-02 fix: teacher-only accounts (no student role) belong on
+  // /teacher (their canonical home). They were previously stuck on
+  // /cabinet which is the learner surface — the «Мои занятия как
+  // учитель» fallback block was visible but the page label / nav /
+  // CTAs all assumed a learner. The teacher home page at /teacher
+  // owns the proper teacher dashboard (lessons preview, learners
+  // list, digest preview). Teacher+student dual-role stays on
+  // /cabinet so the learner blocks remain reachable.
+  if (isTeacher && !isStudent) {
+    redirect('/teacher')
+  }
+
   // SAAS-PIVOT Day 2 (2026-05-22) codex-paranoia round-2 WARN #3
   // closure — derive the cabinet's "primary teacher" from the n:m
   // canonical array, not from the legacy single-value alias.

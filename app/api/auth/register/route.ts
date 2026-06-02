@@ -223,13 +223,23 @@ export async function POST(request: Request) {
       passwordHash,
     })
     // SAAS-3 (2026-05-18) — self-registered teacher gets an explicit
-    // teacher role on the new-email path. Learner-archetype default
-    // (no role = learner) is preserved by NOT granting on student.
+    // teacher role on the new-email path.
+    //
+    // 2026-06-02 fix: also grant the explicit `student` role for
+    // learner registrations (including invite redeem path). Previously
+    // we relied on the implicit "no role = learner" default — that
+    // works for `isLearnerArchetypeCandidate` but trips up surfaces
+    // like /cabinet/settings/calendar that test `roles.includes('student')`
+    // explicitly. Granting the role gives a single, unambiguous role
+    // shape for every account.
+    //
     // Failure to grant is fatal to register because returning ok:true
-    // without the role would silently land a teacher on the learner
+    // without the role would silently land an account on the wrong
     // surface — worse than a fail-fast 5xx that prompts retry.
     if (requestedRole === 'teacher') {
       await grantAccountRole(account.id, 'teacher', null)
+    } else {
+      await grantAccountRole(account.id, 'student', null)
     }
 
     // TASK-5 (mig 0095) — best-effort post-create profile UPSERT for

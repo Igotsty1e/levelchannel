@@ -35,7 +35,9 @@ describe('POST /api/auth/login', () => {
     const json = await res.json()
     expect(json.account.email).toBe('login-ok@example.com')
     expect(json.account.emailVerifiedAt).toBeNull()
-    expect(json.account.roles).toEqual([])
+    // 2026-06-02: register now grants `student` role explicitly for
+    // learner registrations (was implicit-no-role before).
+    expect(json.account.roles).toEqual(['student'])
   })
 
   it('rejects wrong password with identical 401', async () => {

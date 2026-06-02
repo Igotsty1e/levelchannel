@@ -2,8 +2,8 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
-import { AuthShell } from '@/components/auth-shell'
 import { AuthInfoBox } from '@/components/auth-form-bits'
+import { SiteHeader } from '@/components/site-header'
 import { LearnerTelegramBinding } from '@/components/cabinet/learner-telegram-binding'
 import { resolveOperatorSettingsForProbe } from '@/lib/admin/operator-settings'
 import { listAccountRoles } from '@/lib/auth/accounts'
@@ -87,53 +87,74 @@ export default async function CabinetProfilePage() {
       settings.LEARNER_REMINDERS_TELEGRAM_ENABLED?.value === 1
   }
 
+  // 2026-06-02 (verstka fix): wrap the page in a wider centered column
+  // than the default AuthShell maxWidth: 440. The form + cards stack
+  // looked drifted-to-the-right and visually unbalanced — the section
+  // headings and Имя/Фамилия grid breathe better at 640.
   return (
-    <AuthShell>
-      <div
+    <>
+      <SiteHeader />
+      <main
+        className="auth-shell-main saas-chrome"
         style={{
+          minHeight: 'calc(100vh - 56px)',
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 16,
-          marginBottom: 16,
+          padding: '48px 24px 96px',
         }}
       >
-        <Link
-          href="/cabinet"
-          style={{
-            color: 'var(--secondary)',
-            textDecoration: 'none',
-            fontSize: 14,
-          }}
-        >
-          ← Назад в кабинет
-        </Link>
-        <LogoutButton />
-      </div>
-      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 24 }}>
-        Профиль
-      </h1>
+        <div style={{ width: '100%', maxWidth: 640 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 16,
+              marginBottom: 16,
+            }}
+          >
+            <Link
+              href="/cabinet"
+              style={{
+                color: 'var(--secondary)',
+                textDecoration: 'none',
+                fontSize: 14,
+              }}
+            >
+              ← Назад в кабинет
+            </Link>
+            <LogoutButton />
+          </div>
+          <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 24 }}>
+            Профиль
+          </h1>
 
-      {!isVerified ? (
-        <AuthInfoBox>
-          E-mail ещё не подтверждён. Откройте письмо, которое мы отправили при
-          регистрации, и нажмите ссылку в нём. Если письма нет —{' '}
-          <ResendVerifyButton />.
-        </AuthInfoBox>
-      ) : null}
+          {!isVerified ? (
+            <AuthInfoBox>
+              E-mail ещё не подтверждён. Откройте письмо, которое мы отправили
+              при регистрации, и нажмите ссылку в нём. Если письма нет —{' '}
+              <ResendVerifyButton />.
+            </AuthInfoBox>
+          ) : null}
 
-      <ProfileEditor initialProfile={profile} fallbackEmail={account.email} />
+          <ProfileEditor
+            initialProfile={profile}
+            fallbackEmail={account.email}
+          />
 
-      {!isTeacher ? (
-        <LearnerTelegramBinding
-          initialBound={learnerTgBound}
-          initialChatId={learnerTgChatId}
-          masterSwitchOn={learnerTgMasterSwitch}
-        />
-      ) : null}
+          {!isTeacher ? (
+            <LearnerTelegramBinding
+              initialBound={learnerTgBound}
+              initialChatId={learnerTgChatId}
+              masterSwitchOn={learnerTgMasterSwitch}
+            />
+          ) : null}
 
-      <DangerZone />
-    </AuthShell>
+          <DangerZone />
+        </div>
+      </main>
+    </>
   )
 }
 
