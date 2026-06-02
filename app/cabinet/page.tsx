@@ -310,24 +310,6 @@ export default async function CabinetPage() {
             learnerTimezone={profile?.timezone ?? null}
             canBuyPackages={canBuyPackages}
           />
-
-          <div className="card" style={{ padding: 24, marginBottom: 24 }}>
-            <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
-              Скоро здесь появится
-            </h2>
-            <ul
-              style={{
-                color: 'var(--secondary)',
-                fontSize: 14,
-                lineHeight: 1.8,
-                paddingLeft: 20,
-                marginTop: 8,
-              }}
-            >
-              <li>оплата занятий и история платежей</li>
-              <li>история занятий и материалы</li>
-            </ul>
-          </div>
         </>
       ) : null}
     </AuthShell>

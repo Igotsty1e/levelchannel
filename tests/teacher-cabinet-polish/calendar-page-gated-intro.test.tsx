@@ -128,7 +128,13 @@ describe('/teacher/settings/calendar page — gated intro (TASK-6)', () => {
     ).toBeNull()
   })
 
-  it('configReady=true → original intro + "Подключитесь сейчас" CTA render unchanged', async () => {
+  // Updated per docs/plans/cabinet-stale-future-labels.md §B.0:
+  // the configReady=true intro is now state-aware (not a single fixed
+  // paragraph). Old "Подключитесь сейчас / Текущий статус интеграции"
+  // status row was deleted; intro copy depends on (pullStatus × pushStatus).
+  // For default no_integration fixture (integration mock returns null),
+  // the intro reads as the no-teaser CTA.
+  it('configReady=true → state-aware intro renders (no banned teaser, no deleted status row)', async () => {
     getGoogleCalendarOauthConfigMock.mockReturnValue({
       clientId: 'test-client-id',
       clientSecret: 'test-secret',
@@ -141,18 +147,21 @@ describe('/teacher/settings/calendar page — gated intro (TASK-6)', () => {
     })
     render(jsx)
 
-    // Original intro present.
+    // New state-aware intro present (no_integration default → CTA copy).
     expect(
-      screen.getByText(/Подключите ваш Google Calendar к LevelChannel/),
+      screen.getByText(/Подключите ваш Google Calendar/),
     ).not.toBeNull()
 
-    // Status / CTA paragraph present.
-    expect(screen.getByText(/Подключитесь сейчас/)).not.toBeNull()
+    // Deleted teaser strings must NOT appear.
+    expect(screen.queryByText(/Подключитесь сейчас/)).toBeNull()
     expect(
-      screen.getByText(/Текущий статус интеграции: подключение готово/),
-    ).not.toBeNull()
+      screen.queryByText(/Текущий статус интеграции: подключение готово/),
+    ).toBeNull()
+    expect(
+      screen.queryByText(/появится в ближайших обновлениях/),
+    ).toBeNull()
 
-    // Coming-soon copy is NOT shown when config is ready.
+    // Coming-soon (env-misconfig) copy is NOT shown when config is ready.
     expect(screen.queryByTestId('calendar-coming-soon-intro')).toBeNull()
     expect(
       screen.queryByText(/Эта функция активируется в ближайшем обновлении/),
