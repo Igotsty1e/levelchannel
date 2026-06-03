@@ -1,6 +1,6 @@
 # Bug #2 — Packages catalog must be scoped to learner's teacher(s)
 
-Status: PLANNED
+Status: SHIPPED — PR #495 merged 2026-06-02 (SHA edb2907). Wave paranoia §7 fallback (Codex quota exhausted; 2 plan errors + 4 wave findings closed inline).
 Owner: Claude (auto mode session 2026-06-02)
 Branch: `bug/2-packages-teacher-scope`
 
