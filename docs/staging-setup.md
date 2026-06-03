@@ -171,6 +171,28 @@ upstream port 3001 has nothing listening yet. That's the expected
 pre-app state. Step 7 starts the systemd unit and the response will
 flip to `200`.
 
+### Step 6.5 — Swap file (required for build on small VPS)
+
+The VPS has 2 GB RAM and prod's `next-server` already holds ~500 MB. The
+staging cold-start build runs `tsc --noEmit` after `next build`'s
+compile step, which peaks at ~1.5 GB and gets OOM-killed without
+backing swap (verified 2026-06-03 — `Killed` after "Running TypeScript
+…"; the build exits 0 but writes no `.next/BUILD_ID`, so `next start`
+later refuses to run).
+
+```bash
+sudo fallocate -l 4G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+sudo swapon --show   # confirm 4 GB swap is active
+```
+
+The swap is only used during the build burst; runtime memory of both
+prod + staging fits comfortably in physical RAM and never touches it.
+No prod-impact risk.
+
 ### Step 7 — systemd units
 
 ```bash
@@ -414,3 +436,60 @@ to ~2.5/5: real staging environment, real CP TEST integration, real
 post-promote e2e. Not 3.5+ because (a) lag-behind-main only,
 (b) single environment shared by all PRs, (c) no canary traffic split.
 Future ratchet: per-PR preview envs would move it to 4.0+.
+
+## Lessons from first cold-start (2026-06-03)
+
+Captured during the autonomous first activation on the prod VPS so the
+next operator doesn't re-discover them in production:
+
+1. **`seed-staging-env.sh` reads `/etc/<operator>.env`, not
+   `/etc/<operator>/env`.** Some operator runbooks use a subdirectory
+   layout; LevelChannel uses the flat file in /etc. The helper now
+   assembles the path from `${PROD_OPERATOR:-levelchannel}` (override
+   via `PROD_ENV_PATH=...` if your prod layout differs). Fixed in
+   PR #507.
+
+2. **`EMAIL_FROM` must be quoted in the env file.** The display name
+   contains `<` / `>` characters; bash's `source` interprets them as
+   I/O redirects and aborts the Step 7 build with `syntax error near
+   unexpected token 'newline'`. systemd's `EnvironmentFile=` accepts
+   both quoted and unquoted forms, so quoting is the universally safe
+   shape. Fixed in the env-template + seed helper.
+
+3. **Node 20 V8 baseline JIT is incompatible with
+   `MemoryDenyWriteExecute=true`.** The unit dies immediately with
+   `status=5/TRAP` because V8's `OS::SetPermissions` mprotects pages
+   W↔X at runtime. Prod's `levelchannel.service` does not set MDWE
+   either; staging dropped it to match. The remaining
+   `@system-service` filter + `@privileged`/`@resources` deny + pkey_*
+   allowlist still catches the regression class
+   `scripts/seccomp-regression-check.sh` asserts on. Fixed in PR #507.
+
+4. **`RestrictAddressFamilies` must include `AF_NETLINK`.** Linux
+   glibc `getifaddrs(3)` uses rtnetlink under the hood. Without it
+   libuv's `uv_interface_addresses` returns `EAFNOSUPPORT` (errno 97).
+   Next 16's `start-server.js` post-listen callback throws on it and
+   never registers the request handler — port 3001 listens but every
+   TCP request times out at 0 bytes received. Fixed in PR #507.
+
+5. **`staging-promote.yml` needs a first-time-bootstrap path.** On a
+   fresh repo the `staging` branch does not exist; the workflow's
+   `--force-with-lease="refs/heads/staging:"` (empty lease ref)
+   behaves inconsistently across git versions. Workflow now detects
+   the empty `STAGING_SHA` case and falls back to a plain
+   `git push origin SHA:refs/heads/staging` for the bootstrap. Fixed
+   in this cleanup PR.
+
+6. **A 4 GB swap file on the VPS is required.** The build's
+   `tsc --noEmit` step peaks at ~1.5 GB; together with prod
+   `next-server` it exceeds the 2 GB physical RAM. Without swap the
+   build is `Killed` after "Running TypeScript ..." and exits 0
+   without writing `BUILD_ID`, leaving `next start` unable to run.
+   Documented in Step 6.5 above.
+
+None of these escape CI's `build-check` because CI runs `next build`
+but never `next start`, and CI runners have abundant RAM. The
+follow-up is a smoke-boot regression workflow that boots
+`next-server` under the actual unit file's hardening for ~30 s and
+hits `/api/health`. See the cross-cutting backlog item for the
+tracker.

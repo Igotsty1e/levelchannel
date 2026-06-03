@@ -43,7 +43,11 @@ PAYMENTS_ALLOW_MOCK_CONFIRM=
 # Reuse the same Resend account but consider a separate domain (e.g.
 # noreply-staging@mail.levelchannel.ru) to avoid muddying prod analytics.
 RESEND_API_KEY=<FILL_IN>
-EMAIL_FROM=LevelChannel Staging <noreply-staging@mail.levelchannel.ru>
+# Quoted because the value contains `<` / `>` (a friendly mailbox name).
+# systemd's EnvironmentFile strips the quotes; bash `source` needs them
+# or it interprets `<` as an input redirect and aborts. Operator runbook
+# Step 7 sources this file via `set -a; . /etc/levelchannel-staging/env`.
+EMAIL_FROM="LevelChannel Staging <noreply-staging@mail.levelchannel.ru>"
 AUTH_RATE_LIMIT_SECRET=<FILL_IN_AT_LEAST_32_CHARS>
 
 # HMAC key for teacher-issued invite tokens. Production-required;
