@@ -19,6 +19,11 @@ const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${PORT}`
 export default defineConfig({
   testDir: 'tests/e2e',
   testMatch: /.*\.spec\.ts/,
+  // staging-flows.spec.ts runs against the deployed staging URL via its
+  // own playwright.config.staging.ts. Exclude it from the default
+  // local/CI run that spins up a fresh Next server (which reports
+  // environment=prod by default and breaks STAGING-HEALTH-001).
+  testIgnore: ['**/staging-flows.spec.ts'],
   timeout: 30_000,
   expect: { timeout: 5_000 },
   fullyParallel: false,
