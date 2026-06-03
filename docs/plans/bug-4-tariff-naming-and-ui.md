@@ -1,6 +1,6 @@
 # Bug 4 — Tariff naming + subscription-screen polish
 
-Status: Sub-PR A SHIPPED (1fd631e via PR #490) · Sub-PR B IMPL in progress (2026-06-02)
+Status: SHIPPED — Sub-PR A (1fd631e via PR #490) + Sub-PR B (97bd92d via PR #494) merged 2026-06-02. Sub-PR C (legal-RF offer body rename) deferred to a separate legal-rf cascade epic.
 
 Owner: Иван
 Driver: Claude (this session)

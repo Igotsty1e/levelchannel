@@ -1,6 +1,6 @@
 # Free-tier (Стартовый) — unlock 1 package + 1 tariff for «feel the features»
 
-Status: SIGN-OFF — codex-paranoia round 10/3 (cap extended; package cap `is_active=true AND deleted_at IS NULL` unified; tariff cap `deleted_at IS NULL`; UI SSR data contract specified; teacher copy plain-RU without admin-only terms)
+Status: SHIPPED — PR #498 merged 2026-06-03 (SHA 27f5901). Plan paranoia SIGN-OFF round 10/3 (cap-extended) + wave paranoia SIGN-OFF round 3/3 (R1 PATCH reactivation bypass + R2 cap=0→plan_upgrade_required mirror closed inline).
 Owner: Иван
 Driver: Claude (this session, 2026-06-02)
 Branch: `feat/free-tier-1pkg-1tariff`
