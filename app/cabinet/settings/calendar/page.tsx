@@ -65,7 +65,13 @@ export default async function LearnerCalendarSettingsPage() {
   const roles = await listAccountRoles(session.account.id)
   if (roles.includes('admin')) redirect('/admin')
   if (roles.includes('teacher') && !roles.includes('student')) {
-    redirect('/teacher')
+    // R-AMBIG-1 resolved 2026-06-03: teacher-only navigating to the
+    // learner-side calendar settings surface is redirected to the
+    // analogous teacher surface, not to the teacher dashboard root.
+    // Same role scope, just lands them on the page they actually
+    // wanted (their calendar settings).
+    // Contract: evals/URL_REDIRECT_CONTRACT.md Table 2.
+    redirect('/teacher/settings/calendar')
   }
 
   const resolved = await getActiveTeacherForLearner(session.account.id)

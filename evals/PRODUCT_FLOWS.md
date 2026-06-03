@@ -169,14 +169,14 @@ Each flow row carries:
 - **Area:** learner / calendar
 - **Starting URL:** `/cabinet/settings/calendar`
 - **Expected final URL:** `/cabinet/settings/calendar` (for verified learner / hybrid student+teacher)
-- **Allowed redirects:** `/login` (anon), `/admin` (admin), `/teacher` (teacher-only)
+- **Allowed redirects:** `/login` (anon), `/admin` (admin), `/teacher/settings/calendar` (teacher-only — resolved R-AMBIG-1 on 2026-06-03)
 - **Forbidden redirects:** none beyond the above
 - **Required UI anchors:** calendar settings heading
 - **Forbidden UI anchors:** `Скоро будет` (this surface uses state-aware copy per `derivePullStatus` / `derivePushStatus`)
 - **Role required:** learner / hybrid
 - **Risk:** Medium
 - **Automation status:** **none**
-- **Notes:** Teacher-only redirect target is `/teacher`, NOT `/teacher/settings/calendar`. See URL_REDIRECT_CONTRACT.md note `R-AMBIG-1`.
+- **Notes:** Teacher-only redirect target is `/teacher/settings/calendar` (analogous surface). See URL_REDIRECT_CONTRACT.md note for R-AMBIG-1 resolution history.
 
 ## D. Teacher cabinet
 
@@ -305,8 +305,8 @@ today; promotion order tracked in `docs/tech-debt/COVERAGE_RATCHET_PLAN.md`.
 
 When a fixture lands, flip the `Automation status` field on each row.
 
-## H. Ambiguities flagged for owner decision
+## H. Resolved ambiguities
 
-| Tag | Where | Question |
+| Tag | Where | Resolution |
 |---|---|---|
-| `R-AMBIG-1` | `/cabinet/settings/calendar` with teacher-only role | Should it redirect to `/teacher` (current) or `/teacher/settings/calendar` (analogous surface)? See URL_REDIRECT_CONTRACT.md. Default = leave current; owner sign-off required to change. |
+| `R-AMBIG-1` | `/cabinet/settings/calendar` with teacher-only role | **Resolved 2026-06-03**: redirect to `/teacher/settings/calendar` (analogous surface). See URL_REDIRECT_CONTRACT.md. |
