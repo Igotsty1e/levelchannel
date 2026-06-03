@@ -88,14 +88,38 @@ log "building (GIT_SHA=$NEW_SHA)"
 export GIT_SHA="$NEW_SHA"
 npm run build
 
+# Inject GIT_SHA into the runtime env file so the systemd unit's
+# process.env carries it on next start. Without this /api/health.version
+# stays null on staging — prod uses its activate-ops helper to write
+# the same value into its main env file. Staging keeps the dynamic
+# value in a SEPARATE runtime env file under /var/lib/levelchannel-staging/
+# because the user owns that path (vs /etc/levelchannel-staging/ which
+# is root-owned and not writable without sudo). The main unit reads
+# it via the optional second `EnvironmentFile=-` directive.
+RUNTIME_ENV=/var/lib/levelchannel-staging/runtime.env
+log "writing GIT_SHA=$NEW_SHA to $RUNTIME_ENV"
+if [ -f "$RUNTIME_ENV" ]; then
+  # Replace existing line; the sed -i tmp file is created in
+  # /var/lib/levelchannel-staging which is in the autodeploy unit's
+  # ReadWritePaths and user-owned.
+  if grep -qE '^GIT_SHA=' "$RUNTIME_ENV"; then
+    sed -i "s|^GIT_SHA=.*|GIT_SHA=$NEW_SHA|" "$RUNTIME_ENV"
+  else
+    echo "GIT_SHA=$NEW_SHA" >> "$RUNTIME_ENV"
+  fi
+else
+  printf 'GIT_SHA=%s\n' "$NEW_SHA" > "$RUNTIME_ENV"
+  chmod 600 "$RUNTIME_ENV"
+fi
+
 log "starting levelchannel-staging.service (downtime window ends)"
 sudo /bin/systemctl start levelchannel-staging.service
 
 log "waiting 5s for startup"
 sleep 5
 
-log "post-restart smoke against staging.levelchannel.ru"
-if ! bash scripts/post-deploy-smoke.sh https://staging.levelchannel.ru; then
+log "post-restart smoke against staging.levelchannel.ru (expect environment=staging)"
+if ! bash scripts/post-deploy-smoke.sh https://staging.levelchannel.ru staging; then
   log "post-restart smoke FAILED — staging serving NEW SHA but unhealthy"
   log "operator: investigate journalctl -u levelchannel-staging.service --since 5min ago"
   exit 1

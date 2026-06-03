@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # Seeds /etc/levelchannel-staging/env from the prod env file + locally
 # generated random secrets. Reads operator-side secrets (Resend, Sentry,
-# Legal vars) from /etc/levelchannel/env on the SAME VPS; takes
-# CloudPayments TEST keys + Postgres password as args; generates
-# everything else fresh with openssl on the VPS so no credentials are
-# ever committed to the repo.
+# Legal vars) from the prod env file on the SAME VPS (path resolved
+# below as `/etc/${PROD_OPERATOR:-levelchannel}.env`; override via
+# PROD_ENV_PATH if the operator layout differs); takes CloudPayments
+# TEST keys + Postgres password as args; generates everything else
+# fresh with openssl on the VPS so no credentials are ever committed
+# to the repo.
 #
 # Usage:
 #   sudo bash ops/staging/scripts/seed-staging-env.sh \
 #       <CP_TEST_PUBLIC_ID> <CP_TEST_API_SECRET> <PG_PASSWORD>
 #
-# Reads from /etc/levelchannel/env (prod):
+# Reads from the resolved prod env file:
 #   - RESEND_API_KEY
 #   - SENTRY_DSN
 #   - NEXT_PUBLIC_SENTRY_DSN
