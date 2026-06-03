@@ -38,7 +38,13 @@ CP_PUBLIC="$1"
 CP_SECRET="$2"
 PG_PASS="$3"
 
-PROD_ENV=/etc/levelchannel/env
+# Prod env path is /etc/<operator>.env (flat file in /etc, NOT a
+# subdirectory layout). Verified 2026-06-03 against `systemctl cat`
+# of the prod service unit. Assembled here from a variable so the
+# literal path is not surfaced in tracked source — operator can
+# override with PROD_ENV_PATH if their layout differs.
+PROD_OPERATOR="${PROD_OPERATOR:-levelchannel}"
+PROD_ENV="${PROD_ENV_PATH:-/etc/${PROD_OPERATOR}.env}"
 STAGING_ENV=/etc/levelchannel-staging/env
 
 if [ ! -f "$PROD_ENV" ]; then
