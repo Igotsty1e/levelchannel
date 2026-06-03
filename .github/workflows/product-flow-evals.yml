@@ -72,6 +72,31 @@ jobs:
       - name: Install Playwright chromium
         run: npx playwright install --with-deps chromium
 
+      - name: Bring up test Postgres (docker compose)
+        run: |
+          docker compose -f docker-compose.test.yml up -d --wait
+          for _ in $(seq 1 30); do
+            if docker compose -f docker-compose.test.yml exec -T postgres-test \
+                pg_isready -U levelchannel_test -d levelchannel_test >/dev/null 2>&1; then
+              echo "postgres ready"
+              break
+            fi
+            sleep 1
+          done
+        env:
+          LC_TEST_DB_NAMESPACE: e2e
+          LC_TEST_DB_PORT: "54329"
+
+      - name: Apply migrations
+        run: npm run migrate:up
+        env:
+          DATABASE_URL: postgresql://levelchannel_test:levelchannel_test@127.0.0.1:54329/levelchannel_test?sslmode=disable
+
+      - name: Seed e2e fixtures (learner / teacher / admin)
+        run: node tests/e2e/seed.mjs
+        env:
+          DATABASE_URL: postgresql://levelchannel_test:levelchannel_test@127.0.0.1:54329/levelchannel_test?sslmode=disable
+
       - name: Build Next app (placeholder legal env)
         run: npm run build
         env:
@@ -91,7 +116,7 @@ jobs:
           NEXT_PUBLIC_LEGAL_BANK_CORR_ACCOUNT: "00000000000000000000"
           NEXT_PUBLIC_LEGAL_BANK_CITY: ci-placeholder
 
-      - name: Run Playwright product-flow suite
+      - name: Run Playwright product-flow suite (public + authenticated)
         run: npx playwright test --config=playwright.config.ts
         env:
           PLAYWRIGHT_BASE_URL: http://127.0.0.1:3100
@@ -111,6 +136,12 @@ jobs:
           NEXT_PUBLIC_LEGAL_BANK_BIK: "000000000"
           NEXT_PUBLIC_LEGAL_BANK_CORR_ACCOUNT: "00000000000000000000"
           NEXT_PUBLIC_LEGAL_BANK_CITY: ci-placeholder
+          # Database for the spawned `next start` server. The seeded
+          # accounts above + the cookies in tests/e2e/.fixtures.json
+          # depend on the same DATABASE_URL being visible to the app.
+          DATABASE_URL: postgresql://levelchannel_test:levelchannel_test@127.0.0.1:54329/levelchannel_test?sslmode=disable
+          AUTH_RATE_LIMIT_SECRET: lc-e2e-rate-limit-secret-32-chars-min
+          TELEMETRY_HASH_SECRET: lc-e2e-telemetry-secret-32-chars-min
 
       - name: Upload Playwright report on failure
         if: failure()

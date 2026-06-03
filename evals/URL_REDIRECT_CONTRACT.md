@@ -122,6 +122,7 @@ Files affected:
 - `app/cabinet/settings/calendar/page.tsx` — redirect target updated.
 - `evals/URL_REDIRECT_CONTRACT.md` Table 2 — row aligned.
 - `evals/PRODUCT_FLOWS.md` FLOW-CABINET-CALENDAR-SETTINGS-001 — notes updated.
+- `tests/e2e/product-flows-authenticated.spec.ts` — assertion locked.
 
 Not a security regression — both targets are inside the teacher's role scope.
 

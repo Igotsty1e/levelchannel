@@ -17,6 +17,7 @@
     "migrate:payments:postgres": "node scripts/migrate-payment-orders-to-postgres.mjs",
     "check:env-contract": "node scripts/check-env-contract.mjs",
     "check:content-style": "node scripts/check-content-style.mjs",
+    "test:e2e:seed": "node tests/e2e/seed.mjs",
     "test:e2e:product-flows": "next build && playwright test --config=playwright.config.ts",
     "test:e2e:product-flows:only": "playwright test --config=playwright.config.ts",
     "postinstall": "git config core.hooksPath .githooks 2>/dev/null || true"
