@@ -1,0 +1,53 @@
+name: integration-coverage
+
+# Coverage signal for critical-path money / scheduling / teacher-ledger /
+# admin / audit files that are exclusively exercised by integration tests
+# against real Postgres. Companion to integration-tests.yml — same suite,
+# +v8 instrumentation, +threshold check via vitest.integration.config.ts
+# (enabled by `LC_INTEGRATION_COVERAGE=1`).
+#
+# Why a separate workflow rather than a step inside integration-tests.yml:
+# the coverage-instrumented run takes ~30% longer, which would push the
+# happy-path integration job toward its 15-min timeout. Splitting lets us
+# parallelize them, keeps the non-coverage job fast, and lets us evolve
+# threshold strictness independently.
+#
+# Floors (vitest.integration.config.ts):
+#   lines       60
+#   functions   70
+#   branches    50
+#   statements  60
+#
+# Files protected: lib/billing/{package-grant,consumption,reversals,
+# packages/eligibility,packages/purchases,teacher-grant,paid-not-granted,
+# paid-state}.ts, lib/scheduling/slots.ts, lib/teacher-ledger/{mark-
+# lesson-completed,settle-lessons}.ts, lib/audit/payment-events.ts,
+# lib/admin/operator-settings.ts, lib/calendar/{pull-runner,pull-worker}.ts.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  integration-coverage:
+    name: npm run test:integration:coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run integration tests with coverage
+        run: npm run test:integration:coverage
+        env:
+          LC_TEST_PARALLEL_ID: ${{ github.run_id }}-${{ github.job }}
