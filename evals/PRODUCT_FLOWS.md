@@ -136,7 +136,7 @@ Each flow row carries:
 - **Forbidden UI anchors:** `Скоро будет`, admin-only labels
 - **Role required:** learner (student role OR no role = default learner)
 - **Risk:** Critical
-- **Automation status:** **none** (requires session-cookie fixture; tracked in §F)
+- **Automation status:** **e2e** (`tests/e2e/product-flows-authenticated.spec.ts`)
 
 ### FLOW-LEARNER-BOOK-001
 
@@ -149,7 +149,7 @@ Each flow row carries:
 - **Forbidden UI anchors:** hardcoded lesson name (`Занятие по английскому`), hardcoded duration (`50 мин`) — see content-style §forbidden
 - **Role required:** learner
 - **Risk:** Critical (money path entry)
-- **Automation status:** **manual** + content-style guard
+- **Automation status:** **e2e** (`tests/e2e/product-flows-authenticated.spec.ts`) + content-style guard
 
 ### FLOW-LEARNER-PACKAGES-001
 
@@ -162,7 +162,7 @@ Each flow row carries:
 - **Forbidden UI anchors:** test-package legacy names (`Тестовый пакет`) outside operator scope, `Скоро будет`
 - **Role required:** learner
 - **Risk:** **Critical** (money UI; teacher-scoping incident Bug #2 codified)
-- **Automation status:** **integration** (`tests/integration/billing/bug-2-packages-teacher-scope.test.ts`)
+- **Automation status:** **e2e** (`tests/e2e/product-flows-authenticated.spec.ts`) + **integration** (`tests/integration/billing/bug-2-packages-teacher-scope.test.ts` covers teacher-scoping invariant)
 
 ### FLOW-CABINET-CALENDAR-SETTINGS-001
 
@@ -204,7 +204,7 @@ Each flow row carries:
 - **Forbidden UI anchors:** `Скоро будет`, learner-only labels
 - **Role required:** teacher (+ verified)
 - **Risk:** High
-- **Automation status:** **none**
+- **Automation status:** **e2e** (`tests/e2e/product-flows-authenticated.spec.ts`)
 
 ### FLOW-TEACHER-CALENDAR-SETTINGS-001
 
@@ -217,7 +217,7 @@ Each flow row carries:
 - **Forbidden UI anchors:** `Скоро будет` IS allowed on this surface because it's a state-aware placeholder when the 4 required env vars are unset or malformed: `GOOGLE_CALENDAR_CLIENT_ID`, `GOOGLE_CALENDAR_CLIENT_SECRET`, `GOOGLE_CALENDAR_REDIRECT_URL`, `GOOGLE_OAUTH_STATE_SECRET`. **This is an explicit exception** — flagged via inline `content-style-allow` comment in `connect-card.tsx`. Plain content-style guard would otherwise flag it.
 - **Role required:** teacher
 - **Risk:** **High** (prod environment-variable drift can leave the feature looking unshipped)
-- **Automation status:** **none** + state-aware
+- **Automation status:** **e2e** (`tests/e2e/product-flows-authenticated.spec.ts`; asserts URL + 200 only — content stays state-aware)
 - **Notes:** When ALL 4 env vars are set AND validated (`lib/calendar/google/config.ts` rejects malformed redirect URLs and short state secrets), the tile flips to the connect card with no second deploy. Setting only 3 of 4 (e.g. forgetting `GOOGLE_OAUTH_STATE_SECRET`) keeps the placeholder visible. Track env presence via `scripts/check-env-contract.mjs`.
 
 ## E. Admin
@@ -260,7 +260,7 @@ Each flow row carries:
 - **Forbidden UI anchors:** `Скоро будет`, `TODO`
 - **Role required:** admin
 - **Risk:** High
-- **Automation status:** **none**
+- **Automation status:** **e2e** (`tests/e2e/product-flows-authenticated.spec.ts`)
 
 ## F. Payment / package UX
 
@@ -290,20 +290,35 @@ Each flow row carries:
 - **Risk:** Medium
 - **Automation status:** **e2e** + post-deploy-smoke
 
-## G. Postponed / awaiting fixture
+## G. Authenticated-flow fixture (2026-06-03)
 
-The flows below are **registered but not yet automated** because they require a
-session-cookie test fixture against a seeded Postgres. They are covered manually
-today; promotion order tracked in `docs/tech-debt/COVERAGE_RATCHET_PLAN.md`.
+A session-cookie test fixture against a seeded Postgres now lives at
+`tests/e2e/seed.mjs` + `tests/e2e/product-flows-authenticated.spec.ts`.
 
-- FLOW-LEARNER-CABINET-001 (authenticated learner render)
-- FLOW-LEARNER-BOOK-001 (booking happy path)
-- FLOW-LEARNER-PACKAGES-001 (learner-scope assertion already covered by integration test; e2e promotion later)
-- FLOW-TEACHER-CABINET-001 (authenticated teacher render)
-- FLOW-TEACHER-CALENDAR-SETTINGS-001 (state-aware copy variants)
-- FLOW-ADMIN-DASHBOARD-001 (authenticated admin render)
+How it works:
 
-When a fixture lands, flip the `Automation status` field on each row.
+1. `npm run check:e2e-fixtures` brings up `docker-compose.test.yml` postgres,
+   applies migrations, runs the seed script. Seed inserts three accounts
+   (`e2e-fixture-learner@example.com`, `…-teacher@example.com`,
+   `…-admin@example.com`) — verified emails, role grants, and mints a
+   session cookie for each. Cookies + accountIds land in
+   `tests/e2e/.fixtures.json` (gitignored).
+2. The Playwright suite reads the fixture file, injects the cookie via
+   `context.addCookies()`, and asserts SSR redirect / render contract.
+3. Suite skips cleanly when `tests/e2e/.fixtures.json` is absent — local
+   developers without Docker get the public/anon suite only.
+
+Promoted from "postponed" to **e2e** automated:
+
+- FLOW-LEARNER-CABINET-001
+- FLOW-LEARNER-BOOK-001
+- FLOW-LEARNER-PACKAGES-001
+- FLOW-TEACHER-CABINET-001
+- FLOW-TEACHER-CALENDAR-SETTINGS-001 (URL + 200 only — copy stays state-aware)
+- FLOW-ADMIN-DASHBOARD-001
+
+Plus one contract-locking test for R-AMBIG-1 (teacher-only redirect to
+`/teacher/settings/calendar`).
 
 ## H. Resolved ambiguities
 

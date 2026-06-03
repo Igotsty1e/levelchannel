@@ -296,4 +296,7 @@ Do not claim the task done unless:
 - `npm run check:content-style` passes (or its failure is documented as a
   state-aware exemption).
 - `npm run test:e2e:product-flows` passes (when applicable for the surface
-  you touched).
+  you touched). Authenticated suite requires Docker Postgres (brought up
+  automatically via `docker-compose.test.yml` + seed script). Without
+  Docker, the authenticated suite skips cleanly and the public/anon suite
+  still runs.

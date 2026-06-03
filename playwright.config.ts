@@ -66,6 +66,19 @@ export default defineConfig({
           NEXT_PUBLIC_LEGAL_BANK_BIK: '000000000',
           NEXT_PUBLIC_LEGAL_BANK_CORR_ACCOUNT: '00000000000000000000',
           NEXT_PUBLIC_LEGAL_BANK_CITY: 'ci-placeholder',
+          // Pass through DATABASE_URL + auth secrets when set (CI sets
+          // these against the seeded test PG); when unset, `next start`
+          // falls back to whatever the local .env declares and the
+          // authenticated suite is skipped by the .fixtures.json guard.
+          ...(process.env.DATABASE_URL
+            ? { DATABASE_URL: process.env.DATABASE_URL }
+            : {}),
+          ...(process.env.AUTH_RATE_LIMIT_SECRET
+            ? { AUTH_RATE_LIMIT_SECRET: process.env.AUTH_RATE_LIMIT_SECRET }
+            : {}),
+          ...(process.env.TELEMETRY_HASH_SECRET
+            ? { TELEMETRY_HASH_SECRET: process.env.TELEMETRY_HASH_SECRET }
+            : {}),
         },
       },
 })
