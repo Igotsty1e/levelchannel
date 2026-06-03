@@ -1,0 +1,95 @@
+name: mutation-test
+
+# Mutation testing — P0 #2 from the AI-assisted maturity audit.
+#
+# Why this exists:
+#   Coverage thresholds (vitest.config.ts + vitest.integration.config.ts)
+#   protect against tests disappearing. They DON'T protect against tests
+#   that pass when the production code is wrong. Mutation testing fills
+#   that gap: Stryker corrupts source code in many small ways and
+#   asserts the unit suite catches each corruption. Surviving mutants
+#   mean the test on that line is silently weak.
+#
+# Scope (Phase 1):
+#   - Phase 1 mutates lib/payments/* + lib/auth/* + lib/security/*
+#     files that already have unit-test coverage. See stryker.config.mjs.
+#   - lib/billing/** is integration-test-driven and lives in Phase 2.
+#
+# Schedule:
+#   - On PRs that touch the mutate paths (catches regressions early).
+#   - Weekly cron (Mondays 03:17 UTC; nothing else runs on that slot).
+#   - Manual via workflow_dispatch.
+#
+# Wall-clock: ~10-15 min for the 7-file Phase 1 scope. The workflow has
+# a 30-minute hard cap. If a future phase blows that budget, split the
+# matrix.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'lib/payments/cloudpayments-api.ts'
+      - 'lib/payments/cloudpayments-webhook.ts'
+      - 'lib/payments/tokens.ts'
+      - 'lib/auth/password.ts'
+      - 'lib/auth/tokens.ts'
+      - 'lib/security/rate-limit.ts'
+      - 'lib/security/idempotency.ts'
+      - 'tests/payments/**'
+      - 'tests/auth/**'
+      - 'tests/security/**'
+      - 'stryker.config.mjs'
+      - '.github/workflows/mutation-test.yml'
+  schedule:
+    # Weekly safety net — catches drift across modules that didn't
+    # change in the matched paths but whose tests still weakened.
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    name: npm run test:mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run Stryker mutation tests
+        env:
+          NEXT_PUBLIC_SITE_URL: https://levelchannel.ru
+          # Placeholder legal env (same set as build-check) so the
+          # CloudPayments + auth modules that touch lib/legal at
+          # import time can load without throwing.
+          NEXT_PUBLIC_LEGAL_OPERATOR_NAME: ci-placeholder-operator
+          NEXT_PUBLIC_LEGAL_OPERATOR_DISPLAY: ci-placeholder-operator
+          NEXT_PUBLIC_LEGAL_OPERATOR_TAX_ID: "000000000000"
+          NEXT_PUBLIC_LEGAL_OPERATOR_OGRN: "000000000000000"
+          NEXT_PUBLIC_LEGAL_OPERATOR_REG_AUTHORITY: ci-placeholder-authority
+          NEXT_PUBLIC_LEGAL_OPERATOR_CLAIMS_ADDRESS: ci-placeholder-address
+          NEXT_PUBLIC_PUBLIC_CONTACT_EMAIL: ci@example.invalid
+          NEXT_PUBLIC_LEGAL_BANK_ACCOUNT: "00000000000000000000"
+          NEXT_PUBLIC_LEGAL_BANK_NAME: ci-placeholder-bank
+          NEXT_PUBLIC_LEGAL_BANK_BIK: "000000000"
+          NEXT_PUBLIC_LEGAL_BANK_CORR_ACCOUNT: "00000000000000000000"
+          NEXT_PUBLIC_LEGAL_BANK_CITY: ci-placeholder-city
+        run: npm run test:mutation
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4
+        with:
+          name: mutation-report-${{ github.run_id }}
+          path: reports/mutation/
+          retention-days: 14
+          if-no-files-found: warn

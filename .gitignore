@@ -57,3 +57,8 @@ next-env.d.ts
 
 # Claude Code internal session state
 .claude/
+
+# Mutation testing (Stryker)
+.stryker-tmp/
+reports/mutation/
+stryker.log
