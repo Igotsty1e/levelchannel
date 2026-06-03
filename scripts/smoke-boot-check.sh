@@ -126,26 +126,26 @@ echo "[smoke-boot] using next entry: $NEXT_ENTRY"
 # to systemd-run; ExecStart / User / EnvironmentFile / Type live
 # elsewhere in the file and we set our own.
 #
-# Deliberately omitted:
+# Deliberately omitted (filesystem / mount-namespace hardening):
 #
-#   ProtectHome / ProtectSystem / ReadWritePaths — filesystem-only
-#   hardening. They DON'T cause the V8/libuv class of crashes this
-#   smoke exists to catch; they restrict reads/writes. In CI the
-#   working tree lives under /home/runner/work/, which ProtectHome=
-#   true makes invisible to the unit — `next start` can't even
-#   exec (status=203/EXEC). The actual filesystem hardening posture
-#   is verified by the prod unit's runtime behaviour and
-#   integration-tests; dropping them here keeps the smoke focused on
-#   the syscall/memory/network layers that prior CI missed.
+#   ProtectHome / ProtectSystem / ReadWritePaths / PrivateTmp /
+#   PrivateDevices / RestrictNamespaces / ProtectKernel* /
+#   ProtectControlGroups — these are filesystem-isolation and
+#   namespace-restriction primitives. They DON'T cause the V8/libuv
+#   class of crashes this smoke exists to catch (those live at the
+#   syscall + memory + network layers). On the GHA runner, several
+#   of them (PrivateTmp creates a private mount namespace via
+#   CLONE_NEWNS; PrivateDevices remounts /dev) interact poorly with
+#   the runner's overlay-fs mount layout and make /home/runner/work
+#   or /opt/hostedtoolcache invisible to the transient unit — both
+#   `node` and the next entry script then fail with MODULE_NOT_FOUND.
+#   The actual filesystem hardening posture is verified by the prod
+#   unit's runtime behaviour + integration-tests; dropping these
+#   here keeps the smoke focused on the syscall + memory + network
+#   layers that prior CI missed.
 HARDENING_KEYS=(
   NoNewPrivileges
-  PrivateTmp
-  PrivateDevices
-  ProtectKernelTunables
-  ProtectKernelModules
-  ProtectControlGroups
   RestrictAddressFamilies
-  RestrictNamespaces
   LockPersonality
   MemoryDenyWriteExecute
   RestrictRealtime
