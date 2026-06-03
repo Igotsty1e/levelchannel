@@ -433,7 +433,9 @@ Any diff outside `environment` and `version` fields is the culprit.
   the same DSN; cheaper and good enough for v1).
 - Separate staging Resend domain (we reuse `mail.levelchannel.ru`;
   staging emails go to ops accounts only).
-- Mutation testing / property testing — separate P0 #2 from the audit.
+- Property-based testing (fast-check). Still pending; mutation testing
+  (P0 #2 from the audit) shipped 2026-06-04 Phase 1 — see
+  `docs/tech-debt/MUTATION_TESTING_PLAN.md`.
 
 ## Maturity bump
 
