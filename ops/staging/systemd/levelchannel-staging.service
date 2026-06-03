@@ -44,7 +44,13 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=levelchannel-staging
 
-# --- Hardening (mirrors prod) ---
+# --- Hardening ---
+# MemoryDenyWriteExecute is intentionally NOT set: Node 20 V8 in
+# baseline JIT mode mprotects allocated pages W↔X at runtime (verified
+# crash on 2026-06-03 during the first staging cold-start). The
+# pkey_* allowlist + @system-service filter alone are tolerant of the
+# JIT path and still catch the @privileged / @resources regression
+# class that scripts/seccomp-regression-check.sh asserts on.
 NoNewPrivileges=true
 PrivateTmp=true
 PrivateDevices=true
@@ -53,17 +59,20 @@ ProtectHome=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# AF_NETLINK is required for libuv's uv_interface_addresses (Linux
+# getifaddrs uses rtnetlink under the hood). Without it Next 16's
+# start-server.js post-listen callback throws ERR_SYSTEM_ERROR 97
+# (EAFNOSUPPORT) and never registers its request handler. Verified
+# 2026-06-03 against /api/health curl from 127.0.0.1.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 RestrictNamespaces=true
 LockPersonality=true
-MemoryDenyWriteExecute=true
 RestrictRealtime=true
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @resources
-# Explicit pkey_* allowlist for Node + V8 + glibc parity with prod
-# (Wave 8 #6 sandboxing incident). seccomp-regression-check.sh
-# enforces this list per-unit.
+# Explicit pkey_* allowlist for Node + V8 + glibc parity.
+# scripts/seccomp-regression-check.sh enforces this list per-unit.
 SystemCallFilter=pkey_alloc pkey_mprotect pkey_free
 ReadWritePaths=/srv/levelchannel-staging /var/log/levelchannel-staging
 CapabilityBoundingSet=
