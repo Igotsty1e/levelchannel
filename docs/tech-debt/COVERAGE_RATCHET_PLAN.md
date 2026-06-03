@@ -162,7 +162,9 @@ floor:
 
 - Not a mandate to write tests for every untested branch — only to **protect**
   existing tested coverage from silent regression.
-- Not a mutation-testing plan (separate concern; out of scope here).
+- Not a mutation-testing plan — mutation testing lives in
+  `docs/tech-debt/MUTATION_TESTING_PLAN.md` (Phase 1 shipped
+  2026-06-04).
 - Not a property-based testing plan.
 - Not a code-quality refactor mandate.
 
