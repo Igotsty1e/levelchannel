@@ -151,9 +151,18 @@ HARDENING_KEYS=(
   RestrictRealtime
   SystemCallArchitectures
   SystemCallFilter
-  CapabilityBoundingSet
-  AmbientCapabilities
 )
+# CapabilityBoundingSet= / AmbientCapabilities= (both empty in the
+# prod unit) are also omitted. They drop CAP_DAC_OVERRIDE +
+# CAP_DAC_READ_SEARCH, which on prod is harmless because the unit
+# runs as the `levelchannel-staging` user who owns the working tree
+# anyway. On CI we boot the unit as root via sudo; without DAC
+# overrides root can't bypass the directory-traversal checks on
+# /opt/hostedtoolcache or /home/runner/work, and `node` / `next`
+# fail with MODULE_NOT_FOUND despite existing on disk. The
+# capability-drop class of regression is orthogonal to the V8/libuv
+# class this smoke catches — prod's User=levelchannel-staging +
+# integration-tests cover it.
 
 PROPS=()
 while IFS='=' read -r key val; do
