@@ -1,0 +1,81 @@
+name: staging-promote
+
+# Auto-promote main → staging after prod is healthy on the new SHA.
+#
+# Trigger sequence:
+#   1. PR merges to main
+#   2. autodeploy.timer on VPS pulls main, builds, restarts prod
+#   3. post-deploy-smoke.yml passes against https://levelchannel.ru
+#   4. This workflow fires (on workflow_run completion = success)
+#   5. Pushes main HEAD to origin/staging
+#   6. Staging autodeploy.timer pulls + deploys to staging.levelchannel.ru
+#
+# Why this inverted order (prod-first then staging): single-VPS deploy,
+# prod must always serve. Staging is for post-merge e2e replay against
+# CloudPayments TEST-mode + clean DB. It's NOT a pre-merge gate — that
+# layer is the PR's own integration + unit + e2e jobs.
+#
+# If staging falls behind because of repeated prod smoke failures, that's
+# correct behaviour: staging stays on the last known-good SHA. Manual
+# operator override:
+#   git push origin <sha>:staging --force
+# documented in docs/staging-setup.md §"Manual promote".
+
+on:
+  workflow_run:
+    workflows: ["post-deploy-smoke"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: staging-promote
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Fast-forward staging to main
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    timeout-minutes: 3
+    steps:
+      - name: Checkout at the SHA that just passed smoke
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          # Pin to the EXACT commit that the upstream post-deploy-smoke
+          # workflow ran against. Pulling `main` HEAD instead would
+          # promote whatever landed after smoke ran — including a
+          # broken commit merged seconds after the green probe.
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Push smoke-confirmed SHA to staging branch
+        run: |
+          set -euo pipefail
+          SMOKE_SHA="${{ github.event.workflow_run.head_sha }}"
+          if [ -z "$SMOKE_SHA" ]; then
+            echo "no head_sha from workflow_run trigger; refusing to promote"
+            exit 1
+          fi
+          echo "Promoting $SMOKE_SHA (smoke-confirmed) to staging"
+
+          # Fetch current staging tip for a no-op short-circuit when
+          # the workflow_run fires for a smoke probe that didn't add
+          # new code (e.g. cron-only smoke against an already-deployed
+          # SHA).
+          git fetch origin staging:staging-current || true
+          STAGING_SHA=$(git rev-parse staging-current 2>/dev/null || echo "")
+          if [ "$SMOKE_SHA" = "$STAGING_SHA" ]; then
+            echo "staging already at $SMOKE_SHA, nothing to do"
+            exit 0
+          fi
+
+          # Force-with-lease semantics. If someone manually advanced
+          # staging beyond the expected SHA, we WON'T overwrite —
+          # surface error instead.
+          git push origin "$SMOKE_SHA:refs/heads/staging" \
+              --force-with-lease="refs/heads/staging:$STAGING_SHA"
+          echo "staging promoted to $SMOKE_SHA (was $STAGING_SHA)"

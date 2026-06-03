@@ -1,0 +1,107 @@
+# /etc/levelchannel-staging/env — staging env file template.
+#
+# Operator install:
+#   1. Copy this file to /etc/levelchannel-staging/env on the VPS
+#   2. Fill in every <FILL_IN> placeholder with the staging-specific value
+#   3. chown levelchannel-staging:levelchannel-staging /etc/levelchannel-staging/env
+#   4. chmod 600 /etc/levelchannel-staging/env
+#
+# NEVER copy /etc/levelchannel/env (prod) here verbatim — staging must
+# use distinct DB, distinct CloudPayments keys, distinct Sentry DSN.
+
+# --- Site identity ---
+NEXT_PUBLIC_SITE_URL=https://staging.levelchannel.ru
+LC_ENV=staging
+NEXT_PUBLIC_LC_ENV=staging
+# Optional banner shown in top of every page on staging surfaces.
+# When unset, no banner. Set to "1" to enable.
+NEXT_PUBLIC_STAGING_BANNER=1
+
+# --- Postgres (separate DB on same instance) ---
+# Create with:
+#   psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE levelchannel_staging OWNER lc_staging;"
+#   psql -h 127.0.0.1 -U postgres -c "CREATE USER lc_staging WITH PASSWORD '<FILL_IN>';"
+DATABASE_URL=postgresql://lc_staging:<FILL_IN>@127.0.0.1:5432/levelchannel_staging?sslmode=disable
+DB_SSL=disable
+# Optional separate audit DB; can share with DATABASE_URL on staging.
+AUDIT_DATABASE_URL=
+
+# --- CloudPayments TEST-mode ---
+# Get from CloudPayments merchant cabinet → Settings → Test Mode → enable.
+# These are SEPARATE from prod CLOUDPAYMENTS_PUBLIC_ID / CLOUDPAYMENTS_API_SECRET.
+# Configure the CloudPayments-side webhook URLs to point at staging:
+#   Pay:   https://staging.levelchannel.ru/api/payments/webhooks/cloudpayments/pay
+#   Check: https://staging.levelchannel.ru/api/payments/webhooks/cloudpayments/check
+#   Fail:  https://staging.levelchannel.ru/api/payments/webhooks/cloudpayments/fail
+PAYMENTS_PROVIDER=cloudpayments
+CLOUDPAYMENTS_PUBLIC_ID=<FILL_IN_TEST_PUBLIC_ID>
+CLOUDPAYMENTS_API_SECRET=<FILL_IN_TEST_API_SECRET>
+PAYMENTS_STORAGE_BACKEND=postgres
+PAYMENTS_ALLOW_MOCK_CONFIRM=
+
+# --- Email (Resend) ---
+# Reuse the same Resend account but consider a separate domain (e.g.
+# noreply-staging@mail.levelchannel.ru) to avoid muddying prod analytics.
+RESEND_API_KEY=<FILL_IN>
+EMAIL_FROM=LevelChannel Staging <noreply-staging@mail.levelchannel.ru>
+AUTH_RATE_LIMIT_SECRET=<FILL_IN_AT_LEAST_32_CHARS>
+
+# HMAC key for teacher-issued invite tokens. Production-required;
+# lib/auth/teacher-invites.ts throws on first call if unset. Use a
+# DIFFERENT random 32+ chars secret from prod so a leaked staging value
+# can't forge prod invite tokens.
+TEACHER_INVITE_SECRET=<FILL_IN_AT_LEAST_32_CHARS>
+
+# --- Sentry (separate environment tag) ---
+# Same DSN as prod is fine — Sentry separates by `environment` tag,
+# which instrumentation.ts and instrumentation-client.ts derive from
+# LC_ENV (server) / NEXT_PUBLIC_LC_ENV (client). Both default to NODE_ENV
+# when LC_ENV is unset. Operator can split DSN later if traffic scale
+# demands.
+SENTRY_DSN=<FILL_IN>
+NEXT_PUBLIC_SENTRY_DSN=<FILL_IN>
+
+# --- Health probe gate ---
+# Distinct secret from prod so a staging-side leak doesn't expose prod
+# /api/health detail.
+HEALTH_DETAIL_SECRET=<FILL_IN_AT_LEAST_32_CHARS>
+
+# --- Cron + ops ---
+CRON_SHARED_SECRET=<FILL_IN_AT_LEAST_32_CHARS>
+TELEMETRY_HASH_SECRET=<FILL_IN_AT_LEAST_32_CHARS>
+
+# --- Telegram (optional; staging usually omits) ---
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_ALERT_CHAT_ID=
+TELEGRAM_WEBHOOK_SECRET_TOKEN=
+TELEGRAM_BOT_USERNAME=
+
+# --- Audit at-rest encryption ---
+# 32+ random chars. Generate with `openssl rand -base64 48`.
+AUDIT_ENCRYPTION_KEY=<FILL_IN_AT_LEAST_32_CHARS>
+
+# --- Calendar at-rest encryption ---
+CALENDAR_ENCRYPTION_KEY=<FILL_IN_AT_LEAST_32_CHARS>
+
+# --- Google Calendar OAuth (separate redirect URL pointing at staging) ---
+# Create a SEPARATE OAuth client in Google Cloud Console for staging
+# with redirect URL https://staging.levelchannel.ru/api/calendar/google/callback
+# Prod and staging must NOT share OAuth clients.
+GOOGLE_CALENDAR_CLIENT_ID=<FILL_IN>
+GOOGLE_CALENDAR_CLIENT_SECRET=<FILL_IN>
+GOOGLE_CALENDAR_REDIRECT_URL=https://staging.levelchannel.ru/api/calendar/google/callback
+GOOGLE_OAUTH_STATE_SECRET=<FILL_IN_AT_LEAST_32_CHARS>
+
+# --- Legal env (same as prod — same legal entity) ---
+NEXT_PUBLIC_LEGAL_OPERATOR_NAME=<FILL_IN_OR_SAME_AS_PROD>
+NEXT_PUBLIC_LEGAL_OPERATOR_DISPLAY=<FILL_IN_OR_SAME_AS_PROD>
+NEXT_PUBLIC_LEGAL_OPERATOR_TAX_ID=<FILL_IN_OR_SAME_AS_PROD>
+NEXT_PUBLIC_LEGAL_OPERATOR_OGRN=<FILL_IN_OR_SAME_AS_PROD>
+NEXT_PUBLIC_LEGAL_OPERATOR_REG_AUTHORITY=<FILL_IN_OR_SAME_AS_PROD>
+NEXT_PUBLIC_LEGAL_OPERATOR_CLAIMS_ADDRESS=<FILL_IN_OR_SAME_AS_PROD>
+NEXT_PUBLIC_PUBLIC_CONTACT_EMAIL=<FILL_IN_OR_SAME_AS_PROD>
+NEXT_PUBLIC_LEGAL_BANK_ACCOUNT=<FILL_IN_OR_SAME_AS_PROD>
+NEXT_PUBLIC_LEGAL_BANK_NAME=<FILL_IN_OR_SAME_AS_PROD>
+NEXT_PUBLIC_LEGAL_BANK_BIK=<FILL_IN_OR_SAME_AS_PROD>
+NEXT_PUBLIC_LEGAL_BANK_CORR_ACCOUNT=<FILL_IN_OR_SAME_AS_PROD>
+NEXT_PUBLIC_LEGAL_BANK_CITY=<FILL_IN_OR_SAME_AS_PROD>

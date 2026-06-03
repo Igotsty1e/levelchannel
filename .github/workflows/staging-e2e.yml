@@ -1,0 +1,149 @@
+name: staging-e2e
+
+# E2E suite against deployed staging.levelchannel.ru.
+#
+# Trigger: after staging-promote workflow succeeds (i.e. main was just
+# fast-forwarded to staging, autodeploy.timer will have picked it up
+# within 1-3 min). The job polls /api/health.version against the
+# promoted SHA for up to 10 min — exits as soon as staging serves the
+# expected SHA; fails if 10 min elapse without the SHA showing up.
+#
+# This suite NEVER blocks a PR — staging-e2e fires post-merge only.
+# A failure here means we shipped a regression that prod also has but
+# the prod smoke probe missed (different surface coverage). Open a
+# `staging-e2e-failure` Issue and investigate.
+
+on:
+  workflow_run:
+    workflows: ["staging-promote"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: staging-e2e
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    name: Playwright against staging.levelchannel.ru
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          # Pin tests to the SAME SHA staging is expected to be on.
+          # Without this, a newer test suite could race against an
+          # older staging deploy.
+          ref: ${{ github.event.workflow_run.head_sha || 'main' }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684  # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: pw-${{ runner.os }}-
+
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Wait for staging autodeploy to land the promoted SHA
+        # Poll /api/health.{version,environment} every 15s for up to
+        # 10 min using jq (pre-installed on ubuntu-latest runners).
+        # Exits as soon as staging reports the SHA we just promoted.
+        # Manual dispatch (no head_sha) falls back to a short fixed
+        # wait — staging is whatever it currently is.
+        run: |
+          set -uo pipefail
+          EXPECTED_SHA="${{ github.event.workflow_run.head_sha }}"
+          URL="https://staging.levelchannel.ru/api/health"
+          if [ -z "$EXPECTED_SHA" ]; then
+            echo "no head_sha (manual dispatch); sleeping 60s"
+            sleep 60
+            exit 0
+          fi
+          echo "expecting staging at $EXPECTED_SHA"
+          for i in $(seq 1 40); do
+            BODY=$(curl --silent --show-error --max-time 10 "$URL" || true)
+            CURRENT=$(printf '%s' "$BODY" | jq -r '.version // ""' 2>/dev/null || echo "")
+            ENVF=$(printf '%s' "$BODY" | jq -r '.environment // ""' 2>/dev/null || echo "")
+            echo "poll $i/40: version=$CURRENT environment=$ENVF"
+            EXPECTED_PREFIX=$(printf '%s' "$EXPECTED_SHA" | cut -c1-12)
+            CURRENT_PREFIX=$(printf '%s' "$CURRENT" | cut -c1-12)
+            if [ -n "$CURRENT" ] && [ "$EXPECTED_PREFIX" = "$CURRENT_PREFIX" ]; then
+              if [ "$ENVF" = "staging" ]; then
+                echo "staging is on $CURRENT (env=$ENVF), proceeding"
+                exit 0
+              fi
+              echo "version matches but environment=$ENVF — staging unit may be mis-routed"
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "timeout: staging did not reach $EXPECTED_SHA within 10 min"
+          exit 1
+
+      - name: Run Playwright against staging
+        run: npx playwright test --config=playwright.config.staging.ts
+        env:
+          PLAYWRIGHT_STAGING_BASE_URL: https://staging.levelchannel.ru
+
+      - name: Open issue on failure
+        if: failure()
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b  # v7
+        with:
+          script: |
+            const ts = new Date().toISOString()
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'staging-e2e-failure',
+              per_page: 1,
+            })
+            const body =
+              `Post-promote staging Playwright suite failed at \`${ts}\`.\n\n` +
+              `- run: ${runUrl}\n` +
+              `- main SHA promoted: see staging-promote workflow run\n\n` +
+              `Likely causes:\n` +
+              `1. nginx vhost regression (staging not routing to port 3001)\n` +
+              `2. staging DB migration drift\n` +
+              `3. CloudPayments TEST-mode webhook URL drift\n` +
+              `4. real product regression that prod smoke probe missed`
+            if (open[0]) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: open[0].number,
+                body: `Still failing at \`${ts}\`. Run: ${runUrl}`,
+              })
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `[staging-e2e] post-promote suite failure`,
+                body,
+                labels: ['staging-e2e-failure'],
+              })
+            }
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4
+        with:
+          name: playwright-staging-report
+          path: playwright-report/
+          retention-days: 7

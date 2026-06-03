@@ -1,0 +1,255 @@
+name: staging-uptime
+
+# External health probe for staging.levelchannel.ru. Sibling of
+# uptime-probe.yml. Runs every 15 min — staging tolerates more lag than
+# prod because (a) it doesn't serve real users; (b) the upstream
+# autodeploy can take 1-3 min to swap after a promote and we don't want
+# a noisy false-alarm during that window.
+#
+# Same idempotent issue-management style as uptime-probe.yml: open /
+# comment / close a `staging-uptime-incident` GitHub Issue.
+#
+# When staging hasn't been provisioned yet (DNS misses, nginx vhost
+# missing, etc.), this workflow surfaces a one-time `staging-inactive`
+# issue and stays quiet until the operator activates per
+# docs/staging-setup.md.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: staging-uptime
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe staging /api/health
+        id: probe
+        env:
+          HEALTH_DETAIL_SECRET: ${{ secrets.STAGING_HEALTH_DETAIL_SECRET }}
+        run: |
+          set -uo pipefail
+
+          URL="https://staging.levelchannel.ru/api/health"
+          OK=0
+          STAGING_INACTIVE=0
+          LAST_CODE=""
+          LAST_ENV=""
+
+          AUTH_HEADER=()
+          if [ -n "${HEALTH_DETAIL_SECRET:-}" ]; then
+            AUTH_HEADER=(-H "X-Health-Detail: ${HEALTH_DETAIL_SECRET}")
+          fi
+
+          for i in 1 2 3; do
+            EXIT=0
+            BODY=$(curl --silent --show-error \
+                        --max-time 15 \
+                        "${AUTH_HEADER[@]}" \
+                        --write-out "\n__HTTP_CODE__:%{http_code}" \
+                        "$URL" 2>&1) || EXIT=$?
+
+            CODE=$(printf '%s' "$BODY" | sed -n 's/.*__HTTP_CODE__:\([0-9]*\).*/\1/p' | tail -1)
+            BODY_ONLY=$(printf '%s' "$BODY" | sed 's/\n*__HTTP_CODE__:[0-9]*$//')
+
+            LAST_CODE="$CODE"
+
+            # Detect "staging not provisioned yet" — distinct error
+            # surface from a real outage. We treat HTTP 5xx with no
+            # DNS resolution OR DNS resolves to nothing as "inactive".
+            if [ "$EXIT" -ne 0 ] && printf '%s' "$BODY" | grep -qi "could not resolve\|name or service not known"; then
+              STAGING_INACTIVE=1
+              break
+            fi
+
+            if [ "$EXIT" = "0" ] && [ "$CODE" = "200" ] && \
+               printf '%s' "$BODY_ONLY" | grep -q '"status":"ok"'; then
+              OK=1
+              # Extract the .environment value cleanly via jq so the
+              # downstream comparison can be exact-match, not a fragile
+              # substring test on the JSON fragment.
+              LAST_ENV=$(printf '%s' "$BODY_ONLY" | jq -r '.environment // ""' 2>/dev/null || echo "")
+              break
+            fi
+            [ "$i" != "3" ] && sleep 20
+          done
+
+          {
+            echo "ok=$OK"
+            echo "inactive=$STAGING_INACTIVE"
+            echo "code=$LAST_CODE"
+            echo "env_field=$LAST_ENV"
+            echo "url=$URL"
+          } >> "$GITHUB_OUTPUT"
+
+          exit 0
+
+      - name: Manage incident issue
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b  # v7
+        env:
+          PROBE_OK: ${{ steps.probe.outputs.ok }}
+          PROBE_INACTIVE: ${{ steps.probe.outputs.inactive }}
+          PROBE_CODE: ${{ steps.probe.outputs.code }}
+          PROBE_ENV: ${{ steps.probe.outputs.env_field }}
+          PROBE_URL: ${{ steps.probe.outputs.url }}
+        with:
+          script: |
+            const ok = process.env.PROBE_OK === '1'
+            const inactive = process.env.PROBE_INACTIVE === '1'
+            const code = process.env.PROBE_CODE || '(no response)'
+            const envField = process.env.PROBE_ENV || ''
+            const url = process.env.PROBE_URL
+            const ts = new Date().toISOString()
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+
+            const findOpenIssue = async (label) => {
+              const { data } = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                labels: label,
+                per_page: 5,
+              })
+              return data[0] || null
+            }
+
+            // Inactive (one-time notice)
+            if (inactive) {
+              const existing = await findOpenIssue('staging-inactive')
+              if (existing) {
+                core.notice(`staging still inactive (open issue #${existing.number}). No new noise.`)
+                return
+              }
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `[staging-inactive] staging.levelchannel.ru not provisioned`,
+                body:
+                  `Staging uptime probe can't resolve / reach \`${url}\`. ` +
+                  `Operator runbook: docs/staging-setup.md\n\n` +
+                  `This issue auto-closes once staging /api/health returns 200.`,
+                labels: ['staging-inactive'],
+              })
+              core.notice(`Opened staging-inactive notice.`)
+              return
+            }
+
+            // Anti-misroute defence: environment field must be EXACTLY
+            // "staging". An arbitrary value containing "staging" as a
+            // substring (e.g. "staging-broken") would otherwise sneak
+            // past.
+            if (ok && envField !== 'staging') {
+              const existingMisroute = await findOpenIssue('staging-misroute')
+              if (!existingMisroute) {
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: `[staging-misroute] staging URL responding but env != staging`,
+                  body:
+                    `Probed \`${url}\`, got 200 but environment field is \`${envField}\`.\n\n` +
+                    `nginx vhost probably routes staging.levelchannel.ru to the prod backend. ` +
+                    `Investigate /etc/nginx/sites-enabled/ on the VPS.\n\n` +
+                    `Run: ${runUrl}`,
+                  labels: ['staging-misroute'],
+                })
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: existingMisroute.number,
+                  body: `Still misrouted at \`${ts}\` (env=\`${envField}\`). Run: ${runUrl}`,
+                })
+              }
+              core.setFailed('staging is serving prod content')
+              return
+            }
+
+            if (!ok) {
+              const open = await findOpenIssue('staging-uptime-incident')
+              const body =
+                `**${url}** is unhealthy.\n\n` +
+                `- detected at: \`${ts}\`\n` +
+                `- last HTTP code: \`${code}\`\n` +
+                `- probe run: ${runUrl}\n`
+              if (!open) {
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: `[staging-uptime] ${url} is DOWN`,
+                  body,
+                  labels: ['staging-uptime-incident'],
+                })
+                core.notice(`Opened new staging-uptime-incident.`)
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: open.number,
+                  body: `Still failing at \`${ts}\` — code \`${code}\`. Run: ${runUrl}`,
+                })
+                core.notice(`Flap-commented on #${open.number}.`)
+              }
+              return
+            }
+
+            // Probe OK — close incidents.
+            const open = await findOpenIssue('staging-uptime-incident')
+            if (open) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: open.number,
+                body: `Recovered at \`${ts}\` (env=\`${envField}\`). Closing.\nRun: ${runUrl}`,
+              })
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: open.number,
+                state: 'closed',
+                state_reason: 'completed',
+              })
+            }
+            const inactiveOpen = await findOpenIssue('staging-inactive')
+            if (inactiveOpen) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: inactiveOpen.number,
+                body: `Staging is now reachable at \`${ts}\`. Closing.`,
+              })
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: inactiveOpen.number,
+                state: 'closed',
+                state_reason: 'completed',
+              })
+            }
+            // Also close any open staging-misroute issue — env field
+            // is correct now, the nginx vhost is routing to the right
+            // backend.
+            const misrouteOpen = await findOpenIssue('staging-misroute')
+            if (misrouteOpen) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: misrouteOpen.number,
+                body: `Staging is back on the correct backend (env=\`${envField}\`) at \`${ts}\`. Closing.`,
+              })
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: misrouteOpen.number,
+                state: 'closed',
+                state_reason: 'completed',
+              })
+            }

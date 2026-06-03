@@ -1,0 +1,14 @@
+# Staging autodeploy tick. Same cadence as prod (every minute) so the
+# main → staging promotion lag is dominated by the promote workflow,
+# not by the timer interval.
+
+[Unit]
+Description=LevelChannel — staging autodeploy timer
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+Unit=levelchannel-staging-autodeploy.service
+
+[Install]
+WantedBy=timers.target
