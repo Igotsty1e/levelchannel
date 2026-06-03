@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:integration": "bash scripts/test-integration.sh",
+    "test:integration:coverage": "LC_INTEGRATION_COVERAGE=1 bash scripts/test-integration.sh --coverage",
     "migrate:up": "node scripts/migrate.mjs up",
     "migrate:status": "node scripts/migrate.mjs status",
     "migrate:payments:postgres": "node scripts/migrate-payment-orders-to-postgres.mjs",
