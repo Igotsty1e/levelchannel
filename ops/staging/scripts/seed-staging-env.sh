@@ -86,7 +86,7 @@ PAYMENTS_STORAGE_BACKEND=postgres
 
 # Email (Resend reused from prod, different FROM)
 RESEND_API_KEY=${RESEND_API_KEY}
-EMAIL_FROM=LevelChannel Staging <noreply-staging@mail.levelchannel.ru>
+EMAIL_FROM="LevelChannel Staging <noreply-staging@mail.levelchannel.ru>"
 AUTH_RATE_LIMIT_SECRET=$(gen_secret)
 TEACHER_INVITE_SECRET=$(gen_secret)
 
