@@ -1,0 +1,133 @@
+name: smoke-boot
+
+# Boots `next start` under the FULL staging-unit hardening on a CI
+# runner, hits `/api/health`, asserts 200 + status:ok +
+# environment:smoke. Catches regressions in the
+# `levelchannel-staging.service` hardening posture that pass
+# `build-check` (which compiles the app but never starts it) and pass
+# `seccomp-regression` (which boots `node --version` but not
+# `next start`).
+#
+# Discovered 2026-06-03 first staging cold-start (PR #507): two
+# hardening regressions had landed silently and crashed the unit on
+# real prod hardware. This workflow proves on every PR that the
+# current unit file boots a real Next 16 server end-to-end.
+#
+# Scope of paths the workflow runs on:
+#   - any change under ops/staging/systemd/** (unit file itself)
+#   - package.json + package-lock.json (Node + lib version churn)
+#   - next.config.js (Next config changes affect start path)
+#   - app/api/health/** (the smoke target)
+#   - the workflow + script themselves
+#
+# Out of scope:
+#   - DB-bound flows: smoke probes only /api/health, which does a
+#     liveness `SELECT 1`. Heavy migrations / DAO code paths are
+#     covered by `integration-tests` separately.
+#   - SSL / nginx: handled by docs/staging-setup.md operator steps;
+#     not modeled here.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ops/staging/systemd/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'next.config.js'
+      - 'app/api/health/**'
+      - 'scripts/smoke-boot-check.sh'
+      - '.github/workflows/smoke-boot.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ops/staging/systemd/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'next.config.js'
+      - 'app/api/health/**'
+      - 'scripts/smoke-boot-check.sh'
+      - '.github/workflows/smoke-boot.yml'
+
+jobs:
+  smoke-boot:
+    name: bash scripts/smoke-boot-check.sh
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: lc_smoke
+          POSTGRES_PASSWORD: lc_smoke_password
+          POSTGRES_DB: levelchannel_smoke
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://lc_smoke:lc_smoke_password@127.0.0.1:5432/levelchannel_smoke
+      DB_SSL: disable
+      LC_ENV: smoke
+      NEXT_PUBLIC_LC_ENV: smoke
+      NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3199
+      # Pin storage backend = postgres so /api/health exercises
+      # `getHealthProbePool` → `SELECT 1` against the smoke DB on
+      # every request. Without this the route resolves to `skip` and
+      # the smoke degrades to a trivial bound-port assertion. Provider
+      # stays default ('mock') because the smoke is a runtime/health
+      # check, not a CloudPayments integration test.
+      PAYMENTS_STORAGE_BACKEND: postgres
+      # NEXT_PUBLIC_* legal contract — placeholder values; lib/legal
+      # throws under NEXT_PHASE=phase-production-build when missing.
+      NEXT_PUBLIC_LEGAL_OPERATOR_NAME: ci-placeholder-operator
+      NEXT_PUBLIC_LEGAL_OPERATOR_DISPLAY: ci-placeholder-operator
+      NEXT_PUBLIC_LEGAL_OPERATOR_TAX_ID: "000000000000"
+      NEXT_PUBLIC_LEGAL_OPERATOR_OGRN: "000000000000000"
+      NEXT_PUBLIC_LEGAL_OPERATOR_REG_AUTHORITY: ci-placeholder-authority
+      NEXT_PUBLIC_LEGAL_OPERATOR_CLAIMS_ADDRESS: ci-placeholder-address
+      NEXT_PUBLIC_PUBLIC_CONTACT_EMAIL: ci@example.invalid
+      NEXT_PUBLIC_LEGAL_BANK_ACCOUNT: "00000000000000000000"
+      NEXT_PUBLIC_LEGAL_BANK_NAME: ci-placeholder-bank
+      NEXT_PUBLIC_LEGAL_BANK_BIK: "000000000"
+      NEXT_PUBLIC_LEGAL_BANK_CORR_ACCOUNT: "00000000000000000000"
+      NEXT_PUBLIC_LEGAL_BANK_CITY: ci-placeholder-city
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          # Pin to Node 20 specifically — the staging VPS runs Node 20
+          # (verified 2026-06-03), and the MDWE / AF_NETLINK class of
+          # incompatibilities surfaces at the V8 + libuv layer that
+          # differs across Node majors. Matching the prod runtime
+          # gives the strongest signal.
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run staging migrations against smoke DB
+        run: npm run migrate:up
+
+      - name: Build for production
+        run: npm run build
+
+      - name: Smoke-boot under staging unit hardening
+        run: bash scripts/smoke-boot-check.sh
+
+      - name: Dump recent journal on failure
+        if: failure()
+        run: |
+          # The script already dumps its own journalctl tail; this is a
+          # safety net for the case where the script itself died before
+          # reaching the journal dump (e.g. systemd-run rejected the
+          # transient unit args).
+          sudo journalctl --since "10 minutes ago" --no-pager -n 300 || true
