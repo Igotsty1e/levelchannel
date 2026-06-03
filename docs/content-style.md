@@ -600,3 +600,65 @@ style guide мешает — правьте style guide, а не игнорир�
 - **Реконсилиация → сверка платежей. Webhook → уведомление от платёжной
   системы. Слот → занятие. Алерт → уведомление оператора.**
 - **Если можно вычеркнуть слово — вычеркните.**
+
+---
+
+## Appendix B. Forbidden user-facing terms (machine-readable)
+
+The list below is parsed by `scripts/check-content-style.mjs` and enforced on
+every PR via `.github/workflows/product-flow-evals.yml`.
+
+**Scope of enforcement:** `app/` + `components/` only. The check does NOT scan
+`docs/`, `tests/`, `scripts/`, `lib/` (internal engineering surfaces — terms
+like «webhook», «idempotency» are legitimate there).
+
+**Match semantics:** case-insensitive substring per line. Each item below is a
+single term. Multi-word terms are matched as a contiguous substring (with
+spaces).
+
+**Exemption:** when a placeholder is **state-aware** and deliberately surfaces
+only when an external precondition is missing (e.g.
+`app/teacher/settings/calendar/connect-card.tsx` shows «Скоро будет» only when
+`GOOGLE_CALENDAR_*` env vars are unset), add `// content-style-allow` on the
+line above the violation. Use sparingly — every exemption is a long-term
+maintenance commitment to keep the placeholder genuinely state-gated.
+
+<!-- machine-readable-forbidden-terms:begin -->
+- Скоро будет
+- Coming soon
+- placeholder text
+- Реконсилиация
+- paid_not_granted
+- Эндпоинт
+- Internal error
+- Internal server error
+- Грант пакета
+<!-- machine-readable-forbidden-terms:end -->
+
+### Notes per entry
+
+- **Скоро будет / Coming soon** — shipped pages must not surface these
+  strings. Use the inline exemption ONLY for genuinely state-aware
+  placeholders that flip when an external precondition is met.
+- **placeholder text** — literal "placeholder text" or "Placeholder text"
+  prose that leaked into a page body. The HTML attribute `placeholder="..."`
+  is a separate technical surface and is handled by the attribute heuristic
+  in `check-content-style.mjs`.
+- **Реконсилиация / paid_not_granted / Эндпоинт** — internal terminology
+  that leaked into copy in past sessions. See main table in §4.
+- **Internal error / Internal server error** — user-facing copy must explain
+  what to do; never expose framework defaults verbatim.
+- **Грант пакета** — replace with «Выдача пакета» per §4.
+
+Notes on intentionally **NOT** in the machine-readable list (handled by
+finer-grained tooling or audience nuance):
+
+- `Webhook`, `Идемпотентность`, `Слот`, `Алерт` — operator (`app/admin/`)
+  audience tolerates these per §2 audience matrix. The check excludes
+  `app/admin/**` for that reason.
+- `TODO`, `Placeholder` (bare) — too broad; flagged by other lints and
+  legitimate as a JSX attribute or comment marker. Use `placeholder text`
+  for prose detection.
+
+When adding a new forbidden term, add it INSIDE the machine-readable block AND
+add a 1-line rationale here so reviewers know why it's banned.

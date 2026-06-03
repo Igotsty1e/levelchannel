@@ -108,6 +108,7 @@ export function CalendarConnectCard({
           lineHeight: 1.5,
         }}
       >
+        {/* content-style-allow — state-aware: surfaces only when configError || !configReady; flips automatically when GOOGLE_CALENDAR_CLIENT_ID/SECRET/REDIRECT_URL + GOOGLE_OAUTH_STATE_SECRET are all set and valid in prod env (see lib/calendar/google/config.ts validators). See evals/PRODUCT_FLOWS.md FLOW-TEACHER-CALENDAR-SETTINGS-001. */}
         🛠 Скоро будет — функция активируется в ближайшем обновлении.
       </div>
     )

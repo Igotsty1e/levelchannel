@@ -1,0 +1,312 @@
+# Product-Flow Evals Registry
+
+> Source-of-truth for the highest-risk product/user flows that AI agents and humans must not break.
+> Companion file: [`URL_REDIRECT_CONTRACT.md`](URL_REDIRECT_CONTRACT.md) — route × role × redirect.
+> This file is flow-oriented; the contract file is route-oriented.
+
+**Audit cadence:** review on every plan-doc that touches routes / role gates /
+cabinet / teacher / admin / booking / packages / payment / calendar settings.
+
+## How to read
+
+Each flow row carries:
+
+- **Flow ID** — `FLOW-{AREA}-{NAME}-{NNN}`; stable across edits.
+- **Area** — public / learner / teacher / admin / auth / payment / calendar.
+- **Starting URL** — what the user types or clicks first.
+- **Expected final URL** — where they end up after navigation + redirects.
+- **Allowed redirects** — intermediate hops permitted (302/307/replace).
+- **Forbidden redirects** — hops that constitute a regression.
+- **Required UI anchors** — substring(s) that must appear in rendered HTML to confirm the page is the right one. Substrings, not full snapshots.
+- **Forbidden UI anchors** — placeholders / wrong copy / wrong role labels that must not appear (unless explicitly state-conditional).
+- **Role required** — anon / learner / teacher (+ verified) / admin.
+- **Risk** — Low / Medium / High / Critical.
+- **Automation status** — none / manual / unit / integration / e2e / post-deploy-smoke.
+- **Notes** — known ambiguities, state-conditional placeholders, TODOs.
+
+---
+
+## A. Public / legal
+
+### FLOW-PUBLIC-HOME-001
+
+- **Area:** public
+- **Starting URL:** `/`
+- **Expected final URL:** `/` (no redirect — public Anastasia homepage; restored 2026-05-28 in commit `648868b`)
+- **Allowed redirects:** none
+- **Forbidden redirects:** `/cabinet`, `/login`, `/saas`, `/teacher`
+- **Required UI anchors:** at least one of: `LevelChannel`, `<h1`, branded landing copy
+- **Forbidden UI anchors:** `Скоро будет`, `Coming soon`, `TODO`, `Placeholder`
+- **Role required:** anon
+- **Risk:** **High** (recent regression — landing previously redirected to authenticated surface)
+- **Automation status:** **e2e** (`tests/e2e/product-flows.spec.ts`)
+- **Notes:** Source of truth: `app/page.tsx` renders `HomePageClient` directly; no auth check. If a future change adds a redirect here, update this flow first and explain why.
+
+### FLOW-PUBLIC-OFFER-001
+
+- **Area:** public / legal
+- **Starting URL:** `/offer`
+- **Expected final URL:** `/offer`
+- **Allowed redirects:** none
+- **Forbidden redirects:** `/cabinet`, `/login`
+- **Required UI anchors:** offer-related copy (substring `оферт`)
+- **Forbidden UI anchors:** `Скоро будет`, `TODO`
+- **Role required:** anon
+- **Risk:** Medium (legal surface; visible to anonymous visitors before registration)
+- **Automation status:** **e2e**
+
+### FLOW-PUBLIC-PRIVACY-001
+
+- **Area:** public / legal
+- **Starting URL:** `/privacy`
+- **Expected final URL:** `/privacy`
+- **Allowed redirects:** none
+- **Forbidden redirects:** `/cabinet`, `/login`
+- **Required UI anchors:** privacy-related copy (substring `персональн` or `privacy`)
+- **Forbidden UI anchors:** `Скоро будет`
+- **Role required:** anon
+- **Risk:** Medium
+- **Automation status:** **e2e**
+
+### FLOW-PUBLIC-SAAS-OFFER-001
+
+- **Area:** public / saas
+- **Starting URL:** `/saas/offer`
+- **Expected final URL:** `/saas/offer`
+- **Allowed redirects:** none
+- **Forbidden redirects:** `/login`
+- **Required UI anchors:** SaaS-offer Russian heading text
+- **Forbidden UI anchors:** `Скоро будет` unless legal version is placeholder (`v0-placeholder-*`)
+- **Role required:** anon
+- **Risk:** Medium
+- **Automation status:** **none** (manual; legal-pipeline already audits this surface)
+- **Notes:** Page is state-aware — when `live.versionLabel.startsWith('v0-placeholder-')` the registration banner shows placeholder copy. That's intentional, not a bug.
+
+## B. Auth
+
+### FLOW-AUTH-LOGIN-001
+
+- **Area:** auth
+- **Starting URL:** `/login`
+- **Expected final URL:** `/login`
+- **Allowed redirects:** none for anonymous
+- **Forbidden redirects:** `/cabinet`, `/admin`
+- **Required UI anchors:** input field for email
+- **Forbidden UI anchors:** `Скоро будет`
+- **Role required:** anon
+- **Risk:** Critical
+- **Automation status:** **e2e**
+
+### FLOW-AUTH-REGISTER-001
+
+- **Area:** auth
+- **Starting URL:** `/register`
+- **Expected final URL:** `/register`
+- **Allowed redirects:** none for anonymous
+- **Forbidden redirects:** `/cabinet`, `/login`
+- **Required UI anchors:** input field for email
+- **Forbidden UI anchors:** `Скоро будет`
+- **Role required:** anon
+- **Risk:** Critical
+- **Automation status:** **e2e**
+
+## C. Learner cabinet
+
+### FLOW-CABINET-ANON-REDIRECT-001
+
+- **Area:** learner / auth gate
+- **Starting URL:** `/cabinet`
+- **Expected final URL:** `/login` (after server-side redirect)
+- **Allowed redirects:** `/login`
+- **Forbidden redirects:** `/admin`, `/teacher`, `/register`
+- **Required UI anchors:** login form (substring email input attribute or label)
+- **Forbidden UI anchors:** authenticated cabinet content
+- **Role required:** anon
+- **Risk:** **Critical** (auth boundary)
+- **Automation status:** **e2e**
+
+### FLOW-LEARNER-CABINET-001
+
+- **Area:** learner
+- **Starting URL:** `/cabinet`
+- **Expected final URL:** `/cabinet` (renders learner UI)
+- **Allowed redirects:** none for authenticated learner
+- **Forbidden redirects:** `/login`, `/admin`, `/teacher`
+- **Required UI anchors:** `Кабинет`, learner-only sections
+- **Forbidden UI anchors:** `Скоро будет`, admin-only labels
+- **Role required:** learner (student role OR no role = default learner)
+- **Risk:** Critical
+- **Automation status:** **none** (requires session-cookie fixture; tracked in §F)
+
+### FLOW-LEARNER-BOOK-001
+
+- **Area:** learner / booking
+- **Starting URL:** `/cabinet/book`
+- **Expected final URL:** `/cabinet/book` (or `/cabinet/book/[ymd]` after day pick)
+- **Allowed redirects:** none for authenticated learner
+- **Forbidden redirects:** `/login`
+- **Required UI anchors:** booking-related Russian copy
+- **Forbidden UI anchors:** hardcoded lesson name (`Занятие по английскому`), hardcoded duration (`50 мин`) — see content-style §forbidden
+- **Role required:** learner
+- **Risk:** Critical (money path entry)
+- **Automation status:** **manual** + content-style guard
+
+### FLOW-LEARNER-PACKAGES-001
+
+- **Area:** learner / payment
+- **Starting URL:** `/cabinet/packages`
+- **Expected final URL:** `/cabinet/packages`
+- **Allowed redirects:** none for authenticated learner
+- **Forbidden redirects:** `/login`
+- **Required UI anchors:** packages list heading
+- **Forbidden UI anchors:** test-package legacy names (`Тестовый пакет`) outside operator scope, `Скоро будет`
+- **Role required:** learner
+- **Risk:** **Critical** (money UI; teacher-scoping incident Bug #2 codified)
+- **Automation status:** **integration** (`tests/integration/billing/bug-2-packages-teacher-scope.test.ts`)
+
+### FLOW-CABINET-CALENDAR-SETTINGS-001
+
+- **Area:** learner / calendar
+- **Starting URL:** `/cabinet/settings/calendar`
+- **Expected final URL:** `/cabinet/settings/calendar` (for verified learner / hybrid student+teacher)
+- **Allowed redirects:** `/login` (anon), `/admin` (admin), `/teacher` (teacher-only)
+- **Forbidden redirects:** none beyond the above
+- **Required UI anchors:** calendar settings heading
+- **Forbidden UI anchors:** `Скоро будет` (this surface uses state-aware copy per `derivePullStatus` / `derivePushStatus`)
+- **Role required:** learner / hybrid
+- **Risk:** Medium
+- **Automation status:** **none**
+- **Notes:** Teacher-only redirect target is `/teacher`, NOT `/teacher/settings/calendar`. See URL_REDIRECT_CONTRACT.md note `R-AMBIG-1`.
+
+## D. Teacher cabinet
+
+### FLOW-TEACHER-ANON-REDIRECT-001
+
+- **Area:** teacher / auth gate
+- **Starting URL:** `/teacher`
+- **Expected final URL:** `/login`
+- **Allowed redirects:** `/login`
+- **Forbidden redirects:** `/admin`, `/cabinet`, `/register`
+- **Required UI anchors:** login form
+- **Forbidden UI anchors:** teacher dashboard content
+- **Role required:** anon
+- **Risk:** Critical
+- **Automation status:** **e2e**
+
+### FLOW-TEACHER-CABINET-001
+
+- **Area:** teacher
+- **Starting URL:** `/teacher`
+- **Expected final URL:** `/teacher`
+- **Allowed redirects:** none for verified teacher
+- **Forbidden redirects:** `/cabinet`, `/login`, `/admin`
+- **Required UI anchors:** teacher-cabinet heading
+- **Forbidden UI anchors:** `Скоро будет`, learner-only labels
+- **Role required:** teacher (+ verified)
+- **Risk:** High
+- **Automation status:** **none**
+
+### FLOW-TEACHER-CALENDAR-SETTINGS-001
+
+- **Area:** teacher / calendar
+- **Starting URL:** `/teacher/settings/calendar`
+- **Expected final URL:** `/teacher/settings/calendar`
+- **Allowed redirects:** `/login` (anon), `/admin/slots` (admin), `/cabinet` (non-teacher)
+- **Forbidden redirects:** none beyond auth ladder
+- **Required UI anchors:** calendar connection card markup (visible heading or `data-testid="calendar-coming-soon-tile"` when state is `!configReady`)
+- **Forbidden UI anchors:** `Скоро будет` IS allowed on this surface because it's a state-aware placeholder when the 4 required env vars are unset or malformed: `GOOGLE_CALENDAR_CLIENT_ID`, `GOOGLE_CALENDAR_CLIENT_SECRET`, `GOOGLE_CALENDAR_REDIRECT_URL`, `GOOGLE_OAUTH_STATE_SECRET`. **This is an explicit exception** — flagged via inline `content-style-allow` comment in `connect-card.tsx`. Plain content-style guard would otherwise flag it.
+- **Role required:** teacher
+- **Risk:** **High** (prod environment-variable drift can leave the feature looking unshipped)
+- **Automation status:** **none** + state-aware
+- **Notes:** When ALL 4 env vars are set AND validated (`lib/calendar/google/config.ts` rejects malformed redirect URLs and short state secrets), the tile flips to the connect card with no second deploy. Setting only 3 of 4 (e.g. forgetting `GOOGLE_OAUTH_STATE_SECRET`) keeps the placeholder visible. Track env presence via `scripts/check-env-contract.mjs`.
+
+## E. Admin
+
+### FLOW-ADMIN-GATED-ANON-REDIRECT-001
+
+- **Area:** admin / auth gate
+- **Starting URL:** `/admin/dashboard`
+- **Expected final URL:** `/admin/login`
+- **Allowed redirects:** `/admin/login`
+- **Forbidden redirects:** `/cabinet`, `/login`
+- **Required UI anchors:** admin login form
+- **Forbidden UI anchors:** admin dashboard content
+- **Role required:** anon
+- **Risk:** **Critical**
+- **Automation status:** **e2e**
+- **Notes:** Unlike `/cabinet`, anonymous admin access lands on the dedicated admin login surface. Don't conflate the two.
+
+### FLOW-ADMIN-LOGIN-001
+
+- **Area:** admin / auth
+- **Starting URL:** `/admin/login`
+- **Expected final URL:** `/admin/login`
+- **Allowed redirects:** none for anon
+- **Forbidden redirects:** `/login`, `/cabinet`, `/admin`
+- **Required UI anchors:** email + password input
+- **Forbidden UI anchors:** `Скоро будет`, register link
+- **Role required:** anon
+- **Risk:** High
+- **Automation status:** **e2e**
+
+### FLOW-ADMIN-DASHBOARD-001
+
+- **Area:** admin
+- **Starting URL:** `/admin/dashboard`
+- **Expected final URL:** `/admin/dashboard`
+- **Allowed redirects:** none for authenticated admin
+- **Forbidden redirects:** `/cabinet`, `/login`
+- **Required UI anchors:** admin dashboard heading
+- **Forbidden UI anchors:** `Скоро будет`, `TODO`
+- **Role required:** admin
+- **Risk:** High
+- **Automation status:** **none**
+
+## F. Payment / package UX
+
+### FLOW-PAY-PUBLIC-001
+
+- **Area:** payment
+- **Starting URL:** `/pay`
+- **Expected final URL:** `/pay`
+- **Allowed redirects:** none
+- **Forbidden redirects:** none expected
+- **Required UI anchors:** payment-related Russian copy
+- **Forbidden UI anchors:** `Скоро будет`, `Webhook`, `Реконсилиация`
+- **Role required:** anon (the page itself is anonymous; CloudPayments widget loads after)
+- **Risk:** High (CSP / external script surface)
+- **Automation status:** **e2e** + post-deploy-smoke CSP-nonce check
+
+### FLOW-THANK-YOU-001
+
+- **Area:** payment
+- **Starting URL:** `/thank-you`
+- **Expected final URL:** `/thank-you`
+- **Allowed redirects:** none
+- **Forbidden redirects:** `/login`, `/cabinet` (this is a redirect target after successful payment, both anon and authenticated)
+- **Required UI anchors:** confirmation copy
+- **Forbidden UI anchors:** `Скоро будет`, `TODO`
+- **Role required:** anon-or-authenticated (gateless landing for return URL)
+- **Risk:** Medium
+- **Automation status:** **e2e** + post-deploy-smoke
+
+## G. Postponed / awaiting fixture
+
+The flows below are **registered but not yet automated** because they require a
+session-cookie test fixture against a seeded Postgres. They are covered manually
+today; promotion order tracked in `docs/tech-debt/COVERAGE_RATCHET_PLAN.md`.
+
+- FLOW-LEARNER-CABINET-001 (authenticated learner render)
+- FLOW-LEARNER-BOOK-001 (booking happy path)
+- FLOW-LEARNER-PACKAGES-001 (learner-scope assertion already covered by integration test; e2e promotion later)
+- FLOW-TEACHER-CABINET-001 (authenticated teacher render)
+- FLOW-TEACHER-CALENDAR-SETTINGS-001 (state-aware copy variants)
+- FLOW-ADMIN-DASHBOARD-001 (authenticated admin render)
+
+When a fixture lands, flip the `Automation status` field on each row.
+
+## H. Ambiguities flagged for owner decision
+
+| Tag | Where | Question |
+|---|---|---|
+| `R-AMBIG-1` | `/cabinet/settings/calendar` with teacher-only role | Should it redirect to `/teacher` (current) or `/teacher/settings/calendar` (analogous surface)? See URL_REDIRECT_CONTRACT.md. Default = leave current; owner sign-off required to change. |
