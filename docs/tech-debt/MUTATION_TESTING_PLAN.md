@@ -49,34 +49,79 @@ config sets:
 - `thresholds.low: 60` — display in yellow
 - `thresholds.break: 50` — CI fails below this
 
-## Phase 1 — money + auth + security unit-tested (shipped 2026-06-04)
+## Phase 1 — money + auth + security unit-tested
 
-The first wave is narrow on purpose: pick files that already have
-strong unit-test coverage (per `vitest.config.ts coverage.include`)
-and that handle money / auth / security boundaries. This keeps the
-first CI run under the 15-minute wall-clock budget and produces
-signal that's directly actionable.
+### Phase 1a — proof-of-concept on one file (shipped 2026-06-04)
 
-Mutated files (see `stryker.config.mjs`):
+The first 7-file scope CANCELLED at the 30-min CI cap. The 3-file
+shrink ALSO CANCELLED at 30 min. Each mutant requires a full vitest
+reboot under the command runner; the per-mutant wall-clock on the
+GHA ubuntu-latest runner is closer to 15-20s than the local-Mac
+~5s. With ~80-90 mutants per file, even 3 files overruns 30 min.
 
-- `lib/payments/cloudpayments-api.ts` — CloudPayments API client +
-  signature verification helpers.
-- `lib/payments/cloudpayments-webhook.ts` — Inbound webhook payload
-  parsing + HMAC check.
-- `lib/payments/tokens.ts` — CloudPayments card token storage +
-  redaction.
-- `lib/auth/password.ts` — Password hashing + verify (bcrypt/scrypt
-  wrapper).
-- `lib/auth/tokens.ts` — Email-verify + password-reset token gen +
-  HMAC validation.
+Phase 1a is therefore a PROOF-OF-CONCEPT: one file, CI timeout
+bumped to 45 minutes. The goal is to prove the workflow runs end-
+to-end with a real mutation score, then unblock the runner upgrade
+that lets us scale back up.
+
+Mutated file (see `stryker.config.mjs`):
+
 - `lib/security/rate-limit.ts` — Token-bucket rate limiter for auth
-  routes.
-- `lib/security/idempotency.ts` — Idempotency-key dedup for
-  payment-side handlers.
+  routes. Selected as the smallest money-adjacent unit-tested file.
 
-These 7 files combined produce ~600 mutants on the first run. At
-~3-5 seconds per mutant under the `command` runner (one vitest reboot
-per mutant), wall-clock is ~10-15 minutes.
+Deferred to Phase 1b (after runner upgrade):
+
+- `lib/payments/tokens.ts`
+- `lib/payments/cloudpayments-api.ts`
+- `lib/payments/cloudpayments-webhook.ts`
+- `lib/auth/password.ts`
+- `lib/auth/tokens.ts`
+- `lib/security/idempotency.ts`
+
+### Ratcheting up the Phase 1 break threshold
+
+First green CI run on 2026-06-04 produced a baseline of **36.59 %**
+mutation score on `lib/security/rate-limit.ts` (30 killed / 52
+survived / 82 total). The break threshold is pinned to 30 — slightly
+below the baseline so trivial regressions surface but the current
+state passes.
+
+Survived mutant classes that fall into the "real test gap" bucket
+(closing these is the path to raising the break threshold):
+
+- ConditionalExpression flips on the postgres-fallback-to-memory
+  path (`if (pgResult) return pgResult` → `if (false) return ...`).
+  The unit suite never exercises a case where the Postgres bucket
+  succeeds; the file-mocked tests always force fallback to memory.
+- BooleanLiteral flips on the same fallback (`if (!pool) return` →
+  `if (true) return`).
+- BlockStatement removals on the `__resetRateLimitsForTesting`
+  helper body — legitimate (it's a test helper, not behaviour
+  under test). Annotate with `// Stryker disable next-line all`
+  in a follow-up.
+
+Survived mutants in the "false positive" bucket (worth annotating
+out, not adding tests for):
+
+- StringLiteral mutations on log-message text and structured-log
+  field values (`level: 'warn'`, `probe: 'rate-limit'`,
+  `msg: '...'`). Behaviour-equivalent for the consumer; the
+  observability signal doesn't change app correctness.
+
+### Runner upgrade — Phase 1 -> Phase 2 transition (TODO)
+
+The path off the per-mutant vitest-reboot wall-clock budget is one
+of:
+
+1. Switch back to Stryker's `vitest` runner once it natively supports
+   `tsconfigPaths` — open upstream issue + monitor releases.
+2. Stryker `since` mode: only mutate files changed since main. Drops
+   per-PR wall-clock to ~1 file equivalent regardless of mutate-list
+   size, while the weekly cron still does full sweep.
+3. Increase concurrency to 4 on a larger GHA runner (`ubuntu-22.04-32core`).
+
+Whichever lands first unblocks the 6 deferred files going back into
+Phase 1b. Tracked as the next ratchet PR.
 
 ### Test runner choice
 

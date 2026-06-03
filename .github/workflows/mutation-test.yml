@@ -28,15 +28,11 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'lib/payments/cloudpayments-api.ts'
-      - 'lib/payments/cloudpayments-webhook.ts'
-      - 'lib/payments/tokens.ts'
-      - 'lib/auth/password.ts'
-      - 'lib/auth/tokens.ts'
+      # Mirror stryker.config.mjs `mutate` list 1:1. Phase 1a is a
+      # proof-of-concept scope (one file) — the 6 deferred files
+      # re-enter the filter as Phase 1b lands once we switch the
+      # workflow to a faster runner.
       - 'lib/security/rate-limit.ts'
-      - 'lib/security/idempotency.ts'
-      - 'tests/payments/**'
-      - 'tests/auth/**'
       - 'tests/security/**'
       - 'stryker.config.mjs'
       - '.github/workflows/mutation-test.yml'
@@ -53,7 +49,7 @@ jobs:
   mutation:
     name: npm run test:mutation
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
