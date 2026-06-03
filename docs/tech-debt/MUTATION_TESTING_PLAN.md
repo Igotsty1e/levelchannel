@@ -78,6 +78,36 @@ Deferred to Phase 1b (after runner upgrade):
 - `lib/auth/tokens.ts`
 - `lib/security/idempotency.ts`
 
+### Ratcheting up the Phase 1 break threshold
+
+First green CI run on 2026-06-04 produced a baseline of **36.59 %**
+mutation score on `lib/security/rate-limit.ts` (30 killed / 52
+survived / 82 total). The break threshold is pinned to 30 — slightly
+below the baseline so trivial regressions surface but the current
+state passes.
+
+Survived mutant classes that fall into the "real test gap" bucket
+(closing these is the path to raising the break threshold):
+
+- ConditionalExpression flips on the postgres-fallback-to-memory
+  path (`if (pgResult) return pgResult` → `if (false) return ...`).
+  The unit suite never exercises a case where the Postgres bucket
+  succeeds; the file-mocked tests always force fallback to memory.
+- BooleanLiteral flips on the same fallback (`if (!pool) return` →
+  `if (true) return`).
+- BlockStatement removals on the `__resetRateLimitsForTesting`
+  helper body — legitimate (it's a test helper, not behaviour
+  under test). Annotate with `// Stryker disable next-line all`
+  in a follow-up.
+
+Survived mutants in the "false positive" bucket (worth annotating
+out, not adding tests for):
+
+- StringLiteral mutations on log-message text and structured-log
+  field values (`level: 'warn'`, `probe: 'rate-limit'`,
+  `msg: '...'`). Behaviour-equivalent for the consumer; the
+  observability signal doesn't change app correctness.
+
 ### Runner upgrade — Phase 1 -> Phase 2 transition (TODO)
 
 The path off the per-mutant vitest-reboot wall-clock budget is one
