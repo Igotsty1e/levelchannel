@@ -100,12 +100,22 @@ fi
 # Extract hardening directives. Only known-good keys are forwarded
 # to systemd-run; ExecStart / User / EnvironmentFile / Type live
 # elsewhere in the file and we set our own.
+#
+# Deliberately omitted:
+#
+#   ProtectHome / ProtectSystem / ReadWritePaths — filesystem-only
+#   hardening. They DON'T cause the V8/libuv class of crashes this
+#   smoke exists to catch; they restrict reads/writes. In CI the
+#   working tree lives under /home/runner/work/, which ProtectHome=
+#   true makes invisible to the unit — `next start` can't even
+#   exec (status=203/EXEC). The actual filesystem hardening posture
+#   is verified by the prod unit's runtime behaviour and
+#   integration-tests; dropping them here keeps the smoke focused on
+#   the syscall/memory/network layers that prior CI missed.
 HARDENING_KEYS=(
   NoNewPrivileges
   PrivateTmp
   PrivateDevices
-  ProtectSystem
-  ProtectHome
   ProtectKernelTunables
   ProtectKernelModules
   ProtectControlGroups
@@ -147,16 +157,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Allow ReadWritePaths to include CWD so .next/ is writable for
-# Next's runtime cache. The staging unit lists
-# `/srv/levelchannel-staging` for this reason; we mirror it on
-# the CI checkout path.
-PROPS+=(--property="ReadWritePaths=$REPO_ROOT /tmp")
-# Override the strict ProtectSystem so /tmp + cwd are writable for
-# the smoke. (We're testing the syscall + memory hardening, not
-# filesystem partitioning, which is well-tested by the staging unit
-# in prod.)
-# Note: systemd-run merges multiple ReadWritePaths automatically.
+# No ReadWritePaths override needed — ProtectSystem isn't in the
+# extracted set (see HARDENING_KEYS rationale above), so the unit's
+# default filesystem permissions apply and /home/runner/work + CWD
+# stay writable for Next's runtime cache.
 
 echo "[smoke-boot] booting $NEXT_BIN start --port $PORT under transient unit $TRANSIENT_UNIT"
 
