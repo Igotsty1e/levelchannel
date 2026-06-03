@@ -38,7 +38,11 @@ CP_PUBLIC="$1"
 CP_SECRET="$2"
 PG_PASS="$3"
 
-PROD_ENV=/etc/levelchannel/env
+# Prod systemd unit references /etc/levelchannel.env (verified
+# 2026-06-03 against `systemctl cat levelchannel.service`). NOT
+# /etc/levelchannel/env (subdirectory layout some operators use;
+# LevelChannel does not).
+PROD_ENV=/etc/levelchannel.env
 STAGING_ENV=/etc/levelchannel-staging/env
 
 if [ ! -f "$PROD_ENV" ]; then
