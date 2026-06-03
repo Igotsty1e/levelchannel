@@ -219,6 +219,7 @@ done
 if ! $SUDO systemd-run \
     --unit="$TRANSIENT_UNIT" \
     --collect \
+    --working-directory="$REPO_ROOT" \
     "${SETENV_FLAGS[@]}" \
     "${PROPS[@]}" \
     -- "$NODE_BIN" "$NEXT_ENTRY" start --port "$PORT" >/tmp/smoke-boot-launch.log 2>&1; then
