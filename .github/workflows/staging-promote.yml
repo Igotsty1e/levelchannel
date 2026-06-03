@@ -73,9 +73,25 @@ jobs:
             exit 0
           fi
 
-          # Force-with-lease semantics. If someone manually advanced
-          # staging beyond the expected SHA, we WON'T overwrite —
-          # surface error instead.
-          git push origin "$SMOKE_SHA:refs/heads/staging" \
-              --force-with-lease="refs/heads/staging:$STAGING_SHA"
-          echo "staging promoted to $SMOKE_SHA (was $STAGING_SHA)"
+          # First-time bootstrap: if the staging branch doesn't exist
+          # yet (operator hasn't run `Step 10 — First promote` from
+          # docs/staging-setup.md), STAGING_SHA is empty and
+          # --force-with-lease="refs/heads/staging:" misbehaves
+          # (interpreted as "expect remote ref absent" by some git
+          # versions, "expect any" by others — surfaced as a stuck
+          # promote on the first prod-smoke-ok event after activation).
+          # Branch creation does not need lease protection; plain
+          # `git push origin SHA:refs/heads/staging` is safe when the
+          # destination ref does not exist.
+          if [ -z "$STAGING_SHA" ]; then
+            echo "staging branch absent — bootstrapping without --force-with-lease"
+            git push origin "$SMOKE_SHA:refs/heads/staging"
+            echo "staging bootstrapped at $SMOKE_SHA"
+          else
+            # Force-with-lease semantics. If someone manually advanced
+            # staging beyond the expected SHA, we WON'T overwrite —
+            # surface error instead.
+            git push origin "$SMOKE_SHA:refs/heads/staging" \
+                --force-with-lease="refs/heads/staging:$STAGING_SHA"
+            echo "staging promoted to $SMOKE_SHA (was $STAGING_SHA)"
+          fi
