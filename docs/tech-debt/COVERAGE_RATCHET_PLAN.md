@@ -2,7 +2,18 @@
 
 > Gradual expansion of `vitest.config.ts` coverage threshold protection across
 > the load-bearing `lib/` modules.
-> Status: **plan only** — no code changes in the PR that created this file.
+> Status: **first ratchet pass shipped 2026-06-03**.
+>
+> Phase 3 (calendar) and Phase 5 (audit) partially executed in PR #503:
+> 9 new files added to the `coverage.include` list (7 calendar helpers +
+> 2 audit helpers), thresholds preserved at the original 85/95/80/85.
+> Measured: stmts 91.23 / branches 83.88 / funcs 99.04 / lines 92.17.
+>
+> Remaining phases (1, 2, 4, 6) targeted modules whose files are
+> exclusively integration-tested (real Postgres + advisory locks) —
+> their unit-coverage floors require either (a) deferring those files
+> until unit tests catch up, or (b) wiring integration-coverage as a
+> separate signal in a follow-up PR.
 
 ## Why this exists
 
@@ -34,7 +45,9 @@ Failing this loop = unrelated PRs blocked by coverage drops they did not cause.
 ## Priority order (gradual rollout)
 
 Order chosen by money-adjacency × pre-existing test density × file count.
-Each row is a separate PR. Do **not** bundle.
+Each row is a separate PR. Do **not** bundle — except the first pass below
+which closed two phases at once because the new include list happened to
+hit the original 85/95/80/85 floors with margin.
 
 ### Phase 1 — `lib/billing/**`
 
@@ -58,14 +71,27 @@ Each row is a separate PR. Do **not** bundle.
 - Same floor pattern (70/80/65/70).
 - Note: `lib/scheduling/slots/booking.ts` and `lib/scheduling/slots/mutations-cancel.ts` are critical-path; PR requires SIGN-OFF.
 
-### Phase 3 — `lib/calendar/**`
+### Phase 3 — `lib/calendar/**` — **PARTIALLY SHIPPED 2026-06-03 (PR #503)**
 
-**Files:** `lib/calendar/{pull-runner,pull-worker,derive-status,integrations}.ts` + Google subdir.
+**Shipped in PR #503** (covered by existing unit tests, all above floor):
+- `lib/calendar/dates.ts` (97/90/100/98)
+- `lib/calendar/encryption.ts` (96/96/100/100)
+- `lib/calendar/grid-keyboard.ts` (100/96/100/100)
+- `lib/calendar/view-model.ts` (98/92/100/100)
+- `lib/calendar/google/config.ts` (91/85/100/100)
+- `lib/calendar/google/push.ts` (84/60/100/85)
+- `lib/calendar/google/state.ts` (88/76/100/90)
 
-**Acceptance criteria:**
+**Still pending** (integration-tested, would show 0% under unit coverage):
+- `lib/calendar/pull-runner.ts` — critical-path
+- `lib/calendar/pull-worker.ts` — critical-path
+- `lib/calendar/integrations.ts`
+- `lib/calendar/channel-renewer.ts`
+- `lib/calendar/orphan-cleanup.ts`
+- `lib/calendar/derive-status.ts` (no direct unit test; uses status enum)
 
-- Same floor pattern.
-- `lib/calendar/pull-runner.ts` and `lib/calendar/pull-worker.ts` are critical-path.
+Acceptance for remaining files: requires either dedicated unit tests OR a
+separate integration-coverage signal in vitest.integration.config.ts.
 
 ### Phase 4 — `lib/teacher-ledger/**`
 
@@ -76,14 +102,18 @@ Each row is a separate PR. Do **not** bundle.
 - Same floor pattern.
 - Both files are critical-path (SaaS-pivot Day 5).
 
-### Phase 5 — `lib/audit/**`
+### Phase 5 — `lib/audit/**` — **PARTIALLY SHIPPED 2026-06-03 (PR #503)**
 
-**Files:** `lib/audit/{payment-events,pool}.ts`.
+**Shipped in PR #503**:
+- `lib/audit/auth-events.ts` (100/91/100/100)
+- `lib/audit/encryption.ts` (96/93/100/100)
 
-**Acceptance criteria:**
+**Still pending**:
+- `lib/audit/payment-events.ts` — critical-path; integration-tested only.
+- `lib/audit/pool.ts` — connection helper; no behaviour to unit-test.
 
-- Same floor pattern.
-- `lib/audit/payment-events.ts` is critical-path.
+Acceptance for `payment-events.ts`: requires unit-level extraction of
+the audit-event shape contract OR integration-coverage signal.
 
 ### Phase 6 — `lib/admin/**`
 
@@ -137,4 +167,11 @@ This plan is updated as each phase ships. Status field on each phase row:
 - `in progress` — PR open
 - `shipped (PR #NNN)` — merged
 
-Initial state: all phases `pending`.
+State as of 2026-06-03:
+
+- Phase 1 (lib/billing) — `pending`
+- Phase 2 (lib/scheduling/slots) — `pending`
+- Phase 3 (lib/calendar) — `partially shipped (PR #503)`; 7 of ~13 files
+- Phase 4 (lib/teacher-ledger) — `pending`
+- Phase 5 (lib/audit) — `partially shipped (PR #503)`; 2 of 4 files
+- Phase 6 (lib/admin) — `pending`

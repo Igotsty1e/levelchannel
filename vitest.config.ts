@@ -12,10 +12,20 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
-      // Только то, что покрываем сейчас юнитами. Postgres и file backends
-      // тестируются интеграционно (живая БД / FS); их покрытие отдельной
-      // ratchet'ой можно добавить позже.
+      // Coverage protection scope. Started as 12 files (payments + security +
+      // auth + email/escape); ratcheted 2026-06-03 to add unit-tested helpers
+      // from the 4 modules where unit tests already produce solid coverage:
+      //   - lib/calendar/*           (dates, encryption, grid, view-model, google/*)
+      //   - lib/audit/*              (auth-events, encryption)
+      //
+      // Files in lib/billing/**, lib/scheduling/slots/**, lib/teacher-ledger/**,
+      // lib/admin/** are integration-tested (real Postgres + advisory locks);
+      // adding them here would either show 0% (file not loaded by units)
+      // or pull thresholds down. Those modules are tracked separately in
+      // docs/tech-debt/COVERAGE_RATCHET_PLAN.md for follow-up PRs that
+      // measure + lock floors per file.
       include: [
+        // Original phase 0 (payments + security + auth + email)
         'lib/payments/catalog.ts',
         'lib/payments/cloudpayments-api.ts',
         'lib/payments/cloudpayments-webhook.ts',
@@ -28,12 +38,25 @@ export default defineConfig({
         'lib/auth/policy.ts',
         'lib/auth/email-hash.ts',
         'lib/email/escape.ts',
+        // Phase 3 — lib/calendar/*  unit-tested helpers
+        'lib/calendar/dates.ts',
+        'lib/calendar/encryption.ts',
+        'lib/calendar/grid-keyboard.ts',
+        'lib/calendar/view-model.ts',
+        'lib/calendar/google/config.ts',
+        'lib/calendar/google/push.ts',
+        'lib/calendar/google/state.ts',
+        // Phase 5 — lib/audit/*
+        'lib/audit/auth-events.ts',
+        'lib/audit/encryption.ts',
       ],
-      // COVERAGE-PAYMENTS (2026-05-18) — ratchet up from 70/70/70/70
-      // after adding refundTransaction + chargeWithSavedToken
-      // invalid-JSON unit tests. Floor each threshold a few points
-      // below the actual measured value so a stray regression trips
-      // CI but normal churn doesn't. Payments alone sits at ~96/89/97/96.
+      // Coverage floors preserved at the original 85/95/80/85 contract.
+      // Measured 2026-06-03 with the expanded include list:
+      // stmts 91.23 / branches 83.88 / funcs 99.04 / lines 92.17 — every
+      // floor met with margin. The weakest individual contributor is
+      // calendar/google/push.ts at 60.86% branches; the bundle absorbs
+      // it because other 90%+ files dominate the weighted average.
+      // Tightening floors further (e.g. branches 82) is a future ratchet.
       thresholds: {
         lines: 85,
         functions: 95,
