@@ -219,6 +219,13 @@ npm ci --no-audit --no-fund
 npm run migrate:up
 export GIT_SHA=$(git rev-parse HEAD)
 npm run build
+# Seed the runtime env file the systemd unit reads as its second
+# EnvironmentFile=- line. Without this the first manual `enable
+# --now` will boot the service with GIT_SHA unset and /api/health
+# will report version: null until the first autodeploy tick. The
+# autodeploy script rewrites this file on every successful build.
+printf "GIT_SHA=%s\n" "$GIT_SHA" > /var/lib/levelchannel-staging/runtime.env
+chmod 600 /var/lib/levelchannel-staging/runtime.env
 '
 
 # Start the unit + timer

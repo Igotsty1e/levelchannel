@@ -1,12 +1,22 @@
 name: smoke-boot
 
-# Boots `next start` under the FULL staging-unit hardening on a CI
-# runner, hits `/api/health`, asserts 200 + status:ok +
-# environment:smoke. Catches regressions in the
+# Boots `next start` under the V8 / libuv-relevant subset of the
+# staging-unit hardening on a CI runner, hits `/api/health`, asserts
+# 200 + status:ok + environment:smoke. Catches regressions in the
 # `levelchannel-staging.service` hardening posture that pass
 # `build-check` (which compiles the app but never starts it) and pass
 # `seccomp-regression` (which boots `node --version` but not
 # `next start`).
+#
+# What this DOESN'T catch (intentionally — filesystem / namespace
+# hardening that's incompatible with GHA's overlay-fs + sudo layout):
+# ProtectSystem, ProtectHome, ReadWritePaths, PrivateTmp,
+# PrivateDevices, RestrictNamespaces, ProtectKernel*,
+# ProtectControlGroups, CapabilityBoundingSet, AmbientCapabilities.
+# Regressions in those directives must still be caught at deploy
+# time by the prod unit's actual runtime. See HARDENING_KEYS in
+# scripts/smoke-boot-check.sh for the precise inclusion list and
+# rationale.
 #
 # Discovered 2026-06-03 first staging cold-start (PR #507): two
 # hardening regressions had landed silently and crashed the unit on

@@ -109,7 +109,7 @@ CALENDAR_ENCRYPTION_KEY=$(gen_secret)
 # Console and fills these. Not on the staging critical path for v1.
 GOOGLE_CALENDAR_CLIENT_ID=
 GOOGLE_CALENDAR_CLIENT_SECRET=
-GOOGLE_CALENDAR_REDIRECT_URL=https://staging.levelchannel.ru/api/calendar/google/callback
+GOOGLE_CALENDAR_REDIRECT_URL=https://staging.levelchannel.ru/api/teacher/calendar/google/callback
 GOOGLE_OAUTH_STATE_SECRET=$(gen_secret)
 
 # Legal env (copied verbatim from prod — same legal entity)
