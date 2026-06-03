@@ -14,9 +14,15 @@
 #
 # Usage:
 #
-#   bash scripts/post-deploy-smoke.sh                       # default: prod
+#   bash scripts/post-deploy-smoke.sh                                # default: prod
 #   bash scripts/post-deploy-smoke.sh https://levelchannel.ru
-#   bash scripts/post-deploy-smoke.sh http://127.0.0.1:3000  # local dev
+#   bash scripts/post-deploy-smoke.sh http://127.0.0.1:3000          # local dev
+#   bash scripts/post-deploy-smoke.sh https://staging.levelchannel.ru staging
+#
+# Second argument is OPTIONAL — when set, the smoke asserts that the
+# response from /api/health has `.environment` equal to that exact
+# string. Catches the nginx-misroute class of bug where staging.* would
+# proxy to the prod backend and serve prod content under a staging URL.
 #
 # Wiring:
 #
@@ -33,6 +39,7 @@
 set -uo pipefail
 
 BASE_URL="${1:-https://levelchannel.ru}"
+EXPECTED_ENV="${2:-}"
 TMP_BODY="$(mktemp -t lc-smoke-body.XXXXXX)"
 trap 'rm -f "$TMP_BODY"' EXIT
 
@@ -77,6 +84,30 @@ echo "=== post-deploy smoke against $BASE_URL ==="
 # the GitHub Actions uptime probe which holds the secret as a repo
 # secret.
 check GET /api/health 200 '"status":"ok"'
+
+# Anti-misroute defense: when the caller provided an EXPECTED_ENV,
+# assert /api/health.environment matches it EXACTLY. Catches the
+# class where staging.levelchannel.ru's nginx vhost accidentally
+# proxies to the prod backend (verified on 2026-06-03 first staging
+# cold-start — the staging cert was missing and SNI fallback served
+# prod). Without this check the autodeploy would write deployed-sha
+# and report swap-complete even when the public URL was serving
+# the wrong environment.
+if [ -n "$EXPECTED_ENV" ]; then
+  ENV_BODY=$(curl -sS --max-time 10 "$BASE_URL/api/health" || echo "")
+  ACTUAL_ENV=$(printf '%s' "$ENV_BODY" \
+    | grep -oE '"environment":"[^"]*"' \
+    | head -1 \
+    | sed -E 's/"environment":"([^"]*)"/\1/')
+  if [ "$ACTUAL_ENV" = "$EXPECTED_ENV" ]; then
+    printf '  ok    %-7s %-30s environment=%s (expected %s)\n' \
+      ENV-CHECK /api/health "$ACTUAL_ENV" "$EXPECTED_ENV"
+  else
+    printf '  FAIL  %-7s %-30s environment=%s (expected %s) — possible nginx misroute\n' \
+      ENV-CHECK /api/health "${ACTUAL_ENV:-<unset>}" "$EXPECTED_ENV"
+    FAILS=$((FAILS + 1))
+  fi
+fi
 
 # Auth surface — anon should never see authenticated content.
 check GET /api/auth/me 401

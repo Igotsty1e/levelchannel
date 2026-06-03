@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # Seeds /etc/levelchannel-staging/env from the prod env file + locally
 # generated random secrets. Reads operator-side secrets (Resend, Sentry,
-# Legal vars) from /etc/levelchannel/env on the SAME VPS; takes
-# CloudPayments TEST keys + Postgres password as args; generates
-# everything else fresh with openssl on the VPS so no credentials are
-# ever committed to the repo.
+# Legal vars) from the prod env file on the SAME VPS (path resolved
+# below as `/etc/${PROD_OPERATOR:-levelchannel}.env`; override via
+# PROD_ENV_PATH if the operator layout differs); takes CloudPayments
+# TEST keys + Postgres password as args; generates everything else
+# fresh with openssl on the VPS so no credentials are ever committed
+# to the repo.
 #
 # Usage:
 #   sudo bash ops/staging/scripts/seed-staging-env.sh \
 #       <CP_TEST_PUBLIC_ID> <CP_TEST_API_SECRET> <PG_PASSWORD>
 #
-# Reads from /etc/levelchannel/env (prod):
+# Reads from the resolved prod env file:
 #   - RESEND_API_KEY
 #   - SENTRY_DSN
 #   - NEXT_PUBLIC_SENTRY_DSN
@@ -107,7 +109,7 @@ CALENDAR_ENCRYPTION_KEY=$(gen_secret)
 # Console and fills these. Not on the staging critical path for v1.
 GOOGLE_CALENDAR_CLIENT_ID=
 GOOGLE_CALENDAR_CLIENT_SECRET=
-GOOGLE_CALENDAR_REDIRECT_URL=https://staging.levelchannel.ru/api/calendar/google/callback
+GOOGLE_CALENDAR_REDIRECT_URL=https://staging.levelchannel.ru/api/teacher/calendar/google/callback
 GOOGLE_OAUTH_STATE_SECRET=$(gen_secret)
 
 # Legal env (copied verbatim from prod — same legal entity)

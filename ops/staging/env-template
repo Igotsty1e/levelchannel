@@ -6,8 +6,11 @@
 #   3. chown levelchannel-staging:levelchannel-staging /etc/levelchannel-staging/env
 #   4. chmod 600 /etc/levelchannel-staging/env
 #
-# NEVER copy /etc/levelchannel/env (prod) here verbatim — staging must
-# use distinct DB, distinct CloudPayments keys, distinct Sentry DSN.
+# NEVER copy the prod env file here verbatim — staging must use
+# distinct DB and distinct CloudPayments keys. Sentry DSN MAY be
+# shared with prod (the events are separated by the `environment`
+# tag, derived from LC_ENV / NEXT_PUBLIC_LC_ENV — see the Sentry
+# section below); a split DSN is a future ratchet, not v1.
 
 # --- Site identity ---
 NEXT_PUBLIC_SITE_URL=https://staging.levelchannel.ru
@@ -89,11 +92,13 @@ CALENDAR_ENCRYPTION_KEY=<FILL_IN_AT_LEAST_32_CHARS>
 
 # --- Google Calendar OAuth (separate redirect URL pointing at staging) ---
 # Create a SEPARATE OAuth client in Google Cloud Console for staging
-# with redirect URL https://staging.levelchannel.ru/api/calendar/google/callback
+# with redirect URL https://staging.levelchannel.ru/api/teacher/calendar/google/callback
+# (the handler lives under /teacher/calendar/ — see
+# app/api/teacher/calendar/google/callback/route.ts).
 # Prod and staging must NOT share OAuth clients.
 GOOGLE_CALENDAR_CLIENT_ID=<FILL_IN>
 GOOGLE_CALENDAR_CLIENT_SECRET=<FILL_IN>
-GOOGLE_CALENDAR_REDIRECT_URL=https://staging.levelchannel.ru/api/calendar/google/callback
+GOOGLE_CALENDAR_REDIRECT_URL=https://staging.levelchannel.ru/api/teacher/calendar/google/callback
 GOOGLE_OAUTH_STATE_SECRET=<FILL_IN_AT_LEAST_32_CHARS>
 
 # --- Legal env (same as prod — same legal entity) ---

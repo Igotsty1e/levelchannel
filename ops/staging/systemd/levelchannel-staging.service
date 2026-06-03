@@ -31,6 +31,13 @@ User=levelchannel-staging
 Group=levelchannel-staging
 WorkingDirectory=/srv/levelchannel-staging
 EnvironmentFile=/etc/levelchannel-staging/env
+# Runtime env file written by `ops/staging/scripts/autodeploy-staging.sh`
+# before each `systemctl start`. Carries dynamic per-deploy values
+# (currently just GIT_SHA, surfaced by /api/health.version and used by
+# .github/workflows/staging-e2e.yml to poll for the promoted SHA).
+# Leading `-` makes systemd tolerate the file being absent on the
+# very first boot before autodeploy has run.
+EnvironmentFile=-/var/lib/levelchannel-staging/runtime.env
 Environment="NODE_ENV=production"
 Environment="LC_ENV=staging"
 Environment="PORT=3001"
