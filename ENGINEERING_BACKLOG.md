@@ -17,6 +17,18 @@ the rationale. Historical / fully-shipped waves live under
 - [SaaS-pivot scope](docs/backlog/saas-pivot.md) — SAAS-1..SAAS-6 product pivot from single-teacher-channel to multi-teacher SaaS; foundation docs first, multi-week sweep; SAAS-1 + follow-ups + SAAS-6-A11Y-1 SHIPPED, SAAS-2..6 ACTIVE.
 - [Cross-cutting backlog](docs/backlog/cross-cutting.md) — DOC-SPLIT (this file) / DOC-MODULE-CONTRACTS / API-BOUNDARIES / CRITICAL-PATH-INVENTORY / COVERAGE-PAYMENTS; status ACTIVE.
 
+## Cross-cutting / tech debt
+
+- [Coverage ratchet plan](docs/tech-debt/COVERAGE_RATCHET_PLAN.md) — gradual
+  expansion of `vitest.config.ts` coverage thresholds from the current 12 files
+  to load-bearing `lib/billing`, `lib/scheduling/slots`, `lib/calendar`,
+  `lib/teacher-ledger`, `lib/audit`, `lib/admin` modules. Status: plan only;
+  6 phases pending, one PR per phase.
+- [Product-flow evals registry](evals/PRODUCT_FLOWS.md) +
+  [URL/redirect contract](evals/URL_REDIRECT_CONTRACT.md) — live source of truth
+  for flow-level expectations enforced by Playwright + content-style +
+  env-contract checks via `.github/workflows/product-flow-evals.yml`.
+
 ## Closed / informational
 
 - [Audit findings — 2026-05-17](docs/backlog/audit-2026-05-17.md) — three parallel sub-agent audits (4 SEC + 8 CODE + 8 DOC); status SHIPPED (20/20 closed across PR #252-#268).

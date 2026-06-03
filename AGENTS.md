@@ -250,3 +250,50 @@ the diff being correct.
 For payment-domain or security-layer work specifically: **would you bet
 your own money on this code path being correct?** If not, slow down
 and verify.
+
+## 7. Product-flow evals rule
+
+If your task touches any of:
+
+- routes, navigation, role access, redirects, layouts
+- learner / teacher / admin dashboard pages
+- booking, packages, payment, checkout, thank-you flows
+- teacher / learner calendar settings
+- public legal / offer / privacy surfaces
+
+Then BEFORE writing code:
+
+1. Read [`evals/PRODUCT_FLOWS.md`](evals/PRODUCT_FLOWS.md) — flow registry
+   with expected URLs, allowed/forbidden redirects, required/forbidden UI
+   anchors.
+2. Read [`evals/URL_REDIRECT_CONTRACT.md`](evals/URL_REDIRECT_CONTRACT.md) —
+   route × role × redirect contract.
+
+If your change would alter a row in either file, **edit the registry/contract
+in the same PR**. Drift between code and contract is the regression class these
+files exist to prevent.
+
+If you find a bug in route or redirect behavior:
+
+1. Add a failing test in `tests/e2e/product-flows.spec.ts` that locks in the
+   expected behavior.
+2. Fix the bug only if expected behavior is clear from PRODUCT_FLOWS.md or
+   URL_REDIRECT_CONTRACT.md.
+3. If expected behavior is **ambiguous**, do not guess. Tag it `R-AMBIG-N` in
+   URL_REDIRECT_CONTRACT.md and surface to the owner.
+
+If a shipped page shows placeholder or wrong copy (`Скоро будет`, hardcoded
+English, internal status names, etc.):
+
+- Either rephrase per `docs/content-style.md`, or
+- If the placeholder is state-aware (depends on env / DB state), add an inline
+  `// content-style-allow` comment on the line above it.
+
+Do not claim the task done unless:
+
+- `npm run check:env-contract` passes (or its failure is unrelated and
+  documented).
+- `npm run check:content-style` passes (or its failure is documented as a
+  state-aware exemption).
+- `npm run test:e2e:product-flows` passes (when applicable for the surface
+  you touched).

@@ -861,6 +861,7 @@ function Pricing() {
                   }}
                   disabled
                   aria-disabled="true"
+                  // content-style-allow — intentional unavailable-state aria-label for tariffs gated behind a launch date (see PRODUCT_FLOWS.md note on landing tariff states); not a placeholder string.
                   aria-label={`Тариф ${t.name} — скоро будет доступен`}
                 >
                   {t.ctaLabel}

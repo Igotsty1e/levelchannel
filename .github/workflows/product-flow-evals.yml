@@ -1,0 +1,121 @@
+name: product-flow-evals
+
+# Phase 7 of product-flow evals hardening (2026-06-03).
+# Wires three new pre-merge checks:
+#   1. env-contract  — process.env.X cross-checked against .env.example
+#   2. content-style — user-facing forbidden-terms scan (app/ + components/)
+#   3. e2e           — Playwright suite locking in URL/redirect contract
+#
+# Existing workflows (build-check, unit-tests, integration-tests, etc.) are
+# untouched. This adds a single new workflow file rather than amending
+# existing ones, mirroring the convention used by skill-pipeline.yml and
+# legal-pipeline.yml.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  env-contract:
+    name: npm run check:env-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: 22
+
+      - name: Run env-contract check
+        run: node scripts/check-env-contract.mjs --ci
+
+  content-style:
+    name: npm run check:content-style
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: 22
+
+      - name: Run content-style check
+        run: node scripts/check-content-style.mjs --ci
+
+  e2e-product-flows:
+    name: Playwright product-flow suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684  # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            pw-${{ runner.os }}-
+
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Build Next app (placeholder legal env)
+        run: npm run build
+        env:
+          # Mirror build-check.yml placeholder set so `next build`
+          # passes the strict NEXT_PUBLIC_LEGAL_* validators.
+          NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3100
+          NEXT_PUBLIC_LEGAL_OPERATOR_NAME: ci-placeholder
+          NEXT_PUBLIC_LEGAL_OPERATOR_DISPLAY: ci-placeholder
+          NEXT_PUBLIC_LEGAL_OPERATOR_TAX_ID: "000000000000"
+          NEXT_PUBLIC_LEGAL_OPERATOR_OGRN: "000000000000000"
+          NEXT_PUBLIC_LEGAL_OPERATOR_REG_AUTHORITY: ci-placeholder
+          NEXT_PUBLIC_LEGAL_OPERATOR_CLAIMS_ADDRESS: ci-placeholder
+          NEXT_PUBLIC_PUBLIC_CONTACT_EMAIL: ci@example.invalid
+          NEXT_PUBLIC_LEGAL_BANK_ACCOUNT: "00000000000000000000"
+          NEXT_PUBLIC_LEGAL_BANK_NAME: ci-placeholder
+          NEXT_PUBLIC_LEGAL_BANK_BIK: "000000000"
+          NEXT_PUBLIC_LEGAL_BANK_CORR_ACCOUNT: "00000000000000000000"
+          NEXT_PUBLIC_LEGAL_BANK_CITY: ci-placeholder
+
+      - name: Run Playwright product-flow suite
+        run: npx playwright test --config=playwright.config.ts
+        env:
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:3100
+          PLAYWRIGHT_PORT: "3100"
+          # Same placeholder env so the spawned `next start` survives
+          # legal-env validators.
+          NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3100
+          NEXT_PUBLIC_LEGAL_OPERATOR_NAME: ci-placeholder
+          NEXT_PUBLIC_LEGAL_OPERATOR_DISPLAY: ci-placeholder
+          NEXT_PUBLIC_LEGAL_OPERATOR_TAX_ID: "000000000000"
+          NEXT_PUBLIC_LEGAL_OPERATOR_OGRN: "000000000000000"
+          NEXT_PUBLIC_LEGAL_OPERATOR_REG_AUTHORITY: ci-placeholder
+          NEXT_PUBLIC_LEGAL_OPERATOR_CLAIMS_ADDRESS: ci-placeholder
+          NEXT_PUBLIC_PUBLIC_CONTACT_EMAIL: ci@example.invalid
+          NEXT_PUBLIC_LEGAL_BANK_ACCOUNT: "00000000000000000000"
+          NEXT_PUBLIC_LEGAL_BANK_NAME: ci-placeholder
+          NEXT_PUBLIC_LEGAL_BANK_BIK: "000000000"
+          NEXT_PUBLIC_LEGAL_BANK_CORR_ACCOUNT: "00000000000000000000"
+          NEXT_PUBLIC_LEGAL_BANK_CITY: ci-placeholder
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
