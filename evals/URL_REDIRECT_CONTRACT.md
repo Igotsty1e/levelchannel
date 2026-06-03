@@ -51,7 +51,7 @@ it here first.
 | `/cabinet/book` | redirect → `/login` | render | redirect (inherited) | redirect → `/admin` | render |
 | `/cabinet/packages` | redirect → `/login` | render | redirect (inherited) | redirect → `/admin` | render |
 | `/cabinet/profile` | redirect → `/login` | render | redirect (inherited) | redirect → `/admin` | render |
-| `/cabinet/settings/calendar` | redirect → `/login` | render | **redirect → `/teacher`** (see R-AMBIG-1) | redirect → `/admin` | render |
+| `/cabinet/settings/calendar` | redirect → `/login` | render | redirect → `/teacher/settings/calendar` | redirect → `/admin` | render |
 
 **Source of truth:** `app/cabinet/page.tsx` (SSR redirect chain) +
 `app/cabinet/settings/calendar/page.tsx` (per-page SSR redirect chain).
@@ -108,27 +108,22 @@ it here first.
   them out spuriously), `/admin/login` (would suggest non-admins can become
   admin).
 
-## Ambiguity notes — owner decision required
+## Ambiguity notes — resolved
 
-### `R-AMBIG-1` — teacher-only on `/cabinet/settings/calendar`
+### `R-AMBIG-1` — teacher-only on `/cabinet/settings/calendar` — **RESOLVED 2026-06-03**
 
-**Where:** `app/cabinet/settings/calendar/page.tsx` lines 64-69 currently redirect
-teacher-only role to `/teacher`, not `/teacher/settings/calendar`.
+Decision: redirect target changed from `/teacher` to `/teacher/settings/calendar`.
 
-**Question:** Should the redirect target be `/teacher` (current behavior — teacher
-goes to dashboard root) or `/teacher/settings/calendar` (analogous surface — teacher
-goes to their calendar settings, which is what they presumably wanted)?
+Rationale: the user navigated to a calendar-settings URL; routing them to the
+analogous teacher-side surface (rather than the teacher dashboard root) preserves
+their intent and keeps the role-scope invariant intact.
 
-**Default:** leave current. Tests assert current behavior (redirect to `/teacher`).
-Changing the redirect target would require:
+Files affected:
+- `app/cabinet/settings/calendar/page.tsx` — redirect target updated.
+- `evals/URL_REDIRECT_CONTRACT.md` Table 2 — row aligned.
+- `evals/PRODUCT_FLOWS.md` FLOW-CABINET-CALENDAR-SETTINGS-001 — notes updated.
 
-1. Owner sign-off on the new contract.
-2. Update this section.
-3. Update FLOW-CABINET-CALENDAR-SETTINGS-001 in PRODUCT_FLOWS.md.
-4. Update the test.
-
-Not a security regression either way — both targets are inside the teacher's role
-scope.
+Not a security regression — both targets are inside the teacher's role scope.
 
 ## Source-of-truth files
 
