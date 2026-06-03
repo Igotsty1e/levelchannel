@@ -97,6 +97,31 @@ if [ ! -f .next/BUILD_ID ]; then
   exit 1
 fi
 
+# Resolve the absolute node binary path. `systemd-run` ignores the
+# calling shell's PATH (it uses the systemd default
+# `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`),
+# so `/usr/bin/env node` from the next CLI's shebang would resolve
+# to whatever `/usr/bin/node` ships on the host instead of the
+# actions/setup-node-pinned version. We bypass the shebang by
+# calling `$NODE_BIN $NEXT_ENTRY start ...` directly. NEXT_ENTRY
+# is the actual Next.js CLI module under node_modules/next/dist/bin/
+# (the `node_modules/.bin/next` symlink chain causes
+# MODULE_NOT_FOUND on Node 22 when invoked as the entry script
+# under systemd-run; verified 2026-06-03 on ubuntu-24.04).
+NODE_BIN="$(command -v node 2>/dev/null || true)"
+if [ -z "$NODE_BIN" ]; then
+  echo "FAIL  node not found in PATH" >&2
+  exit 1
+fi
+
+NEXT_ENTRY="$REPO_ROOT/node_modules/next/dist/bin/next"
+if [ ! -f "$NEXT_ENTRY" ]; then
+  echo "FAIL  next entry not found at $NEXT_ENTRY" >&2
+  exit 1
+fi
+echo "[smoke-boot] using node at: $NODE_BIN ($($NODE_BIN --version))"
+echo "[smoke-boot] using next entry: $NEXT_ENTRY"
+
 # Extract hardening directives. Only known-good keys are forwarded
 # to systemd-run; ExecStart / User / EnvironmentFile / Type live
 # elsewhere in the file and we set our own.
@@ -148,8 +173,6 @@ done < <(
 echo "[smoke-boot] applying ${#PROPS[@]} hardening properties from $UNIT_FILE"
 printf '  %s\n' "${PROPS[@]}"
 
-NEXT_BIN="$REPO_ROOT/node_modules/.bin/next"
-
 cleanup() {
   $SUDO systemctl stop "$TRANSIENT_UNIT.service" 2>/dev/null || true
   # If the unit failed it stays "failed" until reset.
@@ -162,7 +185,7 @@ trap cleanup EXIT
 # default filesystem permissions apply and /home/runner/work + CWD
 # stay writable for Next's runtime cache.
 
-echo "[smoke-boot] booting $NEXT_BIN start --port $PORT under transient unit $TRANSIENT_UNIT"
+echo "[smoke-boot] booting $NODE_BIN $NEXT_ENTRY start --port $PORT under transient unit $TRANSIENT_UNIT"
 
 SETENV_FLAGS=(
   --setenv=NODE_ENV=production
@@ -189,7 +212,7 @@ if ! $SUDO systemd-run \
     --collect \
     "${SETENV_FLAGS[@]}" \
     "${PROPS[@]}" \
-    -- "$NEXT_BIN" start --port "$PORT" >/tmp/smoke-boot-launch.log 2>&1; then
+    -- "$NODE_BIN" "$NEXT_ENTRY" start --port "$PORT" >/tmp/smoke-boot-launch.log 2>&1; then
   echo "FAIL  systemd-run could not start transient unit" >&2
   cat /tmp/smoke-boot-launch.log >&2
   exit 1
