@@ -1,0 +1,46 @@
+# Staging autodeploy — pulls `staging` branch from origin, rebuilds, restarts.
+#
+# Twin of the prod `levelchannel-autodeploy.service` (private runbook),
+# but follows the `staging` branch instead of `main`. The branch is
+# auto-promoted from main by `.github/workflows/staging-promote.yml`
+# after post-deploy smoke confirms prod healthy on the new SHA. So
+# staging lags prod by ~5-10 min — intentional, lets us hold staging
+# at a known-good state for e2e replay.
+#
+# Operator install:
+#   cp ops/staging/systemd/levelchannel-staging-autodeploy.service \
+#      ops/staging/systemd/levelchannel-staging-autodeploy.timer \
+#      /etc/systemd/system/
+#   systemctl daemon-reload
+#   systemctl enable --now levelchannel-staging-autodeploy.timer
+
+[Unit]
+Description=LevelChannel — staging autodeploy (pull staging branch + build + restart)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=levelchannel-staging
+Group=levelchannel-staging
+WorkingDirectory=/srv/levelchannel-staging
+EnvironmentFile=/etc/levelchannel-staging/env
+Environment="NODE_ENV=production"
+Environment="LC_ENV=staging"
+ExecStart=/srv/levelchannel-staging/ops/staging/scripts/autodeploy-staging.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=levelchannel-staging-autodeploy
+
+# --- Hardening (mirrors prod autodeploy) ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/levelchannel-staging /var/log/levelchannel-staging /var/lib/levelchannel-staging /tmp
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallFilter=pkey_alloc pkey_mprotect pkey_free

@@ -56,6 +56,30 @@ Public repository readers should use:
   `scripts/lib/telegram-alerts.mjs` — restart the app after changing.
   Added by BCS-DEF-4-TG-PROXY (2026-05-21).
 
+## Staging environment
+
+Staging at `staging.levelchannel.ru` is a single shared instance tracking the
+`staging` branch (auto-promoted from `main` after prod post-deploy-smoke).
+Lives on the same VPS as prod (separate port 3001 + user `levelchannel-staging`
++ DB `levelchannel_staging` + CloudPayments TEST-mode site keys). Activation
+runbook + ops cadence + troubleshooting → [`docs/staging-setup.md`](docs/staging-setup.md).
+
+Scaffold lives at:
+
+- `ops/staging/systemd/` — service + autodeploy + timer units
+- `ops/staging/scripts/autodeploy-staging.sh` — staging deploy driver
+- `ops/staging/nginx/staging.conf` — vhost
+- `ops/staging/env-template` — env file template (fill placeholders, copy to `/etc/levelchannel-staging/env` on VPS)
+
+Operator-tunable knobs specific to staging:
+
+- `LC_ENV` (auto-set by systemd unit to `staging`) — surfaces via
+  `/api/health.environment`. Used by the `staging-uptime.yml` probe to
+  guard against nginx misroute.
+- `NEXT_PUBLIC_STAGING_BANNER` — when `1`, future versions of the UI
+  can render a top banner so QA can't confuse staging with prod.
+  Currently informational; no UI consumer yet.
+
 ## Maintenance rule
 
 Do not reintroduce production hostnames, server IPs, private SSH commands,

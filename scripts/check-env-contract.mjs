@@ -148,6 +148,13 @@ const KNOWN_DYNAMIC_USAGE = new Set([
   // Build-time only — Sentry plugin in next.config.js consumes this
   // from process env directly; not referenced in source.
   'SENTRY_AUTH_TOKEN',
+  // Staging-only env vars surfaced in .env.example for operator
+  // discoverability. NEXT_PUBLIC_LC_ENV / NEXT_PUBLIC_STAGING_BANNER
+  // have no UI consumer yet — they're documented now so future PRs
+  // adding a "this is staging" banner can wire them without an
+  // env-contract drift round-trip.
+  'NEXT_PUBLIC_LC_ENV',
+  'NEXT_PUBLIC_STAGING_BANNER',
 ])
 
 function scanFile(path) {

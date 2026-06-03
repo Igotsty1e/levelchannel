@@ -132,9 +132,18 @@ export async function GET(request: Request) {
   const ok = Object.values(checks).every((value) => value !== 'fail')
   const privileged = isPrivilegedHealthRequest(request)
 
+  // LC_ENV exposes the deployment tier (prod | staging | dev) without
+  // leaking implementation details to anonymous probes. Used by staging
+  // smoke probes and the GitHub Actions promote workflow to confirm the
+  // request actually hit the intended environment (catches DNS / nginx
+  // routing drift). Defaults to 'prod' for backward compat — every
+  // existing prod uptime probe stays valid.
+  const environment = process.env.LC_ENV?.trim() || 'prod'
+
   const body = privileged
     ? {
         status: ok ? 'ok' : 'degraded',
+        environment,
         provider: paymentConfig.provider,
         storage: paymentConfig.storageBackend,
         version: readDeployedVersion(),
@@ -142,6 +151,7 @@ export async function GET(request: Request) {
       }
     : {
         status: ok ? 'ok' : 'degraded',
+        environment,
         version: readDeployedVersion(),
       }
 

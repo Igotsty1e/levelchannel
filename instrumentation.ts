@@ -24,7 +24,11 @@ export async function register() {
       // Don't ship secrets in breadcrumbs. The default integrations
       // already redact common auth headers; this stays the safer side.
       sendDefaultPii: false,
-      environment: process.env.NODE_ENV,
+      // Sentry environment tag — drives separate dashboards per env.
+      // LC_ENV takes precedence so staging and prod (both NODE_ENV=
+      // production at runtime) report distinctly. Falls back to
+      // NODE_ENV for local dev where LC_ENV is unset.
+      environment: process.env.LC_ENV?.trim() || process.env.NODE_ENV,
       release: process.env.GIT_SHA || undefined,
     })
     _captureRequestError = sentry.captureRequestError
@@ -34,7 +38,11 @@ export async function register() {
       dsn: process.env.SENTRY_DSN,
       tracesSampleRate: 0.1,
       sendDefaultPii: false,
-      environment: process.env.NODE_ENV,
+      // Sentry environment tag — drives separate dashboards per env.
+      // LC_ENV takes precedence so staging and prod (both NODE_ENV=
+      // production at runtime) report distinctly. Falls back to
+      // NODE_ENV for local dev where LC_ENV is unset.
+      environment: process.env.LC_ENV?.trim() || process.env.NODE_ENV,
       release: process.env.GIT_SHA || undefined,
     })
     _captureRequestError = sentry.captureRequestError

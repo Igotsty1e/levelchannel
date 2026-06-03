@@ -12,7 +12,10 @@ Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
   tracesSampleRate: 0.1,
   sendDefaultPii: false,
-  environment: process.env.NODE_ENV,
+  // Browser-side env tag — NEXT_PUBLIC_LC_ENV inlined at build time.
+  // Same precedence rule as instrumentation.ts: LC_ENV wins for the
+  // staging/prod split; NODE_ENV is the local-dev fallback.
+  environment: process.env.NEXT_PUBLIC_LC_ENV || process.env.NODE_ENV,
   release: process.env.NEXT_PUBLIC_GIT_SHA || undefined,
   // No replay integration — privacy concern (we serve checkout) and
   // it doubles the SDK weight. Easy to turn on later if needed.

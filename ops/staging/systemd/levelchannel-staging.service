@@ -1,0 +1,73 @@
+# LevelChannel — staging instance.
+#
+# Twin of the production `levelchannel.service` (lives in the private
+# runbook) but with:
+#   - distinct port (3001 vs prod 3000)
+#   - distinct env file (/etc/levelchannel-staging/env)
+#   - distinct work-dir (/srv/levelchannel-staging vs prod /srv/levelchannel)
+#   - distinct user (`levelchannel-staging` vs prod `levelchannel`)
+#   - distinct journald tag
+#
+# Same hardening posture as prod (SystemCallFilter, ProtectSystem, etc.)
+# so seccomp regression tests cover both. See
+# `scripts/seccomp-regression-check.sh`.
+#
+# Operator install:
+#   cp ops/staging/systemd/levelchannel-staging.service \
+#      /etc/systemd/system/
+#   systemctl daemon-reload
+#   systemctl enable --now levelchannel-staging.service
+#
+# Full activation runbook: docs/staging-setup.md
+
+[Unit]
+Description=LevelChannel Next.js — staging
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=levelchannel-staging
+Group=levelchannel-staging
+WorkingDirectory=/srv/levelchannel-staging
+EnvironmentFile=/etc/levelchannel-staging/env
+Environment="NODE_ENV=production"
+Environment="LC_ENV=staging"
+Environment="PORT=3001"
+# Path is relative to WorkingDirectory (/srv/levelchannel-staging).
+# Resolves to /srv/levelchannel-staging/node_modules/.bin/next at
+# runtime — installed by `npm ci` during autodeploy.
+ExecStart=/srv/levelchannel-staging/node_modules/.bin/next start --port 3001
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=levelchannel-staging
+
+# --- Hardening (mirrors prod) ---
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+# Explicit pkey_* allowlist for Node + V8 + glibc parity with prod
+# (Wave 8 #6 sandboxing incident). seccomp-regression-check.sh
+# enforces this list per-unit.
+SystemCallFilter=pkey_alloc pkey_mprotect pkey_free
+ReadWritePaths=/srv/levelchannel-staging /var/log/levelchannel-staging
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target
