@@ -1,6 +1,6 @@
 # BCS-DEF-1-FANOUT — teacher fan-out follow-up to the operator-only MVP
 
-**Status:** DRAFT 2026-05-18; **plan-paranoia round 1 BLOCK on 2026-06-04** — 6 substantive BLOCKERs + 1 WARN recorded below (§0a). Closures pending; do NOT proceed to implementation until round-2+ SIGN-OFF achieved.
+**Status:** SIGN-OFF round 6/3 (off-protocol cap extension; codex returned 0 BLOCKER + 0 WARN + 4 INFO confirmations on 2026-06-05). Path: r1 6B+1W (§0a) → r2 3B+1W+1I (§0b) → r3 2B+2W+1I (§0c+§0d) → r4 2B+1W+1I (§0e) → r4-recheck 2B+1W+1I (§0f) → r5 1B+1W (§0g) → **r6 SIGN-OFF**. Implementation epic unblocked — estimated 600-800 LOC: migration 0104 (probe_runs.alert_audience) + scripts/conflict-unresolved-alert.mjs extensions (unbounded teacher-grouped query, state-file v2 additive shape, GC, atomic-rename writer, cap-drain rotation, alertAudience-aware recordProbeRun) + lib/admin/probe-status.ts + admin alerts page extension + tests + runbook env-pinning.
 **Wave name:** `bcs-def-1-fanout` (one-PR epic — see §5).
 **Trigger:** Backlog item BCS-DEF-1 originally scoped operator + per-teacher
 notification. The operator-only MVP shipped 2026-05-19 (RFC #316, commit
