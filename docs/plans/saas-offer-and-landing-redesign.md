@@ -1,6 +1,6 @@
 # SaaS оферта + Tier-1 landing redesign (2026-05-30 — owner-requested)
 
-**Status:** DRAFT — plan-paranoia rounds 1-7 closed; **round 8 BLOCK on 2026-06-04 with 6 BLOCKERs + 1 WARN (see §0ab)**. 6 BLOCKERs + 4 WARNs (r1) → 3 BLOCKERs + 5 WARNs (r2) → 5 BLOCKERs + 3 WARNs (r3) → 5 BLOCKERs + 2 WARNs (r4) → 3 BLOCKERs + 2 WARNs + 1 INFO (r5) → 2 BLOCKERs + 1 WARN (r6) → 1 BLOCKER + 2 WARNs + 1 INFO (r7) → 6 BLOCKERs + 1 WARN (r8 — NOT yet closed). Rounds 1-7 closures applied inline; round-8 findings recorded but closures deferred. All running off-protocol per saas-pivot 32-round precedent.
+**Status:** SIGN-OFF round 12/3 (off-protocol cap extension per saas-pivot 32-round precedent; codex returned 0 BLOCKER + 0 WARN + 4 INFO confirmations). Path: r1 6B+4W → r2 3B+5W → r3 5B+3W → r4 5B+2W → r5 3B+2W+1I → r6 2B+1W → r7 1B+2W+1I → r8 6B+1W (§0ac) → r9 3B+2W (§0ad) → r10 6B+1I (§0af; §0ae escalation superseded) → r11 2B+2W (§0ag) → **r12 SIGN-OFF (4 INFO only)**. Ready for Sub-A.2 + Sub-A.3 + Sub-A.5 + Epic B implementation epics.
 **Author:** Claude (orchestrator-mode).
 **Owner context:** chat 2026-05-30. После SaaS-pivot Epic 8 + Codex restore of `/` (Анастасия 1:1 lessons) and `/saas` (teacher SaaS landing). Owner: текущий `/saas` "выглядит как говно" → Tier-1 редизайн. Отдельная задача: новая **SaaS оферта** (отличная от English-lessons оферты на `/offer`), покрывающая Free/Mid/Pro/Operator-managed тарифы + recurrent subscription + ПД-operator-роль.
 
