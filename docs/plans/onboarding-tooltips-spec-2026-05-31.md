@@ -1,6 +1,6 @@
 ---
 title: Onboarding tooltips — spec
-status: PLANNING (round-3 BLOCK 2026-06-04 — 6 BLOCKER + 2 WARN + 1 INFO; closures pending; see onboarding-flows §0c)
+status: PLANNING — round-6 BLOCK 2026-06-04 (1 BLOCKER on cross-file scope drift); §0c–§0f closures live in flows file; §0g pending in this file. See onboarding-flows-2026-05-31.md §0c through §0f for the authoritative contract.
 date: 2026-05-31
 ---
 
@@ -13,7 +13,15 @@ slot'а, persistence schema, recovery surfaces, mobile/a11y considerations.
 
 ---
 
-> **§0e/§0f UPDATE 2026-06-04 (supersedes §1 ID/key contract below):** wire/storage key is **snake_case `hintKey`** matching `lib/onboarding/keys.ts ONBOARDING_HINT_KEYS`. The kebab-case "ID" field below is a HUMAN-READABLE LABEL ONLY — not the wire value, not the JSONB key. Mapping (kebab-case ID → snake_case persistence key) lives in `lib/onboarding/keys.ts`. Reset route + admin CLI move to Sub-PR D (nice-to-have); Sub-PR A scope = dismiss API + cabinet redirect fix + per-account purge + tests (see flows §0f).
+> **§0e/§0f/§0g UPDATE 2026-06-04 — SUPERSEDES §1, §2.3, §3.4, §4.1 below.** Authoritative contract lives in `onboarding-flows-2026-05-31.md §0e + §0f`. Highlights that supersede the body of THIS file:
+>
+> - **Wire/storage key:** snake_case `hintKey` matching `lib/onboarding/keys.ts ONBOARDING_HINT_KEYS`. Kebab-case "ID" in §1 is a HUMAN-READABLE LABEL ONLY — not the wire value, not the JSONB key. There is NO ID→key mapping module; mapping is one-to-one and lives in the per-hint table of §1 (column "Persistence key").
+> - **Foundation already SHIPPED in main:** `lib/onboarding/state.ts`, `lib/onboarding/keys.ts`, `auth.onboarding.reset` audit event, `migrations/0100_account_onboarding_state.sql`. §2.3 wording "new, Sub-PR A" is HISTORICAL DRAFT — these files already exist.
+> - **Sub-PR A scope (canonical, from flows §0f):** `POST /api/onboarding/dismiss-hint` route + `app/cabinet/page.tsx` redirect fix (teacher-only `/cabinet` → `/teacher` only when `emailVerifiedAt IS NOT NULL`) + `account_onboarding_state` purge INSIDE `purgeAccounts()` per-account TX after deletion-guard pass + integration tests (8 cases) + `evals/URL_REDIRECT_CONTRACT.md` + `evals/PRODUCT_FLOWS.md` updates.
+> - **Sub-PR D scope (DEFERRED, was incorrectly in Sub-PR A):** `POST /api/onboarding-state/reset` route, `scripts/onboarding-reset.ts` CLI. §3.4 + §4.1 listings of these in Sub-PR A are STALE.
+> - **CT1 (verify-email banner):** mount on `/cabinet` (NOT `/teacher/*`); hint key choice deferred to Sub-PR C (NOT Sub-PR A). §4.1 listing "CT1 ... on /teacher/*" is STALE.
+>
+> The body sections §1–§6 below remain for context but the bullet list above wins on every contradiction.
 
 ## §1 Tooltip catalog
 

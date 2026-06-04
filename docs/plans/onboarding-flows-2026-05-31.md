@@ -805,3 +805,40 @@ The cabinet redirect change in §0e/§0f Closure for BLOCKER #2 amends the redir
 ---
 
 **Status after §0f applied + tooltip-spec banner edit:** all round-5 findings closed. §0f says explicitly that closures are CONTRACTS for Sub-PR A, not live-code changes. Round-6 codex verifies coherence.
+
+---
+
+## §0g — Round-6 closures (2026-06-04)
+
+Round 6 returned BLOCK with 1 BLOCKER + 2 WARNs + 1 INFO. The BLOCKER was cross-file scope drift — tooltip-spec body still listed reset+CLI+CT1-on-/teacher in Sub-PR A and treated `lib/onboarding/state.ts` as new work, even though the §0e/§0f banner at the top of §1 declared otherwise.
+
+### Closure for BLOCKER (cross-file scope drift)
+
+**Action taken in this commit:** rewrote the §0e/§0f banner at the top of tooltip-spec §1 to an explicit SUPERSESSION block that enumerates every body section it overrides (§1, §2.3, §3.4, §4.1). Each stale claim is named verbatim with the new authoritative contract:
+- wire key is snake_case `hintKey`, not kebab-case ID.
+- foundation files already shipped in main (§2.3 "new, Sub-PR A" is historical draft).
+- Sub-PR A scope: dismiss API + redirect fix + purge + tests + evals updates.
+- Sub-PR D scope: reset route + CLI (§3.4/§4.1 listings stale).
+- CT1 mount: `/cabinet`, not `/teacher/*`; key choice in Sub-PR C.
+
+Body sections remain readable as historical drafting, but the banner wins on every contradiction. Any future implementer who reads the file starts at the banner and the §0e/§0f/§0g contract in flows.
+
+### Closure for WARN #2 (banner overstated "mapping lives in keys.ts")
+
+The previous §0e/§0f banner said "mapping kebab-case ID → snake_case persistence key lives in `lib/onboarding/keys.ts`". That was inaccurate — `lib/onboarding/keys.ts` exports `ONBOARDING_HINT_KEYS`, `OnboardingHintKey`, `isOnboardingHintKey`. There is no ID→key mapping module.
+
+**Fix:** the rewritten banner now says: "mapping is one-to-one and lives in the per-hint table of §1 (column `Persistence key`)". Each tooltip-spec §1.x entry pairs the kebab-case human label with the canonical `ONBOARDING_HINT_KEYS` value.
+
+### Closure for WARN #3 (tooltip-spec frontmatter stale)
+
+`onboarding-tooltips-spec-2026-05-31.md:3` previously said `round-3 BLOCK ... closures pending`. After §0e–§0g closures recorded in this flows file, that frontmatter no longer reflects the current state.
+
+**Fix taken in this commit:** frontmatter now says `PLANNING — round-6 BLOCK 2026-06-04 (1 BLOCKER on cross-file scope drift); §0c–§0f closures live in flows file; §0g pending in this file`. Round-7 codex confirmation flips this to `SIGN-OFF` if accepted.
+
+### Closure (INFO #4) — field + helper anchors
+
+No change; the §0f field name + helper export fixes are confirmed correct.
+
+---
+
+**Status after §0g + tooltip-spec banner rewrite:** all round-6 findings closed. Cross-file consistency is enforced via an explicit supersession banner that enumerates every stale section by line. Round-7 codex verifies.
