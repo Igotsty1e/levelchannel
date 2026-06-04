@@ -42,6 +42,14 @@ export default function RegisterPage() {
     versionLabel: string
     isPlaceholder: boolean
   } | null>(null)
+  // §0af Closure for BLOCKER #4 (Sub-A.3 two-document TOCTOU): pin
+  // BOTH the saas_offer AND saas_processor_terms version IDs at form
+  // render so the server can reject if either drifts before submit.
+  const [saasProcessorTermsVersion, setSaasProcessorTermsVersion] = useState<{
+    id: string
+    versionLabel: string
+    isPlaceholder: boolean
+  } | null>(null)
   // A1.1 round-1 WARN#3 closure — loading-флаг блокирует submit ДО
   // получения /api/legal/current response. Без него teacher мог успеть
   // нажать «Создать» до окончания fetch и получить server-side 503/400.
@@ -58,11 +66,18 @@ export default function RegisterPage() {
     }
     let cancelled = false
     setSaasOfferLoading(true)
-    fetch('/api/legal/current?kind=saas_offer')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((v) => {
+    Promise.all([
+      fetch('/api/legal/current?kind=saas_offer').then((r) =>
+        r.ok ? r.json() : null,
+      ),
+      fetch('/api/legal/current?kind=saas_processor_terms').then((r) =>
+        r.ok ? r.json() : null,
+      ),
+    ])
+      .then(([offer, terms]) => {
         if (cancelled) return
-        if (v) setSaasOfferVersion(v)
+        if (offer) setSaasOfferVersion(offer)
+        if (terms) setSaasProcessorTermsVersion(terms)
         setSaasOfferLoading(false)
       })
       .catch(() => {
@@ -97,10 +112,11 @@ export default function RegisterPage() {
       personalDataConsentAccepted: true,
       role: inviteToken ? 'student' : role,
       ...(inviteToken ? { inviteToken } : {}),
-      ...(isTeacherSelfReg && saasOfferVersion
+      ...(isTeacherSelfReg && saasOfferVersion && saasProcessorTermsVersion
         ? {
             saasOfferConsentAccepted: saasOfferAgreed,
             saasOfferConsentVersionId: saasOfferVersion.id,
+            saasProcessorTermsConsentVersionId: saasProcessorTermsVersion.id,
           }
         : {}),
     })
@@ -114,14 +130,20 @@ export default function RegisterPage() {
       setError(
         'Условия SaaS-оферты обновились. Перечитайте новую версию и подтвердите ещё раз.',
       )
-      fetch('/api/legal/current?kind=saas_offer')
-        .then((r) => (r.ok ? r.json() : null))
-        .then((v) => {
-          if (v) {
-            setSaasOfferVersion(v)
-            setSaasOfferAgreed(false)
-          }
-        })
+      Promise.all([
+        fetch('/api/legal/current?kind=saas_offer').then((r) =>
+          r.ok ? r.json() : null,
+        ),
+        fetch('/api/legal/current?kind=saas_processor_terms').then((r) =>
+          r.ok ? r.json() : null,
+        ),
+      ]).then(([offer, terms]) => {
+        if (offer) {
+          setSaasOfferVersion(offer)
+          setSaasOfferAgreed(false)
+        }
+        if (terms) setSaasProcessorTermsVersion(terms)
+      })
         .catch(() => {})
       setSubmitting(false)
       return
