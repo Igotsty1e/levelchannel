@@ -5,7 +5,9 @@ import { recordAuthAuditEvent } from '@/lib/audit/auth-events'
 import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import {
   createInviteForTeacher,
+  isValidInviteDefaultPaymentMethod,
   listInvitesForTeacher,
+  type InviteDefaultPaymentMethod,
 } from '@/lib/auth/teacher-invites'
 import { enforceAccountRateLimit } from '@/lib/security/account-rate-limit'
 import {
@@ -49,7 +51,55 @@ export async function POST(request: Request) {
   )
   if (rl) return rl
 
-  const invite = await createInviteForTeacher(teacherAccountId)
+  // Per-learner-payment-method §Scope item 6 — teacher may seed a
+  // default payment method for the (teacher, learner) pair when the
+  // invite is redeemed. Body is optional; missing / empty / null
+  // defaults to 'none' (legacy behaviour — booking blocked until the
+  // teacher picks a method on the learner card). An explicit value
+  // outside the allow-list ('postpaid' | 'prepaid_packages' | 'none')
+  // is rejected with 422 so the client surfaces a validation error
+  // rather than silently falling back to 'none' (which would be a
+  // foot-gun if the client misspelled an enum constant).
+  // Distinguish "empty body" (legacy client / no body at all) from
+  // "body present but malformed JSON". Empty body → defaults to
+  // 'none'. Malformed JSON → 422 fail-closed (codex-paranoia wave
+  // round-2 WARN #2 closure: silent fallback would let a misspelled
+  // enum-carrying body slip through and create the wrong invite).
+  let defaultPaymentMethod: InviteDefaultPaymentMethod = 'none'
+  const rawText = await request.text()
+  if (rawText.trim().length > 0) {
+    let body: unknown
+    try {
+      body = JSON.parse(rawText)
+    } catch {
+      return NextResponse.json(
+        {
+          error: 'invalid_json',
+          valid: ['postpaid', 'prepaid_packages', 'none'],
+        },
+        { status: 422, headers: NO_STORE },
+      )
+    }
+    if (body && typeof body === 'object') {
+      const raw = (body as { defaultPaymentMethod?: unknown }).defaultPaymentMethod
+      if (raw !== undefined && raw !== null && raw !== '') {
+        if (!isValidInviteDefaultPaymentMethod(raw)) {
+          return NextResponse.json(
+            {
+              error: 'invalid_default_payment_method',
+              valid: ['postpaid', 'prepaid_packages', 'none'],
+            },
+            { status: 422, headers: NO_STORE },
+          )
+        }
+        defaultPaymentMethod = raw
+      }
+    }
+  }
+
+  const invite = await createInviteForTeacher(teacherAccountId, {
+    defaultPaymentMethod,
+  })
   await recordAuthAuditEvent({
     eventType: 'auth.invite.created',
     accountId: teacherAccountId,
@@ -59,6 +109,7 @@ export async function POST(request: Request) {
     payload: {
       inviteId: invite.id,
       expiresAt: invite.expiresAt.toISOString(),
+      defaultPaymentMethod: invite.defaultPaymentMethod,
     },
   })
   return NextResponse.json(
@@ -67,6 +118,7 @@ export async function POST(request: Request) {
       id: invite.id,
       url: invite.url,
       expiresAt: invite.expiresAt.toISOString(),
+      defaultPaymentMethod: invite.defaultPaymentMethod,
     },
     { status: 200, headers: NO_STORE },
   )

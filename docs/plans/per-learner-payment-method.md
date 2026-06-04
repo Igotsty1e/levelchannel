@@ -1,6 +1,6 @@
 ---
 title: Per-learner payment method (teacher's choice)
-status: ACTIVE — one-PR epic
+status: SHIPPED 2026-06-04 — gap-close PR pending; majority shipped earlier via PRs #493 (cabinet banner) + #495 (packages scoped to teacher) + Quality Sub-PR A mig 0103 (drop accounts.postpaid_allowed).
 date: 2026-06-01
 owner: claude-orchestrator
 codex_consult: 2026-06-01 (vote Option b over Option a)

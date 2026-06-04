@@ -29,7 +29,35 @@ type CreatedInvite = {
   id: string
   url: string
   expiresAt: string
+  defaultPaymentMethod?: 'postpaid' | 'prepaid_packages' | 'none'
 }
+
+type DefaultPaymentMethod = 'none' | 'postpaid' | 'prepaid_packages'
+
+// Per-learner-payment-method §Scope item 6 — invite-flow default
+// selector. Russian labels mirror the teacher learner-card selector
+// copy ("Постоплата" / "Предоплата пакетами" / "Не выбрано").
+const PAYMENT_METHOD_OPTIONS: ReadonlyArray<{
+  value: DefaultPaymentMethod
+  label: string
+  hint: string
+}> = [
+  {
+    value: 'none',
+    label: 'Не выбирать сейчас',
+    hint: 'Ученик не сможет записаться до того, как вы выберете способ оплаты на его карточке.',
+  },
+  {
+    value: 'postpaid',
+    label: 'Постоплата',
+    hint: 'Ученик записывается, оплата фиксируется как долг и закрывается отдельно.',
+  },
+  {
+    value: 'prepaid_packages',
+    label: 'Предоплата пакетами',
+    hint: 'Ученик сможет записаться, только купив пакет занятий у вас.',
+  },
+]
 
 function formatDate(iso: string): string {
   const d = new Date(iso)
@@ -60,6 +88,8 @@ export function TeacherInviteSection({ isVerified }: Props) {
   const [created, setCreated] = useState<Map<string, string>>(new Map())
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [defaultMethod, setDefaultMethod] =
+    useState<DefaultPaymentMethod>('none')
 
   useEffect(() => {
     if (!isVerified) return
@@ -81,7 +111,9 @@ export function TeacherInviteSection({ isVerified }: Props) {
     if (busy) return
     setBusy(true)
     setErr(null)
-    const result = await postAuthJson('/api/teacher/invites', {})
+    const result = await postAuthJson('/api/teacher/invites', {
+      defaultPaymentMethod: defaultMethod,
+    })
     setBusy(false)
     if (!result.ok) {
       setErr(result.error)
@@ -155,6 +187,52 @@ export function TeacherInviteSection({ isVerified }: Props) {
         отправьте ученику любым способом (мессенджер, e-mail, СМС). Ссылка
         действует 7 дней и подходит только для одного ученика.
       </p>
+      <div style={{ marginBottom: 16 }}>
+        <label
+          htmlFor="invite-default-payment-method"
+          style={{
+            display: 'block',
+            fontSize: 13,
+            fontWeight: 600,
+            marginBottom: 6,
+          }}
+        >
+          Способ оплаты по умолчанию
+        </label>
+        <select
+          id="invite-default-payment-method"
+          value={defaultMethod}
+          onChange={(e) =>
+            setDefaultMethod(e.target.value as DefaultPaymentMethod)
+          }
+          disabled={busy}
+          style={{
+            width: '100%',
+            padding: '8px 10px',
+            background: 'rgba(255,255,255,0.05)',
+            color: 'var(--text)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: 6,
+            fontSize: 14,
+          }}
+        >
+          {PAYMENT_METHOD_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <p
+          style={{
+            color: 'var(--secondary)',
+            fontSize: 12,
+            marginTop: 6,
+            lineHeight: 1.4,
+          }}
+        >
+          {PAYMENT_METHOD_OPTIONS.find((o) => o.value === defaultMethod)?.hint}
+        </p>
+      </div>
       <button
         type="button"
         onClick={onGenerate}
