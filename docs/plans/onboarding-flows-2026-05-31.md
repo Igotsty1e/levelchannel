@@ -1,6 +1,6 @@
 ---
 title: Onboarding flows — teacher + learner
-status: PLANNING (round-3 BLOCK 2026-06-04 — 6 BLOCKER + 2 WARN + 1 INFO; closures pending; see /tmp/codex-paranoia-20260604T060827Z-onboarding/round-3.md and §0c at end of file)
+status: SIGN-OFF round 7/3 (off-protocol; codex returned 0 BLOCKER + 2 WARN housekeeping closed inline + 1 INFO). Path r3 6B+2W+1I (§0c+§0d) → r4 3B+1W+1I (§0e) → r5 3B+2W+1I (§0f) → r6 1B+2W+1I (§0g) → r7 SIGN-OFF. Sub-PR A scope = dismiss API + cabinet redirect fix + per-account purge + 8 integration tests + evals/URL_REDIRECT_CONTRACT.md + evals/PRODUCT_FLOWS.md updates. Foundation files already shipped in main (lib/onboarding/state.ts, keys.ts, mig 0100).
 date: 2026-05-31
 owner: claude-orchestrator
 ---
