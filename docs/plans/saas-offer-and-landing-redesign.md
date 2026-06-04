@@ -1046,3 +1046,123 @@ The audit emit is part of the same route handler scope; if `recordConsent` succe
 ---
 
 **Status after §0ac applied:** round-8 BLOCKER findings each have a written closure. Round-9 codex run will verify: (a) closures don't contradict each other, (b) closures don't open new BLOCKERs, (c) all 6 BLOCKERs + 1 WARN are addressed.
+
+---
+
+## §0ad — Round-9 corrections (2026-06-04, supersede contradictions in §0ac)
+
+Round 9 surfaced 3 BLOCKERs + 2 WARNs that hit §0ac directly:
+- Closure #2 introduced an unbacked "two consent rows" claim that contradicts the live single-row + `combinedVersion` shape at `app/api/auth/register/route.ts:388`.
+- Closure #6 SQL referenced columns that do not exist (used `is_active` + `document_version_id` instead of `effective_from` + `legal_document_version_id`) per `migrations/0032_legal_document_versions.sql:28-60` and `lib/auth/consents.ts:47`. The BEGIN/COMMIT inside the helper also contradicted the "runs inside route's write TX" claim.
+- Closure #3 wrote new authoritative text but didn't mark older inline sections (lines 268, 277, 789) as superseded, so an implementer could still follow the stale one-doc path.
+
+This section is the authoritative corrigendum. Where §0ad contradicts §0ac, §0ad wins.
+
+### Corrigendum #1 — consent row shape stays SINGLE
+
+The live `/register` flow at `app/api/auth/register/route.ts:153,164,388` reads BOTH `saas_offer` and `saas_processor_terms` live versions (TOCTOU at lines 178-186 pins both), then writes ONE `account_consents` row with `documentKind='saas_offer'` and a string-encoded `combinedVersion = "saas_offer:${saasOfferLabel}+processor_terms:${processorTermsLabel}"`. This is the source of truth — NOT two rows.
+
+§0ac Closure #2 claim "two consent rows written transactionally (or neither)" is INCORRECT and is dropped. The actual contract is:
+
+- Live-version reads: BOTH `saas_offer` AND `saas_processor_terms` via `getCurrentLegalVersion()`.
+- TOCTOU pin: BOTH version IDs in the POST body, both compared to live.
+- Consent row: SINGLE row, `documentKind='saas_offer'`, `documentVersion = combinedVersion` string. Backward-compatible — no migration needed; no existing cohort invalidated.
+- The `/saas-offer-accept` interstitial currently only reads `saas_offer` (`app/api/teacher/saas-offer-accept/route.ts:70`); EXTEND to also read `saas_processor_terms`, compute the same `combinedVersion`, and write that string. This is a real gap covered by Closure #7 — and now also by this corrigendum.
+
+### Corrigendum #2 — gate helper uses correct schema + injected client
+
+§0ac Closure #6 SQL is rewritten to the actual schema and to take an injected client (no own TX management):
+
+```typescript
+// lib/auth/guards.ts (new helper; coexists with the SSR-side evaluateSaasOfferGate)
+export async function evaluateSaasOfferGateForMutation(
+  client: PoolClient,  // INJECTED — caller controls TX scope
+  accountId: string,
+): Promise<GateVerdict> {
+  // Caller has already done `BEGIN` + `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`
+  // (or stronger). Helper does ONE read and returns; no BEGIN/COMMIT here.
+  const res = await client.query<{
+    live_offer_label: string | null
+    consent_offer_version_id: string | null
+    live_terms_label: string | null
+    consent_terms_version_id: string | null
+  }>(
+    `select
+       (select version_label
+          from legal_document_versions
+         where doc_kind = 'saas_offer'
+         order by effective_from desc
+         limit 1) as live_offer_label,
+       (select legal_document_version_id
+          from account_consents
+         where account_id = $1::uuid
+           and document_kind = 'saas_offer'
+         order by accepted_at desc
+         limit 1) as consent_offer_version_id,
+       (select version_label
+          from legal_document_versions
+         where doc_kind = 'saas_processor_terms'
+         order by effective_from desc
+         limit 1) as live_terms_label,
+       (select legal_document_version_id
+          from account_consents
+         where account_id = $1::uuid
+           and document_kind = 'saas_processor_terms'
+         order by accepted_at desc
+         limit 1) as consent_terms_version_id`,
+    [accountId],
+  )
+  const row = res.rows[0]
+  if (row.live_offer_label === null || row.live_terms_label === null) {
+    return { verdict: 'awaiting_publication' }
+  }
+  if (row.consent_offer_version_id === null) {
+    // No consent row at all; we use a SINGLE consent row keyed on
+    // 'saas_offer' which carries `combinedVersion`; the
+    // saas_processor_terms entry in account_consents is the
+    // bundle's expansion path only if/when we split.
+    return { verdict: 'consent_required' }
+  }
+  // Resolve the consent row's documentVersion string and compare
+  // its embedded processor_terms label to the live one. The encoded
+  // shape is "saas_offer:<offer_label>+processor_terms:<terms_label>";
+  // mismatch on either segment → consent_required.
+  // Implementation in lib/legal/combined-version.ts (new helper).
+  // ...
+  return { verdict: 'ok' }
+}
+```
+
+Notes:
+- Caller (mutating `/api/teacher/**` route) starts its own write TX at `REPEATABLE READ`, calls this helper, and ABORTS the TX with `rollback` if the verdict is anything but `ok`. If `ok`, the route's writes happen in the same TX — publish-v2 that lands between gate-read and route-writes is invisible (snapshot-isolation gives a clean fail).
+- The current 2-read SSR helper (`lib/auth/guards.ts:383`) is NOT replaced; both helpers coexist.
+- New helper file `lib/legal/combined-version.ts` exports `parseCombinedVersion(combinedVersionString): { saasOfferLabel: string; processorTermsLabel: string } | null` plus `buildCombinedVersion(offerLabel, termsLabel): string` (matches the encoding at `app/api/auth/register/route.ts:388`).
+
+Regression test: integration case where publish-v2 of `saas_processor_terms` lands AFTER gate-read but BEFORE route-write on the same connection — gate verdict still `ok` (snapshot), route writes commit, NEXT request on the same account hits `consent_required` (fresh snapshot reads the new live label).
+
+### Corrigendum #3 — §0ac authority markers on older inline sections
+
+The older inline contracts at lines 268 (`saasOfferConsentVersionId` only) and 789 (Day-2 rollout publishing only `saas_offer`) are NOT manually rewritten here. Instead, this corrigendum declares: **any reader of this plan MUST treat §0ac + §0ad as the canonical contract for the gate, consent shape, and rollout. Older inline sections are historical drafting and DO NOT supersede §0ac/§0ad even when more specific.**
+
+Specifically: lines 262-299 (Sub-A.3/A.5 version-TOCTOU) and lines 780-805 (Day-2 rollout) keep their wording but their authority is downgraded to "draft notes — see §0ac + §0ad for the final contract." The implementer ships per §0ac + §0ad.
+
+### Corrigendum #4 — eval registries include /saas/processor-terms
+
+Round-9 WARN #4 closure: the evals additions in §0ac Closure #5 are extended to include the processor-terms route:
+
+- `evals/PRODUCT_FLOWS.md` — EXTEND: add `/saas-offer-accept`, `/saas-offer-awaiting`, `/admin/settings/saas-offer`, AND `/saas/processor-terms` (the second public doc).
+- `evals/URL_REDIRECT_CONTRACT.md` — EXTEND: same set; `/saas/processor-terms` is `200` for everyone (public).
+
+### Corrigendum #5 — Epic B Pricing card count
+
+Round-9 WARN #5 closure: §8 already cuts Operator-managed, but body sections at line 646 (4-card spec) and line 754 (4-card test) remain stale. Bring §8 into the implementation contract:
+
+- Line 646: pricing block renders 3 cards (`Free / Mid / Pro`), NOT 4.
+- Line 754: `tests/saas-pivot/landing.test.tsx` asserts 3 cards.
+- §8 (line 877) is canonical; older 4-card text is historical and overridden.
+
+(These changes don't need a separate edit pass — the implementer reads §8 + this corrigendum as authoritative; lines 646/754 are flagged here for the impl PR's review checklist.)
+
+---
+
+**Status after §0ad applied:** round-9 BLOCKER findings each have a written closure that cites the actual schema + the real consent-row shape. Round-10 codex run will verify: (a) §0ad doesn't open new BLOCKERs, (b) all 3 round-9 BLOCKERs + 2 WARNs are addressed, (c) the gate-helper contract is implementable as written.
