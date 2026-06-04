@@ -22,10 +22,12 @@ import { redirect } from 'next/navigation'
 
 import { TeacherInviteSection } from '@/app/cabinet/teacher-invite-section'
 import { TeacherLearnersSection } from '@/app/cabinet/teacher-learners-section'
+import { TeacherSetupChecklist } from '@/components/onboarding/teacher-setup-checklist'
 import { DigestPreviewTile } from '@/components/teacher/digest-preview-tile'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getDbPool } from '@/lib/db/pool'
 import { getTeacherDigestPreview } from '@/lib/notifications/teacher-digest-preview'
+import { computeTeacherSetupChecklist } from '@/lib/onboarding/teacher-setup-checklist'
 import { listLearnersForTeacher } from '@/lib/scheduling/teacher-learners'
 
 export const dynamic = 'force-dynamic'
@@ -120,11 +122,13 @@ export default async function TeacherHomePage() {
   const teacherAccountId = current.account.id
   const isVerified = Boolean(current.account.emailVerifiedAt)
 
-  const [upcomingSlots, allLearners, digestPreview] = await Promise.all([
-    listUpcomingSlotsForTeacher(teacherAccountId, 3),
-    listLearnersForTeacher(teacherAccountId),
-    getTeacherDigestPreview(teacherAccountId),
-  ])
+  const [upcomingSlots, allLearners, digestPreview, setupChecklist] =
+    await Promise.all([
+      listUpcomingSlotsForTeacher(teacherAccountId, 3),
+      listLearnersForTeacher(teacherAccountId),
+      getTeacherDigestPreview(teacherAccountId),
+      computeTeacherSetupChecklist(teacherAccountId),
+    ])
 
   // На главной показываем максимум 5 ближайших учеников; полный
   // список — на /teacher/learners.
@@ -135,6 +139,12 @@ export default async function TeacherHomePage() {
       <h1 style={{ fontSize: 26, fontWeight: 700, marginBottom: 24 }}>
         Кабинет
       </h1>
+
+      {/* Onboarding Sub-PR B1 — teacher setup checklist hint.
+          SSR-rendered when not all 4 setup items are done AND user
+          hasn't dismissed. Mount above «Ближайшие занятия» so it's
+          the first thing a fresh teacher sees. */}
+      <TeacherSetupChecklist state={setupChecklist} />
 
       {/* Блок 1: Ближайшие занятия */}
       <section
