@@ -609,3 +609,156 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
 
 — END OF DRAFT (plan-doc only; paranoia plan-mode is the next step) —
+
+---
+
+## §0b — Round-1 closures (2026-06-04, supersede contradictions in §1.x / §2.x / §3.x)
+
+Each round-1 finding gets a written closure. §0b is authoritative when older inline text contradicts.
+
+### Closure #1 (BLOCKER#1 — bounded operator slice)
+
+**Fact:** `readOffenderRows()` at `scripts/conflict-unresolved-alert.mjs:143-183` is globally `LIMIT $3` truncated to `CONFLICT_UNRESOLVED_REPORT_LIMIT` (default 50). Operator email uses this view; fan-out cannot reuse it without missing teachers past the cap.
+
+**Closure:** add a separate teacher-grouped query path. Reuse the existing unbounded tuple-read shape from `:214-242`:
+
+```js
+// scripts/conflict-unresolved-alert.mjs — NEW helper readAllOffendersForFanout()
+async function readAllOffendersForFanout(client, thresholdMinutes) {
+  // No LIMIT — full qualifying set, grouped client-side by teacher_account_id.
+  // Same WHERE/JOIN as readOffenderRows but no `LIMIT $3` clause.
+  // Returns flat rows; caller groups.
+  return client.query(/* ...full unbounded ...*/);
+}
+```
+
+Operator email keeps using the truncated view (`readOffenderRows`); fan-out uses `readAllOffendersForFanout`. Per-teacher fingerprint is computed over the unbounded set per teacher. The §1.2 "Offender query at :124-180 reused unchanged" claim is now WRONG — fan-out gets its own query. Updated test §3.1 must cover: 6th conflict for already-shown teacher → teacher fingerprint flips → fan-out re-emits even if operator view is unchanged.
+
+### Closure #2 (BLOCKER#2 — TEACHER_FANOUT_CAP starvation)
+
+**Closure:** define cap as soft-limit AFTER per-teacher dedup. Track `lastAttemptAt` per deferred teacher in state file. Rotate so no teacher waits more than `CONFLICT_UNRESOLVED_TEACHER_CAP_DRAIN_TICKS` (default 24, i.e. ~6 hours at 15-min ticks) before being attempted. Algorithm:
+
+```js
+// scripts/conflict-unresolved-alert.mjs (fan-out loop)
+const candidates = teachersWithNewFingerprint;  // post-dedup
+// Sort by oldest lastAttemptAt first (or never-attempted first).
+candidates.sort((a, b) => (a.lastAttemptAt ?? 0) - (b.lastAttemptAt ?? 0));
+// Force-include teachers whose lastAttemptAt > drain-window-ago, even if not in top-cap.
+const forced = candidates.filter(t => 
+  t.lastAttemptAt !== null && (now - t.lastAttemptAt) > DRAIN_WINDOW_MS
+);
+const remainingCap = CAP - forced.length;
+const recent = candidates.filter(t => !forced.includes(t)).slice(0, Math.max(0, remainingCap));
+const toSend = [...forced, ...recent];
+// All others get lastAttemptAt=null (or unchanged) and wait for next tick.
+```
+
+New operator settings:
+- `CONFLICT_UNRESOLVED_TEACHER_FANOUT_ENABLED` (already in §2.5) — master switch, default OFF.
+- `CONFLICT_UNRESOLVED_TEACHER_FANOUT_CAP` (already in §2.5) — soft per-tick cap, default 100.
+- `CONFLICT_UNRESOLVED_TEACHER_CAP_DRAIN_TICKS` (NEW) — across-tick drain window in ticks, default 24.
+
+§2.5 file list extends with the new key in `lib/admin/operator-settings.ts`.
+
+### Closure #3 (BLOCKER#3 — probe_runs.alert_audience for getProbeStatus)
+
+**Fact:** `lib/admin/probe-status.ts:99-109` picks latest `alert_sent` row regardless of audience. Filter by `recipient_email = ALERT_EMAIL_TO` is wrong because `recipient_email` is a historical snapshot per `migrations/0053_probe_runs.sql:71-73`.
+
+**Closure:** add `alert_audience` column to `probe_runs` via additive migration:
+
+**NEW migration:** `migrations/0104_probe_runs_alert_audience.sql`
+```sql
+-- Round-1 BLOCKER#3 closure for bcs-def-1-fanout.
+-- Distinguish operator email from per-teacher email rows in probe_runs.
+ALTER TABLE probe_runs
+  ADD COLUMN IF NOT EXISTS alert_audience text NULL
+  CHECK (alert_audience IS NULL OR alert_audience IN ('operator', 'teacher'));
+-- NULL is acceptable for pre-existing rows (operator-only MVP era).
+-- New rows MUST set this column at insert time per Closure #3.
+-- Partial index for the operator-audience filter (used by getProbeStatus):
+CREATE INDEX IF NOT EXISTS probe_runs_probe_audience_ran_idx
+  ON probe_runs (probe_name, alert_audience, ran_at DESC)
+  WHERE alert_audience IS NOT NULL;
+```
+
+Backward-compat: pre-mig rows have `alert_audience IS NULL` and are NOT picked by the audience-filter query (intentional; legacy rows pre-date fan-out).
+
+`getProbeStatus()` filter changes to:
+```sql
+-- pseudocode
+SELECT * FROM probe_runs
+ WHERE probe_name = $1
+   AND (alert_audience = 'operator' OR alert_audience IS NULL)  -- legacy compat
+ ORDER BY ran_at DESC LIMIT 1
+```
+
+§2.x file list adds `migrations/0104_probe_runs_alert_audience.sql` + `lib/admin/probe-status.ts` to extension list.
+
+### Closure #4 (BLOCKER#4 — per-teacher UI surface)
+
+**Fact:** parent SoT `docs/plans/conflict-unresolved-alert.md:933-940` requires per-teacher delivery UI; plan §2.x file list omits both `lib/admin/probe-status.ts` and `app/admin/(gated)/settings/alerts/page.tsx`.
+
+**Closure:** add both to file list:
+
+- `lib/admin/probe-status.ts` — EXTEND: add `getProbeFanoutStats(probeName)` returning `{ operator: {…}, teachers: { sent, sendFailed, deferred, deferredOldestAge } }` aggregated from `probe_runs` rows with `alert_audience IS NOT NULL`.
+- `app/admin/(gated)/settings/alerts/page.tsx` — EXTEND: add an expandable "Fan-out по учителям" block beneath each fan-out-capable probe, showing the aggregate. Copy: «Учителя: отправлено X, ошибок Y, в очереди Z (старейшая Z старше N мин)».
+
+### Closure #5 (BLOCKER#5 — state file shape backward-safe)
+
+**Fact:** legacy reader at `scripts/conflict-unresolved-alert.mjs:429-435,686-689,793-795` understands only `{ lastAlertAt, lastFingerprint }`. Plan's v2 write always produces nested shape; rollback/mixed-version tick loses operator dedup.
+
+**Closure:** state file shape additive, NOT replacing:
+
+```json
+{
+  "lastAlertAt": 1234567890,         // v1 keys — operator dedup; UNCHANGED
+  "lastFingerprint": "abc...",        // v1 keys — operator dedup; UNCHANGED
+  "perTeacher": {                     // NEW additive key (v2)
+    "<teacherId>": {
+      "lastAlertAt": 1234567890,
+      "lastFingerprint": "def...",
+      "lastAttemptAt": 1234567890
+    }
+  }
+}
+```
+
+- Legacy reader ignores `perTeacher` (unknown key).
+- New reader populates both top-level v1 keys + per-teacher map.
+- Rollback safe: pre-fan-out script reads top-level v1 keys and continues operator dedup with no loss.
+- Forward-deploy safe: new script reads BOTH top-level AND per-teacher; if `perTeacher` absent (legacy state file), treat as empty map and rebuild.
+
+§2.3 + §3.x must reflect this additive contract.
+
+### Closure #6 (BLOCKER#6 — privacy boundary + test harness)
+
+**Closure:** rewrite §3.x privacy tests as explicit negative assertions:
+
+```ts
+// tests/integration/conflict-unresolved/fanout.test.ts (new)
+it('teacher A email does NOT contain teacher B slot IDs or teacher B email', async () => {
+  // Setup: 2 teachers, each with own conflicts, fan-out enabled.
+  // Run probe tick.
+  // Find teacher A's probe_runs row by recipient_email.
+  const teacherARow = await pool.query(
+    `SELECT * FROM probe_runs WHERE probe_name='conflict-unresolved'
+       AND recipient_email=$1 AND alert_audience='teacher'`,
+    [teacherA.email]
+  );
+  // Negative assertion 1: teacher B's slot IDs are NOT in teacher A's stats.shown
+  expect(JSON.stringify(teacherARow.rows[0].stats.shown)).not.toContain(teacherB.slot_id);
+  // Negative assertion 2: teacher B's email is NOT in teacher A's email body.
+  expect(teacherARow.rows[0].alert_email_id).toBeTruthy();
+  // (Optional: fetch the actual email body from a test mailer mock and grep teacher B's email.)
+});
+```
+
+Test harness no longer reads "one latest row by ran_at desc" — it explicitly filters `probe_runs` by `recipient_email` (and now also by `alert_audience='teacher'`) before assertion.
+
+### Closure #7 (WARN — alerts page copy update)
+
+**Closure:** `app/admin/(gated)/settings/alerts/page.tsx:111-122` copy updated to acknowledge fan-out: «Четыре системных пробника настроены на отправку писем оператору; пробник `conflict-unresolved` дополнительно может слать письма затронутым учителям при включении `CONFLICT_UNRESOLVED_TEACHER_FANOUT_ENABLED`.»
+
+---
+
+**Status after §0b applied:** round-1 BLOCKER findings each have a written closure. Round-2 codex run will verify: (a) closures are coherent, (b) no new BLOCKERs opened, (c) state-file additive shape is realistic, (d) migration is truly additive (no breaking change). Implementation effort estimate: ~600-800 LOC (mig + script extensions + probe-status extension + alerts page + tests).
