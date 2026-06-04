@@ -13,10 +13,12 @@ slot'а, persistence schema, recovery surfaces, mobile/a11y considerations.
 
 ---
 
+> **§0e/§0f UPDATE 2026-06-04 (supersedes §1 ID/key contract below):** wire/storage key is **snake_case `hintKey`** matching `lib/onboarding/keys.ts ONBOARDING_HINT_KEYS`. The kebab-case "ID" field below is a HUMAN-READABLE LABEL ONLY — not the wire value, not the JSONB key. Mapping (kebab-case ID → snake_case persistence key) lives in `lib/onboarding/keys.ts`. Reset route + admin CLI move to Sub-PR D (nice-to-have); Sub-PR A scope = dismiss API + cabinet redirect fix + per-account purge + tests (see flows §0f).
+
 ## §1 Tooltip catalog
 
 Контракт-поля каждого hint:
-- **ID** — kebab-case, используется как `dismissed_hints` key.
+- **ID** — kebab-case, human-readable label (NOT the wire/storage key; see §0e/§0f superseding contract above).
 - **Route/Component** — file:line where mounted.
 - **Trigger** — mount-time / action / SSR conditional.
 - **Copy** — русский, plural-aware через `pluralRu` из `lib/copy/plural-ru.ts`.

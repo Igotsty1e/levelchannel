@@ -742,3 +742,66 @@ No change; `lesson_completions.teacher_id` exists and indexed.
 ---
 
 **Status after §0e applied:** round-4 BLOCKER findings each have a written closure verified against live helpers and route graph. Round-5 codex verifies. Sub-PR A scope finally bounded: dismiss API + cabinet redirect fix + purge per-account + tests.
+
+---
+
+## §0f — Round-5 closures (2026-06-04)
+
+Round 5 surfaced 3 BLOCKERs + 2 WARNs + 1 INFO — all spec-precision issues, no architecture concerns. Closed in §0f:
+
+### Clarification of plan-mode vs impl
+
+§0e wording said "fix applied" for purge + redirect. Codex correctly read this as a claim that LIVE CODE was changed; in plan-mode it just specifies the contract Sub-PR A implementation will satisfy. **§0f explicit phrasing:** all "closures" in §0c/§0d/§0e/§0f are CONTRACTS that Sub-PR A code must satisfy — not assertions that the code is already changed. The plan-paranoia gate verifies the contract is sound; the wave-paranoia gate (run on Sub-PR A's diff) verifies the implementation actually matches.
+
+### Closure for BLOCKER #1 (purge contract phrasing)
+
+**Contract for Sub-PR A:** the `account_onboarding_state` delete MUST land inside `purgeAccounts()` per-account TX, after the deletion-guard pass, before the per-account `commit`. The contract is SPECIFIED in §0e Closure for BLOCKER #1; Sub-PR A IMPLEMENTS it; the wave-paranoia round on Sub-PR A verifies the diff matches. No live-code change is part of this plan-only PR.
+
+### Closure for BLOCKER #2 (field name — emailVerifiedAt)
+
+The `app/cabinet/page.tsx` redirect uses field `account.emailVerifiedAt`, NOT `verifiedAt`. **Fixed contract** for Sub-PR A:
+
+```typescript
+// app/cabinet/page.tsx existing teacher-only redirect (line 98 in main):
+// CURRENT (creates loop with /teacher/layout redirect for unverified teacher-only):
+if (isTeacher && !isStudent) redirect('/teacher')
+// FIX (Sub-PR A): keep unverified teacher-only on /cabinet so verify banner is reachable.
+if (isTeacher && !isStudent && account.emailVerifiedAt !== null) redirect('/teacher')
+```
+
+Note the correct field name `emailVerifiedAt` per `app/cabinet/page.tsx:70`. §0e's `verifiedAt` was a transcription error.
+
+### Closure for BLOCKER #3 (helper name — isOnboardingHintKey)
+
+`lib/onboarding/keys.ts:41` exports `isOnboardingHintKey`, NOT `isValidOnboardingHintKey`. **Fixed contract** for the dismiss API:
+
+```typescript
+import { isOnboardingHintKey } from '@/lib/onboarding/keys'  // NOT isValidOnboardingHintKey
+// ...
+if (!isOnboardingHintKey(hintKey)) {
+  return NextResponse.json({ error: 'unknown_hint_key' }, { status: 400, headers: NO_STORE })
+}
+```
+
+§0e's helper name was a transcription error; §0f restores the canonical export.
+
+### Closure for WARN #4 (tooltip spec stale text)
+
+`onboarding-tooltips-spec-2026-05-31.md` has a stale §1 ID/key contract + stale Sub-PR A scope mentions. **Action taken in this commit:** tooltip-spec gets a §0e/§0f UPDATE banner at the top of §1 (lines 16-17) that:
+- Declares snake_case `hintKey` matching `ONBOARDING_HINT_KEYS` as the canonical wire/storage key.
+- Marks the kebab-case "ID" field below as human-readable label only.
+- Defers reset route + admin CLI to Sub-PR D.
+
+Spec text below the banner remains for context but the banner supersedes any contradiction.
+
+### Closure for WARN #5 (evals/URL_REDIRECT_CONTRACT.md)
+
+The cabinet redirect change in §0e/§0f Closure for BLOCKER #2 amends the redirect ladder. **Sub-PR A file list MUST include** `evals/URL_REDIRECT_CONTRACT.md` — EXTEND with the new condition: "teacher-only `/cabinet` → `/teacher` only when `account.emailVerifiedAt IS NOT NULL`; unverified teacher-only stays on `/cabinet` so the verify-email surface is reachable." Both PRODUCT_FLOWS.md and URL_REDIRECT_CONTRACT.md updates land in the SAME PR as the route change.
+
+### Closure for INFO #6 (CT1 hint key)
+
+`verify_email_reminder` is NOT in the canonical `ONBOARDING_HINT_KEYS` whitelist (verified `lib/onboarding/keys.ts:15-30`). CT1 hint is NOT in Sub-PR A scope — it lands in Sub-PR C (learner-side hints). Sub-PR A only needs the `/cabinet` redirect fix that makes CT1's mount reachable; the hint copy + key choice happens in Sub-PR C. Document: when Sub-PR C ships CT1, add `verify_email_reminder` to `ONBOARDING_HINT_KEYS` and the corresponding tooltip-spec entry.
+
+---
+
+**Status after §0f applied + tooltip-spec banner edit:** all round-5 findings closed. §0f says explicitly that closures are CONTRACTS for Sub-PR A, not live-code changes. Round-6 codex verifies coherence.
