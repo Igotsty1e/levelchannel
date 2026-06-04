@@ -549,3 +549,77 @@ export async function requireTeacherWithCurrentSaasOfferConsent(
     ),
   }
 }
+
+// MUTATION-PATH WRAPPER — higher-order helper that opens a write TX
+// at REPEATABLE READ, runs the saas-offer gate inside the TX, and
+// invokes the caller's mutation callback with the SAME client. Either
+// commits on success OR rolls back on a non-`ok` verdict / thrown
+// error.
+//
+// Use this for any `/api/teacher/**` route that writes data AND must
+// be safe against the publish-vs-mutation race documented in plan
+// §0af Closure for BLOCKER #6. Routes that only read (or do not need
+// race-safe gating) can keep using `requireTeacherWithCurrentSaasOfferConsent`.
+//
+// Contract:
+//   - Returns a `NextResponse` if the gate / auth rejects (caller
+//     `return`s it directly).
+//   - Returns the callback's value on success (caller wraps it in a
+//     `NextResponse.json(...)` as needed).
+//
+// Caller responsibilities:
+//   - Do NOT call `client.query('commit')` / `rollback` inside the
+//     callback. The wrapper handles both.
+//   - Do NOT open additional TXes on the same client. Use savepoints
+//     if nested error handling is required.
+//   - Throw to abort + rollback; return normally to commit.
+export async function requireTeacherWithMutationGate<T>(
+  request: Request,
+  fn: (
+    client: import('pg').PoolClient,
+    account: Account,
+  ) => Promise<T>,
+): Promise<NextResponse | T> {
+  const inner = await requireTeacherAndVerified(request)
+  if (!inner.ok) return inner.response
+  const { getDbPool } = await import('@/lib/db/pool')
+  const pool = getDbPool()
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+    await client.query('set transaction isolation level repeatable read')
+    const verdict = await evaluateSaasOfferGateForMutation(
+      client,
+      inner.account.id,
+    )
+    if (verdict.kind === 'awaiting_publication') {
+      await client.query('rollback').catch(() => {})
+      return NextResponse.json(
+        {
+          error: 'saas_offer_awaiting_publication',
+          message: 'Платформа обновляет SaaS-оферту. Возвращайтесь чуть позже.',
+        },
+        { status: 503, headers: { 'Cache-Control': 'no-store, max-age=0' } },
+      )
+    }
+    if (verdict.kind === 'consent_required') {
+      await client.query('rollback').catch(() => {})
+      return NextResponse.json(
+        {
+          error: 'saas_offer_consent_required',
+          message:
+            'Подтвердите согласие с условиями SaaS-оферты в кабинете LevelChannel.',
+        },
+        { status: 403, headers: { 'Cache-Control': 'no-store, max-age=0' } },
+      )
+    }
+    const result = await fn(client, inner.account)
+    await client.query('commit')
+    return result
+  } catch (err) {
+    await client.query('rollback').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
+}
