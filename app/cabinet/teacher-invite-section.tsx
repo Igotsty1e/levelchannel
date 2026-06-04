@@ -90,6 +90,16 @@ export function TeacherInviteSection({ isVerified }: Props) {
   const [err, setErr] = useState<string | null>(null)
   const [defaultMethod, setDefaultMethod] =
     useState<DefaultPaymentMethod>('none')
+  // Onboarding Sub-PR B3 — `teacher-invite-copy-feedback` toast slot.
+  // Spec §1.1: show «Ссылка скопирована» on success OR a fallback
+  // «Не удалось скопировать автоматически — выделите ссылку ниже и
+  // скопируйте вручную» on clipboard API failure. Client-only; no
+  // persistence (toasts are transient by definition).
+  const [copyToast, setCopyToast] = useState<
+    | { kind: 'success'; key: number }
+    | { kind: 'fail'; key: number }
+    | null
+  >(null)
 
   useEffect(() => {
     if (!isVerified) return
@@ -145,9 +155,12 @@ export function TeacherInviteSection({ isVerified }: Props) {
   async function copyToClipboard(url: string) {
     try {
       await navigator.clipboard.writeText(url)
+      setCopyToast({ kind: 'success', key: Date.now() })
     } catch {
-      /* clipboard API can fail under permissions; user can still
-       *  select and copy manually from the link below. */
+      // clipboard API can fail under permissions; show a fallback
+      // toast that points the user at the visible link below the
+      // button (round-3 SaaS-Pivot pattern — explicit failure UX).
+      setCopyToast({ kind: 'fail', key: Date.now() })
     }
   }
 
@@ -175,6 +188,37 @@ export function TeacherInviteSection({ isVerified }: Props) {
       <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
         Пригласить ученика
       </h3>
+      {copyToast ? (
+        <div
+          key={copyToast.key}
+          role="status"
+          aria-live="polite"
+          style={{
+            background:
+              copyToast.kind === 'success'
+                ? 'rgba(110, 168, 254, 0.12)'
+                : 'rgba(224, 118, 118, 0.12)',
+            border: `1px solid ${
+              copyToast.kind === 'success'
+                ? 'var(--accent, #6ea8fe)'
+                : 'var(--danger, #e07676)'
+            }`,
+            color:
+              copyToast.kind === 'success'
+                ? 'var(--text)'
+                : 'var(--danger, #e07676)',
+            borderRadius: 6,
+            padding: '8px 12px',
+            fontSize: 13,
+            lineHeight: 1.5,
+            marginBottom: 12,
+          }}
+        >
+          {copyToast.kind === 'success'
+            ? 'Ссылка скопирована'
+            : 'Не удалось скопировать автоматически — выделите ссылку ниже и скопируйте вручную.'}
+        </div>
+      ) : null}
       <p
         style={{
           color: 'var(--secondary)',
