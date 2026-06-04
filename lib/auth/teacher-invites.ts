@@ -177,6 +177,26 @@ export const TEACHER_INVITE_DEFAULT_TTL_SECONDS = 7 * 24 * 60 * 60
 // DB-bound primitives (TINV.3+4)
 // =============================================================================
 
+export type InviteDefaultPaymentMethod =
+  | 'postpaid'
+  | 'prepaid_packages'
+  | 'none'
+
+const VALID_DEFAULT_PAYMENT_METHODS: ReadonlyArray<InviteDefaultPaymentMethod> = [
+  'postpaid',
+  'prepaid_packages',
+  'none',
+]
+
+export function isValidInviteDefaultPaymentMethod(
+  value: unknown,
+): value is InviteDefaultPaymentMethod {
+  return (
+    typeof value === 'string'
+    && (VALID_DEFAULT_PAYMENT_METHODS as ReadonlyArray<string>).includes(value)
+  )
+}
+
 export type CreatedInvite = {
   /** UUID of the new teacher_invites row. */
   id: string
@@ -186,6 +206,8 @@ export type CreatedInvite = {
   url: string
   /** Expiry as a Date object (epoch ms). */
   expiresAt: Date
+  /** Default payment method seeded for the resulting (teacher, learner) pair. */
+  defaultPaymentMethod: InviteDefaultPaymentMethod
 }
 
 /**
@@ -197,20 +219,42 @@ export type CreatedInvite = {
  * route guard already enforced it. The redeem-time CTE
  * (redeemInviteAndBindLearnerAtomic) re-checks the role at use time,
  * which is the load-bearing security guarantee.
+ *
+ * Per docs/plans/per-learner-payment-method.md §Scope item 6 — invite
+ * can carry a teacher-picked `defaultPaymentMethod` which is written
+ * onto `teacher_invites.default_payment_method` and propagated into
+ * `learner_billing_preferences` at redeem time. Default `'none'`
+ * preserves the legacy behaviour (booking blocked until teacher picks
+ * a method on the learner card).
  */
 export async function createInviteForTeacher(
   teacherAccountId: string,
-  options?: { ttlSeconds?: number; env?: NodeJS.ProcessEnv },
+  options?: {
+    ttlSeconds?: number
+    env?: NodeJS.ProcessEnv
+    defaultPaymentMethod?: InviteDefaultPaymentMethod
+  },
 ): Promise<CreatedInvite> {
   const env = options?.env ?? process.env
   const ttl = options?.ttlSeconds ?? TEACHER_INVITE_DEFAULT_TTL_SECONDS
+  const defaultPaymentMethod: InviteDefaultPaymentMethod =
+    options?.defaultPaymentMethod ?? 'none'
+  if (!isValidInviteDefaultPaymentMethod(defaultPaymentMethod)) {
+    // Defensive — should be impossible given the union, but keep the
+    // assertion close to the DB write so an off-union value never lands
+    // in `teacher_invites.default_payment_method` (CHECK constraint
+    // would catch it, but the error surface would be opaque).
+    throw new Error(
+      `teacher-invites/invalid-default-payment-method: ${String(defaultPaymentMethod)}`,
+    )
+  }
   const expiresAt = new Date(Date.now() + ttl * 1000)
   const pool = getAuthPool()
   const inserted = await pool.query<{ id: string; expires_at: Date }>(
-    `insert into teacher_invites (teacher_account_id, expires_at)
-       values ($1, $2)
+    `insert into teacher_invites (teacher_account_id, expires_at, default_payment_method)
+       values ($1, $2, $3)
        returning id, expires_at`,
-    [teacherAccountId, expiresAt],
+    [teacherAccountId, expiresAt, defaultPaymentMethod],
   )
   const row = inserted.rows[0]
   if (!row) {
@@ -226,7 +270,13 @@ export async function createInviteForTeacher(
     env,
   )
   const url = `${paymentConfig.siteUrl}/register?invite=${encodeURIComponent(token)}`
-  return { id: row.id, token, url, expiresAt: row.expires_at }
+  return {
+    id: row.id,
+    token,
+    url,
+    expiresAt: row.expires_at,
+    defaultPaymentMethod,
+  }
 }
 
 export type InviteRow = {
@@ -364,19 +414,44 @@ export async function revokeInvite(
 export async function redeemInviteAndBindLearnerAtomic(
   inviteId: string,
   learnerAccountId: string,
-): Promise<{ teacherAccountId: string } | null> {
+): Promise<
+  | {
+      teacherAccountId: string
+      defaultPaymentMethod: InviteDefaultPaymentMethod
+      // True iff the seed actually inserted a new
+      // learner_billing_preferences row (i.e. there was no prior
+      // pair-pref). False on conflict-preserve (a previous redeem
+      // or operator-PATCH already wrote the pair's pref). Callers
+      // who emit `auth.billing.method_changed` MUST gate on this —
+      // logging a "change" that never happened would be a falsified
+      // audit row (codex-paranoia wave round-1 BLOCKER #1 closure).
+      seededPrefInserted: boolean
+    }
+  | null
+> {
   if (!UUID_RE.test(inviteId) || !UUID_RE.test(learnerAccountId)) {
     return null
   }
   const pool = getAuthPool()
-  // The writable CTE has THREE statements chained:
+  // The writable CTE has FOUR statements chained:
   //   1. verified_invite — UPDATE teacher_invites with the role-EXISTS
-  //      anti-spoof check; returns teacher_account_id.
+  //      anti-spoof check; returns teacher_account_id +
+  //      default_payment_method.
   //   2. linked — INSERT into learner_teacher_links (canonical n:m
   //      table). ON CONFLICT revives a previously-unlinked row.
   //   3. dual_write — UPDATE accounts.assigned_teacher_id (back-compat
   //      alias for any not-yet-rewritten reader; mig 0084 drops it).
-  // All three see the SAME teacher_account_id from the CTE — even if a
+  //   4. seeded_pref — UPSERT learner_billing_preferences from the
+  //      invite's default_payment_method (per-learner-payment-method
+  //      §Scope item 6). ON CONFLICT DO NOTHING: an existing pref row
+  //      wins (e.g. the learner was previously linked to this teacher
+  //      under a non-'none' method, then unlinked, and is now
+  //      re-redeeming a fresh invite). The seed never clobbers an
+  //      explicit teacher choice. Caller emits the
+  //      `auth.billing.method_changed` audit row OUT-OF-CTE so the
+  //      audit row carries the same shape as a teacher-driven PATCH
+  //      (event_type + payload schema identical to setPaymentMethodForPair).
+  // All four see the SAME teacher_account_id from the CTE — even if a
   // concurrent transaction yanks the inviter's teacher role between
   // (1) and (2), the snapshot wraps the entire statement so no
   // mid-flight role-mutation can sneak through.
@@ -396,7 +471,11 @@ export async function redeemInviteAndBindLearnerAtomic(
       'select pg_advisory_xact_lock(hashtext($1)::bigint)',
       [`lc-saas-pivot:learner-teacher-links:${learnerAccountId}`],
     )
-    const res = await client.query<{ teacher_account_id: string }>(
+    const res = await client.query<{
+      teacher_account_id: string
+      default_payment_method: string
+      seeded_pref_inserted: boolean
+    }>(
       `with verified_invite as (
          update teacher_invites
             set used_at = now(),
@@ -410,7 +489,7 @@ export async function redeemInviteAndBindLearnerAtomic(
                where r.account_id = teacher_invites.teacher_account_id
                  and r.role = 'teacher'
             )
-         returning teacher_account_id, id as invite_id
+         returning teacher_account_id, id as invite_id, default_payment_method
        ),
        linked as (
          insert into learner_teacher_links (learner_account_id, teacher_account_id, linked_at, unlinked_at, via_invite_id)
@@ -431,14 +510,35 @@ export async function redeemInviteAndBindLearnerAtomic(
            from verified_invite vi
           where accounts.id = $2
           returning vi.teacher_account_id
+       ),
+       seeded_pref as (
+         insert into learner_billing_preferences (
+           teacher_account_id, learner_account_id, payment_method, updated_by_account_id
+         )
+         select vi.teacher_account_id, $2, vi.default_payment_method, vi.teacher_account_id
+           from verified_invite vi
+         on conflict (teacher_account_id, learner_account_id) do nothing
+         returning teacher_account_id
        )
-       select teacher_account_id from linked`,
+       select vi.teacher_account_id,
+              vi.default_payment_method,
+              exists(select 1 from seeded_pref) as seeded_pref_inserted
+         from verified_invite vi`,
       [inviteId, learnerAccountId],
     )
     await client.query('commit')
     const row = res.rows[0]
     if (!row) return null
-    return { teacherAccountId: row.teacher_account_id }
+    const defaultPaymentMethod = isValidInviteDefaultPaymentMethod(
+      row.default_payment_method,
+    )
+      ? row.default_payment_method
+      : 'none'
+    return {
+      teacherAccountId: row.teacher_account_id,
+      defaultPaymentMethod,
+      seededPrefInserted: Boolean(row.seeded_pref_inserted),
+    }
   } catch (err) {
     await client.query('rollback').catch(() => undefined)
     throw err

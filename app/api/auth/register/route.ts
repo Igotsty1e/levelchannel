@@ -321,8 +321,46 @@ export async function POST(request: Request) {
         payload: {
           inviteId: invitePayload.iid,
           teacherAccountId: redeemed.teacherAccountId,
+          defaultPaymentMethod: redeemed.defaultPaymentMethod,
         },
       })
+      // Per-learner-payment-method §Scope item 6 — when the invite
+      // carried a non-'none' default method AND the CTE actually
+      // seeded the pair-pref (no pre-existing row took precedence),
+      // emit the same audit row shape that setPaymentMethodForPair
+      // writes for a teacher-driven PATCH. Mirrors the Q7 audit
+      // contract (event_type 'auth.billing.method_changed', actor =
+      // teacher, from='none', to=<seeded method>). Skipped for
+      // default 'none' because the post-redeem state matches the
+      // pre-redeem default. Skipped on conflict-preserve because
+      // the pair's actual method did NOT change — emitting the
+      // event there would be a falsified audit row (codex-paranoia
+      // wave round-1 BLOCKER #1 closure).
+      //
+      // We deliberately do NOT thread clientIp / userAgent — the
+      // canonical writer in lib/billing/learner-payment-method.ts
+      // §setPaymentMethodForPair persists neither, so re-using its
+      // shape means we also must not. Doing otherwise here would
+      // let an anonymous-with-token learner influence forensic
+      // metadata on a teacher-attributed event (codex-paranoia
+      // wave round-1 BLOCKER #2 closure).
+      if (
+        redeemed.defaultPaymentMethod !== 'none'
+        && redeemed.seededPrefInserted
+      ) {
+        await recordAuthAuditEvent({
+          eventType: 'auth.billing.method_changed',
+          accountId: redeemed.teacherAccountId,
+          email: '',
+          payload: {
+            learner_account_id: account.id,
+            from_method: 'none',
+            to_method: redeemed.defaultPaymentMethod,
+            source: 'invite_default',
+            inviteId: invitePayload.iid,
+          },
+        })
+      }
     }
     // Legal-versioning sister wave (migration 0032): capture the
     // FK to the snapshot row currently in force, alongside the
