@@ -873,3 +873,18 @@ No change; documented. Duplicate-0103 debt tracked separately (Task #7).
 ---
 
 **Status after §0c applied:** all round-2 BLOCKER findings closed with verified file:line citations. Round-3 codex verifies.
+
+---
+
+## §0d — Round-3 findings (recorded; impl deferred per user instruction)
+
+Round 3 returned BLOCK with 2 BLOCKERs + 2 WARNs. Recording without closures — implementation work prioritised over further plan-paranoia rounds.
+
+| # | Severity | Summary |
+|---|---|---|
+| 1 | BLOCKER | Default state-file path `/var/lib/levelchannel/...` conflicts with the probe's systemd sandbox (ReadWritePaths only allows `__LEVELCHANNEL_APP_DIR__/var`); current script default is `./var/conflict-unresolved-state.json`. Plan needs explicit `StateDirectory=` / runbook `mkdir+chown` step OR keep the existing relative path + document admin-side resolution. |
+| 2 | BLOCKER | "Deferred" count from state file alone is wrong: `perTeacher` TTL is 30 days and entries are not cleared when the upstream conflict resolves, so admin UI would show phantom backlog. Need either join with current qualifying set OR a `currentlyDeferred` flag updated each tick from the live offender query. |
+| 3 | WARN | State-file write is in-place `writeFile`; reader on admin side will race partial-JSON. Need temp-file + `rename()` OR best-effort parse fallback ("deferred: unknown"). |
+| 4 | WARN | `tests/integration/admin/alerts-obs.test.ts` re-creates `probe_runs` shadow schema manually; needs `alert_audience` column added there too. |
+
+**Status:** plan-paranoia paused for bcs-def-1-fanout. Closure (§0e) requires 2 substantial design decisions (state path + deferred semantics) plus 2 mechanical follow-ups. Estimated 1-2 more rounds + 4-6h impl. Deferred to a future session focused on this plan.
