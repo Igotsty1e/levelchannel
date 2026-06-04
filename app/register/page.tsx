@@ -54,10 +54,41 @@ export default function RegisterPage() {
   // получения /api/legal/current response. Без него teacher мог успеть
   // нажать «Создать» до окончания fetch и получить server-side 503/400.
   const [saasOfferLoading, setSaasOfferLoading] = useState(false)
+  // Onboarding Sub-PR C4 (`learner-invite-from-teacher-name`) — when
+  // `?invite=<token>` is present, fetch the inviting teacher's display
+  // name from /api/auth/invite-preview (anonymous endpoint) so the
+  // banner above the form can render «Вас пригласил <name>».
+  const [inviterTeacherName, setInviterTeacherName] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   const isTeacherSelfReg = !inviteToken && role === 'teacher'
+
+  useEffect(() => {
+    if (!inviteToken) {
+      setInviterTeacherName(null)
+      return
+    }
+    let cancelled = false
+    fetch('/api/auth/invite-preview', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ inviteToken }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled) return
+        if (data && typeof data.teacherName === 'string') {
+          setInviterTeacherName(data.teacherName)
+        }
+      })
+      .catch(() => {
+        if (cancelled) return
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [inviteToken])
 
   useEffect(() => {
     if (!isTeacherSelfReg) {
@@ -202,7 +233,17 @@ export default function RegisterPage() {
               marginBottom: 16,
             }}
           >
-            Вы регистрируетесь по приглашению учителя. После регистрации вы будете автоматически привязаны к этому учителю.
+            {inviterTeacherName ? (
+              <>
+                Вас пригласил(-а) <strong>{inviterTeacherName}</strong>. После
+                регистрации вы будете автоматически привязаны к этому учителю.
+              </>
+            ) : (
+              <>
+                Вы регистрируетесь по приглашению учителя. После регистрации вы
+                будете автоматически привязаны к этому учителю.
+              </>
+            )}
           </div>
         ) : (
           <fieldset
