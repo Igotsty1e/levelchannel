@@ -762,3 +762,114 @@ Test harness no longer reads "one latest row by ran_at desc" — it explicitly f
 ---
 
 **Status after §0b applied:** round-1 BLOCKER findings each have a written closure. Round-2 codex run will verify: (a) closures are coherent, (b) no new BLOCKERs opened, (c) state-file additive shape is realistic, (d) migration is truly additive (no breaking change). Implementation effort estimate: ~600-800 LOC (mig + script extensions + probe-status extension + alerts page + tests).
+
+---
+
+## §0c — Round-2 closures (2026-06-04, supersedes contradictions in §0b)
+
+Round 2 returned BLOCK with 3 BLOCKERs + 1 WARN + 1 INFO. All addressable.
+
+### Closure for BLOCKER #1 (deferred count + age sourced from state file, not probe_runs)
+
+Closure #2 (cap = soft-limit AFTER dedup) implies capped-out teachers do NOT get a `probe_runs` row; they only get a `state.perTeacher[id].lastAttemptAt` update. Closure #4's `getProbeFanoutStats()` aggregating from `probe_runs` cannot recover `deferred` count or oldest queue age.
+
+**Fix:** state file becomes the source of truth for "deferred" metrics. Admin UI helper splits responsibilities:
+
+- `lib/admin/probe-status.ts getProbeFanoutStatsFromProbeRuns(probeName)` — aggregates `probe_runs` rows with `alert_audience='teacher'` for sent + send_failed counts + last-sent age. Source: DB.
+- `lib/admin/probe-status.ts getProbeFanoutDeferredStats(probeName)` — reads the state file (server-side fs access) to count entries where `(now - lastAttemptAt) > DRAIN_WINDOW_MS / N_TICKS_THRESHOLD` (= "in queue, NOT yet sent this round"). Source: state file path from operator settings (`CONFLICT_UNRESOLVED_STATE_FILE` env or default `/var/lib/levelchannel/conflict-unresolved-state.json`).
+- Combined `getProbeFanoutStats(probeName)` returns `{ operator, teachers: { sent, sendFailed, deferred, deferredOldestAge } }` with `deferred` + `deferredOldestAge` from the state file, `sent`/`sendFailed` from `probe_runs`.
+
+Trade-off acknowledged: state file is the script's local artifact; admin UI must read it from the same FS. The script runs under systemd on the prod VPS; admin app runs on the same host. Path is operator-configurable. Sub-PR file list adds the state-file reader to `lib/admin/probe-status.ts`.
+
+### Closure for BLOCKER #2 (recordProbeRun signature extension)
+
+`scripts/lib/probe-runs.mjs:107-128 recordProbeRun()` has a fixed column list with no `alertAudience` parameter. All conflict-unresolved write-sites flow through this helper.
+
+**Fix:** the bcs-def-1-fanout PR extends `recordProbeRun()` with an OPTIONAL `alertAudience` field:
+
+```js
+// scripts/lib/probe-runs.mjs — extend signature
+export async function recordProbeRun(pool, {
+  probeName,
+  verdictKind,
+  recipientEmail,
+  alertEmailId = null,
+  fingerprint = null,
+  stats = {},
+  isTest = false,
+  alertAudience = null,  // NEW: 'operator' | 'teacher' | null (legacy)
+}) {
+  await pool.query(
+    `INSERT INTO probe_runs
+       (probe_name, verdict_kind, recipient_email, alert_email_id,
+        fingerprint, stats, is_test, ran_at, alert_audience)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, now(), $8)`,
+    [probeName, verdictKind, recipientEmail, alertEmailId, fingerprint,
+     JSON.stringify(stats), isTest, alertAudience],
+  )
+}
+```
+
+All `recordProbeRun()` call-sites in `scripts/conflict-unresolved-alert.mjs` (lines 419-552 inclusive) pass `alertAudience: 'operator'` for the operator-branch writes and `'teacher'` for fan-out writes. Other probes (`teacher-daily-digest`, `learner-reminders`, etc.) keep the default `null` value — backward-compatible.
+
+File list extends: `scripts/lib/probe-runs.mjs` — EXTEND (signature + INSERT column added).
+
+### Closure for BLOCKER #3 (privacy test — mandatory body inspection)
+
+The existing harness already captures the outbound Resend payload (`tests/integration/scripts/conflict-unresolved-alert.test.ts:57-61,74-83,379-396`). Test §3.x privacy assertion is rewritten as MANDATORY two-layer check:
+
+```ts
+// tests/integration/scripts/conflict-unresolved-fanout.test.ts
+it('teacher A email does NOT contain teacher B slot IDs or email', async () => {
+  // Setup: 2 teachers, each with own conflicts, fan-out ON.
+  await runProbeTick();
+
+  // Layer 1 — probe_runs.stats scoping (DB-side).
+  const teacherARow = await pool.query(
+    `SELECT stats FROM probe_runs
+      WHERE probe_name='conflict-unresolved'
+        AND recipient_email=$1 AND alert_audience='teacher'
+      ORDER BY ran_at DESC LIMIT 1`,
+    [teacherA.email]
+  );
+  expect(JSON.stringify(teacherARow.rows[0].stats)).not.toContain(teacherB.slot_id);
+  expect(JSON.stringify(teacherARow.rows[0].stats)).not.toContain(teacherB.email);
+
+  // Layer 2 — outbound email body (Resend payload stub).
+  const teacherAEmails = capturedResendCalls.filter(c => c.to === teacherA.email);
+  expect(teacherAEmails).toHaveLength(1);
+  expect(teacherAEmails[0].html).not.toContain(teacherB.slot_id);
+  expect(teacherAEmails[0].html).not.toContain(teacherB.email);
+  expect(teacherAEmails[0].text).not.toContain(teacherB.slot_id);
+  expect(teacherAEmails[0].text).not.toContain(teacherB.email);
+});
+```
+
+Both layers MUST pass. A false-green where `probe_runs.stats` is scoped correctly but the rendered email leaks teacher B data is now caught by Layer 2.
+
+### Closure for WARN #4 (test harness update for N+1 emails + rotation regression)
+
+Existing stub `tests/integration/scripts/conflict-unresolved-alert.test.ts:123-124,174-209` keeps only the last outbound email. Fan-out tests need ALL N+1 emails per tick.
+
+**Fix:** harness extends to keep an array of all outbound Resend calls per tick:
+
+```ts
+// tests/integration/scripts/conflict-unresolved-alert.test.ts setup
+let capturedResendCalls: Array<{ to: string; html: string; text: string; subject: string }> = [];
+beforeEach(() => { capturedResendCalls = []; });
+// Stub Resend.emails.send to push to capturedResendCalls instead of mutating a single var.
+```
+
+§3.x test cases that count outbound emails (e.g. `expect(capturedResendCalls).toHaveLength(N+1)`) now assert against the full array.
+
+**Rotation regression test (NEW):** added to §3.x — `it('TEACHER_FANOUT_CAP=50 with 200 teachers AND DRAIN_WINDOW_TICKS=2: tick 1 sends top 50, tick 2 sends NEXT 50 (rotated), tick 3 sends NEXT 50, tick 4 sends LAST 50, tick 5 returns to top 50')`. Verifies no teacher waits more than CAP_DRAIN_WINDOW_TICKS = 2 ticks between attempts.
+
+**Test §3.1 / §3.2 wording update:** capped-out teachers DO appear in `state.perTeacher[id]` with `lastAttemptAt: null` (or with old timestamp); they are NOT absent. §3.2 should say "200 teachers, cap=50 → 50 emails this tick; ALL 200 entries in state.perTeacher with 50 having fresh lastAttemptAt and 150 unchanged from prior tick".
+
+### Closure (INFO #5) — mig 0104 safe filename
+
+No change; documented. Duplicate-0103 debt tracked separately (Task #7).
+
+---
+
+**Status after §0c applied:** all round-2 BLOCKER findings closed with verified file:line citations. Round-3 codex verifies.
