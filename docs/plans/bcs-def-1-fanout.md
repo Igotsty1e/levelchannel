@@ -1,6 +1,6 @@
 # BCS-DEF-1-FANOUT — teacher fan-out follow-up to the operator-only MVP
 
-**Status:** DRAFT 2026-05-18 (plan-doc only; paranoia plan-mode is the next step).
+**Status:** DRAFT 2026-05-18; **plan-paranoia round 1 BLOCK on 2026-06-04** — 6 substantive BLOCKERs + 1 WARN recorded below (§0a). Closures pending; do NOT proceed to implementation until round-2+ SIGN-OFF achieved.
 **Wave name:** `bcs-def-1-fanout` (one-PR epic — see §5).
 **Trigger:** Backlog item BCS-DEF-1 originally scoped operator + per-teacher
 notification. The operator-only MVP shipped 2026-05-19 (RFC #316, commit
@@ -11,6 +11,24 @@ that deferred scope.
 **Telegram path:** still deferred to BCS-DEF-1-TG (see §10).
 **Test-send for `conflict-unresolved`:** still deferred to BCS-DEF-1-TEST-SEND
 (operator-only MVP shipped a 422 short-circuit; this plan does not unblock that).
+
+---
+
+## §0a — Plan-paranoia round-1 findings (2026-06-04, BLOCK)
+
+Codex paranoia round 1 returned BLOCK with 6 BLOCKERs + 1 WARN. Raw output: `/tmp/codex-paranoia-20260604T055143Z-bcs-def-1/round-1.md`. Findings summarised below — each will be closed in §0b (round-2 prep) by a principled plan revision. Until then, this plan is NOT SIGN-OFF; implementation must not start.
+
+| # | Severity | Summary | Closure approach |
+|---|---|---|---|
+| 1 | BLOCKER | Fan-out builds on bounded `readOffenderRows()` (truncated by `CONFLICT_UNRESOLVED_REPORT_LIMIT`); teachers beyond the limit miss fan-out, and per-teacher fingerprint can fail to flip on new conflicts within an already-shown teacher (`scripts/conflict-unresolved-alert.mjs:143-183,214-242`). | Add separate teacher-grouped query path (analogous to the unbounded operator-fingerprint tuple read at `:214-242`) — unbounded, grouped by `teacher_account_id`. Operator email keeps the truncated view; fan-out runs over the full qualifying set. |
+| 2 | BLOCKER | `TEACHER_FANOUT_CAP` allows starvation of the deferred tail: cap-before-dedup vs cap-after-dedup unspecified, no across-tick drain semantics. Stable backlog → first N teachers forever, rest never paged. Precedent in `scripts/teacher-daily-digest.mjs:351-389` uses an explicit per-recipient state machine with `maxAttempts` + retry semantics. | Define cap as soft-limit AFTER dedup; track `lastAttemptAt` per deferred teacher in state file; rotate so any teacher waits at most `CAP_DRAIN_WINDOW_TICKS` before being attempted. Document semantics + invariants explicitly in §2.x. |
+| 3 | BLOCKER | `/admin/settings/alerts` "Последнее уведомление" semantics break: `getProbeStatus()` selects latest `alert_sent` row regardless of audience (`lib/admin/probe-status.ts:99-109`), so operator-branch send-failure + teacher-branch success surfaces teacher email as "last operator alert." Proposed filter by `ALERT_EMAIL_TO` is wrong because `recipient_email` is a historical snapshot per `migrations/0053_probe_runs.sql:71-73`. | Add `probe_runs.alert_audience text check in ('operator','teacher')` column via additive migration; `getProbeStatus()` filters on `alert_audience='operator'` for the operator "last alert" pill, and a new per-teacher aggregate feeds a separate UI block (per BLOCKER #4). |
+| 4 | BLOCKER | Parent SoT `docs/plans/conflict-unresolved-alert.md:933-940` already required per-teacher delivery success/failure UI surface; current draft omits both `lib/admin/probe-status.ts` and `app/admin/(gated)/settings/alerts/page.tsx` from the file list (`docs/plans/bcs-def-1-fanout.md:412-425`). | Add both files to §2.x file list. Design UI: per-probe expandable block listing teacher-row aggregates from the new `alert_audience` column (count sent, last failure, current backlog). |
+| 5 | BLOCKER | State-file upgrade NOT backward-safe despite plan claim. Plan writes v2 always (incl. fan-out OFF case at `:340-343`), but legacy reader at `scripts/conflict-unresolved-alert.mjs:429-435,686-689,793-795` only understands top-level `{lastAlertAt,lastFingerprint}`. Rollback / mixed-version tick loses operator dedup → re-pages every tick. | Keep v1 top-level keys as load-bearing; ADD `perTeacher: { [teacherId]: { lastAlertAt, lastFingerprint, lastAttemptAt } }` as an additive nested key. Old reader ignores unknown key; new reader populates both. Document forward + backward read/write contract explicitly. |
+| 6 | BLOCKER | Privacy boundary pinned weakly (§4 calls it "Pinned by §3.2" but §3.2 only asserts teacher A's email contains the right set — not that it OMITS teacher B's slot IDs / emails). Existing integration helper reads "one latest row by `ran_at desc`" (`tests/integration/scripts/conflict-unresolved-alert.test.ts:174-209`) — ambiguous after N+1 rows. | Rewrite §3.x privacy tests as explicit negative assertions (teacher A's payload must NOT contain teacher B's slot IDs OR teacher B's email). Update integration helper to filter `probe_runs` rows by `recipient_email` before assertion (no more "one latest"). |
+| 7 | WARN | `/admin/settings/alerts` page copy at `app/admin/(gated)/settings/alerts/page.tsx:111-122` says four probes "настроены на отправку писем оператору" — once one probe also emits teacher mail, this copy becomes untruthful. | Update copy to acknowledge per-teacher fan-out (operator-only by default; teacher fan-out enabled per `CONFLICT_UNRESOLVED_TEACHER_FANOUT_ENABLED`). |
+
+**Round-2 prep work (deferred to next session):** rewrite §2.x file list, §2.2 query semantics, §2.3 state-file shape, §2.5 cap-drain semantics, §3.x privacy tests + harness; add `migrations/0XXX_probe_runs_alert_audience.sql` to §2.4; update §10 to acknowledge the now-included UI surface as in-scope. Effort estimate: 200-300 plan-doc lines + 1-2 hours.
 
 ---
 
