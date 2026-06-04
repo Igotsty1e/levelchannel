@@ -777,6 +777,9 @@ Closure #2 (cap = soft-limit AFTER dedup) implies capped-out teachers do NOT get
 
 - `lib/admin/probe-status.ts getProbeFanoutStatsFromProbeRuns(probeName)` — aggregates `probe_runs` rows with `alert_audience='teacher'` for sent + send_failed counts + last-sent age. Source: DB.
 - `lib/admin/probe-status.ts getProbeFanoutDeferredStats(probeName)` — reads the state file (server-side fs access) to count entries where `(now - lastAttemptAt) > DRAIN_WINDOW_MS / N_TICKS_THRESHOLD` (= "in queue, NOT yet sent this round"). Source: state file path from operator settings (`CONFLICT_UNRESOLVED_STATE_FILE` env or default `/var/lib/levelchannel/conflict-unresolved-state.json`).
+
+> **§0g UPDATE 2026-06-04:** the "or default /var/lib/levelchannel/..." fallback in this Closure is SUPERSEDED by §0f + §0g. Canonical contract: env REQUIRED in production; admin returns null deferred-stats when unset; single supported absolute path is `<APP_DIR>/var/conflict-unresolved-state.json`. See §0g.
+
 - Combined `getProbeFanoutStats(probeName)` returns `{ operator, teachers: { sent, sendFailed, deferred, deferredOldestAge } }` with `deferred` + `deferredOldestAge` from the state file, `sent`/`sendFailed` from `probe_runs`.
 
 Trade-off acknowledged: state file is the script's local artifact; admin UI must read it from the same FS. The script runs under systemd on the prod VPS; admin app runs on the same host. Path is operator-configurable. Sub-PR file list adds the state-file reader to `lib/admin/probe-status.ts`.
@@ -1026,3 +1029,29 @@ No change; documented in §0e.
 ---
 
 **Status after §0f applied:** round-4 findings closed. The two BLOCKERs (path-resolution + GC-persistence) now have concrete contracts that the Sub-PR impl will follow. Round-5 codex verifies coherence.
+
+---
+
+## §0g — Round-5 closures (2026-06-04, narrows path recommendation; supersedes §0c Closure #1 fallback wording)
+
+Round 5 surfaced 1 BLOCKER + 1 WARN. §0g closures:
+
+### Closure for BLOCKER (sandbox-risk in §0f recommended paths)
+
+§0f §"BLOCKER #1" closure listed two recommendations for the canonical absolute path: `/var/lib/levelchannel-app/...` OR `<APP_DIR>/var/...`. The first one is OUTSIDE the unit's `ReadWritePaths=__LEVELCHANNEL_APP_DIR__/var` sandbox (`scripts/systemd/levelchannel-conflict-unresolved-alert.service:31`) and would silently break the writer without an explicit `StateDirectory=` / additional RW-path addition.
+
+**Narrow the contract:** the ONLY supported canonical absolute path is `<APP_DIR>/var/conflict-unresolved-state.json` (e.g. `/srv/levelchannel/var/conflict-unresolved-state.json` for the standard VPS layout). Drop the `/var/lib/levelchannel-app/...` alternative entirely.
+
+The Sub-PR impl runbook entry (`docs/private/OPERATIONS.private.md` or equivalent) MUST therefore say:
+
+> `CONFLICT_UNRESOLVED_STATE_FILE` MUST be set to the absolute path `<APP_DIR>/var/conflict-unresolved-state.json` on BOTH the probe systemd unit AND the next-server systemd unit. The base dir `<APP_DIR>` matches the systemd `WorkingDirectory=__LEVELCHANNEL_APP_DIR__` substitution applied by the env-bootstrap script. Any OTHER absolute path is unsupported because the probe unit only grants `ReadWritePaths=__LEVELCHANNEL_APP_DIR__/var`; arbitrary `/var/lib/...` paths would silently break the writer.
+
+If we ever need to move state outside `<APP_DIR>/var/...`, that's a separate epic that ships the systemd `StateDirectory=` extension + runbook update FIRST.
+
+### Closure for WARN (§0c Closure #1 fallback wording stale)
+
+§0c Closure #1 wording at line 779 still says "Source: state file path from operator settings (`CONFLICT_UNRESOLVED_STATE_FILE` env or default `/var/lib/levelchannel/conflict-unresolved-state.json`)." §0f changed the production contract to "admin reads env directly; when unset in production returns null."
+
+**Fix taken in this commit:** annotate the §0c Closure #1 wording inline. The supersession chain now reads: §0c → §0e (rescinded `/var/lib/levelchannel/...` proposal) → §0f (env-required) → §0g (single canonical path: `<APP_DIR>/var/...`).
+
+(The annotation is below — applied as a one-line note at the §0c reference.)
