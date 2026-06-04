@@ -912,3 +912,137 @@ Codex paranoia round 8 returned BLOCK with 6 BLOCKERs + 1 WARN. Raw output: `/tm
 | 7 | WARN | Audit trail for interstitial accept underspecified — plan expands `AUTH_AUDIT_EVENT_TYPES` to include `auth.teacher.saas_offer_accepted` but accept handler writes only `recordConsent()`. Schema promises a stronger audit trail than the code provides. (plan:314-315,549; `lib/audit/auth-events.ts:27-37`; `app/api/teacher/saas-offer-accept/route.ts:91-101`) | Add explicit `recordAuthAuditEvent({eventType:'auth.teacher.saas_offer_accepted', accountId: teacher.id, payload: { consentVersionId, ip, ua }})` call in accept handler; document in plan §Sub-A.3. |
 
 **Round-9 prep work (deferred):** rewrite §0z migration contract (mig 0096/0097/0099 already shipped), §1 + §2 blast-radius to two-document bundle, Sub-A.3 TOCTOU contract for both docs, telegram-bind gate scope, evals contract sync, `evaluateSaasOfferGate()` TX snapshot semantics, audit emit. Estimated 200-400 plan-doc lines + decisions on TX snapshot SQL shape that may require additional codex consult.
+
+---
+
+## §0ac — Round-8 closures (2026-06-04, supersede contradictions in §0z / §2 / §6)
+
+This section is the authoritative closure for the round-8 findings recorded in §0ab. Where this section contradicts older inline text (especially in §0z file-list and §6 Sub-A.4 risk list), §0ac wins.
+
+### Closure #1 (BLOCKER#1 — migration contract stale)
+
+**Fact:** migrations `0096_saas_offer_doc_kind.sql`, `0097_saas_processor_terms_doc_kind.sql`, and `0099_saas_v1_publish_and_flip.sql` are already in main as of 2026-06-04 (verify: `ls migrations/ | grep saas`). Foundation Sub-A.1 (CASE_PACKET + legal-rf v1 drafting + DB schema enable) has SHIPPED.
+
+**Closure:** the §0z row "`migrations/0096_saas_offer_doc_kind.sql` | NEW" is now historical (shipped). The remaining scope this plan covers is:
+- Sub-A.2 — DB-canonical persistence wrappers + legal-pipeline guard extension (partially shipped — see `scripts/legal-pipeline-check.sh` LEGAL_PREFIXES; verify final extension before Sub-A.2 PR).
+- Sub-A.3 + Sub-A.5 — `/register` consent gate + existing-teacher re-consent gate + interstitial routes (`/saas-offer-accept`, `/saas-offer-awaiting`).
+- Sub-A.4 — paranoia + ship.
+- Epic B — landing redesign.
+
+The "next mig slot" claim in §0z is wrong; next free slot is `0104` (after the duplicate-0103 sweep tracked separately). No new migration is required by Sub-A.2 / A.3 / A.5; the CHECK constraints are already widened by 0096 / 0097.
+
+### Closure #2 (BLOCKER#2 — two-document bundle)
+
+**Fact:** the live legal bundle is TWO documents: `saas_offer` (the SaaS agreement, mig 0096) AND `saas_processor_terms` (the operator-of-ПД processing terms, mig 0097). Both are referenced by `lib/legal/versions.ts:13-18`, the admin legal UI, public routes, and the self-reg flow.
+
+**Closure:** all blast-radius bullets in §0z that name `saas_offer` ALSO apply to `saas_processor_terms`. Specifically:
+- `lib/auth/consents.ts ConsentKind`: includes both `saas_offer` AND `saas_processor_terms` (verify in current main; if only one is listed, the gap is an additional BLOCKER to close before Sub-A.3 ships).
+- `lib/legal/versions.ts LegalDocKind`: same — both kinds.
+- Admin legal UI (`versions-manager.tsx`, `page.tsx`) must list BOTH tabs.
+- `scripts/legal-pipeline-check.sh` `LEGAL_PATHS` / `LEGAL_PREFIXES`: must protect BOTH document routes (`app/saas/offer/` AND `app/saas/processor-terms/`) plus both accept handlers if separate.
+
+`saas_processor_terms` is NOT to be removed; the plan must protect both. Any future "cleanup" PR that drops the second kind is a regression.
+
+### Closure #3 (BLOCKER#3 — TOCTOU on saas_processor_terms)
+
+**Fact:** the round-2 BLOCKER#1 + round-10 BLOCKER#1 closure pinned `saasOfferConsentVersionId` GET→POST equality (see §Sub-A.3 / Sub-A.5 version-TOCTOU contract). It did NOT pin `saasProcessorTermsConsentVersionId`. Two-document bundle implies both pins are required.
+
+**Closure:** the §3.6 consent matrix and §Sub-A.3 version-TOCTOU contract are amended to require BOTH `saasOfferConsentVersionId` AND `saasProcessorTermsConsentVersionId` in the POST body for teacher-register-without-invite. The server compares both to the live `getCurrentLegalVersion('saas_offer')` / `('saas_processor_terms')` results and rejects with 409 `version_changed` if either differs. Two consent rows are written transactionally (or neither) — see Closure #6 for the TX shape.
+
+### Closure #4 (BLOCKER#4 — unbind must remain opt-out escape hatch)
+
+**Fact:** §0z row at line 33 ("`lib/teacher-telegram-bind/actions.ts` (round-9 BLOCKER#2) | EXTEND") gates BOTH `bindTeacherTelegramAndCreateChannel` (line 62) AND `unbindTeacherTelegram` (line 117). That is wrong — a teacher caught without current consent must STILL be able to stop Telegram delivery.
+
+**Closure:** the gate applies ONLY to `bindTeacherTelegramAndCreateChannel` (line 62). `unbindTeacherTelegram` (line 117) is explicitly excluded from the gate; document this exclusion in the plan and the code comment. The Telegram webhook teacher-branch consume path at `app/api/telegram/webhook/route.ts:154+205` is similarly gated only on the bind side; the public `/stop` command (whichever path it routes through) is never gated.
+
+### Closure #5 (BLOCKER#5 — evals registries)
+
+**Fact:** `evals/PRODUCT_FLOWS.md:71-83` and `evals/URL_REDIRECT_CONTRACT.md:20-31,87-99` are mandatory contract files for new top-level routes (see `docs/plans/CRITICAL-PATH-INVENTORY.md`). The plan's §0z file list omits both.
+
+**Closure:** add the following to the Sub-A.2 (or Sub-A.3, whichever ships the new routes) file list:
+- `evals/PRODUCT_FLOWS.md` — EXTEND: add `/saas-offer-accept` (existing-teacher acceptance interstitial), `/saas-offer-awaiting` (operator-flipped-flag-before-publishing-v1 holding page), `/admin/settings/saas-offer` (operator surface if/when it exists).
+- `evals/URL_REDIRECT_CONTRACT.md` — EXTEND: pin the redirect ladder for each verdict (`ok` → `/teacher`; `consent_required` → `/saas-offer-accept`; `awaiting_publication` → `/saas-offer-awaiting`; anonymous → `/login`; non-teacher → role-appropriate redirect).
+
+Without these entries the new routes ship outside the eval contract and break the project's URL audit.
+
+### Closure #6 (BLOCKER#6 — evaluateSaasOfferGate snapshot)
+
+**Fact:** `lib/auth/guards.ts:360-396` implements `evaluateSaasOfferGate` as two independent reads (`getCurrentLegalVersion('saas_offer')` then `getActiveConsent(...)`). For SSR this is acceptable (the redirect surface is idempotent). For the mutating `/api/teacher/**` perimeter — which this plan elevates the gate to — the two-read window allows a stale consent row to slip through one mutation between version-publish and consent-revalidation.
+
+**Closure:** introduce a single TX-bound snapshot shape for the mutation gate. New helper `evaluateSaasOfferGateForMutation(accountId): Promise<GateVerdict>` (separate from `evaluateSaasOfferGate` to keep SSR perf):
+
+```typescript
+// lib/auth/guards.ts (new helper; coexists with evaluateSaasOfferGate)
+export async function evaluateSaasOfferGateForMutation(
+  accountId: string,
+): Promise<GateVerdict> {
+  const pool = getAuthPool()
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+    await client.query('set transaction isolation level repeatable read')
+    const res = await client.query<{
+      live_offer_id: string | null
+      consent_offer_id: string | null
+      live_terms_id: string | null
+      consent_terms_id: string | null
+    }>(
+      `select
+         (select id from legal_document_versions
+            where doc_kind = 'saas_offer' and is_active = true limit 1) as live_offer_id,
+         (select document_version_id from account_consents
+            where account_id = $1::uuid and document_kind = 'saas_offer'
+            order by accepted_at desc limit 1) as consent_offer_id,
+         (select id from legal_document_versions
+            where doc_kind = 'saas_processor_terms' and is_active = true limit 1) as live_terms_id,
+         (select document_version_id from account_consents
+            where account_id = $1::uuid and document_kind = 'saas_processor_terms'
+            order by accepted_at desc limit 1) as consent_terms_id`,
+      [accountId],
+    )
+    await client.query('commit')
+    const row = res.rows[0]
+    // Decision tree:
+    //   live IS NULL → awaiting_publication
+    //   live IS NOT NULL AND consent IS NULL → consent_required
+    //   live != consent → consent_required (version drifted)
+    //   live == consent → ok (for this kind)
+    // Both kinds must be 'ok' to return overall ok.
+    // ...
+  } finally {
+    client.release()
+  }
+}
+```
+
+The repeatable-read isolation level guarantees the two-document snapshot is consistent within the gate read. The mutation route calls this helper inside its own write TX (so the gate verdict is part of the same transaction that does the mutation — a publish-v2 commit that lands between gate and mutation is invisible to the mutation TX, which fails the gate and rolls back cleanly).
+
+Regression test: integration case that publishes v2 between gate-read and mutation-write (via two concurrent connections) — old code lets the stale-consent mutation commit, new code rolls it back.
+
+### Closure #7 (WARN — saas_offer_accepted audit emit)
+
+**Fact:** `app/api/teacher/saas-offer-accept/route.ts:91-101` currently writes only `recordConsent()`. The audit event type `auth.teacher.saas_offer_accepted` is already in the SQL CHECK + the TS `AUTH_AUDIT_EVENT_TYPES` allowlist (`lib/audit/auth-events.ts:27-37`), but no writer emits it.
+
+**Closure:** the accept handler MUST emit the audit event alongside the consent row:
+
+```typescript
+// app/api/teacher/saas-offer-accept/route.ts (post-recordConsent)
+await recordAuthAuditEvent({
+  eventType: 'auth.teacher.saas_offer_accepted',
+  accountId: teacher.id,
+  email: teacher.email,
+  clientIp: getClientIp(request),
+  userAgent: request.headers.get('user-agent'),
+  payload: {
+    consentVersionId: liveVersionId,
+    documentKind: 'saas_offer',
+  },
+})
+// And mirror for saas_processor_terms when the bundle requires both.
+```
+
+The audit emit is part of the same route handler scope; if `recordConsent` succeeds, `recordAuthAuditEvent` must also succeed (or be retried best-effort — the consent row is the source of truth, the audit row is the forensic trail). Do NOT couple them in a hard TX; the audit recorder is already silent-skip on missing pool per `lib/audit/auth-events.ts:81-86`.
+
+---
+
+**Status after §0ac applied:** round-8 BLOCKER findings each have a written closure. Round-9 codex run will verify: (a) closures don't contradict each other, (b) closures don't open new BLOCKERs, (c) all 6 BLOCKERs + 1 WARN are addressed.
