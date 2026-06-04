@@ -1,6 +1,8 @@
 # BCS-DEF-1-FANOUT — teacher fan-out follow-up to the operator-only MVP
 
-**Status:** SIGN-OFF round 6/3 (off-protocol cap extension; codex returned 0 BLOCKER + 0 WARN + 4 INFO confirmations on 2026-06-05). Path: r1 6B+1W (§0a) → r2 3B+1W+1I (§0b) → r3 2B+2W+1I (§0c+§0d) → r4 2B+1W+1I (§0e) → r4-recheck 2B+1W+1I (§0f) → r5 1B+1W (§0g) → **r6 SIGN-OFF**. Implementation epic unblocked — estimated 600-800 LOC: migration 0104 (probe_runs.alert_audience) + scripts/conflict-unresolved-alert.mjs extensions (unbounded teacher-grouped query, state-file v2 additive shape, GC, atomic-rename writer, cap-drain rotation, alertAudience-aware recordProbeRun) + lib/admin/probe-status.ts + admin alerts page extension + tests + runbook env-pinning.
+**Status:** SHIPPED 2026-06-04 (impl PR landed: mig 0104 + scripts/conflict-unresolved-alert.mjs fan-out branch + lib/admin/probe-status.ts audience filter + getProbeFanoutStatsFromProbeRuns helper + 4 new unit tests + alerts-obs shadow schema bump). Activation gate: operator flips CONFLICT_UNRESOLVED_TEACHER_FANOUT_ENABLED=1 in BOTH the probe systemd unit env AND the next-server unit env (alongside agreement on CONFLICT_UNRESOLVED_STATE_FILE per plan §0f/§0g). Admin UI fan-out block (read-only stats card) DEFERRED to follow-up — data layer ready.
+
+**Plan-paranoia trail (prior to ship):** r1 6B+1W (§0a) → r2 3B+1W+1I (§0b) → r3 2B+2W+1I (§0c+§0d) → r4 2B+1W+1I (§0e) → r4-recheck 2B+1W+1I (§0f) → r5 1B+1W (§0g) → r6 SIGN-OFF.
 **Wave name:** `bcs-def-1-fanout` (one-PR epic — see §5).
 **Trigger:** Backlog item BCS-DEF-1 originally scoped operator + per-teacher
 notification. The operator-only MVP shipped 2026-05-19 (RFC #316, commit

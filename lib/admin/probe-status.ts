@@ -86,7 +86,42 @@ export async function getProbeStatus(probeName: ProbeName): Promise<ProbeStatus>
     // a Telegram row would render as `Resend: <telegram message id>`
     // with `(нет адреса)` — incoherent UI. Telegram rows surface
     // exclusively via `getLatestTelegramRun()` below.
-    const lastRunQ = pool.query(
+    //
+    // bcs-def-1-fanout impl (mig 0104) — filter to operator-audience
+    // rows so per-teacher fan-out activity does not displace the
+    // operator-branch outcome the admin card surfaces. NULL acceptable
+    // for pre-mig legacy rows + non-fan-out probes (auth-flow,
+    // calendar-pathology, webhook-flow always write NULL).
+    //
+    // Wave-paranoia R2 WARN #1 closure (2026-06-04): in the rolling-
+    // deploy window with new code + pre-0104 DB, the alert_audience
+    // predicate trips 42703 undefined_column. Catch and retry WITHOUT
+    // the predicate so the alerts page keeps rendering. Once mig 0104
+    // lands the predicate takes effect on the next request — no
+    // restart needed.
+    const runWithFanoutFallback = async (
+      sqlWith: string,
+      sqlWithout: string,
+      params: unknown[],
+    ) => {
+      try {
+        return await pool.query(sqlWith, params)
+      } catch (queryErr) {
+        if (isUndefinedColumnError(queryErr)) {
+          return await pool.query(sqlWithout, params)
+        }
+        throw queryErr
+      }
+    }
+    const lastRunQ = runWithFanoutFallback(
+      `select ran_at, verdict_kind, alert_sent, stats, error_message
+         from probe_runs
+        where probe_name = $1
+          and is_test = false
+          and recipient_kind = 'email'
+          and (alert_audience = 'operator' or alert_audience is null)
+        order by ran_at desc
+        limit 1`,
       `select ran_at, verdict_kind, alert_sent, stats, error_message
          from probe_runs
         where probe_name = $1
@@ -96,7 +131,16 @@ export async function getProbeStatus(probeName: ProbeName): Promise<ProbeStatus>
         limit 1`,
       [probeName],
     )
-    const lastAlertQ = pool.query(
+    const lastAlertQ = runWithFanoutFallback(
+      `select ran_at, recipient_email, fingerprint, alert_email_id
+         from probe_runs
+        where probe_name = $1
+          and is_test = false
+          and alert_sent = true
+          and recipient_kind = 'email'
+          and (alert_audience = 'operator' or alert_audience is null)
+        order by ran_at desc
+        limit 1`,
       `select ran_at, recipient_email, fingerprint, alert_email_id
          from probe_runs
         where probe_name = $1
@@ -175,15 +219,34 @@ export type TelegramRunStatus =
 export async function getLatestTelegramRun(): Promise<TelegramRunStatus> {
   const pool = getDbPool()
   try {
-    const r = await pool.query(
-      `select probe_name, ran_at, verdict_kind, alert_sent,
+    // Wave-paranoia R2 WARN #1 closure (2026-06-04): same 42703 retry
+    // pattern as getProbeStatus() to keep the Telegram tile rendering
+    // during the rolling-deploy window with pre-0104 DB.
+    const telegramSqlWith = `select probe_name, ran_at, verdict_kind, alert_sent,
+              recipient_email, alert_email_id, fingerprint, error_message
+         from probe_runs
+        where is_test = false
+          and recipient_kind = 'telegram'
+          and (alert_audience = 'operator' or alert_audience is null)
+        order by ran_at desc
+        limit 1`
+    const telegramSqlWithout = `select probe_name, ran_at, verdict_kind, alert_sent,
               recipient_email, alert_email_id, fingerprint, error_message
          from probe_runs
         where is_test = false
           and recipient_kind = 'telegram'
         order by ran_at desc
-        limit 1`,
-    )
+        limit 1`
+    let r
+    try {
+      r = await pool.query(telegramSqlWith)
+    } catch (queryErr) {
+      if (isUndefinedColumnError(queryErr)) {
+        r = await pool.query(telegramSqlWithout)
+      } else {
+        throw queryErr
+      }
+    }
     const row = r.rows[0] ?? null
     return {
       lastRun: row
@@ -200,6 +263,85 @@ export async function getLatestTelegramRun(): Promise<TelegramRunStatus> {
             fingerprint: row.fingerprint ? String(row.fingerprint) : null,
             errorMessage: row.error_message
               ? String(row.error_message)
+              : null,
+          }
+        : null,
+    }
+  } catch (err) {
+    if (isUndefinedTableError(err) || isUndefinedColumnError(err)) {
+      return { migrationPending: true }
+    }
+    throw err
+  }
+}
+
+// bcs-def-1-fanout impl — observability for per-teacher fan-out activity.
+// Reads aggregate counts from probe_runs over the trailing 24h, plus the
+// most recent send/error for the operator-facing "Fan-out (per-teacher)"
+// card. Same migration-pending guard as the sibling helpers.
+export type FanoutStats =
+  | { migrationPending: true }
+  | {
+      migrationPending?: false
+      windowHours: number
+      sent24h: number
+      failed24h: number
+      dedupSkipped24h: number
+      deferred24h: number
+      lastRun: {
+        ranAt: string
+        verdictKind: string
+        recipientEmail: string | null
+        errorMessage: string | null
+      } | null
+    }
+
+export async function getProbeFanoutStatsFromProbeRuns(
+  probeName: ProbeName,
+): Promise<FanoutStats> {
+  const pool = getDbPool()
+  try {
+    const aggQ = pool.query(
+      `select
+         count(*) filter (where verdict_kind = 'alert_sent'  and alert_sent = true)        as sent,
+         count(*) filter (where verdict_kind = 'alert_send_failed' or verdict_kind = 'config_missing') as failed,
+         count(*) filter (where verdict_kind = 'dedup_skip' and (stats->>'defer_reason') is null)      as deduped,
+         count(*) filter (where verdict_kind = 'dedup_skip' and (stats->>'defer_reason') = 'cap_drain_rotation') as deferred
+       from probe_runs
+        where probe_name = $1
+          and is_test = false
+          and alert_audience = 'teacher'
+          and ran_at >= now() - interval '24 hours'`,
+      [probeName],
+    )
+    const lastQ = pool.query(
+      `select ran_at, verdict_kind, recipient_email, error_message
+         from probe_runs
+        where probe_name = $1
+          and is_test = false
+          and alert_audience = 'teacher'
+        order by ran_at desc
+        limit 1`,
+      [probeName],
+    )
+    const [aggR, lastR] = await Promise.all([aggQ, lastQ])
+    const agg = aggR.rows[0] ?? {}
+    const last = lastR.rows[0] ?? null
+    return {
+      windowHours: 24,
+      sent24h: Number(agg.sent ?? 0),
+      failed24h: Number(agg.failed ?? 0),
+      dedupSkipped24h: Number(agg.deduped ?? 0),
+      deferred24h: Number(agg.deferred ?? 0),
+      lastRun: last
+        ? {
+            ranAt: new Date(String(last.ran_at)).toISOString(),
+            verdictKind: String(last.verdict_kind),
+            recipientEmail: last.recipient_email
+              ? String(last.recipient_email)
+              : null,
+            errorMessage: last.error_message
+              ? String(last.error_message)
               : null,
           }
         : null,
