@@ -482,3 +482,117 @@ Codex paranoia round 3 returned BLOCK with 6 BLOCKERs + 2 WARNs + 1 INFO. Raw ou
 | 9 | INFO | mig 0100 indexes adequate — helper reads/writes by `account_id` only, PK gives needed btree; no JSONB-key index needed until query-by-content lands. | No change required; document the decision in §schema for traceability. |
 
 **Round-4 prep work (deferred):** rewrite Sub-PR A scope (foundation already shipped), add dismiss-hint API contract + test matrix to tooltip spec, fix CT1/learner-tz/T9 contracts, add purge-hook + test. Estimated 150-250 plan-doc lines + decision on extend-vs-rename helper.
+
+---
+
+## §0d — Round-3 closures (2026-06-04, supersede contradictions in §0c)
+
+This section is the authoritative closure for the round-3 findings recorded in §0c. Where §0d contradicts older inline text, §0d wins.
+
+### Closure #1 (BLOCKER#1 — dismiss-hint API contract)
+
+**Fact:** `lib/onboarding/state.ts` already exports `dismissOnboardingHint(accountId, key)` and `getOnboardingState(accountId)` + `resetOnboardingState(accountId)` (SHIPPED in main). There is NO HTTP endpoint yet — the helper is callable only from server contexts.
+
+**Closure:** add the canonical mutation surface `POST /api/onboarding/dismiss-hint`:
+
+- **File:** `app/api/onboarding/dismiss-hint/route.ts` (NEW).
+- **Method:** POST.
+- **Body:** `{ hintId: string }` — the kebab-case key from `lib/onboarding/keys.ts` whitelist.
+- **Auth:** `requireAuthenticatedAccount(request)` from `lib/auth/guards.ts` — accept ANY authenticated account (learner/teacher/admin), reject anonymous with 401. **`accountId` derives from session** — never from body (anti-spoof).
+- **Rate-limit:** `enforceAccountRateLimit('onboarding-dismiss', 30 / minute)` per account (small ceiling — repeated dismissal is idempotent but no need for spam).
+- **Whitelist:** validate `hintId` against `ONBOARDING_HINT_KEYS` constant from `lib/onboarding/keys.ts`; unknown key → 400 `unknown_key`.
+- **Idempotency:** repeated dismiss returns 200 with the same shape; no error.
+- **Return shape:** `{ ok: true, hintId, dismissedAt: iso8601 }`.
+- **Origin gate:** `enforceTrustedBrowserOrigin(request)` (same-site-only, per cabinet convention).
+- **Tests:** see §0d Closure #8 test matrix.
+
+### Closure #2 (BLOCKER#2 — drop CT1 verify-email banner for /teacher/*)
+
+**Fact:** the SSR gate in `app/teacher/layout.tsx:50-60` redirects unverified teachers from `/teacher/*` to `/cabinet`. `evals/URL_REDIRECT_CONTRACT.md:57-65` pins this redirect. A banner on `/teacher/*` is unreachable.
+
+**Closure:** DROP the CT1 verify-email banner from the spec entirely for teachers. The verify-email surface lives at `/cabinet` (where the unverified teacher actually lands). Either:
+- Surface the verify-email reminder on `/cabinet/page.tsx` when the redirected account has `role='teacher'` AND `verified_at IS NULL` (showing role-aware copy "Подтвердите email чтобы вернуться в кабинет учителя").
+- OR drop the teacher-side CT1 entirely; the existing `/cabinet` verify-email flow already handles this.
+
+Default: drop CT1 for teachers (the redirect itself already communicates the gate; an additional banner is noise).
+
+### Closure #3 (BLOCKER#3 — learner-after-book-reminder mount location)
+
+**Fact:** post-book success path is `app/cabinet/book/[ymd]/[slotId]/confirm-form.tsx:51-54` → `router.push('/cabinet?booked=1')`. Banner lives in `app/cabinet/lessons-section.tsx:457-483`. The tooltip-spec mount on `app/cabinet/book/[ymd]/page.tsx` would never render.
+
+**Closure:** re-mount `learner-after-book-reminder-channel` on `app/cabinet/page.tsx` reading `?booked=1` SSR. The hint sits adjacent to the success banner in `LessonsSection`. Specifically:
+
+- **Trigger:** SSR — `searchParams.booked === '1'` AND `dismissed_hints.learner_after_book_reminder_channel === undefined`.
+- **Copy:** «Чтобы не забыть про занятие, подключите напоминания: Telegram или email» + CTA to `/cabinet/settings/reminders`.
+- **Mount file:** `app/cabinet/page.tsx` (top of `LessonsSection`'s post-book branch — see line 457+).
+
+### Closure #4 (BLOCKER#4 — learner-book-tz-reminder SoT)
+
+**Fact:** `app/cabinet/book/[ymd]/page.tsx:55-57,121-129` and `app/cabinet/book/[ymd]/time-list.tsx:23-29,54-57` render times in **learner profile timezone**, not teacher_tz. Comparing browser tz to teacher_tz raises false positives.
+
+**Closure:** rewrite `learner-book-tz-reminder` trigger + copy:
+
+- **Trigger:** browser tz (from `Intl.DateTimeFormat().resolvedOptions().timeZone`) differs from learner-profile tz (from `account_profiles.timezone` per mig 0069). If learner-profile tz is missing OR equals browser tz, hide the hint.
+- **Copy:** «Времена показаны в вашем часовом поясе ({learner_tz}). Если вы сейчас в другом, обновите часовой пояс в профиле перед бронированием.»
+- **CTA:** `/cabinet/profile#timezone`.
+
+### Closure #5 (BLOCKER#5 — T9 hint condition is ever-completed)
+
+**Fact:** §Goal at line 12-16 says "onboarding complete on first `lesson_completions` insert". T9 SQL at line 156-177 uses a rolling-30-day window for the `teacher-first-slot-mark-completed` hint — after day 31 the hint re-appears for an already-onboarded teacher.
+
+**Closure:** change the predicate from rolling-30d to ever-completed:
+
+```sql
+-- T9 trigger predicate
+SELECT NOT EXISTS (
+  SELECT 1 FROM lesson_completions
+   WHERE teacher_id = $1
+) AS hint_needed;
+```
+
+If a teacher has ANY completion ever, the hint is hidden. This matches the §Goal definition of "onboarding complete".
+
+### Closure #6 (BLOCKER#6 — db-retention-cleanup scrubs account_onboarding_state)
+
+**Fact:** `app/api/account/delete/route.ts:21-27` schedules anonymization via `db-retention-cleanup.mjs:133-245`; the script does NOT scrub `account_onboarding_state`. Per-account behavioral state survives the purge.
+
+**Closure:** add `account_onboarding_state` to the cleanup script's table list:
+
+- **File:** `scripts/db-retention-cleanup.mjs`.
+- **Add to the anonymization sweep:** `DELETE FROM account_onboarding_state WHERE account_id IN (<grace-expired-account-ids>)`.
+- **Integration test:** verify a grace-expired account's onboarding row is deleted by the cleanup pass.
+
+This is Sub-PR A scope (foundation purge-hook lives alongside the API route).
+
+### Closure #7 (WARN — plan stale; foundation shipped)
+
+**Fact:** `mig 0100_account_onboarding_state.sql`, `lib/onboarding/state.ts`, `lib/onboarding/keys.ts`, `auth.onboarding.reset` audit event — all SHIPPED in main.
+
+**Closure:** the spec's "Sub-PR A foundation" scope is REDUCED to:
+- New: `app/api/onboarding/dismiss-hint/route.ts` (Closure #1).
+- New: `scripts/db-retention-cleanup.mjs` extension (Closure #6).
+- New: integration test file `tests/integration/onboarding/dismiss-hint.test.ts` (Closure #8).
+- New: optional `<HintCard />` component shell (deferred to Sub-PR B/C; foundation does NOT need a default UI).
+
+The helper + migration + keys + audit are already SHIPPED. The spec's "Sub-PR A creates `lib/onboarding/dismiss-hint.ts`" is wrong — that module already exists as `lib/onboarding/state.ts`.
+
+### Closure #8 (WARN — Sub-PR A test matrix)
+
+**Closure:** integration test cases for `POST /api/onboarding/dismiss-hint`:
+
+1. **Auth:** anonymous → 401.
+2. **Auth:** learner self-call → 200 + state row written.
+3. **Auth:** teacher self-call → 200 + state row written.
+4. **Auth boundary:** learner A cannot affect learner B's state (body `accountId` ignored — derived from session only).
+5. **Whitelist:** unknown `hintId` → 400 `unknown_key`.
+6. **Idempotent:** repeat-dismiss same key → 200 (same response shape).
+7. **Rate-limit:** > N/min → 429.
+8. **Purge:** `db-retention-cleanup.mjs` against a grace-expired account → onboarding row deleted (Closure #6).
+
+### Closure #9 (INFO — mig 0100 indexes)
+
+No change. PK already gives needed btree; helper queries by `account_id` only. JSONB-key index unnecessary until query-by-content lands.
+
+---
+
+**Status after §0d applied:** round-3 BLOCKER findings each have a written closure. Round-4 codex run will verify: (a) closures are coherent, (b) no new BLOCKERs opened, (c) Sub-PR A remaining scope is correctly bounded (API + purge-hook + tests).
