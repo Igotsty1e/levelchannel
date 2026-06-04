@@ -1,6 +1,6 @@
 # BCS-DEF-1-FANOUT — teacher fan-out follow-up to the operator-only MVP
 
-**Status:** DRAFT 2026-05-18 (plan-doc only; paranoia plan-mode is the next step).
+**Status:** SIGN-OFF round 6/3 (off-protocol cap extension; codex returned 0 BLOCKER + 0 WARN + 4 INFO confirmations on 2026-06-05). Path: r1 6B+1W (§0a) → r2 3B+1W+1I (§0b) → r3 2B+2W+1I (§0c+§0d) → r4 2B+1W+1I (§0e) → r4-recheck 2B+1W+1I (§0f) → r5 1B+1W (§0g) → **r6 SIGN-OFF**. Implementation epic unblocked — estimated 600-800 LOC: migration 0104 (probe_runs.alert_audience) + scripts/conflict-unresolved-alert.mjs extensions (unbounded teacher-grouped query, state-file v2 additive shape, GC, atomic-rename writer, cap-drain rotation, alertAudience-aware recordProbeRun) + lib/admin/probe-status.ts + admin alerts page extension + tests + runbook env-pinning.
 **Wave name:** `bcs-def-1-fanout` (one-PR epic — see §5).
 **Trigger:** Backlog item BCS-DEF-1 originally scoped operator + per-teacher
 notification. The operator-only MVP shipped 2026-05-19 (RFC #316, commit
@@ -11,6 +11,24 @@ that deferred scope.
 **Telegram path:** still deferred to BCS-DEF-1-TG (see §10).
 **Test-send for `conflict-unresolved`:** still deferred to BCS-DEF-1-TEST-SEND
 (operator-only MVP shipped a 422 short-circuit; this plan does not unblock that).
+
+---
+
+## §0a — Plan-paranoia round-1 findings (2026-06-04, BLOCK)
+
+Codex paranoia round 1 returned BLOCK with 6 BLOCKERs + 1 WARN. Raw output: `/tmp/codex-paranoia-20260604T055143Z-bcs-def-1/round-1.md`. Findings summarised below — each will be closed in §0b (round-2 prep) by a principled plan revision. Until then, this plan is NOT SIGN-OFF; implementation must not start.
+
+| # | Severity | Summary | Closure approach |
+|---|---|---|---|
+| 1 | BLOCKER | Fan-out builds on bounded `readOffenderRows()` (truncated by `CONFLICT_UNRESOLVED_REPORT_LIMIT`); teachers beyond the limit miss fan-out, and per-teacher fingerprint can fail to flip on new conflicts within an already-shown teacher (`scripts/conflict-unresolved-alert.mjs:143-183,214-242`). | Add separate teacher-grouped query path (analogous to the unbounded operator-fingerprint tuple read at `:214-242`) — unbounded, grouped by `teacher_account_id`. Operator email keeps the truncated view; fan-out runs over the full qualifying set. |
+| 2 | BLOCKER | `TEACHER_FANOUT_CAP` allows starvation of the deferred tail: cap-before-dedup vs cap-after-dedup unspecified, no across-tick drain semantics. Stable backlog → first N teachers forever, rest never paged. Precedent in `scripts/teacher-daily-digest.mjs:351-389` uses an explicit per-recipient state machine with `maxAttempts` + retry semantics. | Define cap as soft-limit AFTER dedup; track `lastAttemptAt` per deferred teacher in state file; rotate so any teacher waits at most `CAP_DRAIN_WINDOW_TICKS` before being attempted. Document semantics + invariants explicitly in §2.x. |
+| 3 | BLOCKER | `/admin/settings/alerts` "Последнее уведомление" semantics break: `getProbeStatus()` selects latest `alert_sent` row regardless of audience (`lib/admin/probe-status.ts:99-109`), so operator-branch send-failure + teacher-branch success surfaces teacher email as "last operator alert." Proposed filter by `ALERT_EMAIL_TO` is wrong because `recipient_email` is a historical snapshot per `migrations/0053_probe_runs.sql:71-73`. | Add `probe_runs.alert_audience text check in ('operator','teacher')` column via additive migration; `getProbeStatus()` filters on `alert_audience='operator'` for the operator "last alert" pill, and a new per-teacher aggregate feeds a separate UI block (per BLOCKER #4). |
+| 4 | BLOCKER | Parent SoT `docs/plans/conflict-unresolved-alert.md:933-940` already required per-teacher delivery success/failure UI surface; current draft omits both `lib/admin/probe-status.ts` and `app/admin/(gated)/settings/alerts/page.tsx` from the file list (`docs/plans/bcs-def-1-fanout.md:412-425`). | Add both files to §2.x file list. Design UI: per-probe expandable block listing teacher-row aggregates from the new `alert_audience` column (count sent, last failure, current backlog). |
+| 5 | BLOCKER | State-file upgrade NOT backward-safe despite plan claim. Plan writes v2 always (incl. fan-out OFF case at `:340-343`), but legacy reader at `scripts/conflict-unresolved-alert.mjs:429-435,686-689,793-795` only understands top-level `{lastAlertAt,lastFingerprint}`. Rollback / mixed-version tick loses operator dedup → re-pages every tick. | Keep v1 top-level keys as load-bearing; ADD `perTeacher: { [teacherId]: { lastAlertAt, lastFingerprint, lastAttemptAt } }` as an additive nested key. Old reader ignores unknown key; new reader populates both. Document forward + backward read/write contract explicitly. |
+| 6 | BLOCKER | Privacy boundary pinned weakly (§4 calls it "Pinned by §3.2" but §3.2 only asserts teacher A's email contains the right set — not that it OMITS teacher B's slot IDs / emails). Existing integration helper reads "one latest row by `ran_at desc`" (`tests/integration/scripts/conflict-unresolved-alert.test.ts:174-209`) — ambiguous after N+1 rows. | Rewrite §3.x privacy tests as explicit negative assertions (teacher A's payload must NOT contain teacher B's slot IDs OR teacher B's email). Update integration helper to filter `probe_runs` rows by `recipient_email` before assertion (no more "one latest"). |
+| 7 | WARN | `/admin/settings/alerts` page copy at `app/admin/(gated)/settings/alerts/page.tsx:111-122` says four probes "настроены на отправку писем оператору" — once one probe also emits teacher mail, this copy becomes untruthful. | Update copy to acknowledge per-teacher fan-out (operator-only by default; teacher fan-out enabled per `CONFLICT_UNRESOLVED_TEACHER_FANOUT_ENABLED`). |
+
+**Round-2 prep work (deferred to next session):** rewrite §2.x file list, §2.2 query semantics, §2.3 state-file shape, §2.5 cap-drain semantics, §3.x privacy tests + harness; add `migrations/0XXX_probe_runs_alert_audience.sql` to §2.4; update §10 to acknowledge the now-included UI surface as in-scope. Effort estimate: 200-300 plan-doc lines + 1-2 hours.
 
 ---
 
@@ -591,3 +609,449 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
 
 — END OF DRAFT (plan-doc only; paranoia plan-mode is the next step) —
+
+---
+
+## §0b — Round-1 closures (2026-06-04, supersede contradictions in §1.x / §2.x / §3.x)
+
+Each round-1 finding gets a written closure. §0b is authoritative when older inline text contradicts.
+
+### Closure #1 (BLOCKER#1 — bounded operator slice)
+
+**Fact:** `readOffenderRows()` at `scripts/conflict-unresolved-alert.mjs:143-183` is globally `LIMIT $3` truncated to `CONFLICT_UNRESOLVED_REPORT_LIMIT` (default 50). Operator email uses this view; fan-out cannot reuse it without missing teachers past the cap.
+
+**Closure:** add a separate teacher-grouped query path. Reuse the existing unbounded tuple-read shape from `:214-242`:
+
+```js
+// scripts/conflict-unresolved-alert.mjs — NEW helper readAllOffendersForFanout()
+async function readAllOffendersForFanout(client, thresholdMinutes) {
+  // No LIMIT — full qualifying set, grouped client-side by teacher_account_id.
+  // Same WHERE/JOIN as readOffenderRows but no `LIMIT $3` clause.
+  // Returns flat rows; caller groups.
+  return client.query(/* ...full unbounded ...*/);
+}
+```
+
+Operator email keeps using the truncated view (`readOffenderRows`); fan-out uses `readAllOffendersForFanout`. Per-teacher fingerprint is computed over the unbounded set per teacher. The §1.2 "Offender query at :124-180 reused unchanged" claim is now WRONG — fan-out gets its own query. Updated test §3.1 must cover: 6th conflict for already-shown teacher → teacher fingerprint flips → fan-out re-emits even if operator view is unchanged.
+
+### Closure #2 (BLOCKER#2 — TEACHER_FANOUT_CAP starvation)
+
+**Closure:** define cap as soft-limit AFTER per-teacher dedup. Track `lastAttemptAt` per deferred teacher in state file. Rotate so no teacher waits more than `CONFLICT_UNRESOLVED_TEACHER_CAP_DRAIN_TICKS` (default 24, i.e. ~6 hours at 15-min ticks) before being attempted. Algorithm:
+
+```js
+// scripts/conflict-unresolved-alert.mjs (fan-out loop)
+const candidates = teachersWithNewFingerprint;  // post-dedup
+// Sort by oldest lastAttemptAt first (or never-attempted first).
+candidates.sort((a, b) => (a.lastAttemptAt ?? 0) - (b.lastAttemptAt ?? 0));
+// Force-include teachers whose lastAttemptAt > drain-window-ago, even if not in top-cap.
+const forced = candidates.filter(t => 
+  t.lastAttemptAt !== null && (now - t.lastAttemptAt) > DRAIN_WINDOW_MS
+);
+const remainingCap = CAP - forced.length;
+const recent = candidates.filter(t => !forced.includes(t)).slice(0, Math.max(0, remainingCap));
+const toSend = [...forced, ...recent];
+// All others get lastAttemptAt=null (or unchanged) and wait for next tick.
+```
+
+New operator settings:
+- `CONFLICT_UNRESOLVED_TEACHER_FANOUT_ENABLED` (already in §2.5) — master switch, default OFF.
+- `CONFLICT_UNRESOLVED_TEACHER_FANOUT_CAP` (already in §2.5) — soft per-tick cap, default 100.
+- `CONFLICT_UNRESOLVED_TEACHER_CAP_DRAIN_TICKS` (NEW) — across-tick drain window in ticks, default 24.
+
+§2.5 file list extends with the new key in `lib/admin/operator-settings.ts`.
+
+### Closure #3 (BLOCKER#3 — probe_runs.alert_audience for getProbeStatus)
+
+**Fact:** `lib/admin/probe-status.ts:99-109` picks latest `alert_sent` row regardless of audience. Filter by `recipient_email = ALERT_EMAIL_TO` is wrong because `recipient_email` is a historical snapshot per `migrations/0053_probe_runs.sql:71-73`.
+
+**Closure:** add `alert_audience` column to `probe_runs` via additive migration:
+
+**NEW migration:** `migrations/0104_probe_runs_alert_audience.sql`
+```sql
+-- Round-1 BLOCKER#3 closure for bcs-def-1-fanout.
+-- Distinguish operator email from per-teacher email rows in probe_runs.
+ALTER TABLE probe_runs
+  ADD COLUMN IF NOT EXISTS alert_audience text NULL
+  CHECK (alert_audience IS NULL OR alert_audience IN ('operator', 'teacher'));
+-- NULL is acceptable for pre-existing rows (operator-only MVP era).
+-- New rows MUST set this column at insert time per Closure #3.
+-- Partial index for the operator-audience filter (used by getProbeStatus):
+CREATE INDEX IF NOT EXISTS probe_runs_probe_audience_ran_idx
+  ON probe_runs (probe_name, alert_audience, ran_at DESC)
+  WHERE alert_audience IS NOT NULL;
+```
+
+Backward-compat: pre-mig rows have `alert_audience IS NULL` and are NOT picked by the audience-filter query (intentional; legacy rows pre-date fan-out).
+
+`getProbeStatus()` filter changes to:
+```sql
+-- pseudocode
+SELECT * FROM probe_runs
+ WHERE probe_name = $1
+   AND (alert_audience = 'operator' OR alert_audience IS NULL)  -- legacy compat
+ ORDER BY ran_at DESC LIMIT 1
+```
+
+§2.x file list adds `migrations/0104_probe_runs_alert_audience.sql` + `lib/admin/probe-status.ts` to extension list.
+
+### Closure #4 (BLOCKER#4 — per-teacher UI surface)
+
+**Fact:** parent SoT `docs/plans/conflict-unresolved-alert.md:933-940` requires per-teacher delivery UI; plan §2.x file list omits both `lib/admin/probe-status.ts` and `app/admin/(gated)/settings/alerts/page.tsx`.
+
+**Closure:** add both to file list:
+
+- `lib/admin/probe-status.ts` — EXTEND: add `getProbeFanoutStats(probeName)` returning `{ operator: {…}, teachers: { sent, sendFailed, deferred, deferredOldestAge } }` aggregated from `probe_runs` rows with `alert_audience IS NOT NULL`.
+- `app/admin/(gated)/settings/alerts/page.tsx` — EXTEND: add an expandable "Fan-out по учителям" block beneath each fan-out-capable probe, showing the aggregate. Copy: «Учителя: отправлено X, ошибок Y, в очереди Z (старейшая Z старше N мин)».
+
+### Closure #5 (BLOCKER#5 — state file shape backward-safe)
+
+**Fact:** legacy reader at `scripts/conflict-unresolved-alert.mjs:429-435,686-689,793-795` understands only `{ lastAlertAt, lastFingerprint }`. Plan's v2 write always produces nested shape; rollback/mixed-version tick loses operator dedup.
+
+**Closure:** state file shape additive, NOT replacing:
+
+```json
+{
+  "lastAlertAt": 1234567890,         // v1 keys — operator dedup; UNCHANGED
+  "lastFingerprint": "abc...",        // v1 keys — operator dedup; UNCHANGED
+  "perTeacher": {                     // NEW additive key (v2)
+    "<teacherId>": {
+      "lastAlertAt": 1234567890,
+      "lastFingerprint": "def...",
+      "lastAttemptAt": 1234567890
+    }
+  }
+}
+```
+
+- Legacy reader ignores `perTeacher` (unknown key).
+- New reader populates both top-level v1 keys + per-teacher map.
+- Rollback safe: pre-fan-out script reads top-level v1 keys and continues operator dedup with no loss.
+- Forward-deploy safe: new script reads BOTH top-level AND per-teacher; if `perTeacher` absent (legacy state file), treat as empty map and rebuild.
+
+§2.3 + §3.x must reflect this additive contract.
+
+### Closure #6 (BLOCKER#6 — privacy boundary + test harness)
+
+**Closure:** rewrite §3.x privacy tests as explicit negative assertions:
+
+```ts
+// tests/integration/conflict-unresolved/fanout.test.ts (new)
+it('teacher A email does NOT contain teacher B slot IDs or teacher B email', async () => {
+  // Setup: 2 teachers, each with own conflicts, fan-out enabled.
+  // Run probe tick.
+  // Find teacher A's probe_runs row by recipient_email.
+  const teacherARow = await pool.query(
+    `SELECT * FROM probe_runs WHERE probe_name='conflict-unresolved'
+       AND recipient_email=$1 AND alert_audience='teacher'`,
+    [teacherA.email]
+  );
+  // Negative assertion 1: teacher B's slot IDs are NOT in teacher A's stats.shown
+  expect(JSON.stringify(teacherARow.rows[0].stats.shown)).not.toContain(teacherB.slot_id);
+  // Negative assertion 2: teacher B's email is NOT in teacher A's email body.
+  expect(teacherARow.rows[0].alert_email_id).toBeTruthy();
+  // (Optional: fetch the actual email body from a test mailer mock and grep teacher B's email.)
+});
+```
+
+Test harness no longer reads "one latest row by ran_at desc" — it explicitly filters `probe_runs` by `recipient_email` (and now also by `alert_audience='teacher'`) before assertion.
+
+### Closure #7 (WARN — alerts page copy update)
+
+**Closure:** `app/admin/(gated)/settings/alerts/page.tsx:111-122` copy updated to acknowledge fan-out: «Четыре системных пробника настроены на отправку писем оператору; пробник `conflict-unresolved` дополнительно может слать письма затронутым учителям при включении `CONFLICT_UNRESOLVED_TEACHER_FANOUT_ENABLED`.»
+
+---
+
+**Status after §0b applied:** round-1 BLOCKER findings each have a written closure. Round-2 codex run will verify: (a) closures are coherent, (b) no new BLOCKERs opened, (c) state-file additive shape is realistic, (d) migration is truly additive (no breaking change). Implementation effort estimate: ~600-800 LOC (mig + script extensions + probe-status extension + alerts page + tests).
+
+---
+
+## §0c — Round-2 closures (2026-06-04, supersedes contradictions in §0b)
+
+Round 2 returned BLOCK with 3 BLOCKERs + 1 WARN + 1 INFO. All addressable.
+
+### Closure for BLOCKER #1 (deferred count + age sourced from state file, not probe_runs)
+
+Closure #2 (cap = soft-limit AFTER dedup) implies capped-out teachers do NOT get a `probe_runs` row; they only get a `state.perTeacher[id].lastAttemptAt` update. Closure #4's `getProbeFanoutStats()` aggregating from `probe_runs` cannot recover `deferred` count or oldest queue age.
+
+**Fix:** state file becomes the source of truth for "deferred" metrics. Admin UI helper splits responsibilities:
+
+- `lib/admin/probe-status.ts getProbeFanoutStatsFromProbeRuns(probeName)` — aggregates `probe_runs` rows with `alert_audience='teacher'` for sent + send_failed counts + last-sent age. Source: DB.
+- `lib/admin/probe-status.ts getProbeFanoutDeferredStats(probeName)` — reads the state file (server-side fs access) to count entries where `(now - lastAttemptAt) > DRAIN_WINDOW_MS / N_TICKS_THRESHOLD` (= "in queue, NOT yet sent this round"). Source: state file path from operator settings (`CONFLICT_UNRESOLVED_STATE_FILE` env or default `/var/lib/levelchannel/conflict-unresolved-state.json`).
+
+> **§0g UPDATE 2026-06-04:** the "or default /var/lib/levelchannel/..." fallback in this Closure is SUPERSEDED by §0f + §0g. Canonical contract: env REQUIRED in production; admin returns null deferred-stats when unset; single supported absolute path is `<APP_DIR>/var/conflict-unresolved-state.json`. See §0g.
+
+- Combined `getProbeFanoutStats(probeName)` returns `{ operator, teachers: { sent, sendFailed, deferred, deferredOldestAge } }` with `deferred` + `deferredOldestAge` from the state file, `sent`/`sendFailed` from `probe_runs`.
+
+Trade-off acknowledged: state file is the script's local artifact; admin UI must read it from the same FS. The script runs under systemd on the prod VPS; admin app runs on the same host. Path is operator-configurable. Sub-PR file list adds the state-file reader to `lib/admin/probe-status.ts`.
+
+### Closure for BLOCKER #2 (recordProbeRun signature extension)
+
+`scripts/lib/probe-runs.mjs:107-128 recordProbeRun()` has a fixed column list with no `alertAudience` parameter. All conflict-unresolved write-sites flow through this helper.
+
+**Fix:** the bcs-def-1-fanout PR extends `recordProbeRun()` with an OPTIONAL `alertAudience` field:
+
+```js
+// scripts/lib/probe-runs.mjs — extend signature
+export async function recordProbeRun(pool, {
+  probeName,
+  verdictKind,
+  recipientEmail,
+  alertEmailId = null,
+  fingerprint = null,
+  stats = {},
+  isTest = false,
+  alertAudience = null,  // NEW: 'operator' | 'teacher' | null (legacy)
+}) {
+  await pool.query(
+    `INSERT INTO probe_runs
+       (probe_name, verdict_kind, recipient_email, alert_email_id,
+        fingerprint, stats, is_test, ran_at, alert_audience)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, now(), $8)`,
+    [probeName, verdictKind, recipientEmail, alertEmailId, fingerprint,
+     JSON.stringify(stats), isTest, alertAudience],
+  )
+}
+```
+
+All `recordProbeRun()` call-sites in `scripts/conflict-unresolved-alert.mjs` (lines 419-552 inclusive) pass `alertAudience: 'operator'` for the operator-branch writes and `'teacher'` for fan-out writes. Other probes (`teacher-daily-digest`, `learner-reminders`, etc.) keep the default `null` value — backward-compatible.
+
+File list extends: `scripts/lib/probe-runs.mjs` — EXTEND (signature + INSERT column added).
+
+### Closure for BLOCKER #3 (privacy test — mandatory body inspection)
+
+The existing harness already captures the outbound Resend payload (`tests/integration/scripts/conflict-unresolved-alert.test.ts:57-61,74-83,379-396`). Test §3.x privacy assertion is rewritten as MANDATORY two-layer check:
+
+```ts
+// tests/integration/scripts/conflict-unresolved-fanout.test.ts
+it('teacher A email does NOT contain teacher B slot IDs or email', async () => {
+  // Setup: 2 teachers, each with own conflicts, fan-out ON.
+  await runProbeTick();
+
+  // Layer 1 — probe_runs.stats scoping (DB-side).
+  const teacherARow = await pool.query(
+    `SELECT stats FROM probe_runs
+      WHERE probe_name='conflict-unresolved'
+        AND recipient_email=$1 AND alert_audience='teacher'
+      ORDER BY ran_at DESC LIMIT 1`,
+    [teacherA.email]
+  );
+  expect(JSON.stringify(teacherARow.rows[0].stats)).not.toContain(teacherB.slot_id);
+  expect(JSON.stringify(teacherARow.rows[0].stats)).not.toContain(teacherB.email);
+
+  // Layer 2 — outbound email body (Resend payload stub).
+  const teacherAEmails = capturedResendCalls.filter(c => c.to === teacherA.email);
+  expect(teacherAEmails).toHaveLength(1);
+  expect(teacherAEmails[0].html).not.toContain(teacherB.slot_id);
+  expect(teacherAEmails[0].html).not.toContain(teacherB.email);
+  expect(teacherAEmails[0].text).not.toContain(teacherB.slot_id);
+  expect(teacherAEmails[0].text).not.toContain(teacherB.email);
+});
+```
+
+Both layers MUST pass. A false-green where `probe_runs.stats` is scoped correctly but the rendered email leaks teacher B data is now caught by Layer 2.
+
+### Closure for WARN #4 (test harness update for N+1 emails + rotation regression)
+
+Existing stub `tests/integration/scripts/conflict-unresolved-alert.test.ts:123-124,174-209` keeps only the last outbound email. Fan-out tests need ALL N+1 emails per tick.
+
+**Fix:** harness extends to keep an array of all outbound Resend calls per tick:
+
+```ts
+// tests/integration/scripts/conflict-unresolved-alert.test.ts setup
+let capturedResendCalls: Array<{ to: string; html: string; text: string; subject: string }> = [];
+beforeEach(() => { capturedResendCalls = []; });
+// Stub Resend.emails.send to push to capturedResendCalls instead of mutating a single var.
+```
+
+§3.x test cases that count outbound emails (e.g. `expect(capturedResendCalls).toHaveLength(N+1)`) now assert against the full array.
+
+**Rotation regression test (NEW):** added to §3.x — `it('TEACHER_FANOUT_CAP=50 with 200 teachers AND DRAIN_WINDOW_TICKS=2: tick 1 sends top 50, tick 2 sends NEXT 50 (rotated), tick 3 sends NEXT 50, tick 4 sends LAST 50, tick 5 returns to top 50')`. Verifies no teacher waits more than CAP_DRAIN_WINDOW_TICKS = 2 ticks between attempts.
+
+**Test §3.1 / §3.2 wording update:** capped-out teachers DO appear in `state.perTeacher[id]` with `lastAttemptAt: null` (or with old timestamp); they are NOT absent. §3.2 should say "200 teachers, cap=50 → 50 emails this tick; ALL 200 entries in state.perTeacher with 50 having fresh lastAttemptAt and 150 unchanged from prior tick".
+
+### Closure (INFO #5) — mig 0104 safe filename
+
+No change; documented. Duplicate-0103 debt tracked separately (Task #7).
+
+---
+
+**Status after §0c applied:** all round-2 BLOCKER findings closed with verified file:line citations. Round-3 codex verifies.
+
+---
+
+## §0d — Round-3 findings (recorded; impl deferred per user instruction)
+
+Round 3 returned BLOCK with 2 BLOCKERs + 2 WARNs. Recording without closures — implementation work prioritised over further plan-paranoia rounds.
+
+| # | Severity | Summary |
+|---|---|---|
+| 1 | BLOCKER | Default state-file path `/var/lib/levelchannel/...` conflicts with the probe's systemd sandbox (ReadWritePaths only allows `__LEVELCHANNEL_APP_DIR__/var`); current script default is `./var/conflict-unresolved-state.json`. Plan needs explicit `StateDirectory=` / runbook `mkdir+chown` step OR keep the existing relative path + document admin-side resolution. |
+| 2 | BLOCKER | "Deferred" count from state file alone is wrong: `perTeacher` TTL is 30 days and entries are not cleared when the upstream conflict resolves, so admin UI would show phantom backlog. Need either join with current qualifying set OR a `currentlyDeferred` flag updated each tick from the live offender query. |
+| 3 | WARN | State-file write is in-place `writeFile`; reader on admin side will race partial-JSON. Need temp-file + `rename()` OR best-effort parse fallback ("deferred: unknown"). |
+| 4 | WARN | `tests/integration/admin/alerts-obs.test.ts` re-creates `probe_runs` shadow schema manually; needs `alert_audience` column added there too. |
+
+**Status:** plan-paranoia paused for bcs-def-1-fanout. Closure (§0e) requires 2 substantial design decisions (state path + deferred semantics) plus 2 mechanical follow-ups. Estimated 1-2 more rounds + 4-6h impl. Deferred to a future session focused on this plan.
+
+---
+
+## §0e — Round-3 closures (2026-06-04, supersedes the round-3 BLOCKER record in §0d)
+
+Round 3 returned BLOCK with 2 substantive design BLOCKERs + 2 WARNs. §0e applies authoritative closures.
+
+### Closure for BLOCKER #1 (state-file path + systemd sandbox)
+
+**Decision:** keep the existing default path `./var/conflict-unresolved-state.json` (relative to the script's WorkingDirectory) — verified at `scripts/conflict-unresolved-alert.mjs:85-87`. This path IS already inside the unit's `ReadWritePaths=__LEVELCHANNEL_APP_DIR__/var` sandbox per `scripts/systemd/levelchannel-conflict-unresolved-alert.service:31`. No `StateDirectory=` addition needed.
+
+§0c Closure #1's proposed `/var/lib/levelchannel/conflict-unresolved-state.json` default is RESCINDED — it added systemd + runbook surface (mkdir / chown / StateDirectory drop-in) for zero benefit. Operators who DO need a custom path can still override via `CONFLICT_UNRESOLVED_STATE_FILE` env var (already supported at `scripts/conflict-unresolved-alert.mjs:85`).
+
+Implementation: NO change to the script's default path. The admin UI helper (`lib/admin/probe-status.ts:getProbeFanoutDeferredStats`) reads from the same `process.env.CONFLICT_UNRESOLVED_STATE_FILE` env OR the script's default — both processes (script writer + admin reader) resolve the path identically.
+
+### Closure for BLOCKER #2 (phantom-backlog from stale perTeacher entries)
+
+**Decision:** clear `state.perTeacher[teacherId]` entries when the teacher's CURRENT qualifying-set fingerprint no longer matches what's stored. The script computes the per-teacher fingerprint each tick over the LIVE offender query result (unbounded variant from §0b Closure #1); if a teacher previously had conflicts but the upstream resolution drained them (no longer in the qualifying set), the script GCs their `state.perTeacher` entry at the start of the next tick BEFORE the deferred-stats computation.
+
+Algorithm (added to `scripts/conflict-unresolved-alert.mjs` tick body):
+
+```js
+// Garbage-collect perTeacher entries for teachers no longer in the
+// qualifying set. This closes the phantom-backlog window where the
+// upstream conflict resolved but state.perTeacher kept the entry.
+const liveTeacherIds = new Set(allOffendersForFanout.map(r => r.teacher_account_id))
+for (const teacherId of Object.keys(state.perTeacher ?? {})) {
+  if (!liveTeacherIds.has(teacherId)) {
+    delete state.perTeacher[teacherId]
+  }
+}
+```
+
+After GC, `state.perTeacher[teacherId]` exists iff the teacher is in the live qualifying set this tick. The deferred-stats query (`getProbeFanoutDeferredStats`) sees real backlog only.
+
+### Closure for WARN #3 (race-prone state-file write)
+
+**Decision:** writer uses temp-file + atomic rename pattern. Add to `scripts/conflict-unresolved-alert.mjs writeState()`:
+
+```js
+async function writeState(state) {
+  const tmp = `${STATE_FILE}.tmp.${process.pid}`
+  await fs.writeFile(tmp, JSON.stringify(state, null, 2), 'utf8')
+  await fs.rename(tmp, STATE_FILE)
+}
+```
+
+`rename(2)` is atomic on POSIX; the admin reader either sees the OLD JSON (pre-rename) or the NEW JSON (post-rename), never a partial buffer. The `.tmp.<pid>` suffix avoids collision if multiple invocations overlap (cron-tick + manual probe). Document in the inline comment.
+
+Admin reader stays as-is (`readFile + JSON.parse`) — atomic rename means parse can't fail on partial JSON. Defensive `try/catch` is still good engineering but no longer load-bearing for correctness.
+
+### Closure for WARN #4 (alerts-obs shadow-schema)
+
+**Decision:** the `tests/integration/admin/alerts-obs.test.ts` manual `probe_runs` schema CREATE statement must include the new `alert_audience text NULL CHECK (...)` column added by migration 0104 (§0b Closure #3). Verify in the Sub-PR impl that this test file is updated alongside the migration; without it, the test DB schema drifts from prod-shape and integration tests pass against a stale shape.
+
+### Round-4 verdict expectation
+
+§0e closures are mechanical — no further design decisions pending. Round-4 codex should confirm:
+- BLOCKER #1 path decision is internally coherent (default stays inside sandbox; env override path documented).
+- BLOCKER #2 GC algorithm correctly distinguishes "deferred (backlog still live)" from "phantom (resolved upstream)".
+- WARN #3 atomic-rename pattern is sufficient + matches POSIX guarantees.
+- WARN #4 alerts-obs.test.ts update is in the impl scope.
+
+If round 4 returns SIGN-OFF, the plan-doc Status flips to SIGN-OFF and the implementation epic can start as a separate body of work (mig 0104 + script extensions + probe-status helpers + admin UI + tests — estimated 600-800 LOC per §0b).
+
+---
+
+## §0f — Round-4 closures (2026-06-04, supersedes §0e on path resolution + GC persistence + writer mkdir)
+
+Round 4 surfaced 2 BLOCKERs + 1 WARN + 1 INFO. §0f closures:
+
+### Closure for BLOCKER #1 (admin-side path resolution)
+
+§0e claimed "both processes resolve the path identically" — wrong. Script default at `scripts/conflict-unresolved-alert.mjs:87` uses `resolvePath('./var/...')` which is `process.cwd()`-relative. Script runs in `WorkingDirectory=__LEVELCHANNEL_APP_DIR__` (verified `scripts/systemd/levelchannel-conflict-unresolved-alert.service:23`); the Next.js server process is started by `next start` from a different cwd that is NOT pinned in the repo (per `ARCHITECTURE.md:541` the deploy is generic "VPS + next start"). The two cwds CAN drift.
+
+**Fix:** require `CONFLICT_UNRESOLVED_STATE_FILE` env var to be set to an absolute path on BOTH processes in production. Both must agree.
+
+Concretely:
+- `scripts/conflict-unresolved-alert.mjs:85-87` — keep the env-override default. Add a runtime warning when the env is unset AND `NODE_ENV=production`: log `WARN: CONFLICT_UNRESOLVED_STATE_FILE unset in production — admin /admin/settings/alerts deferred-stats may read a different path`.
+- `lib/admin/probe-status.ts:getProbeFanoutDeferredStats` — read `process.env.CONFLICT_UNRESOLVED_STATE_FILE` directly. When unset in production, log the same warning AND return `{ deferred: null, deferredOldestAge: null }` (UI renders «нет данных, проверьте настройки» instead of phantom zeros).
+- `docs/private/OPERATIONS.private.md` (or equivalent runbook) — pin the canonical absolute path. Recommend `/var/lib/levelchannel-app/conflict-unresolved-state.json` OR `<APP_DIR>/var/conflict-unresolved-state.json`, both processes set the env to the SAME value.
+- Sub-PR impl checklist: extend `scripts/seed-staging-env.sh` (or equivalent VPS env-bootstrap script) to set `CONFLICT_UNRESOLVED_STATE_FILE` on BOTH the probe systemd unit AND the next-server systemd unit. Drift-detection unit test or smoke can assert both `systemctl show` outputs match.
+
+### Closure for BLOCKER #2 (GC persistence on non-send ticks)
+
+§0e GC algorithm only runs in the "have offenders" branch and only writes state when a send succeeds. Phantom entries survive on disk through zero-offender, dedup-skip, and send-failed ticks.
+
+**Fix:** persist state file write EVERY tick that runs the GC step, regardless of branch:
+
+- Move GC to a top-level tick step (BEFORE the "if zero offenders" early return).
+- If GC mutated `state.perTeacher` (any entries removed), write state to disk unconditionally — even when the tick later returns at the zero-offenders branch / dedup-skip / send-failed.
+- For zero-offender tick: the live qualifying set is empty → GC removes ALL `state.perTeacher` entries → disk write reflects that → next admin read sees `deferred: 0`.
+
+Concrete pseudocode (`scripts/conflict-unresolved-alert.mjs` tick body — REPLACES §0e):
+
+```js
+const allOffendersForFanout = await readAllOffendersForFanout(client, thresholdMinutes)
+const liveTeacherIds = new Set(allOffendersForFanout.map(r => r.teacher_account_id))
+
+// GC stale perTeacher entries BEFORE any branch decision.
+let stateMutated = false
+for (const teacherId of Object.keys(state.perTeacher ?? {})) {
+  if (!liveTeacherIds.has(teacherId)) {
+    delete state.perTeacher[teacherId]
+    stateMutated = true
+  }
+}
+if (stateMutated) await writeState(state)
+
+// Existing branches: zero-offenders early return / dedup-skip / send / etc.
+// All happen AFTER GC + disk persist, so phantom entries can't survive
+// through them.
+```
+
+This guarantees on-disk `state.perTeacher` mirrors the live qualifying set at the start of every tick.
+
+### Closure for WARN #3 (writer mkdir behavior)
+
+§0e snippet dropped the existing `mkdir(dirname(STATE_FILE), { recursive: true })` at `scripts/conflict-unresolved-alert.mjs:438`. Restore it:
+
+```js
+async function writeState(state) {
+  await fs.mkdir(path.dirname(STATE_FILE), { recursive: true })
+  const tmp = `${STATE_FILE}.tmp.${process.pid}`
+  await fs.writeFile(tmp, JSON.stringify(state, null, 2), 'utf8')
+  await fs.rename(tmp, STATE_FILE)
+}
+```
+
+`mkdir` is needed for the first-run path AND for custom-override paths that aren't pre-created by the deployment harness. `rename` requires both paths to be on the same filesystem; since `tmp` is the same basename + `.tmp.<pid>` suffix, that holds.
+
+### Closure for INFO #4
+
+No change; documented in §0e.
+
+---
+
+**Status after §0f applied:** round-4 findings closed. The two BLOCKERs (path-resolution + GC-persistence) now have concrete contracts that the Sub-PR impl will follow. Round-5 codex verifies coherence.
+
+---
+
+## §0g — Round-5 closures (2026-06-04, narrows path recommendation; supersedes §0c Closure #1 fallback wording)
+
+Round 5 surfaced 1 BLOCKER + 1 WARN. §0g closures:
+
+### Closure for BLOCKER (sandbox-risk in §0f recommended paths)
+
+§0f §"BLOCKER #1" closure listed two recommendations for the canonical absolute path: `/var/lib/levelchannel-app/...` OR `<APP_DIR>/var/...`. The first one is OUTSIDE the unit's `ReadWritePaths=__LEVELCHANNEL_APP_DIR__/var` sandbox (`scripts/systemd/levelchannel-conflict-unresolved-alert.service:31`) and would silently break the writer without an explicit `StateDirectory=` / additional RW-path addition.
+
+**Narrow the contract:** the ONLY supported canonical absolute path is `<APP_DIR>/var/conflict-unresolved-state.json` (e.g. `/srv/levelchannel/var/conflict-unresolved-state.json` for the standard VPS layout). Drop the `/var/lib/levelchannel-app/...` alternative entirely.
+
+The Sub-PR impl runbook entry (`docs/private/OPERATIONS.private.md` or equivalent) MUST therefore say:
+
+> `CONFLICT_UNRESOLVED_STATE_FILE` MUST be set to the absolute path `<APP_DIR>/var/conflict-unresolved-state.json` on BOTH the probe systemd unit AND the next-server systemd unit. The base dir `<APP_DIR>` matches the systemd `WorkingDirectory=__LEVELCHANNEL_APP_DIR__` substitution applied by the env-bootstrap script. Any OTHER absolute path is unsupported because the probe unit only grants `ReadWritePaths=__LEVELCHANNEL_APP_DIR__/var`; arbitrary `/var/lib/...` paths would silently break the writer.
+
+If we ever need to move state outside `<APP_DIR>/var/...`, that's a separate epic that ships the systemd `StateDirectory=` extension + runbook update FIRST.
+
+### Closure for WARN (§0c Closure #1 fallback wording stale)
+
+§0c Closure #1 wording at line 779 still says "Source: state file path from operator settings (`CONFLICT_UNRESOLVED_STATE_FILE` env or default `/var/lib/levelchannel/conflict-unresolved-state.json`)." §0f changed the production contract to "admin reads env directly; when unset in production returns null."
+
+**Fix taken in this commit:** annotate the §0c Closure #1 wording inline. The supersession chain now reads: §0c → §0e (rescinded `/var/lib/levelchannel/...` proposal) → §0f (env-required) → §0g (single canonical path: `<APP_DIR>/var/...`).
+
+(The annotation is below — applied as a one-line note at the §0c reference.)
