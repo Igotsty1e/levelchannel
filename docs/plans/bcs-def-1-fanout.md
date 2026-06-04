@@ -888,3 +888,67 @@ Round 3 returned BLOCK with 2 BLOCKERs + 2 WARNs. Recording without closures —
 | 4 | WARN | `tests/integration/admin/alerts-obs.test.ts` re-creates `probe_runs` shadow schema manually; needs `alert_audience` column added there too. |
 
 **Status:** plan-paranoia paused for bcs-def-1-fanout. Closure (§0e) requires 2 substantial design decisions (state path + deferred semantics) plus 2 mechanical follow-ups. Estimated 1-2 more rounds + 4-6h impl. Deferred to a future session focused on this plan.
+
+---
+
+## §0e — Round-3 closures (2026-06-04, supersedes the round-3 BLOCKER record in §0d)
+
+Round 3 returned BLOCK with 2 substantive design BLOCKERs + 2 WARNs. §0e applies authoritative closures.
+
+### Closure for BLOCKER #1 (state-file path + systemd sandbox)
+
+**Decision:** keep the existing default path `./var/conflict-unresolved-state.json` (relative to the script's WorkingDirectory) — verified at `scripts/conflict-unresolved-alert.mjs:85-87`. This path IS already inside the unit's `ReadWritePaths=__LEVELCHANNEL_APP_DIR__/var` sandbox per `scripts/systemd/levelchannel-conflict-unresolved-alert.service:31`. No `StateDirectory=` addition needed.
+
+§0c Closure #1's proposed `/var/lib/levelchannel/conflict-unresolved-state.json` default is RESCINDED — it added systemd + runbook surface (mkdir / chown / StateDirectory drop-in) for zero benefit. Operators who DO need a custom path can still override via `CONFLICT_UNRESOLVED_STATE_FILE` env var (already supported at `scripts/conflict-unresolved-alert.mjs:85`).
+
+Implementation: NO change to the script's default path. The admin UI helper (`lib/admin/probe-status.ts:getProbeFanoutDeferredStats`) reads from the same `process.env.CONFLICT_UNRESOLVED_STATE_FILE` env OR the script's default — both processes (script writer + admin reader) resolve the path identically.
+
+### Closure for BLOCKER #2 (phantom-backlog from stale perTeacher entries)
+
+**Decision:** clear `state.perTeacher[teacherId]` entries when the teacher's CURRENT qualifying-set fingerprint no longer matches what's stored. The script computes the per-teacher fingerprint each tick over the LIVE offender query result (unbounded variant from §0b Closure #1); if a teacher previously had conflicts but the upstream resolution drained them (no longer in the qualifying set), the script GCs their `state.perTeacher` entry at the start of the next tick BEFORE the deferred-stats computation.
+
+Algorithm (added to `scripts/conflict-unresolved-alert.mjs` tick body):
+
+```js
+// Garbage-collect perTeacher entries for teachers no longer in the
+// qualifying set. This closes the phantom-backlog window where the
+// upstream conflict resolved but state.perTeacher kept the entry.
+const liveTeacherIds = new Set(allOffendersForFanout.map(r => r.teacher_account_id))
+for (const teacherId of Object.keys(state.perTeacher ?? {})) {
+  if (!liveTeacherIds.has(teacherId)) {
+    delete state.perTeacher[teacherId]
+  }
+}
+```
+
+After GC, `state.perTeacher[teacherId]` exists iff the teacher is in the live qualifying set this tick. The deferred-stats query (`getProbeFanoutDeferredStats`) sees real backlog only.
+
+### Closure for WARN #3 (race-prone state-file write)
+
+**Decision:** writer uses temp-file + atomic rename pattern. Add to `scripts/conflict-unresolved-alert.mjs writeState()`:
+
+```js
+async function writeState(state) {
+  const tmp = `${STATE_FILE}.tmp.${process.pid}`
+  await fs.writeFile(tmp, JSON.stringify(state, null, 2), 'utf8')
+  await fs.rename(tmp, STATE_FILE)
+}
+```
+
+`rename(2)` is atomic on POSIX; the admin reader either sees the OLD JSON (pre-rename) or the NEW JSON (post-rename), never a partial buffer. The `.tmp.<pid>` suffix avoids collision if multiple invocations overlap (cron-tick + manual probe). Document in the inline comment.
+
+Admin reader stays as-is (`readFile + JSON.parse`) — atomic rename means parse can't fail on partial JSON. Defensive `try/catch` is still good engineering but no longer load-bearing for correctness.
+
+### Closure for WARN #4 (alerts-obs shadow-schema)
+
+**Decision:** the `tests/integration/admin/alerts-obs.test.ts` manual `probe_runs` schema CREATE statement must include the new `alert_audience text NULL CHECK (...)` column added by migration 0104 (§0b Closure #3). Verify in the Sub-PR impl that this test file is updated alongside the migration; without it, the test DB schema drifts from prod-shape and integration tests pass against a stale shape.
+
+### Round-4 verdict expectation
+
+§0e closures are mechanical — no further design decisions pending. Round-4 codex should confirm:
+- BLOCKER #1 path decision is internally coherent (default stays inside sandbox; env override path documented).
+- BLOCKER #2 GC algorithm correctly distinguishes "deferred (backlog still live)" from "phantom (resolved upstream)".
+- WARN #3 atomic-rename pattern is sufficient + matches POSIX guarantees.
+- WARN #4 alerts-obs.test.ts update is in the impl scope.
+
+If round 4 returns SIGN-OFF, the plan-doc Status flips to SIGN-OFF and the implementation epic can start as a separate body of work (mig 0104 + script extensions + probe-status helpers + admin UI + tests — estimated 600-800 LOC per §0b).
