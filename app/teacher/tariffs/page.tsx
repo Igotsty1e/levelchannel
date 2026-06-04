@@ -1,8 +1,10 @@
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
+import { TariffFirstCreateHint } from '@/components/onboarding/tariff-first-create-hint'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { resolveTeacherWriteCaps } from '@/lib/billing/teacher-subscription'
+import { getOnboardingState } from '@/lib/onboarding/state'
 import {
   countActiveTariffsForTeacher,
   listTariffsForTeacher,
@@ -49,13 +51,17 @@ export default async function TeacherTariffsPage({ searchParams }: SearchParams)
   const sp = await searchParams
   const showArchived = sp.archived === '1'
 
-  const [tariffs, caps, currentActiveCount] = await Promise.all([
+  const [tariffs, caps, currentActiveCount, onboardingState] = await Promise.all([
     listTariffsForTeacher(current.account.id, {
       includeArchived: showArchived,
     }),
     resolveTeacherWriteCaps(current.account.id),
     countActiveTariffsForTeacher(current.account.id),
+    getOnboardingState(current.account.id),
   ])
+  const tariffHintDismissed =
+    'tariff_first_create_hint' in onboardingState.dismissedHints
+  const hasAnyTariff = tariffs.length > 0 || currentActiveCount > 0
 
   // Free-tier 1pkg+1tariff unlock (2026-06-02). Plan:
   // docs/plans/free-tier-1pkg-1tariff-unlock.md §4 (UI data contract).
@@ -91,6 +97,13 @@ export default async function TeacherTariffsPage({ searchParams }: SearchParams)
         использовалась в занятиях, создайте новую цену и архивируйте
         старую.
       </p>
+      {/* Onboarding Sub-PR B2 — empty-state hint explaining what a
+          "цена занятия" is + snapshot-immutability behaviour. Auto-hides
+          once the first tariff is created. */}
+      <TariffFirstCreateHint
+        hasTariff={hasAnyTariff}
+        dismissed={tariffHintDismissed}
+      />
       <TeacherTariffEditor
         initialTariffs={tariffs}
         showArchived={showArchived}

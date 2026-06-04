@@ -1,7 +1,9 @@
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
+import { PackagesVsTariffsExplainer } from '@/components/onboarding/packages-vs-tariffs-explainer'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { getOnboardingState } from '@/lib/onboarding/state'
 import {
   countActivePackagesByTeacher,
   listPackagesByTeacher,
@@ -39,11 +41,16 @@ export default async function TeacherPackagesPage() {
     redirect('/login')
   }
 
-  const [packages, caps, currentActiveCount] = await Promise.all([
-    listPackagesByTeacher(current.account.id),
-    resolveTeacherWriteCaps(current.account.id),
-    countActivePackagesByTeacher(current.account.id),
-  ])
+  const [packages, caps, currentActiveCount, onboardingState] =
+    await Promise.all([
+      listPackagesByTeacher(current.account.id),
+      resolveTeacherWriteCaps(current.account.id),
+      countActivePackagesByTeacher(current.account.id),
+      getOnboardingState(current.account.id),
+    ])
+  const explainerDismissed =
+    'packages_vs_tariffs_explainer' in onboardingState.dismissedHints
+  const hasAnyPackage = packages.length > 0 || currentActiveCount > 0
   const view = packages.map((p) => ({
     id: p.id,
     slug: p.slug,
@@ -92,6 +99,13 @@ export default async function TeacherPackagesPage() {
         покупки цена, длительность и количество занятий фиксируются —
         чтобы поменять, создайте новый пакет и архивируйте старый.
       </p>
+      {/* Onboarding Sub-PR B2 — empty-state explainer
+          distinguishing «пакет» (предоплата) vs «цена занятия»
+          (postpaid). Auto-hides once the first package is created. */}
+      <PackagesVsTariffsExplainer
+        hasPackage={hasAnyPackage}
+        dismissed={explainerDismissed}
+      />
       <TeacherPackagesEditor
         initialPackages={view}
         writeCap={writeCap}
