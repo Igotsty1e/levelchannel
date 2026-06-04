@@ -1166,3 +1166,51 @@ Round-9 WARN #5 closure: §8 already cuts Operator-managed, but body sections at
 ---
 
 **Status after §0ad applied:** round-9 BLOCKER findings each have a written closure that cites the actual schema + the real consent-row shape. Round-10 codex run will verify: (a) §0ad doesn't open new BLOCKERs, (b) all 3 round-9 BLOCKERs + 2 WARNs are addressed, (c) the gate-helper contract is implementable as written.
+
+---
+
+## §0ae — Round-10 escalation (2026-06-04, ESCALATED — STOP and surface to owner)
+
+Round 10 returned BLOCK with 6 BLOCKERs + 1 INFO. Findings expose three different classes of issues that this plan-paranoia loop cannot self-close:
+
+### Class A — §0ad fixable inconsistencies (4 BLOCKERs)
+
+Each requires a §0ad rewrite but is mechanical:
+
+1. **Corrigendum #2 self-contradiction** — helper still models `account_consents.document_kind='saas_processor_terms'`; canonical shape (per Corrigendum #1) is SINGLE row with `document_kind='saas_offer'` and `document_version = combinedVersion`. Fix: rewrite the gate query to read the single saas_offer consent row + parse the embedded combinedVersion to recover both labels; compare each to its respective live label.
+2. **Live-version query missing `effective_from <= now()` + tie-break** — fix: add `where effective_from <= now() order by effective_from desc, created_at desc limit 1` to match the canonical `getCurrentLegalVersion()` shape (`lib/legal/versions.ts:51`).
+3. **Latest consent missing `revoked_at IS NULL`** — fix: add the filter to mirror `getActiveConsent()` (`lib/auth/consents.ts:127`).
+4. **Backfill script writes `documentVersion='v1'`** — incompatible with combinedVersion gate. Fix: backfill writes `documentVersion = buildCombinedVersion(saas_offer_v1_label, saas_processor_terms_v1_label)` so the cohort lines up with new writes.
+
+### Class B — incomplete TOCTOU rewrite (1 BLOCKER)
+
+5. **§0ad declared old sections "draft-only" without writing the concrete replacement** for the second TOCTOU pin (`saasProcessorTermsConsentVersionId`). The `/register` page already reads both live versions (`app/api/auth/register/route.ts:153+164`) but the POST contract + form-side pin + 409 validation for the second id is not specified. Fix: write the explicit GET-side rendering (form receives both ids), POST-side validation (both ids compared, either drift → 409), and 409-recovery UX (which side drifted? both?). This is a full Sub-section rewrite (~50-80 lines of plan).
+
+### Class C — fundamental race (1 BLOCKER) — REQUIRES DESIGN DECISION
+
+6. **REPEATABLE READ does NOT close the publish-v2 race**, contrary to §0ad's claim. Under REPEATABLE READ, a route TX started BEFORE publish-v2's commit sees the old snapshot, passes the gate, and commits the mutation. The next request hits `consent_required` (fresh snapshot reads the new live label), but the previous mutation already committed without re-consent.
+
+Possible designs:
+- **(a) Accept the narrowed leak.** Mutations between gate-read and route-commit are bounded to one TX's window (usually <100ms); documentation states this is acceptable and ships with this risk pinned. *Trade-off: small race window remains, but doc-level honest.*
+- **(b) SERIALIZABLE isolation on mutation route.** Stronger than REPEATABLE READ; the publish-v2 commit conflicts on the read set, forcing a retry of the mutation TX. *Trade-off: increased deadlock/retry cost; needs explicit retry loop in routes.*
+- **(c) Advisory lock pattern.** Publish-v2 takes an advisory lock; gate-check acquires SHARED of the same lock. Concurrent publish-v2 and gate-check serialize. *Trade-off: requires plumbing the lock through every mutating route.*
+- **(d) Consent stamp + SELECT FOR UPDATE.** Mutation route does `SELECT consent_id FROM account_consents WHERE account_id=$1 AND ...not revoked FOR UPDATE` inline before its writes; publish-v2 acquires update lock on the same row to invalidate. *Trade-off: requires schema change (or stamp column) + every mutation route to do the consent lock.*
+
+**This requires owner / architecture decision.** Plan-paranoia cannot self-close — it's a real design call.
+
+### Round-10 final state
+
+- 10 rounds run total.
+- 4 Class-A items: mechanical, can be closed in §0af.
+- 1 Class-B item: needs a Sub-section rewrite (~80 plan lines).
+- 1 Class-C item: needs owner / architecture decision before §0af can finalize.
+
+**Status:** ESCALATED — STOP per `/codex-paranoia §4.2`. Do NOT proceed to implementation until the owner decides Class-C design and §0af is written + verified by a round-11 codex pass.
+
+**Final paranoia trailer for any future commit on this branch:**
+
+```
+Codex-Paranoia: ESCALATED round 10/3 — 1 BLOCKER (Class C race) requires owner design decision (see §0ae options a-d)
+```
+
+**For the implementation epic this plan would feed:** treat Class C as a separate "publish-vs-mutation race" design epic; the SaaS-offer plan body remains valid for the legal / consent / TOCTOU portions IF Class A + Class B are closed via §0af AND Class C lands its own design decision.
