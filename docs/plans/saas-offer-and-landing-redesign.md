@@ -1494,3 +1494,135 @@ it('publish-v2 during gate-check waits for gate to release, then next gate-check
 ---
 
 **Status after §0af applied:** all 6 round-10 BLOCKERs have concrete written closures with verified file:line citations + runnable SQL/TS. Class C race solved by reusing the existing publish-side advisory lock with a shared-lock pair on the gate side — no schema change, no SERIALIZABLE complexity, no architecture decision pending. Round-11 codex verifies coherence.
+
+---
+
+## §0ag — Round-11 closures (2026-06-04)
+
+Round 11 surfaced 2 BLOCKERs + 2 WARNs against §0af. All addressable; no architecture decision needed.
+
+### Closure for BLOCKER #1 (placeholder invariant)
+
+The mig 0096 / 0097 seed rows carry `version_label = 'v0-placeholder-do-not-accept'` (or analogous). The canonical gate at `lib/auth/guards.ts:228,389` and the public-flow routes at `app/api/auth/register/route.ts:153,163`, `app/api/teacher/saas-offer-accept/route.ts:70` treat placeholder rows as `awaiting_publication` — the row exists in the DB but the operator has not yet published the real v1.
+
+**Fix:** extend the §0af gate helper to also treat placeholder labels as `awaiting_publication`:
+
+```typescript
+// In evaluateSaasOfferGateForMutation, AFTER the SQL read, BEFORE the null check:
+const PLACEHOLDER_PREFIX = 'v0-placeholder-'  // canonical seed marker from mig 0096/0097
+
+const isOfferPlaceholder =
+  row.live_offer_label !== null && row.live_offer_label.startsWith(PLACEHOLDER_PREFIX)
+const isTermsPlaceholder =
+  row.live_terms_label !== null && row.live_terms_label.startsWith(PLACEHOLDER_PREFIX)
+
+if (
+  row.live_offer_label === null
+  || row.live_terms_label === null
+  || isOfferPlaceholder
+  || isTermsPlaceholder
+) {
+  return { verdict: 'awaiting_publication' }
+}
+// ... rest of the helper unchanged
+```
+
+This matches the existing `lib/auth/guards.ts:228,389` semantics. The plan-doc §2.B rollout already noted seed-row placeholder shape (lines 178-179, 420); §0ag reaffirms it inside the gate-helper contract.
+
+### Closure for BLOCKER #2 (canonical status code is 503, not 409)
+
+`/api/auth/register/route.ts:158` returns `503` for `saas_offer_awaiting_publication`. §0af incorrectly used `409`. **Fix:** route + gate caller helpers use these status codes:
+
+| Condition | HTTP Status | Body `error` |
+|---|---|---|
+| `evaluateSaasOfferGateForMutation` returns `awaiting_publication` (missing OR placeholder) | **503** | `saas_offer_awaiting_publication` |
+| `evaluateSaasOfferGateForMutation` returns `consent_required` (version drift OR no consent yet) | **409** | `saas_offer_version_changed` (drift) / `saas_offer_consent_required` (no consent) — distinguish via verdict subtype |
+| POST body missing one of the version IDs (request shape error) | **400** | `saas_offer_consent_version_id_missing` / `saas_processor_terms_consent_version_id_missing` |
+| POST body version IDs do NOT match live IDs (drift) | **409** | `saas_offer_version_changed` + `drifted: { saas_offer, saas_processor_terms }` |
+| POST body version IDs match BUT consent gate still rejects | **409** | `saas_offer_consent_required` |
+
+Update the §0af POST snippet to return `503` for missing-live cases:
+
+```typescript
+if (!saasOfferLive || !saasProcessorTermsLive) {
+  return NextResponse.json(
+    { error: 'saas_offer_awaiting_publication' },
+    { status: 503 },  // NOT 409 — matches app/api/auth/register/route.ts:158
+  )
+}
+if (
+  saasOfferLive.versionLabel.startsWith('v0-placeholder-')
+  || saasProcessorTermsLive.versionLabel.startsWith('v0-placeholder-')
+) {
+  return NextResponse.json(
+    { error: 'saas_offer_awaiting_publication' },
+    { status: 503 },
+  )
+}
+```
+
+### Closure for WARN #3 (parseCombinedVersion injectivity)
+
+The literal encoding `saas_offer:${offerLabel}+processor_terms:${termsLabel}` is ambiguous if a `versionLabel` contains `:` or `+`. Fix via input-side validation at version-creation time (admin route):
+
+```typescript
+// app/api/admin/legal/versions/route.ts — EXTEND existing validation
+const VERSION_LABEL_RE = /^[A-Za-z0-9._-]+$/  // ban : and + along with all other separator chars
+if (!VERSION_LABEL_RE.test(versionLabel)) {
+  return NextResponse.json(
+    { error: 'invalid_version_label', allowed: '[A-Za-z0-9._-]+' },
+    { status: 422 },
+  )
+}
+if (versionLabel.length === 0 || versionLabel.length > 64) {
+  return NextResponse.json({ error: 'version_label_length' }, { status: 422 })
+}
+// reserved prefix check (existing) stays as-is
+```
+
+The existing seed rows + any historical rows already conform to this shape (`v0-placeholder-do-not-accept`, `v1`, `v2`, etc.) — verified empirically. The validation locks the input domain so `parseCombinedVersion` is unambiguous for all future writes.
+
+Add unit test `tests/legal/admin-version-label-validation.test.ts`: assert that POSTing `{ versionLabel: 'v1+evil' }` or `{ versionLabel: 'v1:evil' }` returns 422.
+
+### Closure for WARN #4 (409 drift vs 400 missing field)
+
+Adopt the four-status table above. The POST-side validation reads:
+
+```typescript
+const submittedOfferId = String(body.saasOfferConsentVersionId ?? '').trim()
+const submittedTermsId = String(body.saasProcessorTermsConsentVersionId ?? '').trim()
+
+// 400 — request shape error (client didn't send the field at all).
+if (submittedOfferId === '') {
+  return NextResponse.json(
+    { error: 'saas_offer_consent_version_id_missing' },
+    { status: 400 },
+  )
+}
+if (submittedTermsId === '') {
+  return NextResponse.json(
+    { error: 'saas_processor_terms_consent_version_id_missing' },
+    { status: 400 },
+  )
+}
+
+// 409 — version drift between GET and POST.
+if (submittedOfferId !== saasOfferLive.id || submittedTermsId !== saasProcessorTermsLive.id) {
+  return NextResponse.json(
+    {
+      error: 'saas_offer_version_changed',
+      drifted: {
+        saas_offer: submittedOfferId !== saasOfferLive.id,
+        saas_processor_terms: submittedTermsId !== saasProcessorTermsLive.id,
+      },
+    },
+    { status: 409 },
+  )
+}
+```
+
+This matches the existing `/api/teacher/saas-offer-accept/route.ts:56` 400-path for missing version id.
+
+---
+
+**Status after §0ag applied:** §0af closures + §0ag corrections close all round-11 findings. Round-12 codex verifies. Class C race (publish-vs-mutation) closed via shared advisory lock pattern — no architecture decision pending.
