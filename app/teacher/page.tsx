@@ -22,12 +22,14 @@ import { redirect } from 'next/navigation'
 
 import { TeacherInviteSection } from '@/app/cabinet/teacher-invite-section'
 import { TeacherLearnersSection } from '@/app/cabinet/teacher-learners-section'
+import { TeacherInvitePlanLimitBanner } from '@/components/onboarding/teacher-invite-plan-limit-banner'
 import { TeacherSetupChecklist } from '@/components/onboarding/teacher-setup-checklist'
 import { DigestPreviewTile } from '@/components/teacher/digest-preview-tile'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getDbPool } from '@/lib/db/pool'
 import { getTeacherDigestPreview } from '@/lib/notifications/teacher-digest-preview'
 import { computeTeacherSetupChecklist } from '@/lib/onboarding/teacher-setup-checklist'
+import { getTeacherPlanLearnerLimit } from '@/lib/onboarding/teacher-plan-limit'
 import { listLearnersForTeacher } from '@/lib/scheduling/teacher-learners'
 
 export const dynamic = 'force-dynamic'
@@ -122,13 +124,19 @@ export default async function TeacherHomePage() {
   const teacherAccountId = current.account.id
   const isVerified = Boolean(current.account.emailVerifiedAt)
 
-  const [upcomingSlots, allLearners, digestPreview, setupChecklist] =
-    await Promise.all([
-      listUpcomingSlotsForTeacher(teacherAccountId, 3),
-      listLearnersForTeacher(teacherAccountId),
-      getTeacherDigestPreview(teacherAccountId),
-      computeTeacherSetupChecklist(teacherAccountId),
-    ])
+  const [
+    upcomingSlots,
+    allLearners,
+    digestPreview,
+    setupChecklist,
+    planLearnerLimit,
+  ] = await Promise.all([
+    listUpcomingSlotsForTeacher(teacherAccountId, 3),
+    listLearnersForTeacher(teacherAccountId),
+    getTeacherDigestPreview(teacherAccountId),
+    computeTeacherSetupChecklist(teacherAccountId),
+    getTeacherPlanLearnerLimit(teacherAccountId),
+  ])
 
   // На главной показываем максимум 5 ближайших учеников; полный
   // список — на /teacher/learners.
@@ -206,6 +214,11 @@ export default async function TeacherHomePage() {
           08:00 cron-дайджеста. Между «Ближайшие занятия» и «Пригласить
           ученика». */}
       <DigestPreviewTile preview={digestPreview} />
+
+      {/* Onboarding Sub-PR B4 — plan-limit banner above the invite
+          block. SSR-conditional: soft/hard banner when M >= ceil(0.8*N)
+          / M >= N, hidden otherwise. Not dismissible. */}
+      <TeacherInvitePlanLimitBanner limit={planLearnerLimit} />
 
       {/* Блок 2: Пригласить ученика — переиспользуем компонент из /cabinet */}
       <TeacherInviteSection isVerified={isVerified} />
