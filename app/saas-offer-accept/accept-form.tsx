@@ -14,6 +14,11 @@ import { useState, useTransition } from 'react'
 type Props = {
   versionId: string
   versionLabel: string
+  // §0af Closure for BLOCKER #4 (Sub-A.5 two-document TOCTOU): pin
+  // BOTH the saas_offer AND saas_processor_terms version IDs at form
+  // render. The POST handler asserts both ids match live values.
+  processorTermsVersionId: string
+  processorTermsVersionLabel: string
 }
 
 type SubmitState =
@@ -21,7 +26,12 @@ type SubmitState =
   | { kind: 'error'; message: string; reload?: boolean }
   | { kind: 'success' }
 
-export function SaasOfferAcceptForm({ versionId, versionLabel }: Props) {
+export function SaasOfferAcceptForm({
+  versionId,
+  versionLabel,
+  processorTermsVersionId,
+  processorTermsVersionLabel,
+}: Props) {
   const [agreed, setAgreed] = useState(false)
   const [state, setState] = useState<SubmitState>({ kind: 'idle' })
   const [pending, startTransition] = useTransition()
@@ -37,6 +47,7 @@ export function SaasOfferAcceptForm({ versionId, versionLabel }: Props) {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             saasOfferConsentVersionId: versionId,
+            saasProcessorTermsConsentVersionId: processorTermsVersionId,
           }),
         })
         if (res.ok) {
@@ -80,6 +91,11 @@ export function SaasOfferAcceptForm({ versionId, versionLabel }: Props) {
   return (
     <form onSubmit={onSubmit}>
       <input type="hidden" name="saasOfferConsentVersionId" value={versionId} />
+      <input
+        type="hidden"
+        name="saasProcessorTermsConsentVersionId"
+        value={processorTermsVersionId}
+      />
       <label
         style={{
           display: 'flex',
@@ -99,7 +115,9 @@ export function SaasOfferAcceptForm({ versionId, versionLabel }: Props) {
         />
         <span>
           Я согласен(на) с условиями SaaS-оферты LevelChannel (версия{' '}
-          <strong>{versionLabel}</strong>).
+          <strong>{versionLabel}</strong>) и Приложения № 1 «Условия
+          поручения оператору» (версия{' '}
+          <strong>{processorTermsVersionLabel}</strong>).
         </span>
       </label>
 

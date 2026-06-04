@@ -60,11 +60,20 @@ export default async function SaasOfferAcceptPage() {
     redirect('/saas-offer-awaiting')
 
   // 'consent_required' — render the form.
-  const live = await getCurrentLegalVersion('saas_offer')
-  // Defensive: evaluateSaasOfferGate returned 'consent_required' only
-  // if live is non-null + non-placeholder. If we got null here it's a
-  // race; redirect to awaiting and let the user retry.
-  if (!live || live.versionLabel.startsWith('v0-placeholder-')) {
+  // §0af Closure for BLOCKER #4 (Sub-A.5 two-document TOCTOU): read
+  // BOTH live versions; if either is missing/placeholder, redirect to
+  // awaiting. Both ids are pinned on the form so the POST handler
+  // can validate both halves of the combinedVersion.
+  const [live, processorTermsLive] = await Promise.all([
+    getCurrentLegalVersion('saas_offer'),
+    getCurrentLegalVersion('saas_processor_terms'),
+  ])
+  if (
+    !live
+    || live.versionLabel.startsWith('v0-placeholder-')
+    || !processorTermsLive
+    || processorTermsLive.versionLabel.startsWith('v0-placeholder-')
+  ) {
     redirect('/saas-offer-awaiting')
   }
 
@@ -109,6 +118,8 @@ export default async function SaasOfferAcceptPage() {
       <SaasOfferAcceptForm
         versionId={live.id}
         versionLabel={live.versionLabel}
+        processorTermsVersionId={processorTermsLive.id}
+        processorTermsVersionLabel={processorTermsLive.versionLabel}
       />
     </main>
   )

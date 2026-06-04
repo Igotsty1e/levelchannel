@@ -94,6 +94,22 @@ export async function POST(request: Request) {
       { status: 400, headers: NO_STORE },
     )
   }
+  // §0ag Closure for WARN #3: lock the versionLabel character set so
+  // `parseCombinedVersion()` (lib/legal/combined-version.ts) stays
+  // injective. The literal encoding `saas_offer:<offerLabel>+processor_terms:<termsLabel>`
+  // becomes ambiguous if either label contains `:` or `+`. Banning
+  // those (plus all other separator chars not in the allow-list)
+  // keeps the parser unambiguous for every future write.
+  if (!/^[A-Za-z0-9._-]+$/.test(versionLabel)) {
+    return NextResponse.json(
+      {
+        error: 'invalid_version_label',
+        message:
+          'versionLabel должен содержать только [A-Za-z0-9._-] (символы : и + зарезервированы под combinedVersion encoding).',
+      },
+      { status: 422, headers: NO_STORE },
+    )
+  }
   // SAAS-OFFER bundle round-1 BLOCKER#1 closure — the `v0-placeholder-*`
   // prefix is the gate's hard-reject signal (per evaluateSaasOfferGate in
   // lib/auth/guards.ts + /saas-offer-accept SSR guard). The placeholder

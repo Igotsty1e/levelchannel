@@ -22,8 +22,10 @@ import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
 import { readJsonObjectOr400 } from '@/lib/api/json-body'
+import { recordAuthAuditEvent } from '@/lib/audit/auth-events'
 import { recordConsent } from '@/lib/auth/consents'
 import { requireTeacherAndVerified } from '@/lib/auth/guards'
+import { buildCombinedVersion } from '@/lib/legal/combined-version'
 import { getCurrentLegalVersion } from '@/lib/legal/versions'
 import {
   enforceRateLimit,
@@ -53,11 +55,15 @@ export async function POST(request: Request) {
   if (!parsed.ok) return parsed.response
   const b = parsed.body
 
-  const submittedVersionId =
+  const submittedOfferId =
     typeof b.saasOfferConsentVersionId === 'string'
       ? b.saasOfferConsentVersionId.trim()
       : ''
-  if (!submittedVersionId) {
+  const submittedTermsId =
+    typeof b.saasProcessorTermsConsentVersionId === 'string'
+      ? b.saasProcessorTermsConsentVersionId.trim()
+      : ''
+  if (!submittedOfferId) {
     return NextResponse.json(
       {
         error: 'saas_offer_version_missing',
@@ -66,9 +72,30 @@ export async function POST(request: Request) {
       { status: 400, headers: NO_STORE },
     )
   }
+  if (!submittedTermsId) {
+    return NextResponse.json(
+      {
+        error: 'saas_processor_terms_version_missing',
+        message: 'Не указана версия Приложения № 1.',
+      },
+      { status: 400, headers: NO_STORE },
+    )
+  }
 
-  const live = await getCurrentLegalVersion('saas_offer')
-  if (!live || live.versionLabel.startsWith('v0-placeholder-')) {
+  // §0af Closure for BLOCKER #4 (Sub-A.5 two-document TOCTOU): read
+  // BOTH live versions and pin BOTH ids GET→POST. Either missing /
+  // placeholder → 503; either id drifted → 409 with `drifted` object
+  // naming which document changed.
+  const [live, processorTermsLive] = await Promise.all([
+    getCurrentLegalVersion('saas_offer'),
+    getCurrentLegalVersion('saas_processor_terms'),
+  ])
+  if (
+    !live
+    || live.versionLabel.startsWith('v0-placeholder-')
+    || !processorTermsLive
+    || processorTermsLive.versionLabel.startsWith('v0-placeholder-')
+  ) {
     return NextResponse.json(
       {
         error: 'saas_offer_awaiting_publication',
@@ -77,25 +104,59 @@ export async function POST(request: Request) {
       { status: 503, headers: NO_STORE },
     )
   }
-  if (submittedVersionId !== live.id) {
+  if (
+    submittedOfferId !== live.id
+    || submittedTermsId !== processorTermsLive.id
+  ) {
     return NextResponse.json(
       {
         error: 'saas_offer_version_changed',
         message:
           'Оферта обновилась. Перечитайте новую версию и подтвердите ещё раз.',
+        drifted: {
+          saas_offer: submittedOfferId !== live.id,
+          saas_processor_terms: submittedTermsId !== processorTermsLive.id,
+        },
       },
       { status: 409, headers: NO_STORE },
     )
   }
 
+  // §0af Closure for BLOCKER #1 + §0ag Closure #4: write SINGLE
+  // consent row with combinedVersion = `saas_offer:<offerLabel>+
+  // processor_terms:<termsLabel>`. Matches the register-flow shape
+  // at `app/api/auth/register/route.ts:388`.
+  const combinedVersion = buildCombinedVersion(
+    live.versionLabel,
+    processorTermsLive.versionLabel,
+  )
   await recordConsent({
     accountId: guard.account.id,
     documentKind: 'saas_offer',
-    documentVersion: live.versionLabel,
+    documentVersion: combinedVersion,
     documentPath: '/saas/offer',
     legalDocumentVersionId: live.id,
     ip: getClientIp(request),
     userAgent: request.headers.get('user-agent'),
+  })
+
+  // §0af Closure for WARN #7 / §0ac Closure #7: emit the canonical
+  // audit event alongside the consent row. The event type was already
+  // in the AUTH_AUDIT_EVENT_TYPES allowlist + the SQL CHECK; this
+  // route is the writer. recordAuthAuditEvent is silent-skip on
+  // missing pool — best-effort, NOT hard-TX-coupled with recordConsent.
+  await recordAuthAuditEvent({
+    eventType: 'auth.teacher.saas_offer_accepted',
+    accountId: guard.account.id,
+    email: guard.account.email,
+    clientIp: getClientIp(request),
+    userAgent: request.headers.get('user-agent'),
+    payload: {
+      saas_offer_version_id: live.id,
+      saas_offer_label: live.versionLabel,
+      saas_processor_terms_version_id: processorTermsLive.id,
+      saas_processor_terms_label: processorTermsLive.versionLabel,
+    },
   })
 
   return NextResponse.json({ ok: true }, { status: 200, headers: NO_STORE })

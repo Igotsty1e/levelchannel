@@ -24,6 +24,7 @@ import {
   sendAlreadyRegisteredEmail,
   sendVerifyEmail,
 } from '@/lib/email/dispatch'
+import { buildCombinedVersion } from '@/lib/legal/combined-version'
 import { PERSONAL_DATA_DOCUMENT_VERSION } from '@/lib/legal/personal-data'
 import { getCurrentLegalVersion } from '@/lib/legal/versions'
 import { validateCustomerEmail } from '@/lib/payments/catalog'
@@ -60,6 +61,7 @@ export async function POST(request: Request) {
     personalDataConsentAccepted?: boolean
     saasOfferConsentAccepted?: boolean
     saasOfferConsentVersionId?: string
+    saasProcessorTermsConsentVersionId?: string
     role?: string
     inviteToken?: string
     firstName?: string | null
@@ -174,13 +176,31 @@ export async function POST(request: Request) {
         { status: 503, headers: NO_STORE },
       )
     }
-    const submittedId =
+    const submittedOfferId =
       typeof body.saasOfferConsentVersionId === 'string'
         ? body.saasOfferConsentVersionId.trim()
         : ''
-    if (submittedId !== saasOfferLiveVersion.id) {
+    const submittedTermsId =
+      typeof body.saasProcessorTermsConsentVersionId === 'string'
+        ? body.saasProcessorTermsConsentVersionId.trim()
+        : ''
+    // §0af Closure for BLOCKER #4 (Sub-A.3 two-document TOCTOU): pin
+    // BOTH version IDs GET→POST. Drift on either side → 409 with a
+    // `drifted` object naming which document changed so the client
+    // can re-render with the fresh IDs.
+    if (
+      submittedOfferId !== saasOfferLiveVersion.id
+      || submittedTermsId !== saasProcessorTermsLiveVersion.id
+    ) {
       return NextResponse.json(
-        { error: 'saas_offer_version_changed' },
+        {
+          error: 'saas_offer_version_changed',
+          drifted: {
+            saas_offer: submittedOfferId !== saasOfferLiveVersion.id,
+            saas_processor_terms:
+              submittedTermsId !== saasProcessorTermsLiveVersion.id,
+          },
+        },
         { status: 409, headers: NO_STORE },
       )
     }
@@ -385,7 +405,10 @@ export async function POST(request: Request) {
     // вверху уже REQUIRED обе версии non-placeholder; здесь нет fallback
     // на saas_offer-only — combinedVersion всегда содержит обе.
     if (saasOfferLiveVersion && saasProcessorTermsLiveVersion) {
-      const combinedVersion = `saas_offer:${saasOfferLiveVersion.versionLabel}+processor_terms:${saasProcessorTermsLiveVersion.versionLabel}`
+      const combinedVersion = buildCombinedVersion(
+        saasOfferLiveVersion.versionLabel,
+        saasProcessorTermsLiveVersion.versionLabel,
+      )
       await recordConsent({
         accountId: account.id,
         documentKind: 'saas_offer',
