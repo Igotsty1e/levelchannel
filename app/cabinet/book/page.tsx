@@ -3,10 +3,12 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { AuthShell } from '@/components/auth-shell'
+import { LearnerBookTzReminder } from '@/components/onboarding/learner-book-tz-reminder'
 import { getAccountProfile } from '@/lib/auth/profiles'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getActiveTeacherForLearner } from '@/lib/auth/teacher-scope'
 import { TIMEZONE_OPTIONS, safeTimezone } from '@/lib/auth/timezones'
+import { getOnboardingState } from '@/lib/onboarding/state'
 
 import { MonthDayPicker } from './month-day-picker'
 
@@ -56,12 +58,21 @@ export default async function BookPage() {
   const resolved = await getActiveTeacherForLearner(session.account.id)
   const teacherId =
     resolved.teacherId ?? session.account.assignedTeacherIds[0] ?? null
-  const profile = await getAccountProfile(session.account.id)
+  const [profile, onboardingState] = await Promise.all([
+    getAccountProfile(session.account.id),
+    getOnboardingState(session.account.id),
+  ])
   // BUG fix 2026-05-15 — legacy rows may carry a non-IANA value like
   // 'Moscow' which then leaks to /api/slots/booking-days as `tz=Moscow`
   // and triggers "tz must be a valid IANA timezone" on the API side.
   // safeTimezone() clamps any non-allowlisted value to Europe/Moscow.
   const tz = safeTimezone(profile?.timezone)
+  // Onboarding Sub-PR C2 — pass raw profile tz to the tz-reminder
+  // client island so it can compare against browser tz. Profile tz
+  // is null for legacy accounts; the component treats null as "hide
+  // the banner" (no comparison anchor).
+  const learnerTzRaw = profile?.timezone ?? null
+  const tzHintDismissed = 'tz_hint' in onboardingState.dismissedHints
   const tzLabel =
     TIMEZONE_OPTIONS.find((t) => t.id === tz)?.label ?? tz
 
@@ -106,6 +117,14 @@ export default async function BookPage() {
         >
           ← В кабинет
         </Link>
+
+        {/* Onboarding Sub-PR C2 — tz-mismatch reminder. Client island
+            compares browser tz vs learner-profile tz; renders only
+            when both are present + different + not dismissed. */}
+        <LearnerBookTzReminder
+          learnerTz={learnerTzRaw}
+          dismissed={tzHintDismissed}
+        />
 
         {/* Calendly-style header. */}
         <div style={{ marginTop: 16, marginBottom: 24 }}>
