@@ -22,6 +22,9 @@ import { listLearnersForTeacher } from '@/lib/scheduling/teacher-learners'
 import { isLearnerArchetypeCandidate } from '@/lib/auth/learner-archetype'
 
 import { loadTeacherBlocks } from '@/lib/cabinet/teacher-blocks'
+import { shouldShowLearnerCabinetTour } from '@/lib/onboarding/learner-cabinet-tour'
+
+import { LearnerCabinetTour } from '@/components/onboarding/learner-cabinet-tour'
 
 import { BillingSections } from './billing-sections'
 import { LessonsSection } from './lessons-section'
@@ -197,6 +200,14 @@ export default async function CabinetPage() {
     && Boolean(primaryTeacherId)
     && primaryTeacherPaymentMethod === 'none'
 
+  // Onboarding Sub-PR C1 — learner welcome tour. Render predicate is
+  // server-side per spec §1.2: hasTeacher && noCompletion && !dismissed.
+  // Skipped for non-learner archetypes (teachers/admin who don't have
+  // the cabinet learner UI rendered below).
+  const showLearnerTour = isLearner
+    ? await shouldShowLearnerCabinetTour(account.id)
+    : false
+
   return (
     <AuthShell>
       <div
@@ -256,6 +267,9 @@ export default async function CabinetPage() {
 
       {isLearner ? (
         <>
+          {/* Onboarding Sub-PR C1 — learner welcome tour shown only
+              before the first lesson is completed. */}
+          <LearnerCabinetTour shouldRender={showLearnerTour} />
           {/* SAAS-PIVOT Day 7 — multi-teacher branch. 2+ active links:
               show per-teacher blocks + unified timeline. The single-
               teacher LessonsSection (booking CTA, paid pill, etc.) is
