@@ -952,3 +952,77 @@ Admin reader stays as-is (`readFile + JSON.parse`) — atomic rename means parse
 - WARN #4 alerts-obs.test.ts update is in the impl scope.
 
 If round 4 returns SIGN-OFF, the plan-doc Status flips to SIGN-OFF and the implementation epic can start as a separate body of work (mig 0104 + script extensions + probe-status helpers + admin UI + tests — estimated 600-800 LOC per §0b).
+
+---
+
+## §0f — Round-4 closures (2026-06-04, supersedes §0e on path resolution + GC persistence + writer mkdir)
+
+Round 4 surfaced 2 BLOCKERs + 1 WARN + 1 INFO. §0f closures:
+
+### Closure for BLOCKER #1 (admin-side path resolution)
+
+§0e claimed "both processes resolve the path identically" — wrong. Script default at `scripts/conflict-unresolved-alert.mjs:87` uses `resolvePath('./var/...')` which is `process.cwd()`-relative. Script runs in `WorkingDirectory=__LEVELCHANNEL_APP_DIR__` (verified `scripts/systemd/levelchannel-conflict-unresolved-alert.service:23`); the Next.js server process is started by `next start` from a different cwd that is NOT pinned in the repo (per `ARCHITECTURE.md:541` the deploy is generic "VPS + next start"). The two cwds CAN drift.
+
+**Fix:** require `CONFLICT_UNRESOLVED_STATE_FILE` env var to be set to an absolute path on BOTH processes in production. Both must agree.
+
+Concretely:
+- `scripts/conflict-unresolved-alert.mjs:85-87` — keep the env-override default. Add a runtime warning when the env is unset AND `NODE_ENV=production`: log `WARN: CONFLICT_UNRESOLVED_STATE_FILE unset in production — admin /admin/settings/alerts deferred-stats may read a different path`.
+- `lib/admin/probe-status.ts:getProbeFanoutDeferredStats` — read `process.env.CONFLICT_UNRESOLVED_STATE_FILE` directly. When unset in production, log the same warning AND return `{ deferred: null, deferredOldestAge: null }` (UI renders «нет данных, проверьте настройки» instead of phantom zeros).
+- `docs/private/OPERATIONS.private.md` (or equivalent runbook) — pin the canonical absolute path. Recommend `/var/lib/levelchannel-app/conflict-unresolved-state.json` OR `<APP_DIR>/var/conflict-unresolved-state.json`, both processes set the env to the SAME value.
+- Sub-PR impl checklist: extend `scripts/seed-staging-env.sh` (or equivalent VPS env-bootstrap script) to set `CONFLICT_UNRESOLVED_STATE_FILE` on BOTH the probe systemd unit AND the next-server systemd unit. Drift-detection unit test or smoke can assert both `systemctl show` outputs match.
+
+### Closure for BLOCKER #2 (GC persistence on non-send ticks)
+
+§0e GC algorithm only runs in the "have offenders" branch and only writes state when a send succeeds. Phantom entries survive on disk through zero-offender, dedup-skip, and send-failed ticks.
+
+**Fix:** persist state file write EVERY tick that runs the GC step, regardless of branch:
+
+- Move GC to a top-level tick step (BEFORE the "if zero offenders" early return).
+- If GC mutated `state.perTeacher` (any entries removed), write state to disk unconditionally — even when the tick later returns at the zero-offenders branch / dedup-skip / send-failed.
+- For zero-offender tick: the live qualifying set is empty → GC removes ALL `state.perTeacher` entries → disk write reflects that → next admin read sees `deferred: 0`.
+
+Concrete pseudocode (`scripts/conflict-unresolved-alert.mjs` tick body — REPLACES §0e):
+
+```js
+const allOffendersForFanout = await readAllOffendersForFanout(client, thresholdMinutes)
+const liveTeacherIds = new Set(allOffendersForFanout.map(r => r.teacher_account_id))
+
+// GC stale perTeacher entries BEFORE any branch decision.
+let stateMutated = false
+for (const teacherId of Object.keys(state.perTeacher ?? {})) {
+  if (!liveTeacherIds.has(teacherId)) {
+    delete state.perTeacher[teacherId]
+    stateMutated = true
+  }
+}
+if (stateMutated) await writeState(state)
+
+// Existing branches: zero-offenders early return / dedup-skip / send / etc.
+// All happen AFTER GC + disk persist, so phantom entries can't survive
+// through them.
+```
+
+This guarantees on-disk `state.perTeacher` mirrors the live qualifying set at the start of every tick.
+
+### Closure for WARN #3 (writer mkdir behavior)
+
+§0e snippet dropped the existing `mkdir(dirname(STATE_FILE), { recursive: true })` at `scripts/conflict-unresolved-alert.mjs:438`. Restore it:
+
+```js
+async function writeState(state) {
+  await fs.mkdir(path.dirname(STATE_FILE), { recursive: true })
+  const tmp = `${STATE_FILE}.tmp.${process.pid}`
+  await fs.writeFile(tmp, JSON.stringify(state, null, 2), 'utf8')
+  await fs.rename(tmp, STATE_FILE)
+}
+```
+
+`mkdir` is needed for the first-run path AND for custom-override paths that aren't pre-created by the deployment harness. `rename` requires both paths to be on the same filesystem; since `tmp` is the same basename + `.tmp.<pid>` suffix, that holds.
+
+### Closure for INFO #4
+
+No change; documented in §0e.
+
+---
+
+**Status after §0f applied:** round-4 findings closed. The two BLOCKERs (path-resolution + GC-persistence) now have concrete contracts that the Sub-PR impl will follow. Round-5 codex verifies coherence.
