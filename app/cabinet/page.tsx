@@ -23,7 +23,9 @@ import { isLearnerArchetypeCandidate } from '@/lib/auth/learner-archetype'
 
 import { loadTeacherBlocks } from '@/lib/cabinet/teacher-blocks'
 import { shouldShowLearnerCabinetTour } from '@/lib/onboarding/learner-cabinet-tour'
+import { getOnboardingState } from '@/lib/onboarding/state'
 
+import { LearnerAfterBookReminder } from '@/components/onboarding/learner-after-book-reminder'
 import { LearnerCabinetTour } from '@/components/onboarding/learner-cabinet-tour'
 
 import { BillingSections } from './billing-sections'
@@ -56,7 +58,12 @@ export const metadata = {
   title: 'Кабинет — LevelChannel',
 }
 
-export default async function CabinetPage() {
+export default async function CabinetPage({
+  searchParams,
+}: {
+  // Next 16 — searchParams is a Promise per the new dynamic-API contract.
+  searchParams?: Promise<{ booked?: string | string[] }>
+}) {
   const cookieStore = await cookies()
   const cookieValue = cookieStore.get(SESSION_COOKIE_NAME)?.value ?? null
 
@@ -208,6 +215,20 @@ export default async function CabinetPage() {
     ? await shouldShowLearnerCabinetTour(account.id)
     : false
 
+  // Onboarding Sub-PR C3 — post-book reminder banner per spec §1.2 +
+  // round-3 §0d Closure for BLOCKER #3. confirm-form pushes to
+  // /cabinet?booked=1 right after a successful slot booking; we show
+  // a banner offering to set up Telegram/email reminders until the
+  // learner dismisses (`learner_reminder_hint` key).
+  const sp = await searchParams
+  const bookedFlag = Array.isArray(sp?.booked) ? sp.booked[0] : sp?.booked
+  const justBooked = bookedFlag === '1'
+  const reminderHintState = isLearner ? await getOnboardingState(account.id) : null
+  const reminderHintDismissed = reminderHintState
+    ? 'learner_reminder_hint' in reminderHintState.dismissedHints
+    : false
+  const showAfterBookReminder = isLearner && justBooked && !reminderHintDismissed
+
   return (
     <AuthShell>
       <div
@@ -267,6 +288,10 @@ export default async function CabinetPage() {
 
       {isLearner ? (
         <>
+          {/* Onboarding Sub-PR C3 — post-book reminder banner. Renders
+              ABOVE the welcome tour because it's the more urgent action
+              when the learner just booked something. */}
+          <LearnerAfterBookReminder shouldRender={showAfterBookReminder} />
           {/* Onboarding Sub-PR C1 — learner welcome tour shown only
               before the first lesson is completed. */}
           <LearnerCabinetTour shouldRender={showLearnerTour} />
