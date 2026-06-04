@@ -596,3 +596,149 @@ No change. PK already gives needed btree; helper queries by `account_id` only. J
 ---
 
 **Status after §0d applied:** round-3 BLOCKER findings each have a written closure. Round-4 codex run will verify: (a) closures are coherent, (b) no new BLOCKERs opened, (c) Sub-PR A remaining scope is correctly bounded (API + purge-hook + tests).
+
+---
+
+## §0e — Round-4 closures (2026-06-04, supersedes contradictions in §0d)
+
+Round 4 surfaced 3 BLOCKERs + 1 WARN + 1 INFO against §0d. All closed concretely; §0e supersedes §0d where they conflict.
+
+### Closure for BLOCKER #1 (Closure #6 — purge belongs per-account, not bulk-table)
+
+§0d's "add to anonymization sweep" wording is wrong. `scripts/db-retention-cleanup.mjs:141 purgeAccounts()` is per-account: it selects grace-expired accounts, opens a TX per account, re-runs `deletionGuardForAccount()` inside the TX, and **skips** purge when the guard reports an in-flight package grant. A blind `DELETE FROM account_onboarding_state WHERE account_id IN (...)` table-level sweep would delete state even for deferred accounts.
+
+**Fix:** the `account_onboarding_state` delete lives INSIDE the per-account TX, AFTER the deletion-guard check passes, BEFORE the per-account commit. Concretely (pseudocode inside `purgeAccounts` per-account loop):
+
+```js
+// scripts/db-retention-cleanup.mjs (per-account TX body, after guard pass)
+await client.query('begin')
+const guard = await deletionGuardForAccount(client, account.id)
+if (!guard.ok) {
+  await client.query('commit')  // commit nothing — guard deferred
+  continue
+}
+// Existing anonymisation steps (UPDATE accounts SET email=anon, ...; etc.)
+// NEW: scrub onboarding state in the SAME TX so guard-deferred accounts retain it.
+await client.query(
+  `delete from account_onboarding_state where account_id = $1`,
+  [account.id],
+)
+await client.query('commit')
+```
+
+Integration test extends to:
+1. Account A grace-expired, no guard hit → onboarding row deleted alongside other anonymisation.
+2. Account B grace-expired, deletion-guard defers (in-flight package grant) → onboarding row PRESERVED until guard clears.
+
+### Closure for BLOCKER #2 (Closure #2 — CT1 reachable verify path)
+
+§0d's "drop CT1, existing /cabinet verify banner already handles unverified teachers" is wrong. The route graph creates a redirect loop:
+
+- `/teacher/*` redirects unverified teacher to `/cabinet` (`app/teacher/layout.tsx:50`).
+- `/cabinet/page.tsx:90+` (added 2026-06-02) redirects teacher-only accounts (no `student` role) BACK to `/teacher`.
+
+For a teacher-only unverified account, this is unreachable surface, not "existing".
+
+**Fix:** the `/cabinet` teacher-only redirect must NOT fire when the teacher is also unverified — keep them on `/cabinet` so the existing verify-banner is visible. Concretely amend `app/cabinet/page.tsx` redirect:
+
+```typescript
+// app/cabinet/page.tsx:90+ (existing teacher-only redirect)
+// CURRENT (creates loop with /teacher/layout redirect):
+if (isTeacher && !isStudent) redirect('/teacher')
+// FIX (Closure #2): unverified teacher-only stays on /cabinet to see verify banner.
+if (isTeacher && !isStudent && account.verifiedAt !== null) redirect('/teacher')
+```
+
+With that one-line change:
+- Unverified teacher: `/teacher` → `/cabinet` (no further redirect because `verifiedAt === null` short-circuits the cabinet teacher-only redirect). Verify-email banner renders. CT1 hint can now be hosted on `/cabinet` for the unverified-teacher case. 
+- Verified teacher: `/teacher` renders normally; `/cabinet` still redirects to `/teacher`.
+- Learner / admin paths unchanged.
+
+This is a **prerequisite for Sub-PR A** that lands in the SAME PR (`app/cabinet/page.tsx` one-line change + integration test for the verify-banner-on-cabinet path for unverified teacher-only). After that, CT1 can either:
+- (a) Stay in the spec as a Sub-PR C item (hint on `/cabinet` with key `verify_email_reminder`) — RECOMMENDED.
+- (b) Drop entirely if the existing verify-banner is judged sufficient — Sub-PR D decides.
+
+§0d's "default drop" is rescinded; CT1 stays planned, target route is `/cabinet`, hint key TBD in spec finalization.
+
+### Closure for BLOCKER #3 (Closures #1, #3 — namespace + helper names)
+
+§0d conflated kebab-case **Hint IDs** (from tooltip spec §1) with snake_case **persistence keys** (from `lib/onboarding/keys.ts:15` `ONBOARDING_HINT_KEYS`). They are different namespaces. §0d also referenced helpers that do not exist (`requireAuthenticatedAccount`) or have a different signature (`enforceAccountRateLimit`).
+
+**Fix — single source of truth = `ONBOARDING_HINT_KEYS` (snake_case persistence keys):**
+
+- API body field is `hintKey: string` (snake_case), NOT `hintId`. Server validates `hintKey` is in `ONBOARDING_HINT_KEYS`.
+- Tooltip spec §1 entries get an explicit `Persistence key` field that names the `ONBOARDING_HINT_KEYS` entry. The kebab-case Hint ID stays in the spec as the human-readable label but is NOT the wire value.
+- Component-side: `<HintCard hintKey="teacher_setup_checklist">` (snake_case), NOT `<HintCard hintId="teacher-home-setup-checklist">`.
+- The §0d kebab-case-key API contract is REPLACED in §0e.
+
+**Fix — actual helper signatures:**
+
+- Auth: `requireAuthenticated(request)` from `lib/auth/guards.ts:16-30` (verified). Returns `{ ok: true, account } | { ok: false, response }`. NOT `requireAuthenticatedAccount`.
+- Rate-limit: `enforceAccountRateLimit(accountId, scope, limit, windowMs)` from `lib/security/account-rate-limit.ts:24` (verified). Concretely:
+  ```typescript
+  const rl = await enforceAccountRateLimit(
+    account.id,
+    'onboarding-dismiss-hint',
+    30,           // 30 dismisses per
+    60_000,       // ... 60 seconds
+  )
+  if (rl) return rl  // 429 response if rate-limited
+  ```
+- Origin gate: `enforceTrustedBrowserOrigin(request)` (existing helper from `lib/security/request.ts`).
+
+**Final §0e API contract for `POST /api/onboarding/dismiss-hint`:**
+
+```typescript
+import { enforceTrustedBrowserOrigin } from '@/lib/security/request'
+import { requireAuthenticated } from '@/lib/auth/guards'
+import { enforceAccountRateLimit } from '@/lib/security/account-rate-limit'
+import { isValidOnboardingHintKey } from '@/lib/onboarding/keys'
+import { dismissOnboardingHint } from '@/lib/onboarding/state'  // existing helper
+
+export async function POST(request: Request) {
+  const origin = enforceTrustedBrowserOrigin(request)
+  if (origin) return origin
+  const auth = await requireAuthenticated(request)
+  if (!auth.ok) return auth.response
+  const rl = await enforceAccountRateLimit(auth.account.id, 'onboarding-dismiss-hint', 30, 60_000)
+  if (rl) return rl
+
+  let body: unknown = null
+  try { body = await request.json() } catch { /* empty → 400 below */ }
+  const hintKey = (body && typeof body === 'object')
+    ? String((body as { hintKey?: unknown }).hintKey ?? '').trim()
+    : ''
+  if (hintKey === '') {
+    return NextResponse.json({ error: 'hint_key_missing' }, { status: 400, headers: NO_STORE })
+  }
+  if (!isValidOnboardingHintKey(hintKey)) {
+    return NextResponse.json({ error: 'unknown_hint_key' }, { status: 400, headers: NO_STORE })
+  }
+  // Idempotent: repeated dismiss is a no-op via the helper's UPSERT.
+  await dismissOnboardingHint(auth.account.id, hintKey)
+  return NextResponse.json(
+    { ok: true, hintKey, dismissedAt: new Date().toISOString() },
+    { headers: NO_STORE },
+  )
+}
+```
+
+This matches the actual exports verified at the cited file:line.
+
+### Closure for WARN #4 (Sub-PR A scope reconciliation)
+
+§0d Closure #7 said remaining Sub-PR A = dismiss API + purge + tests. Tooltip spec still holds reset route + admin CLI in Sub-PR A scope. Two sources disagree.
+
+**Fix — single Sub-PR A scope (defined here, supersedes tooltip spec):**
+
+- IN Sub-PR A: `POST /api/onboarding/dismiss-hint` route + `account_onboarding_state` purge inside `purgeAccounts` per-account TX + integration tests (8 cases per §0d Closure #8) + the `/cabinet` redirect guard from BLOCKER #2 closure above + matching integration test for the verify-banner-on-cabinet path for unverified teacher-only.
+- DEFERRED to Sub-PR D (nice-to-have): reset route (`POST /api/onboarding-state/reset`), admin CLI for ops support.
+- The tooltip spec §6 Sub-PR decomposition is amended in this §0e to mark reset + admin CLI as Sub-PR D.
+
+### Closure (INFO #5) — Closure #5 SQL is correct
+
+No change; `lesson_completions.teacher_id` exists and indexed.
+
+---
+
+**Status after §0e applied:** round-4 BLOCKER findings each have a written closure verified against live helpers and route graph. Round-5 codex verifies. Sub-PR A scope finally bounded: dismiss API + cabinet redirect fix + purge per-account + tests.
