@@ -396,6 +396,122 @@ export async function evaluateSaasOfferGate(
   return { kind: 'ok' }
 }
 
+// MUTATION-PATH GATE — Class C race closure from plan §0af.
+//
+// `evaluateSaasOfferGate` (above) is SSR-only: two independent reads
+// of legal + consent. For SSR pages the race is harmless (the page
+// rendered against an old snapshot still routes correctly on the
+// next request). For MUTATING `/api/teacher/**` routes that race is
+// real — a publish-v2 commit landing between gate-read and
+// route-write lets one stale-consent mutation through.
+//
+// This helper takes a caller-controlled `PoolClient` so the gate
+// read runs inside the route's write TX. The caller MUST:
+//   1. open a TX at isolation REPEATABLE READ (or stronger) BEFORE
+//      calling this helper,
+//   2. acquire shared advisory locks on the same per-kind keys that
+//      `createLegalVersion` takes exclusively (lib/legal/versions.ts
+//      line 140-141 — `pg_advisory_xact_lock(hashtext('legal:' || docKind))`),
+//   3. abort the TX with `rollback` on anything other than `ok`,
+//   4. keep the route's writes inside the same TX so publish-v2 that
+//      commits before the route's commit conflicts and rolls back
+//      cleanly.
+//
+// Two-document bundle (round-9 BLOCKER#2 + §0ad Corrigendum #1): the
+// SaaS оферта lives as TWO docs (`saas_offer` + `saas_processor_terms`).
+// Live versions of BOTH must be non-placeholder AND the consent row's
+// combinedVersion must encode BOTH live labels. The consent row is a
+// SINGLE entry under document_kind='saas_offer' (matches the live
+// register-flow shape at app/api/auth/register/route.ts:388).
+//
+// SHARED locks coexist (many readers; multiple gates run in parallel);
+// EXCLUSIVE (held by publish) blocks SHARED. So while publish is in
+// flight, gates queue; after publish commits, queued gates read the
+// new live label via the single CTE below and return `consent_required`
+// for any combinedVersion that no longer matches.
+export async function evaluateSaasOfferGateForMutation(
+  client: import('pg').PoolClient,
+  accountId: string,
+): Promise<SaasOfferGateVerdict> {
+  const flagOn = await isSaasOfferGateEnabled()
+  if (!flagOn) return { kind: 'ok' }
+
+  // Acquire shared locks on both kinds. Both are held for the rest
+  // of the TX so the snapshot stays consistent under REPEATABLE READ.
+  await client.query(
+    `select pg_advisory_xact_lock_shared(hashtext($1))`,
+    ['legal:saas_offer'],
+  )
+  await client.query(
+    `select pg_advisory_xact_lock_shared(hashtext($1))`,
+    ['legal:saas_processor_terms'],
+  )
+
+  // Single CTE — one round-trip, one consistent read. Mirrors the
+  // canonical SQL shape from getCurrentLegalVersion (effective_from
+  // <= now() + tie-break created_at desc) and getActiveConsent
+  // (revoked_at IS NULL + order by accepted_at desc).
+  const res = await client.query<{
+    live_offer_label: string | null
+    live_terms_label: string | null
+    consent_combined_version: string | null
+  }>(
+    `with live_offer as (
+       select version_label
+         from legal_document_versions
+        where doc_kind = 'saas_offer'
+          and effective_from <= now()
+        order by effective_from desc, created_at desc
+        limit 1
+     ),
+     live_terms as (
+       select version_label
+         from legal_document_versions
+        where doc_kind = 'saas_processor_terms'
+          and effective_from <= now()
+        order by effective_from desc, created_at desc
+        limit 1
+     ),
+     consent as (
+       select document_version
+         from account_consents
+        where account_id = $1::uuid
+          and document_kind = 'saas_offer'
+          and revoked_at is null
+        order by accepted_at desc
+        limit 1
+     )
+     select
+       (select version_label from live_offer) as live_offer_label,
+       (select version_label from live_terms) as live_terms_label,
+       (select document_version from consent) as consent_combined_version`,
+    [accountId],
+  )
+  const row = res.rows[0]
+  const PLACEHOLDER_PREFIX = 'v0-placeholder-'
+  if (
+    row.live_offer_label === null
+    || row.live_terms_label === null
+    || row.live_offer_label.startsWith(PLACEHOLDER_PREFIX)
+    || row.live_terms_label.startsWith(PLACEHOLDER_PREFIX)
+  ) {
+    return { kind: 'awaiting_publication' }
+  }
+  if (row.consent_combined_version === null) {
+    return { kind: 'consent_required' }
+  }
+  const { parseCombinedVersion } = await import('@/lib/legal/combined-version')
+  const parsed = parseCombinedVersion(row.consent_combined_version)
+  if (
+    parsed === null
+    || parsed.saasOfferLabel !== row.live_offer_label
+    || parsed.processorTermsLabel !== row.live_terms_label
+  ) {
+    return { kind: 'consent_required' }
+  }
+  return { kind: 'ok' }
+}
+
 // REQUEST WRAPPER: combines requireTeacherAndVerified with the gate.
 // Used by every /api/teacher/** route handler that mutates state.
 // The /api/teacher/saas-offer-accept POST handler is the documented
