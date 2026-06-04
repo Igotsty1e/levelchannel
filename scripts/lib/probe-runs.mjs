@@ -105,28 +105,70 @@ export const RECIPIENT_KINDS = Object.freeze({
  * }} params
  */
 export async function recordProbeRun(pool, params) {
+  const recipientKind = params.recipientKind ?? RECIPIENT_KINDS.EMAIL
+  // bcs-def-1-fanout impl (mig 0104): optional alertAudience
+  // distinguishes 'operator' email rows from 'teacher' fan-out rows.
+  // NULL acceptable for non-fan-out probes (backward compatible).
+  //
+  // Wave-paranoia R1 BLOCKER #2 closure (2026-06-04): the shared
+  // helper MUST stay backward-compatible during the rolling-deploy
+  // window when migration 0104 has not yet applied (NEW code running
+  // against OLD schema). Strategy: only INSERT the alert_audience
+  // column when the caller explicitly provided it. Sibling probes
+  // (auth-flow, calendar-pathology, webhook-flow, learner-reminders,
+  // teacher-daily-digest) never pass it, so their 11-column INSERT
+  // shape stays identical to pre-mig behaviour and unbroken on a
+  // pre-0104 DB. The fan-out probe itself runs as a 30-minute systemd
+  // timer — autodeploy applies migrations BEFORE new code starts, so
+  // the cross-process window is bounded; if the column is missing at
+  // INSERT time we additionally fall back to the 11-column shape on
+  // 42703 to preserve the best-effort observability guarantee.
+  const baseCols = [
+    'probe_name', 'verdict_kind', 'alert_sent', 'recipient_email',
+    'alert_email_id', 'fingerprint', 'stats', 'error_message',
+    'is_test', 'initiator_account_id', 'recipient_kind',
+  ]
+  const baseVals = [
+    params.probeName,
+    params.verdictKind,
+    params.alertSent ?? false,
+    params.recipientEmail ?? null,
+    params.alertEmailId ?? null,
+    params.fingerprint ?? null,
+    params.stats == null ? null : JSON.stringify(params.stats),
+    params.errorMessage ?? null,
+    params.isTest ?? false,
+    params.initiatorAccountId ?? null,
+    recipientKind,
+  ]
+  const wantsAudience = params.alertAudience !== undefined && params.alertAudience !== null
+
+  const buildSql = (includeAudience) => {
+    const cols = includeAudience ? [...baseCols, 'alert_audience'] : baseCols
+    const vals = includeAudience ? [...baseVals, params.alertAudience] : baseVals
+    const placeholders = vals
+      .map((_, i) => (i === 6 ? `$${i + 1}::jsonb` : `$${i + 1}`))
+      .join(', ')
+    return {
+      text: `insert into probe_runs (${cols.join(', ')}) values (${placeholders})`,
+      values: vals,
+    }
+  }
+
   try {
-    const recipientKind = params.recipientKind ?? RECIPIENT_KINDS.EMAIL
-    await pool.query(
-      `insert into probe_runs (
-         probe_name, verdict_kind, alert_sent, recipient_email,
-         alert_email_id, fingerprint, stats, error_message,
-         is_test, initiator_account_id, recipient_kind
-       ) values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11)`,
-      [
-        params.probeName,
-        params.verdictKind,
-        params.alertSent ?? false,
-        params.recipientEmail ?? null,
-        params.alertEmailId ?? null,
-        params.fingerprint ?? null,
-        params.stats == null ? null : JSON.stringify(params.stats),
-        params.errorMessage ?? null,
-        params.isTest ?? false,
-        params.initiatorAccountId ?? null,
-        recipientKind,
-      ],
-    )
+    const first = buildSql(wantsAudience)
+    try {
+      await pool.query(first.text, first.values)
+    } catch (err) {
+      // 42703 = undefined_column (pre-mig 0104 DB on NEW code path).
+      const code = err && typeof err === 'object' ? err.code : null
+      if (wantsAudience && code === '42703') {
+        const fallback = buildSql(false)
+        await pool.query(fallback.text, fallback.values)
+      } else {
+        throw err
+      }
+    }
   } catch (err) {
     // Best-effort: log + swallow. NEVER throw. The probe's primary
     // job (sending the alert email) must not be blocked by an

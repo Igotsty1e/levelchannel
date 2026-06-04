@@ -233,8 +233,17 @@ describe('POST /api/admin/settings/alerts/[probe]/test-send', () => {
           -- from prod and a follow-up test seeding Telegram rows would
           -- silently pass.
           recipient_kind text not null default 'email'
-            check (recipient_kind in ('email', 'telegram'))
+            check (recipient_kind in ('email', 'telegram')),
+          -- bcs-def-1-fanout impl (mig 0104): operator/teacher audience
+          -- discriminator. NULL acceptable for legacy/non-fan-out rows.
+          alert_audience text null
+            check (alert_audience is null or alert_audience in ('operator', 'teacher'))
         )
+      `)
+      await pool.query(`
+        create index if not exists probe_runs_probe_audience_ran_idx
+          on probe_runs (probe_name, alert_audience, ran_at desc)
+          where alert_audience is not null
       `)
       await pool.query(`
         create index if not exists probe_runs_real_runs_idx

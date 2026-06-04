@@ -493,3 +493,194 @@ describe('readFingerprintTuples() — mocked pool', () => {
     expect(binds).toEqual([120])
   })
 })
+
+// bcs-def-1-fanout impl — unit tests for the new fan-out helpers.
+describe('groupOffendersByTeacher() — Map by teacher_account_id', () => {
+  it('preserves input order and groups slots correctly', async () => {
+    const mod = (await loadModule()) as unknown as {
+      groupOffendersByTeacher: (offenders: ReadonlyArray<{
+        teacherAccountId: string
+        teacherEmail: string
+        slotId: string
+        conflictSourceCalendarId: string | null
+        conflictSourceEventId: string | null
+      }>) => Map<string, {
+        teacherAccountId: string
+        teacherEmail: string
+        slots: Array<unknown>
+      }>
+    }
+    const grouped = mod.groupOffendersByTeacher([
+      { teacherAccountId: 't1', teacherEmail: 'a@x', slotId: 's1', conflictSourceCalendarId: null, conflictSourceEventId: null },
+      { teacherAccountId: 't2', teacherEmail: 'b@x', slotId: 's2', conflictSourceCalendarId: null, conflictSourceEventId: null },
+      { teacherAccountId: 't1', teacherEmail: 'a@x', slotId: 's3', conflictSourceCalendarId: null, conflictSourceEventId: null },
+    ])
+    expect(grouped.size).toBe(2)
+    expect(grouped.get('t1')?.slots).toHaveLength(2)
+    expect(grouped.get('t2')?.slots).toHaveLength(1)
+    expect(grouped.get('t1')?.teacherEmail).toBe('a@x')
+  })
+})
+
+describe('perTeacherFingerprint() — stable hash over slot tuples', () => {
+  it('is reorder-insensitive', async () => {
+    const mod = (await loadModule()) as unknown as {
+      perTeacherFingerprint: (slots: ReadonlyArray<{
+        slotId: string
+        conflictSourceCalendarId: string | null
+        conflictSourceEventId: string | null
+      }>) => string
+    }
+    const a = [
+      { slotId: 's1', conflictSourceCalendarId: 'c1', conflictSourceEventId: 'e1' },
+      { slotId: 's2', conflictSourceCalendarId: 'c2', conflictSourceEventId: 'e2' },
+    ]
+    const b = [...a].reverse()
+    expect(mod.perTeacherFingerprint(a)).toBe(mod.perTeacherFingerprint(b))
+  })
+
+  it('changes when a slot is added', async () => {
+    const mod = (await loadModule()) as unknown as {
+      perTeacherFingerprint: (slots: ReadonlyArray<{
+        slotId: string
+        conflictSourceCalendarId: string | null
+        conflictSourceEventId: string | null
+      }>) => string
+    }
+    const a = [{ slotId: 's1', conflictSourceCalendarId: 'c', conflictSourceEventId: 'e' }]
+    const b = [...a, { slotId: 's2', conflictSourceCalendarId: 'c', conflictSourceEventId: 'e' }]
+    expect(mod.perTeacherFingerprint(a)).not.toBe(mod.perTeacherFingerprint(b))
+  })
+})
+
+// bcs-def-1-fanout impl wave-paranoia R2 INFO #2 closure (2026-06-04) —
+// regression pin for the 42703 (undefined_column) retry path. Sibling
+// probes never pass alertAudience, so their INSERT is bytewise the same
+// as pre-mig; the test below covers the conflict-unresolved path where
+// alertAudience IS passed but the column does not exist (rolling-deploy
+// window NEW code + pre-0104 DB).
+describe('recordProbeRun() — backward-compat 42703 fallback', () => {
+  it('retries without alert_audience column when first INSERT trips 42703', async () => {
+    const { recordProbeRun, PROBE_NAMES, VERDICT_KINDS } = (await import(
+      new URL('../../scripts/lib/probe-runs.mjs', import.meta.url).href
+    )) as unknown as {
+      recordProbeRun: (pool: { query: ReturnType<typeof vi.fn> }, params: Record<string, unknown>) => Promise<void>
+      PROBE_NAMES: Record<string, string>
+      VERDICT_KINDS: Record<string, string>
+    }
+    const undefinedColumn = Object.assign(new Error('column "alert_audience" of relation "probe_runs" does not exist'), {
+      code: '42703',
+    })
+    let callIdx = 0
+    const queries: Array<{ text: string; values: unknown[] }> = []
+    const pool = {
+      query: vi.fn(async (text: string, values: unknown[]) => {
+        queries.push({ text, values })
+        callIdx += 1
+        if (callIdx === 1) throw undefinedColumn
+        return { rows: [], rowCount: 1 }
+      }),
+    }
+    await recordProbeRun(pool, {
+      probeName: PROBE_NAMES.CONFLICT_UNRESOLVED,
+      alertAudience: 'operator',
+      verdictKind: VERDICT_KINDS.NO_OFFENDERS,
+    })
+    expect(queries).toHaveLength(2)
+    expect(queries[0].text).toContain('alert_audience')
+    expect(queries[1].text).not.toContain('alert_audience')
+    // Fallback INSERT has 11 columns (no alert_audience), so 11 values.
+    expect(queries[1].values).toHaveLength(11)
+  })
+
+  it('does NOT retry on errors other than 42703', async () => {
+    const { recordProbeRun, PROBE_NAMES, VERDICT_KINDS } = (await import(
+      new URL('../../scripts/lib/probe-runs.mjs', import.meta.url).href
+    )) as unknown as {
+      recordProbeRun: (pool: { query: ReturnType<typeof vi.fn> }, params: Record<string, unknown>) => Promise<void>
+      PROBE_NAMES: Record<string, string>
+      VERDICT_KINDS: Record<string, string>
+    }
+    const otherErr = Object.assign(new Error('CHECK constraint violated'), { code: '23514' })
+    const pool = { query: vi.fn(async () => { throw otherErr }) }
+    // Best-effort guarantee: recordProbeRun NEVER throws — the helper
+    // logs + swallows. Verify the single attempt + no retry.
+    await recordProbeRun(pool, {
+      probeName: PROBE_NAMES.CONFLICT_UNRESOLVED,
+      alertAudience: 'operator',
+      verdictKind: VERDICT_KINDS.ERROR,
+    })
+    expect(pool.query).toHaveBeenCalledTimes(1)
+  })
+
+  it('omits alert_audience column entirely when caller never sets it (sibling-probe compat)', async () => {
+    const { recordProbeRun, PROBE_NAMES, VERDICT_KINDS } = (await import(
+      new URL('../../scripts/lib/probe-runs.mjs', import.meta.url).href
+    )) as unknown as {
+      recordProbeRun: (pool: { query: ReturnType<typeof vi.fn> }, params: Record<string, unknown>) => Promise<void>
+      PROBE_NAMES: Record<string, string>
+      VERDICT_KINDS: Record<string, string>
+    }
+    const queries: Array<{ text: string; values: unknown[] }> = []
+    const pool = {
+      query: vi.fn(async (text: string, values: unknown[]) => {
+        queries.push({ text, values })
+        return { rows: [], rowCount: 1 }
+      }),
+    }
+    await recordProbeRun(pool, {
+      probeName: PROBE_NAMES.AUTH_FLOW,
+      verdictKind: VERDICT_KINDS.NO_FAILURES,
+    })
+    expect(queries).toHaveLength(1)
+    expect(queries[0].text).not.toContain('alert_audience')
+    expect(queries[0].values).toHaveLength(11)
+  })
+})
+
+describe('buildTeacherEmail() — privacy invariant', () => {
+  it("contains only this teacher's slot IDs, never another teacher's", async () => {
+    const mod = (await loadModule()) as unknown as {
+      buildTeacherEmail: (
+        group: {
+          teacherAccountId: string
+          teacherEmail: string
+          slots: Array<{
+            slotId: string
+            startAt: string
+            durationMinutes: number
+            externalConflictAt: string
+            conflictSourceCalendarId: string | null
+            conflictSourceEventId: string | null
+          }>
+        },
+        thresholds: { thresholdMinutes: number },
+      ) => { subject: string; text: string }
+    }
+    const group = {
+      teacherAccountId: 't1',
+      teacherEmail: 'self@example.com',
+      slots: [
+        {
+          slotId: 'slot-OWN-A',
+          startAt: '2026-06-04T10:00:00.000Z',
+          durationMinutes: 60,
+          externalConflictAt: '2026-06-04T08:00:00.000Z',
+          conflictSourceCalendarId: 'cal-own',
+          conflictSourceEventId: 'ev-own',
+        },
+      ],
+    }
+    const { subject, text } = mod.buildTeacherEmail(group, { thresholdMinutes: 120 })
+    expect(subject).toContain('1 нерешённый конфликт')
+    expect(text).toContain('slot-OWN-A')
+    // Negative assertion: nothing about other teachers leaks in.
+    expect(text).not.toMatch(/other@example\.com/)
+    expect(text).not.toMatch(/slot-OTHER-/)
+    // The teacher's own email is the recipient — it should NOT appear
+    // verbatim in the body (the body addresses them by «у вас»).
+    expect(text).not.toContain('self@example.com')
+    // Admin-only deep-link must NOT appear in teacher email.
+    expect(text).not.toContain('/admin/accounts/')
+  })
+})
