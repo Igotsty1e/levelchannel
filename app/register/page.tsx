@@ -244,6 +244,21 @@ export default function RegisterPage() {
                 будете автоматически привязаны к этому учителю.
               </>
             )}
+            {/* Onboarding Sub-PR C5 — already-registered link per spec
+                §1.2 `learner-invite-already-registered-link`. The link
+                lets an existing learner sign in via /login?invite=...
+                and have the same teacher binding applied (Plan G —
+                backend handles the redeem on login). */}
+            <div style={{ marginTop: 10, fontSize: 13, lineHeight: 1.5 }}>
+              Уже есть аккаунт?{' '}
+              <Link
+                href={`/login?invite=${encodeURIComponent(inviteToken)}`}
+                style={{ color: '#bbf7d0', textDecoration: 'underline' }}
+              >
+                Войти и привязаться к учителю
+              </Link>
+              .
+            </div>
           </div>
         ) : (
           <fieldset

@@ -7,6 +7,10 @@ import { constantTimeVerifyPassword } from '@/lib/auth/dummy-hash'
 import { rateLimitScope } from '@/lib/auth/email-hash'
 import { hashPassword, passwordNeedsRehash } from '@/lib/auth/password'
 import {
+  redeemInviteAndBindLearnerAtomic,
+  verifyInviteToken,
+} from '@/lib/auth/teacher-invites'
+import {
   buildSessionCookie,
   createSession,
 } from '@/lib/auth/sessions'
@@ -39,7 +43,7 @@ export async function POST(request: Request) {
   const origin = enforceTrustedBrowserOrigin(request)
   if (origin) return origin
 
-  let body: { email?: string; password?: string }
+  let body: { email?: string; password?: string; inviteToken?: string }
   try {
     body = await request.json()
   } catch {
@@ -135,6 +139,51 @@ export async function POST(request: Request) {
 
   const roles = await listAccountRoles(account.id)
 
+  // Plan G — `/login?invite=<token>` redeem. When the login was
+  // initiated from an invite link, redeem the invite and bind the
+  // (now-authenticated) learner to the inviting teacher. Best-effort:
+  // login succeeds regardless of redeem outcome; the response carries
+  // `inviteRedeem` so the UI can surface success / a typed failure
+  // (invalid / expired / already_used).
+  let inviteRedeem: 'ok' | 'invalid' | 'already_used' | null = null
+  const inviteTokenRaw =
+    typeof body.inviteToken === 'string' ? body.inviteToken.trim() : ''
+  if (inviteTokenRaw !== '') {
+    const payload = verifyInviteToken(inviteTokenRaw)
+    if (!payload) {
+      inviteRedeem = 'invalid'
+    } else {
+      const redeemed = await redeemInviteAndBindLearnerAtomic(
+        payload.iid,
+        account.id,
+      )
+      if (redeemed) {
+        inviteRedeem = 'ok'
+        await recordAuthAuditEvent({
+          eventType: 'auth.invite.redeemed',
+          accountId: account.id,
+          email,
+          clientIp: getClientIp(request),
+          userAgent: request.headers.get('user-agent'),
+          payload: {
+            inviteId: payload.iid,
+            teacherAccountId: redeemed.teacherAccountId,
+            defaultPaymentMethod: redeemed.defaultPaymentMethod,
+            via: 'login',
+          },
+        })
+      } else {
+        // CTE atomically guards (`used_at is null and revoked_at is null
+        // and expires_at > now() and exists role=teacher`); a null return
+        // means one of those conditions failed. We can't cheaply tell
+        // expired vs revoked vs used apart from the route, so report
+        // the most actionable generic "already_used" — the user will
+        // re-request a fresh invite from their teacher either way.
+        inviteRedeem = 'already_used'
+      }
+    }
+  }
+
   return NextResponse.json(
     {
       account: {
@@ -144,6 +193,7 @@ export async function POST(request: Request) {
         disabledAt: account.disabledAt,
         roles,
       },
+      ...(inviteRedeem !== null ? { inviteRedeem } : {}),
     },
     {
       status: 200,
