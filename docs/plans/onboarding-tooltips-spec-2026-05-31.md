@@ -1,6 +1,6 @@
 ---
 title: Onboarding tooltips — spec
-status: PLANNING (round-3 paranoia pending)
+status: PLANNING (round-3 BLOCK 2026-06-04 — 6 BLOCKER + 2 WARN + 1 INFO; closures pending; see onboarding-flows §0c)
 date: 2026-05-31
 ---
 
