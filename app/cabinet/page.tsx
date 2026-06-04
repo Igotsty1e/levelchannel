@@ -95,7 +95,14 @@ export default async function CabinetPage() {
   // owns the proper teacher dashboard (lessons preview, learners
   // list, digest preview). Teacher+student dual-role stays on
   // /cabinet so the learner blocks remain reachable.
-  if (isTeacher && !isStudent) {
+  // Onboarding Sub-PR A (round-7 SIGN-OFF closure for BLOCKER #2): the
+  // teacher-only redirect was creating a /teacher↔/cabinet loop for
+  // unverified teachers — /teacher/layout.tsx:50 redirects unverified
+  // teachers to /cabinet, and the cabinet bounced them back. We keep
+  // unverified teacher-only accounts on /cabinet so the existing
+  // verify-email banner (rendered below) is reachable. Verified
+  // teacher-only accounts still go to /teacher (their canonical home).
+  if (isTeacher && !isStudent && account.emailVerifiedAt !== null) {
     redirect('/teacher')
   }
 

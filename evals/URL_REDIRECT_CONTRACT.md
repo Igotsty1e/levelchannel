@@ -45,9 +45,9 @@ it here first.
 
 ## Table 2 — learner cabinet routes
 
-| Route | anon | learner | teacher-only (no `student`) | admin | hybrid teacher+student |
-|---|---|---|---|---|---|
-| `/cabinet` | redirect → `/login` | render | redirect → `/teacher` | redirect → `/admin` | render learner UI |
+| Route | anon | learner | teacher-only (no `student`) | unverified teacher-only | admin | hybrid teacher+student |
+|---|---|---|---|---|---|---|
+| `/cabinet` | redirect → `/login` | render | redirect → `/teacher` | render (verify-email banner reachable; loop avoidance) | redirect → `/admin` | render learner UI |
 | `/cabinet/book` | redirect → `/login` | render | redirect (inherited) | redirect → `/admin` | render |
 | `/cabinet/packages` | redirect → `/login` | render | redirect (inherited) | redirect → `/admin` | render |
 | `/cabinet/profile` | redirect → `/login` | render | redirect (inherited) | redirect → `/admin` | render |
