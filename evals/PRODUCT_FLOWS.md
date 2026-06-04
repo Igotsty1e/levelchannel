@@ -206,6 +206,20 @@ Each flow row carries:
 - **Risk:** High
 - **Automation status:** **e2e** (`tests/e2e/product-flows-authenticated.spec.ts`)
 
+### FLOW-TEACHER-UNVERIFIED-CABINET-001
+
+- **Area:** teacher / verify-email
+- **Starting URL:** `/teacher` (unverified teacher-only account)
+- **Expected final URL:** `/cabinet`
+- **Allowed redirects:** `/teacher` → `/cabinet` (single hop; verify-email banner reachable)
+- **Forbidden redirects:** `/cabinet` → `/teacher` for unverified teacher-only (would create redirect loop with /teacher/layout's redirect)
+- **Required UI anchors:** verify-email banner on `/cabinet`
+- **Forbidden UI anchors:** redirect loop (browser would show ERR_TOO_MANY_REDIRECTS)
+- **Role required:** teacher (NOT verified)
+- **Risk:** Medium (was producing ERR_TOO_MANY_REDIRECTS before onboarding Sub-PR A landed)
+- **Automation status:** integration test (`tests/integration/onboarding/dismiss-hint.test.ts` shares the auth setup; dedicated redirect-loop test in same suite)
+- **Source of truth:** `app/cabinet/page.tsx:98` — `if (isTeacher && !isStudent && account.emailVerifiedAt !== null) redirect('/teacher')`. The `emailVerifiedAt !== null` guard is the loop-break.
+
 ### FLOW-TEACHER-CALENDAR-SETTINGS-001
 
 - **Area:** teacher / calendar

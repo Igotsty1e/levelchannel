@@ -241,6 +241,17 @@ async function purgeAccounts(pool) {
             where account_id = $1`,
           [id],
         )
+        // Onboarding Sub-PR A (round-4 BLOCKER #6 + round-5 BLOCKER #1
+        // closure) — scrub `account_onboarding_state` INSIDE the same
+        // per-account TX, AFTER the deletion-guard pass, so deferred
+        // accounts (guard-skipped above) keep their state until the
+        // next sweep clears them. A bulk-table sweep would delete the
+        // row even for accounts whose purge was deferred. mig 0100
+        // table is keyed by `account_id`; PK gives the needed lookup.
+        await client.query(
+          `delete from account_onboarding_state where account_id = $1`,
+          [id],
+        )
         await client.query('commit')
         purged += 1
       } catch (rowErr) {
