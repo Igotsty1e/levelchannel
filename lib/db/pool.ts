@@ -1,5 +1,7 @@
 import { Pool, type PoolConfig } from 'pg'
 
+import { isLiteralLoopbackHostname } from '@/lib/security/local-host'
+
 // Single shared `pg.Pool` for every Postgres-backed module:
 // payments, auth, idempotency, telemetry, audit. Replaces five
 // per-domain pools that each defaulted to `max=10` connections —
@@ -111,13 +113,13 @@ export function resolveSslConfig(
     // Treat as "non-local" so the strict TLS default kicks in.
   }
 
-  // Strict loopback allowlist. NEVER add wildcard suffixes (e.g.
-  // `.local` was previously here — Codex found that any
-  // attacker-controlled mDNS host like `db.attacker.local` would
-  // bypass the TLS gate in production). Only literal loopback
-  // addresses qualify; everything else gets strict TLS.
-  const isLocal =
-    host === 'localhost' || host === '127.0.0.1' || host === '::1'
+  // Strict loopback allowlist via lib/security/local-host.ts shared
+  // helper. NEVER add wildcard suffixes (e.g. `.local` was previously
+  // here — Codex found that any attacker-controlled mDNS host like
+  // `db.attacker.local` would bypass the TLS gate in production).
+  // Only literal loopback addresses qualify; everything else gets
+  // strict TLS.
+  const isLocal = isLiteralLoopbackHostname(host)
 
   // DB_SSL=disable: production safety applies only to non-local hosts.
   if (

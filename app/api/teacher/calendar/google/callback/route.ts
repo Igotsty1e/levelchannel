@@ -11,6 +11,7 @@ import { exchangeCodeForTokens } from '@/lib/calendar/google/oauth'
 import { verifyOauthState } from '@/lib/calendar/google/state'
 import { upsertGoogleIntegration } from '@/lib/calendar/integrations'
 import { enqueuePullJob } from '@/lib/calendar/pull-worker'
+import { isCalendarRequireTimezoneError } from '@/lib/calendar/timezone-trigger-errors'
 import { enforceRateLimit } from '@/lib/security/request'
 
 export const runtime = 'nodejs'
@@ -57,7 +58,20 @@ function redirectToLogin(origin: string): NextResponse {
 // callback Location header (ERR_SSL_PROTOCOL_ERROR in user's browser).
 
 export async function GET(request: Request) {
-  const origin = resolveCanonicalOrigin(request)
+  // 2026-06-06 calendar-onboarding-followup (round-6 WARN 2): wrap
+  // resolveCanonicalOrigin in try/catch. In production it throws on
+  // bad/missing NEXT_PUBLIC_SITE_URL — we can't redirect because we
+  // don't have a valid origin; return a generic 500 instead.
+  let origin: string
+  try {
+    origin = resolveCanonicalOrigin(request)
+  } catch (err) {
+    console.error('[calendar/oauth] resolveCanonicalOrigin failed:', err)
+    return new NextResponse(
+      'Calendar OAuth callback unavailable. Operator action required.',
+      { status: 500 },
+    )
+  }
 
   // Codex C.3b review: enforceRateLimit emits JSON 429 by default,
   // which would dead-end the browser mid-OAuth flow with a raw JSON
@@ -172,16 +186,34 @@ export async function GET(request: Request) {
   // Persist. Default read=['primary'], write='primary'. C.4 UI will
   // let the teacher refine which calendars to read and which to push
   // into via calendarList.list.
-  const upsert = await upsertGoogleIntegration({
-    accountId: session.account.id,
-    accessToken,
-    refreshToken,
-    scope,
-    tokenExpiresAt: expiresAt,
-    readCalendarIds: ['primary'],
-    writeCalendarId: 'primary',
-    reason: 'initial_connect',
-  })
+  //
+  // 2026-06-06 calendar-onboarding-followup (round-4 BLOCKER 2 +
+  // round-9 BLOCKER 1): catch the mig 0107 trigger raising 23514 when
+  // a concurrent PATCH /api/account/profile cleared the timezone
+  // between our gate-check and this upsert. Narrow-match by message
+  // prefix so unrelated 23514 sources still propagate as 500.
+  let upsert: Awaited<ReturnType<typeof upsertGoogleIntegration>>
+  try {
+    upsert = await upsertGoogleIntegration({
+      accountId: session.account.id,
+      accessToken,
+      refreshToken,
+      scope,
+      tokenExpiresAt: expiresAt,
+      readCalendarIds: ['primary'],
+      writeCalendarId: 'primary',
+      reason: 'initial_connect',
+    })
+  } catch (err) {
+    if (isCalendarRequireTimezoneError(err)) {
+      console.warn(
+        '[calendar/oauth] upsert hit DB timezone-required trigger (TOCTOU race):',
+        err,
+      )
+      return redirectToSettings(origin, { error: 'timezone_required' })
+    }
+    throw err
+  }
   if (!upsert.ok) {
     console.error('[calendar/oauth] upsert failed:', upsert.error)
     return redirectToSettings(origin, {

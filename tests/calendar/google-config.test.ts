@@ -34,7 +34,7 @@ describe('getGoogleCalendarOauthConfig', () => {
         NODE_ENV: 'production',
         GOOGLE_CALENDAR_CLIENT_ID: 'id',
         GOOGLE_CALENDAR_CLIENT_SECRET: 'secret',
-        GOOGLE_CALENDAR_REDIRECT_URL: 'https://example.com/cb',
+        GOOGLE_CALENDAR_REDIRECT_URL: 'https://example.com/api/teacher/calendar/google/callback',
         // GOOGLE_OAUTH_STATE_SECRET missing
       } as NodeJS.ProcessEnv),
     ).toThrow(/GOOGLE_OAUTH_STATE_SECRET/)
@@ -46,7 +46,7 @@ describe('getGoogleCalendarOauthConfig', () => {
         NODE_ENV: 'development',
         GOOGLE_CALENDAR_CLIENT_ID: 'id',
         GOOGLE_CALENDAR_CLIENT_SECRET: 'secret',
-        GOOGLE_CALENDAR_REDIRECT_URL: 'https://example.com/cb',
+        GOOGLE_CALENDAR_REDIRECT_URL: 'https://example.com/api/teacher/calendar/google/callback',
         GOOGLE_OAUTH_STATE_SECRET: 'short',
       } as NodeJS.ProcessEnv),
     ).toThrow(/at least 32 characters/i)
@@ -58,7 +58,7 @@ describe('getGoogleCalendarOauthConfig', () => {
         NODE_ENV: 'development',
         GOOGLE_CALENDAR_CLIENT_ID: 'id',
         GOOGLE_CALENDAR_CLIENT_SECRET: 'secret',
-        GOOGLE_CALENDAR_REDIRECT_URL: 'ftp://example.com/cb',
+        GOOGLE_CALENDAR_REDIRECT_URL: 'ftp://example.com/api/teacher/calendar/google/callback',
         GOOGLE_OAUTH_STATE_SECRET: 'x'.repeat(40),
       } as NodeJS.ProcessEnv),
     ).toThrow(/http\(s\)/i)
@@ -69,13 +69,13 @@ describe('getGoogleCalendarOauthConfig', () => {
       NODE_ENV: 'development',
       GOOGLE_CALENDAR_CLIENT_ID: 'my-client-id',
       GOOGLE_CALENDAR_CLIENT_SECRET: 'my-secret',
-      GOOGLE_CALENDAR_REDIRECT_URL: 'https://example.com/cb',
+      GOOGLE_CALENDAR_REDIRECT_URL: 'https://example.com/api/teacher/calendar/google/callback',
       GOOGLE_OAUTH_STATE_SECRET: 'state-secret-state-secret-state-secret-',
     } as NodeJS.ProcessEnv)
     expect(config).not.toBeNull()
     expect(config!.clientId).toBe('my-client-id')
     expect(config!.clientSecret).toBe('my-secret')
-    expect(config!.redirectUrl).toBe('https://example.com/cb')
+    expect(config!.redirectUrl).toBe('https://example.com/api/teacher/calendar/google/callback')
     expect(config!.stateSecret.length).toBeGreaterThanOrEqual(32)
   })
 
