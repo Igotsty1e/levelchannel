@@ -353,9 +353,15 @@ export async function listInvitesForTeacher(
 export async function revokeInvite(
   inviteId: string,
   teacherAccountId: string,
+  opts: { client?: import('pg').PoolClient } = {},
 ): Promise<boolean> {
-  const pool = getAuthPool()
-  const res = await pool.query<{ id: string }>(
+  // saas-offer-mutation-wrapper-poc (2026-06-04, plan §4): when caller
+  // passes `client`, use the wrapper's PoolClient so the UPDATE runs
+  // inside the outer REPEATABLE READ TX. When omitted, fall back to
+  // the legacy module-pool path for back-compat with non-migrated
+  // callers and tests.
+  const queryRunner = opts.client ?? getAuthPool()
+  const res = await queryRunner.query<{ id: string }>(
     `update teacher_invites
         set revoked_at = now()
       where id = $1

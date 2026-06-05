@@ -19,7 +19,11 @@ import {
   markAccountVerified,
 } from '@/lib/auth/accounts'
 import { recordConsent } from '@/lib/auth/consents'
-import { requireTeacherWithMutationGate } from '@/lib/auth/guards'
+import {
+  MutationGateAbort,
+  requireTeacherWithMutationGate,
+  runInSaasOfferMutationGate,
+} from '@/lib/auth/guards'
 import { getAuthPool } from '@/lib/auth/pool'
 import { buildCombinedVersion } from '@/lib/legal/combined-version'
 
@@ -255,5 +259,158 @@ describe('requireTeacherWithMutationGate', () => {
     } finally {
       delete process.env.SAAS_OFFER_GATE_ENABLED
     }
+  })
+})
+
+// saas-offer-mutation-wrapper-poc (2026-06-04, plan §0a-2 + §0b-2):
+// `runInSaasOfferMutationGate(accountId, fn)` is the 2-step split half
+// that does ONLY the TX + gate + run-callback (no auth). Caller
+// authenticates first, then rate-limits, then runs the gate.
+describe('runInSaasOfferMutationGate (2-step split)', () => {
+  it('teacher + gate flag OFF → callback runs + commits', async () => {
+    delete process.env.SAAS_OFFER_GATE_ENABLED
+    const teacher = await reg('rgate-off@example.com', { role: 'teacher' })
+    const r = await runInSaasOfferMutationGate(teacher.accountId, async (client) => {
+      await client.query(
+        `insert into account_onboarding_state (account_id, dismissed_hints, updated_at)
+         values ($1::uuid, jsonb_build_object('rgate_marker', 'flag_off'), now())
+         on conflict (account_id) do update set
+           dismissed_hints = account_onboarding_state.dismissed_hints || excluded.dismissed_hints,
+           updated_at = now()`,
+        [teacher.accountId],
+      )
+      return { rgate: 'ok' }
+    })
+    expect(r).toEqual({ rgate: 'ok' })
+
+    const pool = getAuthPool()
+    const check = await pool.query<{ dismissed_hints: Record<string, unknown> }>(
+      `select dismissed_hints from account_onboarding_state where account_id = $1`,
+      [teacher.accountId],
+    )
+    expect(check.rows[0]?.dismissed_hints).toMatchObject({ rgate_marker: 'flag_off' })
+  })
+
+  it('teacher + flag ON + no consent → 403 + callback never runs', async () => {
+    process.env.SAAS_OFFER_GATE_ENABLED = '1'
+    try {
+      await seedLiveVersion('saas_offer', 'rv1')
+      await seedLiveVersion('saas_processor_terms', 'rv1')
+      const teacher = await reg('rgate-no-consent@example.com', { role: 'teacher' })
+      const callback = vi.fn()
+      const r = await runInSaasOfferMutationGate(teacher.accountId, callback)
+      expect(r).toBeInstanceOf(Response)
+      expect((r as Response).status).toBe(403)
+      const body = await (r as Response).json()
+      expect(body.error).toBe('saas_offer_consent_required')
+      expect(callback).not.toHaveBeenCalled()
+    } finally {
+      delete process.env.SAAS_OFFER_GATE_ENABLED
+    }
+  })
+
+  it('teacher + flag ON + placeholder live → 503 + callback never runs', async () => {
+    process.env.SAAS_OFFER_GATE_ENABLED = '1'
+    try {
+      const pool = getAuthPool()
+      await pool.query(
+        `delete from legal_document_versions where doc_kind in ('saas_offer', 'saas_processor_terms')`,
+      )
+      await pool.query(
+        `insert into legal_document_versions (doc_kind, version_label, effective_from, body_md) values
+         ('saas_offer', 'v0-placeholder-do-not-accept', now() - interval '1 minute', 'p'),
+         ('saas_processor_terms', 'v0-placeholder-do-not-accept', now() - interval '1 minute', 'p')`,
+      )
+      const teacher = await reg('rgate-placeholder@example.com', { role: 'teacher' })
+      const callback = vi.fn()
+      const r = await runInSaasOfferMutationGate(teacher.accountId, callback)
+      expect(r).toBeInstanceOf(Response)
+      expect((r as Response).status).toBe(503)
+      const body = await (r as Response).json()
+      expect(body.error).toBe('saas_offer_awaiting_publication')
+      expect(callback).not.toHaveBeenCalled()
+    } finally {
+      delete process.env.SAAS_OFFER_GATE_ENABLED
+    }
+  })
+
+  it('MutationGateAbort thrown from callback → returns carried response, TX rolled back', async () => {
+    delete process.env.SAAS_OFFER_GATE_ENABLED
+    const teacher = await reg('rgate-abort@example.com', { role: 'teacher' })
+    const r = await runInSaasOfferMutationGate(teacher.accountId, async (client) => {
+      // Side-effect that MUST be rolled back when sentinel throws.
+      await client.query(
+        `insert into account_onboarding_state (account_id, dismissed_hints, updated_at)
+         values ($1::uuid, jsonb_build_object('abort_marker', 'should_rollback'), now())
+         on conflict (account_id) do update set
+           dismissed_hints = account_onboarding_state.dismissed_hints || excluded.dismissed_hints`,
+        [teacher.accountId],
+      )
+      throw MutationGateAbort.fromJson(
+        { error: 'not_found', message: 'sentinel test' },
+        { status: 404 },
+      )
+    })
+    expect(r).toBeInstanceOf(Response)
+    expect((r as Response).status).toBe(404)
+    const body = await (r as Response).json()
+    expect(body.error).toBe('not_found')
+
+    // Side-effect MUST NOT have persisted (rollback).
+    const pool = getAuthPool()
+    const check = await pool.query<{ count: string }>(
+      `select count(*)::text as count from account_onboarding_state where account_id = $1`,
+      [teacher.accountId],
+    )
+    expect(check.rows[0]?.count).toBe('0')
+  })
+
+  it('callback returns {ok:false} → wrapper COMMITS (no rollback); only sentinel throws roll back', async () => {
+    delete process.env.SAAS_OFFER_GATE_ENABLED
+    const teacher = await reg('rgate-return-false@example.com', { role: 'teacher' })
+    const r = await runInSaasOfferMutationGate(teacher.accountId, async (client) => {
+      await client.query(
+        `insert into account_onboarding_state (account_id, dismissed_hints, updated_at)
+         values ($1::uuid, jsonb_build_object('return_false_marker', 'committed'), now())
+         on conflict (account_id) do update set
+           dismissed_hints = account_onboarding_state.dismissed_hints || excluded.dismissed_hints`,
+        [teacher.accountId],
+      )
+      // Helper signals failure via return value — wrapper still commits.
+      return { ok: false as const }
+    })
+    expect(r).toEqual({ ok: false })
+
+    // Side-effect MUST have persisted (commit semantics).
+    const pool = getAuthPool()
+    const check = await pool.query<{ dismissed_hints: Record<string, unknown> }>(
+      `select dismissed_hints from account_onboarding_state where account_id = $1`,
+      [teacher.accountId],
+    )
+    expect(check.rows[0]?.dismissed_hints).toMatchObject({ return_false_marker: 'committed' })
+  })
+
+  it('non-sentinel throw → wrapper rolls back AND re-throws', async () => {
+    delete process.env.SAAS_OFFER_GATE_ENABLED
+    const teacher = await reg('rgate-generic-throw@example.com', { role: 'teacher' })
+    await expect(
+      runInSaasOfferMutationGate(teacher.accountId, async (client) => {
+        await client.query(
+          `insert into account_onboarding_state (account_id, dismissed_hints, updated_at)
+           values ($1::uuid, jsonb_build_object('generic_throw_marker', 'should_rollback'), now())
+           on conflict (account_id) do update set
+             dismissed_hints = account_onboarding_state.dismissed_hints || excluded.dismissed_hints`,
+          [teacher.accountId],
+        )
+        throw new Error('synthetic generic throw')
+      }),
+    ).rejects.toThrow('synthetic generic throw')
+
+    const pool = getAuthPool()
+    const check = await pool.query<{ count: string }>(
+      `select count(*)::text as count from account_onboarding_state where account_id = $1`,
+      [teacher.accountId],
+    )
+    expect(check.rows[0]?.count).toBe('0')
   })
 })

@@ -582,16 +582,63 @@ export async function requireTeacherWithMutationGate<T>(
 ): Promise<NextResponse | T> {
   const inner = await requireTeacherAndVerified(request)
   if (!inner.ok) return inner.response
+  return runInSaasOfferMutationGate(inner.account.id, (client) =>
+    fn(client, inner.account),
+  )
+}
+
+// Typed-abort sentinel for routes that consume `runInSaasOfferMutationGate`
+// directly. Throwing this from inside the callback rolls back the TX and
+// returns the carried NextResponse unchanged.
+//
+// Contract (plan §0a-3 + §0b-2):
+//   - ONLY `throw MutationGateAbort.fromJson(...)` (or `new MutationGateAbort(response)`)
+//     triggers wrapper rollback + typed response return.
+//   - Helper return values are ALWAYS treated as commit. A helper that
+//     wants to signal failure must return a discriminated union; the
+//     ROUTE then maps it to a `throw MutationGateAbort.fromJson(...)`
+//     if rollback is required, or returns it normally to commit.
+//   - Helpers MUST NOT `catch (err)` and re-wrap the sentinel into a
+//     generic Error — that would defeat the typed-response contract.
+//     Drift-test pin in tests/security/saas-offer-mutation-gate-perimeter.test.ts.
+export class MutationGateAbort extends Error {
+  constructor(public readonly response: NextResponse) {
+    super('mutation_gate_abort')
+    this.name = 'MutationGateAbort'
+  }
+  static fromJson(body: unknown, init: ResponseInit): MutationGateAbort {
+    return new MutationGateAbort(NextResponse.json(body, init))
+  }
+}
+
+// Run a callback inside a REPEATABLE READ transaction gated by the
+// saas-offer mutation gate. Caller MUST have already authenticated via
+// `requireTeacherAndVerified` (or equivalent) and resolved an
+// `accountId`. The 2-step split (auth → rate-limit → gate) lets routes
+// keep their existing rate-limit shape AFTER auth but BEFORE opening
+// the TX (saas-offer-mutation-wrapper-rollout-poc.md §2-3).
+//
+// On gate-rejection: returns NextResponse (caller must check
+// `instanceof NextResponse`). On callback throw: rolls back; if the
+// throw is a `MutationGateAbort`, returns the typed response; any
+// other throw propagates.
+//
+// Caller responsibilities (same as `requireTeacherWithMutationGate`):
+//   - Do NOT call `client.query('commit'|'rollback')` inside the callback.
+//   - Do NOT open additional TXes on the same client (use savepoints).
+//   - Pass ONLY `auth.account.id` as `accountId` (anti-spoof; drift-test
+//     pinned in tests/security/saas-offer-mutation-gate-perimeter.test.ts).
+export async function runInSaasOfferMutationGate<T>(
+  accountId: string,
+  fn: (client: import('pg').PoolClient) => Promise<T>,
+): Promise<NextResponse | T> {
   const { getDbPool } = await import('@/lib/db/pool')
   const pool = getDbPool()
   const client = await pool.connect()
   try {
     await client.query('begin')
     await client.query('set transaction isolation level repeatable read')
-    const verdict = await evaluateSaasOfferGateForMutation(
-      client,
-      inner.account.id,
-    )
+    const verdict = await evaluateSaasOfferGateForMutation(client, accountId)
     if (verdict.kind === 'awaiting_publication') {
       await client.query('rollback').catch(() => {})
       return NextResponse.json(
@@ -613,11 +660,14 @@ export async function requireTeacherWithMutationGate<T>(
         { status: 403, headers: { 'Cache-Control': 'no-store, max-age=0' } },
       )
     }
-    const result = await fn(client, inner.account)
+    const result = await fn(client)
     await client.query('commit')
     return result
   } catch (err) {
     await client.query('rollback').catch(() => {})
+    if (err instanceof MutationGateAbort) {
+      return err.response
+    }
     throw err
   } finally {
     client.release()
