@@ -1,6 +1,6 @@
 # Calendar onboarding cleanup — follow-up fix-PR 2026-06-06
 
-Status: PLAN — SIGN-OFF round 10/3 (off-protocol, owner authorized; precedent PRs #515 32 rounds, #410 12 rounds). 9 substantive BLOCK→fix cycles then SIGN-OFF on round 10 with 2 WARNs + 1 INFO applied inline.
+Status: SHIPPED 2026-06-06 (PR #539, squash 259750d). Plan-paranoia: 9 substantive Codex BLOCK→fix cycles + SIGN-OFF on round 10/3 (off-protocol, owner authorized).
 
 Parent epic: `docs/plans/calendar-onboarding-cleanup-2026-06-05.md` (PR #537, squash 9a366f7, merged 2026-06-05). Wave-paranoia round 1 surfaced 1 BLOCKER + 2 WARNs + 1 INFO. This fix-PR closes all three findings inline.
 
