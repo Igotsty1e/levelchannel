@@ -27,6 +27,17 @@ Active plan-doc work (not yet shipped) lives in `docs/plans/*.md` without an ent
 
 - **`admin-dashboard.md`** — operational metrics + sparklines + cohort funnel + health banner at /admin/dashboard. Status: SHIPPED. Codex-paranoia wave-mode SIGN-OFF round 2/3 (3 BLOCKER + 5 WARN + 1 INFO closed). No migration.
 
+## 2026-06-06 calendar-onboarding-followup wave (1 PR)
+
+- **`calendar-onboarding-followup-2026-06-06.md`** — fix-PR closing wave-paranoia round 1 findings from parent PR #537 + significant new scope from plan-paranoia. Status: SHIPPED 2026-06-06 (PR #539, squash 259750d). Plan-paranoia: 9 substantive Codex rounds + SIGN-OFF on round 10/3 (off-protocol per owner authorization; precedent PRs #515 32, #410 12).
+  - **mig 0107** adds the deferred DB-level timezone-required triggers: `teacher_calendar_integrations_require_timezone_trg` (fires on every active|degraded write — drops state_changing optimisation to close TOCTOU) + `account_profiles_timezone_required_when_integration_active_trg` (fires on INSERT/UPDATE/DELETE). Both take per-account `pg_advisory_xact_lock(hashtextextended('tz_invariant:' || account_id, 0))` BEFORE cross-table SELECT — concurrent writers serialize (otherwise READ COMMITTED admits the steady-state race that lets both commit into active|degraded + timezone=NULL).
+  - **`lib/security/local-host.ts`** consolidates 3 separate localhost classifiers into TWO helpers: `isLiteralLoopbackHostname` (STRICT) for auth/TLS boundaries (cron-auth + db/pool); `isLoopbackOriginUrl` (WIDE — adds *.localhost per RFC 6761 + 0.0.0.0) for URL validation (origin + paymentConfig).
+  - **NEXT_PUBLIC_SITE_URL prod fail-closed** in `lib/payments/config.ts` (provider-AGNOSTIC — not just CloudPayments) + `lib/api/origin.ts` (throws on unset/malformed/http/loopback; callback wraps with try/catch returning 500). Closes the round-2/3 BLOCKERs around silent fallback to upstream-socket localhost behind nginx.
+  - **GOOGLE_CALENDAR_REDIRECT_URL exact contract** in `lib/calendar/google/config.ts`: exact path /api/teacher/calendar/google/callback + https + non-loopback + SAME origin as NEXT_PUBLIC_SITE_URL in prod. Was only `/^https?:\/\//` — would have let attacker-controlled hosts receive Google's OAuth redirect.
+  - **App-layer 23514 narrow-match catches** via new `lib/calendar/timezone-trigger-errors.ts::{isAccountProfilesClearTimezoneError, isCalendarRequireTimezoneError}`. PATCH /api/account/profile + callback wrap their writers; unrelated 23514 sources (mig 0069 IANA, mig 0017 display_name, mig 0095 columns) propagate as 500 unchanged.
+  - 23 files / 1700+ lines. Tests: 18 unit (local-host) + 11 unit (trigger-errors) + 6 unit (origin prod-mode) + 5 integration (mig 0107 direct evidence) + 2 integration (concurrent-write race both orderings). Plus regression sweep 32/32 on existing suites. Merged --admin --squash with test:mutation still running (slow, non-blocking).
+  - Out of scope: README.md + PAYMENTS_SETUP.md sweep (deferred to doc-only follow-up).
+
 ## 2026-06-05 calendar-onboarding-cleanup wave (1 PR)
 
 - **`calendar-onboarding-cleanup-2026-06-05.md`** — 4 owner-backlog items in one PR (#537, squash 9a366f7). Status: SHIPPED 2026-06-05. Plan-paranoia: 5 substantive Codex rounds + 2 self-review fallback rounds (Codex quota exhausted on round 6; precedent: PRs #515 32 off-protocol rounds, #410 12). Wave-paranoia pending Codex quota reset 2026-06-06 00:00 (deferred per skill §7).
