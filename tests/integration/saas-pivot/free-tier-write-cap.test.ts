@@ -169,7 +169,7 @@ describe('free-tier 1pkg+1tariff unlock — packages cap', () => {
     expect(body.error).toBe('plan_upgrade_required')
   })
 
-  it('no-subscription teacher: pkg create → 422 plan_upgrade_required (cap=0 fallback)', async () => {
+  it('legacy no-row defensive state: pkg create → 422 plan_upgrade_required (cap=0 fallback)', async () => {
     const t = await makeTeacher({
       emailSuffix: 'pkg-nosub',
       planSlug: null,

@@ -100,6 +100,22 @@ export async function POST(request: Request, { params }: RouteParams) {
       try {
         if (op === 'grant') {
           await grantAccountRole(id, role as AccountRole, guard.account.id)
+          // free-tier-saas-card-and-subscription-row plan §0b-1 closure:
+          // when admin grants the 'teacher' role, insert the implicit
+          // Стартовый subscription row so the new teacher gets
+          // TIER_WRITE_CAPS.free (1 пакет + 1 тариф). Without this,
+          // admin-promoted teachers would hit EMPTY_CAPS (same bug as
+          // self-register). ON CONFLICT keeps it idempotent. Failure is
+          // FATAL — falls through to the existing catch + 500 branch.
+          if (role === 'teacher') {
+            const { getDbPool } = await import('@/lib/db/pool')
+            await getDbPool().query(
+              `insert into teacher_subscriptions (account_id, plan_slug, state)
+               values ($1::uuid, 'free', 'active')
+               on conflict (account_id) do nothing`,
+              [id],
+            )
+          }
         } else {
           await revokeAccountRole(id, role as AccountRole)
         }
