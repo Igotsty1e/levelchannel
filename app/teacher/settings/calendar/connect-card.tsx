@@ -14,12 +14,21 @@ export function CalendarConnectCard({
   isConnected,
   syncState,
   lastReconnectedAt,
+  timezoneNotSet = false,
 }: {
   configReady: boolean
   configError: string | null
   isConnected: boolean
   syncState: 'active' | 'degraded' | 'disconnected' | null
   lastReconnectedAt: string | null
+  /**
+   * calendar-onboarding-cleanup (2026-06-05) — when true (teacher's
+   * profile.timezone IS NULL), disable the Connect button and replace
+   * the explainer copy with a "fill timezone first" hint. The SSR page
+   * renders a banner with a profile link above the card; this prop
+   * mirrors the gate state inside the card.
+   */
+  timezoneNotSet?: boolean
 }) {
   const [busy, setBusy] = useState<'connect' | 'disconnect' | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -200,15 +209,14 @@ export function CalendarConnectCard({
               lineHeight: 1.6,
             }}
           >
-            После нажатия «Подключить» вы попадёте на страницу Google, где
-            подтвердите доступ. Это безопасно: LevelChannel получит только
-            права читать и записывать события в указанный календарь,
-            ничего больше.
+            {timezoneNotSet
+              ? 'Сначала укажите часовой пояс в профиле — кнопка активируется после сохранения.'
+              : 'После нажатия «Подключить» вы попадёте на страницу Google, где подтвердите доступ. Это безопасно: LevelChannel получит только права читать и записывать события в указанный календарь, ничего больше.'}
           </p>
           <button
             type="button"
             onClick={connect}
-            disabled={busy !== null}
+            disabled={busy !== null || timezoneNotSet}
             style={{
               padding: '12px 24px',
               background: 'var(--accent, #3b82f6)',
@@ -217,8 +225,13 @@ export function CalendarConnectCard({
               borderRadius: 999,
               fontSize: 15,
               fontWeight: 600,
-              cursor: busy === 'connect' ? 'wait' : 'pointer',
-              opacity: busy ? 0.6 : 1,
+              cursor:
+                busy === 'connect'
+                  ? 'wait'
+                  : timezoneNotSet
+                    ? 'not-allowed'
+                    : 'pointer',
+              opacity: busy || timezoneNotSet ? 0.6 : 1,
             }}
           >
             {busy === 'connect' ? 'Переходим в Google…' : 'Подключить Google Calendar'}

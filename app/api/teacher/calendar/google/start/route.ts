@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
 import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
+import { getAccountProfile } from '@/lib/auth/profiles'
 import { getGoogleCalendarOauthConfig } from '@/lib/calendar/google/config'
 import { buildAuthorizationUrl } from '@/lib/calendar/google/oauth'
 import { generateOauthState } from '@/lib/calendar/google/state'
@@ -42,6 +43,22 @@ export async function POST(request: Request) {
 
   const auth = await requireTeacherWithCurrentSaasOfferConsent(request)
   if (!auth.ok) return auth.response
+
+  // calendar-onboarding-cleanup (2026-06-05) — timezone gate. Calendar
+  // runtime relies on profile.timezone for slot rendering / push event
+  // labels. Refuse to start OAuth without it; SSR page surfaces a
+  // banner with link to profile.
+  const profile = await getAccountProfile(auth.account.id)
+  if (profile?.timezone == null) {
+    return NextResponse.json(
+      {
+        error: 'timezone_required',
+        message:
+          'Укажите часовой пояс в профиле перед подключением Google Calendar.',
+      },
+      { status: 422, headers: NO_STORE },
+    )
+  }
 
   let config
   try {

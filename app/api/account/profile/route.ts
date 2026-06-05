@@ -9,6 +9,7 @@ import {
   upsertAccountProfile,
   validateProfileUpdate,
 } from '@/lib/auth/profiles'
+import { getGoogleIntegrationMeta } from '@/lib/calendar/integrations'
 import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
@@ -121,6 +122,29 @@ export async function PATCH(request: Request) {
       { error: `${validation.field}/${validation.reason}` },
       { status: 400, headers: NO_STORE },
     )
+  }
+
+  // calendar-onboarding-cleanup (2026-06-05) — refuse to clear timezone
+  // while an active|degraded Google Calendar integration exists.
+  // Otherwise the integration would keep pushing/pulling against MSK
+  // fallback while the teacher's saved tz reads as unset. The teacher
+  // must disconnect first.
+  if ('timezone' in update && update.timezone === null) {
+    const integration = await getGoogleIntegrationMeta(auth.account.id)
+    if (
+      integration
+      && (integration.syncState === 'active'
+        || integration.syncState === 'degraded')
+    ) {
+      return NextResponse.json(
+        {
+          error: 'timezone_required_while_calendar_connected',
+          message:
+            'Невозможно очистить часовой пояс, пока Google Calendar подключён. Отключите интеграцию и попробуйте снова.',
+        },
+        { status: 409, headers: NO_STORE },
+      )
+    }
   }
 
   const profile = await upsertAccountProfile(auth.account.id, update)

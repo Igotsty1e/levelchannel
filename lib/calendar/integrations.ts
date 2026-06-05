@@ -11,7 +11,12 @@
 //   - sync_state machine: 'active' / 'degraded' / 'disconnected'
 //   - epoch: rotated on every fresh connect (UUID; default
 //     gen_random_uuid()::text)
-//   - MSK-only trigger fires on INSERT/UPDATE into active/degraded
+//   - Moscow-only triggers from mig 0043 dropped in mig 0106
+//     (2026-06-05, Option A): any teacher with a profile.timezone in
+//     the existing 19-entry IANA allowlist (mig 0069) can now connect.
+//     The timezone-required invariant is enforced at app layer this
+//     wave (POST /start + callback + PATCH /api/account/profile); DB
+//     defense-in-depth tracked as follow-up trigger PR.
 //
 // Token encryption uses CALENDAR_ENCRYPTION_KEY (lib/calendar/encryption.ts)
 // — separate from AUDIT_ENCRYPTION_KEY for blast-radius (plan §8 #6).

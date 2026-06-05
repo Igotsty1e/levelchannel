@@ -305,23 +305,28 @@ describe('lib/calendar/integrations — pgcrypto round-trip', () => {
     if (!r.ok) expect(r.error.code).toBe('encryption_key_missing')
   })
 
-  it('MSK-only trigger blocks initial_connect for non-MSK teachers', async () => {
+  it('integration activates for any allowlisted IANA timezone (Moscow-only trigger removed mig 0106)', async () => {
+    // calendar-onboarding-cleanup (2026-06-05, Option A): mig 0043's
+    // Moscow-only trigger was dropped by mig 0106. Any timezone from
+    // the existing 19-entry IANA allowlist (mig 0069) is now accepted
+    // at the DB layer. Full UX correctness for non-MSK teachers (slot
+    // validation / week anchor / Google pull) is tracked separately as
+    // the multi-tenant-timezone runtime refactor epic.
     const accountId = await makeTeacher(
       'teacher-c3a-tz@example.com',
       'Europe/Berlin',
     )
-    await expect(
-      upsertGoogleIntegration({
-        accountId,
-        accessToken: 'A',
-        refreshToken: 'R',
-        scope: 'scope',
-        tokenExpiresAt: new Date(Date.now() + 3600_000),
-        readCalendarIds: ['primary'],
-        writeCalendarId: 'primary',
-        reason: 'initial_connect',
-      }),
-    ).rejects.toThrow(/Europe\/Moscow/)
+    const r = await upsertGoogleIntegration({
+      accountId,
+      accessToken: 'A',
+      refreshToken: 'R',
+      scope: 'scope',
+      tokenExpiresAt: new Date(Date.now() + 3600_000),
+      readCalendarIds: ['primary'],
+      writeCalendarId: 'primary',
+      reason: 'initial_connect',
+    })
+    expect(r.ok).toBe(true)
   })
 
   it('reconnect resets last_pulled_at so F3 freshness contract treats busy-cache as stale', async () => {

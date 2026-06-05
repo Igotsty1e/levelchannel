@@ -51,6 +51,24 @@ vi.mock('@/lib/auth/sessions', () => ({
   })),
 }))
 
+// calendar-onboarding-cleanup (2026-06-05) — SSR page now reads the
+// teacher's profile.timezone to decide whether to render the gate
+// banner. Default mock returns a Moscow profile so the existing state-
+// matrix cases keep asserting non-gate copy. New gate-specific test
+// lives in calendar-page-timezone-gate.test.tsx.
+vi.mock('@/lib/auth/profiles', () => ({
+  getAccountProfile: vi.fn(async () => ({
+    accountId: 'teacher-account-fixture',
+    displayName: 'T',
+    firstName: null,
+    lastName: null,
+    timezone: 'Europe/Moscow',
+    locale: 'ru',
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+  })),
+}))
+
 vi.mock('@/lib/calendar/google/config', () => ({
   getGoogleCalendarOauthConfig: () => ({
     clientId: 'test-client',
