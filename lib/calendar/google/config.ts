@@ -1,5 +1,12 @@
 // BCS-C.2 — env-bound configuration for the Google Calendar OAuth flow.
 //
+// 2026-06-06 calendar-onboarding-followup: redirect URL validation
+// tightened — exact path + same-origin as NEXT_PUBLIC_SITE_URL +
+// https-only + non-loopback in production. Otherwise a misconfigured
+// GOOGLE_CALENDAR_REDIRECT_URL could send the teacher to the wrong
+// host (or attacker-controlled host) when Google completes the
+// consent step. Plan: docs/plans/calendar-onboarding-followup-2026-06-06.md
+//
 // Four env vars participate in this contract:
 //
 //   GOOGLE_CALENDAR_CLIENT_ID
@@ -25,7 +32,10 @@
 //     a "не настроено" hint instead of broken OAuth);
 //   - cached on first use against process.env.
 
+import { isLoopbackOriginUrl } from '@/lib/security/local-host'
+
 const STATE_SECRET_MIN_LENGTH = 32
+const EXPECTED_REDIRECT_PATH = '/api/teacher/calendar/google/callback'
 
 export type GoogleCalendarOauthConfig = {
   clientId: string
@@ -74,13 +84,64 @@ export function getGoogleCalendarOauthConfig(
     )
   }
 
-  // Surface-level redirect URL sanity check. We don't pretend to
-  // validate the URL exhaustively here; if it's wrong, Google will
-  // reject the OAuth consent step with `redirect_uri_mismatch`.
-  if (!/^https?:\/\//.test(redirectUrl)) {
+  // Redirect URL validation. Must be a valid URL with the exact
+  // callback path. In production: https + non-loopback + same origin
+  // as NEXT_PUBLIC_SITE_URL.
+  let parsedRedirect: URL
+  try {
+    parsedRedirect = new URL(redirectUrl)
+  } catch {
     throw new Error(
-      `GOOGLE_CALENDAR_REDIRECT_URL must start with http(s)://. Got: ${redirectUrl}`,
+      `GOOGLE_CALENDAR_REDIRECT_URL must be a valid URL. Got: ${redirectUrl}`,
     )
+  }
+  if (
+    parsedRedirect.protocol !== 'http:'
+    && parsedRedirect.protocol !== 'https:'
+  ) {
+    throw new Error(
+      `GOOGLE_CALENDAR_REDIRECT_URL must use http(s)://. Got: ${redirectUrl}`,
+    )
+  }
+  if (parsedRedirect.pathname !== EXPECTED_REDIRECT_PATH) {
+    throw new Error(
+      `GOOGLE_CALENDAR_REDIRECT_URL must end with path ${EXPECTED_REDIRECT_PATH}. Got pathname: ${parsedRedirect.pathname}`,
+    )
+  }
+  if (env.NODE_ENV === 'production') {
+    if (parsedRedirect.protocol !== 'https:') {
+      throw new Error(
+        `GOOGLE_CALENDAR_REDIRECT_URL must use https:// in production. Got: ${redirectUrl}`,
+      )
+    }
+    if (isLoopbackOriginUrl(parsedRedirect)) {
+      throw new Error(
+        `GOOGLE_CALENDAR_REDIRECT_URL must not be a loopback hostname in production. Got: ${redirectUrl}`,
+      )
+    }
+    // Same-origin invariant: redirectUrl.origin MUST match
+    // NEXT_PUBLIC_SITE_URL.origin. Otherwise Google can land the
+    // teacher on the wrong host even though the URL is "valid https".
+    const expectedSiteUrl = (env.NEXT_PUBLIC_SITE_URL ?? '').trim()
+    if (!expectedSiteUrl) {
+      throw new Error(
+        'GOOGLE_CALENDAR_REDIRECT_URL same-origin check requires NEXT_PUBLIC_SITE_URL to be set in production.',
+      )
+    }
+    let expectedOrigin: string
+    try {
+      expectedOrigin = new URL(expectedSiteUrl).origin
+    } catch {
+      throw new Error(
+        'GOOGLE_CALENDAR_REDIRECT_URL same-origin check requires NEXT_PUBLIC_SITE_URL to be a valid URL in production.',
+      )
+    }
+    if (parsedRedirect.origin !== expectedOrigin) {
+      throw new Error(
+        `GOOGLE_CALENDAR_REDIRECT_URL must have the same origin as NEXT_PUBLIC_SITE_URL in production. ` +
+          `Redirect origin: ${parsedRedirect.origin}; site origin: ${expectedOrigin}.`,
+      )
+    }
   }
 
   const config: GoogleCalendarOauthConfig = {

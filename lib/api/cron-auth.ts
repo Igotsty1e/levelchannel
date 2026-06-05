@@ -19,11 +19,9 @@
 
 import { NextResponse } from 'next/server'
 
-import { constantTimeEqual } from '@/lib/security/constant-time'
-
 import { NO_STORE } from '@/lib/api/http-headers'
-
-const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
+import { constantTimeEqual } from '@/lib/security/constant-time'
+import { isLiteralLoopbackHostname } from '@/lib/security/local-host'
 
 function parseHostHeader(rawHost: string | null): string | null {
   if (!rawHost) return null
@@ -55,7 +53,7 @@ export function requireCronSecret(request: Request): Response | null {
   const hostname = parseHostHeader(request.headers.get('host'))
   const trusted = trustedHostnames()
   const hostOk =
-    (hostname !== null && LOOPBACK_HOSTNAMES.has(hostname))
+    (hostname !== null && isLiteralLoopbackHostname(hostname))
     || (hostname !== null && trusted.has(hostname))
   if (!hostOk) {
     // 404, NOT 401. Don't reveal the route exists to external callers.

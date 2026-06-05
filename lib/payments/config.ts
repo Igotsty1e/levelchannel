@@ -1,3 +1,4 @@
+import { isLoopbackOriginUrl } from '@/lib/security/local-host'
 import type { PaymentProvider } from '@/lib/payments/types'
 
 function parseProvider(value: string | undefined): PaymentProvider {
@@ -34,13 +35,32 @@ const siteUrl = parseSiteUrl(process.env.NEXT_PUBLIC_SITE_URL)
 const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build'
 const isProd = process.env.NODE_ENV === 'production' && !isBuildPhase
 
-// Жёсткие фейлы на старте: в проде сайт без правильного siteUrl сломает
-// successRedirectUrl/failRedirectUrl и уведёт пользователя на localhost
-// после успешного списания. Лучше уронить приложение, чем потерять платёж.
-if (isProd && provider === 'cloudpayments' && siteUrl.startsWith('http://localhost')) {
-  throw new Error(
-    'NEXT_PUBLIC_SITE_URL must be a real https URL when PAYMENTS_PROVIDER=cloudpayments in production.',
-  )
+// Production fail-fast on bad NEXT_PUBLIC_SITE_URL — provider-agnostic.
+// paymentConfig.siteUrl is consumed by lib/security/request.ts
+// (allowed-browser-origins), lib/email/* (verification + reset + invite
+// links), and 15+ other surfaces independent of payment provider. A
+// `https://localhost` or `http://your-domain` siteUrl would taint
+// auth/email regardless of PAYMENTS_PROVIDER value.
+// Plan: docs/plans/calendar-onboarding-followup-2026-06-06.md
+if (isProd) {
+  let parsedSite: URL
+  try {
+    parsedSite = new URL(siteUrl)
+  } catch {
+    throw new Error(
+      'NEXT_PUBLIC_SITE_URL must be a valid URL in production.',
+    )
+  }
+  if (parsedSite.protocol !== 'https:') {
+    throw new Error(
+      'NEXT_PUBLIC_SITE_URL must use https:// (not http://) in production.',
+    )
+  }
+  if (isLoopbackOriginUrl(parsedSite)) {
+    throw new Error(
+      'NEXT_PUBLIC_SITE_URL must be a non-loopback hostname (not localhost / 127.0.0.1 / *.localhost / ::1 / 0.0.0.0) in production.',
+    )
+  }
 }
 
 if (

@@ -10,6 +10,7 @@ import {
   validateProfileUpdate,
 } from '@/lib/auth/profiles'
 import { getGoogleIntegrationMeta } from '@/lib/calendar/integrations'
+import { isAccountProfilesClearTimezoneError } from '@/lib/calendar/timezone-trigger-errors'
 import {
   enforceRateLimit,
   enforceTrustedBrowserOrigin,
@@ -147,6 +148,32 @@ export async function PATCH(request: Request) {
     }
   }
 
-  const profile = await upsertAccountProfile(auth.account.id, update)
+  // 2026-06-06 calendar-onboarding-followup (round-3 BLOCKER 1 +
+  // round-9 BLOCKER 1): catch the mig 0107 trigger raising 23514 when
+  // the app-layer guard above missed (TOCTOU race where the
+  // integration row got created between the meta-read and the upsert).
+  // Narrow-match by message prefix so unrelated 23514 sources
+  // (display_name length, mig 0069 IANA, mig 0095 column CHECKs)
+  // propagate as 500.
+  let profile
+  try {
+    profile = await upsertAccountProfile(auth.account.id, update)
+  } catch (err) {
+    if (isAccountProfilesClearTimezoneError(err)) {
+      console.warn(
+        '[account/profile] upsert hit DB timezone-clear trigger (TOCTOU race):',
+        err,
+      )
+      return NextResponse.json(
+        {
+          error: 'timezone_required_while_calendar_connected',
+          message:
+            'Невозможно очистить часовой пояс, пока Google Calendar подключён. Отключите интеграцию и попробуйте снова.',
+        },
+        { status: 409, headers: NO_STORE },
+      )
+    }
+    throw err
+  }
   return NextResponse.json({ profile }, { status: 200, headers: NO_STORE })
 }
