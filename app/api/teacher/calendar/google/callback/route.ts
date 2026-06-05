@@ -48,8 +48,29 @@ function redirectToLogin(origin: string): NextResponse {
   return NextResponse.redirect(new URL('/login', origin), { status: 302 })
 }
 
+// Production-correct origin resolution: behind nginx proxy, `request.url`
+// reports `http://localhost:3000/...` (upstream socket Next sees), NOT
+// the public `https://levelchannel.ru`. Using `new URL(request.url).origin`
+// silently produces a redirect Location header pointing at localhost,
+// which the user's browser then errors as ERR_SSL_PROTOCOL_ERROR.
+//
+// Canonical site URL lives in `NEXT_PUBLIC_SITE_URL` (set per-env). We
+// fall back to `request.url.origin` ONLY when the env var is unset
+// (local dev without an explicit override).
+function resolveCanonicalOrigin(request: Request): string {
+  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim()
+  if (fromEnv && fromEnv.length > 0) {
+    try {
+      return new URL(fromEnv).origin
+    } catch {
+      // malformed env value — fall through to request-origin path
+    }
+  }
+  return new URL(request.url).origin
+}
+
 export async function GET(request: Request) {
-  const origin = new URL(request.url).origin
+  const origin = resolveCanonicalOrigin(request)
 
   // Codex C.3b review: enforceRateLimit emits JSON 429 by default,
   // which would dead-end the browser mid-OAuth flow with a raw JSON
