@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { resolveCanonicalOrigin } from '@/lib/api/origin'
 import { recordPaymentAuditEvent, rublesToKopecks } from '@/lib/audit/payment-events'
 import { getCurrentSession } from '@/lib/auth/sessions'
 import {
@@ -289,7 +290,7 @@ export async function POST(request: Request) {
             // TermUrl возвращает пользователя на наш callback; PaRes / MD
             // приходят POST'ом от банка, finalize вызывает CloudPayments
             // /payments/cards/post3ds на стороне сервера.
-            termUrl: `${new URL(request.url).origin}/api/payments/3ds-callback?invoiceId=${encodeURIComponent(result.order.invoiceId)}`,
+            termUrl: `${resolveCanonicalOrigin(request)}/api/payments/3ds-callback?invoiceId=${encodeURIComponent(result.order.invoiceId)}`,
           },
         },
       }

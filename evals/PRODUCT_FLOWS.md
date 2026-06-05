@@ -227,12 +227,12 @@ Each flow row carries:
 - **Expected final URL:** `/teacher/settings/calendar`
 - **Allowed redirects:** `/login` (anon), `/admin/slots` (admin), `/cabinet` (non-teacher)
 - **Forbidden redirects:** none beyond auth ladder
-- **Required UI anchors:** calendar connection card markup (visible heading or `data-testid="calendar-coming-soon-tile"` when state is `!configReady`)
+- **Required UI anchors:** calendar connection card markup (visible heading or `data-testid="calendar-coming-soon-tile"` when state is `!configReady`). When the teacher's `account_profiles.timezone IS NULL` AND `configReady=true` AND the integration is NOT connected, the surface also renders `data-testid="teacher-calendar-timezone-gate"` ABOVE the connect card (calendar-onboarding-cleanup, 2026-06-05).
 - **Forbidden UI anchors:** `Скоро будет` IS allowed on this surface because it's a state-aware placeholder when the 4 required env vars are unset or malformed: `GOOGLE_CALENDAR_CLIENT_ID`, `GOOGLE_CALENDAR_CLIENT_SECRET`, `GOOGLE_CALENDAR_REDIRECT_URL`, `GOOGLE_OAUTH_STATE_SECRET`. **This is an explicit exception** — flagged via inline `content-style-allow` comment in `connect-card.tsx`. Plain content-style guard would otherwise flag it.
 - **Role required:** teacher
 - **Risk:** **High** (prod environment-variable drift can leave the feature looking unshipped)
-- **Automation status:** **e2e** (`tests/e2e/product-flows-authenticated.spec.ts`; asserts URL + 200 only — content stays state-aware)
-- **Notes:** When ALL 4 env vars are set AND validated (`lib/calendar/google/config.ts` rejects malformed redirect URLs and short state secrets), the tile flips to the connect card with no second deploy. Setting only 3 of 4 (e.g. forgetting `GOOGLE_OAUTH_STATE_SECRET`) keeps the placeholder visible. Track env presence via `scripts/check-env-contract.mjs`.
+- **Automation status:** **e2e** (`tests/e2e/product-flows-authenticated.spec.ts`; asserts URL + 200 only — content stays state-aware). Banner-presence assertion is CONDITIONAL on `configReady` — when the page shows `data-testid="calendar-coming-soon-tile"` (CI without GOOGLE_CALENDAR_* env), the gate banner is suppressed by design. e2e tests skip banner assertion in that branch.
+- **Notes:** When ALL 4 env vars are set AND validated (`lib/calendar/google/config.ts` rejects malformed redirect URLs and short state secrets), the tile flips to the connect card with no second deploy. Setting only 3 of 4 (e.g. forgetting `GOOGLE_OAUTH_STATE_SECRET`) keeps the placeholder visible. Track env presence via `scripts/check-env-contract.mjs`. Timezone gate is enforced at three layers (SSR page banner + `POST /api/teacher/calendar/google/start` 422 + callback redirect with `?error=timezone_required`) — per `docs/plans/calendar-onboarding-cleanup-2026-06-05.md`.
 
 ## E. Admin
 

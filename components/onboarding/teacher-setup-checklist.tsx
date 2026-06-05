@@ -24,7 +24,7 @@ const ITEMS: ReadonlyArray<{
   pick: (s: TeacherSetupChecklistState) => boolean
 }> = [
   {
-    label: 'Заполнить профиль',
+    label: 'Заполните профиль (имя и часовой пояс)',
     href: '/teacher/profile',
     pick: (s) => s.profileFilled,
   },

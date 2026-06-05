@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 
+import { resolveCanonicalOrigin } from '@/lib/api/origin'
 import { listAccountRoles } from '@/lib/auth/accounts'
 import { evaluateSaasOfferGate } from '@/lib/auth/guards'
+import { getAccountProfile } from '@/lib/auth/profiles'
 import { getCurrentSession } from '@/lib/auth/sessions'
 import { setupChannelForIntegration } from '@/lib/calendar/channel-renewer'
 import { getGoogleCalendarOauthConfig } from '@/lib/calendar/google/config'
@@ -48,26 +50,11 @@ function redirectToLogin(origin: string): NextResponse {
   return NextResponse.redirect(new URL('/login', origin), { status: 302 })
 }
 
-// Production-correct origin resolution: behind nginx proxy, `request.url`
-// reports `http://localhost:3000/...` (upstream socket Next sees), NOT
-// the public `https://levelchannel.ru`. Using `new URL(request.url).origin`
-// silently produces a redirect Location header pointing at localhost,
-// which the user's browser then errors as ERR_SSL_PROTOCOL_ERROR.
-//
-// Canonical site URL lives in `NEXT_PUBLIC_SITE_URL` (set per-env). We
-// fall back to `request.url.origin` ONLY when the env var is unset
-// (local dev without an explicit override).
-function resolveCanonicalOrigin(request: Request): string {
-  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim()
-  if (fromEnv && fromEnv.length > 0) {
-    try {
-      return new URL(fromEnv).origin
-    } catch {
-      // malformed env value — fall through to request-origin path
-    }
-  }
-  return new URL(request.url).origin
-}
+// Canonical-origin resolution lives in lib/api/origin.ts so the same
+// helper covers the 3DS termURL in payments/charge-token. Behind nginx,
+// `new URL(request.url).origin` returns `http://localhost:3000` instead
+// of the public `https://levelchannel.ru` — silently breaks the
+// callback Location header (ERR_SSL_PROTOCOL_ERROR in user's browser).
 
 export async function GET(request: Request) {
   const origin = resolveCanonicalOrigin(request)
@@ -153,6 +140,15 @@ export async function GET(request: Request) {
   }
   if (saasOfferVerdict.kind === 'consent_required') {
     return redirectToSettings(origin, { error: 'saas_offer_consent_required' })
+  }
+
+  // calendar-onboarding-cleanup (2026-06-05) — timezone gate. Without
+  // a saved timezone the pull worker would fall back to MSK via
+  // safeTimezone — silent misrender for non-MSK teachers. Refuse to
+  // activate the integration; redirect with localized error.
+  const profile = await getAccountProfile(session.account.id)
+  if (profile?.timezone == null) {
+    return redirectToSettings(origin, { error: 'timezone_required' })
   }
 
   // Exchange code → tokens.

@@ -100,4 +100,77 @@ describe('GET/PATCH /api/account/profile', () => {
     const json = await res.json()
     expect(json.error).toContain('displayName')
   })
+
+  // calendar-onboarding-cleanup (2026-06-05) — timezone-clear gate while
+  // calendar integration is active.
+  it('refuses to clear timezone while Google Calendar integration is active', async () => {
+    const { getAccountByEmail } = await import('@/lib/auth/accounts')
+    const { upsertAccountProfile } = await import('@/lib/auth/profiles')
+    const { upsertGoogleIntegration } = await import('@/lib/calendar/integrations')
+    const { __resetCalendarEncryptionKeyCache } = await import('@/lib/calendar/encryption')
+
+    // upsertGoogleIntegration requires CALENDAR_ENCRYPTION_KEY for the
+    // pgcrypto round-trip. Pattern mirrors tests/integration/calendar/
+    // integrations.test.ts.
+    process.env.CALENDAR_ENCRYPTION_KEY = 'k'.repeat(48)
+    __resetCalendarEncryptionKeyCache()
+
+    const cookie = await registerAndLogin('profile-tz-clear@example.com')
+    const account = await getAccountByEmail('profile-tz-clear@example.com')
+    if (!account) throw new Error('expected account')
+    const accountId = account.id
+
+    await upsertAccountProfile(accountId, {
+      displayName: 'TZ Clear Test',
+      timezone: 'Europe/Moscow',
+    })
+    const integrationResult = await upsertGoogleIntegration({
+      accountId,
+      accessToken: 'A',
+      refreshToken: 'R',
+      scope: 'scope',
+      tokenExpiresAt: new Date(Date.now() + 3600_000),
+      readCalendarIds: ['primary'],
+      writeCalendarId: 'primary',
+      reason: 'initial_connect',
+    })
+    expect(integrationResult.ok).toBe(true)
+
+    const res = await patchHandler(
+      buildRequest('/api/account/profile', {
+        method: 'PATCH',
+        cookie,
+        body: { timezone: null },
+      }),
+    )
+    expect(res.status).toBe(409)
+    const json = await res.json()
+    expect(json.error).toBe('timezone_required_while_calendar_connected')
+  })
+
+  it('allows timezone clear when no calendar integration exists', async () => {
+    const { getAccountByEmail } = await import('@/lib/auth/accounts')
+    const { upsertAccountProfile } = await import('@/lib/auth/profiles')
+
+    const cookie = await registerAndLogin('profile-tz-clear-ok@example.com')
+    const account = await getAccountByEmail('profile-tz-clear-ok@example.com')
+    if (!account) throw new Error('expected account')
+    const accountId = account.id
+
+    await upsertAccountProfile(accountId, {
+      displayName: 'TZ Clear OK',
+      timezone: 'Europe/Moscow',
+    })
+
+    const res = await patchHandler(
+      buildRequest('/api/account/profile', {
+        method: 'PATCH',
+        cookie,
+        body: { timezone: null },
+      }),
+    )
+    expect(res.status).toBe(200)
+    const json = await res.json()
+    expect(json.profile.timezone).toBeNull()
+  })
 })

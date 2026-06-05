@@ -2,6 +2,7 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
+import { getAccountProfile } from '@/lib/auth/profiles'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import {
   derivePullStatus,
@@ -82,6 +83,31 @@ function bullet3Suffix(pull: PullStatus): string | null {
   return 'Сейчас синхронизация отстаёт — конфликты могут подсвечиваться с задержкой.'
 }
 
+// 2026-06-05 calendar-onboarding-cleanup — localized error map. The
+// callback redirects with stable error codes; we render plain Russian
+// (no «токен / OAuth / refresh-token» jargon — docs/content-style.md
+// §forbidden).
+const ERROR_MESSAGES: Record<string, string> = {
+  timezone_required:
+    'Укажите часовой пояс в профиле и нажмите «Сохранить» — без него календарь не подключается.',
+  consent_denied: 'Вы отменили разрешение на стороне Google. Попробуйте подключиться ещё раз.',
+  invalid_callback: 'Google вернул некорректный ответ. Попробуйте подключиться ещё раз.',
+  state_invalid: 'Срок действия запроса истёк. Попробуйте подключиться ещё раз.',
+  wrong_role: 'Аккаунт не имеет роли учителя.',
+  email_unverified: 'Подтвердите адрес почты перед подключением календаря.',
+  saas_offer_awaiting_publication:
+    'Подключение временно недоступно — оператор обновляет соглашение.',
+  saas_offer_consent_required: 'Подтвердите соглашение перед подключением.',
+  token_exchange_failed:
+    'Не удалось подтвердить вход в Google. Проверьте часы устройства и попробуйте ещё раз.',
+  no_refresh_token:
+    'Google не выдал нужное разрешение. Нажмите «Подключить» ещё раз и подтвердите все запрашиваемые доступы.',
+  persist_failed: 'Не удалось сохранить подключение. Попробуйте ещё раз.',
+  oauth_misconfigured: 'Подключение календаря пока недоступно — напишите оператору.',
+  oauth_not_configured: 'Подключение календаря пока недоступно — напишите оператору.',
+  rate_limited: 'Слишком много попыток подключения. Подождите минуту.',
+}
+
 export default async function TeacherCalendarSettingsPage({
   searchParams,
 }: {
@@ -90,9 +116,10 @@ export default async function TeacherCalendarSettingsPage({
   const params = await searchParams
   const connected = paramString(params.connected)
   const error = paramString(params.error)
-  const errorReason = paramString(params.reason)
-  const errorDetail = paramString(params.detail)
-  const errorKind = paramString(params.kind)
+  // 2026-06-05 calendar-onboarding-cleanup: callback's ?reason/?detail/?kind
+  // tail params used to be surfaced raw in <code>. Now we render only the
+  // localized message keyed by ?error= via ERROR_MESSAGES. The tail params
+  // are still emitted by the callback (operator logs / Sentry breadcrumbs).
 
   const cookieStore = await cookies()
   const cookieValue = cookieStore.get(SESSION_COOKIE_NAME)?.value ?? null
@@ -125,6 +152,15 @@ export default async function TeacherCalendarSettingsPage({
     || integration?.syncState === 'degraded'
   const pullStatus = derivePullStatus(integration)
   const pushStatus = derivePushStatus(integration)
+
+  // 2026-06-05 calendar-onboarding-cleanup — timezone gate (TASK #8).
+  // Without a saved timezone the calendar pull/push workers fall back
+  // to MSK via safeTimezone; non-MSK teachers get silent misrender.
+  // Refuse to start OAuth and surface a banner pointing at the profile
+  // editor. Gate is also enforced server-side (start route + callback)
+  // for defense-in-depth.
+  const profile = await getAccountProfile(session.account.id)
+  const timezoneNotSet = profile?.timezone == null
 
   // BCS-G.4 — orphan-self slots (stale binding from a prior epoch).
   // Surfaced when present so the teacher can clear the local link.
@@ -186,6 +222,34 @@ export default async function TeacherCalendarSettingsPage({
         </p>
       )}
 
+      {timezoneNotSet && !isConnected && configReady ? (
+        <div
+          role="alert"
+          data-testid="teacher-calendar-timezone-gate"
+          style={{
+            padding: '12px 16px',
+            background: 'var(--warning-bg)',
+            color: 'var(--text-primary)',
+            border: '1px solid var(--warning)',
+            borderRadius: 8,
+            margin: '0 0 16px 0',
+            fontSize: 14,
+            lineHeight: 1.6,
+          }}
+        >
+          <p style={{ margin: '0 0 6px 0' }}>
+            Укажите часовой пояс перед подключением — без него расписание
+            учеников и события в Google Calendar могут уехать на чужое время.
+          </p>
+          <Link
+            href="/teacher/profile"
+            style={{ color: 'var(--warning)', textDecoration: 'underline' }}
+          >
+            Перейти в Профиль → выбрать пояс → нажать «Сохранить» →
+          </Link>
+        </div>
+      ) : null}
+
       {connected === '1' ? (
         <p
           role="status"
@@ -216,14 +280,8 @@ export default async function TeacherCalendarSettingsPage({
             lineHeight: 1.5,
           }}
         >
-          ⚠ Не удалось завершить подключение:{' '}
-          <code style={{ fontSize: 12 }}>
-            {error}
-            {errorReason ? `:${errorReason}` : ''}
-            {errorKind ? `:${errorKind}` : ''}
-            {errorDetail ? ` (${errorDetail})` : ''}
-          </code>
-          . Попробуйте подключиться ещё раз. Если повторяется, напишите оператору.
+          ⚠ {ERROR_MESSAGES[error]
+            ?? `Не удалось завершить подключение. Попробуйте ещё раз. Если повторяется, напишите оператору.`}
         </p>
       ) : null}
 
@@ -233,9 +291,15 @@ export default async function TeacherCalendarSettingsPage({
         isConnected={isConnected}
         syncState={integration?.syncState ?? null}
         lastReconnectedAt={integration?.lastReconnectedAt ?? null}
+        timezoneNotSet={timezoneNotSet}
       />
 
-      <section
+      {/* 2026-06-05 calendar-onboarding-cleanup (TASK #11) — collapsed
+          by default once integration is connected (teacher already knows
+          how it works). Auto-expanded for not-yet-connected teachers so
+          the explainer is the primary CTA below the connect card. */}
+      <details
+        open={!isConnected}
         style={{
           marginTop: 40,
           padding: 24,
@@ -244,16 +308,18 @@ export default async function TeacherCalendarSettingsPage({
           borderRadius: 12,
         }}
       >
-        <h2
+        <summary
           data-testid="teacher-calendar-list-heading"
           style={{
+            cursor: 'pointer',
             fontSize: 18,
             fontWeight: 600,
             margin: '0 0 12px 0',
+            listStyle: 'revert',
           }}
         >
           Как работает интеграция с Google Calendar
-        </h2>
+        </summary>
         <ul
           style={{
             paddingLeft: 20,
@@ -309,7 +375,7 @@ export default async function TeacherCalendarSettingsPage({
             установлено напрямую с Google по защищённому каналу.
           </li>
         </ul>
-      </section>
+      </details>
 
       <OrphanSection initialSlots={orphanSlots} />
 

@@ -12,9 +12,18 @@ import { TIMEZONE_OPTIONS, safeTimezone } from '@/lib/auth/timezones'
 export function ProfileEditor({
   initialProfile,
   fallbackEmail,
+  enforceExplicitTimezone = false,
 }: {
   initialProfile: AccountProfile | null
   fallbackEmail: string
+  /**
+   * calendar-onboarding-cleanup (2026-06-05). When true (teacher cabinet),
+   * a null saved timezone is shown as «не выбрано» — the dropdown does
+   * NOT fall back to Moscow via safeTimezone, and a yellow hint warns
+   * the teacher that recipe is required. Learner cabinet keeps the
+   * legacy behaviour (Moscow default) — they don't have a calendar gate.
+   */
+  enforceExplicitTimezone?: boolean
 }) {
   // TASK-5 (2026-05-23) — two distinct inputs (firstName + lastName).
   // Storage display_name is recomputed server-side from these two
@@ -28,8 +37,15 @@ export function ProfileEditor({
   // other string is now refused server-side. safeTimezone() clamps
   // legacy stored values (e.g. plain 'Moscow') so the dropdown lands
   // on a valid option instead of rendering blank.
+  //
+  // 2026-06-05 calendar-onboarding-cleanup: when enforceExplicitTimezone
+  // is on (teacher surface), a null saved tz keeps the dropdown empty
+  // and surfaces a yellow hint so the teacher doesn't think Moscow is
+  // already saved.
+  const initialTzNotSet =
+    enforceExplicitTimezone && initialProfile?.timezone == null
   const [timezone, setTimezone] = useState(
-    safeTimezone(initialProfile?.timezone),
+    initialTzNotSet ? '' : safeTimezone(initialProfile?.timezone),
   )
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -124,11 +140,29 @@ export function ProfileEditor({
         <span style={{ color: 'var(--text)' }}>{previewName}</span>
       </p>
       <Field label="Часовой пояс">
+        {initialTzNotSet ? (
+          <p
+            style={{
+              color: 'var(--warning)',
+              fontSize: 12,
+              margin: '0 0 6px 0',
+              lineHeight: 1.5,
+            }}
+          >
+            Часовой пояс не сохранён — расписание и календарь используют
+            его для корректного времени.
+          </p>
+        ) : null}
         <select
           value={timezone}
           onChange={(e) => setTimezone(e.target.value)}
           style={inputStyle}
         >
+          {initialTzNotSet ? (
+            <option value="" disabled>
+              — Выберите часовой пояс —
+            </option>
+          ) : null}
           {TIMEZONE_OPTIONS.map((opt) => (
             <option key={opt.id} value={opt.id}>
               {opt.label}
