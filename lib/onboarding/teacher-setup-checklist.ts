@@ -3,7 +3,11 @@
 //
 // Computes the 4-item completion state for the teacher's
 // home-page setup checklist:
-//   1. Profile filled (`account_profiles.display_name IS NOT NULL`)
+//   1. Profile filled (`account_profiles.display_name IS NOT NULL AND
+//      account_profiles.timezone IS NOT NULL`) — timezone added
+//      2026-06-05 in calendar-onboarding-cleanup wave: without timezone
+//      the calendar step is unreachable, so a teacher seeing «Заполнить
+//      профиль ✓» while still blocked at the calendar gate is misleading.
 //   2. At least one tariff created (`pricing_tariffs` row)
 //   3. Calendar integration active or degraded (`getGoogleIntegrationMeta`)
 //   4. At least one invite sent (`teacher_invites` row)
@@ -48,7 +52,7 @@ export async function computeTeacherSetupChecklist(
     getOnboardingState(teacherAccountId),
   ])
 
-  const profileFilled = Boolean(profile?.displayName)
+  const profileFilled = Boolean(profile?.displayName && profile?.timezone)
   const tariffCreated = Boolean(tariff.rows[0]?.exists)
   const calendarConnected =
     calendar?.syncState === 'active' || calendar?.syncState === 'degraded'

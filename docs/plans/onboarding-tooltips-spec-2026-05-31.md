@@ -42,7 +42,7 @@ slot'а, persistence schema, recovery surfaces, mobile/a11y considerations.
 - **Route:** `app/teacher/page.tsx` (top of mobile-first home, выше «Ближайшие
   занятия»).
 - **Trigger:** SSR — render when ANY of the 4 checklist items incomplete:
-  1. Профиль заполнен: `account_profiles.display_name IS NOT NULL`.
+  1. Профиль заполнен: `account_profiles.display_name IS NOT NULL AND account_profiles.timezone IS NOT NULL` (timezone gate added 2026-06-05 в calendar-onboarding-cleanup — без часового пояса учитель упирается в gate на calendar settings, поэтому шаг «Заполнить профиль» считается завершённым только когда оба поля сохранены). См. `docs/plans/calendar-onboarding-cleanup-2026-06-05.md`.
   2. Создан хотя бы один тариф: `SELECT 1 FROM pricing_tariffs WHERE
      teacher_id = $1 LIMIT 1`.
   3. Подключён календарь: `getGoogleIntegrationMeta(teacher_id)?.syncState ===

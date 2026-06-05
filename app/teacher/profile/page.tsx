@@ -129,7 +129,11 @@ export default async function TeacherProfilePage() {
       <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>
         Профиль
       </h1>
-      <ProfileEditor initialProfile={profile} fallbackEmail={account.email} />
+      <ProfileEditor
+        initialProfile={profile}
+        fallbackEmail={account.email}
+        enforceExplicitTimezone
+      />
     </>
   )
 }

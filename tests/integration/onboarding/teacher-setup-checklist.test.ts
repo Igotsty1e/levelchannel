@@ -93,6 +93,23 @@ describe('computeTeacherSetupChecklist', () => {
     expect(state.allComplete).toBe(false)
   })
 
+  it('profileFilled is FALSE when displayName is set but timezone is null (calendar-onboarding-cleanup 2026-06-05)', async () => {
+    const teacher = await regTeacher('tsc-no-timezone@example.com')
+    // Save displayName only; leave timezone as the registration default
+    // (null at this point — register flow does NOT seed timezone today).
+    await upsertAccountProfile(teacher.accountId, {
+      displayName: 'Test Teacher',
+      firstName: 'Test',
+      lastName: 'Teacher',
+      timezone: null,
+    })
+    const state = await computeTeacherSetupChecklist(teacher.accountId)
+    // Without timezone, the calendar gate blocks the next step — so the
+    // checklist must NOT show «Заполнить профиль ✓».
+    expect(state.profileFilled).toBe(false)
+    expect(state.allComplete).toBe(false)
+  })
+
   it('after profile + tariff + invite → 3 of 4 items flip true, allComplete still false (calendar gating)', async () => {
     const teacher = await regTeacher('tsc-partial@example.com')
 
