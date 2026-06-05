@@ -46,6 +46,22 @@ jobs:
       - name: Run content-style check
         run: node scripts/check-content-style.mjs --ci
 
+  migration-prefixes:
+    name: npm run check:migration-prefixes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: 22
+
+      # Post-2026-06-02 0103 prefix collision (PR #490 + #492). The check
+      # rejects NEW prefix collisions; 0103 is grandfathered.
+      - name: Run migration-prefix check
+        run: node scripts/check-migration-prefixes.mjs --ci
+
   e2e-product-flows:
     name: Playwright product-flow suite
     runs-on: ubuntu-latest
