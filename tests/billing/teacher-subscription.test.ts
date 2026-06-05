@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest'
 import {
   SAAS_SUBSCRIPTION_TARIFFS,
   createOrRenewTeacherSubscription,
+  getPaidSubscriptionTariff,
   getSubscriptionTariff,
 } from '@/lib/billing/teacher-subscription'
 
@@ -49,6 +50,15 @@ describe('SAAS_SUBSCRIPTION_TARIFFS', () => {
       ),
     ).toBe(true)
   })
+
+  // free-tier-saas-card-and-subscription-row plan §0a-7 closure (2026-06-05):
+  // 'free' (Стартовый) is now a catalog entry alongside mid+pro.
+  it('exposes free tier (Стартовый) — amountKopecks=0, learnerLimit=1', () => {
+    expect(SAAS_SUBSCRIPTION_TARIFFS.free.titleRu).toBe('Стартовый')
+    expect(SAAS_SUBSCRIPTION_TARIFFS.free.amountKopecks).toBe(0)
+    expect(SAAS_SUBSCRIPTION_TARIFFS.free.learnerLimit).toBe(1)
+    expect(SAAS_SUBSCRIPTION_TARIFFS.free.features.length).toBeGreaterThanOrEqual(3)
+  })
 })
 
 describe('getSubscriptionTariff', () => {
@@ -66,12 +76,45 @@ describe('getSubscriptionTariff', () => {
     expect(t?.amountKopecks).toBe(80000)
   })
 
-  it('returns null for unknown / disallowed tiers', () => {
-    expect(getSubscriptionTariff('free')).toBeNull()
+  // free-tier-saas-card-and-subscription-row plan §0a-7 closure (2026-06-05):
+  // 'free' is now a valid catalog entry. Returns the Стартовый tariff.
+  it('returns the free tariff for tier="free"', () => {
+    const t = getSubscriptionTariff('free')
+    expect(t).not.toBeNull()
+    expect(t?.tier).toBe('free')
+    expect(t?.amountKopecks).toBe(0)
+    expect(t?.titleRu).toBe('Стартовый')
+    expect(t?.learnerLimit).toBe(1)
+  })
+
+  it('returns null for unknown / disallowed tiers (operator-managed is NOT a catalog tier)', () => {
     expect(getSubscriptionTariff('operator-managed')).toBeNull()
     expect(getSubscriptionTariff('enterprise')).toBeNull()
     expect(getSubscriptionTariff('')).toBeNull()
     expect(getSubscriptionTariff('MID')).toBeNull() // case-sensitive by design
+  })
+})
+
+// free-tier-saas-card-and-subscription-row plan §0b-3 + §0c-3:
+// getPaidSubscriptionTariff narrows to mid|pro and NEVER returns 'free'.
+// Used by the CloudPayments webhook so an untrusted productKind slug
+// cannot accidentally feed a 0₽ "paid" row into createOrRenewTeacherSubscription.
+describe('getPaidSubscriptionTariff (paid-only narrowing helper)', () => {
+  it('returns mid for tier="mid"', () => {
+    const t = getPaidSubscriptionTariff('mid')
+    expect(t?.tier).toBe('mid')
+  })
+  it('returns pro for tier="pro"', () => {
+    const t = getPaidSubscriptionTariff('pro')
+    expect(t?.tier).toBe('pro')
+  })
+  it('returns null for tier="free" (anti-spoof against 0₽ paid row)', () => {
+    expect(getPaidSubscriptionTariff('free')).toBeNull()
+  })
+  it('returns null for operator-managed / unknown slugs', () => {
+    expect(getPaidSubscriptionTariff('operator-managed')).toBeNull()
+    expect(getPaidSubscriptionTariff('enterprise')).toBeNull()
+    expect(getPaidSubscriptionTariff('')).toBeNull()
   })
 })
 

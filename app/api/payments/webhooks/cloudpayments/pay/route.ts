@@ -4,7 +4,7 @@ import { processPackageGrant } from '@/lib/billing/package-grant'
 import {
   createOrRenewTeacherSubscription,
   findSubscriptionByPaymentOrderId,
-  getSubscriptionTariff,
+  getPaidSubscriptionTariff,
 } from '@/lib/billing/teacher-subscription'
 import { sendOperatorPaymentNotification } from '@/lib/email/dispatch'
 import { recordAllocation } from '@/lib/payments/allocations'
@@ -204,7 +204,11 @@ export async function POST(request: Request) {
           productKind.startsWith('saas_subscription_')
         if (isSaasSub) {
           const tier = productKind.replace('saas_subscription_', '')
-          const tariff = getSubscriptionTariff(tier)
+          // Paid-only helper (free-tier-saas-card-and-subscription-row
+          // plan §0b-3 + §0c-3): NEVER returns a 'free' entry, so a
+          // free-tier slug in `productKind` cannot accidentally feed a
+          // 0₽ "paid" row into createOrRenewTeacherSubscription.
+          const tariff = getPaidSubscriptionTariff(tier)
           const teacherAccountId =
             (typeof fullOrderForSub?.teacherAccountId === 'string'
               ? fullOrderForSub.teacherAccountId

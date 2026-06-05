@@ -40,7 +40,13 @@ export default async function TeacherSubscriptionPage() {
 
   const row = await getActiveTeacherSubscription(account.id)
 
-  const tariffs = (['mid', 'pro'] as const).map((tier) => {
+  // free-tier-saas-card-and-subscription-row plan §1 item 2 (§0a-3
+  // closure): pick-tier grid now includes Стартовый (free) alongside
+  // Базовый (mid) and Расширенный (pro). When the teacher has an active
+  // paid sub, the active-card view below renders instead — Стартовый is
+  // NOT shown in active-paid mode (the Mid teacher already exceeds free
+  // caps, so showing Стартовый would be misleading).
+  const tariffs = (['free', 'mid', 'pro'] as const).map((tier) => {
     const tariff = SAAS_SUBSCRIPTION_TARIFFS[tier]
     return {
       tier: tariff.tier,

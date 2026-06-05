@@ -223,6 +223,34 @@ export async function POST(request: Request) {
     // Existing-email path: same wall-clock budget as new-email path.
     await verifyPassword(password, await getDummyHash())
     await sendAlreadyRegisteredEmail(email)
+    // free-tier-saas-card-and-subscription-row wave-paranoia R1 BLOCKER #1
+    // closure (2026-06-05): heal-on-retry. If a previous register call
+    // partially succeeded — created the account + granted the teacher
+    // role, then crashed before inserting teacher_subscriptions — the
+    // anti-enumeration retry on the same email lands HERE, not in the
+    // new-email branch below. Without this heal, the half-provisioned
+    // teacher stays without a subscription row forever (until the next
+    // backfill mig run). Idempotent: ON CONFLICT DO NOTHING. Best-effort:
+    // failure logged but does NOT throw (already-registered branch must
+    // remain byte-equal to the new-email branch per anti-enumeration).
+    try {
+      const { getDbPool } = await import('@/lib/db/pool')
+      await getDbPool().query(
+        `insert into teacher_subscriptions (account_id, plan_slug, state)
+         select $1::uuid, 'free', 'active'
+          where exists (
+            select 1 from account_roles ar
+             where ar.account_id = $1::uuid and ar.role = 'teacher'
+          )
+         on conflict (account_id) do nothing`,
+        [existing.id],
+      )
+    } catch (err) {
+      console.warn('[register.existing] free-row heal insert failed', {
+        accountId: existing.id,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
     // Wave 5 — audit the register attempt on a known email. Reason
     // tag distinguishes from a legit register so the alert query can
     // tell "abuser sweeping known emails" apart from organic load.
@@ -258,6 +286,21 @@ export async function POST(request: Request) {
     // surface — worse than a fail-fast 5xx that prompts retry.
     if (requestedRole === 'teacher') {
       await grantAccountRole(account.id, 'teacher', null)
+      // free-tier-saas-card-and-subscription-row plan §1 item 3 (§0a-4
+      // closure + §0b-1 parallel for admin path): insert the implicit
+      // Стартовый subscription row immediately after grantAccountRole.
+      // Failure is FATAL — mirrors the grantAccountRole precedent above:
+      // returning ok:true with a half-provisioned teacher would silently
+      // park them in EMPTY_CAPS (the bug this PR exists to fix). The
+      // ON CONFLICT clause keeps the INSERT idempotent so partial-
+      // register retries are safe.
+      const { getDbPool } = await import('@/lib/db/pool')
+      await getDbPool().query(
+        `insert into teacher_subscriptions (account_id, plan_slug, state)
+         values ($1::uuid, 'free', 'active')
+         on conflict (account_id) do nothing`,
+        [account.id],
+      )
     } else {
       await grantAccountRole(account.id, 'student', null)
     }

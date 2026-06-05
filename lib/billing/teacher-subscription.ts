@@ -28,7 +28,15 @@
 
 import { getDbPool } from '@/lib/db/pool'
 
+// Paid-only tier — used by `createOrRenewTeacherSubscription` and
+// `/api/teacher/subscribe`. Free is NOT a paid tier (amountKopecks=0;
+// no period). Free-tier-saas-card-and-subscription-row plan §0a-1.
 export type TeacherSubscriptionTier = 'mid' | 'pro'
+
+// Catalog/display tier — used by `SAAS_SUBSCRIPTION_TARIFFS` and the
+// /teacher/subscription page. Includes 'free' (Стартовый) as the
+// implicit default plan every teacher is on at registration.
+export type SubscriptionCatalogTier = 'free' | 'mid' | 'pro'
 export type TeacherSubscriptionState =
   | 'active'
   | 'past_due'
@@ -278,7 +286,7 @@ export async function findSubscriptionByPaymentOrderId(
  * Mid/Pro to Базовый/Расширенный per owner request. DB slugs unchanged.
  */
 export type SubscriptionTariff = {
-  tier: TeacherSubscriptionTier
+  tier: SubscriptionCatalogTier
   titleRu: string
   amountKopecks: number
   learnerLimit: number | null
@@ -287,7 +295,34 @@ export type SubscriptionTariff = {
   features: ReadonlyArray<string>
 }
 
-export const SAAS_SUBSCRIPTION_TARIFFS: Readonly<Record<TeacherSubscriptionTier, SubscriptionTariff>> = {
+// Discriminated subtype — `tier` is guaranteed to be 'mid' | 'pro'.
+// Used by `getPaidSubscriptionTariff` so callers like the CloudPayments
+// webhook can never accidentally consume a free-tier entry for paid-row
+// creation (compile-time guard; free-tier plan §0c-3).
+export type PaidSubscriptionTariff = SubscriptionTariff & {
+  tier: TeacherSubscriptionTier
+}
+
+export const SAAS_SUBSCRIPTION_TARIFFS: Readonly<Record<SubscriptionCatalogTier, SubscriptionTariff>> = {
+  // free-tier-saas-card-and-subscription-row plan §1 item 1.
+  // Стартовый — implicit default for every teacher; amountKopecks=0, no
+  // billing period. Caps live in `TIER_WRITE_CAPS.free` below: 1 пакет
+  // + 1 тариф (free-tier 1pkg+1tariff unlock, PR #498).
+  free: {
+    tier: 'free',
+    titleRu: 'Стартовый',
+    amountKopecks: 0,
+    learnerLimit: 1,
+    description:
+      'Подписка LevelChannel «Стартовый» — бесплатно, навсегда, для одного ученика. 1 пакет и 1 тариф включены.',
+    features: [
+      'До 1 активного ученика',
+      'Расписание и слоты',
+      '1 пакет и 1 тариф',
+      'Балансы и долги',
+      'Родительский доступ',
+    ],
+  },
   mid: {
     tier: 'mid',
     titleRu: 'Базовый',
@@ -320,11 +355,28 @@ export const SAAS_SUBSCRIPTION_TARIFFS: Readonly<Record<TeacherSubscriptionTier,
   },
 }
 
+// Catalog lookup — accepts 'free' | 'mid' | 'pro'. Used by the
+// /teacher/subscription page to render the 3-card pick-tier grid.
 export function getSubscriptionTariff(
   tier: string,
 ): SubscriptionTariff | null {
-  if (tier === 'mid' || tier === 'pro') {
+  if (tier === 'free' || tier === 'mid' || tier === 'pro') {
     return SAAS_SUBSCRIPTION_TARIFFS[tier]
+  }
+  return null
+}
+
+// Paid-only lookup — returns ONLY mid/pro entries; NEVER free. Used by
+// `app/api/payments/webhooks/cloudpayments/pay/route.ts` so an untrusted
+// `productKind` slug cannot accidentally feed a 0₽ "paid" row into
+// `createOrRenewTeacherSubscription`. Compile-time guard via the
+// discriminated `PaidSubscriptionTariff` return type. Free-tier plan
+// §0b-3 + §0c-3.
+export function getPaidSubscriptionTariff(
+  tier: string,
+): PaidSubscriptionTariff | null {
+  if (tier === 'mid' || tier === 'pro') {
+    return SAAS_SUBSCRIPTION_TARIFFS[tier] as PaidSubscriptionTariff
   }
   return null
 }

@@ -1,15 +1,17 @@
 // @vitest-environment jsdom
 
 // bug-4 Sub-PR B (2026-06-02) — pick-a-tier surface visual contract.
+// free-tier-saas-card-and-subscription-row plan §0a-7 (2026-06-05) —
+// Стартовый (free) card now also rendered in pick-tier mode with a
+// «Доступен по умолчанию» chip in place of «Подписаться» button.
 //
 // Pins:
-//   - Empty state (active === null) renders exactly two tier cards:
-//     «Базовый» (mid) and «Расширенный» (pro). «Стартовый» is NOT
-//     a purchasable tier on /teacher/subscription.
-//   - Each card shows a "Подписаться" button.
-//   - The «Расширенный» card carries a "Популярный" badge; «Базовый» does not.
+//   - Empty state (active === null) renders exactly THREE tier cards:
+//     «Стартовый» (free), «Базовый» (mid), «Расширенный» (pro).
+//   - free card has a chip (NOT a button); mid/pro have «Подписаться» buttons.
+//   - The «Расширенный» card carries a "Популярный" badge; the other two don't.
 //   - Each card renders the feature-bullets from the catalogue.
-//   - Prices come from `tariffs[*].amountKopecks` formatted as roubles.
+//   - Prices come from `tariffs[*].amountKopecks`; free renders «Бесплатно».
 
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -17,6 +19,14 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { TeacherSubscriptionClient } from '@/app/teacher/subscription/client'
 
 const TARIFFS = [
+  {
+    tier: 'free' as const,
+    titleRu: 'Стартовый',
+    amountKopecks: 0,
+    learnerLimit: 1,
+    description: 'desc-free',
+    features: ['До 1 активного ученика', 'Расписание и слоты', '1 пакет и 1 тариф'],
+  },
   {
     tier: 'mid' as const,
     titleRu: 'Базовый',
@@ -40,15 +50,29 @@ describe('TeacherSubscriptionClient — pick-a-tier (bug-4 Sub-PR B)', () => {
     cleanup()
   })
 
-  it('renders exactly two tier cards in the empty state (Стартовый is NOT shown)', () => {
+  it('renders exactly THREE tier cards in the empty state (Стартовый + Базовый + Расширенный)', () => {
     render(<TeacherSubscriptionClient active={null} tariffs={TARIFFS} />)
+    expect(screen.getByTestId('teacher-subscription-tier-free')).toBeTruthy()
     expect(screen.getByTestId('teacher-subscription-tier-mid')).toBeTruthy()
     expect(screen.getByTestId('teacher-subscription-tier-pro')).toBeTruthy()
-    // Negative pin — there's no «Стартовый» / `free` card here.
-    expect(screen.queryByText('Стартовый')).toBeNull()
-    // Both required titles render exactly once.
+    // All three required titles render exactly once.
+    expect(screen.getAllByText('Стартовый').length).toBe(1)
     expect(screen.getAllByText('Базовый').length).toBe(1)
     expect(screen.getAllByText('Расширенный').length).toBe(1)
+  })
+
+  it('the Стартовый card has «Доступен по умолчанию» chip (NOT a Подписаться button)', () => {
+    render(<TeacherSubscriptionClient active={null} tariffs={TARIFFS} />)
+    const chip = screen.getByTestId('teacher-subscription-tier-free-chip')
+    expect(chip.textContent).toContain('Доступен по умолчанию')
+    expect(screen.queryByTestId('teacher-subscription-subscribe-free')).toBeNull()
+  })
+
+  it('the Стартовый card price reads «Бесплатно» (no 30-day period label)', () => {
+    render(<TeacherSubscriptionClient active={null} tariffs={TARIFFS} />)
+    const freeCard = screen.getByTestId('teacher-subscription-tier-free')
+    expect(freeCard.textContent).toContain('Бесплатно')
+    expect(freeCard.textContent).not.toContain('30 дней')
   })
 
   it('the Расширенный card carries a "Популярный" badge; Базовый does not', () => {

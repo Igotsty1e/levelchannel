@@ -18,8 +18,11 @@ import { useCallback, useEffect, useState } from 'react'
 
 import type { CloudPaymentsWidgetIntent } from '@/lib/payments/types'
 
+// free-tier-saas-card-and-subscription-row plan §1 item 2 + §0a-3 closure:
+// pick-tier grid now accepts 'free' alongside paid tiers. Free renders
+// with «Доступен по умолчанию» chip instead of «Подписаться» button.
 type Tariff = {
-  tier: 'mid' | 'pro'
+  tier: 'free' | 'mid' | 'pro'
   titleRu: string
   amountKopecks: number
   learnerLimit: number
@@ -276,6 +279,7 @@ export function TeacherSubscriptionClient({ active, tariffs }: Props) {
       <div style={gridStyle}>
         {tariffs.map((t) => {
           const isPro = t.tier === 'pro'
+          const isFree = t.tier === 'free'
           return (
             <article
               key={t.tier}
@@ -297,8 +301,14 @@ export function TeacherSubscriptionClient({ active, tariffs }: Props) {
               ) : null}
               <h3 style={cardTitleStyle}>{t.titleRu}</h3>
               <div style={cardPriceRowStyle}>
-                <span style={cardPriceStyle}>{formatPrice(t.amountKopecks)}</span>
-                <span style={cardPeriodStyle}>/ 30 дней</span>
+                {isFree ? (
+                  <span style={cardPriceStyle}>Бесплатно</span>
+                ) : (
+                  <>
+                    <span style={cardPriceStyle}>{formatPrice(t.amountKopecks)}</span>
+                    <span style={cardPeriodStyle}>/ 30 дней</span>
+                  </>
+                )}
               </div>
               <div style={cardLimitStyle}>До {t.learnerLimit} активных учеников</div>
 
@@ -314,20 +324,38 @@ export function TeacherSubscriptionClient({ active, tariffs }: Props) {
                 ))}
               </ul>
 
-              <button
-                type="button"
-                onClick={() => handleSubscribe(t.tier)}
-                disabled={loading !== null || !scriptReady}
-                data-testid={`teacher-subscription-subscribe-${t.tier}`}
-                style={{
-                  ...subscribeButtonStyle,
-                  background: isPro ? 'var(--accent)' : 'transparent',
-                  color: isPro ? '#fff' : 'var(--text)',
-                  border: isPro ? 'none' : '1px solid var(--border)',
-                }}
-              >
-                {loading === t.tier ? 'Готовим оплату…' : 'Подписаться'}
-              </button>
+              {isFree ? (
+                // Стартовый — implicit default plan; no «Подписаться»
+                // button (free-tier-saas-card-and-subscription-row §0a-3).
+                <div
+                  data-testid={`teacher-subscription-tier-${t.tier}-chip`}
+                  style={{
+                    ...subscribeButtonStyle,
+                    background: 'transparent',
+                    color: 'var(--secondary)',
+                    border: '1px dashed var(--border)',
+                    cursor: 'default',
+                    textAlign: 'center',
+                  }}
+                >
+                  Доступен по умолчанию
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleSubscribe(t.tier as 'mid' | 'pro')}
+                  disabled={loading !== null || !scriptReady}
+                  data-testid={`teacher-subscription-subscribe-${t.tier}`}
+                  style={{
+                    ...subscribeButtonStyle,
+                    background: isPro ? 'var(--accent)' : 'transparent',
+                    color: isPro ? '#fff' : 'var(--text)',
+                    border: isPro ? 'none' : '1px solid var(--border)',
+                  }}
+                >
+                  {loading === t.tier ? 'Готовим оплату…' : 'Подписаться'}
+                </button>
+              )}
             </article>
           )
         })}
