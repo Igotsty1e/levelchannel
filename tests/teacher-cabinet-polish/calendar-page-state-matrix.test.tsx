@@ -73,7 +73,7 @@ vi.mock('@/lib/calendar/google/config', () => ({
   getGoogleCalendarOauthConfig: () => ({
     clientId: 'test-client',
     clientSecret: 'test-secret',
-    redirectUri: 'https://example.test/cb',
+    redirectUri: 'https://example.test/api/teacher/calendar/google/callback',
     scope: ['https://www.googleapis.com/auth/calendar'],
   }),
 }))
