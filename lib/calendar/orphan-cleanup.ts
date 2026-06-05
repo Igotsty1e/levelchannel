@@ -95,6 +95,10 @@ export type IgnoreOrphanOutcome =
 export async function ignoreOrphanSelfSlot(opts: {
   teacherAccountId: string
   slotId: string
+  // saas-offer-mutation-wrapper-poc (2026-06-04): optional outer
+  // PoolClient — when provided, UPDATE runs inside the wrapper's TX;
+  // when omitted, falls back to the module pool (back-compat).
+  client?: import('pg').PoolClient
 }): Promise<IgnoreOrphanOutcome> {
   if (!UUID_PATTERN.test(opts.teacherAccountId)) {
     return { ok: false, reason: 'no_match' }
@@ -102,8 +106,8 @@ export async function ignoreOrphanSelfSlot(opts: {
   if (!UUID_PATTERN.test(opts.slotId)) {
     return { ok: false, reason: 'no_match' }
   }
-  const pool = getDbPool()
-  const r = await pool.query(
+  const queryRunner = opts.client ?? getDbPool()
+  const r = await queryRunner.query(
     `update lesson_slots s
         set external_event_id = null,
             external_calendar_id = null,
@@ -125,10 +129,11 @@ export async function ignoreOrphanSelfSlot(opts: {
 
 export async function ignoreAllOrphanSelfSlotsForTeacher(
   teacherAccountId: string,
+  opts: { client?: import('pg').PoolClient } = {},
 ): Promise<{ ignored: number }> {
   if (!UUID_PATTERN.test(teacherAccountId)) return { ignored: 0 }
-  const pool = getDbPool()
-  const r = await pool.query(
+  const queryRunner = opts.client ?? getDbPool()
+  const r = await queryRunner.query(
     `update lesson_slots s
         set external_event_id = null,
             external_calendar_id = null,
