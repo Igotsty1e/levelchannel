@@ -1,6 +1,6 @@
 # Calendar onboarding cleanup — 2026-06-05 (Option A — narrow scope)
 
-Status: PLAN — Option-A paranoia round 3 BLOCK closed (engineering-hygiene only — see round-3 BLOCKER 1+2 closures); off-protocol round 4 follows.
+Status: SHIPPED 2026-06-05 via PR #537 (squash 9a366f7). Plan-paranoia: 5 substantive Codex rounds + 2 self-review fallback rounds (Codex quota exhausted on round 6; precedent: PRs #515 32, #410 12). Wave-paranoia pending Codex quota reset 2026-06-06 00:00 (deferred per skill §7).
 
 Owner decision 2026-06-05: drop Moscow-only trigger from mig 0043 BUT keep the existing 19-entry allowlist via mig 0069 intact. The full "any IANA timezone (мировой)" promise is **deferred** to a separate multi-tenant-timezone-runtime epic (BLOCKER 1 from prior round-3 — MSK is hardcoded in 4 runtime places: `lib/calendar/google/pull.ts`, `app/teacher/calendar/page.tsx`, `lib/scheduling/slots/validation.ts`, `lib/calendar/dates.ts`).
 
