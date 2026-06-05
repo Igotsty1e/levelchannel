@@ -30,7 +30,7 @@ Backlog items bundled into this single PR:
 
 ### Deploy ordering (round-2 BLOCKER 2 closure)
 
-LevelChannel runs on a single VPS (`production_target` memory: Timeweb VPS 83.217.202.136). Autodeploy is a systemd timer (`levelchannel-autodeploy.timer`) that does `git pull` → `npm run build` → run pending migrations → `systemctl restart next-app`. **There is no rolling deploy across multiple instances** — the binary swap is atomic with sub-5s downtime.
+LevelChannel runs on a single VPS (Timeweb; concrete IP redacted — see private ops runbook). Autodeploy is a systemd timer (`levelchannel-autodeploy.timer`) that does `git pull` → `npm run build` → run pending migrations → `systemctl restart next-app`. **There is no rolling deploy across multiple instances** — the binary swap is atomic with sub-5s downtime.
 
 Sequence per autodeploy tick:
 1. T0: git pull (new SHA).
