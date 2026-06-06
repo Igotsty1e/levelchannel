@@ -23,8 +23,8 @@ checklist for a new or repeated production environment.
    - `PAYMENTS_PROVIDER=cloudpayments`
    - `PAYMENTS_STORAGE_BACKEND=postgres`
    - `PAYMENTS_ALLOW_MOCK_CONFIRM=false`
-   - `NEXT_PUBLIC_SITE_URL=https://your-domain`
-   - `DATABASE_URL=postgresql://...` (must reach Postgres over TLS unless the host is `localhost` — `lib/db/pool.ts` forces strict TLS in production)
+   - `NEXT_PUBLIC_SITE_URL=https://your-domain` — **MUST** be https + non-loopback in production regardless of `PAYMENTS_PROVIDER`. Provider-agnostic prod fail-fast in `lib/payments/config.ts` rejects `http://...`, `https://localhost`, `https://*.localhost` (RFC 6761 loopback), `https://127.0.0.1`, `https://0.0.0.0`, `https://[::1]`. Same contract enforced inside the canonical-origin helper used by calendar callback + 3DS termURL (`lib/api/origin.ts`). Boot fails immediately if the env is wrong — better than silently shipping a Location header pointing at the upstream socket origin behind nginx
+   - `DATABASE_URL=postgresql://...` (must reach Postgres over TLS unless the host is a literal loopback — `localhost` / `127.0.0.1` / `::1` / `[::1]` — per `lib/security/local-host.ts::isLiteralLoopbackHostname`. `*.local` is NOT loopback. `lib/db/pool.ts` forces strict TLS in production for every non-loopback host)
    - `TELEMETRY_HASH_SECRET=...`
    - `CLOUDPAYMENTS_PUBLIC_ID=...`
    - `CLOUDPAYMENTS_API_SECRET=...`
