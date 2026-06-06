@@ -201,7 +201,13 @@ SETENV_FLAGS=(
   --setenv=LC_ENV="$LC_ENV_VALUE"
   --setenv=PORT="$PORT"
   --setenv=DATABASE_URL="$DATABASE_URL"
-  --setenv=NEXT_PUBLIC_SITE_URL="http://127.0.0.1:$PORT"
+  # BCS-DEF-4-PUSH (2026-06-06): PR #539 added a prod fail-closed gate
+  # in lib/payments/config.ts that rejects http:// + loopback NEXT_PUBLIC_SITE_URL
+  # under NODE_ENV=production. Smoke-boot probes /api/health on 127.0.0.1:$PORT
+  # directly; SITE_URL is only consumed by module-load wiring (email links,
+  # canonical-origin contract) and never has to point at the same port for
+  # liveness check. Use a non-loopback https URL the prod gate accepts.
+  --setenv=NEXT_PUBLIC_SITE_URL="https://staging.levelchannel.ru"
   --setenv=NEXT_PUBLIC_LC_ENV="$LC_ENV_VALUE"
 )
 

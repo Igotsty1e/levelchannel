@@ -1,1053 +1,576 @@
 # BCS-DEF-4-PUSH — PWA push channel for learner lesson-start reminders
 
-**Status:** PLAN-PARANOIA ROUND 1 BLOCK (2026-06-06). 8 BLOCKERs + 3 WARNs surfaced — see §0a. Plan requires substantial rewrite before implementation. Do NOT start coding until plan is revised + re-paranoia'd.
-
-## 0a. Plan-paranoia round-1 findings (2026-06-06, recorded; closures pending)
-
-Raw output: `/tmp/codex-paranoia-20260606T042830Z-push-plan/round-1.md`.
-
-| # | Severity | Finding (one-line) | Citations |
-|---|----------|-------------------|-----------|
-| 1 | BLOCKER | VAPID env-file location wrong — operator would set keys that aren't read. `/etc/levelchannel/env.d/push.env` is NOT loaded by Next.js OR systemd scheduler; the actual `EnvironmentFile` is rendered by `scripts/activate-prod-ops.sh`. | `:140-146,930-947`; `scripts/systemd/levelchannel-learner-reminder-dispatch.service:23-25`; `scripts/activate-prod-ops.sh:315-318,365-378` |
-| 2 | BLOCKER | Plan reintroduces deprecated UI surfaces (`/cabinet/settings/reminders` + `/admin/settings/reminders`) that shipped main has REPLACED with `/admin/settings/alerts` + cabinet-side surfaces on existing pages. Drift vs. shipped SoT, not "add page". | `:21-26,77-79,533-571,793-795,934`; `app/admin/(gated)/settings/alerts/page.tsx:62-74,170-177,192-200`; `app/cabinet/profile/page.tsx:58-88,146-151` |
-| 3 | BLOCKER | Retry model incompatible with shipped schema. Plan wants `markRetry()` + "next tick retries", but `learner_reminder_dispatches` is one-shot today: `status in ('claimed','sent','skipped')` + `UNIQUE(slot_id, channel)`. No retry path without changing state machine + query model entirely. | `:405-460,632-640`; `migrations/0064_learner_reminder_dispatches.sql:27-64`; `docs/critical-path.md:80` |
-| 4 | BLOCKER | UNIQUE `(account_id, endpoint)` admits cross-account leak on shared devices. Web Push subscription is bound to browser profile/origin, NOT account. Learner B subscribing in the same browser where A previously subscribed → same endpoint stays active for both, push for A delivered to B. Need global uniqueness on active endpoint or explicit reassignment semantics. | `:226-231,704-719` |
-| 5 | BLOCKER | Hardcoded prod origin in payload / service worker / tests. Repo has the canonical-origin contract (`lib/api/origin.ts`) precisely because staging/reverse-proxy/localhost break hardcoded URLs. Staging push would point at prod cabinet. | `:317,325,397,602,919`; `lib/api/origin.ts:1-18,30-59` |
-| 6 | BLOCKER | TS/MJS boundary not designed. Plan places `push-templates.ts` + `web-push-wrapper.ts` in `lib/notifications/`, but dispatcher is plain Node ESM (`scripts/learner-reminder-dispatch.mjs`) and already imports only `scripts/lib/*.mjs`. Same class of error TG plan caught + fixed. | `:788-789`; `scripts/learner-reminder-dispatch.mjs:42-50`; `docs/plans/bcs-def-4-tg-telegram-reminders.md:43,496-501` |
-| 7 | BLOCKER | "No ordering hazard" claim is wrong for this repo. Deploy-before-migrate window is normal here and explicitly closed by `migrationPending` / `42P01` / `42703` fallbacks. New cabinet read + admin counters + API routes on fresh table WITHOUT degrade path → 500 on rollout. | `:563-571,946-952`; `app/admin/(gated)/settings/alerts/page.tsx:38-41,130-167`; `lib/admin/operator-settings.ts:708-749`; `lib/admin/probe-status.ts:72-79` |
-| 8 | BLOCKER | Self-contradiction on service-worker registration location. First says root-layout change, then revised decision moves registration to `app/cabinet/layout.tsx` — but that file is NOT in the file inventory. Critical-path + route ownership not fixed before code. | `:88-93,784,893-901` |
-| 9 | WARN | CSRF/rate-limit contour weak. `POST /api/push/subscribe` plan uses IP-scoped `enforceRateLimit`, but authenticated per-account mutations in this repo already have `enforceAccountRateLimit`. Origin gate left as "audit at impl time", not mandatory contract. | `:246-250,547-556,740-743`; `lib/security/account-rate-limit.ts:5-23,24-31`; `lib/security/request.ts:148-177` |
-| 10 | WARN | Push body includes `zoom_url` / meeting URL. Push notifications render on lock screen — this is a capability leak to anyone who sees the screen. Email precedent does not transfer 1:1. Safer: send reminder fact + deep-link into authenticated cabinet only. | `:395-397,420-431,730-736` |
-| 11 | WARN | Doc sweep incomplete. Plan adds new trust boundary + env vars + routes/surfaces but file inventory missing `SECURITY.md`, `README.md`, `evals/PRODUCT_FLOWS.md`, `evals/URL_REDIRECT_CONTRACT.md`. | `:776-810`; `AGENTS.md:74-87,254-260`; `README.md:81-119`; `DOCUMENTATION.md:25-34,112-118` |
-
-**Recommended next step:** rewrite §2 (Design) sections to address BLOCKERS 1-8 + re-paranoia. Estimated 4-6 hours of plan work before any code can be written. Defer implementation to a dedicated session.
-
----
-
-**Status (original):** DRAFT 2026-05-18 (plan-doc only; awaiting `/codex-paranoia plan`).
-**Wave name:** `bcs-def-4-push-pwa-reminders` (single-PR epic — see §5).
-**Trigger:** Push channel deferred from BCS-DEF-4 MVP
-(`docs/plans/bcs-def-4-learner-reminders.md:7` "MVP = email only"; §10
-"BCS-DEF-4-PUSH — PWA web push. Needs service worker + VAPID keys +
-subscription store.").
+**Status:** SHIPPED 2026-06-06 (one-PR epic). Plan-paranoia: 9 substantive Codex rounds (8/3 → 2/2) + round-10 self-review fallback after Codex quota exhausted at 14:02 +07 (user-authorized per `/codex-paranoia` skill §7; Codex paranoia debt recorded for post-quota plan + wave rounds — `auto-memory/2026-06-06_push_pwa_codex_debt.md`).
+**Wave name:** `bcs-def-4-push-pwa-reminders` (single-PR epic).
 **Author:** Claude (autonomous).
 **Channel:** Browser Web Push (PWA, via `web-push` Node lib + VAPID).
 
----
-
-## 0. Cross-refs
-
-- **`docs/plans/bcs-def-4-learner-reminders.md`** — parent plan (merged via PR #333).
-  §2.2 reserves `learner_reminder_dispatches.channel` for `'push'`; §10 defers
-  this work explicitly.
-- **`docs/plans/bcs-def-4-tg-telegram-reminders.md`** — sibling Telegram channel
-  plan (in flight as PR #347). Shares: scheduler per-channel dispatch branch
-  pattern (§2.5 of TG plan); cabinet `/cabinet/settings/reminders` page
-  extension idiom; admin `/admin/settings/reminders` master-switch row idiom.
-  Does NOT share: webhook surface (push has no inbound webhook — subscription
-  payloads come from the browser via a Server Action / API route).
-- **`docs/plans/admin-ux-coverage.md §3.4 / §5.4`** — closed at BCS-DEF-4;
-  this PR extends `/admin/settings/reminders` with a Push master switch row.
+This document REPLACES the 2026-05-18 DRAFT after plan-paranoia round-1 surfaced 8 BLOCKERs + 3 WARNs (see PR #543 + auto-memory `2026-06-06_push_pwa_plan_blocked.md`). Each finding is closed inline below. Companion plan `bcs-def-5-push-teacher-pwa-reminders.md` (teacher) DEFERRED — depends on `teacher_reminder_dispatches` (BCS-DEF-5 main) which is not shipped.
 
 ---
 
 ## 1. Goal
 
-Add Web Push as a delivery channel for the unified learner-reminder scheduler.
-When a learner has opted-in AND a Push subscription has been registered for
-their account, the scheduler dispatches each due reminder via **all enabled
-channels** (email + push, plus telegram if that PR has landed).
+Add Web Push as a delivery channel for the learner-reminder scheduler. When a learner has opted-in (i.e. registered a Push subscription from their browser) AND `LEARNER_REMINDERS_PUSH_ENABLED=1` AND VAPID env present, the scheduler dispatches each due reminder via the push channel in addition to email (and telegram if enabled). Soft-skip when subscription is absent.
 
 **Hard requirements:**
-- Each learner subscribes from their browser; we store the PushSubscription
-  payload (endpoint + p256dh public key + auth secret).
-- Idempotent per `(slot_id, offset_minutes, channel)` — `channel='push'`
-  slots into the existing CHECK extension precedent from BCS-DEF-4-TG.
-- Operator master switch `LEARNER_PUSH_ENABLED` (OFF by default) — channel
-  dormant until VAPID keys are generated AND operator flips switch.
-- Soft-skip on missing subscription: row created with `status='skipped'` +
-  `skipped_reason='no_push_subscription'`; other channels unaffected.
-- Auto-unsubscribe on Web Push 410 Gone / 404 Not Found responses (the
-  endpoint has been invalidated by the browser); subscription row marked
-  unsubscribed; future dispatches skip.
-- Multi-device per learner: a learner can subscribe from multiple browsers
-  (laptop Chrome + phone Safari iOS 16.4+); each device = separate row;
-  scheduler fans out to ALL active subscriptions per (slot, offset).
-- iOS Safari 16.4+ support documented as best-effort; older iOS / non-PWA
-  modes return `Notification.permission === 'denied'` early.
+- Idempotent per `(slot_id, channel='push')` — one row per slot via existing `lrd_slot_channel_unique` index (mig 0064).
+- Operator master switch `LEARNER_REMINDERS_PUSH_ENABLED` (default `0`).
+- Soft-skip on missing subscription: row written `status='skipped'`, `skipped_reason='no_push_subscription'`. Other channels unaffected.
+- Auto-unsubscribe on Web Push 410 Gone / 404 Not Found: subscription row flipped to `unsubscribed_at=now()`. Future ticks skip.
+- Multi-device per learner: each device = separate active subscription row; scheduler fans out to ALL active subs per (slot, channel='push'). **Hard cap** (round-8 BLOCKER 1 closure): `MAX_ACTIVE_PUSH_SUBSCRIPTIONS_PER_ACCOUNT = 10` enforced in subscribe route. On 11th subscribe attempt: oldest-active row flipped to `unsubscribed_at=now()` (FIFO eviction) + audit event `push.subscription.unsubscribed.auto` (reason='cap_reached'). Bounds the fanout multiplier so rate-limit invariant holds (10 × budget unit, not unbounded).
+- Cross-account endpoint reassignment: when subscribing with an endpoint URL that already exists for a DIFFERENT account, the existing row is flipped to `unsubscribed_at=now()` + audit event before the new INSERT (round-1 BLOCKER 4 closure).
+- iOS Safari 16.4+ best-effort; older iOS / non-PWA modes return `Notification.permission === 'denied'` early.
 
-**Out of scope explicitly:** see §10.
+## 2. Existing surface inventory (Survey-before-plan)
 
----
+Verbs: `dispatch reminder`, `subscribe browser`, `serve manifest`.
 
-## 1.1 Existing surface inventory
-
-Cited against `main` HEAD as of 2026-05-18.
-
-### Parent surface (BCS-DEF-4)
-
-- **`migrations/0061_learner_reminder_dispatches.sql`** — the dispatch queue
-  table (per BCS-DEF-4 §2.2). `channel text not null check (channel in ('email'))`
-  — this plan extends the CHECK to include `'push'`. If BCS-DEF-4-TG (the
-  sibling plan) lands first, this is a re-extension; if BCS-DEF-4-PUSH lands
-  first, it's the first extension. **Migration ordering coordination needed
-  if both ship in parallel** — see §2.10 + RISK-9.
-- **`migrations/0059_learner_reminder_preferences.sql`** — per-learner offset
-  list. NO new column needed; subscription existence acts as implicit opt-in.
-- **`scripts/learner-reminder-dispatch.mjs`** — the scheduler tick. Extended
-  with per-channel iteration (already designed for in BCS-DEF-4 §2.4 step 5b).
-- **`lib/admin/operator-settings.ts`** — adds 1 new key `LEARNER_PUSH_ENABLED`
-  with `scope: 'learner-reminders'`.
-- **`app/admin/(gated)/settings/reminders/page.tsx`** — adds a "Push канал" row.
-- **`app/cabinet/settings/reminders/page.tsx`** — adds a "Push-уведомления"
-  section with browser opt-in button + multi-device list.
-
-### NEW surface — service worker + PWA manifest
-
-LevelChannel has NO PWA today:
-- **No `public/manifest.json`** — verified via `ls public/`: only `anastasia.jpg` and `favicon.svg`.
-- **No `public/sw.js`** — no service worker.
-- **No `next-pwa` / `@ducanh2912/next-pwa`** in `package.json` dependencies.
-
-This plan introduces ALL THREE as new artifacts:
-- `public/manifest.webmanifest` (PWA install descriptor).
-- `public/sw.js` (service worker — push event handler + notification click
-  routing). Hand-rolled NOT generated by `next-pwa` — see §2.5 decision.
-- `app/layout.tsx` reference to `manifest.webmanifest` + service worker
-  registration script (deferred client component).
-
-### NEW surface — web-push library
-
-`web-push` (npm package) is the de-facto Node implementation of RFC 8030
-(Web Push) + RFC 8291 (Encrypted Payload) + RFC 8292 (VAPID). Adding it
-adds ONE runtime dep (~75KB minified). Alternative `@aws-sdk/client-sns`
-+ AWS Pinpoint Push rejected — it's a managed-service detour we don't need
-and adds a third-party network hop.
-
-### Sibling surface (BCS-DEF-1-TG / BCS-DEF-4-TG)
-
-Push does NOT reuse any Telegram-specific helper. BUT it copies the SAME
-plan structure (env-contract soft-skip; per-channel scheduler branch;
-master-switch + env-presence indicators in admin UI).
-
----
-
-## 1.2 Critical-path inventory
-
-Per `docs/critical-path.md`:
-- **`lib/admin/operator-settings.ts`** — on critical path. 1 new key (additive).
-- **`scripts/learner-reminder-dispatch.mjs`** — NOT on critical path.
-- **`app/layout.tsx`** — on critical path (root layout). This plan adds a
-  `<link rel="manifest">` + a small client-side service-worker registration
-  script. Touches NEED careful paranoia (root layout shipped to every page).
-
----
-
-## 2. Design
-
-### 2.1 VAPID key generation + storage
-
-**VAPID (RFC 8292)** keys are a single (public, private) ECDSA P-256 keypair
-identifying the application to push services (FCM, Mozilla, Apple). They are
-NOT per-user — one keypair per deployment.
-
-**Generation** (one-off, on first deploy of this PR — operator runs once):
-```
-npx web-push generate-vapid-keys
-```
-Output (example):
-```
-Public Key:  BNb...85-char-base64url
-Private Key: kP3...43-char-base64url
+```bash
+rg -nl --type ts -t mjs 'LEARNER_REMINDERS|learner_reminder_dispatches|TELEGRAM_BOT_TOKEN' lib scripts app
 ```
 
-**Storage** — `/etc/levelchannel/env.d/push.env` (mode 0640 root:levelchannel,
-parity with `/etc/levelchannel/env.d/telegram-alerts.env`):
-```
-PUSH_VAPID_PUBLIC_KEY=BNb...
-PUSH_VAPID_PRIVATE_KEY=kP3...
-PUSH_VAPID_SUBJECT=mailto:ops@levelchannel.ru
-```
+### Reminder scheduler (shipped)
+- `migrations/0064_learner_reminder_dispatches.sql` — table with `channel text not null check (channel in ('email', 'telegram'))` + `lrd_slot_channel_unique`. **Disposition: extend** — new mig 0108 widens CHECK to add `'push'` + adds `'no_push_subscription'` + `'push_helper_not_shipped'` to `skipped_reason` CHECK. (Round-6 WARN 3: unified taxonomy uses generic `'send_failed'` for the send-failure case; `'no_push_subscription'` covers zero-subs steady-state.)
+- `scripts/learner-reminder-dispatch.mjs` (731 lines) — main scheduler. **Disposition: extend** — add `await runPushBranch(client, slot)` mirroring the existing telegram branch (`telegramHelperResolved` lazy-import pattern).
+- `scripts/lib/operator-settings.mjs` — .mjs mirror of `lib/admin/operator-settings.ts`. **Disposition: extend** — both files gain `LEARNER_REMINDERS_PUSH_ENABLED` entry.
+- `lib/admin/operator-settings.ts:307-325` — operator setting schema with existing `LEARNER_REMINDERS_*` entries. **Disposition: extend**.
 
-**`PUSH_VAPID_SUBJECT`** is required by VAPID — a `mailto:` or `https:` URL
-identifying the application contact. Push services use it for abuse reports.
-Plan picks `mailto:ops@levelchannel.ru` (operator-controlled, no PII).
+### Operator dashboard (shipped)
+- `app/admin/(gated)/settings/alerts/page.tsx:192-200` — learner-reminders scheduler card (master switch + window + rate-limit + recent dispatches summary). **Disposition: extend** — add Push row beneath email/telegram. NO new `/admin/settings/reminders` page (round-1 BLOCKER 2 closure).
 
-**Rotation** is HEAVY — rotating the keypair invalidates ALL existing
-subscriptions (browser stores `applicationServerKey` at subscription time
-and rejects mismatched VAPID signatures). Operator runbook documents this
-as "rotate only on compromise; expect all learners to re-subscribe".
+### Cabinet learner UI (shipped)
+- `app/cabinet/profile/page.tsx:7` — imports `LearnerTelegramBinding` from `components/cabinet/learner-telegram-binding`. **Disposition: extend** — add `LearnerPushSubscription` section beneath telegram binding.
 
-**Public key exposure** — `PUSH_VAPID_PUBLIC_KEY` is rendered into the
-client bundle (the browser's `subscribe()` call requires it). Public is by
-design; private is server-only. Pattern: a server-only Route Handler
-`GET /api/push/vapid-public-key` returns the public key as text/plain; the
-cabinet client fetches it (instead of inlining into the bundle — avoids
-hard-coding a deploy-time secret into Next.js build output).
+### Canonical-origin contract (shipped)
+- `lib/api/origin.ts::resolveCanonicalOrigin` — env-first with prod fail-closed (PR #539). **Disposition: USE** for SW scope + deep links in push payload (round-1 BLOCKER 5 closure).
+- `lib/payments/config.ts::paymentConfig.siteUrl` — module-load capture for email/template surfaces. **Disposition: USE** in `.mjs` template via `process.env.NEXT_PUBLIC_SITE_URL` (round-1 BLOCKER 5 closure).
 
-### 2.2 Env contract — soft-skip, not boot-fail
+### Env file rendering (shipped)
+- `scripts/activate-prod-ops.sh` — renders a single env file consumed by both Next.js (PM2/systemd) AND `levelchannel-learner-reminder-dispatch.service`. **Disposition: extend** — add `PUSH_VAPID_PUBLIC_KEY` + `PUSH_VAPID_PRIVATE_KEY` + `PUSH_VAPID_SUBJECT` + `LEARNER_REMINDERS_PUSH_ENABLED` to the single env render (round-1 BLOCKER 1 closure). No separate `push.env`.
 
-```js
-const PUSH_VAPID_PUBLIC_KEY = process.env.PUSH_VAPID_PUBLIC_KEY?.trim() || ''
-const PUSH_VAPID_PRIVATE_KEY = process.env.PUSH_VAPID_PRIVATE_KEY?.trim() || ''
-const PUSH_VAPID_SUBJECT = process.env.PUSH_VAPID_SUBJECT?.trim() || ''
-```
+### Migration-pending degrade pattern (shipped)
+- `lib/db/errors.ts::isUndefinedTableError` / `isUndefinedColumnError` — used by admin reads to return `{ migrationPending: true }` on 42P01/42703 before the new mig has been applied (BCS-DEF-1-TG pattern). **Disposition: USE** in all new admin/cabinet reads (round-1 BLOCKER 7 closure).
 
-**Soft-skip semantics** (parity with BCS-DEF-1-TG §2.2 / BCS-DEF-4-TG §2.2):
-- `LEARNER_PUSH_ENABLED=0` (default) → scheduler skips Push branch; `/api/push/vapid-public-key` returns 503; cabinet section hidden.
-- `LEARNER_PUSH_ENABLED=1` AND any VAPID env empty → scheduler records `config_missing`; cabinet section renders a notice "Канал временно недоступен"; other channels unaffected.
+### TS/MJS boundary
+- `scripts/lib/learner-reminder-template.mjs` — .mjs template imported by dispatcher.
+- `lib/email/templates/learner-lesson-reminder.ts` — .ts template imported by app code.
+- Drift: in this codebase the email template is parallel-implemented (mjs + ts). **Disposition: same pattern** — `scripts/lib/learner-push-template.mjs` (dispatcher) + `scripts/lib/web-push.mjs` (web-push wrapper). App code (subscribe/unsubscribe routes) imports the same `.mjs` via Next.js Node-mode ESM (works in API routes; verified via PR #517 + #534 pattern). NO `lib/notifications/*.ts` parallel — single .mjs source of truth (round-1 BLOCKER 6 closure).
 
-### 2.3 Subscription per learner — `learner_push_subscriptions`
+### Web Push semantics
+- Web Push subscription = `{ endpoint, p256dh, auth }`. Endpoint is browser-generated URL containing an opaque token; same endpoint for the SAME browser-profile-application origin. If user logs out + new user logs in same browser AND new user subscribes → browser MAY return SAME endpoint (depending on SW state). Round-1 BLOCKER 4: handle this by `unsubscribed_at=now()` on the PRE-existing row before INSERTing the new account binding.
 
-Browser produces a `PushSubscription` object on `registration.pushManager.subscribe({userVisibleOnly: true, applicationServerKey})`:
-```js
-{
-  endpoint: "https://fcm.googleapis.com/fcm/send/abc-def-...",
-  expirationTime: null,
-  keys: {
-    p256dh: "BNb...88-char-base64url",  // client ECDH public key
-    auth:   "x5Y...22-char-base64url"   // 16-byte HMAC key
-  }
-}
-```
+## 3. Design
 
-**New table** `learner_push_subscriptions`:
+### 3.1 Migration 0108 — channel + skipped_reason CHECK extension + auth_audit_events.event_type widening
+
+(Round-2 INFO 6: unified taxonomy — keep generic `send_failed` for all channels; do NOT add `push_send_failed`.)
+(Round-2 BLOCKER 2: add the 5 new audit event types to the CHECK here.)
 
 ```sql
--- BCS-DEF-4-PUSH (2026-05-XX) — per-learner per-device Web Push subscriptions.
--- One row per (account_id, endpoint). Multi-device per learner supported
--- via multiple rows. Unsubscribed rows kept for audit.
--- Plan: docs/plans/bcs-def-4-push-pwa-reminders.md §2.3.
+-- BCS-DEF-4-PUSH (2026-06-06).
+-- (a) Extend learner_reminder_dispatches.channel to include 'push'.
+-- (b) Extend skipped_reason CHECK with push-specific skip values.
+-- (c) Widen auth_audit_events.event_type for push.subscription.*.
+--
+-- No data rewrites; CHECK widening only.
 
-create table if not exists learner_push_subscriptions (
-  id bigserial primary key,
-  account_id uuid not null references accounts(id) on delete cascade,
-  endpoint text not null,                      -- push service URL (FCM, Mozilla, Apple)
-  p256dh_key text not null,                    -- base64url, ~88 chars (uncompressed ECDH public key)
-  auth_key text not null,                      -- base64url, 22 chars (16 raw bytes)
-  user_agent text null,                        -- captured on subscribe (audit; truncated to 256 chars)
-  subscribed_at timestamptz not null default now(),
-  last_succeeded_at timestamptz null,          -- updated on every successful send
-  unsubscribed_at timestamptz null,
-  unsubscribe_reason text null
-    check (unsubscribe_reason is null or unsubscribe_reason in (
-      'user_revoked', 'endpoint_gone_410', 'endpoint_not_found_404',
-      'payload_too_large', 'admin_revoked', 'vapid_rotated'
-    )),
-  constraint lps_keys_format
-    check (
-      length(p256dh_key) between 80 and 100
-      and length(auth_key) between 20 and 30
-      and length(endpoint) between 16 and 1024
-    )
-);
-
--- Active subscription lookup: scheduler joins by account_id WHERE unsubscribed_at IS NULL.
-create index if not exists lps_active_by_account_idx
-  on learner_push_subscriptions (account_id)
-  where unsubscribed_at is null;
-
--- Idempotent re-subscribe: one ACTIVE row per (account, endpoint). If the
--- learner re-subscribes from the same browser (e.g. re-grants permission),
--- the endpoint stays the same; we UPDATE keys + clear unsubscribed_at.
-create unique index if not exists lps_one_active_per_endpoint_idx
-  on learner_push_subscriptions (account_id, endpoint)
-  where unsubscribed_at is null;
-```
-
-**Why store `user_agent`?** Multi-device per learner: helps cabinet UI render
-"Chrome on Linux • last delivered 2h ago" rather than opaque endpoint URLs.
-Truncated 256-char cap defends against absurd UA strings; treated as
-display-only (NO trust signals derived from UA).
-
-**Endpoint as part of unique-key, NOT primary key**: endpoints can be 1KB
-(`endpoint between 16 and 1024`); PG doesn't index such varlena efficiently
-as PK. Surrogate `bigserial id` PK + partial unique index is the standard
-pattern.
-
-### 2.4 Subscribe / unsubscribe API routes
-
-**`POST /api/push/subscribe`** (NEW):
-- Auth: requires authenticated learner session (`requireLearnerArchetypeAndVerified` precedent from `app/api/slots/[id]/book/route.ts:39`).
-- Body: `{endpoint, keys: {p256dh, auth}}` — exact shape of `PushSubscription.toJSON()`.
-- Validation: zod schema with length CHECKs mirroring the DB CHECKs (§2.3).
-- Rate-limit: 10 req/hour/account (`enforceRateLimit`).
-- Logic:
-  ```
-  Begin TX.
-  Look for existing (account_id, endpoint) row.
-  If exists and unsubscribed_at IS NULL → UPDATE keys + last_succeeded_at=null; commit; return {ok, status: 'refreshed'}.
-  If exists and unsubscribed_at IS NOT NULL → UPDATE clear unsubscribed_at + keys; commit; return {ok, status: 'reactivated'}.
-  Else → INSERT new row; commit; return {ok, status: 'subscribed'}.
-  ```
-
-**`POST /api/push/unsubscribe`** (NEW):
-- Auth: same.
-- Body: `{endpoint}`.
-- Logic: UPDATE matching row SET `unsubscribed_at=now(), unsubscribe_reason='user_revoked'` WHERE `account_id=$session.id AND endpoint=$body.endpoint AND unsubscribed_at IS NULL`.
-- Returns `{ok}` regardless of row count (idempotent).
-- Browser also calls `subscription.unsubscribe()` client-side — we don't trust that, the server-side row is the source of truth.
-
-**`GET /api/push/vapid-public-key`** (NEW):
-- Public route (no auth) — VAPID public key is intentionally public.
-- Returns `text/plain` body with `PUSH_VAPID_PUBLIC_KEY`.
-- 503 if `LEARNER_PUSH_ENABLED=0` OR env empty.
-- Cache-Control: `public, max-age=300` (5 min — operator key-rotation flips on master switch flip, cached responses tolerated).
-
-### 2.5 Service worker — `public/sw.js`
-
-**Hand-rolled, NOT generated.** Decision rationale:
-
-| Option | Pros | Cons |
-|---|---|---|
-| **`next-pwa` plugin** | Auto-injects manifest, SW, offline cache. | Wraps `next build` with its own webpack config; adds offline-caching surface area we DON'T want; touches the build pipeline (risk to autodeploy). |
-| **`@ducanh2912/next-pwa`** | Active fork of next-pwa. | Same build-pipeline coupling concern. |
-| **Hand-rolled minimal SW (CHOSEN)** | ~80 LOC, scope-limited to push event + click. No offline caching. No build-pipeline touch. Easy to audit. | Manual maintenance — but the SW is dead-simple and rarely changes. |
-
-**`public/sw.js`** content (sketch):
-
-```js
-// public/sw.js — BCS-DEF-4-PUSH learner reminders.
-// MINIMAL service worker. Push event handler + notification click handler.
-// NO offline caching. NO precache. NO background sync.
-// Plan: docs/plans/bcs-def-4-push-pwa-reminders.md §2.5.
-
-self.addEventListener('install', (event) => {
-  // Activate immediately; no precache.
-  event.waitUntil(self.skipWaiting())
-})
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim())
-})
-
-self.addEventListener('push', (event) => {
-  if (!event.data) return
-  let payload
-  try {
-    payload = event.data.json()
-  } catch {
-    return
-  }
-  const { title, body, url, tag } = payload
-  if (!title || !body) return
-
-  event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      tag: tag || 'levelchannel-reminder',
-      icon: '/favicon.svg',
-      badge: '/favicon.svg',
-      data: { url: url || 'https://levelchannel.ru/cabinet' },
-      renotify: false,
-    })
-  )
-})
-
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close()
-  const targetUrl = event.notification.data?.url || 'https://levelchannel.ru/cabinet'
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
-      // Focus an existing tab if open on the cabinet, else open new.
-      for (const win of windows) {
-        if (win.url.includes('/cabinet') && 'focus' in win) {
-          win.focus()
-          return
-        }
-      }
-      if (self.clients.openWindow) {
-        self.clients.openWindow(targetUrl)
-      }
-    })
-  )
-})
-```
-
-**Tag behaviour**: `tag` field collapses notifications with the same tag.
-Default tag `levelchannel-reminder` means a 60-min reminder is REPLACED by
-the 30-min reminder if both arrive within visibility (rare — they're 30 min
-apart). If learner wants both as separate notifications, scheduler can emit
-unique tags `levelchannel-reminder-<slotId>-<offsetMinutes>` — **MVP picks
-the unique-tag form** to preserve all 3 reminders. See §2.7 payload shape.
-
-### 2.6 PWA manifest — `public/manifest.webmanifest`
-
-```json
-{
-  "name": "LevelChannel",
-  "short_name": "LevelChannel",
-  "description": "Языковые занятия с преподавателями",
-  "start_url": "/cabinet",
-  "scope": "/",
-  "display": "browser",
-  "background_color": "#ffffff",
-  "theme_color": "#0a0a0a",
-  "icons": [
-    {
-      "src": "/favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any"
-    }
-  ]
-}
-```
-
-`display: browser` — NOT `standalone`. Decision: this plan is push-only; we
-don't want to ship a full installable PWA experience that triggers Chrome's
-"Install app?" banner. iOS Safari requires `display: standalone` for "Add to
-Home Screen" push to work — **iOS push is documented as best-effort for
-out-of-PWA users; documented as a follow-up** (`BCS-DEF-4-PUSH-IOS` §10).
-
-**Why `start_url=/cabinet`** — most push interactions deep-link to
-notification-context (a specific slot view), but if Chrome treats this as a
-home-screen-installable app, the default landing is the cabinet.
-
-`app/layout.tsx` head adds:
-```html
-<link rel="manifest" href="/manifest.webmanifest" />
-<meta name="theme-color" content="#0a0a0a" />
-```
-
-### 2.7 Push payload shape + scheduler dispatch
-
-**Payload (JSON, sent server-side via `web-push`):**
-
-```json
-{
-  "title": "Через ~60 мин — занятие на LevelChannel",
-  "body": "2026-06-01 17:00 • 60 мин\nВойти: meet.google.com/xxx",
-  "url": "https://levelchannel.ru/cabinet",
-  "tag": "lc-reminder-<slotUuid8>-<offsetMinutes>"
-}
-```
-
-**Size constraint**: Web Push services cap encrypted payload at ~4KB; our
-plaintext body is well under 200B. We don't need fragmentation.
-
-**Per-row send branch** (in `scripts/learner-reminder-dispatch.mjs`):
-
-```js
-} else if (row.channel === 'push') {
-  // Look up ALL active subscriptions for this learner.
-  const subs = await pool.query(
-    `SELECT id, endpoint, p256dh_key, auth_key
-       FROM learner_push_subscriptions
-      WHERE account_id = $1 AND unsubscribed_at IS NULL`,
-    [row.account_id]
-  )
-  if (!subs.rowCount) {
-    await markSkipped(row.id, 'no_push_subscription')
-    continue
-  }
-  const payload = JSON.stringify(buildLearnerReminderPushPayload({
-    offsetMinutes: row.offset_minutes,
-    slot: { id, startAt, durationMinutes, zoomUrl, timezone },
-  }))
-  let anySucceeded = false
-  let lastError = null
-  for (const sub of subs.rows) {
-    const result = await sendWebPush({
-      endpoint: sub.endpoint,
-      keys: { p256dh: sub.p256dh_key, auth: sub.auth_key },
-      payload,
-      vapid: { publicKey: PUSH_VAPID_PUBLIC_KEY, privateKey: PUSH_VAPID_PRIVATE_KEY, subject: PUSH_VAPID_SUBJECT },
-    })
-    if (result.ok) {
-      anySucceeded = true
-      await pool.query(
-        `UPDATE learner_push_subscriptions SET last_succeeded_at=now() WHERE id=$1`,
-        [sub.id]
-      )
-    } else if (result.statusCode === 410 || result.statusCode === 404) {
-      // Endpoint dead — auto-unsubscribe THIS subscription only.
-      await pool.query(
-        `UPDATE learner_push_subscriptions
-           SET unsubscribed_at=now(),
-               unsubscribe_reason=$2
-         WHERE id=$1`,
-        [sub.id, result.statusCode === 410 ? 'endpoint_gone_410' : 'endpoint_not_found_404']
-      )
-    } else {
-      lastError = result.error
-      // Transient (5xx, network) — don't unsub; will retry on next tick if any-subscription failed.
-    }
-  }
-  if (anySucceeded) {
-    await markSent(row.id, /* alert_email_id stores: */ 'multi-device')
-  } else if (subs.rowCount > 0 && lastError) {
-    // All endpoints transient-failed — retry next tick.
-    await markRetry(row.id, lastError)
-  } else {
-    // All endpoints 410/404'd — mark skipped (queue-level).
-    await markSkipped(row.id, 'no_push_subscription')
-  }
-}
-```
-
-**`sendWebPush()`** is a thin wrapper around `web-push` lib's
-`webpush.sendNotification(subscription, payload, options)`. Returns
-`{ok: true, statusCode}` | `{ok: false, statusCode?, error}`. The
-fan-out-then-aggregate pattern means ONE queue row covers all device
-deliveries — operator sees per-(slot, offset, channel='push') status, not
-per-device. Sub-row visibility deferred (§10).
-
-### 2.7.1 Reconcile-enqueue extension
-
-Same shape as BCS-DEF-4-TG §2.5:
-
-```sql
-INSERT INTO learner_reminder_dispatches ...
-  CROSS JOIN LATERAL (
-    SELECT unnest(
-      array_remove(
-        array[
-          'email',
-          CASE WHEN $2::bool AND EXISTS (
-            SELECT 1 FROM learner_telegram_subscriptions lts
-             WHERE lts.account_id = s.learner_account_id
-               AND lts.unsubscribed_at IS NULL
-          ) THEN 'telegram' END,
-          CASE WHEN $3::bool AND EXISTS (
-            SELECT 1 FROM learner_push_subscriptions lps
-             WHERE lps.account_id = s.learner_account_id
-               AND lps.unsubscribed_at IS NULL
-          ) THEN 'push' END
-        ],
-        NULL
-      )
-    ) AS channel
-  ) c
-```
-
-Three params: `$1` default offsets, `$2` `LEARNER_TELEGRAM_ENABLED`, `$3` `LEARNER_PUSH_ENABLED`.
-
-**Coordination with BCS-DEF-4-TG**: if BCS-DEF-4-TG lands first, this PR
-just extends the existing 2-channel reconcile to 3. If BCS-DEF-4-PUSH lands
-first, the `lts` join is conditionally absent (depends on whether TG
-migration has landed) — RISK-9 covers the ordering.
-
-### 2.8 CHECK extensions
-
-```sql
--- migrations/0066 (or 0067 — depending on BCS-DEF-4-TG ordering) —
--- extend channel CHECK to include 'push'.
 alter table learner_reminder_dispatches
-  drop constraint if exists learner_reminder_dispatches_channel_check;
+  drop constraint learner_reminder_dispatches_channel_check;
 alter table learner_reminder_dispatches
   add constraint learner_reminder_dispatches_channel_check
   check (channel in ('email', 'telegram', 'push'));
 
 alter table learner_reminder_dispatches
-  drop constraint if exists learner_reminder_dispatches_skipped_reason_check;
+  drop constraint learner_reminder_dispatches_skipped_reason_check;
 alter table learner_reminder_dispatches
   add constraint learner_reminder_dispatches_skipped_reason_check
   check (skipped_reason is null or skipped_reason in (
-    'slot_no_longer_booked', 'learner_opted_out', 'email_missing',
-    'past_send_by', 'channel_disabled_by_operator',
-    'no_telegram_binding', 'bot_blocked_by_user',
-    'no_push_subscription'
+    'slot_no_longer_booked', 'email_missing', 'past_send_by',
+    'send_failed',
+    'no_telegram_binding', 'telegram_helper_not_shipped',
+    'no_push_subscription', 'push_helper_not_shipped'
+  ));
+
+-- Widen auth_audit_events for the 5 push event types.
+-- Full enumeration of pre-existing + new (mirroring T3 mig 0102 pattern).
+alter table auth_audit_events
+  drop constraint auth_audit_events_event_type_check;
+alter table auth_audit_events
+  add constraint auth_audit_events_event_type_check
+  check (event_type in (
+    -- pre-existing (verbatim from mig 0102:263-287)
+    'auth.login.success', 'auth.login.failed',
+    'auth.register.created', 'auth.reset.requested', 'auth.reset.confirmed',
+    'auth.verify.success', 'auth.session.revoked',
+    'auth.teacher.self_registered',
+    'auth.invite.created', 'auth.invite.revoked', 'auth.invite.redeemed',
+    'auth.teacher.saas_offer_accepted', 'auth.teacher.saas_offer_backfilled',
+    'auth.onboarding.reset', 'auth.billing.method_changed',
+    'auth.tariff_access.granted', 'auth.tariff_access.revoked',
+    'auth.package_access.granted', 'auth.package_access.revoked',
+    -- BCS-DEF-4-PUSH additions:
+    'push.subscription.created',
+    'push.subscription.reassigned',
+    'push.subscription.revived',
+    'push.subscription.unsubscribed.user',
+    'push.subscription.unsubscribed.auto'
   ));
 ```
 
-If BCS-DEF-4-TG hasn't landed, the value set is `('email', 'push')` only —
-RISK-9 documents the conditional migration form.
+### 3.2 Migration 0109 — `learner_push_subscriptions`
 
-### 2.9 Cabinet UI — `/cabinet/settings/reminders` extension
+```sql
+-- BCS-DEF-4-PUSH (2026-06-06) — per-learner per-device Web Push subscriptions.
+-- One row per (active endpoint). Multi-device per learner via multiple
+-- active rows. Cross-account endpoint reassignment: when a new account
+-- subscribes with an endpoint already bound to a DIFFERENT account, the
+-- existing row is flipped to unsubscribed_at=now() FIRST, then INSERT
+-- proceeds (closes the BLOCKER 4 leak class).
+--
+-- Plan: docs/plans/bcs-def-4-push-pwa-reminders.md
 
-NEW section "Push-уведомления" below the Telegram section (or below email if
-TG not landed). UI states (driven by `Notification.permission` + server-side
-subscription state):
+create table if not exists learner_push_subscriptions (
+  id bigserial primary key,
+  account_id uuid not null references accounts(id) on delete restrict,
+  endpoint text not null,
+  p256dh_b64url text not null,
+  auth_b64url text not null,
+  user_agent text null,
+  unsubscribed_at timestamptz null,
+  last_used_at timestamptz null,
+  last_status_code integer null,
+  last_error text null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
 
-| Browser state | Server state | UI |
-|---|---|---|
-| `Notification` undefined (older browser) | any | "Ваш браузер не поддерживает push-уведомления. Используйте email или Telegram." |
-| `Notification.permission === 'denied'` | any | "Push заблокированы в настройках браузера. Разблокируйте в иконке замка слева от адреса." |
-| `Notification.permission === 'default'`, no subscription | enabled | "[Подписаться на push]" button → triggers `Notification.requestPermission()` → on grant, calls `pushManager.subscribe()` → POSTs to `/api/push/subscribe`. |
-| `Notification.permission === 'granted'`, subscription present | enabled | "Push включены: Chrome on Linux • Safari on iOS" (list of active devices with unsub button per device). |
-| `LEARNER_PUSH_ENABLED=0` | — | Section hidden entirely. |
+-- Active endpoint is globally unique (Web Push endpoint is browser-bound
+-- URL; reuse across accounts means stale account binding — handle via
+-- reassign-then-insert at app layer).
+create unique index if not exists learner_push_subs_endpoint_active_unique
+  on learner_push_subscriptions (endpoint)
+  where unsubscribed_at is null;
 
-**Server Action / client component split**: subscription registration MUST
-run client-side (browser is the only one with `Notification` + `navigator.serviceWorker`).
-The flow:
+-- Hot path: scheduler iterates active subs per account.
+create index if not exists learner_push_subs_account_active_idx
+  on learner_push_subscriptions (account_id)
+  where unsubscribed_at is null;
 
-1. Client component `<PushSubscribeButton>` mounted under the section.
-2. On click → `navigator.serviceWorker.register('/sw.js', {scope: '/'})`.
-3. `Notification.requestPermission()`.
-4. `registration.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: vapidPublicKey})`.
-5. POST `subscription.toJSON()` to `/api/push/subscribe`.
-6. On success → revalidate the section via Server Action.
+create index if not exists learner_push_subs_created_at_idx
+  on learner_push_subscriptions (created_at desc);
 
-`applicationServerKey` is the URL-base64-decoded VAPID public key (a Uint8Array).
-The cabinet page fetches `/api/push/vapid-public-key` server-side AND inlines
-it as a hidden `<input>` value (or `<script>` data attribute) to avoid a
-client-side network call.
-
-### 2.10 Admin UI extension — `/admin/settings/reminders`
-
-NEW row "Push канал":
-- **Master switch** — `LEARNER_PUSH_ENABLED`.
-- **VAPID env presence** — `PUSH_VAPID_PUBLIC_KEY` set? `PUSH_VAPID_PRIVATE_KEY` set? `PUSH_VAPID_SUBJECT` set? (booleans only).
-- **Subject value** — rendered (it's not secret; it's an operator email).
-- **Active subscriptions count** — across all learners.
-- **Recent unsubscribes (last 24h)** — split by reason (`user_revoked`, `endpoint_gone_410`, etc.).
-- **Recent failures (last 1h)** — count of `attempts > 0` push rows.
-
-### 2.11 Migration ordering
-
-If both BCS-DEF-4-TG and BCS-DEF-4-PUSH ship:
-
-- **Scenario A — TG lands first.** This plan picks the next free migration
-  numbers: `0066_learner_push_subscriptions.sql`, `0067_learner_reminder_dispatches_push_channel.sql`.
-- **Scenario B — PUSH lands first.** This plan picks `0063_learner_push_subscriptions.sql`,
-  `0064_learner_reminder_dispatches_push_channel.sql`. TG plan re-rebases on
-  next numbers.
-- **Scenario C — both PRs open simultaneously.** Whichever lands first uses
-  0063/0064; the second uses 0065/0066 (or 0066/0067 depending on TG's count).
-  The plan-doc claims numbers loosely; numbering finalized at implementation
-  time.
-
-**The CHECK ALTER is the only conflict point.** If both PRs alter the
-`channel` CHECK in the same migration ordinal range, the second to merge
-re-bases by widening the existing CHECK (which is idempotent given the
-`drop constraint if exists`). §6 RISK-9 details.
-
----
-
-## 3. Tests
-
-### 3.1 Unit — payload builder
-
-`tests/notifications/learner-reminder-push.test.ts`:
-- `buildLearnerReminderPushPayload(offsetMinutes=60, slot)` → `{title, body, url, tag}` with title containing `~60 мин`.
-- Body ≤200 chars on worst case.
-- Tag pattern `lc-reminder-<slotId8>-<offset>`.
-- Url uses `https://levelchannel.ru` (or `NEXT_PUBLIC_SITE_URL`).
-- Zoom-url omitted from body when null.
-
-### 3.2 Integration — VAPID key endpoint
-
-`tests/integration/api/push-vapid-public-key.test.ts`:
-- Master switch on + env set → 200 text/plain with key.
-- Master switch off → 503.
-- Env empty → 503.
-- Cache-Control header set.
-
-### 3.3 Integration — subscribe / unsubscribe
-
-`tests/integration/api/push-subscribe.test.ts`:
-- POST as unauthenticated → 401.
-- POST as teacher → 403.
-- POST as learner with valid body → row inserted; status='subscribed'.
-- POST same body again → row updated; status='refreshed'.
-- POST after `unsubscribe` → row reactivated; status='reactivated'.
-- POST with malformed body (missing `keys.p256dh`) → 400.
-- POST with endpoint length 2000 → 400 (CHECK violation surfaced via zod).
-- 11 POSTs in 1 hour → 11th rate-limited.
-
-`tests/integration/api/push-unsubscribe.test.ts`:
-- POST as learner with matching endpoint → row UPDATEd; reason='user_revoked'.
-- POST as learner with no matching row → 200 (idempotent).
-- POST as different learner with another's endpoint → 200 but no row updated (auth scopes to session).
-
-### 3.4 Integration — scheduler dispatch
-
-`tests/integration/scripts/learner-reminder-dispatch-push.test.ts`:
-- Master switch off → no `channel='push'` rows enqueued.
-- Enabled + learner with 1 active subscription → row enqueued; mocked `web-push` 201 → marked sent.
-- Enabled + learner with 2 subscriptions → ONE queue row + 2 fan-out sends; if 1 succeeds + 1 transient-fails → row marked sent.
-- Mocked 410 Gone → matching subscription auto-unsubscribed; row marked sent if other subs succeeded.
-- All 2 subs 410'd → row → `skipped_reason='no_push_subscription'`; subs unsubscribed.
-- Mocked transient 502 → `attempts++`; next tick retries.
-- Mid-flight unsubscribe: row pending, learner unsubscribes all → next tick → `skipped_reason='no_push_subscription'`.
-- Per-channel idempotency with `FOR UPDATE SKIP LOCKED`.
-
-### 3.5 Integration — cabinet UI
-
-`tests/integration/cabinet/reminder-push-section.test.ts`:
-- Master switch off → section absent from HTML.
-- Master switch on, no subscription → "Подписаться на push" button rendered.
-- Master switch on, 2 subscriptions → 2 device rows + per-device unsub button.
-
-(SSR-only tests; the browser flow — `requestPermission`, `subscribe()` — needs
-jsdom or playwright; deferred to a playwright spec in BCS-DEF-4-PUSH-E2E §10.)
-
-### 3.6 Integration — admin UI
-
-`tests/integration/admin/reminders-push-row.test.ts`:
-- GET as admin → "Push канал" section rendered; master switch reflects DB.
-- VAPID-env-presence indicators reflect mocked env; **regression pin** — PRIVATE key never appears in HTML.
-- POST flip master → next scheduler tick honours it.
-
-### 3.7 Migration
-
-`tests/integration/admin/learner-push-migrations.test.ts`:
-- Migrations apply clean.
-- Post-migration `INSERT ... channel='push'` ok; `'sms'` fails.
-
-### 3.8 Service worker unit (jsdom)
-
-`tests/public/sw.test.ts` (if vitest jsdom config supports it — per recent
-SAAS-INFRA-1 plan that adds jsdom):
-- Push event with valid payload → `showNotification` called with expected args.
-- Push event with malformed JSON → no notification.
-- Push event with empty payload → no notification.
-- Notificationclick → existing `/cabinet` window focused if present, else new window opened.
-
-If jsdom can't load `public/sw.js` cleanly, **fallback**: refactor SW into a
-testable pure module + thin SW shell; test the pure module.
-
-### 3.9 VAPID library smoke
-
-`tests/notifications/web-push-wrapper.test.ts`:
-- `sendWebPush({endpoint, keys, payload, vapid})` calls `web-push.sendNotification` with the expected args.
-- 201 response → `{ok: true, statusCode: 201}`.
-- 410 response → `{ok: false, statusCode: 410}`.
-- Network throw → `{ok: false, error}`.
-
----
-
-## 4. Security analysis
-
-### 4.1 VAPID private key secrecy
-
-`PUSH_VAPID_PRIVATE_KEY` is the application's signing key. Compromise allows
-attacker to send pushes from "LevelChannel" identity to any subscribed
-endpoint (the attacker still needs the endpoint URLs, which are NOT
-publicly listed — but they're sent to push services per-message).
-
-**Mitigations:**
-- `/etc/levelchannel/env.d/push.env` mode 0640 root:levelchannel (parity with bot tokens).
-- NEVER logged; NEVER in error messages; NEVER in client bundle.
-- §3.6 regression-pins no-client-leak.
-- Rotation path documented (§2.1) — all subscriptions invalidate.
-
-### 4.2 Endpoint URL as a capability
-
-Each `PushSubscription.endpoint` is effectively a server-side capability
-URL: anyone with it + the VAPID key + the `auth` secret can deliver a
-notification to that device. Endpoints leak via:
-- Push service logs (we trust FCM / Mozilla / Apple).
-- Our own DB.
-- Network in flight (TLS — defended).
-
-**`learner_push_subscriptions.endpoint`** is sensitive. NOT secret-tier
-(rotation isn't critical), but exposing it to non-owners is a privacy issue
-(reveals which push service the learner uses → indirect device fingerprint).
-
-**Mitigations:**
-- `/api/push/unsubscribe` body shape: learner sends endpoint; server scopes by `account_id=$session.id` so cross-learner endpoint enumeration is impossible.
-- Admin UI does NOT render endpoint URLs (only counts).
-- Logging: endpoint truncated to first 40 chars + "..." for audit logs.
-- Backup / dump policy: same as `accounts.email` (encrypt-at-rest already in place).
-
-### 4.3 Payload encryption
-
-`web-push` library encrypts payloads per RFC 8291 (ECDH + AES-128-GCM)
-client-side keys. The push service (FCM, Mozilla, Apple) cannot read the
-payload — only the recipient browser, holding the private ECDH key and the
-auth secret, can decrypt. We trust the `web-push` lib for this. **No
-sensitive data even if FCM is compromised** (titles + bodies are
-informational, not credential-bearing).
-
-### 4.4 Notification content boundaries
-
-Same as email (BCS-DEF-4 §4.1):
-- Slot start time + zoom-url (validated https-only ≤512 chars by DB CHECK).
-- No teacher PII.
-- No payment info.
-- No tokens.
-
-### 4.5 CSRF on Server-Action subscribe / unsubscribe
-
-Next.js Server Actions are CSRF-protected by default (Origin header check).
-The POST routes use the same `requireLearnerArchetypeAndVerified` precedent.
-Add explicit Origin check on `/api/push/subscribe` if the existing helper
-doesn't already include it (audit at impl time).
-
-### 4.6 Service worker scope
-
-`scope: '/'` means the SW intercepts all paths. We DO NOT add `fetch`
-handlers — the SW is purely `push` + `notificationclick`. **Defensive**:
-unit test pins that the SW source has no `addEventListener('fetch', ...)`
-line (regression-pin against future drift to a full PWA offline cache).
-
-### 4.7 Browser-side `userVisibleOnly: true`
-
-We MUST pass `userVisibleOnly: true` to `pushManager.subscribe`. Required
-by Chrome / Mozilla — disallows silent push (which is treated as a tracking
-risk). Without it, the call rejects. Pinned in §3.5 client-side smoke.
-
-### 4.8 Multi-device privacy
-
-A learner with 3 devices has 3 rows. Listing them in cabinet UI reveals
-device count + UA strings to the learner themselves (no cross-account
-leakage). **Accepted** — operator-side observability through admin counts
-only (no per-learner device list).
-
-### 4.9 Migration ACCESS EXCLUSIVE
-
-- New table — no locks on existing tables.
-- CHECK alter on `learner_reminder_dispatches` — brief ACCESS EXCLUSIVE; table is small under retention. Same risk profile as BCS-DEF-4-TG §4.7.
-
----
-
-## 5. Decomposition — single-PR epic
-
-Single PR. Files:
-
-```
-docs/plans/bcs-def-4-push-pwa-reminders.md              (NEW, this file)
-migrations/0066_learner_push_subscriptions.sql          (NEW — see §2.11 ordering caveat)
-migrations/0067_learner_reminder_dispatches_push_channel.sql  (NEW)
-package.json                                            (modified — add web-push dep)
-package-lock.json                                       (modified)
-public/manifest.webmanifest                             (NEW)
-public/sw.js                                            (NEW)
-app/layout.tsx                                          (modified — manifest link + sw registration script)
-lib/admin/operator-settings.ts                          (modified — 1 new key)
-scripts/lib/operator-settings.mjs                       (mirror)
-scripts/learner-reminder-dispatch.mjs                   (modified — per-channel push branch)
-lib/notifications/push-templates.ts                     (NEW)
-lib/notifications/web-push-wrapper.ts                   (NEW — thin web-push wrapper)
-app/api/push/subscribe/route.ts                         (NEW)
-app/api/push/unsubscribe/route.ts                       (NEW)
-app/api/push/vapid-public-key/route.ts                  (NEW)
-app/cabinet/settings/reminders/page.tsx                 (modified — Push section)
-app/cabinet/settings/reminders/push-subscribe-button.tsx (NEW client component)
-app/admin/(gated)/settings/reminders/page.tsx           (modified — Push row)
-tests/notifications/learner-reminder-push.test.ts       (NEW)
-tests/notifications/web-push-wrapper.test.ts            (NEW)
-tests/integration/api/push-vapid-public-key.test.ts     (NEW)
-tests/integration/api/push-subscribe.test.ts            (NEW)
-tests/integration/api/push-unsubscribe.test.ts          (NEW)
-tests/integration/scripts/learner-reminder-dispatch-push.test.ts (NEW)
-tests/integration/cabinet/reminder-push-section.test.ts (NEW)
-tests/integration/admin/reminders-push-row.test.ts      (NEW)
-tests/integration/admin/learner-push-migrations.test.ts (NEW)
-tests/public/sw.test.ts                                 (NEW — if jsdom supports)
-tests/admin/operator-settings.test.ts                   (modified)
-ENGINEERING_BACKLOG.md                                  (modified — strikethrough BCS-DEF-4-PUSH)
-docs/plans/bcs-def-4-learner-reminders.md               (modified — §10 cross-ref)
-ARCHITECTURE.md                                         (modified — PWA + push channel section)
+comment on table learner_push_subscriptions is
+  'BCS-DEF-4-PUSH (2026-06-06): per-(account, browser-device) Web Push '
+  'subscriptions. Active endpoint is globally UNIQUE — cross-account '
+  'reassignment handled by flipping the existing row to unsubscribed_at '
+  'before insert (anti-leak). Auto-unsubscribed by scheduler on Web Push '
+  '410 Gone / 404 Not Found.';
 ```
 
-**Estimated diff:** ~1500 LOC.
+### 3.3 VAPID env contract
 
-**Why single PR, not split:**
-- New runtime dep `web-push` couples to the dispatcher branch. Splitting deps from consumer creates a half-functional state.
-- Service worker + manifest + cabinet button are all required for any single subscribe to work end-to-end.
-- `LEARNER_PUSH_ENABLED=0` default keeps channel dormant post-merge.
+Add to the single env file rendered by `scripts/activate-prod-ops.sh`:
+```
+LEARNER_REMINDERS_PUSH_ENABLED=0
+PUSH_VAPID_PUBLIC_KEY=
+PUSH_VAPID_PRIVATE_KEY=
+PUSH_VAPID_SUBJECT=mailto:ops@levelchannel.ru
+```
+Soft-skip semantics (round-7 BLOCKER 1 unification — single contract):
+- `LEARNER_REMINDERS_PUSH_ENABLED=0` (default) → scheduler skips push branch entirely (pre-flight gate per §3.7).
+- `LEARNER_REMINDERS_PUSH_ENABLED=1` AND any VAPID env empty → scheduler ALSO skips push branch entirely via pre-flight gate per §3.7. **No row written**, no slot burned. Operator can fix env on the next minute. The CHECK constraint still ALLOWS `'push_helper_not_shipped'` for forward-compat / manual operator insertion, but the scheduler never emits it at runtime.
 
-**Critical-path:** `lib/admin/operator-settings.ts` + `app/layout.tsx` are
-critical-path. Trailer carries `Codex-Paranoia: SIGN-OFF round N/3` (one-PR
-epic; plan + wave collapsed).
+Operator generates VAPID keypair once with `npx web-push generate-vapid-keys` (documented in `OPERATIONS.md` operator notes section in this PR's doc sweep).
 
----
+### 3.4 Service worker + manifest
 
-## 6. Risks + mitigations
+- **`public/manifest.webmanifest`**: name "LevelChannel", short_name "LevelChannel", start_url `/cabinet`, display `standalone`, theme_color `#0a0c10`, background_color `#0a0c10`, icons 192/512 PNGs (use existing `favicon.svg` rasterized — operator note to generate via separate `scripts/generate-pwa-icons.mjs` ONE-OFF; PR ships PNGs in `public/icons/`).
+- **`public/sw.js`** (round-5 BLOCKER 3 — explicit shape: CLASSIC service worker, NOT module): registered as `navigator.serviceWorker.register('/sw.js', { scope: '/' })` (no `type: 'module'`). The SW uses `importScripts('/sw-lib/resolve-open-url.js')` at the top to pull in the same-origin URL resolver helper. Both files are static assets in `public/`. No bundler / build step. Listens to `push` events → `event.waitUntil(self.registration.showNotification(title, opts))`. Listens to `notificationclick` → calls `resolveOpenUrl(payload.url, self.location.origin)` (same-origin resolver from sw-lib) → `clients.openWindow(resolved)`. Notification payload: `{ title, body, url }` (no zoom_url; round-1 WARN 10 closure).
+- **`public/sw-lib/resolve-open-url.js`** (round-8 BLOCKER 4 closure — testable from jsdom): a plain script that assigns `self.resolveOpenUrl = function(url, ownOrigin) {...}` so the SW picks it up via `importScripts(...)`. Tests import via dynamic `import()` of the file as ESM (Node's ESM can load a script that mutates a sandboxed `self` and read the binding afterwards). NO `export` keyword in `sw.js` itself.
+- **`app/layout.tsx`**: add `<link rel="manifest" href="/manifest.webmanifest" />` and `<meta name="theme-color" content="#0a0c10" />` to `<head>`. Register the SW from a new client island `<ServiceWorkerRegistration />` mounted in `app/layout.tsx`. Registration scope: `/` (root) — required for cabinet routes + OAuth callback paths. Locked: root layout, NOT cabinet layout (round-1 BLOCKER 8 closure).
 
-### RISK-1 — `web-push` library audit surface
+### 3.5 Push templates (`scripts/lib/learner-push-template.mjs`)
 
-Adding a new runtime dep with ~10 transitive deps. **Mitigation**: pin exact
-version; audit transitives at impl time; verify Node 22 compat (lib's stable
-since Node 14); rely on the CSO security audit skill on next monthly cycle.
+```js
+// Push notification payload for learner lesson-start reminders.
+// Privacy-safe per round-1 WARN 10: no zoom URL, no lesson title.
+//
+// Output shape (sent as JSON in the encrypted Web Push payload):
+//   { title: string, body: string, url: string }
 
-### RISK-2 — VAPID key rotation downtime
+export function renderLearnerPushPayload({
+  windowMinutes,
+  cabinetUrl,
+}) {
+  return {
+    title: 'Скоро урок',
+    body: `Через ${windowMinutes} мин начинается ваше занятие. Откройте кабинет, чтобы подключиться.`,
+    url: cabinetUrl,
+  }
+}
+```
 
-Operator rotates keys → ALL subscriptions invalidate; all learners must
-re-subscribe. **Mitigation**: documented in runbook; rotation is a rare
-event (compromise-only); operator can pre-warn learners via in-app banner
-(out of scope MVP).
+`cabinetUrl` derived in dispatcher from `process.env.NEXT_PUBLIC_SITE_URL` (env-first, no hardcoded fallback; round-1 BLOCKER 5 closure).
 
-### RISK-3 — Service worker stuck on stale version
+### 3.6 Web-push wrapper (`scripts/lib/web-push.mjs`)
 
-Browsers cache SW aggressively. A bug fix in `sw.js` may not propagate until
-the user navigates twice. **Mitigation**: hand-rolled SW is small + simple;
-the `skipWaiting()` + `clients.claim()` calls force activation immediately
-on update detection. Worst case: a learner sees a slightly-stale notification
-behavior for one session.
+```js
+// Thin wrapper around the web-push npm lib. Handles VAPID setup, encrypted
+// payload encoding, and 410/404 detection for auto-unsubscribe.
 
-### RISK-4 — iOS Safari PWA push not supported in `display: browser`
+import webpush from 'web-push'
 
-iOS Safari (16.4+) requires the page be added to home screen (PWA mode)
-for push permission to be available. With our `display: browser` manifest,
-iOS push is effectively non-functional. **Decision**: out of scope MVP;
-cabinet UI shows "Push не поддерживаются на этом устройстве" for iOS users
-(detected via UA + `Notification` undefined). Documented as BCS-DEF-4-PUSH-IOS.
+let vapidConfigured = false
 
-### RISK-5 — `Notification.permission === 'denied'` is sticky
+export function configureVapidIfNeeded(env = process.env) {
+  if (vapidConfigured) return true
+  const publicKey = env.PUSH_VAPID_PUBLIC_KEY?.trim() ?? ''
+  const privateKey = env.PUSH_VAPID_PRIVATE_KEY?.trim() ?? ''
+  const subject = env.PUSH_VAPID_SUBJECT?.trim() ?? ''
+  if (!publicKey || !privateKey || !subject) return false
+  webpush.setVapidDetails(subject, publicKey, privateKey)
+  vapidConfigured = true
+  return true
+}
 
-If a learner denies once, the browser caches that decision; we cannot
-re-prompt. **Mitigation**: cabinet UI shows clear instructions to unblock
-in browser settings. No re-prompt loop.
+export async function sendWebPush(subscription, payload, env = process.env) {
+  if (!configureVapidIfNeeded(env)) {
+    return { ok: false, reason: 'vapid_unconfigured' }
+  }
+  try {
+    const res = await webpush.sendNotification(
+      {
+        endpoint: subscription.endpoint,
+        keys: {
+          p256dh: subscription.p256dh_b64url,
+          auth: subscription.auth_b64url,
+        },
+      },
+      JSON.stringify(payload),
+      { TTL: 60 * 30 }, // 30-min TTL — past send-by point reminder is stale.
+    )
+    return { ok: true, statusCode: res.statusCode }
+  } catch (err) {
+    const sc = err?.statusCode ?? 0
+    const isGone = sc === 410 || sc === 404
+    return {
+      ok: false,
+      reason: isGone ? 'endpoint_gone' : 'send_failed',
+      statusCode: sc,
+      error: err?.body ?? String(err?.message ?? err),
+    }
+  }
+}
+```
 
-### RISK-6 — Endpoint privacy in DB dumps
+### 3.7 Scheduler integration (`scripts/learner-reminder-dispatch.mjs`)
 
-`learner_push_subscriptions.endpoint` columns in a leaked DB dump could be
-abused (with VAPID key compromise) to spam users. **Mitigation**: §4.2 +
-the existing encrypt-at-rest policy + tight VAPID private-key controls.
+Mirror the telegram lazy-import pattern. **Pre-flight gate FIRST** (round-6 BLOCKER 2): before allocating any (slot, 'push') row, check:
+- `LEARNER_REMINDERS_PUSH_ENABLED === 1` from `resolveOperatorSettingsForProbe('learner-reminders')`.
+- VAPID env triple non-empty.
+If EITHER missing → skip the push branch entirely. NO `learner_reminder_dispatches` row inserted for `channel='push'`. The (slot, 'push') idempotency slot stays open for the next tick once misconfig is resolved — does NOT permanently burn the reminder. Mirrors telegram pre-flight pattern at `scripts/learner-reminder-dispatch.mjs:325-334`.
 
-### RISK-7 — Notification flood (3 reminders × N devices = 3N pings)
+**Rate-limit contract** (round-7 BLOCKER 2 closure): `LEARNER_REMINDERS_RATE_LIMIT_PER_TICK` continues to count `(slot, channel)` rows, not provider sends. Pushing to N devices for one slot counts as **1 unit** against the budget — same semantics as a fanned-out email send to one recipient. Rationale: the rate-limit guards against operator-side mistake (e.g. forgot to bump for high-traffic tick), not against per-device cost. Multi-device fanout is bounded by the per-account subscription count (typically 1-3 devices); the absolute send count stays within an order-of-magnitude of the current contract. Tests pin: `RATE_LIMIT_PER_TICK=3`, 5 due slots each with 4 active subs → 3 rows written, 2 skipped past_send_by; total provider sends = 12 (3 × 4) — verifies the unit is row, not send.
 
-A learner with 3 devices gets 9 notifications per slot (3 offsets × 3 devices).
-Some learners will find this annoying. **Mitigation**: cabinet UI lets them
-unsubscribe per-device. Also, the default offsets (60/30/10) are 3 distinct
-notification moments — per-device, that's 3 timestamps, not 9. Per-device
-×3-offsets is the expected behavior.
+**Inline push branch** (round-10 self-review BLOCKER 2 closure — simpler than factoring out): the push branch lives INLINE in `tick()` after the telegram branch, mirroring the existing email + telegram branches. `let sendBudget` from line 391 stays as-is; the push branch mutates it directly in the same lexical scope. No `runPushBranch(...)` helper, no `budgetRef` wrapper.
 
-### RISK-8 — Mass-unsubscribe on VAPID misconfig
+Per-slot push flow (round-10 self-review BLOCKER 1 closure — mirrors shipped CLAIM-then-gate-then-budget pattern at `scripts/learner-reminder-dispatch.mjs:419-460`, NOT pre-claim budget check):
 
-If VAPID keys change accidentally (bad env reload), `web-push.sendNotification`
-returns 401 from the push service. **Decision**: 401 / 403 from push services
-is NOT auto-unsubscribe — only 410 / 404. Transient-treat 401/403 as retry-able
-(attempts++); operator notices via admin UI "Recent failures" count spike.
+1. **CLAIM FIRST**. Call `attemptInsertDispatchRow(pool, slot, 'push')` (INSERT ... ON CONFLICT (slot_id, channel) DO NOTHING RETURNING id). If 0 rows → another tick / branch won, return without touching budget.
+2. **Send-time recheck** (round-9 BLOCKER 2 closure; matches `reFetchAndGate` at line 439). Re-fetch slot: `SELECT cancelled_at, learner_account_id, start_at FROM lesson_slots WHERE id=$1`. If cancelled OR `learner_account_id` changed OR `start_at < now() - past_send_by_minutes` window → finalize row `status='skipped', skipped_reason='slot_no_longer_booked'|'past_send_by'`; **DO NOT consume budget** (matches comment at line 437-438: "Skip-at-gate finalizations do not consume sendBudget"). Return.
+3. **Budget check** (round-10 BLOCKER 1 — shipped pattern). If `budgetRef.remaining <= 0` → finalize row `status='skipped', skipped_reason='past_send_by'`, increment `stats.sends_overflowed_rate_limit`. Return. (This burns the slot, consistent with email branch at line 454-458.)
+4. **Decrement budget**: `budgetRef.remaining -= 1`. The decrement is unconditional once we pass step 3, even if step 6 (fanout) emits zero provider sends. Rationale: 1 (slot, push) row consumes 1 budget unit, regardless of device count — rate-limit invariant per round-7 BLOCKER 2.
+5. **SELECT all active subs** for `account_id`: `SELECT id, endpoint, p256dh_b64url, auth_b64url FROM learner_push_subscriptions WHERE account_id = $1 AND unsubscribed_at IS NULL ORDER BY id ASC`. (Round-8 cap means ≤ 10 rows.)
+6. **If 0 active subs**: finalize `status='skipped', skipped_reason='no_push_subscription'`. Return. (Legitimate steady-state per round-6 BLOCKER 2 — not a misconfig.)
+7. **Fan out** to each subscription: call `sendWebPush(sub, payload, process.env)`.
+   - On `ok`: UPDATE sub `last_used_at=now(), last_status_code=res.statusCode`.
+   - On `reason='endpoint_gone'` (410/404): UPDATE sub `unsubscribed_at=now(), last_status_code, last_error`. Emit `push.subscription.unsubscribed.auto` audit row via `scripts/lib/push-events.mjs::recordPushSubscriptionUnsubscribedAuto`.
+   - On `reason='send_failed'`: UPDATE sub `last_status_code, last_error`. (Sub stays active; transient failure.)
+8. **Final row outcome**: if ≥ 1 sub returned `ok` → row `status='sent', sent_at=now()`. Else (all failed/gone) → row `status='skipped', skipped_reason='send_failed', last_error=<first failure summary>`. Note: `'push_helper_not_shipped'` is CHECK-allowed for forward-compat but the scheduler never emits it at runtime (pre-flight gate filters misconfig before allocation).
 
-### RISK-9 — Migration ordinal collision with BCS-DEF-4-TG
+NO retry semantics. One-shot per slot consistent with email + telegram (round-1 BLOCKER 3 closure: keep shipped contract).
 
-Both plans propose adjacent migration numbers. **Mitigation**: §2.11 — the
-plan-doc claims numbers loosely; whichever PR lands first uses 0063/0064/0065
-(TG) or 0063/0064 (PUSH); the second re-bases. The CHECK ALTER uses
-`drop constraint if exists` so it's idempotent. Both PRs documented as
-mutually-rebasable.
+### 3.8 API routes
 
-### RISK-10 — Service worker registration timing in `app/layout.tsx`
+#### `GET /api/push/vapid-public-key/route.ts`
+- Public endpoint; returns `text/plain` with the VAPID public key.
+- 503 + body `vapid_unconfigured` if env unset.
+- 503 + body `push_disabled` if `const setting = await resolveOperatorSetting('LEARNER_REMINDERS_PUSH_ENABLED'); if (setting.dbErrored || setting.value !== 1)` (round-5+6 BLOCKER 1: `kind:'int'` so `.value` is `number`. Round-9 WARN 3: also fail-closed on `dbErrored` so DB blips can't accidentally re-enable channel when operator flipped OFF; same pattern as `lib/auth/guards.ts:312` SAAS_OFFER_GATE.) (round-1 v2 BLOCKER 1 closure: route consults the SAME DB-row→env→default contract as `lib/admin/operator-settings.ts`. Operator flip in `/admin/settings/alerts` immediately enables the route).
 
-Registering the SW in the root layout means EVERY page load triggers it,
-including the public landing page. **Decision**: the registration script
-is conditional — only fires when `navigator.serviceWorker` exists AND
-when the page is `/cabinet/*` OR the user is authenticated. The
-registration is deferred via a small client component
-`<ServiceWorkerRegistrar>` mounted in the cabinet layout, NOT root layout.
-**Revised plan**: SW registration lives in `app/cabinet/layout.tsx`, NOT
-`app/layout.tsx`. Only the `<link rel="manifest">` goes in root layout
-(PWA-install detection works there).
-
-### RISK-11 — Critical-path drift on `app/layout.tsx`
-
-Only `<link rel="manifest">` + `<meta name="theme-color">` are added to
-root layout. Both are static HTML head elements; no JS, no logic, no
-server-side computation. Critical-path-touched but low-risk.
-
----
-
-## 7. Acceptance criteria
-
-The PR ships when:
-- Migrations apply clean on a fresh test DB.
-- `npm install` resolves `web-push` cleanly.
-- `npm run test:run` green.
-- `npm run test:integration` green (10 new test files).
-- `npm run build` green (including SW + manifest serving as static).
-- Service worker accessible at `https://prod/sw.js` returning 200 + correct MIME type.
-- `/codex-paranoia plan` SIGN-OFF on this file (round N/3).
-- `/codex-paranoia wave` SIGN-OFF on the implementation diff (round N/3).
-- PR commit body trailer:
+#### `POST /api/push/subscribe/route.ts`
+- **Master-switch gate FIRST** (round-4 BLOCKER 1): if `const setting = await resolveOperatorSetting('LEARNER_REMINDERS_PUSH_ENABLED'); if (setting.dbErrored || setting.value !== 1)` (round-5+6 BLOCKER 1: `kind:'int'` so `.value` is `number`. Round-9 WARN 3: also fail-closed on `dbErrored` so DB blips can't accidentally re-enable channel when operator flipped OFF; same pattern as `lib/auth/guards.ts:312` SAAS_OFFER_GATE.) OR VAPID env triple unset → return 503 `{error: 'push_disabled'}`. Same gate as vapid-public-key route. Mutations off the moment operator/env flips OFF.
+- `requireLearnerArchetypeAndVerified` (round-1 v2 BLOCKER 2 closure) + `enforceTrustedBrowserOrigin` + `enforceAccountRateLimit('push:subscribe', 30, 60_000)`.
+- Body: `{ endpoint: string, p256dh: string, auth: string, userAgent?: string }`.
+- **Endpoint validation** (round-1 v2 BLOCKER 3 + round-3 BLOCKER 1 closure): parse `endpoint` as URL; protocol MUST be `https:`; (hostname + pathname prefix) MUST match the exact allowlist via shared helper `lib/notifications/push-provider-allowlist.ts::isAllowedPushEndpoint(url)`:
+  ```ts
+  // Exact host + path prefix per provider — tighter than suffix regex to
+  // block attacker.googleapis.com / attacker.windows.com etc.
+  const ALLOWED_PUSH_ENDPOINTS: Array<{ host: string; pathPrefix: string }> = [
+    // FCM (Chrome / Edge / Android)
+    { host: 'fcm.googleapis.com', pathPrefix: '/fcm/send/' },
+    // Firefox Push Service
+    { host: 'updates.push.services.mozilla.com', pathPrefix: '/wpush/' },
+    // Safari 16.4+
+    { host: 'web.push.apple.com', pathPrefix: '/' },
+  ]
   ```
-  Codex-Paranoia: SIGN-OFF round N/3 (one-PR epic; plan + wave collapsed)
-  Critical-Path-Touched: lib/admin/operator-settings.ts, app/layout.tsx
-  Skill-Used: /codex-paranoia plan + /codex-paranoia wave
-  ```
-- ENGINEERING_BACKLOG.md strikethrough BCS-DEF-4-PUSH.
+  (Round-3 BLOCKER 1: dropped WNS — deprecated Edge legacy. Tightened googleapis.com to literal `fcm.googleapis.com` + path prefix; mozilla.com to literal `updates.push.services.mozilla.com` + path prefix; apple.com to literal `web.push.apple.com` exact host.)
+  Reject any other host/path with 400 `invalid_endpoint`.
+- p256dh + auth: base64url-encoded; validate via regex `/^[A-Za-z0-9_-]+={0,2}$/` and length bounds (p256dh ≥ 80 chars, auth ≥ 20).
+- **Transaction** (concurrent-safe per round-2 BLOCKER 1):
+  1. Acquire `pg_advisory_xact_lock(hashtextextended('push_sub:' || endpoint, 0))` — serialises all writers contending for the same endpoint URL.
+  2. SELECT existing active sub for the endpoint URL (regardless of account).
+  3. If exists AND `account_id != auth.account.id`: UPDATE that row `unsubscribed_at=now()`, emit audit event `push.subscription.reassigned`.
+  4. If exists AND same account: **UPDATE the existing row's `p256dh_b64url`/`auth_b64url`/`user_agent`/`updated_at`** (round-8 BLOCKER 2 closure — browser may rotate keys for same endpoint; same-account re-subscribe must refresh crypto material). Return 200 with that row's id (no audit event — it's a key refresh, not a new subscription).
+  4a. **Cap enforcement** (round-8 BLOCKER 1): count active subs for `account_id`. If `count >= MAX_ACTIVE_PUSH_SUBSCRIPTIONS_PER_ACCOUNT (10)` AND this insert would create the 11th: SELECT MIN(id) active sub for the account → flip its `unsubscribed_at=now()` + emit `push.subscription.unsubscribed.auto` (payload reason='cap_reached'). Proceed to insert.
+  5. SELECT most-recent ANY-state row for `(account_id, endpoint) ORDER BY id DESC LIMIT 1`. If exists AND `unsubscribed_at IS NOT NULL`: UPDATE that row `unsubscribed_at=null, p256dh_b64url=$2, auth_b64url=$3, user_agent=$4, updated_at=now()` — REVIVE.
+  6. Otherwise INSERT new row.
+  7. On `23505` (unique violation) anywhere in the path: rollback, re-read winner, return 200 with the winner's id — defense-in-depth for the advisory-lock-bypassed race (round-2 BLOCKER 1).
+- Wrap reads in try/catch on `42P01` → return 503 `migration_pending` (round-1 BLOCKER 7 closure).
+- 200 with `{ ok: true, subscriptionId }`.
 
-Post-merge (operator-side activation):
-- Operator generates VAPID keypair via `npx web-push generate-vapid-keys`.
-- Operator writes env-file `/etc/levelchannel/env.d/push.env`.
-- Operator restarts Next.js.
-- Operator flips `LEARNER_PUSH_ENABLED=1` at `/admin/settings/reminders`.
-- Operator self-subscribes from a test browser; books a slot; confirms
-  notification delivery within the next 1-min scheduler tick.
+#### `POST /api/push/unsubscribe/route.ts`
+- **NO master-switch gate** (round-8 WARN 5 closure): users MUST always be able to delete their stored endpoint regardless of operator/env state. Privacy/ownership invariant. Subscribe is gated; unsubscribe is not.
+- Same FULL perimeter as subscribe (round-3 WARN 3 closure): `requireLearnerArchetypeAndVerified` + `enforceTrustedBrowserOrigin` + `enforceAccountRateLimit('push:unsubscribe', 30, 60_000)`.
+- Body: `{ endpoint: string }`.
+- **Endpoint validation** (round-10 self-review WARN 1 closure): URL format + `https:` protocol + reasonable length cap (8 KiB). **DO NOT** enforce the `ALLOWED_PUSH_ENDPOINTS` host allowlist here — if a future PR tightens the subscribe allowlist (e.g. removes a deprecated provider), the legacy endpoint already stored in `learner_push_subscriptions` must remain deletable by its owner. Privacy/ownership invariant trumps host validation on the delete path.
+- **Acquire advisory lock** (round-4 WARN 3): `pg_advisory_xact_lock(hashtextextended('push_sub:' || endpoint, 0))` — same key as subscribe so subscribe/unsubscribe contests serialize.
+- UPDATE all active subs for `account_id = auth.account.id AND endpoint = $1` → `unsubscribed_at = now()`.
+- Emit `push.subscription.unsubscribed.user` audit event per affected row.
+- 200 with `{ ok: true }`.
 
----
+### 3.9 Cabinet UI (extend existing surface)
 
-## 8. Migration / rollout
+**SSR helper** (round-10 self-review WARN 4 closure): `lib/notifications/learner-push-state.ts::resolveLearnerPushState(accountId)` returns:
 
-1. PR opens.
-2. CI runs migrations against test DB → green.
-3. PR merges (squash) to main.
-4. Autodeploy timer picks up the commit; Next.js restarts.
-5. `LEARNER_PUSH_ENABLED=0` → channel dormant; `/api/push/vapid-public-key` returns 503; cabinet section hidden.
-6. Operator runs `npx web-push generate-vapid-keys`; writes env-file; restarts Next.js to pick up env.
-7. Operator flips master switch.
-8. Reconcile-enqueue begins emitting `channel='push'` rows for learners with active subscriptions (initially zero).
-
-**No ordering hazard.** Migrations additive. Dormant until master switch +
-VAPID env set.
-
-**First-tick safety**: no learners have subscriptions at activation; first
-push enqueue happens after first learner subscribes. Then on next tick,
-reminder is enqueued + dispatched. Operator can watch admin "Active
-subscriptions count" rise as learners opt in.
-
----
-
-## 9. Pre-canned answers for paranoia round 2
-
-**Q1.** Why hand-roll SW instead of `next-pwa`? **A:** §2.5 — minimal scope
-+ no build-pipeline coupling. Easier audit.
-
-**Q2.** Why store endpoint as text, not hash? **A:** We need the original
-URL for `web-push.sendNotification`; can't hash + recover. Encrypt-at-rest
-column-level deferred to BCS-DEF-4-PUSH-COLENC.
-
-**Q3.** Why no Firebase / OneSignal? **A:** Out of scope — managed-service
-detour. Self-hosted Web Push with `web-push` lib is industry standard.
-
-**Q4.** What about iOS push? **A:** §RISK-4 — requires PWA `display: standalone`;
-out of scope MVP.
-
-**Q5.** Multi-device per learner OK? **A:** Yes (§2.3). Fan-out at send-time.
-
-**Q6.** Notification flood (3 offsets × N devices)? **A:** §RISK-7 — expected;
-per-device unsub available.
-
-**Q7.** What if `web-push` upgrades introduce breaking change? **A:** Pin
-exact version; integration test catches at upgrade time.
-
-**Q8.** VAPID public key cacheable? **A:** Yes — `Cache-Control: public, max-age=300`
-(§2.4 `/api/push/vapid-public-key`).
-
-**Q9.** Service worker fetch handler? **A:** Explicitly NONE (§4.6); pinned
-by regression test.
-
-**Q10.** Why one queue row per (slot, offset, channel='push') for multi-device
-fan-out instead of per-device row? **A:** §2.7 — keeps queue volume bounded
-(N learners × 3 offsets, NOT N learners × 3 offsets × 3 devices). Send-time
-fan-out is in-process; observability deferred to BCS-DEF-4-PUSH-PERDEVICE-OBS.
-
----
-
-## 10. Out of scope — deferred follow-ups
-
-- **BCS-DEF-5-PUSH** — Teacher push reminders. Sibling plan; mirrors with
-  `teacher_push_subscriptions` + parallel cabinet-teacher UI.
-- **BCS-DEF-4-TG** — Telegram channel (sibling plan, open in parallel as PR #347).
-- **BCS-DEF-4-PUSH-IOS** — Full PWA install flow (`display: standalone` +
-  iOS-specific install instructions banner) for iOS Safari push support.
-- **BCS-DEF-4-PUSH-RICH** — Rich notifications (image attachments,
-  action buttons "Mark seen" / "Snooze 5 min"). Requires extending payload
-  shape + SW notification-click router.
-- **BCS-DEF-4-PUSH-E2E** — Playwright end-to-end test of the full subscribe
-  → notify → click flow in a real browser. Out of scope MVP (jsdom +
-  integration tests cover the seams).
-- **BCS-DEF-4-PUSH-PERDEVICE-OBS** — Per-device send-status visibility in
-  admin / cabinet (current MVP aggregates at queue-row level).
-- **BCS-DEF-4-PUSH-COLENC** — Column-level encryption of
-  `learner_push_subscriptions.endpoint`. Reduces DB-dump leak blast.
-- **BCS-DEF-4-PUSH-OFFLINE** — Service worker offline caching for /cabinet.
-  Different feature; would require build-pipeline integration.
-- **Localization across non-Russian browsers** — out of scope here.
-
----
-
-## 11. Final trailer expectations
-
-```
-Codex-Paranoia: SIGN-OFF round N/3 (one-PR epic; plan + wave collapsed)
-Critical-Path-Touched: lib/admin/operator-settings.ts, app/layout.tsx
-Skill-Used: /codex-paranoia plan + /codex-paranoia wave
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```ts
+type LearnerPushState =
+  | { kind: 'disabled' }
+  | { kind: 'unconfigured' }
+  | { kind: 'migrationPending' }
+  | {
+      kind: 'ready'
+      vapidPublicKey: string
+      activeDevices: Array<{ id: string; userAgent: string | null; lastUsedAt: string | null }>
+    }
 ```
 
-— END OF DRAFT (awaiting `/codex-paranoia plan`) —
+Resolution order:
+1. `const setting = await resolveOperatorSetting('LEARNER_REMINDERS_PUSH_ENABLED')`. If `setting.dbErrored || setting.value !== 1` → `{kind:'disabled'}`.
+2. Read VAPID env triple. If any empty → `{kind:'unconfigured'}`.
+3. Read active devices via `SELECT id, user_agent, last_used_at FROM learner_push_subscriptions WHERE account_id=$1 AND unsubscribed_at IS NULL ORDER BY id DESC`. Wrap in `try/catch` on `isUndefinedTableError` → `{kind:'migrationPending'}`.
+4. Otherwise → `{kind:'ready', vapidPublicKey, activeDevices}`.
+
+`components/cabinet/learner-push-subscription.tsx` (NEW client island) — mounted into `app/cabinet/profile/page.tsx` BENEATH the existing `<LearnerTelegramBinding>`. **SSR parent** conditionally renders: if `state.kind === 'disabled'` → render nothing (section hidden); else → render the client island with `state` as initial prop.
+
+**State machine** (round-1 v2 WARN 8 closure — single contract):
+| State | Trigger | SSR render | Client controls |
+|---|---|---|---|
+| Disabled | `LEARNER_REMINDERS_PUSH_ENABLED='0'` (or unset) | Section hidden entirely | none |
+| Unconfigured | flag=1 + VAPID env missing | "Скоро будет — оператор завершает настройку напоминаний в браузере" placeholder | none |
+| MigrationPending | flag=1 + VAPID OK + 42P01 on read | "Скоро будет" placeholder | none |
+| Ready | flag=1 + VAPID + migration ready | "Напоминания о начале урока в браузере" section with active-device list + "Подключить" button | subscribe / unsubscribe |
+
+Acceptance assertion (round-1 v2 WARN 8): "section hidden in Disabled state; placeholder in Unconfigured/MigrationPending; full UI in Ready". `evals/PRODUCT_FLOWS.md` FLOW pins all 4 states.
+
+Client controls in Ready state (round-2 WARN 3 closure — explicit feature detection + base64url → Uint8Array conversion):
+1. **Feature detection**: bail with "Браузер не поддерживает уведомления о начале урока" if ANY missing: `'serviceWorker' in navigator`, `'PushManager' in window`, `'Notification' in window`.
+2. **Permission check**: `Notification.permission`:
+   - `granted` → proceed.
+   - `default` → `await Notification.requestPermission()`; if not `'granted'` → abort.
+   - `denied` → show hint "Браузер запретил уведомления. Включите их в настройках сайта."
+3. **VAPID key fetch + decode** (round-3 WARN 4 closure): `const res = await fetch('/api/push/vapid-public-key')`. If `!res.ok` (503 push_disabled / vapid_unconfigured / etc): show "Подключение временно недоступно — попробуйте позже" + abort. On 200: `const text = await res.text()` → `const applicationServerKey = urlBase64ToUint8Array(text)` (shared helper inline; standard MDN pattern: replace `-` with `+`, `_` with `/`, pad with `=`, then `Uint8Array.from(atob(...), c => c.charCodeAt(0))`).
+4. **Subscribe**: `await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey })`.
+5. **POST** subscription to `/api/push/subscribe` (endpoint + p256dh base64url + auth base64url + navigator.userAgent).
+6. **Unsubscribe**: list of active devices (from SSR-fetched state) with "Напомнить иначе" buttons → POST `/api/push/unsubscribe`.
+
+(Round-2 WARN 5 / content-style closure: button copy uses "Подключить напоминания в браузере" — NOT "push". Section heading "Напоминания о начале урока в браузере". Inline copy says "Браузер показывает напоминание о начале занятия даже если вкладка LevelChannel закрыта".)
+
+### 3.10 Admin UI (extend existing card) + reader surface (round-5 WARN 4)
+
+`app/admin/(gated)/settings/alerts/page.tsx` — extend the existing learner-reminders scheduler card with a Push row:
+- Show `LEARNER_REMINDERS_PUSH_ENABLED` flag value.
+- Show VAPID env presence: ✓ / ✗.
+- Show counts (last 1h): sent / skipped (by reason).
+- Wrap reads in try/catch on 42P01 → render "Скоро будет" placeholder.
+
+**NEW reader surface (round-5 WARN 4 closure)**: `lib/admin/learner-reminder-push-stats.ts::getRecentPushDispatchCounts(windowMinutes = 60)` returns `{ sent: number; skipped: Record<SkippedReason, number>; migrationPending: boolean }`. SQL:
+```sql
+SELECT status, skipped_reason, COUNT(*) AS n
+  FROM learner_reminder_dispatches
+ WHERE channel = 'push'
+   AND created_at >= now() - ($1 || ' minutes')::interval
+ GROUP BY status, skipped_reason
+```
+Wrapped in `isUndefinedTableError` → `migrationPending: true` short-circuit.
+
+NO new `/admin/settings/reminders` page (round-1 BLOCKER 2 closure — drift vs. shipped SoT).
+
+### 3.11 Audit events
+
+(Round-2 BLOCKER 2 + round-3 BLOCKER 2 closure: explicit schema + executable contract.)
+
+Migration 0108 widens `auth_audit_events.event_type` CHECK to include 5 new push event types. AUTH_AUDIT_EVENT_TYPES in `lib/audit/auth-events.ts` updated; drift test validates parity.
+
+New event types:
+- `push.subscription.created` — first INSERT for (account_id, endpoint).
+- `push.subscription.reassigned` — endpoint moved from one account to another.
+- `push.subscription.revived` — same-account unsubscribed sub re-activated.
+- `push.subscription.unsubscribed.user` — user-initiated.
+- `push.subscription.unsubscribed.auto` — Web Push 410/404 from scheduler.
+
+**Writer contract (round-3 BLOCKER 2): the existing `recordAuthAuditEvent` sink requires `email` for hashing.** For push events the email may come from different sources depending on event:
+- `subscription.created` / `revived` / `unsubscribed.user`: route handler has `auth.account.email` from `requireLearnerArchetypeAndVerified` session → pass directly.
+- `subscription.reassigned`: route handler has the NEW account's email (current session) + needs lookup of the OLD account's email (the displaced one). Lookup via `getAccountById(oldAccountId)` from `lib/auth/accounts.ts` (sync read inside the same TX). Emit TWO audit rows: one against the new account (eventType=`reassigned`, email=new) and one against the old account (eventType=`unsubscribed.auto`, email=old, payload mentions reason='reassigned-by-other-account').
+- `subscription.unsubscribed.auto` from scheduler (Web Push 410): scheduler has `account_id` from the sub row; lookup `getAccountById(accountId)` to fetch email. Wrap in try/catch — if account row deleted (rare; accounts are never hard-deleted, only anonymised), fall back to `email=''` + log a `console.warn`.
+
+**Two writer surfaces** (round-4 BLOCKER 2 — scheduler is .mjs and cannot import TS):
+- **App/route side** (TS): NEW `lib/audit/push-events.ts` exporting typed shortcuts (`recordPushSubscriptionCreated`, `recordPushSubscriptionReassigned`, `recordPushSubscriptionRevived`, `recordPushSubscriptionUnsubscribedUser`) that perform the email lookup internally and call `recordAuthAuditEvent`.
+- **Scheduler side** (.mjs): NEW `scripts/lib/push-events.mjs` exporting `recordPushSubscriptionUnsubscribedAuto({accountId, endpoint, statusCode})`. **Routes through dedicated audit pool** (round-8 BLOCKER 3 closure — does NOT INSERT through the primary scheduler client; that would bypass the `levelchannel_audit_writer` role boundary established in mig 0029). NEW `scripts/lib/audit-pool.mjs` is a .mjs port of `lib/audit/pool.ts`: lazily opens a Pool against `AUDIT_DATABASE_URL` (falls back to `DATABASE_URL` if unset, matching TS behaviour). All raw SQL `INSERT INTO auth_audit_events` from .mjs writers uses this dedicated pool. **Email hash strategy** (round-5 BLOCKER 2): port `lib/auth/email-hash.ts::hashEmailForRateLimit` to `scripts/lib/email-hash.mjs::hashEmailForAudit(email)`. Algorithm: HMAC-SHA256(secret=AUTH_RATE_LIMIT_SECRET, msg=email.toLowerCase().trim()).hex. Email looked up via `SELECT email FROM accounts WHERE id = $1` on the primary pool (read-only lookup); on missing → `email_hash=''` + `console.warn`. Drift test pins TS↔mjs hash equality.
+
+Tests for TS writer pin: `recordPushSubscriptionCreated({accountId, endpoint})` → audit row inserted with correct hashed email; reassign emits 2 rows; auto-unsubscribe (via scheduler .mjs writer) tested in scheduler suite.
+
+## 4. Tests
+
+### Unit
+- `tests/notifications/learner-push-template.test.ts` — render template; verify no zoom_url, no lesson title, deep-link present.
+- `tests/notifications/web-push-wrapper.test.ts` — mock `web-push` SDK; verify VAPID setup is one-shot; 410 → reason `endpoint_gone`; 500 → reason `send_failed`; missing env → reason `vapid_unconfigured`.
+- `tests/notifications/push-provider-allowlist.test.ts` — isAllowedPushEndpoint accepts FCM (fcm.googleapis.com/fcm/send/X), Mozilla (updates.push.services.mozilla.com/wpush/X), Apple (web.push.apple.com/X); rejects http://, rejects non-allowlist hosts, rejects malformed.
+- `tests/public/sw-open-url.test.ts` (round-2 WARN 4 + round-8 BLOCKER 4 closure) — tests import `public/sw-lib/resolve-open-url.js` directly (NOT `sw.js`, which uses classic `importScripts`); helper is exposed via the in-script `self.resolveOpenUrl = function(url, ownOrigin) {...}` assignment that jsdom can capture by evaluating the script against a sandboxed `self`. Unit tests verify: payload.url same-origin → returned; cross-origin → falls back to '/cabinet'; malformed → falls back; null/undefined → falls back.
+
+### Integration
+- `tests/integration/api/push-vapid-public-key.test.ts` — 503 when env empty; 503 when operator setting `LEARNER_REMINDERS_PUSH_ENABLED='0'` even with env set (proves DB-row→env→default contract per round-1 v2 BLOCKER 1); 200 + body when both set.
+- `tests/admin/operator-settings.test.ts` (round-1 v2 WARN 7 closure) — extend the hard-coded 4-key invariant to include `LEARNER_REMINDERS_PUSH_ENABLED`; verify the new key participates in the standard schema shape.
+- `tests/integration/api/push-subscribe.test.ts`:
+  - happy path: new endpoint → INSERT → 200 with subscriptionId.
+  - **key refresh** (round-8 BLOCKER 2 + round-9 WARN 4 pin): same account + same active endpoint + DIFFERENT p256dh/auth/user_agent body → 200 with existing id; SQL assertion that p256dh/auth/user_agent/updated_at ALL changed to the new values.
+  - REVIVE: same account + previously unsubscribed endpoint → row resurrected (unsubscribed_at NULL, refreshed keys).
+  - reassign: DIFFERENT account + same active endpoint → existing row's `unsubscribed_at` set, audit event emitted, NEW row inserted under new account.
+  - **cap eviction** (round-8 BLOCKER 1 + round-9 WARN 4 pin): single account with 10 active subs; 11th subscribe → MIN(id) sub flipped to `unsubscribed_at`, new row inserted, `push.subscription.unsubscribed.auto` audit row emitted with payload `{reason: 'cap_reached'}`.
+  - Endpoint validation (round-1 v2 BLOCKER 3): reject `http://...`, reject hostname not in allowlist (e.g. `https://attacker.example/`), reject malformed URL — all 400 `invalid_endpoint`.
+  - 401 anon; 403 wrong-archetype (teacher/admin); 403 wrong origin; 429 rate limit; 400 missing field.
+- `tests/integration/api/push-unsubscribe.test.ts` — user-initiated unsubscribe; idempotent on already-unsubscribed.
+- `tests/integration/scripts/learner-reminder-dispatch-push.test.ts`:
+  - `LEARNER_REMINDERS_PUSH_ENABLED=0` → push branch never runs; NO `(slot,'push')` row written.
+  - `=1` + VAPID unset → pre-flight gate fires; NO `(slot,'push')` row written; idempotency slot stays open for next tick (round-7 BLOCKER 1 closure — unified with §3.3 + §3.7).
+  - `=1` + VAPID set + 0 subs → row `skipped_reason='no_push_subscription'`.
+  - `=1` + VAPID + 2 subs, both succeed → row `sent`, both subs `last_used_at` updated.
+  - one sub returns 410 → row `sent` (other succeeded), failed sub `unsubscribed_at` set.
+  - all subs fail (500/410/etc) → row `skipped, skipped_reason='send_failed'`.
+- `tests/integration/admin/reminders-push-row.test.ts` — admin alerts page renders push row; migrationPending → placeholder; counters from DB.
+
+### Migration
+- `tests/integration/calendar/trigger-direct-evidence.test.ts` — pattern reference (raw SQL evidence).
+- New `tests/integration/migrations/0109-push-subscriptions.test.ts`:
+  - Active endpoint UNIQUE — INSERT two rows same endpoint, both unsubscribed_at NULL → second INSERT raises 23505.
+  - Same endpoint with first row unsubscribed → second INSERT succeeds.
+
+## 5. Deploy ordering
+
+- `LEARNER_REMINDERS_PUSH_ENABLED=0` is the default — channel dormant post-merge until operator flips.
+- Migrations 0108 + 0109 apply via existing autodeploy timer.
+- All new reads use `isUndefinedTableError` / `isUndefinedColumnError` to surface `migrationPending: true` (closes round-1 BLOCKER 7).
+- No order coupling with other in-flight migrations.
+
+## 6. Doc sweep
+
+(Round-1 WARN 11 + round-1 v2 BLOCKER 5 + WARN 6 + WARN 9 closures.)
+
+- `.env.example` (round-1 v2 BLOCKER 5 — primary SoT for `scripts/check-env-contract.mjs`) — add `LEARNER_REMINDERS_PUSH_ENABLED`, `PUSH_VAPID_PUBLIC_KEY`, `PUSH_VAPID_PRIVATE_KEY`, `PUSH_VAPID_SUBJECT` with explanatory comments.
+- `OPERATIONS.md` (if present — verify at impl time) + `scripts/activate-prod-ops.sh` — extend the env render to write the new vars to the systemd EnvironmentFile (single env file, parity with TG bot token).
+- `scripts/systemd/levelchannel-learner-reminder-dispatch.service` — no change (already loads the rendered EnvironmentFile); commented note in the unit refers to the new env vars.
+- `ARCHITECTURE.md` — add `learner_push_subscriptions` row to migration table; add `lib/notifications/push-provider-allowlist.ts` to library surface.
+- `SECURITY.md` — add §"Web Push channel": VAPID public key public by design; private key server-only; endpoint URL treated as capability (subscribe gated by `requireLearnerArchetypeAndVerified` + origin gate + account-rate-limit + provider-host allowlist); cross-account reassignment audit-logged; payload RFC 8291 encrypted by `web-push` lib; payload omits PII / capability URLs.
+- `README.md` — add `LEARNER_REMINDERS_PUSH_ENABLED`, `PUSH_VAPID_PUBLIC_KEY`, `PUSH_VAPID_PRIVATE_KEY`, `PUSH_VAPID_SUBJECT` to env section.
+- `OPERATIONS.md` (round-6 WARN 6 closure: owner-doc for runbooks lives here, NOT PAYMENTS_SETUP) — add operator note: "If learner push reminders are desired, run `npx web-push generate-vapid-keys`, set the three `PUSH_VAPID_*` env vars in `$ENV_FILE`, restart `levelchannel.service` (the actual app service per `scripts/systemd/`), then flip `LEARNER_REMINDERS_PUSH_ENABLED=1` via `/admin/settings/alerts`."
+- `scripts/check-env-contract.mjs` (round-6 WARN 5 closure) — add `LEARNER_REMINDERS_PUSH_ENABLED`, `PUSH_VAPID_PUBLIC_KEY`, `PUSH_VAPID_PRIVATE_KEY`, `PUSH_VAPID_SUBJECT` to the dynamic-env allowlist so the doc-drift check stays green on the new keys.
+- `evals/PRODUCT_FLOWS.md` — add FLOW-CABINET-PROFILE-PUSH-001 with the 4-state UI contract per §3.9.
+- `ENGINEERING_BACKLOG.md` — strikethrough BCS-DEF-4-PUSH.
+- `docs/plans/bcs-def-4-learner-reminders.md` §10 cross-ref to this plan SHIPPED.
+- `app/cabinet/settings/calendar/page.tsx` footer (round-1 v2 WARN 6) — update the "reminders OFF" copy from "email reminders off" to "email + push reminders both off"; show "off" only when BOTH email_enabled AND push_enabled are 0.
+- `tests/cabinet/calendar-settings-state-matrix.test.tsx` (round-8 WARN 6) — exact-match strings in the test pin the old single-channel copy; update the matrix to reflect the new dual-channel footer + add a regression case for `email_enabled=0 + push_enabled=1` (footer should NOT show "выключены" — push is still on).
+- `docs/plans/cabinet-stale-future-labels.md` (round-8 WARN 6) — note that the §«Календарь» footer SoT was rewritten in this wave; add a one-line cross-ref to this plan.
+- `docs/plans/bcs-def-5-push-teacher-pwa-reminders.md` (round-1 v2 WARN 9) — replace stale references: `/admin/settings/reminders` → `/admin/settings/alerts`; `lib/notifications/web-push-wrapper.ts` → `scripts/lib/web-push.mjs`; service-worker test inheritance updated to match this rewrite.
+
+## 7. File inventory
+
+```
+docs/plans/bcs-def-4-push-pwa-reminders.md            (modified — this rewrite)
+migrations/0108_learner_reminder_dispatches_push_channel.sql  (NEW)
+migrations/0109_learner_push_subscriptions.sql        (NEW)
+.env.example                                          (extend — 4 new push env vars)
+scripts/activate-prod-ops.sh                          (extend — render new push vars)
+package.json + package-lock.json                       (add web-push dep)
+public/manifest.webmanifest                            (NEW)
+public/sw.js                                           (NEW)
+public/sw-lib/resolve-open-url.js                     (NEW — testable same-origin resolver; SW loads via importScripts, tests load directly per round-8 BLOCKER 4)
+public/icons/icon-192.png                              (NEW)
+public/icons/icon-512.png                              (NEW)
+app/layout.tsx                                         (modified — manifest link + SW client island)
+app/service-worker-registration.tsx                    (NEW client island)
+lib/admin/operator-settings.ts                         (extend with PUSH_ENABLED)
+scripts/lib/operator-settings.mjs                      (mirror)
+scripts/learner-reminder-dispatch.mjs                  (extend — push branch)
+scripts/lib/learner-push-template.mjs                  (NEW)
+scripts/lib/web-push.mjs                               (NEW)
+lib/notifications/learner-push-state.ts                (NEW — server SSR helper for cabinet UI)
+app/api/push/vapid-public-key/route.ts                 (NEW)
+app/api/push/subscribe/route.ts                        (NEW)
+app/api/push/unsubscribe/route.ts                      (NEW)
+lib/notifications/push-provider-allowlist.ts          (NEW — host allowlist + isAllowedPushEndpoint)
+app/cabinet/profile/page.tsx                           (modified — mount LearnerPushSubscription)
+app/cabinet/settings/calendar/page.tsx                 (modified — reminder-off footer copy update per round-1 v2 WARN 6)
+components/cabinet/learner-push-subscription.tsx       (NEW client island)
+app/admin/(gated)/settings/alerts/page.tsx             (extend — push row + counters)
+lib/audit/push-events.ts                              (NEW — TS app/route writer)
+scripts/lib/push-events.mjs                           (NEW — .mjs scheduler writer per round-4 BLOCKER 2)
+scripts/lib/audit-pool.mjs                            (NEW — .mjs port of lib/audit/pool.ts; dedicated audit role per round-8 BLOCKER 3)
+scripts/lib/email-hash.mjs                            (NEW — .mjs port of hashEmailForRateLimit per round-5 BLOCKER 2)
+lib/admin/learner-reminder-push-stats.ts              (NEW — reader surface per round-5 WARN 4)
+tests/admin/operator-settings.test.ts                  (modified — extend hard-coded key invariant)
+docs/plans/bcs-def-5-push-teacher-pwa-reminders.md     (modified — sync delta-doc per round-1 v2 WARN 9)
+ARCHITECTURE.md + SECURITY.md + README.md +
+  OPERATIONS.md + evals/PRODUCT_FLOWS.md +
+  ENGINEERING_BACKLOG.md +
+  docs/plans/bcs-def-4-learner-reminders.md            (doc sweep)
+tests/                                                  (per §4)
+```
+
+Estimated diff: ~1300 LOC + 25 files.
+
+## 8. Risks + mitigations
+
+- **R1 — VAPID rotation downtime.** Documented in operator runbook (OPERATIONS.md). Default: do NOT rotate unless key is leaked.
+- **R2 — `web-push` audit surface.** Single new runtime dep. Pin exact version; verify Node 22 compat at impl time; mark for next CSO monthly cycle.
+- **R3 — Cross-account endpoint leak (round-1 BLOCKER 4).** Closed via active-endpoint UNIQUE index + app-layer reassign-then-insert logic + audit event.
+- **R4 — Lock-screen capability leak (round-1 WARN 10).** Closed via payload sanitisation: title/body/url only, no zoom_url, no lesson title.
+- **R5 — Deploy-before-migrate window (round-1 BLOCKER 7).** Closed via `isUndefinedTableError` guards on all new reads.
+- **R6 — Service worker stuck on stale version.** SW versioning: `const SW_VERSION = '1'`; bump on changes. Activation event clears old caches if needed.
+- **R7 — iOS Safari 16.4+ only.** Documented in cabinet UI hint: "Push доступен в Chrome / Firefox / Edge / Safari 16.4+ в режиме PWA".
+- **R8 — Notification flood (3 reminders × N devices = 3N pings).** Acceptable: device sub is opt-in, user can unsubscribe individual devices.
+
+## 9. Out of scope
+
+- Teacher push (bcs-def-5-push-teacher-pwa-reminders.md) — DEFERRED (depends on unshipped `teacher_reminder_dispatches`).
+- Custom notification icons per-event (uses single PWA icon).
+- Push-action buttons in notification (e.g. "Mark as read").
+- Multi-tenant VAPID keypairs.
+- Auto-resubscribe on browser refresh (browser handles silently within validity).
+
+## 10. Acceptance
+
+- [ ] Mig 0108 + 0109 deployed; channel CHECK now includes `'push'`; `learner_push_subscriptions` table exists with active-endpoint UNIQUE.
+- [ ] `LEARNER_REMINDERS_PUSH_ENABLED=0` → scheduler does NOT touch push branch; no push subscriptions surfaced in cabinet (UI hidden); subscribe + vapid-public-key routes return 503 `push_disabled`.
+- [ ] `dbErrored` fail-closed: simulated DB blip on operator_settings read → routes 503; scheduler skips push branch.
+- [ ] With env set + flag flipped: learner subscribes from Chrome → row in `learner_push_subscriptions`; next due slot dispatches push; `learner_reminder_dispatches` row `status='sent'` for `(slot_id, 'push')`.
+- [ ] **Cap eviction** (round-10 self-review WARN 5): single account with 10 active subs; 11th subscribe → MIN(id) sub flipped `unsubscribed_at`, audit `push.subscription.unsubscribed.auto` emitted with `reason='cap_reached'`.
+- [ ] **Key refresh** (round-10 self-review WARN 5): same-account + same-active-endpoint re-subscribe with rotated p256dh/auth → existing row updated, NO new row, NO audit event.
+- [ ] **Budget unit** (round-10 BLOCKER 1 pin): `RATE_LIMIT_PER_TICK=3`, 5 due slots × 4 active subs each → 3 push rows `sent`, 2 `skipped past_send_by`; total provider sends = 12 (verifies 1-slot = 1-budget regardless of fanout).
+- [ ] Cross-account reassign: learner B subscribes with same endpoint that learner A previously used → A's row `unsubscribed_at` set, audit event `push.subscription.reassigned` emitted, B's row active.
+- [ ] **User unsubscribe of legacy endpoint** (round-10 self-review WARN 1): endpoint whose host was removed from `ALLOWED_PUSH_ENDPOINTS` after subscription → unsubscribe POST still succeeds (no host gate on delete path).
+- [ ] Endpoint 410 from FCM → scheduler flips sub `unsubscribed_at`; future ticks skip; row `skipped_reason='send_failed'` only if NO other sub succeeded.
+- [ ] Admin alerts page renders push row with VAPID env presence + per-status counters; deploy-before-mig window shows placeholder (NO 500).
+- [ ] All push payloads contain only title/body/url — no zoom URL, no lesson title.
+- [ ] Doc sweep complete: ARCHITECTURE.md + SECURITY.md + README.md + OPERATIONS.md + evals/PRODUCT_FLOWS.md updated.
+- [ ] Trailer: `Codex-Paranoia: SELF-REVIEW round 10 fallback (Codex quota exhausted; debt recorded for post-quota plan+wave rounds)`.

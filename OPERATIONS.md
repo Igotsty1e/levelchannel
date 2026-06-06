@@ -56,6 +56,24 @@ Public repository readers should use:
   `scripts/lib/telegram-alerts.mjs` — restart the app after changing.
   Added by BCS-DEF-4-TG-PROXY (2026-05-21).
 
+- `LEARNER_REMINDERS_PUSH_ENABLED` + `PUSH_VAPID_PUBLIC_KEY` +
+  `PUSH_VAPID_PRIVATE_KEY` + `PUSH_VAPID_SUBJECT` — Web Push channel
+  for learner lesson-start reminders. Default `0` (off); flip via
+  `/admin/settings/alerts` after:
+  (1) `npx web-push generate-vapid-keys` (one-shot on a workstation);
+  (2) copy the public/private keys into `$ENV_FILE` and set
+  `PUSH_VAPID_SUBJECT=mailto:ops@levelchannel.ru` (RFC 8292 requires a
+  `mailto:` or `https:` URI);
+  (3) `systemctl restart levelchannel.service
+  levelchannel-learner-reminder-dispatch.timer`;
+  (4) flip `LEARNER_REMINDERS_PUSH_ENABLED=1` from
+  `/admin/settings/alerts` (DB-row → env → default — env stays the
+  default fallback in case of a DB blip; the route + scheduler
+  fail-closed on `dbErrored` per the SAAS_OFFER_GATE pattern).
+  Rotation: leave keys static unless a leak is suspected. Rotating
+  invalidates ALL stored subscriptions — learners must re-subscribe.
+  Added by BCS-DEF-4-PUSH (2026-06-06).
+
 ## Staging environment
 
 Staging at `staging.levelchannel.ru` is a single shared instance tracking the

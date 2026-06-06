@@ -85,7 +85,16 @@ jobs:
       DB_SSL: disable
       LC_ENV: smoke
       NEXT_PUBLIC_LC_ENV: smoke
-      NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3199
+      # BCS-DEF-4-PUSH (2026-06-06) — PR #539 added a prod fail-closed
+      # gate in lib/payments/config.ts rejecting http:// + loopback under
+      # NODE_ENV=production. Smoke-boot polls /api/health on 127.0.0.1:$PORT
+      # directly; SITE_URL is module-load wiring (email links, canonical
+      # origin) and never has to match the liveness port. Use a non-loopback
+      # https URL the prod gate accepts. scripts/smoke-boot-check.sh sets
+      # the same value via --setenv= for the systemd transient unit (the
+      # workflow env above is consumed by `next build`; the script
+      # --setenv= flags are what reach the actual `next start` boot).
+      NEXT_PUBLIC_SITE_URL: https://staging.levelchannel.ru
       # Pin storage backend = postgres so /api/health exercises
       # `getHealthProbePool` → `SELECT 1` against the smoke DB on
       # every request. Without this the route resolves to `skip` and

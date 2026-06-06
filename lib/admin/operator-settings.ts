@@ -348,6 +348,21 @@ export const SETTING_SCHEMA = {
       'master switch (1=on/0=off) for the learner Telegram channel; OFF by default — flip after BotFather setup + webhook registration. Per-learner opt-in still required (accounts.learner_telegram_enabled=true after /start <code> handshake).',
     scope: 'learner-reminders',
   },
+  // BCS-DEF-4-PUSH (2026-06-06) — master switch for the learner Web Push
+  // channel. OFF by default — flip after VAPID keypair generation
+  // (`npx web-push generate-vapid-keys`) + PUSH_VAPID_* env render. Per-
+  // learner opt-in still required (active row in learner_push_subscriptions).
+  // Plan: docs/plans/bcs-def-4-push-pwa-reminders.md §3.3.
+  LEARNER_REMINDERS_PUSH_ENABLED: {
+    kind: 'int',
+    default: 0,
+    min: 0,
+    max: 1,
+    envName: 'LEARNER_REMINDERS_PUSH_ENABLED',
+    description:
+      'master switch (1=on/0=off) for the learner Web Push channel; OFF by default — flip after VAPID keypair generation + PUSH_VAPID_* env render.',
+    scope: 'learner-reminders',
+  },
   // SAAS-OFFER bundle (Sub-A.2 foundation, 2026-05-30) — single gate
   // flag for the SaaS-оферта consent layer.
   //
