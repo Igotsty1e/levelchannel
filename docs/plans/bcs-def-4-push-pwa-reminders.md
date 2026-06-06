@@ -1,6 +1,30 @@
 # BCS-DEF-4-PUSH — PWA push channel for learner lesson-start reminders
 
-**Status:** DRAFT 2026-05-18 (plan-doc only; awaiting `/codex-paranoia plan`).
+**Status:** PLAN-PARANOIA ROUND 1 BLOCK (2026-06-06). 8 BLOCKERs + 3 WARNs surfaced — see §0a. Plan requires substantial rewrite before implementation. Do NOT start coding until plan is revised + re-paranoia'd.
+
+## 0a. Plan-paranoia round-1 findings (2026-06-06, recorded; closures pending)
+
+Raw output: `/tmp/codex-paranoia-20260606T042830Z-push-plan/round-1.md`.
+
+| # | Severity | Finding (one-line) | Citations |
+|---|----------|-------------------|-----------|
+| 1 | BLOCKER | VAPID env-file location wrong — operator would set keys that aren't read. `/etc/levelchannel/env.d/push.env` is NOT loaded by Next.js OR systemd scheduler; the actual `EnvironmentFile` is rendered by `scripts/activate-prod-ops.sh`. | `:140-146,930-947`; `scripts/systemd/levelchannel-learner-reminder-dispatch.service:23-25`; `scripts/activate-prod-ops.sh:315-318,365-378` |
+| 2 | BLOCKER | Plan reintroduces deprecated UI surfaces (`/cabinet/settings/reminders` + `/admin/settings/reminders`) that shipped main has REPLACED with `/admin/settings/alerts` + cabinet-side surfaces on existing pages. Drift vs. shipped SoT, not "add page". | `:21-26,77-79,533-571,793-795,934`; `app/admin/(gated)/settings/alerts/page.tsx:62-74,170-177,192-200`; `app/cabinet/profile/page.tsx:58-88,146-151` |
+| 3 | BLOCKER | Retry model incompatible with shipped schema. Plan wants `markRetry()` + "next tick retries", but `learner_reminder_dispatches` is one-shot today: `status in ('claimed','sent','skipped')` + `UNIQUE(slot_id, channel)`. No retry path without changing state machine + query model entirely. | `:405-460,632-640`; `migrations/0064_learner_reminder_dispatches.sql:27-64`; `docs/critical-path.md:80` |
+| 4 | BLOCKER | UNIQUE `(account_id, endpoint)` admits cross-account leak on shared devices. Web Push subscription is bound to browser profile/origin, NOT account. Learner B subscribing in the same browser where A previously subscribed → same endpoint stays active for both, push for A delivered to B. Need global uniqueness on active endpoint or explicit reassignment semantics. | `:226-231,704-719` |
+| 5 | BLOCKER | Hardcoded prod origin in payload / service worker / tests. Repo has the canonical-origin contract (`lib/api/origin.ts`) precisely because staging/reverse-proxy/localhost break hardcoded URLs. Staging push would point at prod cabinet. | `:317,325,397,602,919`; `lib/api/origin.ts:1-18,30-59` |
+| 6 | BLOCKER | TS/MJS boundary not designed. Plan places `push-templates.ts` + `web-push-wrapper.ts` in `lib/notifications/`, but dispatcher is plain Node ESM (`scripts/learner-reminder-dispatch.mjs`) and already imports only `scripts/lib/*.mjs`. Same class of error TG plan caught + fixed. | `:788-789`; `scripts/learner-reminder-dispatch.mjs:42-50`; `docs/plans/bcs-def-4-tg-telegram-reminders.md:43,496-501` |
+| 7 | BLOCKER | "No ordering hazard" claim is wrong for this repo. Deploy-before-migrate window is normal here and explicitly closed by `migrationPending` / `42P01` / `42703` fallbacks. New cabinet read + admin counters + API routes on fresh table WITHOUT degrade path → 500 on rollout. | `:563-571,946-952`; `app/admin/(gated)/settings/alerts/page.tsx:38-41,130-167`; `lib/admin/operator-settings.ts:708-749`; `lib/admin/probe-status.ts:72-79` |
+| 8 | BLOCKER | Self-contradiction on service-worker registration location. First says root-layout change, then revised decision moves registration to `app/cabinet/layout.tsx` — but that file is NOT in the file inventory. Critical-path + route ownership not fixed before code. | `:88-93,784,893-901` |
+| 9 | WARN | CSRF/rate-limit contour weak. `POST /api/push/subscribe` plan uses IP-scoped `enforceRateLimit`, but authenticated per-account mutations in this repo already have `enforceAccountRateLimit`. Origin gate left as "audit at impl time", not mandatory contract. | `:246-250,547-556,740-743`; `lib/security/account-rate-limit.ts:5-23,24-31`; `lib/security/request.ts:148-177` |
+| 10 | WARN | Push body includes `zoom_url` / meeting URL. Push notifications render on lock screen — this is a capability leak to anyone who sees the screen. Email precedent does not transfer 1:1. Safer: send reminder fact + deep-link into authenticated cabinet only. | `:395-397,420-431,730-736` |
+| 11 | WARN | Doc sweep incomplete. Plan adds new trust boundary + env vars + routes/surfaces but file inventory missing `SECURITY.md`, `README.md`, `evals/PRODUCT_FLOWS.md`, `evals/URL_REDIRECT_CONTRACT.md`. | `:776-810`; `AGENTS.md:74-87,254-260`; `README.md:81-119`; `DOCUMENTATION.md:25-34,112-118` |
+
+**Recommended next step:** rewrite §2 (Design) sections to address BLOCKERS 1-8 + re-paranoia. Estimated 4-6 hours of plan work before any code can be written. Defer implementation to a dedicated session.
+
+---
+
+**Status (original):** DRAFT 2026-05-18 (plan-doc only; awaiting `/codex-paranoia plan`).
 **Wave name:** `bcs-def-4-push-pwa-reminders` (single-PR epic — see §5).
 **Trigger:** Push channel deferred from BCS-DEF-4 MVP
 (`docs/plans/bcs-def-4-learner-reminders.md:7` "MVP = email only"; §10
