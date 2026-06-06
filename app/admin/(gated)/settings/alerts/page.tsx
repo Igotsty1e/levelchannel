@@ -12,6 +12,7 @@ import {
   getLatestTelegramRun,
   getProbeStatus,
 } from '@/lib/admin/probe-status'
+import { getRecentPushDispatchCounts } from '@/lib/admin/learner-reminder-push-stats'
 
 import { SettingEditor } from './setting-editor'
 import { TestSendButton } from './test-send-button'
@@ -71,6 +72,8 @@ const LEARNER_REMINDER_KEYS: ReadonlyArray<SettingKey> = [
   'LEARNER_REMINDERS_RATE_LIMIT_PER_TICK',
   // BCS-DEF-4-TG (2026-05-20) — master switch for learner Telegram channel.
   'LEARNER_REMINDERS_TELEGRAM_ENABLED',
+  // BCS-DEF-4-PUSH (2026-06-06) — master switch for learner Web Push channel.
+  'LEARNER_REMINDERS_PUSH_ENABLED',
 ]
 
 export default async function AdminAlertsPage() {
@@ -198,7 +201,29 @@ export default async function AdminAlertsPage() {
 // last-alert surface) — so this card has no "last alert" field. We
 // expose the 3 SETTING_SCHEMA knobs only, with a short explainer about
 // what each one does.
-function LearnerRemindersCard({ settings }: { settings: AdminSettingView }) {
+async function LearnerRemindersCard({ settings }: { settings: AdminSettingView }) {
+  // BCS-DEF-4-PUSH (2026-06-06) — counters for the push channel.
+  // Wrapped in try/catch via the reader surface (migrationPending shape).
+  const pushStats = await getRecentPushDispatchCounts(60)
+  const vapidPublic = (process.env.PUSH_VAPID_PUBLIC_KEY ?? '').trim() !== ''
+  const vapidPrivate = (process.env.PUSH_VAPID_PRIVATE_KEY ?? '').trim() !== ''
+  const vapidSubject = (process.env.PUSH_VAPID_SUBJECT ?? '').trim() !== ''
+  return _LearnerRemindersCardImpl({ settings, pushStats, vapidPublic, vapidPrivate, vapidSubject })
+}
+
+function _LearnerRemindersCardImpl({
+  settings,
+  pushStats,
+  vapidPublic,
+  vapidPrivate,
+  vapidSubject,
+}: {
+  settings: AdminSettingView
+  pushStats: { sent: number; skipped: Record<string, number>; migrationPending: boolean }
+  vapidPublic: boolean
+  vapidPrivate: boolean
+  vapidSubject: boolean
+}) {
   return (
     <section
       style={{
@@ -276,6 +301,45 @@ function LearnerRemindersCard({ settings }: { settings: AdminSettingView }) {
             />
           )
         })}
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <div
+          style={{
+            fontSize: 12,
+            color: 'var(--secondary)',
+            textTransform: 'uppercase',
+            letterSpacing: 0.4,
+            marginBottom: 4,
+          }}
+        >
+          Web Push (BCS-DEF-4-PUSH)
+        </div>
+        <p
+          style={{
+            color: 'var(--secondary)',
+            fontSize: 12,
+            lineHeight: 1.6,
+            marginBottom: 8,
+            maxWidth: 720,
+          }}
+        >
+          VAPID env: public {vapidPublic ? '✓' : '✗'}, private{' '}
+          {vapidPrivate ? '✓' : '✗'}, subject {vapidSubject ? '✓' : '✗'}.
+        </p>
+        {pushStats.migrationPending ? (
+          <p style={{ color: 'var(--secondary)', fontSize: 12 }}>
+            Скоро будет — таблица <code>learner_push_subscriptions</code>{' '}
+            (миграция 0109) ещё не применена.
+          </p>
+        ) : (
+          <p style={{ color: 'var(--secondary)', fontSize: 12 }}>
+            За последний час: отправлено {pushStats.sent}, пропущено{' '}
+            {Object.entries(pushStats.skipped)
+              .map(([reason, n]) => `${reason}=${n}`)
+              .join(', ') || '0'}.
+          </p>
+        )}
       </div>
     </section>
   )

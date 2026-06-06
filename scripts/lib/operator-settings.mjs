@@ -254,6 +254,17 @@ export const SETTING_SCHEMA = Object.freeze({
       'master switch (1=on/0=off) for the learner Telegram channel; OFF by default — flip after BotFather setup + webhook registration. Per-learner opt-in still required (accounts.learner_telegram_enabled=true after /start <code> handshake).',
     scope: 'learner-reminders',
   }),
+  // BCS-DEF-4-PUSH (2026-06-06) — mirror of the TS twin.
+  LEARNER_REMINDERS_PUSH_ENABLED: Object.freeze({
+    kind: 'int',
+    default: 0,
+    min: 0,
+    max: 1,
+    envName: 'LEARNER_REMINDERS_PUSH_ENABLED',
+    description:
+      'master switch (1=on/0=off) for the learner Web Push channel; OFF by default — flip after VAPID keypair generation + PUSH_VAPID_* env render.',
+    scope: 'learner-reminders',
+  }),
   // SAAS-OFFER bundle (Sub-A.2 foundation, 2026-05-30) — mirror of the TS twin.
   SAAS_OFFER_GATE_ENABLED: Object.freeze({
     kind: 'int',

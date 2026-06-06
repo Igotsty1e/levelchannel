@@ -1,7 +1,9 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import { headers } from 'next/headers'
 import './globals.css'
+
+import { ServiceWorkerRegistration } from './service-worker-registration'
 
 const inter = Inter({
   subsets: ['latin', 'cyrillic'],
@@ -26,6 +28,14 @@ export const metadata: Metadata = {
     shortcut: '/favicon.svg',
     apple: '/favicon.svg',
   },
+  manifest: '/manifest.webmanifest',
+}
+
+// BCS-DEF-4-PUSH (2026-06-06) — PWA theme color (matches manifest
+// background_color + cabinet design system var). Lives in viewport
+// per Next.js 14+ metadata API rules.
+export const viewport: Viewport = {
+  themeColor: '#0a0c10',
 }
 
 export default async function RootLayout({
@@ -58,7 +68,10 @@ export default async function RootLayout({
   // (PricingSection, CheckoutForm).
   return (
     <html lang="ru" className={inter.variable}>
-      <body>{children}</body>
+      <body>
+        {children}
+        <ServiceWorkerRegistration />
+      </body>
     </html>
   )
 }

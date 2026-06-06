@@ -4,12 +4,14 @@ import { redirect } from 'next/navigation'
 
 import { AuthInfoBox } from '@/components/auth-form-bits'
 import { SiteHeader } from '@/components/site-header'
+import { LearnerPushSubscription } from '@/components/cabinet/learner-push-subscription'
 import { LearnerTelegramBinding } from '@/components/cabinet/learner-telegram-binding'
 import { resolveOperatorSettingsForProbe } from '@/lib/admin/operator-settings'
 import { listAccountRoles } from '@/lib/auth/accounts'
 import { getAccountProfile } from '@/lib/auth/profiles'
 import { getAuthPool } from '@/lib/auth/pool'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { resolveLearnerPushState } from '@/lib/notifications/learner-push-state'
 
 import { DangerZone } from '../danger-zone'
 import { LogoutButton } from '../logout-button'
@@ -87,6 +89,13 @@ export default async function CabinetProfilePage() {
       settings.LEARNER_REMINDERS_TELEGRAM_ENABLED?.value === 1
   }
 
+  // BCS-DEF-4-PUSH (2026-06-06) — Web Push subscription state (4-state
+  // contract per plan §3.9). `disabled` → section hidden; other states
+  // render the client island.
+  const pushState = !isTeacher
+    ? await resolveLearnerPushState(account.id)
+    : null
+
   // 2026-06-02 (verstka fix): wrap the page in a wider centered column
   // than the default AuthShell maxWidth: 440. The form + cards stack
   // looked drifted-to-the-right and visually unbalanced — the section
@@ -149,6 +158,10 @@ export default async function CabinetProfilePage() {
               initialChatId={learnerTgChatId}
               masterSwitchOn={learnerTgMasterSwitch}
             />
+          ) : null}
+
+          {!isTeacher && pushState && pushState.kind !== 'disabled' ? (
+            <LearnerPushSubscription initialState={pushState} />
           ) : null}
 
           <DangerZone />

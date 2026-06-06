@@ -41,7 +41,10 @@ import { Resend } from 'resend'
 
 import { resolveSslConfig } from './_pg-ssl.mjs'
 import { renderLearnerLessonReminderText } from './lib/learner-reminder-template.mjs'
+import { renderLearnerPushPayload } from './lib/learner-push-template.mjs'
 import { resolveOperatorSettingsForProbe } from './lib/operator-settings.mjs'
+import { recordPushSubscriptionUnsubscribedAuto } from './lib/push-events.mjs'
+import { sendWebPush } from './lib/web-push.mjs'
 import {
   PROBE_NAMES,
   RECIPIENT_KINDS,
@@ -333,6 +336,19 @@ async function tick(pool) {
   const telegramChannelActive =
     telegramHelperShipped && telegramMasterSwitch && telegramTokenPresent
 
+  // BCS-DEF-4-PUSH (2026-06-06) — pre-flight gate for Web Push channel.
+  // Active iff master switch ON AND VAPID env triple present. Either
+  // missing → push branch skipped entirely (no (slot,'push') rows written;
+  // idempotency slot stays open for the next tick once misconfig clears).
+  const pushMasterSwitch =
+    probeSettings.LEARNER_REMINDERS_PUSH_ENABLED?.value === 1
+  const vapidPublicKey = (process.env.PUSH_VAPID_PUBLIC_KEY?.trim() || '')
+  const vapidPrivateKey = (process.env.PUSH_VAPID_PRIVATE_KEY?.trim() || '')
+  const vapidSubject = (process.env.PUSH_VAPID_SUBJECT?.trim() || '')
+  const vapidKeysPresent =
+    vapidPublicKey !== '' && vapidPrivateKey !== '' && vapidSubject !== ''
+  const pushChannelActive = pushMasterSwitch && vapidKeysPresent
+
   const capturedThresholds = {
     LEARNER_REMINDERS_EMAIL_ENABLED:
       probeSettings.LEARNER_REMINDERS_EMAIL_ENABLED.value,
@@ -340,6 +356,8 @@ async function tick(pool) {
     LEARNER_REMINDERS_RATE_LIMIT_PER_TICK: rateLimitPerTick,
     LEARNER_REMINDERS_TELEGRAM_ENABLED:
       probeSettings.LEARNER_REMINDERS_TELEGRAM_ENABLED?.value ?? 0,
+    LEARNER_REMINDERS_PUSH_ENABLED:
+      probeSettings.LEARNER_REMINDERS_PUSH_ENABLED?.value ?? 0,
   }
   const capturedThresholdsSource = {
     LEARNER_REMINDERS_EMAIL_ENABLED:
@@ -350,6 +368,8 @@ async function tick(pool) {
       probeSettings.LEARNER_REMINDERS_RATE_LIMIT_PER_TICK.source,
     LEARNER_REMINDERS_TELEGRAM_ENABLED:
       probeSettings.LEARNER_REMINDERS_TELEGRAM_ENABLED?.source ?? 'default',
+    LEARNER_REMINDERS_PUSH_ENABLED:
+      probeSettings.LEARNER_REMINDERS_PUSH_ENABLED?.source ?? 'default',
   }
 
   // BCS-DEF-4-TG (2026-05-20) — emit config_missing diagnostic row
@@ -371,8 +391,8 @@ async function tick(pool) {
     )
   }
 
-  // Both channels off → early-exit with a single audit row.
-  if (!emailEnabled && !telegramChannelActive) {
+  // All channels off → early-exit with a single audit row.
+  if (!emailEnabled && !telegramChannelActive && !pushChannelActive) {
     await recordProbeRun(pool, {
       probeName: PROBE_NAME,
       verdictKind: VERDICT_KINDS.CHANNEL_DISABLED_BY_OPERATOR,
@@ -381,30 +401,40 @@ async function tick(pool) {
         thresholds: capturedThresholds,
         thresholds_source: capturedThresholdsSource,
         telegram_helper_shipped: telegramHelperShipped,
+        vapid_keys_present: vapidKeysPresent,
       },
     })
-    logJson('info', 'both channels disabled, exiting tick early')
+    logJson('info', 'all channels disabled, exiting tick early')
     return
   }
 
-  // Tick-level send-budget. Counts email + telegram together.
+  // Tick-level send-budget. Counts email + telegram + push together.
+  // One (slot, channel) row consumes one budget unit, regardless of
+  // the push fan-out factor (per-account device count ≤ MAX_ACTIVE_PUSH
+  // = 10). Rationale: rate-limit guards operator-side mistake, not
+  // per-device cost (round-7 BLOCKER 2 unification).
   let sendBudget = rateLimitPerTick
 
   const stats = {
     selected_due_email: 0,
     selected_due_telegram: 0,
+    selected_due_push: 0,
     sent_email: 0,
     sent_telegram: 0,
+    sent_push: 0,
     skipped_slot_no_longer_booked: 0,
     skipped_email_missing: 0,
     skipped_past_send_by: 0,
     skipped_send_failed: 0,
     skipped_no_telegram_binding: 0,
     skipped_telegram_helper_not_shipped: 0,
+    skipped_no_push_subscription: 0,
     sends_overflowed_rate_limit: 0,
+    push_subs_auto_unsubscribed: 0,
     thresholds: capturedThresholds,
     thresholds_source: capturedThresholdsSource,
     telegram_helper_shipped: telegramHelperShipped,
+    vapid_keys_present: vapidKeysPresent,
   }
 
   // ---- Email channel ----
@@ -629,6 +659,148 @@ async function tick(pool) {
     }
   }
 
+  // ---- Push channel (BCS-DEF-4-PUSH) ----
+  if (pushChannelActive) {
+    const duePush = await readDueSlots(pool, {
+      windowMinutes,
+      rateLimitPerTick,
+      channel: 'push',
+    })
+    stats.selected_due_push = duePush.length
+
+    for (const row of duePush) {
+      // 1. CLAIM FIRST.
+      const claimRes = await pool.query(
+        `
+        INSERT INTO learner_reminder_dispatches
+          (slot_id, account_id, channel, window_minutes_at_dispatch, status)
+        VALUES ($1::uuid, $2::uuid, 'push', $3::int, 'claimed')
+        ON CONFLICT (slot_id, channel) DO NOTHING
+        RETURNING id
+        `,
+        [row.slotId, row.learnerAccountId, windowMinutes],
+      )
+      if (claimRes.rows.length === 0) continue
+      const rowId = String(claimRes.rows[0].id)
+
+      // 2. Send-time recheck (skip-at-gate does NOT consume budget).
+      const gate = await reFetchAndGate(pool, row.slotId, windowMinutes)
+      if ('skipped' in gate) {
+        // For Push, an `email_missing` gate is irrelevant — push doesn't
+        // require email. Treat it the same way the telegram branch does:
+        // collapse to slot_no_longer_booked since email is anonymised on
+        // account purge.
+        const reason =
+          gate.skipped === 'email_missing'
+            ? 'slot_no_longer_booked'
+            : gate.skipped
+        await finalizeSkipped(pool, rowId, reason, null)
+        if (reason === 'slot_no_longer_booked') {
+          stats.skipped_slot_no_longer_booked += 1
+        } else if (reason === 'past_send_by') {
+          stats.skipped_past_send_by += 1
+        }
+        continue
+      }
+
+      // 3. Budget check.
+      if (sendBudget <= 0) {
+        await finalizeSkipped(pool, rowId, 'past_send_by', null)
+        stats.skipped_past_send_by += 1
+        stats.sends_overflowed_rate_limit += 1
+        continue
+      }
+      sendBudget -= 1
+
+      // 4. SELECT active subs.
+      const subsRes = await pool.query(
+        `
+        SELECT id, endpoint, p256dh_b64url, auth_b64url
+          FROM learner_push_subscriptions
+         WHERE account_id = $1::uuid AND unsubscribed_at IS NULL
+         ORDER BY id ASC
+        `,
+        [row.learnerAccountId],
+      )
+      const subs = subsRes.rows
+      if (subs.length === 0) {
+        await finalizeSkipped(pool, rowId, 'no_push_subscription', null)
+        stats.skipped_no_push_subscription += 1
+        continue
+      }
+
+      // 5. Fan out to each subscription.
+      const payload = renderLearnerPushPayload({
+        windowMinutes,
+        cabinetUrl: `${SITE_URL}/cabinet`,
+      })
+      let anyOk = false
+      let lastFailure = null
+      for (const sub of subs) {
+        const res = await sendWebPush(
+          {
+            endpoint: String(sub.endpoint),
+            p256dh_b64url: String(sub.p256dh_b64url),
+            auth_b64url: String(sub.auth_b64url),
+          },
+          payload,
+          process.env,
+        )
+        if (res.ok) {
+          anyOk = true
+          await pool.query(
+            `UPDATE learner_push_subscriptions
+                SET last_used_at = now(),
+                    last_status_code = $2::int,
+                    last_error = NULL,
+                    updated_at = now()
+              WHERE id = $1::bigint`,
+            [String(sub.id), res.statusCode ?? null],
+          )
+        } else if (res.reason === 'endpoint_gone') {
+          await pool.query(
+            `UPDATE learner_push_subscriptions
+                SET unsubscribed_at = now(),
+                    last_status_code = $2::int,
+                    last_error = $3::text,
+                    updated_at = now()
+              WHERE id = $1::bigint`,
+            [String(sub.id), res.statusCode ?? null, truncate(res.error)],
+          )
+          stats.push_subs_auto_unsubscribed += 1
+          // Emit audit row through dedicated pool.
+          await recordPushSubscriptionUnsubscribedAuto({
+            pool,
+            accountId: row.learnerAccountId,
+            endpoint: String(sub.endpoint),
+            statusCode: res.statusCode ?? null,
+            reason: 'endpoint_gone',
+          })
+          lastFailure = truncate(`endpoint_gone:${res.statusCode}`)
+        } else {
+          await pool.query(
+            `UPDATE learner_push_subscriptions
+                SET last_status_code = $2::int,
+                    last_error = $3::text,
+                    updated_at = now()
+              WHERE id = $1::bigint`,
+            [String(sub.id), res.statusCode ?? null, truncate(res.error)],
+          )
+          lastFailure = truncate(res.error ?? `send_failed:${res.statusCode}`)
+        }
+      }
+
+      // 6. Final row outcome.
+      if (anyOk) {
+        await finalizeSent(pool, rowId, { channel: 'push', providerId: null })
+        stats.sent_push += 1
+      } else {
+        await finalizeSkipped(pool, rowId, 'send_failed', lastFailure)
+        stats.skipped_send_failed += 1
+      }
+    }
+  }
+
   // Aggregate observability row.
   await recordProbeRun(pool, {
     probeName: PROBE_NAME,
@@ -656,7 +828,7 @@ async function finalizeSent(pool, rowId, { channel, providerId }) {
       `,
       [rowId, providerId],
     )
-  } else {
+  } else if (channel === 'telegram') {
     await pool.query(
       `
       UPDATE learner_reminder_dispatches
@@ -669,6 +841,20 @@ async function finalizeSent(pool, rowId, { channel, providerId }) {
        WHERE id = $1::bigint
       `,
       [rowId, providerId],
+    )
+  } else {
+    // push: no provider-id column (Web Push has no aggregate message id).
+    await pool.query(
+      `
+      UPDATE learner_reminder_dispatches
+         SET status         = 'sent',
+             sent_at        = now(),
+             skipped_reason = NULL,
+             last_error     = NULL,
+             updated_at     = now()
+       WHERE id = $1::bigint
+      `,
+      [rowId],
     )
   }
 }
