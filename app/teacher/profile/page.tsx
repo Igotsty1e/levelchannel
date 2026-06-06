@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
+import { DangerZone } from '@/app/cabinet/danger-zone'
 import { ProfileEditor } from '@/app/cabinet/profile-editor'
 import {
   TariffComparisonCard,
@@ -134,6 +135,7 @@ export default async function TeacherProfilePage() {
         fallbackEmail={account.email}
         enforceExplicitTimezone
       />
+      <DangerZone />
     </>
   )
 }
