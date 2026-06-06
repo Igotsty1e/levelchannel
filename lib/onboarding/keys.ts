@@ -27,6 +27,8 @@ export const ONBOARDING_HINT_KEYS = [
   'postpaid_explained',
   // cross-cutting (Sub-PR B + C share)
   'pwa_install',
+  // Sub-PR C CT1 — verify-email pending banner on /cabinet.
+  'verify_email_reminder',
 ] as const
 
 export type OnboardingHintKey = (typeof ONBOARDING_HINT_KEYS)[number]

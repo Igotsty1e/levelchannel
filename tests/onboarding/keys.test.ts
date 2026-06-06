@@ -12,7 +12,7 @@ import {
 } from '@/lib/onboarding/keys'
 
 describe('ONBOARDING_HINT_KEYS', () => {
-  it('contains the 11 must-have hints listed in the spec', () => {
+  it('contains the must-have hints listed in the spec', () => {
     expect(ONBOARDING_HINT_KEYS).toEqual([
       'teacher_setup_checklist',
       'tariff_first_create_hint',
@@ -25,6 +25,8 @@ describe('ONBOARDING_HINT_KEYS', () => {
       'first_completed_celebrated',
       'postpaid_explained',
       'pwa_install',
+      // Sub-PR C CT1 (2026-06-06):
+      'verify_email_reminder',
     ])
   })
 

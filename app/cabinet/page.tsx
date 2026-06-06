@@ -31,6 +31,8 @@ import { LearnerCabinetTour } from '@/components/onboarding/learner-cabinet-tour
 import { BillingSections } from './billing-sections'
 import { LessonsSection } from './lessons-section'
 import { LogoutButton } from './logout-button'
+import { VerifyEmailReminderDismissButton } from '@/components/onboarding/verify-email-reminder-dismiss'
+
 import { ResendVerifyButton } from './resend-verify-button'
 import { TeacherBlocksList } from './teacher-blocks-list'
 import { TeacherInviteSection } from './teacher-invite-section'
@@ -229,6 +231,16 @@ export default async function CabinetPage({
     : false
   const showAfterBookReminder = isLearner && justBooked && !reminderHintDismissed
 
+  // Sub-PR C CT1 — verify-email pending banner is dismissible. Mount the
+  // hint card only when user has NOT dismissed it before.
+  const verifyEmailHintState = !isVerified
+    ? await getOnboardingState(account.id)
+    : null
+  const verifyEmailHintDismissed = verifyEmailHintState
+    ? 'verify_email_reminder' in verifyEmailHintState.dismissedHints
+    : false
+  const showVerifyEmailHint = !isVerified && !verifyEmailHintDismissed
+
   return (
     <AuthShell>
       <div
@@ -267,11 +279,12 @@ export default async function CabinetPage({
         <span style={{ color: 'var(--text)' }}>{greetingName}</span>.
       </p>
 
-      {!isVerified ? (
+      {showVerifyEmailHint ? (
         <AuthInfoBox>
           E-mail ещё не подтверждён. Откройте письмо, которое мы отправили при
           регистрации, и нажмите ссылку в нём. Если письма нет —{' '}
           <ResendVerifyButton />.
+          <VerifyEmailReminderDismissButton />
         </AuthInfoBox>
       ) : null}
 
