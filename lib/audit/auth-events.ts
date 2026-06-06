@@ -46,6 +46,16 @@ export const AUTH_AUDIT_EVENT_TYPES = [
   'auth.tariff_access.revoked',     // mig 0102 (T3)
   'auth.package_access.granted',    // mig 0102 (T3)
   'auth.package_access.revoked',    // mig 0102 (T3)
+  // BCS-DEF-4-PUSH (2026-06-06) — mirror SQL CHECK widened by mig 0108.
+  // Five push.subscription.* events for Web Push lifecycle:
+  // created (first INSERT), reassigned (cross-account flip),
+  // revived (same-account dormant resub), unsubscribed.user (user delete),
+  // unsubscribed.auto (scheduler 410/404 or cap eviction).
+  'push.subscription.created',
+  'push.subscription.reassigned',
+  'push.subscription.revived',
+  'push.subscription.unsubscribed.user',
+  'push.subscription.unsubscribed.auto',
 ] as const
 
 export type AuthAuditEventType = (typeof AUTH_AUDIT_EVENT_TYPES)[number]

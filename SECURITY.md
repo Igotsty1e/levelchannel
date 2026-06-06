@@ -615,6 +615,50 @@ picked up on next tick.
 Per-IP rate limit 12/min on each route adds defense-in-depth if the
 loopback gate is ever bypassed.
 
+## Web Push channel (BCS-DEF-4-PUSH, 2026-06-06)
+
+VAPID keypair: public key is exposed via `GET /api/push/vapid-public-key`
+(public by design — browsers need it to subscribe). Private key
+(`PUSH_VAPID_PRIVATE_KEY`) stays server-only; routed only through
+`scripts/lib/web-push.mjs::configureVapidIfNeeded` at scheduler start.
+Subject (`PUSH_VAPID_SUBJECT`) is a `mailto:`/`https:` URI per RFC 8292.
+
+Endpoint as capability: a Web Push endpoint URL embeds an opaque
+token; possession of it grants any caller the ability to push to that
+device. Subscribe is therefore gated by
+`requireLearnerArchetypeAndVerified` + `enforceTrustedBrowserOrigin` +
+`enforceAccountRateLimit('push:subscribe', 30, 60_000)` +
+host allowlist via `lib/notifications/push-provider-allowlist.ts`
+(exact host+pathPrefix tuples for FCM/Mozilla/Apple — tighter than a
+suffix regex). Unsubscribe is the same perimeter MINUS the host
+allowlist (so a legacy endpoint stored when an older provider was
+allowed remains deletable by its owner — round-10 self-review WARN 1).
+
+Cross-account leak guard: the active-endpoint partial UNIQUE index on
+`learner_push_subscriptions` admits at most one ACTIVE row per
+endpoint URL globally. Subscribe-route transaction takes
+`pg_advisory_xact_lock('push_sub:' || endpoint)` THEN flips any
+displaced row to `unsubscribed_at = now()` BEFORE inserting the new
+binding, emitting both `push.subscription.reassigned` (new owner) and
+`push.subscription.unsubscribed.auto` (displaced owner) audit rows.
+Cap of 10 active subscriptions per account with FIFO eviction;
+`push.subscription.unsubscribed.auto` (reason=`cap_reached`) audited.
+
+Payload privacy: notification body is rendered by
+`scripts/lib/learner-push-template.mjs::renderLearnerPushPayload` and
+contains only `{ title, body, url }` — no Zoom URL, no lesson title, no
+PII. The Web Push payload is RFC 8291–encrypted by the `web-push` lib
+between the scheduler and the browser. Cross-origin URLs in the
+payload are rewritten to `/cabinet` by
+`public/sw-lib/resolve-open-url.js` at click time.
+
+Audit boundary: scheduler-side audit writes
+(`push.subscription.unsubscribed.auto` on Web Push 410/404) route
+through `scripts/lib/audit-pool.mjs` — a .mjs port of
+`lib/audit/pool.ts` that targets `AUDIT_DATABASE_URL` /
+`levelchannel_audit_writer` (mig 0029) when set, so the role boundary
+holds even from the scheduler.
+
 ## Current limits and accepted gaps
 
 - payment telemetry: Postgres is the primary path, file fallback is for the case

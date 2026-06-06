@@ -145,6 +145,9 @@ const KNOWN_DYNAMIC_USAGE = new Set([
   // Operator-settings master-switch: read via env[schema.envName] in
   // lib/admin/operator-settings.ts after DB lookup falls back to env.
   'TELEGRAM_ALERTS_MASTER_SWITCH',
+  // BCS-DEF-4-PUSH (2026-06-06) — env-fallback names for the push
+  // schema entry; read dynamically via env[schema.envName].
+  'LEARNER_REMINDERS_PUSH_ENABLED',
   // Build-time only — Sentry plugin in next.config.js consumes this
   // from process env directly; not referenced in source.
   'SENTRY_AUTH_TOKEN',

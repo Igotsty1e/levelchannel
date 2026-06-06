@@ -170,15 +170,17 @@ describe('SETTING_SCHEMA invariants', () => {
     ])
   })
 
-  // BCS-DEF-4 (2026-05-19) + BCS-DEF-4-TG (2026-05-20) — learner-reminders
-  // scope has 4 keys (3 scheduler knobs + 1 Telegram master switch).
-  it('learner-reminders scope has the 4 expected scheduler keys', () => {
+  // BCS-DEF-4 (2026-05-19) + BCS-DEF-4-TG (2026-05-20) + BCS-DEF-4-PUSH
+  // (2026-06-06) — learner-reminders scope has 5 keys (3 scheduler knobs
+  // + Telegram master switch + Push master switch).
+  it('learner-reminders scope has the 5 expected scheduler keys', () => {
     const reminderKeys = Object.entries(TS_SCHEMA)
       .filter(([, s]) => s.scope === 'learner-reminders')
       .map(([k]) => k)
       .sort()
     expect(reminderKeys).toEqual([
       'LEARNER_REMINDERS_EMAIL_ENABLED',
+      'LEARNER_REMINDERS_PUSH_ENABLED',
       'LEARNER_REMINDERS_RATE_LIMIT_PER_TICK',
       'LEARNER_REMINDERS_TELEGRAM_ENABLED',
       'LEARNER_REMINDER_WINDOW_MINUTES',
