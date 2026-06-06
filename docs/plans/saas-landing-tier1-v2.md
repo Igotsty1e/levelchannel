@@ -15,7 +15,17 @@
 
 ## 0. Plan-paranoia gate
 
-This file MUST pass `/codex-paranoia plan` rounds 1-3 BEFORE the first impl sub-PR opens. Sub-PRs inside this epic inherit the plan SIGN-OFF and ship under Claude self-review (`Codex-Paranoia: SUB-WAVE self-reviewed (epic saas-landing-tier1-v2); epic-end review pending` trailer). Epic-end `/codex-paranoia wave` runs ONCE on aggregated diff after all 6 sub-PRs merge to main. Token budget: 2 Codex passes for the full month.
+This file MUST pass `/codex-paranoia plan` rounds 1-3 BEFORE the first impl sub-PR opens. Sub-PRs inside this epic inherit the plan SIGN-OFF and ship under Claude self-review (`Codex-Paranoia: SUB-WAVE self-reviewed (epic saas-landing-tier1-v2); epic-end review pending` trailer). Epic-end `/codex-paranoia wave` runs ONCE on aggregated diff after all sub-PRs merge to main. Token budget: 2 Codex passes for the full month.
+
+## 0a. STRATEGY UPDATE 2026-06-06 — 3 lean variants instead of 1 full cinematic
+
+**Owner directive (chat 2026-06-06 mid-session):** «Сделай в итоге 3 разных варианта лендинга самостоятельно автономно, для картинок используй кодекс — он сгенерит».
+
+**Plan revision:** instead of one fully-built 5-act Cuberto-tier landing, ship **3 lean preview variants** in 1-month budget. Each variant = standalone preview route under `/saas/v2-{a,b,c}` with ~3-section compact narrative. Owner walks all 3 at month-end, picks the winner. Winner gets ramped to full Tier-1 polish in a follow-up epic. Losers archived. Original §2 5-act narrative survives as Variant A's full scope (lean build = Hero + climactic-act + CTA only; full 5-act reserved for the picked-winner polish epic).
+
+**Visual diversification rule:** each variant occupies a distinct point in design-direction space — different MJ `--sref` codes, different palettes within brand range, different layout philosophy. Three variants must look **visibly different** so owner gets a real choice (not three flavours of the same thing). Definitions in §11 below.
+
+**Image generation via Codex:** all illustrations + state variants are generated via Codex CLI calling GPT-Image-1 (owner has ChatGPT Pro subscription which enables this). Claude writes prompt brief → Codex executes generation → output deposited to `public/assets/landing-v2/{variant}/`. Pipeline detail in §11.4. Kling 2.1 / Sora 2 video gen remains the owner's hands-on workflow (Claude provides briefs in `docs/brand/codex-video-prompts.md`).
 
 ---
 
@@ -547,5 +557,175 @@ Buffer: 2 unplanned days within month for Codex paranoia round-2 fixes or perf h
 - **Sentry MCP** — post-launch error tracking.
 
 ---
+
+## 11. 3-variant strategy (added 2026-06-06 per owner directive)
+
+### 11.1 Three distinct directions
+
+Variants occupy distinct points in the SaaS-landing design-space. Each gets its own preview route, own brand-DNA (own `--sref` code), own copy slant. Owner walks all 3, picks winner.
+
+| | Variant A — Cinematic Desk Magic | Variant B — Editorial Storytelling | Variant C — Interactive Demo Playground |
+|---|---|---|---|
+| **Mood** | Dark, magical, premium-cinematic | Light-dark editorial, magazine-grade typography | Mid-dark, hands-on, product-first |
+| **Aesthetic anchor** | Cuberto / Apple / Lusion | Linear / Vercel / Stripe Sessions | Mercury / Notion / Raycast |
+| **Hero mechanic** | Scattered desk items collapsing via 3D R3F into `/teacher/dashboard` | Massive serif/sans type-morph statements, scroll-revealed editorial paragraphs, real product screenshots | Live-feel mocked dashboard surface — user can hover/click to "try" features without registration |
+| **3D usage** | Heavy (R3F desk + dashboard scenes) | Minimal (only optional accent) | None (focus on real product UI) |
+| **Lottie usage** | Few accents | Heavy (illustrative micro-animations) | Few accents |
+| **Copy density** | Sparse (3-5 word headlines per act) | Long (editorial paragraphs, quote-grade statements) | Medium (UI labels + 1-2 sentence per feature) |
+| **Conversion path** | Magnetic CTA at climactic act-4-5 | CTAs distributed through editorial sections | "Try the dashboard" → "Save your work — register" |
+| **Best for buyer type** | Emotional / brand-driven / premium-feel seekers | Rational / comparison-shoppers / content-rich evaluators | Pragmatic / engineer-mindset / try-before-buy |
+| **Route** | `/saas/v2-a` | `/saas/v2-b` | `/saas/v2-c` |
+| **Lean scope** | Hero (Act 1+2 fused) + climax (Act 4) + CTA (Act 5). Acts 3 cut. | Hero + 3 editorial scroll sections + CTA. | Hero + interactive dashboard mock + CTA. |
+| **Asset count (lean)** | 6 illustrations + R3F desk-collapse scene + 1 video loop | 4 illustrations + 6 Lottie micro-anims + 3 product screenshots | 2 illustrations + full `<DashboardMock />` interactive component + 2 sample-data sets |
+| **Estimated dev days** | 5 days | 5 days | 5 days |
+
+### 11.2 Codex image-gen pipeline
+
+Per owner directive, Codex CLI handles image generation (GPT-Image-1 via ChatGPT Pro auth).
+
+**Workflow per variant per asset:**
+1. Claude writes brief into `docs/brand/codex-image-prompts.md` with: variant id, asset slot, prompt text, palette hex, aspect ratio, output filename.
+2. Claude invokes Codex via `codex exec -p "$(cat docs/brand/codex-image-prompts.md | jq -r '.assets[ID].prompt')"` — Codex generates image, saves to local path.
+3. Claude reads file, validates aspect ratio + palette adherence via Chrome DevTools MCP color-picker pass.
+4. If drift detected (palette wrong / composition wrong), Claude updates prompt + re-invokes.
+5. On accept, file optimized (Squoosh AVIF + WebP) → committed to `public/assets/landing-v2/{variant}/illustrations/`.
+
+**Fallback if Codex image-gen unavailable in current CLI version:**
+Claude writes prompts into `docs/brand/codex-image-prompts.md` as todo-list. Owner manually pastes each prompt into ChatGPT to generate, saves output to `public/assets/landing-v2/{variant}/illustrations/raw/`. Claude picks up files and runs optimization pipeline. This is graceful-degrade for v1.
+
+**Style coherence per variant:**
+Each variant has its OWN `--sref-equivalent` style anchor — for GPT-Image, we use a locked **system prompt prefix** (palette + lighting + composition rules) appended to every prompt. Style anchor lives in `docs/brand/variant-{a,b,c}-style-anchor.md`. Prefix is verbatim-identical across all assets of one variant. Mixing variants in one asset set = brand drift incident.
+
+**Video gen:** Claude writes `docs/brand/codex-video-prompts.md` with Kling/Sora prompts. Owner generates manually (Kling not yet CLI-accessible). Output to `public/assets/landing-v2/{variant}/video/`.
+
+### 11.3 Sub-PR re-decomposition (SUPERSEDES §5)
+
+§5 above (6-sub-PR plan) is SUPERSEDED. Revised 8 sub-PR breakdown:
+
+| # | Sub-PR | Goal | Days | Trailer |
+|---|---|---|---|---|
+| Sub-1 | Brand DNA × 3 (style anchors + sample-asset gen for each variant) | Lock 3 visual DNAs. Each variant gets 1 illustration generated as smoke-test before batch. | 3 | `Codex-Paranoia: SUB-WAVE self-reviewed` |
+| Sub-2 | Shared animation foundation (GSAP 3.13 + Lenis + R3F bootstrap, scoped under `lib/animation/`). LenisProvider mounted in `app/saas/layout.tsx`. | 4 | `SUB-WAVE self-reviewed` |
+| Sub-3 | **Variant A — Cinematic Desk Magic** preview route `/saas/v2-a`. Lean 3-section build (Hero/Act1+2 + climax/Act4 dashboard collapse + CTA/Act5). Assets generated via Codex pipeline. | 5 | `SUB-WAVE self-reviewed (variant a)` |
+| Sub-4 | **Variant B — Editorial Storytelling** preview route `/saas/v2-b`. Hero + 3 editorial scroll sections + CTA. Lottie-heavy. | 5 | `SUB-WAVE self-reviewed (variant b)` |
+| Sub-5 | **Variant C — Interactive Demo Playground** preview route `/saas/v2-c`. Hero + `<DashboardMock />` interactive surface + CTA. | 5 | `SUB-WAVE self-reviewed (variant c)` |
+| Sub-6 | Shared analytics ingestion (mig 0110 + `/api/landing/event` + admin dashboard). Beacon variant-aware (`variant_id` column added to schema). | 3 | `SUB-WAVE self-reviewed` |
+| Sub-7 | **Owner pick + winner polish.** Whichever variant owner picks goes through: full 5-act (or full editorial / full demo) ramp, copy refinement via `/design-with-claude:content-strategist`, a11y via `Agent(web-accessibility-wizard)`, Lighthouse Perf ≥70 mobile / ≥90 desktop, mobile-specialist final pass. | 5 | `SUB-WAVE self-reviewed` |
+| Sub-8 | **Epic close.** Flip `LANDING_V2_ENABLED=1` default ON in `/saas`. Delete legacy `components/home/teacher-landing-client.tsx`. Delete 2 losing variant routes. SHIPPED-INDEX entry. Parent `docs/plans/saas-offer-and-landing-redesign.md` Epic B Status flip. | 2 | `Codex-Paranoia: SIGN-OFF round N/3 (epic-end on <range>)` |
+
+**Total:** 32 days budget (28-day month + 4 buffer days for codex paranoia round-2 fixes or perf hot-spots).
+
+### 11.4 Sub-agent orchestration (per owner directive — Claude orchestrator + parallel sub-agents)
+
+Sub-1 + Sub-3 + Sub-4 + Sub-5 each parallelizable via sub-agents:
+
+**Sub-1 parallel sub-agents (3 in parallel):**
+- `Agent(subagent_type=general-purpose)` × 3, one per variant. Each generates: style anchor doc + smoke-test single illustration prompt + palette pin + composition-rules-prefix. Reports back to orchestrator. Orchestrator commits all 3 anchor docs.
+
+**Sub-3 parallel sub-agents (Variant A build):**
+- `Agent(subagent_type=general-purpose)` for the R3F desk-collapse scene (heaviest tech).
+- Orchestrator Claude writes the React composition (`act-1+2-fused.tsx`, `act-4-collapse.tsx`, `act-5-cta.tsx`).
+- `/design-with-claude:motion-designer` for easing review.
+- `/design-with-claude:visual-hierarchy-specialist` for camera angle.
+
+**Sub-4 parallel sub-agents (Variant B build):**
+- `Agent(subagent_type=general-purpose)` for the editorial Lottie batch generation (Rive auth + export).
+- `/design-with-claude:typography-specialist` for editorial type-scale.
+- `/design-with-claude:content-strategist` for the editorial-grade prose.
+
+**Sub-5 parallel sub-agents (Variant C build):**
+- `Agent(subagent_type=general-purpose)` for the `<DashboardMock />` interactive surface (heaviest UI).
+- `/design-with-claude:interaction-designer` for try-without-register UX.
+- `/design-with-claude:b2b-saas-specialist` for value-prop framing.
+
+**Sub-7 parallel sub-agents (winner polish):**
+- `Agent(subagent_type=web-accessibility-wizard)` — WCAG 2.1 AA audit.
+- `/design-with-claude:performance-specialist` — Lighthouse perf gate.
+- `/design-with-claude:mobile-specialist` — touch-target + thumb-zone audit.
+- `/design-with-claude:content-strategist` — final copy polish.
+- All run in parallel from orchestrator Claude in a single message with multiple Agent tool uses.
+
+Rule from `~/.claude/COMPANY.md`: orchestrating sub-agents DOES NOT exempt parent from `/codex-paranoia plan` BEFORE delegating, and `/codex-paranoia wave` AFTER all sub-PRs merge. Plan paranoia on THIS doc must SIGN-OFF before Sub-1 sub-agents launch.
+
+### 11.5 Day-by-day SUPERSEDED (revised for 3 variants)
+
+| Day | Work |
+|---|---|
+| 1 | Sub-1: 3 parallel sub-agents draft 3 variant style anchors (palette pin + composition prefix + mood words). |
+| 2 | Sub-1: Codex image-gen smoke test — 1 illustration per variant. Validate style anchor lock. |
+| 3 | Sub-1 PR + merge. |
+| 4 | Sub-2: GSAP + ScrollTrigger + @gsap/react scaffold. Tests for `prefers-reduced-motion` matchMedia. |
+| 5 | Sub-2: Lenis provider + RAF coordination + R3F bootstrap. Feature flag default OFF. |
+| 6 | Sub-2: tests + `/codex` consult on architecture (1 call). |
+| 7 | Sub-2 PR + merge. |
+| 8 | Sub-3 Variant A: Codex batch-gen 6 illustrations + 1 desk-ambient Kling video (owner). Optimization pipeline. |
+| 9 | Sub-3 Variant A: Act-1+2-fused build (chaos + pain typewriter). |
+| 10 | Sub-3 Variant A: Act-4 R3F desk-to-dashboard collapse scene. |
+| 11 | Sub-3 Variant A: Act-5 CTA + magnetic-cursor + pricing-«секрет» modal. |
+| 12 | Sub-3 Variant A: Playwright iteration (mobile viewport) + Lighthouse audit. |
+| 13 | Sub-3 PR + merge. Owner walks staging `/saas/v2-a`. Feedback captured. |
+| 14 | Sub-4 Variant B: Codex batch-gen 4 illustrations + Rive Lottie batch (6 micro-anims). |
+| 15 | Sub-4 Variant B: Hero editorial section + type-morph. |
+| 16 | Sub-4 Variant B: 3 editorial scroll sections + Lottie reveals. |
+| 17 | Sub-4 Variant B: CTA + distributed conversion points. |
+| 18 | Sub-4 Variant B: Playwright + Lighthouse. |
+| 19 | Sub-4 PR + merge. Owner walks `/saas/v2-b`. |
+| 20 | Sub-5 Variant C: Codex 2 illustrations + sample-data sets for DashboardMock. |
+| 21 | Sub-5 Variant C: Hero + interactive `<DashboardMock />` surface. |
+| 22 | Sub-5 Variant C: Try-without-register flow + persist-on-register handoff design. |
+| 23 | Sub-5 Variant C: CTA + Playwright + Lighthouse. |
+| 24 | Sub-5 PR + merge. Owner walks `/saas/v2-c`. **Owner picks winner.** |
+| 25 | Sub-6: mig 0110 + analytics-events.ts + endpoint + beacon variant-aware. |
+| 26 | Sub-6: admin dashboard + tests. PR + merge. |
+| 27 | Sub-7 winner polish: full ramp (5-act OR editorial-extended OR demo-extended), copy via content-strategist, a11y via web-accessibility-wizard, Lighthouse perf. |
+| 28 | Sub-7 PR + merge. |
+| 29 | `/codex-paranoia wave` on epic commit-range. Round 1. |
+| 30 | Paranoia round-2 fixes if any. |
+| 31 | Sub-8 epic-close PR. Flag default ON. Legacy delete. 2 losing variant routes deleted. SHIPPED-INDEX. |
+| 32 | Buffer for round-3 paranoia or perf tune. |
+
+### 11.6 Variant-specific value-prop hypothesis
+
+| Variant | Tagline hypothesis | One-line story |
+|---|---|---|
+| A | «Магия. Стол → кабинет. Одно нажатие.» | «У тебя 6 сервисов на столе. Мы — один кабинет. Смотри сам.» |
+| B | «Преподавать — твоё призвание. Управлять — наше.» | «Расписание, ученики, балансы. Чисто. Понятно. Навсегда твоё.» |
+| C | «Попробуй прямо сейчас. Регистрация — потом.» | «Кабинет — здесь. Сразу. Без email. Понравится — сохранишь.» |
+
+Real copy refined in Sub-7 winner polish through `/design-with-claude:content-strategist`. These are anchor hypotheses for variant identity during build.
+
+### 11.7 Skill invocations expected for 3-variant approach (extends §10)
+
+Per sub-PR:
+
+**Sub-1** (sub-agents already covered above)
+- `/design-with-claude:brand-designer` (parent Claude review of 3 anchors)
+- `/design-with-claude:design-system-architect` (tokens extension for 3 variants)
+
+**Sub-3** (Variant A)
+- `/design-with-claude:motion-designer`, `:visual-hierarchy-specialist`, `:typography-specialist`, `:interaction-designer`
+
+**Sub-4** (Variant B)
+- `/design-with-claude:typography-specialist`, `:content-strategist`, `:visual-hierarchy-specialist`, `:landing-page-specialist`
+
+**Sub-5** (Variant C)
+- `/design-with-claude:interaction-designer`, `:b2b-saas-specialist`, `:form-designer` (for try-mode persistence)
+
+**Sub-6**
+- `/codex` (consult 1 call) for schema + variant-aware indexing
+- `/review` pre-merge
+
+**Sub-7** (winner polish, sub-agents in parallel)
+- `Agent(web-accessibility-wizard)`, `/design-with-claude:performance-specialist`, `:mobile-specialist`, `:content-strategist`, `:accessibility-specialist`, `/design-review`
+
+**Sub-8**
+- `/ship` for epic-close PR
+- `/document-release` post-merge
+- `/learn` end-of-session
+
+**Throughout**
+- Figma + Playwright + Chrome DevTools + Lighthouse + Sentry MCPs every sub-PR
+- `/codex-paranoia plan` on this doc (BEFORE Sub-1)
+- `/codex-paranoia wave` epic-end (AFTER Sub-7, BEFORE Sub-8 epic-close)
 
 ## End of plan-doc
