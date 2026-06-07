@@ -1,0 +1,97 @@
+{
+  "$schema": "intermediate-manifest-v1",
+  "variantId": "variant-b",
+  "anchorVersion": "vb-1.0",
+  "anchorDoc": "docs/brand/variant-b-style-anchor.md",
+  "outputBase": "public/assets/landing-v2/variant-b/illustrations/raw",
+  "committedBase": "public/assets/landing-v2/variant-b/illustrations",
+  "systemPromptPrefix": "EDITORIAL PHOTOGRAPHY MOOD. Magazine-grade still life or environmental scene. Soft natural daylight from a single window source, diffused through sheer fabric, color temperature approximately 4500K. Low contrast, no dramatic shadows, no specular highlights, no cinematic chiaroscuro. Ambient occlusion only; cast shadows under 25% opacity. Composition follows rule of thirds with deliberate negative space on two thirds. Subjects are real-world textured surfaces: matte paper, brushed wood, woven textile, unpolished ceramic, brushed metal, worn leather. No glossy plastic, no chrome, no neon, no holograms, no glass-reflection bloom. Palette: warm grays #0B0B0C #111113 #1A1818, off-white #F5F5F7, restrained warm-rose accent #C87878 used sparingly as a single small detail (never as primary fill, never as background tint). People may appear as implied presence — a hand on a notebook, a back turned to a window, a chair pulled away from a desk — never as prominent marketing-stock portrait faces. Style references: editorial photography in The New York Times feature section, Kinfolk Magazine still life, Cereal Magazine interiors. Avoid: 3D render aesthetic, illustration aesthetic, gradient backgrounds, cinematic lighting, dramatic angles, motion blur, lens flare, depth-of-field gimmick. Output reads as a photograph that could appear in a print magazine. ASPECT RATIO AND SUBJECT FOLLOW THE PER-ASSET PROMPT BELOW.",
+  "paletteHex": {
+    "bg": "#0B0B0C",
+    "surface": "#111113",
+    "surfaceEditorial": "#1A1818",
+    "textPrimary": "#F5F5F7",
+    "textSecondary": "#A1A1AA",
+    "textEditorialMuted": "#7A7A82",
+    "accent": "#C87878",
+    "accentSoft60": "rgba(200,120,120,0.60)"
+  },
+  "notes": [
+    "Lottie slots (lottie_b_*) are hand-authored in Rive; intentionally absent from this manifest.",
+    "Product screenshots are GPT-Image-1 RENDERINGS that mimic real product UI under editorial-photography treatment; they are not DOM screen-grabs.",
+    "promptHash = sha256(promptText + anchorVersion) computed at commit time by orchestrator; left as null in this intermediate manifest.",
+    "Orchestrator concatenates this file with variant-a + variant-c intermediates (in deterministic a→b→c order) into docs/brand/codex-image-prompts.md after all Sub-1 agents finish."
+  ],
+  "assets": [
+    {
+      "slot": "slot_b_hero_editorial_photo",
+      "category": "illustration",
+      "aspectRatio": "16:9",
+      "generationResolution": "3840x2160",
+      "outputFilename": "slot_b_hero_editorial_photo.png",
+      "committedFilenames": ["slot_b_hero_editorial_photo.avif", "slot_b_hero_editorial_photo.webp"],
+      "promptHash": null,
+      "promptText": "[SYSTEM PROMPT PREFIX vb-1.0 — see manifest.systemPromptPrefix] PER-ASSET SUBJECT: A wooden desk surface photographed in soft late-morning window light. A paper notebook lies open on the right third of the frame, lined pages partly filled with handwritten ink notes (illegible). A fountain pen rests at an angle across the open page. On the left third sits a single ceramic mug of black coffee, no steam. The hand of an implied person rests near the notebook — only the back of the knuckles visible at the edge of frame, suggesting presence without face. No digital screens. No phone. No laptop. Background is gently out of focus and suggests a window with a sheer linen curtain diffusing late-morning sunlight. Surface texture of the wood is visible — slight grain, matte finish, no gloss. The mood is calm, deliberate, before-the-day-begins. ASPECT RATIO 16:9. Output at 3840x2160."
+    },
+    {
+      "slot": "slot_b_section_1_workspace_scene",
+      "category": "illustration",
+      "aspectRatio": "16:9",
+      "generationResolution": "3840x2160",
+      "outputFilename": "slot_b_section_1_workspace_scene.png",
+      "committedFilenames": ["slot_b_section_1_workspace_scene.avif", "slot_b_section_1_workspace_scene.webp"],
+      "promptHash": null,
+      "promptText": "[SYSTEM PROMPT PREFIX vb-1.0 — see manifest.systemPromptPrefix] PER-ASSET SUBJECT: A wall-mounted paper week-calendar with handwritten pencil marks on the date cells. Several entries are visible — short handwritten words and times. The calendar paper is matte off-white with a subtle warm tint. A diagonal strip of natural daylight crosses the upper-left of the calendar, suggesting a window just out of frame. A single yellow paper post-it note is attached to one of the upcoming dates. No digital screens. No clock. No additional decoration on the wall. The surrounding wall is warm off-white plaster with very subtle texture. The calendar fills roughly two-thirds of the frame; the remaining third is wall-space with the light strip. Mood is quiet, organized, deliberate. ASPECT RATIO 16:9. Output at 3840x2160."
+    },
+    {
+      "slot": "slot_b_section_2_calm_dashboard",
+      "category": "illustration",
+      "aspectRatio": "16:9",
+      "generationResolution": "3840x2160",
+      "outputFilename": "slot_b_section_2_calm_dashboard.png",
+      "committedFilenames": ["slot_b_section_2_calm_dashboard.avif", "slot_b_section_2_calm_dashboard.webp"],
+      "promptHash": null,
+      "promptText": "[SYSTEM PROMPT PREFIX vb-1.0 — see manifest.systemPromptPrefix] PER-ASSET SUBJECT: An open paper ledger book on a wooden desk surface, photographed from a slight three-quarter overhead angle. Half a dozen handwritten entries are visible on the open page — names paired with numbers in narrow columns, written in restrained ink. A pair of reading glasses lies folded next to the ledger. A porcelain teacup of pale tea is on the right edge of the frame, with very subtle steam (barely a hint, not theatrical). Soft window-light enters from the upper-right of the frame, diffused. The ledger occupies the central two-thirds of the frame; remaining third is empty desk surface. No digital screens. The book represents the analog calm that the product preserves. ASPECT RATIO 16:9. Output at 3840x2160."
+    },
+    {
+      "slot": "slot_b_section_3_quote_image",
+      "category": "illustration",
+      "aspectRatio": "21:9",
+      "generationResolution": "3840x1645",
+      "outputFilename": "slot_b_section_3_quote_image.png",
+      "committedFilenames": ["slot_b_section_3_quote_image.avif", "slot_b_section_3_quote_image.webp"],
+      "promptHash": null,
+      "promptText": "[SYSTEM PROMPT PREFIX vb-1.0 — see manifest.systemPromptPrefix] PER-ASSET SUBJECT: An empty wooden chair pulled slightly out from a teacher's desk, viewed from a low side angle. Behind the chair, a tall window admits soft natural backlight that haloes the chair silhouette without producing a strong cast shadow. A simple jacket is draped over the back of the chair. The chair occupies the right third of the frame; the left two-thirds is deliberately empty desk surface and window light. The subject reads as: 'the teacher just stepped away — their workflow continues uninterrupted.' Deeply negative-space-forward composition. No digital screens visible. No additional props. Mood is calm, contemplative, end-of-thought. ASPECT RATIO 21:9 (cinematic-ish but used as a pull-quote backdrop, not a film frame — the editorial photography treatment stays in effect). Output at 3840x1645."
+    },
+    {
+      "slot": "slot_b_product_screenshot_dashboard",
+      "category": "product-screenshot",
+      "aspectRatio": "16:10",
+      "generationResolution": "3200x2000",
+      "outputFilename": "slot_b_product_screenshot_dashboard.png",
+      "committedFilenames": ["slot_b_product_screenshot_dashboard.avif", "slot_b_product_screenshot_dashboard.webp"],
+      "promptHash": null,
+      "promptText": "[SYSTEM PROMPT PREFIX vb-1.0 — see manifest.systemPromptPrefix] PER-ASSET SUBJECT: A photograph of a laptop screen showing a teacher's dashboard web application. The browser frame is macOS Safari style with the three traffic-light window controls visible at upper-left. Inside the browser: dark canvas background #0B0B0C. Top navigation bar with a small brand mark on the left — an ascending sine wave glyph in warm-rose #C87878 — followed by the wordmark 'LevelChannel' in Inter sans, off-white #F5F5F7. Below the top nav, a left sidebar with four navigation items stacked vertically: 'Главная', 'Календарь', 'Ученики', 'Настройки', each in Inter sans #A1A1AA with the active item 'Главная' tinted in #C87878 at 18%. The main canvas shows a weekly schedule grid: five day columns (Пн, Вт, Ср, Чт, Пт) and four time-slot rows (10:00, 12:00, 14:00, 18:00). Eight of the twenty slots are filled with lesson cards. Each lesson card uses #C87878 at 18% opacity as background, with a row of text 'Иван Петров · 18:00' in Inter sans #F5F5F7 at 14px. One card is shown in a subtle hover-elevation state (very slight brighter rose tint). All typography Inter sans matching the brand product. The laptop is photographed on a wooden desk with the editorial photography treatment: soft natural window-light, slight three-quarter perspective tilt so the screen reads as an artifact rather than a flat marketing render, a faint warm reflection in the matte screen surface, no specular hot-spots. Background slightly out of focus. The screen is the subject; the surrounding desk is implied. ASPECT RATIO 16:10. Output at 3200x2000."
+    },
+    {
+      "slot": "slot_b_product_screenshot_learners",
+      "category": "product-screenshot",
+      "aspectRatio": "16:10",
+      "generationResolution": "3200x2000",
+      "outputFilename": "slot_b_product_screenshot_learners.png",
+      "committedFilenames": ["slot_b_product_screenshot_learners.avif", "slot_b_product_screenshot_learners.webp"],
+      "promptHash": null,
+      "promptText": "[SYSTEM PROMPT PREFIX vb-1.0 — see manifest.systemPromptPrefix] PER-ASSET SUBJECT: A photograph of a laptop screen showing the same teacher's dashboard application, this time on the learners view. Browser frame, top nav, and left sidebar identical to the dashboard screenshot; the active sidebar item is now 'Ученики' in #C87878 at 18% tint. The main canvas shows a paginated table of eight learners. Table header row in #A1A1AA at 13px Inter sans with columns: 'Имя', 'Тариф', 'Баланс', 'Следующий урок'. Eight body rows alternating background colors #111113 and #0B0B0C. Each row carries realistic-looking sample data: Russian first-name + last-name in Inter sans #F5F5F7, tariff label like 'Стандарт' or 'Премиум' in #A1A1AA, a balance number with ₽ suffix, and a date-time string. One row is shown in an active-selection state with a soft warm-rose background rgba(200,120,120,0.10) and a 1px left-border in #C87878 at 60%. Above the table a small 'Найти учеников' search input and a primary CTA button 'Добавить ученика' filled in #C87878 with off-white text. All typography Inter sans. The laptop is photographed with the same editorial treatment: wooden desk, soft window-light, slight three-quarter perspective tilt, faint warm reflection in the matte screen, no specular hot-spots, no glossy bloom. ASPECT RATIO 16:10. Output at 3200x2000."
+    },
+    {
+      "slot": "slot_b_product_screenshot_schedule",
+      "category": "product-screenshot",
+      "aspectRatio": "16:10",
+      "generationResolution": "3200x2000",
+      "outputFilename": "slot_b_product_screenshot_schedule.png",
+      "committedFilenames": ["slot_b_product_screenshot_schedule.avif", "slot_b_product_screenshot_schedule.webp"],
+      "promptHash": null,
+      "promptText": "[SYSTEM PROMPT PREFIX vb-1.0 — see manifest.systemPromptPrefix] PER-ASSET SUBJECT: A photograph of a laptop screen showing the same teacher's dashboard application, this time on the calendar week view. Browser frame, top nav, and left sidebar identical; active sidebar item is now 'Календарь' in #C87878 at 18% tint. The main canvas shows a full week calendar view, Monday through Sunday as seven column headers (Пн Вт Ср Чт Пт Сб Вс) in Inter sans #A1A1AA. A time axis runs down the left edge: 09:00, 10:00, 11:00, 12:00, 13:00, 14:00, 15:00, 16:00, 17:00, 18:00, 19:00, 20:00, 21:00 in Inter sans #6E6E76. Twelve lesson blocks are distributed across the week, each filling one or two hour-rows, each tinted #C87878 at 18% opacity and labeled with a Russian first name in Inter sans #F5F5F7. The 'today' column has a very subtle background tint of #1A1818 to mark it. A '+' icon button sits in the upper-right corner of the main canvas in #C87878. The current time of day is indicated by a thin horizontal hairline in #C87878 at 60% opacity crossing the today column. All typography Inter sans. The laptop is photographed with the editorial treatment: wooden desk, soft window-light, slight three-quarter perspective tilt, faint warm reflection in the matte screen, no specular hot-spots. ASPECT RATIO 16:10. Output at 3200x2000."
+    }
+  ]
+}

@@ -1,0 +1,99 @@
+{
+  "$schema": "intermediate-prompts-manifest-v1",
+  "variantId": "variant-c",
+  "anchorVersion": "vc-1.0",
+  "anchorDoc": "docs/brand/variant-c-style-anchor.md",
+  "generatedAt": "2026-06-07",
+  "generatedBy": "sub-1-agent-c",
+  "note": "Intermediate per-agent manifest. Orchestrator collates this + variant-a + variant-b into the unified docs/brand/codex-image-prompts.md AFTER all 3 Sub-1 agents finish (deterministic variant-id order: a → b → c). Append-only on a shared file is NOT used — per plan §11.4 (round-3 WARN #5 closure). Variant C is deliberately lean on Codex-gen assets: only 2 illustrations. The interactive <DashboardMock /> component and its sample-data JSON files are hand-coded React deliverables in Sub-5, NOT image-generation tasks; they MUST NOT appear in this manifest or the unified codex-image-prompts.md.",
+  "systemPromptPrefix": "[VARIANT C — INTERACTIVE DEMO PLAYGROUND — anchorVersion vc-1.0]\n\nStyle: flat-UI illustration, product-screenshot framing, mid-dark calm aesthetic. Reference mood: Mercury (banking dashboard), Notion (workspace), Raycast (command palette) — modern SaaS product UI illustrated.\n\nLighting: flat UI lighting. Single soft ambient fill from above, no key-lighting, no god-rays, no spotlights, no dramatic shadows. Maximum subtle 2px drop shadow under one focal element if needed for separation.\n\nPalette (strict — no other colors allowed):\n- Background: #0D0D10 (slightly lifted dark gray)\n- Surface panels: #16161A\n- Card surfaces: #1C1C22\n- Accent (use sparingly, max one element per illustration): #E8A890 (warm rose)\n- Text primary: #F5F5F7\n- Text secondary: #A1A1AA\n- Demo-data utility colors (only if illustration shows calendar slots): booked #4A9D5E, pending #D4A24B, free #8B8B95\n\nComposition: UI-centered. Generous whitespace. 8px grid alignment. Hairline borders at rgba(255,255,255,0.08) instead of drop shadows. No photography. No 3D rendering. No isometric perspective. No human figures. No hands. No realistic devices.\n\nMood: hands-on, immediate, transparent, demo-grade, calm. Looks like a product screenshot, not a marketing illustration.\n\nForbidden: cinematic key-lighting, photography, 3D, isometric, magazine-editorial typography, dramatic shadows, blue/purple/teal accent colors, full-bleed photographic backdrops.\n\nAspect ratio: see per-asset prompt body.",
+  "paletteHex": {
+    "bg": "#0D0D10",
+    "surface1": "#16161A",
+    "surface2": "#1C1C22",
+    "accent": "#E8A890",
+    "accentHover": "#C87878",
+    "textPrimary": "#F5F5F7",
+    "textSecondary": "#A1A1AA",
+    "demoBooked": "#4A9D5E",
+    "demoPending": "#D4A24B",
+    "demoFree": "#8B8B95"
+  },
+  "prompts": [
+    {
+      "slot": "slot_c_hero_dashboard_overview",
+      "purpose": "Static hero illustration — used as the <noscript> fallback for the interactive <DashboardMock /> and as the OG / Twitter / link-preview card image. Renders a stylized, frozen-in-time view of the dashboard at one moment so the page reads correctly even without JavaScript. On live hydration the interactive component replaces this image entirely.",
+      "aspectRatio": "16:10",
+      "outputDimensions": {
+        "desktopMaster": "1920x1200",
+        "exportSizes": ["1920x1200", "1280x800", "960x600", "640x400"]
+      },
+      "outputPath": "public/assets/landing-v2/variant-c/illustrations/raw/slot_c_hero_dashboard_overview.{avif,webp}",
+      "promptText": "Flat-UI illustration of a stylized SaaS teacher-cabinet dashboard, captured as a product screenshot at 1x zoom. Composition fills a 16:10 frame. Three primary UI elements arranged with generous whitespace on an 8px grid:\n\n(1) Top-left: a 7-column × 5-row calendar grid card on background #1C1C22 with hairline border rgba(255,255,255,0.08). Cells are small rectangular slots, each filled with one of three colors representing class state — booked slots filled #4A9D5E, pending slots filled #D4A24B, free slots filled #8B8B95. Mix the states so the grid reads ~40% booked, ~25% pending, ~35% free. Day headers above the grid in #A1A1AA text. Card label 'Календарь — эта неделя' in #F5F5F7 at top.\n\n(2) Top-right: a vertical list card with the same surface treatment. Header label 'Ученики' in #F5F5F7. Six rows of placeholder learners — each row shows a small circular monogram avatar in #26262A bg with a single Cyrillic letter in #F5F5F7 (М, П, К, Л, Д, А), a name (Маша, Петя, Катя, Лёша, Дима, Аня — exactly these names, no others), a small secondary line in #A1A1AA monospace tabular numbers showing a placeholder timestamp like '14:00 пн' or '16:30 ср', and a right-aligned balance amount in #F5F5F7 monospace tabular numbers like '4 500 ₽', '2 000 ₽', '8 500 ₽', '6 000 ₽', '3 500 ₽', '1 500 ₽'.\n\n(3) Bottom-spanning row: a balance summary card with three side-by-side mini-tiles. Large hero number in #F5F5F7 monospace tabular reading '47 500 ₽' with secondary label 'На счетах учеников' in #A1A1AA. Mini-tiles: 'Оплачено в этом месяце · 12 500 ₽', 'Возвраты · 0 ₽', 'К выводу · 8 000 ₽'. One subtle accent #E8A890 outline around the 'К выводу' figure — the SINGLE accent in the whole composition.\n\nBackground canvas: solid #0D0D10. Section panels behind the three cards: #16161A.\n\nLighting: flat single ambient soft fill from above. No drop shadows on cards (hairline borders only). No god-rays, no spotlights, no key-lighting. The whole image must read like a frozen product screenshot, not a marketing illustration.\n\nNo photography. No human figures. No hands. No isometric perspective. No 3D depth. No motion lines. No background patterns.\n\nTypography rendering: headings in clean modern sans-serif (Inter / Inter Tight feel), numerical content in monospace with tabular numerals. All text colors strictly #F5F5F7 (primary) or #A1A1AA (secondary). No other text colors.\n\nMood keywords: calm, hands-on, immediate, transparent, demo-grade. Reference: Mercury banking dashboard / Notion workspace / Raycast command palette.\n\nAspect ratio: 16:10 (1920x1200 master). High detail. Sharp 1px UI strokes. No noise. No grain. No film texture.",
+      "negativePrompt": "photography, photorealism, human figures, hands, faces, isometric perspective, 3D rendering, depth-of-field blur, cinematic lighting, god-rays, spotlights, drop shadows, blue, purple, teal, neon, gradient backgrounds, motion blur, lens flare, film grain, grunge texture, magazine-editorial typography, serif type, watermarks, signatures, real names, real phone numbers, real email addresses, brand logos.",
+      "anchorVersion": "vc-1.0",
+      "promptHash": "PENDING_SHA256_AT_MANIFEST_COLLATION_TIME",
+      "promptHashAlgorithm": "sha256(systemPromptPrefix + '\\n---\\n' + promptText + '\\n---\\n' + anchorVersion)",
+      "regenerationPolicy": "If anchorVersion bumps (e.g. palette change pushes us to vc-2.0), re-invoke Codex with the bumped prefix; old asset moves to raw/ with a timestamped suffix for diff; new asset overwrites the committed copy under public/assets/landing-v2/variant-c/illustrations/{slot}.{avif,webp}; manifest.json row updated to new anchorVersion + new promptHash + new committedAt."
+    },
+    {
+      "slot": "slot_c_secondary_callout_workspace",
+      "purpose": "Small supporting illustration shown beside the 'твоё рабочее пространство' section copy. NOT a full-bleed backdrop — sized as a 480px-wide decorative accent on desktop, 320px on mobile. Reinforces 'everything is here' without competing with the interactive <DashboardMock /> for attention.",
+      "aspectRatio": "4:3",
+      "outputDimensions": {
+        "desktopMaster": "960x720",
+        "exportSizes": ["960x720", "640x480", "480x360", "320x240"]
+      },
+      "outputPath": "public/assets/landing-v2/variant-c/illustrations/raw/slot_c_secondary_callout_workspace.{avif,webp}",
+      "promptText": "Flat-UI illustration of a stylized workspace tray, captured as a product-screenshot still. Composition fills a 4:3 frame.\n\nCenter: a single rectangular 'workspace tray' panel on background #1C1C22 with hairline border rgba(255,255,255,0.08). Inside the tray, arranged on an 8px grid with generous whitespace:\n\n(a) Top-left mini-card: a tiny 3-column × 2-row calendar snippet showing 6 slot tiles in mixed states — 2 booked (#4A9D5E), 2 pending (#D4A24B), 2 free (#8B8B95). Mini-label 'Расписание' above in #F5F5F7.\n\n(b) Top-right mini-card: a tiny learner-list snippet showing 3 rows — each row a small monogram avatar (М, П, К — Cyrillic letters on #26262A bg with #F5F5F7 text), a name (Маша, Петя, Катя — exactly these names), and a tiny balance figure in #F5F5F7 monospace tabular numbers (2 000 ₽, 4 500 ₽, 1 500 ₽). Mini-label 'Ученики' above.\n\n(c) Bottom-spanning mini-card: a single balance figure in #F5F5F7 monospace tabular reading '12 500 ₽' with secondary label 'Этот месяц' in #A1A1AA below. One subtle accent #E8A890 outline at the right edge of this mini-card — the SINGLE accent in the whole composition.\n\nBackground canvas around the tray: solid #16161A.\n\nLighting: flat single ambient soft fill from above. No drop shadows. Hairline borders only. No god-rays, no spotlights, no key-lighting.\n\nNo photography. No human figures. No hands. No isometric perspective. No 3D depth. No motion lines. No background patterns. No external decorations around the tray.\n\nTypography rendering: clean modern sans-serif headings, monospace tabular numerals for figures. Colors strictly #F5F5F7 (primary) or #A1A1AA (secondary). No other text colors.\n\nMood keywords: calm, contained, organized, demo-grade. Reference: Linear sidebar inspector / Notion side-panel widget.\n\nAspect ratio: 4:3 (960x720 master). High detail. Sharp 1px UI strokes. No noise. No grain.",
+      "negativePrompt": "photography, photorealism, human figures, hands, faces, isometric perspective, 3D rendering, depth-of-field blur, cinematic lighting, god-rays, spotlights, drop shadows, blue, purple, teal, neon, gradient backgrounds, motion blur, lens flare, film grain, grunge texture, magazine-editorial typography, serif type, watermarks, signatures, real names, real phone numbers, real email addresses, brand logos, decorative borders outside the tray.",
+      "anchorVersion": "vc-1.0",
+      "promptHash": "PENDING_SHA256_AT_MANIFEST_COLLATION_TIME",
+      "promptHashAlgorithm": "sha256(systemPromptPrefix + '\\n---\\n' + promptText + '\\n---\\n' + anchorVersion)",
+      "regenerationPolicy": "Same as slot_c_hero_dashboard_overview — anchor bump triggers re-invoke with raw/ archive of old asset and manifest.json row update."
+    }
+  ],
+  "totalEntries": 2,
+  "handCodedDeliverables": {
+    "note": "Listed here for orchestrator awareness so these do NOT get treated as Codex-gen targets. Sub-5 hand-authors all of these.",
+    "items": [
+      {
+        "kind": "react-component",
+        "path": "components/saas/landing-v2/variant-c/dashboard-mock/dashboard-mock.tsx",
+        "purpose": "Composition root for the interactive <DashboardMock />. Mounts the 3 mock cards (calendar mini, learner roster, balances) and wires localStorage state via useEffect."
+      },
+      {
+        "kind": "react-component",
+        "path": "components/saas/landing-v2/variant-c/dashboard-mock/dashboard-mock-calendar-card.tsx",
+        "purpose": "7-day × 5-row slot grid; click cycles state booked ↔ pending ↔ free; localStorage write per click."
+      },
+      {
+        "kind": "react-component",
+        "path": "components/saas/landing-v2/variant-c/dashboard-mock/dashboard-mock-learner-card.tsx",
+        "purpose": "6-row learner roster with placeholder names (Маша, Петя, Катя, Лёша, Дима, Аня). Click row expands inline lesson-history snippet."
+      },
+      {
+        "kind": "react-component",
+        "path": "components/saas/landing-v2/variant-c/dashboard-mock/dashboard-mock-balance-card.tsx",
+        "purpose": "Aggregate balance + 3 mini-rows. Click 'К выводу' shows demo-mode toast with register CTA."
+      },
+      {
+        "kind": "json-data",
+        "path": "components/saas/landing-v2/variant-c/dashboard-mock/data/mock-data-classroom.json",
+        "purpose": "Seed data for calendar slots + learner roster. No PII. Names from locked list only. Loaded via static import."
+      },
+      {
+        "kind": "json-data",
+        "path": "components/saas/landing-v2/variant-c/dashboard-mock/data/mock-data-balances.json",
+        "purpose": "Seed data for balance card aggregate + 12-month placeholder history. No real-looking figures. Loaded via static import."
+      }
+    ]
+  },
+  "orchestratorCollationContract": {
+    "targetFile": "docs/brand/codex-image-prompts.md",
+    "order": "a → b → c (deterministic by variantId alphabetical)",
+    "perVariantSection": "## Variant {VARIANT_ID} — anchorVersion {ANCHOR_VERSION}\\n\\n### System prompt prefix\\n<verbatim systemPromptPrefix>\\n\\n### Prompts\\n<one block per entry in prompts[], rendered as markdown>",
+    "promptHashFill": "Orchestrator computes promptHash = sha256(systemPromptPrefix + '\\n---\\n' + prompt.promptText + '\\n---\\n' + anchorVersion) at collation time and replaces 'PENDING_SHA256_AT_MANIFEST_COLLATION_TIME' in the final unified file AND in each variant's manifest.json before CI gate runs.",
+    "validation": "scripts/check-asset-manifest.mjs (Sub-2.5 ships) verifies every committed asset under public/assets/landing-v2/variant-c/illustrations/*.{avif,webp} (excluding _archive/**) has a matching row in public/assets/landing-v2/variant-c/manifest.json with anchorVersion matching this file's anchorVersion header AND promptHash matching the orchestrator-computed hash from the unified codex-image-prompts.md."
+  }
+}
