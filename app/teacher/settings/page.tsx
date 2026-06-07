@@ -135,7 +135,7 @@ export default async function TeacherSettingsHubPage() {
         </li>
         <li>
           <SettingsTile
-            href="/teacher/settings/payment-methods"
+            href={paymentMethodsCount > 0 ? '/teacher/payments' : '/teacher/settings/payment-methods'}
             icon={<SbpAcceptIcon />}
             title="Приём оплат"
             status={

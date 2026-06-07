@@ -1,12 +1,29 @@
 'use client'
 
-import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
+import { CancelLessonModal } from '@/components/cabinet/cancel-lesson-modal'
 import { MissingPaymentMethodBanner } from '@/components/cabinet/missing-payment-method-banner'
+import { PayLessonModal } from '@/components/cabinet/pay-lesson-modal'
+import { Banner, Button, Pill } from '@/components/ui/primitives'
 import type { LessonSlot } from '@/lib/scheduling/slots'
 import { safeTz } from '@/lib/util/tz'
+
+// 2026-06-07: legacy CloudPayments-flow скрыт; новая SBP-self-service
+// модель (`teacher-payments-sbp-self-service` epic) активируется
+// per-pair через prop `sbpPayEnabled` — true когда у учителя есть
+// active payment_method.
+const LESSON_PAYMENT_UI_ENABLED = false
+
+function formatRub(kopecks: number): string {
+  return new Intl.NumberFormat('ru-RU', {
+    style: 'currency',
+    currency: 'RUB',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(kopecks / 100)
+}
 
 // Wave 18 — billing-preview banner inside BookConfirmModal needs to
 // know which packages this learner has. Server hands those down through
@@ -75,6 +92,10 @@ type Props = {
   // Bug #1: same SoT as the «Купить пакет» CTA gate in billing-
   // sections. Used by the banner's second-paragraph copy.
   canBuyPackages: boolean
+  // teacher-payments-sbp-self-service Sub-PR C: per-slot «Оплатить»
+  // button рендерим только если у учителя есть активный SBP-метод.
+  // Set из `lib/payments/sbp-methods.resolveMethodForLearner` на SSR.
+  sbpPayEnabled?: boolean
 }
 
 function fmt(slotIso: string, tz: string): string {
@@ -91,17 +112,17 @@ function fmt(slotIso: string, tz: string): string {
 function statusLabel(status: string): string {
   switch (status) {
     case 'open':
-      return 'свободен'
+      return 'свободно'
     case 'booked':
-      return 'забронирован'
+      return 'забронировано'
     case 'cancelled':
-      return 'отменён'
+      return 'отменено'
     case 'completed':
-      return 'проведён'
+      return 'проведено'
     case 'no_show_learner':
-      return 'не пришёл (вы)'
+      return 'вы не пришли'
     case 'no_show_teacher':
-      return 'не пришёл учитель'
+      return 'учитель не пришёл'
     default:
       return status
   }
@@ -130,6 +151,7 @@ export function LessonsSection({
   cancelWindowHours,
   paymentMethodNotSet,
   canBuyPackages,
+  sbpPayEnabled = false,
 }: Props) {
   const effectiveCancelWindowHours =
     Number.isFinite(cancelWindowHours)
@@ -153,6 +175,11 @@ export function LessonsSection({
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
+  // 2026-06-07 — модал подтверждения отмены. Когда не null, рендерим
+  // <CancelLessonModal> поверх — слот хранит контекст для заголовка.
+  const [cancelTarget, setCancelTarget] = useState<LessonSlot | null>(null)
+  // Sub-PR C — модал оплаты выбранного слота.
+  const [payTarget, setPayTarget] = useState<LessonSlot | null>(null)
 
   async function refresh() {
     try {
@@ -208,8 +235,7 @@ export function LessonsSection({
     }
   }
 
-  async function cancel(slotId: string) {
-    if (!confirm('Отменить запись?')) return
+  async function cancelWithReason(slotId: string, reason: string) {
     setBusy(true)
     setErr(null)
     setInfo(null)
@@ -217,20 +243,19 @@ export function LessonsSection({
       const res = await fetch(`/api/slots/${slotId}/cancel`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: '' }),
+        body: JSON.stringify({ reason }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         if (data?.error === 'too_late_to_cancel') {
-          setErr(
-            `До начала менее ${effectiveCancelWindowHours} ч — отменить через систему уже нельзя. Напишите оператору.`,
+          throw new Error(
+            `До начала менее ${effectiveCancelWindowHours} ч — отменить через систему уже нельзя. Напишите учителю напрямую.`,
           )
-        } else {
-          setErr(data?.message || data?.error || `HTTP `)
         }
-        return
+        throw new Error(data?.message || data?.error || `HTTP ${res.status}`)
       }
-      setInfo('Запись отменена.')
+      setInfo('Запись отменена. Учитель получит уведомление.')
+      setCancelTarget(null)
       await refresh()
     } finally {
       setBusy(false)
@@ -245,7 +270,8 @@ export function LessonsSection({
         </h2>
         {mine.length === 0 ? (
           <p style={{ color: 'var(--secondary)', fontSize: 14 }}>
-            У вас пока нет записей. Выберите свободное время ниже.
+            У вас пока нет записей. Откройте календарь и выберите
+            удобное время.
           </p>
         ) : (
           <>
@@ -292,19 +318,12 @@ export function LessonsSection({
                                   {s.durationMinutes} мин ·{' '}
                                   {statusLabel(s.status)}
                                 </span>
-                                {s.status === 'booked' && s.tariffSlug ? (
+                                {LESSON_PAYMENT_UI_ENABLED && s.status === 'booked' && s.tariffSlug ? (
                                   paidSet.has(s.id) ? (
-                                    <span
-                                      style={{
-                                        marginLeft: 8,
-                                        fontSize: 11,
-                                        padding: '1px 8px',
-                                        borderRadius: 4,
-                                        background: 'rgba(155,223,155,0.15)',
-                                        color: '#9bdf9b',
-                                      }}
-                                    >
-                                      оплачено
+                                    <span style={{ marginLeft: 8 }}>
+                                      <Pill tone="success" size="sm">
+                                        оплачено
+                                      </Pill>
                                     </span>
                                   ) : refundedSet.has(s.id) ? (
                                     // Wave 52 — refund Phase 7 Stage C.
@@ -313,85 +332,72 @@ export function LessonsSection({
                                     // operator doesn't push the learner
                                     // through "оплатить" again.
                                     <span
-                                      style={{
-                                        marginLeft: 8,
-                                        fontSize: 11,
-                                        padding: '1px 8px',
-                                        borderRadius: 4,
-                                        background: 'rgba(180,180,180,0.15)',
-                                        color: '#cfcfcf',
-                                      }}
-                                      title="Оплата за это занятие была возвращена. Если требуется снова оплатить, свяжитесь с оператором."
+                                      style={{ marginLeft: 8 }}
+                                      title="Оплата за это занятие возвращена. Если нужно оплатить снова — напишите оператору."
                                     >
-                                      возврат оформлен
+                                      <Pill tone="default" size="sm">
+                                        возврат оформлен
+                                      </Pill>
                                     </span>
                                   ) : (
-                                    <a
-                                      href={`/checkout/${encodeURIComponent(s.tariffSlug)}?slot=${s.id}`}
-                                      style={{
-                                        marginLeft: 8,
-                                        fontSize: 11,
-                                        padding: '1px 8px',
-                                        borderRadius: 4,
-                                        background: 'rgba(255,196,0,0.15)',
-                                        color: '#ffd166',
-                                        textDecoration: 'none',
-                                      }}
-                                    >
-                                      оплатить{' '}
-                                      {s.tariffAmountKopecks
-                                        ? `${(s.tariffAmountKopecks / 100).toLocaleString('ru-RU')}\u00a0₽`
-                                        : ''}
-                                    </a>
+                                    <span style={{ marginLeft: 8 }}>
+                                      <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        href={`/checkout/${encodeURIComponent(s.tariffSlug)}?slot=${s.id}`}
+                                      >
+                                        Оплатить
+                                        {s.tariffAmountKopecks
+                                          ? ` ${formatRub(s.tariffAmountKopecks)}`
+                                          : ''}
+                                      </Button>
+                                    </span>
                                   )
                                 ) : null}
                               </span>
                               {s.status === 'booked' && s.zoomUrl ? (
-                                <a
-                                  href={s.zoomUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  style={{
-                                    marginRight: 8,
-                                    padding: '4px 10px',
-                                    background: 'rgba(155,223,155,0.15)',
-                                    color: '#9bdf9b',
-                                    border: '1px solid rgba(155,223,155,0.4)',
-                                    borderRadius: 6,
-                                    fontSize: 12,
-                                    textDecoration: 'none',
-                                  }}
-                                >
-                                  ▶ Войти на занятие
-                                </a>
+                                <span style={{ marginRight: 8 }}>
+                                  <Button
+                                    variant="primary"
+                                    size="sm"
+                                    href={s.zoomUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    Войти на занятие
+                                  </Button>
+                                </span>
+                              ) : null}
+                              {sbpPayEnabled && s.status === 'booked' ? (
+                                <span style={{ marginRight: 8 }}>
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => setPayTarget(s)}
+                                    disabled={busy}
+                                  >
+                                    Оплатить
+                                  </Button>
+                                </span>
                               ) : null}
                               {s.status === 'booked' && !tooLate ? (
-                                <button
-                                  type="button"
-                                  onClick={() => cancel(s.id)}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setCancelTarget(s)}
                                   disabled={busy}
-                                  style={{
-                                    padding: '4px 10px',
-                                    background: 'transparent',
-                                    color: '#ffcfcf',
-                                    border: '1px solid #ff8a8a55',
-                                    borderRadius: 6,
-                                    fontSize: 12,
-                                    cursor: busy ? 'wait' : 'pointer',
-                                  }}
                                 >
                                   Отменить
-                                </button>
+                                </Button>
                               ) : s.status === 'booked' && tooLate ? (
                                 <span
                                   style={{
                                     color: 'var(--secondary)',
-                                    fontSize: 11,
-                                    fontStyle: 'italic',
+                                    fontSize: 12,
                                   }}
-                                  title={`До начала менее ${effectiveCancelWindowHours} ч. Напишите оператору.`}
+                                  title={`До начала менее ${effectiveCancelWindowHours} ч — отмену делайте через учителя напрямую.`}
                                 >
-                                  &lt;{effectiveCancelWindowHours}ч — через оператора
+                                  до начала &lt; {effectiveCancelWindowHours} ч
                                 </span>
                               ) : null}
                             </li>
@@ -445,6 +451,27 @@ export function LessonsSection({
         paymentMethodNotSet={paymentMethodNotSet}
         canBuyPackages={canBuyPackages}
       />
+
+      {cancelTarget ? (
+        <CancelLessonModal
+          slotLabel={`${fmt(cancelTarget.startAt, tz)} · ${cancelTarget.durationMinutes} мин`}
+          cancelWindowHours={effectiveCancelWindowHours}
+          onConfirm={(reason) => cancelWithReason(cancelTarget.id, reason)}
+          onClose={() => (busy ? undefined : setCancelTarget(null))}
+        />
+      ) : null}
+
+      {payTarget ? (
+        <PayLessonModal
+          slotId={payTarget.id}
+          onClose={() => setPayTarget(null)}
+          onSuccess={async () => {
+            setPayTarget(null)
+            setInfo('Заявка отправлена — ждём подтверждение учителя.')
+            await refresh()
+          }}
+        />
+      ) : null}
     </>
   )
 }
@@ -488,89 +515,77 @@ function BookingCta({
       style={{ padding: 24, marginBottom: 24 }}
     >
       {showBanner ? (
-        <p
-          role="status"
-          style={{
-            background: 'rgba(155,223,155,0.15)',
-            color: '#9bdf9b',
-            padding: '10px 14px',
-            borderRadius: 6,
-            margin: '0 0 16px 0',
-            fontSize: 13,
-          }}
+        <Banner
+          tone="success"
+          action={
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowBanner(false)}
+              aria-label="Скрыть уведомление"
+            >
+              ×
+            </Button>
+          }
         >
-          ✓ Записано. Занятие появилось в разделе «Мои занятия» выше.
-          <button
-            type="button"
-            onClick={() => setShowBanner(false)}
-            aria-label="Скрыть уведомление"
-            style={{
-              float: 'right',
-              background: 'transparent',
-              border: 'none',
-              color: 'inherit',
-              cursor: 'pointer',
-              fontSize: 14,
-              lineHeight: 1,
-              padding: 0,
-            }}
-          >
-            ✕
-          </button>
-        </p>
+          Записано. Занятие появилось в разделе «Мои занятия» выше.
+        </Banner>
       ) : null}
 
-      <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0, marginBottom: 8 }}>
-        Записаться на занятие
-      </h2>
-
+      {/* Happy-path: H2 + основная CTA на одной строке (без filler-
+          подзаголовка) — это второй primary-CTA сразу под «Мои занятия».
+          На «несчастливых» путях (нет учителя / непроверенный e-mail /
+          payment_method_not_set) разворачиваем объяснение, потому что
+          там кнопка либо не появится, либо её клик упрётся в банкер. */}
       {!hasAssignedTeacher ? (
-        <p style={{ color: 'var(--secondary)', fontSize: 14, margin: 0 }}>
-          Учитель пока не назначен — напишите оператору, чтобы добавил.
-          Кнопка записи появится здесь после привязки.
-        </p>
+        <>
+          <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0, marginBottom: 8 }}>
+            Записаться на занятие
+          </h2>
+          <p style={{ color: 'var(--secondary)', fontSize: 14, margin: 0 }}>
+            Учитель пока не подключён. Напишите оператору, чтобы он привязал
+            вас, — после этого здесь появится кнопка записи.
+          </p>
+        </>
       ) : !emailVerified ? (
-        <p style={{ color: '#ffcfcf', fontSize: 13, margin: 0 }}>
-          Чтобы записаться, сначала подтвердите e-mail (см. баннер выше).
-        </p>
+        <>
+          <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0, marginBottom: 8 }}>
+            Записаться на занятие
+          </h2>
+          <p style={{ color: 'var(--warning)', fontSize: 13, margin: 0 }}>
+            Чтобы записаться, сначала подтвердите e-mail (см. баннер выше).
+          </p>
+        </>
       ) : paymentMethodNotSet ? (
         // Bug #1 (2026-06-02): show the missing-payment-method banner
         // in place of the «Открыть календарь» CTA. Booking-side gate
         // in lib/scheduling/slots/booking.ts:249-252 remains as
         // defense-in-depth. Plan: docs/plans/bug-1-payment-method-
         // banner.md.
-        <MissingPaymentMethodBanner
-          variant="single"
-          canBuyPackages={canBuyPackages}
-        />
-      ) : (
         <>
-          <p
-            style={{
-              color: 'var(--secondary)',
-              fontSize: 13,
-              marginTop: 0,
-              marginBottom: 16,
-            }}
-          >
-            Выберите удобный день и время в календаре.
-          </p>
-          <Link
-            href="/cabinet/book"
-            style={{
-              display: 'inline-block',
-              padding: '12px 20px',
-              background: 'var(--accent)',
-              color: 'var(--accent-contrast)',
-              borderRadius: 999,
-              textDecoration: 'none',
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            Открыть календарь
-          </Link>
+          <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0, marginBottom: 8 }}>
+            Записаться на занятие
+          </h2>
+          <MissingPaymentMethodBanner
+            variant="single"
+            canBuyPackages={canBuyPackages}
+          />
         </>
+      ) : (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 16,
+            flexWrap: 'wrap',
+          }}
+        >
+          <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>
+            Записаться на занятие
+          </h2>
+          <Button href="/cabinet/book">Открыть календарь</Button>
+        </div>
       )}
     </div>
   )
