@@ -1,8 +1,21 @@
 # teacher-payments-sbp-self-service
 
-**Status**: SELF-REVIEWED round 7 — paranoia deferred (Codex quota).
-**Created**: 2026-06-07. **Last update**: 2026-06-07 (round 7).
+**Status**: SHIPPED 2026-06-07 via PR #550 (squash `985e377`) + debt fixes from Codex paranoia round 1 in same PR.
+**Created**: 2026-06-07. **Last update**: 2026-06-07 (shipped).
 **Owner**: ivankhanaev. **Epic ID**: `pay-sbp-ss`.
+
+## Shipped state
+
+- ✅ A1: methods CRUD + UI
+- ✅ C: learner pay flow + teacher feed (decline + confirm)
+- ✅ D extras: mark-paid + UnpaidLearners dashboard
+- ✅ E: refunds + cancelled-after-paid hint
+- ✅ F partial: email notify to teacher on new claim, CSV export, expiring packages, explainer banner
+- ✅ Codex round-1 fixes: package/CP-paid debt exclusions, late-cancel window, server-side amount_mismatch, streaming CSV with teacher tz
+- 📋 Deferred (next PR): per-pair pricing UI (needs lesson_slots trigger update), multi-teacher learner pay flow, Telegram/push notifications, 3 explainer banners (learner-side), focus-trap on teacher decline/refund modals
+- 📋 Reverted from PR #551 cleanup (need own follow-up): app/privacy/page.tsx, lib/security/request.ts (DEV_EXTRA_ALLOWED_ORIGINS), calendar copy refresh teacher+learner sides, /teacher/subscription refactor, /thank-you copy
+
+---
 
 ---
 

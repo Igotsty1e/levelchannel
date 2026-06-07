@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
+import { readSessionCookie } from '@/lib/auth/cookies'
 import { lookupSession, SESSION_COOKIE_NAME } from '@/lib/auth/sessions'
 import { getPayContextForSlot } from '@/lib/payments/sbp-claims'
 import { enforceRateLimit } from '@/lib/security/request'
@@ -17,8 +18,7 @@ export async function GET(
   const rl = await enforceRateLimit(request, 'learner:pay-ctx:ip', 60, 60_000)
   if (rl) return rl
 
-  const cookieHeader = request.headers.get('cookie') ?? ''
-  const cookieValue = readCookie(cookieHeader, SESSION_COOKIE_NAME)
+  const cookieValue = readSessionCookie(request, SESSION_COOKIE_NAME)
   if (!cookieValue) {
     return NextResponse.json({ error: 'unauthenticated' }, { status: 401, headers: NO_STORE })
   }
@@ -44,11 +44,3 @@ export async function GET(
   )
 }
 
-function readCookie(header: string, name: string): string | null {
-  const parts = header.split(';')
-  for (const p of parts) {
-    const [k, v] = p.trim().split('=')
-    if (k === name) return v ?? null
-  }
-  return null
-}

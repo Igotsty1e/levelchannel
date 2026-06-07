@@ -6,6 +6,7 @@
 // Plan: docs/plans/teacher-payments-sbp-self-service.md §2.6, §3.6
 
 import { getDbPool } from '@/lib/db/pool'
+import { MAX_AMOUNT_KOPECKS } from '@/lib/payments/sbp-claims'
 
 export type RefundReason =
   | 'slot_cancelled'
@@ -37,7 +38,7 @@ export async function createRefund(
   if (!Number.isInteger(amountKopecks) || amountKopecks <= 0) {
     return { ok: false, reason: 'invalid_amount' }
   }
-  if (amountKopecks >= 100_000_000) {
+  if (amountKopecks >= MAX_AMOUNT_KOPECKS) {
     return { ok: false, reason: 'amount_too_large' }
   }
   const pool = getDbPool()

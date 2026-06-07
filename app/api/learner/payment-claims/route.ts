@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
 import { readJsonObjectOr400 } from '@/lib/api/json-body'
+import { readSessionCookie } from '@/lib/auth/cookies'
 import { lookupSession, SESSION_COOKIE_NAME } from '@/lib/auth/sessions'
 import { createLearnerClaim } from '@/lib/payments/sbp-claims'
 import {
@@ -22,8 +23,7 @@ export async function POST(request: Request) {
   const rl = await enforceRateLimit(request, 'learner:claims:ip', 10, 60 * 60_000)
   if (rl) return rl
 
-  const cookieHeader = request.headers.get('cookie') ?? ''
-  const cookieValue = readCookie(cookieHeader, SESSION_COOKIE_NAME)
+  const cookieValue = readSessionCookie(request, SESSION_COOKIE_NAME)
   if (!cookieValue) {
     return NextResponse.json({ error: 'unauthenticated' }, { status: 401, headers: NO_STORE })
   }
@@ -106,11 +106,3 @@ export async function POST(request: Request) {
   return NextResponse.json({ claimId: result.claimId }, { status: 201, headers: NO_STORE })
 }
 
-function readCookie(header: string, name: string): string | null {
-  const parts = header.split(';')
-  for (const p of parts) {
-    const [k, v] = p.trim().split('=')
-    if (k === name) return v ?? null
-  }
-  return null
-}
