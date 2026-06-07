@@ -179,7 +179,19 @@ export default function RegisterPage() {
       setSubmitting(false)
       return
     }
-    setError(result.error)
+    // Normalize known machine-code error strings to user-safe copy. These
+    // identifiers leak from the API otherwise (design-system §11: errors
+    // must say what happened + what to do, not the raw code).
+    const raw = result.error
+    const friendly =
+      raw === 'invite_already_used_or_expired'
+        ? 'Ссылка-приглашение уже использована или её срок истёк. Попросите учителя прислать новую.'
+        : raw === 'saas_offer_awaiting_publication'
+          ? 'Условия SaaS-оферты сейчас обновляются. Попробуйте зарегистрироваться через минуту.'
+          : raw === 'Invalid request body.'
+            ? 'Проверьте, что все поля формы заполнены.'
+            : raw
+    setError(friendly)
     setSubmitting(false)
   }
 
@@ -222,14 +234,15 @@ export default function RegisterPage() {
 
         {inviteToken ? (
           <div
+            role="status"
             style={{
               padding: '12px 14px',
-              borderRadius: 8,
-              background: 'rgba(34,197,94,0.12)',
-              border: '1px solid rgba(34,197,94,0.35)',
-              color: '#bbf7d0',
+              borderRadius: 10,
+              background: 'rgba(155,223,155,0.10)',
+              border: '1px solid #9BDF9B',
+              color: 'var(--text)',
               fontSize: 14,
-              lineHeight: 1.4,
+              lineHeight: 1.5,
               marginBottom: 16,
             }}
           >
@@ -249,11 +262,11 @@ export default function RegisterPage() {
                 lets an existing learner sign in via /login?invite=...
                 and have the same teacher binding applied (Plan G —
                 backend handles the redeem on login). */}
-            <div style={{ marginTop: 10, fontSize: 13, lineHeight: 1.5 }}>
+            <div style={{ marginTop: 10, fontSize: 13, lineHeight: 1.5, color: 'var(--secondary)' }}>
               Уже есть аккаунт?{' '}
               <Link
                 href={`/login?invite=${encodeURIComponent(inviteToken)}`}
-                style={{ color: '#bbf7d0', textDecoration: 'underline' }}
+                style={{ color: 'var(--text)', textDecoration: 'underline' }}
               >
                 Войти и привязаться к учителю
               </Link>
@@ -298,7 +311,7 @@ export default function RegisterPage() {
                 checked={role === 'student'}
                 onChange={() => setRole('student')}
                 disabled={submitting}
-                style={{ accentColor: '#C87878' }}
+                style={{ accentColor: 'var(--accent)' }}
               />
               <span>Я ученик — буду заниматься с учителем</span>
             </label>
@@ -319,7 +332,7 @@ export default function RegisterPage() {
                 checked={role === 'teacher'}
                 onChange={() => setRole('teacher')}
                 disabled={submitting}
-                style={{ accentColor: '#C87878' }}
+                style={{ accentColor: 'var(--accent)' }}
               />
               <span>Я учитель — буду проводить занятия</span>
             </label>
@@ -344,7 +357,7 @@ export default function RegisterPage() {
             checked={consent}
             onChange={(e) => setConsent(e.target.checked)}
             disabled={submitting}
-            style={{ marginTop: 3, width: 18, height: 18, accentColor: '#C87878' }}
+            style={{ marginTop: 3, width: 18, height: 18, accentColor: 'var(--accent)' }}
           />
           <span>
             Я согласен(на) с{' '}
@@ -378,7 +391,7 @@ export default function RegisterPage() {
               checked={saasOfferAgreed}
               onChange={(e) => setSaasOfferAgreed(e.target.checked)}
               disabled={submitting}
-              style={{ marginTop: 3, width: 18, height: 18, accentColor: '#C87878' }}
+              style={{ marginTop: 3, width: 18, height: 18, accentColor: 'var(--accent)' }}
             />
             <span>
               Я согласен(на) с условиями{' '}
@@ -404,7 +417,12 @@ export default function RegisterPage() {
 
         {error ? <AuthErrorBox>{error}</AuthErrorBox> : null}
 
-        <button type="submit" disabled={submitting} className="btn-primary" style={{ width: '100%' }}>
+        <button
+          type="submit"
+          disabled={submitting}
+          className="btn-primary"
+          style={{ width: '100%', justifyContent: 'center' }}
+        >
           {submitting ? 'Отправляем…' : 'Создать аккаунт'}
         </button>
       </form>

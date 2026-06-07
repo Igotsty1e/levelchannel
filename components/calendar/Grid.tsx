@@ -285,15 +285,15 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
         display: 'grid',
         gridTemplateColumns: '60px repeat(7, 1fr)',
         gap: 0,
-        border: '1px solid rgba(255,255,255,0.07)',
+        border: '1px solid var(--border)',
         borderRadius: 12,
         overflow: 'hidden',
-        background: 'rgba(255,255,255,0.02)',
-        userSelect: 'none', // drag without text selection nuisance
+        background: 'var(--surface-1, transparent)',
+        userSelect: 'none',
       }}
     >
       {/* Header row: empty corner + 7 day labels */}
-      <div style={{ background: 'rgba(255,255,255,0.04)' }} />
+      <div style={{ background: 'var(--surface-2, rgba(255,255,255,0.04))' }} />
       {days.map((ymd, i) => {
         const isToday = todayYmd === ymd
         return (
@@ -301,21 +301,21 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
             key={ymd}
             style={{
               background: isToday
-                ? 'color-mix(in srgb, var(--accent, #D88A82) 8%, rgba(255,255,255,0.04))'
-                : 'rgba(255,255,255,0.04)',
+                ? 'color-mix(in srgb, var(--accent, #D88A82) 8%, var(--surface-2, rgba(255,255,255,0.04)))'
+                : 'var(--surface-2, rgba(255,255,255,0.04))',
               padding: '12px 8px',
-              borderLeft: '1px solid rgba(255,255,255,0.06)',
+              borderLeft: '1px solid var(--border)',
               textAlign: 'center',
             }}
           >
-            <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase' }}>
+            <div style={{ fontSize: 11, color: 'var(--secondary)', textTransform: 'uppercase' }}>
               {DOW_RU[i]}
             </div>
             <div
               style={{
                 fontSize: 14,
                 fontWeight: 600,
-                color: isToday ? 'var(--accent, #D88A82)' : '#e4e4e7',
+                color: isToday ? 'var(--accent, #D88A82)' : 'var(--text)',
               }}
             >
               {ymd.slice(8, 10)}.{ymd.slice(5, 7)}
@@ -329,7 +329,7 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
         style={{
           position: 'relative',
           height: `${dayHeight}px`,
-          borderTop: '1px solid rgba(255,255,255,0.06)',
+          borderTop: '1px solid var(--border)',
         }}
         aria-hidden="true"
       >
@@ -342,7 +342,7 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
               left: 0,
               right: 0,
               fontSize: 10,
-              color: '#71717a',
+              color: 'var(--secondary)',
               textAlign: 'right',
               padding: '0 6px',
               transform: 'translateY(-50%)',
@@ -370,8 +370,8 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
           style={{
             position: 'relative',
             height: `${dayHeight}px`,
-            borderLeft: '1px solid rgba(255,255,255,0.06)',
-            borderTop: '1px solid rgba(255,255,255,0.06)',
+            borderLeft: '1px solid var(--border)',
+            borderTop: '1px solid var(--border)',
             backgroundImage: gridBackground(),
             backgroundSize: `100% ${60 * CALENDAR_GRID_PX_PER_MIN}px`,
             backgroundColor: isToday
@@ -406,7 +406,7 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
                 right: 0,
                 top: `${currentTimeTop}px`,
                 height: 0,
-                borderTop: '1.5px solid #e85a4f',
+                borderTop: '1.5px solid var(--accent, #e85a4f)',
                 zIndex: 7,
                 pointerEvents: 'none',
               }}
@@ -419,7 +419,7 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
                   width: 8,
                   height: 8,
                   borderRadius: '50%',
-                  background: '#e85a4f',
+                  background: 'var(--accent, #e85a4f)',
                 }}
               />
             </div>

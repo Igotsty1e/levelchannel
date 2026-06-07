@@ -2,6 +2,7 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 
+import { Button, EmptyState, Pill } from '@/components/ui/primitives'
 import { formatProfileNameForRender } from '@/lib/auth/profile-name'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getDbPool } from '@/lib/db/pool'
@@ -183,6 +184,23 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
       maximumFractionDigits: 2,
     })} ₽`
 
+  // Cabinet polish 2026-06-07 (B4) — unified date format per
+  // docs/design-system.md §10.4: «7 июня, 19:00» (без года для текущего).
+  const CURRENT_YEAR = new Date().getFullYear()
+  const fmtLessonDate = (iso: string): string => {
+    const d = new Date(iso)
+    const dateOpts: Intl.DateTimeFormatOptions =
+      d.getFullYear() === CURRENT_YEAR
+        ? { day: 'numeric', month: 'long' }
+        : { day: 'numeric', month: 'long', year: 'numeric' }
+    const datePart = d.toLocaleDateString('ru-RU', dateOpts)
+    const timePart = d.toLocaleTimeString('ru-RU', {
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+    return `${datePart}, ${timePart}`
+  }
+
   return (
     <div style={{ maxWidth: 960, margin: '0 auto' }}>
       <div style={{ marginBottom: 16 }}>
@@ -215,65 +233,116 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
       <section
         style={{
           padding: 16,
-          background: 'var(--surface)',
-          borderRadius: 8,
+          background: 'var(--surface-1)',
+          borderRadius: 12,
           marginBottom: 24,
+          border: '1px solid var(--border)',
         }}
       >
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
+        <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 8 }}>
           Баланс
         </h2>
-        <div style={{ fontSize: 24, fontWeight: 700 }}>
+        <div
+          style={{
+            fontSize: 24,
+            fontWeight: 700,
+            fontVariantNumeric: 'tabular-nums',
+            color:
+              balanceKopecks > 0
+                ? 'var(--danger)'
+                : balanceKopecks < 0
+                  ? 'var(--warning)'
+                  : 'var(--text)',
+          }}
+        >
           {balanceKopecks > 0
             ? `Долг: ${fmtRub(balanceKopecks)}`
             : balanceKopecks < 0
               ? `Переплата: ${fmtRub(-balanceKopecks)}`
-              : 'Долгов нет.'}
+              : 'Долгов нет'}
         </div>
-        <div style={{ marginTop: 8, fontSize: 13, color: 'var(--secondary)' }}>
-          Всего проведено: {fmtRub(totalAmount)} ·{' '}
-          оплачено: {fmtRub(totalCovered)}
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 13,
+            color: 'var(--secondary)',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          Всего проведено: {fmtRub(totalAmount)} · оплачено: {fmtRub(totalCovered)}
         </div>
         {balanceKopecks > 0 && (
-          // SAAS-PIVOT Epic 5B Day 5B — wire to /settle page (was a
-          // disabled placeholder during Day 5A). The page hosts the
-          // amount input + per-completion checkboxes; POST lands on
-          // /api/teacher/learners/[id]/settle.
           <div style={{ marginTop: 16 }}>
-            <Link
-              href={`/teacher/learners/${learnerId}/settle`}
-              style={{
-                display: 'inline-block',
-                padding: '8px 16px',
-                background: 'var(--accent)',
-                color: 'var(--accent-fg)',
-                border: 'none',
-                borderRadius: 4,
-                cursor: 'pointer',
-                fontWeight: 600,
-                textDecoration: 'none',
-              }}
-            >
+            <Button href={`/teacher/learners/${learnerId}/settle`}>
               Отметить оплату
-            </Link>
+            </Button>
           </div>
         )}
       </section>
 
       <section>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
-          История уроков ({completions.length})
+        <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 12 }}>
+          История занятий ({completions.length})
         </h2>
         {completions.length === 0 ? (
-          <p style={{ color: 'var(--secondary)' }}>Пока ничего не отмечено.</p>
+          <EmptyState
+            title="Пока ничего не отмечено"
+            body="Когда отметите занятие проведённым в календаре, оно появится здесь."
+          />
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <table
+            style={{
+              width: '100%',
+              borderCollapse: 'collapse',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                <th style={{ textAlign: 'left', padding: '8px 4px' }}>Дата</th>
-                <th style={{ textAlign: 'left', padding: '8px 4px' }}>Статус</th>
-                <th style={{ textAlign: 'right', padding: '8px 4px' }}>Стоимость</th>
-                <th style={{ textAlign: 'right', padding: '8px 4px' }}>Оплачено</th>
+                <th
+                  style={{
+                    textAlign: 'left',
+                    padding: '8px 4px',
+                    fontSize: 12,
+                    fontWeight: 500,
+                    color: 'var(--secondary)',
+                  }}
+                >
+                  Дата
+                </th>
+                <th
+                  style={{
+                    textAlign: 'left',
+                    padding: '8px 4px',
+                    fontSize: 12,
+                    fontWeight: 500,
+                    color: 'var(--secondary)',
+                  }}
+                >
+                  Статус
+                </th>
+                <th
+                  style={{
+                    textAlign: 'right',
+                    padding: '8px 4px',
+                    fontSize: 12,
+                    fontWeight: 500,
+                    color: 'var(--secondary)',
+                  }}
+                >
+                  Стоимость
+                </th>
+                <th
+                  style={{
+                    textAlign: 'right',
+                    padding: '8px 4px',
+                    fontSize: 12,
+                    fontWeight: 500,
+                    color: 'var(--secondary)',
+                  }}
+                >
+                  Оплачено
+                </th>
                 <th style={{ textAlign: 'right', padding: '8px 4px' }}></th>
               </tr>
             </thead>
@@ -282,11 +351,6 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
                 const createdMs = new Date(c.createdAt).getTime()
                 const elapsed = Date.now() - createdMs
                 const isImmutable = c.immutableAt !== null || elapsed >= 48 * 60 * 60 * 1000
-                // Round-1 paranoia WARN #4 closure: ANY settlement coverage
-                // blocks uncomplete (the DB BEFORE DELETE trigger rejects on
-                // first lesson_settlement_completions row, partial or full).
-                // Previous gate used `>= amount` which surfaced an action
-                // that would deterministically 409 on partial coverage.
                 const hasAnySettlement = c.coveredKopecks > 0
                 const canUncomplete = !isImmutable && !hasAnySettlement
                 return (
@@ -294,26 +358,27 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
                     key={c.id}
                     style={{ borderBottom: '1px solid var(--border)' }}
                   >
-                    <td style={{ padding: '8px 4px' }}>
-                      {new Date(c.startAt).toLocaleString('ru-RU', {
-                        dateStyle: 'short',
-                        timeStyle: 'short',
-                      })}
+                    <td style={{ padding: '10px 4px', fontSize: 13 }}>
+                      {fmtLessonDate(c.startAt)}
                     </td>
-                    <td style={{ padding: '8px 4px' }}>
-                      {c.wasNoShow ? 'Не пришёл' : 'Проведён'}
+                    <td style={{ padding: '10px 4px' }}>
+                      {c.wasNoShow ? (
+                        <Pill tone="warning" size="sm">Не пришёл</Pill>
+                      ) : (
+                        <Pill tone="success" size="sm">Проведено</Pill>
+                      )}
                     </td>
-                    <td style={{ textAlign: 'right', padding: '8px 4px' }}>
+                    <td style={{ textAlign: 'right', padding: '10px 4px', fontSize: 13 }}>
                       {fmtRub(c.amountKopecks)}
                     </td>
-                    <td style={{ textAlign: 'right', padding: '8px 4px' }}>
+                    <td style={{ textAlign: 'right', padding: '10px 4px', fontSize: 13 }}>
                       {fmtRub(c.coveredKopecks)}
                     </td>
-                    <td style={{ textAlign: 'right', padding: '8px 4px' }}>
+                    <td style={{ textAlign: 'right', padding: '10px 4px' }}>
                       {canUncomplete ? (
                         <UncompleteButton completionId={c.id} />
                       ) : (
-                        <span style={{ color: 'var(--secondary)', fontSize: 12 }}>
+                        <span style={{ color: 'var(--text-tertiary, var(--secondary))', fontSize: 12 }}>
                           —
                         </span>
                       )}

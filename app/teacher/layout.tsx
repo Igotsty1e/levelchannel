@@ -87,7 +87,7 @@ export default async function TeacherLayout({
     <>
       <SiteHeader />
       <main
-        className="teacher-cabinet-main"
+        className="teacher-cabinet-main saas-chrome"
         data-cabinet="teacher"
         style={{
           minHeight: 'calc(100vh - 56px)',

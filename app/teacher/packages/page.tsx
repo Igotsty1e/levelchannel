@@ -2,33 +2,38 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { PackagesVsTariffsExplainer } from '@/components/onboarding/packages-vs-tariffs-explainer'
+import { PackageList } from '@/components/teacher/pricing/package-list'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
-import { getOnboardingState } from '@/lib/onboarding/state'
 import {
   countActivePackagesByTeacher,
   listPackagesByTeacher,
 } from '@/lib/billing/packages'
 import { resolveTeacherWriteCaps } from '@/lib/billing/teacher-subscription'
+import { getOnboardingState } from '@/lib/onboarding/state'
 
-import { TeacherPackagesEditor } from './client'
-
-// SAAS-PIVOT Epic 3 Day 4 (2026-05-22) — teacher-owned packages catalog
-// surface. SSR list filtered by current teacher's id; the parent
-// `app/teacher/layout.tsx` is the security gate (auth + role +
-// verified-email + admin-precedence). This file trusts it and reads
-// the session a second time only to surface teacherId to the data
-// fetch (mirrors the pattern at app/teacher/page.tsx).
+// /teacher/packages — «Пакеты».
 //
-// Free-tier 1pkg+1tariff unlock (2026-06-02). Plan:
-// docs/plans/free-tier-1pkg-1tariff-unlock.md §4 (UI data contract).
-// SSR threads `writeCap` (number, 0/1/Infinity) + `currentActiveCount`
-// (number, count of is_active=true AND deleted_at IS NULL packages) into
-// the client editor so it can show the capacity hint, hide the create
-// form at cap, and surface the "Лимит исчерпан" message. After create/
-// archive the editor calls router.refresh() to re-pull caps.
+// Component tree (DEEP UX redesign, 2026-06-07):
+//   <TeacherPackagesPage> (SSR)
+//   ├─ back-to-settings link
+//   ├─ <h1>Пакеты</h1> + sub
+//   ├─ <PackagesVsTariffsExplainer> — onboarding card (empty-state only)
+//   └─ <PackageList>                  — client island (cards + modal + FAB)
+//
+// Server-side immutability rules unchanged: economic fields (count,
+// duration_minutes, amount_kopecks, currency) are frozen after the
+// first purchase by `lesson_packages_economic_fields_immutable`
+// trigger (mig 0033); the route pre-rejects any body that names them.
+// Edit UI surfaces this as a one-line note inside the expand-on-tap
+// edit panel, not as a separate banner.
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+
+export const metadata = {
+  title: 'Пакеты — LevelChannel',
+  robots: { index: false, follow: false },
+}
 
 export default async function TeacherPackagesPage() {
   const cookieStore = await cookies()
@@ -64,53 +69,32 @@ export default async function TeacherPackagesPage() {
     displayOrder: p.displayOrder,
   }))
 
-  // `writeCap` semantics for the client: -1 = unlimited (we can't
-  // serialize Infinity through the Next.js RSC boundary cleanly), >=0
-  // = literal cap. Client uses Number.isFinite-equivalent check via
-  // `writeCap < 0` for the "unlimited" branch.
   const writeCap = Number.isFinite(caps.maxPackages) ? caps.maxPackages : -1
 
   return (
-    <>
-      <div style={{ marginBottom: 16 }}>
-        <a
-          href="/teacher/settings"
-          style={{
-            color: 'var(--secondary)',
-            textDecoration: 'none',
-            fontSize: 14,
-          }}
-        >
+    <div className="pricing-page">
+      <div className="pricing-page-back">
+        <a href="/teacher/settings" className="pricing-back-link">
           ← Назад в настройки
         </a>
       </div>
-      <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 8 }}>
-        Пакеты уроков
-      </h1>
-      <p
-        style={{
-          color: 'var(--secondary)',
-          fontSize: 13,
-          marginBottom: 20,
-          lineHeight: 1.6,
-        }}
-      >
-        Каталог пакетов уроков, которые вы выпускаете. После первой
-        покупки цена, длительность и количество занятий фиксируются —
-        чтобы поменять, создайте новый пакет и архивируйте старый.
-      </p>
-      {/* Onboarding Sub-PR B2 — empty-state explainer
-          distinguishing «пакет» (предоплата) vs «цена занятия»
-          (postpaid). Auto-hides once the first package is created. */}
+      <header className="pricing-page-header">
+        <h1 className="pricing-page-title">Пакеты</h1>
+        <p className="pricing-page-sub">
+          Готовые пакеты по N занятий, которые ученик покупает заранее. После
+          первой покупки цену, длительность и количество занятий поменять
+          нельзя — создайте новый и архивируйте старый.
+        </p>
+      </header>
       <PackagesVsTariffsExplainer
         hasPackage={hasAnyPackage}
         dismissed={explainerDismissed}
       />
-      <TeacherPackagesEditor
+      <PackageList
         initialPackages={view}
         writeCap={writeCap}
         currentActiveCount={currentActiveCount}
       />
-    </>
+    </div>
   )
 }

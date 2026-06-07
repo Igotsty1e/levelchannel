@@ -15,12 +15,19 @@ type Props = {
   preview: TeacherDigestPreview
 }
 
-// Format YYYY-MM-DD as dd.MM.yyyy (RU calendar convention).
+// Format YYYY-MM-DD as «7 июня» (current year) or «7 июня 2025» (other year).
 function formatYmdRu(ymd: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd)
   if (!m) return ymd
   const [, y, mo, d] = m
-  return `${d}.${mo}.${y}`
+  const date = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)))
+  const sameYear = new Date().getUTCFullYear() === Number(y)
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    ...(sameYear ? {} : { year: 'numeric' }),
+    timeZone: 'UTC',
+  }).format(date)
 }
 
 // Format an ISO start_at in the teacher's local tz as HH:mm.
@@ -65,23 +72,33 @@ export function DigestPreviewTile({ preview }: Props) {
         }}
       >
         <strong style={{ fontSize: 14 }}>
-          Сегодня — {formatYmdRu(todayLocalYmd)}
+          Сегодня, {formatYmdRu(todayLocalYmd)}
         </strong>
         <Link
           href="/teacher/settings/digest"
           style={{
-            color: 'var(--secondary)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '4px 10px',
+            borderRadius: 6,
+            border: '1px solid var(--border)',
+            background: 'transparent',
+            color: 'var(--text)',
             textDecoration: 'none',
             fontSize: 12,
+            fontWeight: 500,
+            lineHeight: 1.2,
           }}
         >
-          Открыть настройки дайджеста →
+          <span aria-hidden="true">⚙</span>
+          Настроить
         </Link>
       </div>
 
       {slots.length === 0 ? (
         <p style={{ margin: 0, color: 'var(--secondary)' }}>
-          На сегодня уроков нет
+          На сегодня занятий нет
         </p>
       ) : (
         <ul

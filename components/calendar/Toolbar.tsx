@@ -32,43 +32,54 @@ export function Toolbar({
     <div
       role="toolbar"
       aria-label="Управление календарём"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '12px 0',
-        flexWrap: 'wrap',
-      }}
+      className="calendar-toolbar"
     >
-      <button
-        type="button"
-        onClick={onPrev}
-        disabled={loading}
-        style={btnStyle()}
-        aria-label="Предыдущая неделя"
+      {/* Range as primary title (Apple-Calendar pattern) */}
+      <h2
+        className="calendar-toolbar-range"
+        aria-live="polite"
       >
-        ← Предыдущая
-      </button>
-      <button type="button" onClick={onToday} disabled={loading} style={btnStyle()}>
-        На этой неделе
-      </button>
-      <button type="button" onClick={onNext} disabled={loading} style={btnStyle()} aria-label="Следующая неделя">
-        Следующая →
-      </button>
-      <div style={{ flex: 1 }} />
-      <div style={{ fontSize: 12, color: '#9ca3af' }}>
-        Неделя от <strong style={{ color: '#e4e4e7' }}>{fromYmd}</strong>
+        {formatWeekRangeRu(fromYmd)}
+      </h2>
+
+      {/* Tools cluster — nav + refresh on a single right-aligned row */}
+      <div className="calendar-toolbar-tools">
+        <div className="calendar-toolbar-nav">
+          <button
+            type="button"
+            onClick={onPrev}
+            disabled={loading}
+            style={btnStyle()}
+            aria-label="Предыдущая неделя"
+          >
+            ←
+          </button>
+          <button type="button" onClick={onToday} disabled={loading} style={btnStyle()}>
+            Сегодня
+          </button>
+          <button
+            type="button"
+            onClick={onNext}
+            disabled={loading}
+            style={btnStyle()}
+            aria-label="Следующая неделя"
+          >
+            →
+          </button>
+        </div>
+        <div className="calendar-toolbar-refresh">
+          <span className="calendar-toolbar-updated">{lastLabel}</span>
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={loading}
+            style={btnStyle()}
+            aria-label="Обновить календарь"
+          >
+            {loading ? 'Загружаем…' : '↻'}
+          </button>
+        </div>
       </div>
-      <div style={{ fontSize: 11, color: '#71717a' }}>{lastLabel}</div>
-      <button
-        type="button"
-        onClick={onRefresh}
-        disabled={loading}
-        style={btnStyle()}
-        aria-label="Обновить календарь"
-      >
-        {loading ? 'Загружаем…' : '↻ Обновить'}
-      </button>
     </div>
   )
 }
@@ -77,12 +88,43 @@ function btnStyle(): React.CSSProperties {
   return {
     padding: '6px 12px',
     fontSize: 13,
-    background: 'rgba(255,255,255,0.05)',
-    border: '1px solid rgba(255,255,255,0.1)',
+    background: 'var(--surface-2, rgba(255,255,255,0.05))',
+    border: '1px solid var(--border)',
     borderRadius: 6,
-    color: '#e4e4e7',
+    color: 'var(--text)',
     cursor: 'pointer',
+    lineHeight: 1.2,
   }
+}
+
+function formatWeekRangeRu(fromYmd: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fromYmd)
+  if (!m) return fromYmd
+  const [, ys, ms, ds] = m
+  const start = new Date(Date.UTC(Number(ys), Number(ms) - 1, Number(ds)))
+  const end = new Date(start)
+  end.setUTCDate(end.getUTCDate() + 6)
+  const sameMonth = start.getUTCMonth() === end.getUTCMonth()
+  const sameYear = new Date().getUTCFullYear() === start.getUTCFullYear()
+
+  // Intl.DateTimeFormat with { day, month } in ru-RU returns the
+  // genitive form ("7 июня"), which is what we want for date ranges
+  // — { month: 'long' } alone returns the nominative ("июнь").
+  const formatDayMonth = (d: Date) =>
+    new Intl.DateTimeFormat('ru-RU', {
+      day: 'numeric',
+      month: 'long',
+      timeZone: 'UTC',
+    }).format(d) // → "7 июня"
+
+  if (sameMonth) {
+    const startDay = start.getUTCDate()
+    const endDayMonth = formatDayMonth(end) // → "13 июня"
+    const yearTail = sameYear ? '' : ` ${end.getUTCFullYear()}`
+    return `${startDay}–${endDayMonth}${yearTail}`
+  }
+  const yearTail = sameYear ? '' : ` ${end.getUTCFullYear()}`
+  return `${formatDayMonth(start)} – ${formatDayMonth(end)}${yearTail}`
 }
 
 function formatRelative(d: Date): string {

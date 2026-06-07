@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
+import { Button } from '@/components/ui/primitives'
 import type { CloudPaymentsWidgetIntent } from '@/lib/payments/types'
 
 // PKG-LEARNER-BUY LBL.1 — buy-button client island.
@@ -134,26 +135,11 @@ export function BuyButton({ slug, titleRu, amountRub, packageId }: Props) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <button
-        type="button"
-        onClick={onClick}
-        disabled={busy}
-        style={{
-          padding: '10px 16px',
-          fontSize: 14,
-          fontWeight: 600,
-          background: 'var(--accent, #5b8ef7)',
-          color: 'var(--accent-contrast, #fff)',
-          border: 'none',
-          borderRadius: 6,
-          cursor: busy ? 'wait' : 'pointer',
-          opacity: busy ? 0.7 : 1,
-        }}
-      >
-        {busy ? 'Открываю оплату…' : 'Купить'}
-      </button>
+      <Button onClick={onClick} disabled={busy} loading={busy} fullWidth>
+        {busy ? 'Открываем оплату' : 'Купить'}
+      </Button>
       {err ? (
-        <div style={{ color: '#ff8a8a', fontSize: 12 }}>{err}</div>
+        <div style={{ color: 'var(--danger)', fontSize: 12 }}>{err}</div>
       ) : null}
     </div>
   )

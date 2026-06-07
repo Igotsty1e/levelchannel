@@ -4,9 +4,11 @@ import { redirect } from 'next/navigation'
 
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { countHiddenSlotsForTeacher } from '@/lib/calendar/hidden-slots'
+import { getTeacherCalendarSummary } from '@/lib/calendar/summary'
 import { getDbPool } from '@/lib/db/pool'
 import { listActiveTariffs } from '@/lib/pricing/tariffs'
 
+import { CalendarSummary } from '@/components/calendar/CalendarSummary'
 import TeacherCalendarClient from './client'
 
 // SSR snapshot of future-booked, conflict-stamped slots. BCS-F.3
@@ -52,6 +54,30 @@ export default async function TeacherPage() {
   const tariffs = await listActiveTariffs({ teacherId: current.account.id })
   const conflictCount = await countTeacherConflicts(current.account.id)
   const hiddenCount = await countHiddenSlotsForTeacher(current.account.id)
+  const fromYmd = currentMondayYmd()
+  const summary = await getTeacherCalendarSummary(current.account.id, fromYmd)
+  const nextSlotView = summary.nextSlot
+    ? {
+        label: summary.nextSlot.label,
+        hhmm: new Intl.DateTimeFormat('ru-RU', {
+          timeZone: summary.teacherTz,
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+        }).format(new Date(summary.nextSlot.startAt)),
+        dayLabel: new Intl.DateTimeFormat('ru-RU', {
+          timeZone: summary.teacherTz,
+          day: 'numeric',
+          month: 'short',
+        }).format(new Date(summary.nextSlot.startAt)),
+      }
+    : null
+  const todayDateLabel = new Intl.DateTimeFormat('ru-RU', {
+    timeZone: summary.teacherTz,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  }).format(new Date())
   // Sub-PR B (TASK-1) removed the always-visible Google Calendar status
   // row + the 3-link nav stop-gap — connection state now surfaces via
   // the ●/○ dot in TeacherCabinetNav. Conflict + hidden-slot banners
@@ -62,110 +88,19 @@ export default async function TeacherPage() {
 
   return (
     <>
-      {conflictCount > 0 ? (
-        <div
-          role="alert"
-          style={{
-            padding: '14px 18px',
-            background: 'rgba(255, 80, 80, 0.12)',
-            border: '1px solid rgba(255, 138, 138, 0.45)',
-            borderRadius: 10,
-            color: '#ffb0b0',
-            marginBottom: 16,
-            fontSize: 14,
-            lineHeight: 1.5,
-          }}
-        >
-          ⚠️ <strong>Конфликт расписания:</strong>{' '}
-          {conflictCount === 1
-            ? '1 урок пересекается'
-            : `${conflictCount} уроков пересекаются`}{' '}
-          с событиями в вашем Google Calendar. Конфликтные уроки
-          отмечены красной рамкой и значком ⚠ в расписании ниже —
-          кликните по уроку, чтобы выбрать действие: «я разрулю сам»,
-          «удалить событие в Google» (если у LevelChannel есть write-
-          доступ к источнику) или «отменить занятие». Статус интеграции
-          —{' '}
-          <Link
-            href="/teacher/settings/calendar"
-            style={{ color: 'inherit', textDecoration: 'underline' }}
-          >
-            в настройках
-          </Link>
-          .
-        </div>
-      ) : null}
-      {hiddenCount > 0 ? (
-        <div
-          role="status"
-          style={{
-            padding: '12px 16px',
-            background: 'rgba(255, 196, 0, 0.10)',
-            border: '1px solid rgba(255, 209, 102, 0.40)',
-            borderRadius: 10,
-            color: '#ffd166',
-            marginBottom: 16,
-            fontSize: 14,
-            lineHeight: 1.5,
-          }}
-        >
-          🗓 <strong>Скрыто учениками:</strong>{' '}
-          {hiddenCount === 1
-            ? '1 свободный слот пересекается'
-            : `${hiddenCount} свободных слотов пересекаются`}{' '}
-          с событиями в вашем Google Calendar и не показываются
-          ученикам при записи. Это нормально — слоты остаются у вас,
-          просто скрыты пока время не освободится.{' '}
-          <Link
-            href="/teacher/settings/calendar"
-            style={{ color: 'inherit', textDecoration: 'underline' }}
-          >
-            Настройки календаря
-          </Link>
-          .
-        </div>
-      ) : null}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          marginBottom: 8,
-          flexWrap: 'wrap',
-        }}
-      >
-        <h1 style={{ fontSize: 24, fontWeight: 600, margin: 0 }}>
-          Календарь
-        </h1>
-        <Link
-          href="/teacher/settings/calendar"
-          className="btn-secondary"
-          style={{
-            fontSize: 13,
-            padding: '8px 14px',
-            minHeight: 36,
-          }}
-        >
-          ⚙ Настройки
-        </Link>
-      </div>
-      <p
-        style={{
-          color: 'var(--secondary)',
-          fontSize: 13,
-          marginBottom: 20,
-          lineHeight: 1.6,
-        }}
-      >
-        Перетащите по пустым ячейкам — откроется диалог создания.
-        Перетащите свободный слот по вертикали — он переместится.
-        Кликните по существующему слоту, чтобы посмотреть детали или
-        отменить (для занятых нужна причина для ученика).
-      </p>
+      <CalendarSummary
+        todayCount={summary.todayCount}
+        nextSlot={nextSlotView}
+        weekBookedCount={summary.weekBookedCount}
+        weekOpenCount={summary.weekOpenCount}
+        weekEarningsKopecks={summary.weekEarningsKopecks}
+        conflictCount={conflictCount}
+        hiddenCount={hiddenCount}
+        todayLabel={todayDateLabel}
+      />
       <TeacherCalendarClient
         teacherId={current.account.id}
-        initialFromYmd={currentMondayYmd()}
+        initialFromYmd={fromYmd}
         tariffs={tariffs.map((t) => ({
           id: t.id,
           slug: t.slug,

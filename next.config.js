@@ -16,6 +16,14 @@ const nextConfig = {
     unoptimized: true,
   },
 
+  // Dev-only: allow the LAN IP and any cloudflared quick-tunnel host so
+  // we can poke the dev server from a phone. Production builds ignore
+  // `allowedDevOrigins`. Format = bare hostnames (no scheme, no port).
+  allowedDevOrigins: [
+    '192.168.6.31',
+    '*.trycloudflare.com',
+  ],
+
   // Codex 2026-05-08 (LOW) — strip the `X-Powered-By: Next.js` header.
   // Drives down server-fingerprinting surface; bots that match
   // version-specific Next.js exploits won't see the banner.

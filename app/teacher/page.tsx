@@ -1,17 +1,12 @@
-// Mobile-first cabinet restructure (2026-05-31) — новая главная
-// учительского кабинета. Сценарий: учитель открывает кабинет с
-// мобильного, видит ближайшие занятия, может пригласить ученика,
-// открыть полный календарь / список учеников.
+// Mobile-first cabinet restructure (2026-05-31, refined 2026-06-07).
+// Главная учительского кабинета: один primary CTA — «Открыть календарь».
+// Приглашение учеников переехало на /teacher/learners (логически
+// ближе к разделу «Ученики»). Список учеников на главной не
+// дублируется — он живёт целиком на /teacher/learners.
 //
-// 4 блока на главной (плюс банер ближайшего занятия):
-//   1. Ближайшие занятия    — превью + кнопка «Открыть календарь»
-//   2. Дайджест на сегодня   — DigestPreviewTile (Sub-PR D из
-//                              teacher-cabinet-polish): today_local
-//                              список занятий + ссылка на настройки
-//                              дайджеста
-//   3. Пригласить ученика   — TeacherInviteSection (переиспользуем
-//                              блок из /cabinet)
-//   4. Мои ученики           — компактный список + кнопка «Все ученики»
+// 2 блока на главной (порядок 2026-06-07):
+//   1. Дайджест на сегодня   — DigestPreviewTile (today_local)
+//   2. Ближайшие занятия    — превью + кнопка «Открыть календарь»
 //
 // Бывший контент /teacher (full-week calendar) переехал в
 // /teacher/calendar. Настройки календаря / интеграции / дайджест
@@ -20,17 +15,13 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
-import { TeacherInviteSection } from '@/app/cabinet/teacher-invite-section'
-import { TeacherLearnersSection } from '@/app/cabinet/teacher-learners-section'
-import { TeacherInvitePlanLimitBanner } from '@/components/onboarding/teacher-invite-plan-limit-banner'
 import { TeacherSetupChecklist } from '@/components/onboarding/teacher-setup-checklist'
 import { DigestPreviewTile } from '@/components/teacher/digest-preview-tile'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getDbPool } from '@/lib/db/pool'
 import { getTeacherDigestPreview } from '@/lib/notifications/teacher-digest-preview'
 import { computeTeacherSetupChecklist } from '@/lib/onboarding/teacher-setup-checklist'
-import { getTeacherPlanLearnerLimit } from '@/lib/onboarding/teacher-plan-limit'
-import { listLearnersForTeacher } from '@/lib/scheduling/teacher-learners'
+import { greetingForHour } from '@/lib/util/greeting'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -114,6 +105,25 @@ function formatSlotDateTime(iso: string): string {
   }
 }
 
+async function loadTeacherFirstName(teacherAccountId: string): Promise<string | null> {
+  const r = await getDbPool().query<{
+    first_name: string | null
+    display_name: string | null
+  }>(
+    `select first_name, display_name
+       from account_profiles
+      where account_id = $1`,
+    [teacherAccountId],
+  )
+  const row = r.rows[0]
+  if (!row) return null
+  const first = (row.first_name || '').trim()
+  if (first) return first
+  const display = (row.display_name || '').trim()
+  if (display) return display.split(/\s+/)[0] || null
+  return null
+}
+
 export default async function TeacherHomePage() {
   const cookieStore = await cookies()
   const cookieValue = cookieStore.get(SESSION_COOKIE_NAME)?.value ?? null
@@ -122,39 +132,52 @@ export default async function TeacherHomePage() {
   if (!current) redirect('/login')
 
   const teacherAccountId = current.account.id
-  const isVerified = Boolean(current.account.emailVerifiedAt)
 
   const [
     upcomingSlots,
-    allLearners,
     digestPreview,
     setupChecklist,
-    planLearnerLimit,
+    teacherFirstName,
   ] = await Promise.all([
     listUpcomingSlotsForTeacher(teacherAccountId, 3),
-    listLearnersForTeacher(teacherAccountId),
     getTeacherDigestPreview(teacherAccountId),
     computeTeacherSetupChecklist(teacherAccountId),
-    getTeacherPlanLearnerLimit(teacherAccountId),
+    loadTeacherFirstName(teacherAccountId),
   ])
 
-  // На главной показываем максимум 5 ближайших учеников; полный
-  // список — на /teacher/learners.
-  const previewLearners = allLearners.slice(0, 5)
+  const teacherTz = digestPreview.teacherTz || 'Europe/Moscow'
+  const now = new Date()
+  const greeting = greetingForHour(now, teacherTz)
 
   return (
-    <div style={{ maxWidth: 880, margin: '0 auto' }}>
-      <h1 style={{ fontSize: 26, fontWeight: 700, marginBottom: 24 }}>
-        Кабинет
-      </h1>
+    <main style={{ maxWidth: 880, margin: '0 auto' }}>
+      <header style={{ marginBottom: 28 }}>
+        <h1
+          style={{
+            fontSize: 28,
+            fontWeight: 700,
+            margin: 0,
+            letterSpacing: '-0.01em',
+          }}
+        >
+          {teacherFirstName ? `${greeting}, ${teacherFirstName}` : greeting}
+        </h1>
+        {/* Дата/день недели намеренно убраны: они дублируют шапку
+            «Сегодня, N <месяц>» внутри DigestPreviewTile ниже. */}
+      </header>
 
       {/* Onboarding Sub-PR B1 — teacher setup checklist hint.
           SSR-rendered when not all 4 setup items are done AND user
-          hasn't dismissed. Mount above «Ближайшие занятия» so it's
-          the first thing a fresh teacher sees. */}
+          hasn't dismissed. */}
       <TeacherSetupChecklist state={setupChecklist} />
 
-      {/* Блок 1: Ближайшие занятия */}
+      {/* Дайджест на сегодня — Sub-PR D из teacher-cabinet-polish.
+          Превью today_local списка занятий, тот же предикат, что и у
+          08:00 cron-дайджеста. 2026-06-07: переехал НАД «Ближайшие
+          занятия» — сегодняшний день важнее ближайшего будущего. */}
+      <DigestPreviewTile preview={digestPreview} />
+
+      {/* Блок: Ближайшие занятия */}
       <section
         className="card"
         style={{ padding: 24, marginBottom: 24 }}
@@ -175,8 +198,7 @@ export default async function TeacherHomePage() {
               marginBottom: 16,
             }}
           >
-            Ближайших занятий пока нет. Когда появится новое занятие, оно
-            отобразится здесь.
+            Пока ничего не запланировано. Откройте календарь, чтобы добавить занятие.
           </p>
         ) : (
           <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 16px' }}>
@@ -208,34 +230,6 @@ export default async function TeacherHomePage() {
           Открыть календарь
         </Link>
       </section>
-
-      {/* Дайджест на сегодня — Sub-PR D из teacher-cabinet-polish.
-          Превью today_local списка занятий, тот же предикат, что и у
-          08:00 cron-дайджеста. Между «Ближайшие занятия» и «Пригласить
-          ученика». */}
-      <DigestPreviewTile preview={digestPreview} />
-
-      {/* Onboarding Sub-PR B4 — plan-limit banner above the invite
-          block. SSR-conditional: soft/hard banner when M >= ceil(0.8*N)
-          / M >= N, hidden otherwise. Not dismissible. */}
-      <TeacherInvitePlanLimitBanner limit={planLearnerLimit} />
-
-      {/* Блок 2: Пригласить ученика — переиспользуем компонент из /cabinet */}
-      <TeacherInviteSection isVerified={isVerified} />
-
-      {/* Блок 3: Мои ученики — компактный список + ссылка на полный */}
-      <TeacherLearnersSection learners={previewLearners} />
-      {allLearners.length > previewLearners.length ? (
-        <div style={{ marginTop: -8, marginBottom: 24 }}>
-          <Link
-            href="/teacher/learners"
-            className="btn-secondary"
-            style={{ display: 'inline-flex', minHeight: 44 }}
-          >
-            Все ученики ({allLearners.length})
-          </Link>
-        </div>
-      ) : null}
-    </div>
+    </main>
   )
 }

@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import Script from 'next/script'
 
+import { EmptyState, Pill } from '@/components/ui/primitives'
 import { isLearnerArchetypeCandidate } from '@/lib/auth/learner-archetype'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { listAccountActivePackages, listActivePackages } from '@/lib/billing/packages'
@@ -103,9 +104,10 @@ export default async function CabinetPackagesPage() {
             maxWidth: 640,
           }}
         >
-          Купите пакет — это N занятий фиксированной длительности по выгодной
-          цене. Пакеты живут 6 месяцев с момента покупки. Расход — по одному
-          занятию при каждой брони той же длительности.
+          Пакет — это несколько занятий одной длительности по сниженной
+          цене. Срок действия — 6 месяцев с момента покупки. При каждой
+          записи на занятие нужной длительности списывается одно занятие
+          из пакета.
         </p>
 
         {owned.length > 0 ? (
@@ -140,11 +142,20 @@ export default async function CabinetPackagesPage() {
                     borderRadius: 8,
                     fontSize: 13,
                     color: 'var(--text)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    flexWrap: 'wrap',
                   }}
                 >
-                  <b>{p.titleSnapshot}</b> · {p.countRemaining} из{' '}
-                  {p.countInitial} осталось · {p.durationMinutes} мин · истекает{' '}
-                  {new Date(p.expiresAt).toLocaleDateString('ru-RU')}
+                  <b>{p.titleSnapshot}</b>
+                  <Pill tone="success" size="sm">
+                    {p.countRemaining} из {p.countInitial}
+                  </Pill>
+                  <span style={{ color: 'var(--secondary)' }}>
+                    {p.durationMinutes} мин · действителен до{' '}
+                    {new Date(p.expiresAt).toLocaleDateString('ru-RU')}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -165,15 +176,10 @@ export default async function CabinetPackagesPage() {
             Каталог
           </h2>
           {catalog.length === 0 ? (
-            <p
-              style={{
-                color: 'var(--secondary)',
-                fontSize: 13,
-                padding: '24px 0',
-              }}
-            >
-              Сейчас пакеты не продаются. Загляните позже.
-            </p>
+            <EmptyState
+              title="Пакетов сейчас нет в продаже"
+              body="Загляните позже — мы добавим новые варианты."
+            />
           ) : (
             <div
               style={{

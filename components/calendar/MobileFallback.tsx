@@ -22,22 +22,39 @@ import type { CalendarSlot } from '@/lib/calendar/types'
 function kindLabel(kind: string): string {
   switch (kind) {
     case 'open':
-      return 'Доступен'
+      return 'Свободно'
     case 'booked-self':
       return 'Ваше занятие'
     case 'booked-other':
       return 'Занято'
     case 'booked-full':
-      return 'Забронировано'
+      return 'Занято'
     case 'past-full':
     case 'past-redacted':
-      return 'Прошедшее'
+      return 'Прошло'
     default:
       return kind
   }
 }
 
-const MIN_WEEK_VIEW_PX = 720
+function formatDayHeaderRu(ymd: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd)
+  if (!m) return ymd
+  const [, y, mo, d] = m
+  const date = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)))
+  try {
+    return new Intl.DateTimeFormat('ru-RU', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      timeZone: 'UTC',
+    }).format(date)
+  } catch {
+    return ymd
+  }
+}
+
+const MIN_WEEK_VIEW_PX = 600
 
 export type MobileFallbackProps = {
   fromYmd: string
@@ -72,29 +89,51 @@ export function MobileFallback({
   const days = weekDayKeys(fromYmd)
   const grouped = groupSlotsByDay(slots)
 
+  const nonEmptyDays = days.filter((ymd) => (grouped.get(ymd) || []).length > 0)
+
+  if (nonEmptyDays.length === 0) {
+    return (
+      <div
+        role="status"
+        style={{
+          padding: 24,
+          textAlign: 'center',
+          color: 'var(--secondary)',
+          border: '1px dashed var(--border)',
+          borderRadius: 12,
+          fontSize: 14,
+          lineHeight: 1.5,
+        }}
+      >
+        На этой неделе занятий нет.<br />
+        Откройте календарь с компьютера, чтобы создать первое.
+      </div>
+    )
+  }
+
   return (
     <div role="list" aria-label="Занятия на неделю (мобильный список)">
-      {days.map((ymd) => {
+      {nonEmptyDays.map((ymd) => {
         const rows = grouped.get(ymd) || []
-        if (rows.length === 0) return null
         return (
           <div
             key={ymd}
             style={{
-              borderBottom: '1px solid rgba(255,255,255,0.06)',
+              borderBottom: '1px solid var(--border)',
               padding: '12px 0',
             }}
           >
             <div
               style={{
                 fontSize: 12,
-                color: '#9ca3af',
-                marginBottom: 6,
+                color: 'var(--secondary)',
+                marginBottom: 8,
                 textTransform: 'uppercase',
                 fontWeight: 600,
+                letterSpacing: '0.02em',
               }}
             >
-              {ymd}
+              {formatDayHeaderRu(ymd)}
             </div>
             {rows.map((row, i) => (
               <button
@@ -105,20 +144,21 @@ export function MobileFallback({
                   display: 'block',
                   width: '100%',
                   textAlign: 'left',
-                  padding: '8px 12px',
-                  margin: '4px 0',
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  borderRadius: 6,
-                  color: '#e4e4e7',
+                  padding: '10px 12px',
+                  margin: '6px 0',
+                  background: 'var(--surface-2, rgba(255,255,255,0.03))',
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  color: 'var(--text)',
                   fontSize: 13,
                   cursor: 'pointer',
+                  fontVariantNumeric: 'tabular-nums',
                 }}
               >
                 <strong>
                   {row.startLabel} – {row.endLabel}
                 </strong>
-                <span style={{ marginLeft: 8, color: '#9ca3af', fontSize: 12 }}>
+                <span style={{ marginLeft: 8, color: 'var(--secondary)', fontSize: 12 }}>
                   {kindLabel(row.slot.kind)}
                 </span>
               </button>

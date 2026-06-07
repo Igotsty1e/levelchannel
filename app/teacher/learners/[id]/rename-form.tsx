@@ -3,6 +3,8 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
+import { Button } from '@/components/ui/primitives'
+
 // SAAS-PIVOT — teacher renames learner client form.
 //
 // Plan: owner-requested 2026-05-23.
@@ -13,6 +15,8 @@ import { useState } from 'react'
 //
 // Client-side validation is a HINT only — the route is the authority.
 // We surface server-side errors verbatim via `data.message`.
+//
+// Cabinet polish 2026-06-07 (B4): tokens + <Button>.
 
 export function RenameLearnerForm({
   learnerId,
@@ -82,12 +86,13 @@ export function RenameLearnerForm({
     <section
       style={{
         padding: 16,
-        background: 'var(--surface)',
-        borderRadius: 8,
+        background: 'var(--surface-1)',
+        border: '1px solid var(--border)',
+        borderRadius: 12,
         marginBottom: 24,
       }}
     >
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
+      <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 12 }}>
         Изменить данные ученика
       </h2>
       <p
@@ -98,8 +103,8 @@ export function RenameLearnerForm({
           marginBottom: 16,
         }}
       >
-        Меняет имя и/или email только для этого ученика. Пароль и другие
-        данные ученик меняет в своём личном кабинете самостоятельно.
+        Меняет имя и e-mail только для этого ученика. Пароль и другие
+        данные ученик меняет в своём кабинете сам.
       </p>
       <div
         style={{
@@ -127,49 +132,35 @@ export function RenameLearnerForm({
           />
         </Field>
       </div>
-      <Field label="Email">
+      <Field label="E-mail">
         <input
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="learner@example.com"
           style={{
             ...inputStyle,
-            borderColor: emailLooksOk ? 'var(--border)' : '#ff8a8a',
+            borderColor: emailLooksOk ? 'var(--border)' : 'var(--danger)',
           }}
           type="email"
           autoComplete="off"
         />
         {!emailLooksOk && (
-          <span style={{ color: '#ff8a8a', fontSize: 12, marginTop: 4, display: 'block' }}>
-            Похоже на неверный email.
+          <span style={{ color: 'var(--danger)', fontSize: 12, marginTop: 4, display: 'block' }}>
+            Похоже на неверный e-mail.
           </span>
         )}
       </Field>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 12 }}>
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={!canSave}
-          style={{
-            padding: '8px 16px',
-            background: 'var(--accent)',
-            color: 'var(--accent-contrast, var(--accent-fg))',
-            border: 'none',
-            borderRadius: 6,
-            fontSize: 14,
-            cursor: canSave ? 'pointer' : 'not-allowed',
-            opacity: canSave ? 1 : 0.55,
-          }}
-        >
+        <Button type="button" onClick={onSave} disabled={!canSave} loading={busy}>
           Сохранить
-        </button>
+        </Button>
         {savedAt ? (
           <span style={{ color: 'var(--secondary)', fontSize: 13 }}>
             Сохранено в {savedAt}
           </span>
         ) : null}
         {err ? (
-          <span style={{ color: '#ff8a8a', fontSize: 13 }}>{err}</span>
+          <span style={{ color: 'var(--danger)', fontSize: 13 }}>{err}</span>
         ) : null}
       </div>
     </section>

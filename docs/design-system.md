@@ -1,796 +1,359 @@
-# Design System
+# LevelChannel Design System
 
-**Status:** v1.0 — foundation draft (2026-05-18).
-**Scope:** spec-only. No code lives here; this is the contract that
-`app/globals.css` tokens and `lib/ui/primitives/*` will implement.
-**Owners:** Frontend / Design (rolling out under the SAAS-6 epic).
+**Version:** v2.0 (2026-06-07).
+**Status:** living document — обновляется каждый раз, когда мы шлифуем экран и добавляем что-то общее.
+**Owners:** Frontend / Design (Иван + Claude-агент).
 
-> Section headings in English by repo convention. UI copy examples in
-> Russian — that is the product language.
+> Заголовки на английском по соглашению репо. Примеры копи на русском — это язык продукта.
 
 ---
 
-## 1. Goals + non-goals
+## 1. Что это
 
-**This document decides:**
+Контракт «как должен выглядеть и звучать LevelChannel-кабинет». Один источник правды для:
 
-- One token set (color, type, spacing, radius, shadow, motion) used by
-  every SaaS surface — login/register, learner cabinet, teacher
-  cabinet, admin console.
-- The visual language: dark-first, Apple-HIG-inspired (Calendar /
-  macOS Settings / iOS 17 Settings), warm-gray neutrals, one accent.
-- The primitive component contract: which primitives exist; for each,
-  what variants, states, ARIA, keyboard.
-- The migration baseline: which existing CSS vars survive, get
-  renamed, or get deprecated.
-- The roll-out order: tokens → primitives → per-wave surface ports.
+- Цветов / типографики / отступов / радиусов / теней.
+- Поведения примитивов (Button, ChipGroup, Pill, Banner, EmptyState, FAB) — что они делают и в каких состояниях.
+- Тона голоса: коротко, на «ты» к учителю / на «вы» к ученику, без жаргона.
+- Анти-паттернов — конкретных ошибок, которые мы уже совершали и больше не хотим.
 
-**Explicitly left to feature plans:**
+Чего здесь **нет**:
 
-- Per-page layout (e.g. `docs/plans/calendar-apple-redesign.md` owns
-  the Apple-Calendar week grid; this doc only gives it tokens).
-- Information architecture and copy revisions.
-- Light-mode palette. v1.0 is dark-only.
-- Marketing/landing surfaces beyond the SaaS shell.
-- Iconography library choice (default assumption `lucide-react`,
-  locked in the first primitive PR).
-
-**Out of scope, period:** replacing inline `style={{}}` in one PR, and
-a Tailwind config rewrite. Tokens land as CSS custom properties;
-Tailwind can adopt them later.
+- Лендинговая поверхность (`/saas/v3`) — свой визуальный язык, см. `components/saas/landing-v3/`.
+- Layout конкретных страниц — это решают плановые документы.
+- Light-mode — кабинет dark-only. Light зарезервирован под legal/thank-you.
 
 ---
 
-## 2. Migration baseline (current `app/globals.css`)
+## 2. Принципы
 
-The current site ships dark, but the tokens are minimal and the
-component CSS classes (`.btn-primary`, `.btn-secondary`, `.card`,
-`.section-label`, `.tag`, `.stat-number`) were authored as marketing
-helpers. They stay on landing/marketing surfaces but are NOT the basis
-for SaaS primitives.
+1. **Кабинет — инструмент, не маркетинг.** Плотность информации важнее красоты. Если на экране есть полезная сводка (next lesson / week summary / unpaid debt) — она важнее иллюстрации.
+2. **Не объясняй, что и так понятно.** Drag-paint в календаре, click для деталей — это UX feedback, не текстовая инструкция. Любая фраза вида «Тяните по сетке…» — кандидат на удаление в пользу полезной информации.
+3. **Один токен — одно значение.** Никаких `#1f1f23`, `rgba(255,255,255,0.05)` в новом коде. Если оттенка нет — добавляй в `globals.css`.
+4. **Кнопки > ссылки в потоке.** Действия с именем («Обновить тариф», «Создать ссылку», «Отменить занятие») — `<Button>`. Ссылки внутри статичных абзацев («Настройки календаря») — `<Link>` с подчёркиванием.
+5. **Числа табулярные.** Балансы, счётчики, время — `fontVariantNumeric: 'tabular-nums'`. Иначе скачут на 0.5px при обновлении.
+6. **Эмодзи — только в письмах/пушах, не в UI.** В интерфейсе — inline SVG / системные глифы (`⚠`, `→`, `·`).
+7. **Без жаргона наружу.** «OAuth», «токен», «синхронизация», «write-доступ» — это для нас. Учителю говорим «Google», «событие», «настройки».
+8. **Каждый empty state имеет CTA.** Пустой список без кнопки «что мне делать» — баг. Используй `<EmptyState>`.
 
-### Current root variables
+---
 
-| Var | Value | Verdict |
+## 3. Tokens (живут в `app/globals.css`)
+
+Используются через `var(--name)`. Менять значение — только в `globals.css`.
+
+### 3.1 Surfaces (dark stack)
+
+| Token | Value | Где |
 |---|---|---|
-| `--bg` | `#0B0B0C` | **Keep** as canvas. Hex slightly warms in v1 (see §3). |
-| `--surface` | `#111113` | **Keep**, becomes `--surface-1`. New `--surface-2`/`-3` added. |
-| `--border` | `rgba(255,255,255,0.08)` | **Keep** as `--separator-default`. Two more weights added. |
-| `--text` | `#ffffff` | **Keep**, renamed `--text-primary`, lowered to `#F5F5F7` (Apple system-label tone). |
-| `--secondary` | `#A1A1AA` | **Keep** as `--text-secondary`. Two fainter ranks added. |
-| `--accent-start` / `--accent-end` / `--accent-gradient` | `#C87878 → #E8A890` | **Soft-deprecate.** Marketing keeps it. SaaS uses solid `--accent` from the middle of the gradient (§3). |
+| `--background` | `#0a0a0c` | Корень страницы кабинета |
+| `--surface-1` | `#141416` | Модалки, основные карточки |
+| `--surface-2` | `#1C1C1F` | Вторичные поверхности (input, кнопка-secondary, hover) |
+| `--surface-3` | `#26262A` | Активные / pressed |
+| `--surface` | `#111113` | **Legacy.** Не использовать в новом коде — оставлено для лендинга. |
 
-### Current utility classes — disposition
+### 3.2 Border / texture
 
-- `.btn-primary`, `.btn-secondary`, `.card` — **marketing-only.** SaaS
-  uses primitives (§9). Classes stay for landing.
-- `.section-label`, `.tag`, `.stat-number`, `.glow`, `.gradient-text`,
-  `.gradient-border`, `.fade-in`, `.delay-*`, `.divider` —
-  **marketing-only, untouched.**
-- `.auth-shell-main`, `.legal-page-card`, `.final-cta-card`,
-  `.payment-form-checkbox` — targeted mobile overrides; **untouched**
-  until their surface migrates.
-- `.not-found-page` / `.global-error-*` — CSP edge cases, **untouched.**
-- `.min-svh`, `.no-h-overflow` — **kept** as useful primitives.
-- `body::before` noise overlay — **removed on SaaS routes** via an
-  opt-out class on `<html>`. Kept on marketing.
+| Token | Value | Где |
+|---|---|---|
+| `--border` | `rgba(255,255,255,0.08)` | Все hairlines: input, card, divider |
 
-### Tokens added in v1.0 (namespaced, additive)
+### 3.3 Текст
 
-```
-/* Surfaces */
---bg, --surface-1, --surface-2, --surface-3, --overlay-scrim,
---separator-default, --separator-strong, --separator-faint,
+| Token | Value | Где |
+|---|---|---|
+| `--text` | `#FFFFFF` | Основной текст |
+| `--text-primary` | `#F5F5F7` | Заголовки (немного приглушённый белый) |
+| `--text-secondary` / `--secondary` | `#A1A1AA` | Подзаголовки, лейблы, мета |
+| `--text-tertiary` | `#6E6E76` | Disabled, плейсхолдеры |
+| `--text-quaternary` | `#48484C` | Очень фоновое (timestamp в углу) |
+| `--text-on-accent` | `#FFFFFF` | Текст на accent-кнопке |
 
-/* Text */
---text-primary, --text-secondary, --text-tertiary, --text-quaternary,
---text-on-accent,
+### 3.4 Accent (бренд)
 
-/* Accent + semantic */
---accent, --accent-hover, --accent-pressed, --accent-bg, --accent-bg-strong,
---success, --success-bg, --warning, --warning-bg,
---danger, --danger-bg, --info, --info-bg,
+| Token | Value | Применение |
+|---|---|---|
+| `--accent` | `#D88A82` | Primary CTA, current-time line, today-cell, активный chip |
+| `--accent-hover` | `#E29B92` | Hover для accent-кнопки |
+| `--accent-pressed` | `#C47B72` | Pressed / active |
+| `--accent-bg` | `rgba(216,138,130,0.10)` | Tinted bg активного chip-option, soft-hover |
+| `--accent-bg-strong` | `rgba(216,138,130,0.18)` | Hover для chip-option |
 
-/* Type */
---font-sans, --font-mono,
---text-12, --text-13, --text-15, --text-17, --text-22, --text-28, --text-34,
---font-weight-regular, --font-weight-medium, --font-weight-bold,
+### 3.5 Семантика
 
-/* Spacing */
---space-0..--space-9,
+| Token | Value | Применение |
+|---|---|---|
+| `--warning` | `#F5C26B` | Soft-limit (≥80%), hidden-slots, near-expiry |
+| `--warning-bg` | `rgba(245,194,107,0.10)` | Bg того же |
+| `--danger` | `#FF6E6E` | Hard-limit, конфликты, destructive |
+| `--danger-bg` | `rgba(255,110,110,0.12)` | Bg того же |
 
-/* Radii */
---radius-1, --radius-2, --radius-3, --radius-4, --radius-5, --radius-full,
-
-/* Shadows */
---shadow-1, --shadow-2, --shadow-3, --shadow-modal,
-
-/* Motion */
---duration-fast, --duration-base, --duration-slow,
---ease-out, --ease-in, --ease-in-out, --ease-linear,
-
-/* Focus ring */
---focus-ring-color, --focus-ring-width, --focus-ring-offset,
-```
+Success-токен пока не нужен (используем `#9BDF9B` локально в `<Pill tone="success">` и календарных done-states).
 
 ---
 
-## 3. Color palette
-
-**Principles.** Dark-first; warm grays (no pure black — reads cheap on
-OLED, clashes with the warm-rose accent); one accent; semantic colors
-only in their own contexts; AA contrast everywhere body text appears.
-
-### Surfaces
-
-| Token | Hex | Use | Contrast vs `--text-primary` |
-|---|---|---|---|
-| `--bg` | `#0B0B0D` | Canvas. Body background. | 17.2:1 |
-| `--surface-1` | `#141416` | Default raised: cards, list rows, modal body. | 15.6:1 |
-| `--surface-2` | `#1C1C1F` | Higher: dropdowns, popovers, card hover. | 13.8:1 |
-| `--surface-3` | `#26262A` | Highest: segmented-thumb, prominent inline panels. | 11.1:1 |
-| `--overlay-scrim` | `rgba(0,0,0,0.55)` | Modal backdrop (+ 12px `backdrop-filter: blur`). | n/a |
-
-Surfaces are opaque hex, not `rgba` over `--bg` — keeps readability
-under a scrim and stable in screenshots. `.card:hover` now lands on
-`--surface-2` with a border tint instead of the current `translateY(-4px)`
-lift (translateY belongs to marketing).
-
-### Separators
-
-| Token | Value | Use |
-|---|---|---|
-| `--separator-faint` | `rgba(255,255,255,0.04)` | Inside a row group; high-density lists. |
-| `--separator-default` | `rgba(255,255,255,0.08)` | Card border, section divider. (Replaces `--border`.) |
-| `--separator-strong` | `rgba(255,255,255,0.14)` | Sticky-toolbar underline, page-shell header rule. |
-
-All borders are 1px hairlines (true single pixel on retina).
-
-### Text
-
-| Token | Hex | Use | Contrast vs `--bg` |
-|---|---|---|---|
-| `--text-primary` | `#F5F5F7` | Body, headings, controls. | 15.8:1 |
-| `--text-secondary` | `#A1A1AA` | Meta, captions, helper text, sidebar idle. | 7.4:1 |
-| `--text-tertiary` | `#6E6E76` | Disabled labels, faint timestamps. | 4.5:1 (AA min) |
-| `--text-quaternary` | `#48484C` | Placeholder, "or" dividers. | 3.2:1 (large-text only) |
-| `--text-on-accent` | `#FFFFFF` | Text on `--accent` fills. | 4.6:1 vs `--accent` |
-
-`--text-quaternary` does NOT meet AA against `--bg` and is reserved
-for non-essential decoration. Never for actionable content.
-
-### Accent
-
-The current gradient `#C87878 → #E8A890` is warm-rose. SaaS chrome
-locks a solid hex from the upper middle:
-
-| Token | Hex | Use |
-|---|---|---|
-| `--accent` | `#D88A82` | Primary button fill, focus ring, active nav, switch on-state. |
-| `--accent-hover` | `#E29B92` | Hover for `--accent` surfaces. |
-| `--accent-pressed` | `#C47B72` | Pressed state. |
-| `--accent-bg` | `rgba(216,138,130,0.10)` | Tinted bg: active sidebar row, segmented selected, info-box. |
-| `--accent-bg-strong` | `rgba(216,138,130,0.18)` | Hover for `--accent-bg`. |
-
-`--accent-gradient` is preserved unchanged for marketing.
-
-### Semantic colors (dark-mode tuned)
-
-| Role | `--{role}` | `--{role}-bg` | Use |
-|---|---|---|---|
-| Success | `#4ADE80` | `rgba(74,222,128,0.10)` | "Оплачено", "Сохранено", positive banners. |
-| Warning | `#F5C26B` | `rgba(245,194,107,0.10)` | "Скоро истекает". |
-| Danger | `#FF6E6E` | `rgba(255,110,110,0.12)` | Errors, destructive confirms, "Просрочено". |
-| Info | `#7AB8FF` | `rgba(122,184,255,0.10)` | Neutral banners, "Возвращено". |
-
-Contrast vs `--bg`: success 11.6:1, warning 12.9:1, danger 6.4:1, info
-9.5:1 — all AA+. Banner body text uses `--text-primary` on the tinted
-bg; the chromatic foreground is for icons and accent strokes only.
-
----
-
-## 4. Typography scale
-
-**Font stack:**
+## 4. Typography
 
 ```
---font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text',
-             'SF Pro Display', 'Inter', system-ui, 'Segoe UI', Roboto,
-             'Helvetica Neue', Arial, sans-serif;
---font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
-             'Liberation Mono', monospace;
+--text-12: 12px    — tooltip, label, мелкие badges
+--text-13: 13px    — кнопка default, мета-строка, второй уровень body
+--text-15: 15px    — стандартный body
+--text-17: 17px    — H3, заголовок карточки
+--text-22: 22px    — H2 секции
+--text-28: 28px    — H1 страницы кабинета
+--text-34: 34px    — H1 hero (редко, обычно только onboarding-welcome)
 ```
 
-macOS/iOS get SF Pro natively. The rest fall through to Inter (already
-bundled via `next/font`) or system-ui. This is the single largest
-visual win toward the Apple feel.
+**Веса:**
+- 400 — body
+- 500 — UI-default (кнопки, лейблы, метаданные)
+- 600 — заголовки H2/H3, primary CTA, активный chip
+- 700 — только H1 страницы
 
-**Scale (7-step):**
-
-| Token | Size | Line height | Letter spacing | Weights | Use |
-|---|---|---|---|---|---|
-| `--text-12` | 12px | 16px (1.33) | +0.02em | 400/500/700 | Captions, all-caps micro-labels, badge text. |
-| `--text-13` | 13px | 18px (1.38) | +0.01em | 400/500 | Meta rows, helper text, table secondary. |
-| `--text-15` | 15px | 22px (1.47) | 0 | 400/500/700 | **Body default.** Form controls, list rows, copy. |
-| `--text-17` | 17px | 24px (1.41) | -0.005em | 500/700 | Section headings (`<h3>`), card titles. |
-| `--text-22` | 22px | 28px (1.27) | -0.012em | 600/700 | Page subtitles (`<h2>`), modal title. |
-| `--text-28` | 28px | 34px (1.21) | -0.018em | 700 | Page heading (`<h1>`) — matches current cabinet/login. |
-| `--text-34` | 34px | 40px (1.18) | -0.022em | 700 | Hero h1 / empty-state hero only. |
-
-Three weight tokens: `--font-weight-regular: 400`, `-medium: 500`,
-`-bold: 700`. Sizes 22+ internally use 600/700; 800 is marketing-only.
-
-Negative tracking on display sizes counteracts SF Pro Display
-crowding; Inter fallback handles it gracefully.
-
-**Reserved patterns:**
-
-- Numerals tabular by default in tables (`font-variant-numeric:
-  tabular-nums`, utility class `--numeric-tabular`).
-- All-caps micro-labels are an `Eyebrow` primitive — 12px / 700 /
-  +0.08em / `--text-secondary` / `text-transform: uppercase`.
+**Line-height:**
+- 1.2 — кнопки, заголовки, chip
+- 1.3-1.4 — H3
+- 1.5 — body
 
 ---
 
 ## 5. Spacing scale
 
-4-pt half-step grid. Component padding/margin always reaches a token;
-one-off literals only inside primitives, never inside features.
+Базовая единица 4px. **Используем только:** `4 · 6 · 8 · 10 · 12 · 16 · 20 · 24 · 32 · 40 · 56 · 80`.
 
-| Token | Value | Use |
-|---|---|---|
-| `--space-0` | 0 | Reset. |
-| `--space-1` | 4px | Icon-to-text gap, badge inner pad-x. |
-| `--space-2` | 8px | Small control pad-y, intra-row gap. |
-| `--space-3` | 12px | Input pad-y, button-md pad-y, list row. |
-| `--space-4` | 16px | Input pad-x, default field margin-bottom, small card pad. |
-| `--space-5` | 24px | Default card pad, gap between form sections. |
-| `--space-6` | 32px | Page section spacing inside `<main>`. |
-| `--space-7` | 48px | Hero block breathing room. |
-| `--space-8` | 64px | Page-shell top pad on desktop. |
-| `--space-9` | 96px | Decorative-only; long-form landing rhythm. |
-
-**Mobile collapse** (`≤480px`): `--space-7+` collapse one step
-(`48→32`, `64→48`, `96→64`) via a single media query overriding the
-tokens. No JS, no per-component branching.
+Не используем `2 / 14 / 18 / 22 / 26 / 28 / 36 / 48 / 64` — обедняем выбор, выигрываем консистентность. Если нужно «между 12 и 16» — выбери одно из них.
 
 ---
 
-## 6. Radii
+## 6. Radius
 
-| Token | Value | Use |
-|---|---|---|
-| `--radius-1` | 4px | Inline tag, input focus-ring corner clip. |
-| `--radius-2` | 8px | Button, input/textarea/select, segmented thumb. |
-| `--radius-3` | 12px | Dropdown menu, popover, tooltip, banner. |
-| `--radius-4` | 16px | Card, dialog body, sidebar panel. |
-| `--radius-5` | 24px | Hero card, empty-state illustration container. |
-| `--radius-full` | 9999px | Pill button, avatar, badge, switch track, segmented outer. |
-
-Modal corner masking: `overflow: hidden` + `--radius-4` so internal
-toolbars don't bleed past the corner.
+| Радиус | Применение |
+|---|---|
+| `4px` | Inline badges (цена в слоте, micro-pill) |
+| `6px` | Inputs, мелкие кнопки secondary |
+| `8px` | Slot card в календаре, мелкие cards, primary `<Button>` |
+| `10px` | Banner (warning/danger), стат-блоки |
+| `12px` | Большие карточки, модалки |
+| `999px` | Pills, chips (counters + radio-options) |
 
 ---
 
 ## 7. Shadows
 
-Apple shadows are subtle and layered: one tight contact shadow + one
-diffuse ambient. On a dark canvas we tune them darker than the canvas,
-not lighter — no "glow".
+Минимально, потому что dark UI плохо принимает тени. Используем только для:
 
-| Token | Value | Use |
-|---|---|---|
-| `--shadow-1` | `0 1px 2px rgba(0,0,0,0.30)` | Default raised card on same-color surface (rare). |
-| `--shadow-2` | `0 2px 4px rgba(0,0,0,0.30), 0 8px 16px rgba(0,0,0,0.24)` | Dropdown, popover, tooltip on open. |
-| `--shadow-3` | `0 4px 8px rgba(0,0,0,0.32), 0 16px 32px rgba(0,0,0,0.28)` | Dialog / modal. |
-| `--shadow-modal` | `0 8px 16px rgba(0,0,0,0.36), 0 32px 64px rgba(0,0,0,0.40)` | Full-screen modal (with `backdrop-filter: blur(12px)`). |
+| Применение | Значение |
+|---|---|
+| FAB (floating action button) | `0 8px 24px rgba(0,0,0,0.35)` |
+| Модалка (опц.) | `0 12px 40px rgba(0,0,0,0.45)` |
 
-Most cards on `--bg` skip shadow entirely and rely on the 1px border.
-The existing `.btn-primary` rose-glow stays on marketing only.
+Карточки кабинета — без теней, только `--border`.
 
 ---
 
 ## 8. Motion
 
-```
---duration-fast: 150ms;   /* hover tint, focus ring */
---duration-base: 250ms;   /* default enter/exit, dropdown open */
---duration-slow: 400ms;   /* modal enter, page transitions */
+| Property | Duration | Easing |
+|---|---|---|
+| Hover background / border | 120ms | ease-out |
+| Hover transform (lift) | 160ms | ease-out |
+| Modal enter | 200ms | cubic-bezier(0.16, 1, 0.3, 1) |
+| Progress bar fill | 240ms | ease-out |
+| Page-level fade-in | 600-700ms | cubic-bezier(0.16, 1, 0.3, 1) |
 
---ease-out:    cubic-bezier(0.16, 1, 0.3, 1);   /* enter */
---ease-in:     cubic-bezier(0.7, 0, 0.84, 0);   /* exit */
---ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);  /* cross-fade, thumb slide */
---ease-linear: linear;                          /* progress, spinners */
-```
-
-`--ease-out` approximates Apple's `UISpringTimingParameters` default.
-We avoid CSS spring keyframes — Safari-only.
-
-**Patterns:**
-
-- Hover: `color`/`background` transitions at `--duration-fast`,
-  `--ease-out`. Never `transform: translateY()` (marketing).
-- Dropdown / popover enter: opacity 0→1 + `translateY(-4px → 0)`,
-  `--duration-base`, `--ease-out`. Exit reverses, `--ease-in`.
-- Modal enter: scrim opacity 0→1 + dialog opacity 0→1 + `scale(0.96 → 1)`,
-  `--duration-slow`, `--ease-out`.
-- Segmented thumb: `translateX`, `--duration-base`, `--ease-in-out`.
-- Toast: `translateY(8px → 0)` + opacity, `--duration-base`.
-
-**Reduced motion:** `@media (prefers-reduced-motion: reduce)` collapses
-transitions to none on primitive root classes. Scale/translate on
-modal enter degrades to a plain opacity fade. The segmented thumb still
-translates at fast duration (a static thumb loses the affordance).
+**Reduced-motion:** все `transform`/`opacity` анимации > 200ms должны fallback'ить на instant. Хук — media query `(prefers-reduced-motion: reduce)` в `globals.css`.
 
 ---
 
-## 8.LANDING. Tier-1 SaaS landing motion library
+## 9. UI Primitives (`components/ui/primitives/`)
 
-**Scope:** `.saas-chrome` class (per SAAS-1-5A precedent — tokens MUST NOT bleed into cabinet/admin/`/`/`/offer`). Activates on `/saas` and child routes only. Adds to §8 tokens; doesn't replace them.
+**Источник:** `components/ui/primitives/index.ts`. Импортируем оттуда, не дублируем inline-стили.
 
-**Brief constraint:** owner asked for "МАКСИМАЛЬНО ЩЕДРО" — scroll-driven, magnetic cursor, parallax, micro-interactions (Bruno Simon / Lando Norris benchmark). Lighthouse Performance ≥90 hard floor. `prefers-reduced-motion` MUST collapse every theatrical effect to a static fallback.
+### 9.1 `<Button>`
 
-### 8.LANDING.1 Theatrical durations
+Универсальная кнопка. Props:
+- `variant`: `primary` | `secondary` | `danger` | `ghost`
+- `size`: `sm` | `md` | `lg`
+- `href` (если задан — рендерится как `<Link>`, иначе `<button>`)
+- `iconLeft` / `iconRight` (ReactNode)
+- `loading` — заменяет content на `…`
+- `fullWidth`
 
-```css
-.saas-chrome {
-  --landing-duration-fast: 180ms;        /* micro-interaction settle */
-  --landing-duration-base: 240ms;        /* card hover lift, FAQ open */
-  --landing-duration-slow: 420ms;        /* section reveal, hero text in */
-  --landing-duration-theatrical: 720ms;  /* WebGL hero entrance, parallax depth */
-  --landing-stagger-step: 60ms;          /* between siblings in a row/grid */
-}
+Примеры:
+```tsx
+<Button>Создать ссылку</Button>
+<Button variant="danger" size="sm" href="/teacher/subscription">Обновить тариф</Button>
+<Button variant="ghost" iconLeft={<GearIcon />}>Настройки</Button>
 ```
 
-`theatrical` is reserved for hero entrance + once-per-page reveals; never for hover.
+**Анти-паттерн:** `<button style={{padding, background, border, borderRadius, color, cursor}}>` — всё это уже умеет `<Button>`. Не дублируем.
 
-### 8.LANDING.2 Generous easings
+### 9.2 `<ChipGroup>`
 
-```css
-.saas-chrome {
-  /* Hero reveals, headline appear */
-  --ease-out-expo:  cubic-bezier(0.16, 1, 0.3, 1);
-  /* Card hover lift, button press release — slight overshoot */
-  --ease-out-back:  cubic-bezier(0.34, 1.56, 0.64, 1);
-  /* Spring-feel for magnetic cursor settle */
-  --ease-spring-soft: cubic-bezier(0.5, 1.5, 0.5, 1);
-  /* Asymmetric exit — slow start, fast end */
-  --ease-in-quart:  cubic-bezier(0.5, 0, 0.75, 0);
-}
+Радио-группа из pill-кнопок. Для 2-5 mutually-exclusive опций.
+
+```tsx
+<ChipGroup
+  name="duration"
+  value={duration}
+  options={[
+    { value: '30', label: '30 мин' },
+    { value: '60', label: '60 мин' },
+    { value: '90', label: '90 мин' },
+  ]}
+  onChange={setDuration}
+/>
 ```
 
-### 8.LANDING.3 Scroll-trigger primitives
+**Когда не ChipGroup, а `<select>`:** опций > 5 ИЛИ labels длиннее ~16 символов.
 
-A section becomes visible when its top crosses 75% of viewport height. Triggers a stagger reveal of its children.
+### 9.3 `<Pill>`
 
-```css
-.saas-chrome [data-scroll-trigger] {
-  opacity: 0;
-  transform: translateY(48px);
-  transition:
-    opacity var(--landing-duration-slow) var(--ease-out-expo),
-    transform var(--landing-duration-slow) var(--ease-out-expo);
-}
-.saas-chrome [data-scroll-trigger].is-visible {
-  opacity: 1;
-  transform: translateY(0);
-}
-.saas-chrome [data-scroll-trigger] > *:nth-child(1) { transition-delay: 0ms; }
-.saas-chrome [data-scroll-trigger] > *:nth-child(2) { transition-delay: var(--landing-stagger-step); }
-.saas-chrome [data-scroll-trigger] > *:nth-child(3) { transition-delay: calc(var(--landing-stagger-step) * 2); }
-.saas-chrome [data-scroll-trigger] > *:nth-child(4) { transition-delay: calc(var(--landing-stagger-step) * 3); }
-.saas-chrome [data-scroll-trigger] > *:nth-child(5) { transition-delay: calc(var(--landing-stagger-step) * 4); }
-.saas-chrome [data-scroll-trigger] > *:nth-child(6) { transition-delay: calc(var(--landing-stagger-step) * 5); }
+Read-only badge: статус, счётчик.
+
+```tsx
+<Pill tone="danger">5/5 учеников</Pill>
+<Pill tone="warning">4/5 учеников</Pill>
+<Pill tone="success">оплачено</Pill>
+<Pill tone="default">черновик</Pill>
 ```
 
-JS implementation: a single `IntersectionObserver` shared across all triggers, threshold = 0.25. Add `is-visible` once; never remove (re-triggering on scroll back up is "cheap-feeling").
+**Анти-паттерн:** clickable Pill. Если кликается — это `<Button variant="ghost">` или `<Link>`.
 
-### 8.LANDING.4 Magnetic cursor primitives
+### 9.4 `<Banner>`
 
-For CTA buttons and the logo mark. Cursor enters within a radius → element translates a fraction of the cursor delta. Releases on leave with spring settle.
+Page-level alert / status.
 
-```css
-.saas-chrome [data-magnetic] {
-  --magnetic-radius: 96px;        /* activation zone around element */
-  --magnetic-max-disp: 12px;      /* max element offset */
-  --magnetic-snap-ms: 320ms;      /* settle duration on cursor leave */
-  transition: transform var(--magnetic-snap-ms) var(--ease-spring-soft);
-  will-change: transform;
-}
-/* Active follow drives transform via JS inline style — no transition then. */
-.saas-chrome [data-magnetic].is-following {
-  transition: none;
-}
+```tsx
+<Banner
+  tone="danger"
+  icon="⚠"
+  action={<Button variant="secondary" size="sm" href="/teacher/settings/calendar">Настройки</Button>}
+>
+  <strong>3 занятия пересекаются</strong> с событиями в Google Calendar.
+</Banner>
 ```
 
-JS contract:
-- Single `mousemove` listener on each magnetic element parent.
-- `delta = (cursor - center) * 0.18` (18% of distance to cursor; clamped to `--magnetic-max-disp`).
-- On enter zone: add `is-following`; write `transform: translate3d(deltaX, deltaY, 0)` inline.
-- On leave zone: remove `is-following`; transform animates back to 0,0 via the spring transition.
+**Tones:** `info` / `warning` / `danger` / `success`. Один banner на одно состояние — не лепи два рядом.
 
-### 8.LANDING.5 3D card tilt on hover
+### 9.5 `<EmptyState>`
 
-For feature cards. Cursor over card → card tilts toward cursor with subtle gloss/spotlight.
+Для нулевых списков.
 
-```css
-.saas-chrome [data-tilt] {
-  --tilt-max-rot: 8deg;
-  --tilt-perspective: 1200px;
-  transform-style: preserve-3d;
-  perspective: var(--tilt-perspective);
-  transition: transform var(--landing-duration-fast) var(--ease-out-back);
-  will-change: transform;
-}
-.saas-chrome [data-tilt]:hover {
-  transform: scale(1.02);
-}
-.saas-chrome [data-tilt] .tilt-inner {
-  transition: transform var(--landing-duration-fast) var(--ease-out-back);
-  transform-style: preserve-3d;
-}
-/* JS sets rotateX/rotateY inline on .tilt-inner based on cursor pos. */
+```tsx
+<EmptyState
+  title="Пока учеников нет"
+  body="Создайте приглашение — ссылка действует 7 дней"
+  action={<Button>Создать приглашение</Button>}
+/>
 ```
 
-### 8.LANDING.6 Hero type-scale
+**Правило:** каждый empty state имеет `action` ИЛИ объяснение, почему его нельзя сейчас сделать.
 
-Reserved for the `/saas` hero only; never use these sizes elsewhere.
+### 9.6 `<FloatingActionButton>`
 
-```css
-.saas-chrome {
-  --hero-h1-desktop: clamp(64px, 7vw, 96px);  /* big screens */
-  --hero-h1-tablet:  clamp(48px, 6vw, 64px);  /* iPad portrait */
-  --hero-h1-mobile:  clamp(36px, 9vw, 48px);  /* phone */
-  --hero-h1-leading: 0.95;                    /* tight */
-  --hero-h1-track:   -0.04em;                 /* tight letter-spacing for big sizes */
-  --hero-subtitle:   clamp(18px, 1.6vw, 22px);
-  --hero-subtitle-leading: 1.5;
-}
+Sticky bottom-right на мобиле. Одна FAB на экран.
+
+```tsx
+<FloatingActionButton
+  label="Создать занятие"
+  onClick={openCreate}
+/>
 ```
 
-### 8.LANDING.7 Parallax depth layers
-
-3 layers for the hero: background (slowest), midground (mid), foreground (fastest, near 1:1).
-
-```css
-.saas-chrome [data-parallax="bg"]   { will-change: transform; }  /* 0.3x scroll */
-.saas-chrome [data-parallax="mid"]  { will-change: transform; }  /* 0.6x scroll */
-.saas-chrome [data-parallax="fg"]   { will-change: transform; }  /* 0.9x scroll */
-```
-
-JS contract: single `scroll` listener (passive), `requestAnimationFrame`-throttled. Applies `transform: translate3d(0, scrollY * factor, 0)` per layer.
-
-### 8.LANDING.8 Reduced-motion fallback (MANDATORY)
-
-```css
-@media (prefers-reduced-motion: reduce) {
-  .saas-chrome [data-scroll-trigger],
-  .saas-chrome [data-scroll-trigger] > *,
-  .saas-chrome [data-magnetic],
-  .saas-chrome [data-tilt],
-  .saas-chrome [data-tilt] .tilt-inner,
-  .saas-chrome [data-parallax] {
-    /* Strip all transitions, transforms, and animations */
-    transition: none !important;
-    transform: none !important;
-    animation: none !important;
-    opacity: 1 !important;
-  }
-}
-```
-
-Every JS handler ALSO checks `window.matchMedia('(prefers-reduced-motion: reduce)').matches` at attach time and short-circuits attach if true. No idle event listeners for users who opted out.
-
-### 8.LANDING.9 Performance budget
-
-- Initial JS for hero animation: ≤200KB (code-split, dynamic `import()`).
-- Three.js hero is OPTIONAL — gated by Sub-B.1 performance prototype validating Lighthouse Performance ≥85 on mobile slow-4G.
-- If WebGL hero fails the budget: fallback = vanilla CSS hero with `data-parallax` + `data-scroll-trigger` only.
-- All non-hero animations are CSS-driven (no JS framework cost beyond a tiny IO listener).
+**Когда FAB:** мобильный экран без видимого primary-action в шапке. На desktop FAB не используем — там кнопка в шапке секции.
 
 ---
 
-## 9. Primitive components
+## 10. Анти-паттерны (с примерами из истории)
 
-Each primitive ships under `lib/ui/primitives/`, typed, server-
-component-friendly where possible, exporting both component and TS
-prop types. Each entry names: variants, sizes, states, ARIA, keyboard.
+### 10.1 `<details>` под параграфом
 
-### 9.1 Button
+```tsx
+// BAD
+<p>
+  Тяните по пустым клеткам, чтобы создать занятие.
+  <details><summary>Подробнее</summary>...</details>
+</p>
+```
 
-- **Variants:** `primary` (solid `--accent`, `--text-on-accent`),
-  `secondary` (`--surface-2` fill, `--separator-default` border,
-  `--text-primary`), `ghost` (transparent), `danger` (`--danger` text
-  on `--danger-bg`).
-- **Sizes** (height / pad-x / font): `sm` 28/12/13, `md` 36/16/15
-  (default), `lg` 44/20/15 (touch target).
-- **States:** default, hover, active (pressed), focus-visible,
-  disabled, loading (inline 14px spinner left of label, label →
-  `--text-tertiary`, click suppressed).
-- **ARIA:** native `<button>`; real `disabled` when blocked,
-  `aria-disabled` for content-invalidity; `aria-busy` during loading.
-- **Keyboard:** native — Tab/Space/Enter.
-- **Russian copy examples:** "Сохранить", "Отменить", "Купить пакет",
-  "Удалить аккаунт".
+Если у тебя 2 строки + `<details>`, ты не уверен, какая половина важная. Выбор: либо короткая строчка in-line, либо tooltip-иконка `?`, либо вообще никакого текста (UX сам подскажет).
 
-### 9.2 Input / Textarea / Select
+### 10.2 Длинные jargon-банеры
 
-- **Sizes:** `md` (h=36, default), `lg` (h=44, auth forms — matches
-  current 12×14 padding).
-- **Composition:** `<Field>` wraps `<Label>` + control + `<HelperText>`
-  + `<ErrorMessage>`. Migrates the current `AuthField` (callers swap
-  imports per-wave).
-- **States:** default, hover, focus-visible (4px outset focus ring,
-  §11), invalid (1px `--danger` border + helper in `--danger`),
-  disabled (opacity 0.5).
-- **ARIA:** `<label for>` ↔ `id`; `aria-describedby` → helper id;
-  `aria-invalid` + `aria-errormessage` when invalid.
-- **Keyboard:** native. Native `<select>` only in v1.0 (custom
-  listbox reserved for post-v1).
+```tsx
+// BAD
+«1 урок пересекается с событиями в вашем Google Calendar. Конфликтные уроки
+отмечены красной рамкой и значком ⚠ в расписании ниже — кликните по уроку,
+чтобы выбрать действие: «я разрулю сам», «удалить событие в Google» (если
+у LevelChannel есть write-доступ к источнику) или «отменить занятие».»
 
-### 9.3 Card
+// GOOD
+<Banner tone="danger" icon="⚠"
+  action={<Button variant="secondary" size="sm" href="/teacher/settings/calendar">Настройки</Button>}>
+  <strong>1 занятие пересекается</strong> с событием в Google. Кликните по занятию в сетке.
+</Banner>
+```
 
-- **Anatomy:** `<Card>` (`--surface-1`, `--radius-4`, 1px
-  `--separator-default` border, `--space-5` pad); optional
-  `<Card.Header>` (title `--text-17` weight 600, optional eyebrow,
-  right-aligned actions slot, 1px underline + `--space-4` gap);
-  optional `<Card.Footer>` (separator above, right-aligned actions).
-- **States:** static by default. If the whole card is a link/button,
-  hover: border → `--separator-strong`, bg → `--surface-2`,
-  `--duration-fast`. No translateY lift.
-- **ARIA:** if interactive, render as `<a>` or `<button>`.
+### 10.3 Дублирование заголовков
 
-### 9.4 Modal / Dialog
+Если в навбаре уже выделено «Календарь» / «Главная» / «Ученики» — не дублируй H1 на странице с тем же текстом. Замени на:
+- Контекст: «Добрый день, Анна» (приветствие на главной)
+- Сводку: «5 учеников · 8 занятий на этой неделе»
+- Полезное действие: кнопка справа в action-bar
 
-- **Anatomy:** scrim (`--overlay-scrim` + 12px `backdrop-filter`);
-  dialog centered, `min(560px, 92vw)`, `--surface-1`, `--radius-4`,
-  `--shadow-modal`. Header: `<h2>` `--text-22` weight 600 + ghost icon
-  close (top-right). Body pad `--space-5`. Footer: actions right-
-  aligned (Apple order: secondary "Отмена" left, primary right; for
-  destructive, danger right).
-- **States:** entering (`--duration-slow`, `--ease-out`), open,
-  exiting (reverse, `--ease-in`).
-- **ARIA:** `role="dialog"`, `aria-modal="true"`, `aria-labelledby` →
-  header h2, `aria-describedby` → body description if any.
-- **Keyboard:** Esc closes, focus trap on open, focus returns to
-  trigger on close, initial focus on first field (or on
-  non-destructive button if read-only).
+### 10.4 Mixed форматы дат
 
-### 9.5 Dropdown menu
+В одном проходе видеть `07.06.2026` / `7 июня` / `Sun Jun 07` — больно.
 
-- **Anatomy:** portaled panel — `--surface-2`, `--radius-3`,
-  `--shadow-2`, 1px `--separator-default`. Items 36px tall, `--space-3`
-  pad-x, left-aligned icon + label, hover bg `--surface-3`.
-- **Variants:** plain, with separators, with destructive item (label
-  `--danger`, hover bg `--danger-bg`).
-- **ARIA:** `role="menu"` / `role="menuitem"`; trigger has
-  `aria-haspopup="menu"`, `aria-expanded`, `aria-controls`.
-- **Keyboard:** Up/Down nav, Enter activates, Esc closes, Tab closes
-  forward, focus returns to trigger.
+**Правило:**
+- В продукте: `«7 июня»` (год опускаем для текущего)
+- В H2/details: `«воскресенье, 7 июня»`
+- В машиночитаемом: ISO в `<time datetime="2026-06-07">`
 
-### 9.6 Badge
+### 10.5 Hardcoded цвета
 
-- **Variants:** `neutral` (`--surface-2` / `--text-secondary`),
-  `success`, `warning`, `danger`, `info`, `accent` — each pairing the
-  semantic bg with the chromatic fg.
-- **Size:** one only — h=22, `--text-12` weight 500, pad
-  `0 --space-2`, `--radius-full`.
-- **ARIA:** none required when redundant with nearby text; otherwise
-  a visually-hidden suffix.
+Любой `#RRGGBB` / `rgba(...)` в новом коде вне `globals.css` — баг. Если оттенка нет — добавь токен.
 
-### 9.7 Segmented control
+### 10.6 «Слот» / «занятие» / «урок» вперемешку
 
-- **Anatomy:** outer track `--surface-1`, `--radius-full`, `--space-1`
-  inner pad. Each segment is a button `--text-13` weight 500. Selected
-  segment renders a thumb (`--surface-3`, `--shadow-1`, `--radius-full`),
-  animated via `translateX` (`--duration-base`, `--ease-in-out`).
-- **States:** default (`--text-secondary`), selected (`--text-primary`
-  + thumb), hover unselected (`--text-primary`, no thumb).
-- **ARIA:** `role="tablist"` outer, `role="tab"` each, `aria-selected`
-  on active; controlled panel `role="tabpanel"`.
-- **Keyboard:** Left/Right cycle (wrap configurable), Home/End jump.
-- **Russian copy:** "Все / Открытые / Завершённые", "День / Неделя /
-  Месяц".
+Снаружи (UI, push, email) — только **«занятие»**. «Слот» / «slot» — внутренний термин, остаётся в коде.
 
-### 9.8 Checkbox / Radio
+### 10.7 Бесконечные labels
 
-- **Visual:** 18×18 — square `--radius-1` (checkbox) or circle
-  (radio). Idle: 1px `--separator-strong`, `--surface-1` fill.
-  Selected: `--accent` fill + white check / dot.
-- **States:** default, hover (border → `--accent`), focus-visible,
-  checked, indeterminate (checkbox only — horizontal bar), disabled
-  (opacity 0.5).
-- **ARIA:** native `<input>` + `<label>`. Radio group needs
-  `<fieldset>` + `<legend>`.
-- **Keyboard:** Space toggles; radio group arrow-keys move.
-
-### 9.9 Switch (iOS toggle)
-
-- **Use case:** on/off setting with immediate effect ("Постоплата
-  разрешена"). NOT for form submission — use checkbox if committed on
-  submit.
-- **Visual:** track 32×20, `--radius-full`. Off: track `--surface-3`,
-  thumb `--text-secondary` (16×16, 2px inset). On: track `--accent`,
-  thumb white. Thumb slides `--duration-base` `--ease-in-out`.
-- **States:** off, on, focus-visible (ring around track), disabled.
-- **ARIA:** `role="switch"`, `aria-checked`, label via `<label>` or
-  `aria-labelledby`.
-- **Keyboard:** Space toggles.
-
-### 9.10 Tooltip
-
-- **Visual:** `--surface-3`, `--text-primary` 13px, `--radius-2`,
-  `--space-2 --space-3` pad, `--shadow-2`, max-width 280px, 4px gap
-  from anchor, no arrow (Apple Big Sur+ style).
-- **Trigger:** hover (600ms delay) + focus (no delay). Dismiss on
-  blur/leave/Esc.
-- **ARIA:** anchor `aria-describedby` → tooltip id; tooltip
-  `role="tooltip"`. NEVER use `aria-label` here — double-announce risk.
+«На этой неделе» (когда вы уже на этой неделе) — переименовываем в «Сегодня». «Создать ссылку-приглашение» — терпимо. «Сохранить и продолжить настройку календаря» — длинно, разбей.
 
 ---
 
-## 10. Layout primitives
+## 11. Tone of voice
 
-### 10.1 Page shell
-
-- **AuthShell** (existing, kept): single column, max-width ~440px,
-  vertically centered when short. Used by /login, /register,
-  /cabinet (single-column for now), /forgot, /reset. Internal
-  paddings update to new spacing tokens; contract unchanged.
-- **AdminShell** (new): header bar + sidebar + main. Today's geometry
-  in `app/admin/(gated)/layout.tsx` (sidebar 240px, main flex) is the
-  baseline; restyled per §10.3.
-- **SiteShell** (landing): unchanged. Out of scope.
-
-### 10.2 Section
-
-`<Section>` wraps a logical block inside a shell. Margin-bottom
-`--space-6`. Optional `<Section.Header>` = `<h2>` (`--text-22`, weight
-600) + right-aligned actions.
-
-### 10.3 Header bar
-
-48px height (down from current 56 — Apple's compact toolbar), `--bg`
-bg, no border on cabinet, 1px `--separator-default` on admin, logo
-left, account menu right. Sticky on long-scroll pages.
-
-### 10.4 Sidebar (admin)
-
-Width 240px (current). Pad `--space-4 --space-3`. Items: `<a>` as
-32px-tall rows, `--radius-2`, pad-x `--space-3`, `--text-13` weight 500.
-
-- **Idle:** text `--text-secondary`, bg transparent.
-- **Hover:** text `--text-primary`, bg `--surface-2`.
-- **Active route:** text `--text-primary`, bg `--accent-bg`, plus 2px
-  inset left accent rule (`box-shadow: inset 2px 0 0 var(--accent)`).
-
-Eyebrow "Админка" stays (becomes the new `Eyebrow` primitive).
-
-### 10.5 Grid
-
-12-column responsive grid (dashboards mostly):
-
-- Gutter: `--space-5` (24px).
-- Outer page pad: `--space-6` desktop, `--space-4` mobile.
-- Container max-width: 1180 admin / 740 cabinet / 440 auth.
-
-v1.0 ships as a CSS-grid utility class (`grid-12`) rather than React
-components — feature plans rarely need more.
+- К учителю — **на «ты»**. К ученику — **на «вы»** (в кабинете ученика тоже «вы», потому что многие ученики — школьники, и их родители читают).
+- Глаголы — императив или 2-е лицо: «Создайте», «Откройте», «Подключите». НЕ «Пользователь может создать…».
+- Tooltip = объяснение one-liner («Удалит событие в Google, если у нас есть право записи»). НЕ повтор того, что уже на кнопке.
+- Errors — что произошло + что делать. «Не получилось обратиться к Google. Переподключите календарь в настройках.» НЕ «Внутренняя ошибка обращения к API.»
 
 ---
 
-## 11. Accessibility
+## 12. Migration plan
 
-- **Contrast.** Every pair in §3 passes WCAG AA against its intended
-  bg. Any new pairing not in the matrix must be verified before merge.
-- **Focus ring.** Apple-style 4px outset in `--accent` at 60% alpha
-  with 2px offset. Use `:focus-visible` (NOT `:focus`) so mouse
-  clicks don't paint the ring:
+Текущее состояние (2026-06-07):
 
-  ```
-  --focus-ring-color: rgba(216,138,130,0.60);
-  --focus-ring-width: 4px;
-  --focus-ring-offset: 2px;
+- ✅ Tokens (`§3`) живут в `app/globals.css`.
+- ✅ Primitives (`§9`) в `components/ui/primitives/`.
+- ⚠ **Старые экраны** (admin, parts of cabinet) всё ещё с inline-стилями + hardcoded цветами. Мигрируем **по мере shipping'а** новых фич, не отдельным sweep'ом.
+- ⚠ **Tailwind-классы** на лендинге (`.btn-primary` etc) — оставляем для лендинга. SaaS не использует.
+- ❌ Светлая тема — НЕ делаем. Кабинет dark-only.
 
-  *:focus-visible {
-    outline: var(--focus-ring-width) solid var(--focus-ring-color);
-    outline-offset: var(--focus-ring-offset);
-    border-radius: inherit;
-  }
-  ```
-
-- **Keyboard.** Every interactive element reachable via Tab in
-  document order. No `tabindex > 0`. `tabindex="-1"` only for
-  programmatic-focus targets. Skip-to-content link at top of every
-  shell, visually hidden until focused. Esc closes overlays in order:
-  open menu first, then modal.
-- **Motion reduction.** See §8. Every animation has a fallback —
-  either an opacity fade or no animation.
-- **Touch targets.** ≥44×44 hit area on mobile (`≤480px`). Visual
-  control can be smaller (switch is 32×20); wrapping label/`<button>`
-  extends the hit area via padding. Non-negotiable for `lg` buttons.
-- **Color independence.** No state conveyed by color alone. Validation
-  errors carry an `AlertCircle` + text in `--danger`; "Оплачено" badge
-  carries the word plus the color.
+Правило миграции: если ты редактируешь файл и видишь там hardcoded `#RRGGBB` или ad-hoc button-стиль — **в той же правке** заменяешь на токен/примитив. Если правка не касается этой части — оставляешь и пишешь TODO с ref на этот документ.
 
 ---
 
-## 12. Migration strategy
+## 13. Когда обновлять этот doc
 
-**Phase 0 — token foundation (1 PR).**
+Каждый раз, когда:
 
-- Add the v1.0 token block to `app/globals.css` under a `/* design
-  tokens v1 */` comment.
-- Add the `*:focus-visible` focus ring and the reduced-motion
-  override for `.ui-*` classes.
-- Add `.no-marketing-noise` opt-out on `<html>` applied via root layout
-  for SaaS routes (kills `body::before` noise overlay on cabinet/admin/
-  auth).
-- No component changes. Visual diff: identical except the noise
-  overlay disappears on SaaS routes.
+- Добавляешь новый токен в `globals.css` — добавь строчку в `§3`.
+- Создаёшь новый примитив в `components/ui/primitives/` — добавь раздел в `§9`.
+- Замечаешь новый recurring анти-паттерн — добавь в `§10`.
 
-**Phase 1 — primitive layer (1-2 PRs).**
-
-- `lib/ui/primitives/` populated: `Button`, `Field/Input/Textarea`,
-  `Card`, `Modal`, `DropdownMenu`, `Badge`, `SegmentedControl`,
-  `Checkbox`, `Radio`, `Switch`, `Tooltip`, `Eyebrow`, `Section`.
-- Each primitive exercised on `app/_dev/primitives/page.tsx` (gated to
-  non-prod) so reviewers see every state without booting a feature.
-- No call sites change yet.
-
-**Phase 2 — surface ports (per-wave plan docs).**
-
-Each wave plan picks one or two surfaces and cites this doc by
-section. Suggested order:
-
-1. `/login`, `/register`, `/forgot`, `/reset` — smallest surface,
-   easiest visual win; validates the typography migration.
-2. `/cabinet` learner UI — high-traffic; locks card/banner/modal
-   patterns.
-3. `/admin` chrome (sidebar + header) — locks the sidebar pattern.
-4. `/admin/*` data pages, one at a time — applies grid + segmented +
-   badge.
-5. Calendar redesign (`docs/plans/calendar-apple-redesign.md`) — most
-   ambitious; lands last.
-
-Each port is its own PR. Per CLAUDE.md global policy, surface ports
-are sub-PRs of the SAAS-6 epic (epic-level paranoia, sub-PR
-self-review).
-
-**Phase 3 — cleanup (one PR after all surfaces are ported).**
-
-- Move marketing-only classes (`.btn-primary`, `.btn-secondary`,
-  `.card`, `.section-label`, `.tag`, `.stat-number`, `.glow`,
-  `.gradient-*`) into a `app/(marketing)/marketing.css` scoped
-  stylesheet, imported only by the marketing layout.
-- Drop `.fade-in` / `.delay-*` if unreferenced.
-- Decide whether marketing keeps the gradient accent vars (likely
-  yes — branding).
-
-**Phase 4 — light mode (future, not v1.0).**
-
-Reserved. Tokens are semantic, so a light-mode swap is a
-`:root[data-theme="light"]` override. Out of scope here.
-
----
-
-## Appendix A — open questions (need product input)
-
-1. **Accent hex final lock.** §3 picks `#D88A82`. Owner may prefer
-   warmer (`#E29B92`) or more saturated. Sign-off after Phase 1
-   primitive page lands.
-2. **Iconography library.** Default `lucide-react`. SF-Symbols-style
-   alternatives (Phosphor Pro, custom set) require a buy decision.
-3. **Russian-locale tabular numerals.** SF Pro Cyrillic + tabular-
-   nums works; Inter fallback on Linux has slightly different glyph
-   widths. Acceptable but worth a real-admin-table check.
-4. **Empty-state illustrations.** Currently text-only. Product may
-   want a thin-line icon set; not committed here.
-5. **Per-account reduce-motion toggle.** `prefers-reduced-motion`
-   covers OS-level. A "Уменьшить анимации" cabinet setting is
-   reserved for a settings-page wave.
-
----
-
-*End of v1.0. Revisions land via PR touching this file with a one-line
-status update at the top.*
+Если документация говорит одно, а код другое — **побеждает код**. Документацию обновляешь по факту.

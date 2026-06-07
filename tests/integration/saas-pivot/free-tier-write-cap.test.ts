@@ -152,21 +152,25 @@ describe('free-tier 1pkg+1tariff unlock — packages cap', () => {
     }
   })
 
-  it('mid-tier teacher: pkg create → 422 plan_upgrade_required (cap=0)', async () => {
+  // 2026-06-07 owner change: mid/pro tiers are now unlimited (self-serve
+  // creates for packages + tariffs). Previously mid/pro had cap=0 and
+  // the route returned 422 plan_upgrade_required; concierge-only flow
+  // is deprecated. Test pinned at 201 to lock the new contract.
+  it('mid-tier teacher: pkg create → 201 (unlimited cap, self-serve)', async () => {
     const t = await makeTeacher({
-      emailSuffix: 'pkg-mid-blocked',
+      emailSuffix: 'pkg-mid-unlimited',
       planSlug: 'mid',
     })
 
-    const r = await teacherPackagesPost(
-      buildRequest('/api/teacher/packages', {
-        cookie: t.cookie,
-        body: pkgBody(`mid-pkg-${Date.now()}`),
-      }),
-    )
-    expect(r.status).toBe(422)
-    const body = await r.json()
-    expect(body.error).toBe('plan_upgrade_required')
+    for (let i = 0; i < 3; i += 1) {
+      const r = await teacherPackagesPost(
+        buildRequest('/api/teacher/packages', {
+          cookie: t.cookie,
+          body: pkgBody(`mid-pkg-${i}-${Date.now()}`),
+        }),
+      )
+      expect(r.status).toBe(201)
+    }
   })
 
   it('legacy no-row defensive state: pkg create → 422 plan_upgrade_required (cap=0 fallback)', async () => {
@@ -303,12 +307,11 @@ describe('free-tier 1pkg+1tariff unlock — tariffs cap', () => {
     expect(body.current).toBe(1)
   })
 
-  // R2-BLOCKER closure (wave-paranoia round 2): mid/pro/no-subscription
-  // teacher reactivating an archived package must get the same
-  // plan_upgrade_required code as POST, not tier_write_cap_reached.
-  it('mid-tier teacher: reactivation → 422 plan_upgrade_required (NOT tier_write_cap_reached)', async () => {
-    // Seed an archived package directly for a mid-tier teacher (POST
-    // would 422 first, so create the row manually with is_active=false).
+  // 2026-06-07 owner change: mid-tier now has unlimited package caps,
+  // so reactivation of an archived package succeeds (the cap no longer
+  // gates the path). The package was archived earlier — reactivation
+  // should restore is_active=true cleanly.
+  it('mid-tier teacher: reactivation → 200 (unlimited cap, self-serve)', async () => {
     const free = await makeTeacher({
       emailSuffix: 'react-mid-seed-free',
       planSlug: 'free',
@@ -322,9 +325,8 @@ describe('free-tier 1pkg+1tariff unlock — tariffs cap', () => {
     expect(r1.status).toBe(201)
     const pkgId = (await r1.json()).package.id as string
 
-    // Re-assign the row to a mid-tier teacher + archive it.
     const mid = await makeTeacher({
-      emailSuffix: 'react-mid-downgraded',
+      emailSuffix: 'react-mid-upgraded',
       planSlug: 'mid',
     })
     await getDbPool().query(
@@ -342,25 +344,24 @@ describe('free-tier 1pkg+1tariff unlock — tariffs cap', () => {
       }),
       { params: Promise.resolve({ id: pkgId }) },
     )
-    expect(react.status).toBe(422)
-    const body = await react.json()
-    expect(body.error).toBe('plan_upgrade_required')
+    expect(react.status).toBe(200)
   })
 
-  it('mid-tier teacher: tariff create → 422 plan_upgrade_required (cap=0)', async () => {
+  // 2026-06-07 owner change: mid-tier now has unlimited tariff caps.
+  it('mid-tier teacher: tariff create → 201 (unlimited cap, self-serve)', async () => {
     const t = await makeTeacher({
-      emailSuffix: 'tariff-mid-blocked',
+      emailSuffix: 'tariff-mid-unlimited',
       planSlug: 'mid',
     })
 
-    const r = await teacherTariffsPost(
-      buildRequest('/api/teacher/tariffs', {
-        cookie: t.cookie,
-        body: tariffBody('Mid blocked tariff'),
-      }),
-    )
-    expect(r.status).toBe(422)
-    const body = await r.json()
-    expect(body.error).toBe('plan_upgrade_required')
+    for (let i = 0; i < 3; i += 1) {
+      const r = await teacherTariffsPost(
+        buildRequest('/api/teacher/tariffs', {
+          cookie: t.cookie,
+          body: tariffBody(`Mid tariff #${i}`),
+        }),
+      )
+      expect(r.status).toBe(201)
+    }
   })
 })

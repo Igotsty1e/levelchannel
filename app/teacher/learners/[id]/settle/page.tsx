@@ -2,6 +2,7 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 
+import { Button, EmptyState, Pill } from '@/components/ui/primitives'
 import { formatProfileNameForRender } from '@/lib/auth/profile-name'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getDbPool } from '@/lib/db/pool'
@@ -159,6 +160,24 @@ export default async function TeacherSettlePage({ params }: PageProps) {
       maximumFractionDigits: 2,
     })} ₽`
 
+  // Cabinet polish 2026-06-07 (B5) — unified date format «7 июня, 19:00».
+  const CURRENT_YEAR = new Date().getFullYear()
+  const fmtLessonDate = (iso: string): string => {
+    const d = new Date(iso)
+    const dateOpts: Intl.DateTimeFormatOptions =
+      d.getFullYear() === CURRENT_YEAR
+        ? { day: 'numeric', month: 'long' }
+        : { day: 'numeric', month: 'long', year: 'numeric' }
+    const datePart = d.toLocaleDateString('ru-RU', dateOpts)
+    const timePart = d.toLocaleTimeString('ru-RU', {
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+    return `${datePart}, ${timePart}`
+  }
+
+  const totalRemainingRub = (totalRemaining / 100).toFixed(2)
+
   return (
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
       <div style={{ marginBottom: 16 }}>
@@ -177,20 +196,36 @@ export default async function TeacherSettlePage({ params }: PageProps) {
         Отметить оплату
       </h1>
       <p style={{ color: 'var(--secondary)', marginBottom: 24 }}>
-        {learnerNameForRender} ·{' '}
-        долг {fmtRub(totalRemaining)}
+        {learnerNameForRender} · долг{' '}
+        <strong
+          style={{
+            color: totalRemaining > 0 ? 'var(--danger)' : 'var(--text)',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {fmtRub(totalRemaining)}
+        </strong>
       </p>
 
       {outstanding.length === 0 ? (
-        <p style={{ color: 'var(--secondary)' }}>
-          Нет неоплаченных уроков. Долгов нет.
-        </p>
+        <EmptyState
+          title="Долгов нет"
+          body="Все проведённые занятия оплачены."
+          action={
+            <Button variant="secondary" href={`/teacher/learners/${learnerId}`}>
+              Вернуться к ученику
+            </Button>
+          }
+        />
       ) : (
         <form
           method="post"
           action={`/api/teacher/learners/${learnerId}/settle`}
           style={{ display: 'flex', flexDirection: 'column', gap: 16 }}
         >
+          {/* Поле остаётся в копейках (того ждёт серверный route),
+              лейбл — на «ты», без жаргонной приписки «100 копеек = 1 ₽».
+              Полная конверсия в ₽ потребует client-island — пока не делаем. */}
           <div>
             <label
               htmlFor="amountKopecks"
@@ -201,7 +236,7 @@ export default async function TeacherSettlePage({ params }: PageProps) {
                 fontSize: 14,
               }}
             >
-              Сумма оплаты (копейки)
+              Сумма оплаты, копейки
             </label>
             <input
               id="amountKopecks"
@@ -212,13 +247,14 @@ export default async function TeacherSettlePage({ params }: PageProps) {
               defaultValue={totalRemaining}
               required
               style={{
-                padding: '8px 12px',
+                padding: '10px 12px',
                 border: '1px solid var(--border)',
-                borderRadius: 4,
+                borderRadius: 8,
                 fontSize: 14,
                 width: '100%',
-                background: 'var(--bg)',
-                color: 'var(--fg)',
+                background: 'var(--surface-2)',
+                color: 'var(--text)',
+                fontVariantNumeric: 'tabular-nums',
               }}
             />
             <p
@@ -228,8 +264,8 @@ export default async function TeacherSettlePage({ params }: PageProps) {
                 marginTop: 4,
               }}
             >
-              По умолчанию — полный долг. Можно указать частичную
-              сумму. 100 копеек = 1 ₽.
+              По умолчанию — полный долг ({totalRemainingRub} ₽). Можно
+              указать частичную сумму в копейках (100 = 1 ₽).
             </p>
           </div>
 
@@ -241,7 +277,7 @@ export default async function TeacherSettlePage({ params }: PageProps) {
                 fontSize: 14,
               }}
             >
-              Покрыть конкретные уроки
+              Покрыть конкретные занятия
             </p>
             <p
               style={{
@@ -250,26 +286,72 @@ export default async function TeacherSettlePage({ params }: PageProps) {
                 marginBottom: 8,
               }}
             >
-              Без выбора — распределение по FIFO (старейшие сначала)
-              на всю сумму. С выбором — только эти уроки.
+              Без выбора — оплата ляжет на самые старые занятия по очереди.
+              С выбором — только на отмеченные.
             </p>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <table
+              style={{
+                width: '100%',
+                borderCollapse: 'collapse',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
                   <th style={{ width: 32 }}></th>
-                  <th style={{ textAlign: 'left', padding: '8px 4px' }}>
+                  <th
+                    style={{
+                      textAlign: 'left',
+                      padding: '8px 4px',
+                      fontSize: 12,
+                      fontWeight: 500,
+                      color: 'var(--secondary)',
+                    }}
+                  >
                     Дата
                   </th>
-                  <th style={{ textAlign: 'left', padding: '8px 4px' }}>
+                  <th
+                    style={{
+                      textAlign: 'left',
+                      padding: '8px 4px',
+                      fontSize: 12,
+                      fontWeight: 500,
+                      color: 'var(--secondary)',
+                    }}
+                  >
                     Статус
                   </th>
-                  <th style={{ textAlign: 'right', padding: '8px 4px' }}>
+                  <th
+                    style={{
+                      textAlign: 'right',
+                      padding: '8px 4px',
+                      fontSize: 12,
+                      fontWeight: 500,
+                      color: 'var(--secondary)',
+                    }}
+                  >
                     Стоимость
                   </th>
-                  <th style={{ textAlign: 'right', padding: '8px 4px' }}>
+                  <th
+                    style={{
+                      textAlign: 'right',
+                      padding: '8px 4px',
+                      fontSize: 12,
+                      fontWeight: 500,
+                      color: 'var(--secondary)',
+                    }}
+                  >
                     Уже оплачено
                   </th>
-                  <th style={{ textAlign: 'right', padding: '8px 4px' }}>
+                  <th
+                    style={{
+                      textAlign: 'right',
+                      padding: '8px 4px',
+                      fontSize: 12,
+                      fontWeight: 500,
+                      color: 'var(--secondary)',
+                    }}
+                  >
                     Остаток
                   </th>
                 </tr>
@@ -280,27 +362,28 @@ export default async function TeacherSettlePage({ params }: PageProps) {
                     key={row.id}
                     style={{ borderBottom: '1px solid var(--border)' }}
                   >
-                    <td style={{ padding: '8px 4px' }}>
+                    <td style={{ padding: '10px 4px' }}>
                       <input
                         type="checkbox"
                         name="completionId"
                         value={row.id}
-                        aria-label={`Покрыть урок ${new Date(row.startAt).toLocaleString('ru-RU')}`}
+                        aria-label={`Покрыть занятие ${fmtLessonDate(row.startAt)}`}
                       />
                     </td>
-                    <td style={{ padding: '8px 4px', fontSize: 13 }}>
-                      {new Date(row.startAt).toLocaleString('ru-RU', {
-                        dateStyle: 'short',
-                        timeStyle: 'short',
-                      })}
+                    <td style={{ padding: '10px 4px', fontSize: 13 }}>
+                      {fmtLessonDate(row.startAt)}
                     </td>
-                    <td style={{ padding: '8px 4px', fontSize: 13 }}>
-                      {row.wasNoShow ? 'Не пришёл' : 'Проведён'}
+                    <td style={{ padding: '10px 4px', fontSize: 13 }}>
+                      {row.wasNoShow ? (
+                        <Pill tone="warning" size="sm">Не пришёл</Pill>
+                      ) : (
+                        <Pill tone="success" size="sm">Проведено</Pill>
+                      )}
                     </td>
                     <td
                       style={{
                         textAlign: 'right',
-                        padding: '8px 4px',
+                        padding: '10px 4px',
                         fontSize: 13,
                       }}
                     >
@@ -309,7 +392,7 @@ export default async function TeacherSettlePage({ params }: PageProps) {
                     <td
                       style={{
                         textAlign: 'right',
-                        padding: '8px 4px',
+                        padding: '10px 4px',
                         fontSize: 13,
                       }}
                     >
@@ -318,7 +401,7 @@ export default async function TeacherSettlePage({ params }: PageProps) {
                     <td
                       style={{
                         textAlign: 'right',
-                        padding: '8px 4px',
+                        padding: '10px 4px',
                         fontSize: 13,
                         fontWeight: 600,
                       }}
@@ -332,36 +415,10 @@ export default async function TeacherSettlePage({ params }: PageProps) {
           </div>
 
           <div style={{ display: 'flex', gap: 12 }}>
-            <button
-              type="submit"
-              style={{
-                padding: '10px 18px',
-                background: 'var(--accent)',
-                color: 'var(--accent-fg)',
-                border: 'none',
-                borderRadius: 4,
-                cursor: 'pointer',
-                fontWeight: 600,
-                fontSize: 14,
-              }}
-            >
-              Отметить оплату
-            </button>
-            <Link
-              href={`/teacher/learners/${learnerId}`}
-              style={{
-                padding: '10px 18px',
-                background: 'var(--surface)',
-                color: 'var(--fg)',
-                border: '1px solid var(--border)',
-                borderRadius: 4,
-                textDecoration: 'none',
-                fontSize: 14,
-                fontWeight: 600,
-              }}
-            >
+            <Button type="submit">Отметить оплату</Button>
+            <Button variant="secondary" href={`/teacher/learners/${learnerId}`}>
               Отмена
-            </Link>
+            </Button>
           </div>
         </form>
       )}

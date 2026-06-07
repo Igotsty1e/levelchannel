@@ -1,8 +1,10 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
 import { postAuthJson } from '@/lib/auth/client'
+import type { TeacherPlanLearnerLimit } from '@/lib/onboarding/teacher-plan-limit'
 
 // SAAS-4 TINV.5 (2026-05-18) — teacher's invite-generation card.
 //
@@ -13,6 +15,7 @@ import { postAuthJson } from '@/lib/auth/client'
 
 type Props = {
   isVerified: boolean
+  planLearnerLimit?: TeacherPlanLearnerLimit
 }
 
 type InviteRow = {
@@ -45,28 +48,27 @@ const PAYMENT_METHOD_OPTIONS: ReadonlyArray<{
   {
     value: 'none',
     label: 'Не выбирать сейчас',
-    hint: 'Ученик не сможет записаться до того, как вы выберете способ оплаты на его карточке.',
+    hint: 'Решите позже на карточке ученика.',
   },
   {
     value: 'postpaid',
     label: 'Постоплата',
-    hint: 'Ученик записывается, оплата фиксируется как долг и закрывается отдельно.',
+    hint: 'Ученик платит после занятия.',
   },
   {
     value: 'prepaid_packages',
     label: 'Предоплата пакетами',
-    hint: 'Ученик сможет записаться, только купив пакет занятий у вас.',
+    hint: 'Ученик покупает пакет занятий заранее.',
   },
 ]
 
 function formatDate(iso: string): string {
   const d = new Date(iso)
+  const sameYear = new Date().getFullYear() === d.getFullYear()
   return d.toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+    day: 'numeric',
+    month: 'long',
+    ...(sameYear ? {} : { year: 'numeric' }),
   })
 }
 
@@ -79,11 +81,22 @@ function statusLabel(status: InviteRow['status']): string {
     case 'revoked':
       return 'отозвано'
     case 'expired':
-      return 'истёк срок действия'
+      return 'истекло'
   }
 }
 
-export function TeacherInviteSection({ isVerified }: Props) {
+export function TeacherInviteSection({ isVerified, planLearnerLimit }: Props) {
+  const limited = planLearnerLimit?.kind === 'limited' ? planLearnerLimit : null
+  const isHardLimit = !!limited && limited.activeCount >= limited.limit
+  const isSoftLimit =
+    !!limited &&
+    !isHardLimit &&
+    limited.activeCount >= Math.ceil(0.8 * limited.limit)
+  const limitTone: 'ok' | 'soft' | 'hard' = isHardLimit
+    ? 'hard'
+    : isSoftLimit
+      ? 'soft'
+      : 'ok'
   const [invites, setInvites] = useState<InviteRow[]>([])
   const [created, setCreated] = useState<Map<string, string>>(new Map())
   const [busy, setBusy] = useState(false)
@@ -185,9 +198,67 @@ export function TeacherInviteSection({ isVerified }: Props) {
       className="card"
       style={{ padding: 24, marginBottom: 24, marginTop: 24 }}
     >
-      <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
-        Пригласить ученика
-      </h3>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 12,
+          flexWrap: 'wrap',
+          marginBottom: 12,
+        }}
+      >
+        <h3 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>
+          Пригласить ученика
+        </h3>
+        {limited ? (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+            <span
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                padding: '4px 10px',
+                borderRadius: 999,
+                background:
+                  limitTone === 'hard'
+                    ? 'rgba(224,118,118,0.14)'
+                    : limitTone === 'soft'
+                      ? 'rgba(243,180,107,0.14)'
+                      : 'rgba(255,255,255,0.05)',
+                color:
+                  limitTone === 'hard'
+                    ? '#ff8a8a'
+                    : limitTone === 'soft'
+                      ? '#f3b46b'
+                      : 'var(--secondary)',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+              title={`Активных учеников на тарифе ${limited.planTitleRu}`}
+            >
+              {limited.activeCount}/{limited.limit} учеников
+            </span>
+            {isHardLimit ? (
+              <Link
+                href="/teacher/subscription"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '6px 12px',
+                  borderRadius: 6,
+                  background: 'var(--danger, #e07676)',
+                  color: '#fff',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  textDecoration: 'none',
+                  lineHeight: 1.2,
+                }}
+              >
+                Обновить тариф
+              </Link>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
       {copyToast ? (
         <div
           key={copyToast.key}
@@ -227,9 +298,7 @@ export function TeacherInviteSection({ isVerified }: Props) {
           marginBottom: 16,
         }}
       >
-        Нажмите кнопку — мы создадим персональную ссылку. Скопируйте её и
-        отправьте ученику любым способом (мессенджер, e-mail, СМС). Ссылка
-        действует 7 дней и подходит только для одного ученика.
+        Создайте ссылку и отправьте ученику. Действует 7 дней, для одного человека.
       </p>
       <div style={{ marginBottom: 16 }}>
         <label
@@ -241,7 +310,7 @@ export function TeacherInviteSection({ isVerified }: Props) {
             marginBottom: 6,
           }}
         >
-          Способ оплаты по умолчанию
+          Как ученик будет платить
         </label>
         <select
           id="invite-default-payment-method"
@@ -280,9 +349,14 @@ export function TeacherInviteSection({ isVerified }: Props) {
       <button
         type="button"
         onClick={onGenerate}
-        disabled={busy}
+        disabled={busy || isHardLimit}
         className="btn-primary"
-        style={{ marginBottom: err ? 12 : 16 }}
+        title={
+          isHardLimit
+            ? `Достигнут лимит ${limited!.activeCount}/${limited!.limit} учеников. Обновите тариф.`
+            : undefined
+        }
+        style={{ marginBottom: err ? 12 : 16, minWidth: 240 }}
       >
         {busy ? 'Создаём…' : 'Создать ссылку-приглашение'}
       </button>
@@ -322,9 +396,11 @@ export function TeacherInviteSection({ isVerified }: Props) {
                     flexWrap: 'wrap',
                   }}
                 >
-                  <span style={{ color: 'var(--secondary)' }}>
-                    Создано: {formatDate(row.createdAt)} —{' '}
-                    {statusLabel(row.status)}
+                  <span
+                    style={{ color: 'var(--secondary)' }}
+                    title={`Создано ${formatDate(row.createdAt)}`}
+                  >
+                    {formatDate(row.createdAt)} · {statusLabel(row.status)}
                     {row.usedByEmail ? ` (${row.usedByEmail})` : ''}
                   </span>
                   {row.status === 'active' ? (
@@ -332,13 +408,17 @@ export function TeacherInviteSection({ isVerified }: Props) {
                       type="button"
                       onClick={() => onRevoke(row.id)}
                       disabled={busy}
+                      aria-label={`Отозвать приглашение от ${formatDate(row.createdAt)}`}
                       style={{
                         background: 'transparent',
-                        color: '#ff6b6b',
+                        color: '#ff8a8a',
                         border: 'none',
                         cursor: 'pointer',
                         fontSize: 13,
                         padding: 0,
+                        textDecoration: 'underline',
+                        textDecorationColor: 'rgba(255,138,138,0.4)',
+                        textUnderlineOffset: 3,
                       }}
                     >
                       Отозвать

@@ -314,13 +314,12 @@ export const SAAS_SUBSCRIPTION_TARIFFS: Readonly<Record<SubscriptionCatalogTier,
     amountKopecks: 0,
     learnerLimit: 1,
     description:
-      'Подписка LevelChannel «Стартовый» — бесплатно, навсегда, для одного ученика. 1 пакет и 1 тариф включены.',
+      'Подписка LevelChannel «Стартовый» — бесплатно, навсегда, для одного ученика. 1 пакет и 1 тариф для пробного знакомства.',
     features: [
       'До 1 активного ученика',
       'Расписание и слоты',
       '1 пакет и 1 тариф',
       'Балансы и долги',
-      'Родительский доступ',
     ],
   },
   mid: {
@@ -333,9 +332,9 @@ export const SAAS_SUBSCRIPTION_TARIFFS: Readonly<Record<SubscriptionCatalogTier,
     features: [
       'Расписание и слоты',
       'До 5 активных учеников',
-      'Пакеты и абонементы',
+      'Пакеты и абонементы без лимита',
+      'Тарифы без лимита',
       'Балансы и долги',
-      'Родительский доступ',
     ],
   },
   pro: {
@@ -401,8 +400,11 @@ export function getPaidSubscriptionTariff(
 //   - tariffs: `count(*) WHERE teacher_id=$1 AND deleted_at IS NULL`
 //     (tariffs have an explicit soft-delete UI write path).
 //
-// `operator-managed` is unlimited (Infinity); free=1; mid/pro=0 (out
-// of scope for the 2026-06-02 unlock — only Стартовый opens up).
+// `operator-managed` is unlimited (Infinity); free=1 (trial cap — owner
+// product decision: free tier is "пробное знакомство", 1 пакет + 1 тариф
+// is enough to evaluate); mid/pro are unlimited (2026-06-07 owner change:
+// «тарифы всегда создаёт сам учитель» on paid tiers — concierge-create
+// flow deprecated in favour of self-serve at all paid levels).
 //
 // Helper: `resolveTeacherWriteCaps(teacherAccountId)` reads
 // `teacher_subscriptions` JOIN `teacher_subscription_plans`, returns
@@ -430,8 +432,14 @@ const EMPTY_CAPS: TierWriteCaps = { maxPackages: 0, maxTariffs: 0 }
  */
 export const TIER_WRITE_CAPS: Readonly<Record<string, TierWriteCaps>> = {
   free: { maxPackages: 1, maxTariffs: 1 },
-  mid: { maxPackages: 0, maxTariffs: 0 },
-  pro: { maxPackages: 0, maxTariffs: 0 },
+  mid: {
+    maxPackages: Number.POSITIVE_INFINITY,
+    maxTariffs: Number.POSITIVE_INFINITY,
+  },
+  pro: {
+    maxPackages: Number.POSITIVE_INFINITY,
+    maxTariffs: Number.POSITIVE_INFINITY,
+  },
   'operator-managed': {
     maxPackages: Number.POSITIVE_INFINITY,
     maxTariffs: Number.POSITIVE_INFINITY,

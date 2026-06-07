@@ -27,12 +27,26 @@ export function SlotBlock({ row, onClick, onMouseDown }: SlotBlockProps) {
   const kind = row.slot.kind
   const hasConflict = slotHasConflict(row)
   const palette = paletteForRow({ kind: kind as SlotKind, hasConflict })
-  // Only `open` slots are movable per the data layer (booked /
-  // completed / cancelled are immovable). Wiring layer mirrors this:
-  // we ONLY emit onMouseDown when the slot is `open` AND the parent
-  // is interested. Click handler still fires for every kind.
   const draggable = kind === 'open' && onMouseDown !== undefined
-  const label = hasConflict ? `${kindLabel(kind)} · конфликт` : kindLabel(kind)
+
+  // Visible secondary line. Priority (top to bottom):
+  //   • booked-full / booked-self with learner name → name
+  //   • booked-other                                 → 'Занято'
+  //   • past                                         → 'Прошло'
+  //   • open                                         → null (palette is enough)
+  // hasConflict is overlaid via the ⚠ glyph in the time row + red border.
+  const secondaryLine = secondaryFor(row)
+  const tariff = tariffBadge(row)
+
+  // Conditional density: on a 30-min slot (h ≈ 30px) only the time line
+  // fits; on 45-min hide secondary; on 60+ show everything that exists.
+  const h = row.heightPx
+  const showTariff = !!tariff && h >= 50
+  const showSecondary = !!secondaryLine && h >= 40
+
+  const ariaLabel = hasConflict
+    ? `Занятие ${row.startLabel}–${row.endLabel}${secondaryLine ? ', ' + secondaryLine : ''}, конфликт с Google Calendar`
+    : `Занятие ${row.startLabel}–${row.endLabel}${secondaryLine ? ', ' + secondaryLine : ''}`
 
   return (
     <button
@@ -48,9 +62,6 @@ export function SlotBlock({ row, onClick, onMouseDown }: SlotBlockProps) {
         height: `${row.heightPx}px`,
         left: '4px',
         right: '4px',
-        // SAAS-1: Apple-chip styling — accent stroke on the left,
-        // tinted bg via color-mix() against the accent stroke color,
-        // no full border (just the left accent + faint right tint).
         background: palette.background,
         border: 'none',
         borderLeft: `3px solid ${palette.border}`,
@@ -65,16 +76,16 @@ export function SlotBlock({ row, onClick, onMouseDown }: SlotBlockProps) {
         flexDirection: 'column',
         gap: 2,
         overflow: 'hidden',
-        zIndex: 2, // above grid background so highlights render under
+        zIndex: 2,
         transition: 'background-color 120ms ease-out',
         fontVariantNumeric: 'tabular-nums',
       }}
       title={
         hasConflict
-          ? `${row.startLabel} – ${row.endLabel} · конфликт с событием в Google Calendar`
+          ? `${row.startLabel} – ${row.endLabel} · конфликт с Google Calendar`
           : `${row.startLabel} – ${row.endLabel}`
       }
-      aria-label={`Занятие ${row.startLabel}–${row.endLabel}, ${label}`}
+      aria-label={ariaLabel}
     >
       <div style={{ fontWeight: 600 }}>
         {hasConflict && (
@@ -84,10 +95,14 @@ export function SlotBlock({ row, onClick, onMouseDown }: SlotBlockProps) {
         )}
         {row.startLabel} – {row.endLabel}
       </div>
-      {tariffBadge(row) && (
-        <div style={{ fontSize: 11, opacity: 0.85 }}>{tariffBadge(row)}</div>
-      )}
-      <div style={{ fontSize: 11, opacity: 0.7 }}>{label}</div>
+      {showSecondary ? (
+        <div style={{ fontSize: 11, opacity: 0.85, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {secondaryLine}
+        </div>
+      ) : null}
+      {showTariff ? (
+        <div style={{ fontSize: 11, opacity: 0.7 }}>{tariff}</div>
+      ) : null}
     </button>
   )
 }
@@ -101,20 +116,19 @@ function slotHasConflict(row: CalendarRow): boolean {
   )
 }
 
-function kindLabel(kind: CalendarRow['slot']['kind']): string {
-  switch (kind) {
-    case 'open':
-      return 'Доступен'
-    case 'booked-self':
-      return 'Ваше занятие'
-    case 'booked-other':
-      return 'Занято'
-    case 'booked-full':
-      return 'Забронировано'
-    case 'past-full':
-    case 'past-redacted':
-      return 'Прошедшее'
+function secondaryFor(row: CalendarRow): string | null {
+  const slot = row.slot
+  if (slot.kind === 'open') return null
+  if (slot.kind === 'booked-other') return 'Занято'
+  if (slot.kind === 'past-full' || slot.kind === 'past-redacted') return 'Прошло'
+  // booked-self / booked-full — try to surface a human name when present.
+  if ('learnerDisplayName' in slot && slot.learnerDisplayName) {
+    return String(slot.learnerDisplayName)
   }
+  if ('learnerEmail' in slot && slot.learnerEmail) {
+    return String(slot.learnerEmail)
+  }
+  return slot.kind === 'booked-self' ? 'Ваше занятие' : 'Занято'
 }
 
 function tariffBadge(row: CalendarRow): string | null {

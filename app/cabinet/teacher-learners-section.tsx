@@ -23,8 +23,7 @@ export function TeacherLearnersSection({
           Мои ученики
         </h2>
         <p style={{ color: 'var(--secondary)', fontSize: 14, lineHeight: 1.6 }}>
-          Пока никто не закреплён за вами и нет проведённых занятий. Список
-          появится здесь, когда оператор привяжет учеников к вашему аккаунту.
+          Пока учеников нет. Создайте приглашение выше — ссылка действует 7 дней.
         </p>
       </div>
     )
@@ -32,12 +31,9 @@ export function TeacherLearnersSection({
 
   return (
     <div className="card" style={{ padding: 24, marginBottom: 24 }}>
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
+      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>
         Мои ученики
       </h2>
-      <p style={{ color: 'var(--secondary)', fontSize: 13, marginBottom: 16 }}>
-        Сводка по всем ученикам, с которыми у вас есть занятия.
-      </p>
 
       <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
         {learners.map((l) => {
@@ -85,7 +81,7 @@ export function TeacherLearnersSection({
                       borderRadius: 4,
                     }}
                   >
-                    архив
+                    в архиве
                   </span>
                 ) : null}
               </div>
@@ -105,7 +101,7 @@ export function TeacherLearnersSection({
                 <Stat label="отменено" n={l.cancelledCount} />
               ) : null}
               {l.noShowCount > 0 ? (
-                <Stat label="не пришёл" n={l.noShowCount} muted />
+                <Stat label="пропущено" n={l.noShowCount} muted />
               ) : null}
             </div>
           </li>
