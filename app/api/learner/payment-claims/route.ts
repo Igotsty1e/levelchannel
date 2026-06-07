@@ -51,8 +51,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'teacher_required' }, { status: 400, headers: NO_STORE })
   }
 
-  const items = itemsRaw
-    .map((it: unknown) => {
+  type ItemInput = {
+    slotId: string | undefined
+    packagePurchaseId: string | undefined
+    expectedAmountKopecks: number
+  }
+  const items: ItemInput[] = itemsRaw
+    .map((it: unknown): ItemInput | null => {
       if (typeof it !== 'object' || it === null) return null
       const r = it as Record<string, unknown>
       const slotId = typeof r.slotId === 'string' ? r.slotId : undefined
@@ -64,7 +69,7 @@ export async function POST(request: Request) {
       if (!slotId && !packagePurchaseId) return null
       return { slotId, packagePurchaseId, expectedAmountKopecks }
     })
-    .filter((x): x is { slotId?: string; packagePurchaseId?: string; expectedAmountKopecks: number } => x !== null)
+    .filter((x): x is ItemInput => x !== null)
 
   const result = await createLearnerClaim({
     learnerAccountId: session.account.id,
@@ -81,6 +86,7 @@ export async function POST(request: Request) {
       slot_not_belongs_to_pair: 403,
       method_not_found: 403,
       package_not_found: 404,
+      package_not_belongs_to_pair: 403,
       slot_not_found: 404,
       slot_has_active_claim: 409,
       method_archived: 409,

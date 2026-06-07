@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/primitives'
+import { useFocusTrap } from '@/lib/util/focus-trap'
 
 // Learner-side cancel-confirm modal (2026-06-07).
 //
@@ -41,6 +42,8 @@ export function CancelLessonModal({
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const trapRef = useRef<HTMLDivElement | null>(null)
+  useFocusTrap(trapRef, () => (busy ? undefined : onClose()))
 
   useEffect(() => {
     // Автофокус на поле причины — главное действие в модале.
@@ -82,6 +85,7 @@ export function CancelLessonModal({
       }}
     >
       <div
+        ref={trapRef}
         onClick={(e) => e.stopPropagation()}
         className="card"
         style={{

@@ -81,6 +81,7 @@ export async function POST(request: Request) {
       slot_not_belongs_to_pair: 403,
       method_not_found: 403,
       package_not_found: 404,
+      package_not_belongs_to_pair: 403,
       slot_not_found: 404,
       slot_has_active_claim: 409,
       invalid_amount: 400,

@@ -137,9 +137,10 @@ export async function createTeacherMarkPaid(
       } else if (item.packagePurchaseId) {
         const pr = await client.query<{
           account_id: string
+          teacher_id: string | null
           title_snapshot: string
         }>(
-          `select account_id, title_snapshot
+          `select account_id, teacher_id, title_snapshot
              from package_purchases
             where id = $1
             limit 1`,
@@ -149,6 +150,12 @@ export async function createTeacherMarkPaid(
         if (!p || p.account_id !== input.learnerAccountId) {
           await client.query('rollback')
           return { ok: false, reason: 'package_not_found' }
+        }
+        // Anti-spoof: package must belong to the teacher initiating
+        // the claim (защита от teacher-A mark-paid пакет teacher-B).
+        if (p.teacher_id !== null && p.teacher_id !== input.teacherAccountId) {
+          await client.query('rollback')
+          return { ok: false, reason: 'package_not_belongs_to_pair' }
         }
         itemRecords.push({
           slotId: null,
@@ -652,9 +659,13 @@ export async function createLearnerClaim(
           label: snap.label,
         })
       } else if (item.packagePurchaseId) {
-        // For MVP: validate package belongs to pair.
-        const pr = await client.query<{ account_id: string; title_snapshot: string; amount_kopecks: number }>(
-          `select account_id, title_snapshot, amount_kopecks
+        const pr = await client.query<{
+          account_id: string
+          teacher_id: string | null
+          title_snapshot: string
+          amount_kopecks: number
+        }>(
+          `select account_id, teacher_id, title_snapshot, amount_kopecks
              from package_purchases
             where id = $1
             limit 1`,
@@ -664,6 +675,10 @@ export async function createLearnerClaim(
         if (!p || p.account_id !== input.learnerAccountId) {
           await client.query('rollback')
           return { ok: false, reason: 'package_not_found' }
+        }
+        if (p.teacher_id !== null && p.teacher_id !== input.teacherAccountId) {
+          await client.query('rollback')
+          return { ok: false, reason: 'package_not_belongs_to_pair' }
         }
         itemRecords.push({
           slotId: null,
@@ -734,12 +749,61 @@ export async function createLearnerClaim(
     }
 
     await client.query('commit')
+
+    // Fire-and-forget email уведомление учителю. Errors не должны
+    // ломать создание claim (TX уже committed).
+    void notifyTeacherAboutNewClaim({
+      teacherAccountId: input.teacherAccountId,
+      learnerName,
+      teacherName,
+      amountKopecks: input.amountKopecks,
+      paymentChannel: input.paymentChannel,
+      itemsSummary: itemRecords.map((r) => r.label).join('; '),
+    }).catch(() => {})
+
     return { ok: true, claimId }
   } catch (e) {
     await client.query('rollback').catch(() => {})
     throw e
   } finally {
     client.release()
+  }
+}
+
+async function notifyTeacherAboutNewClaim(args: {
+  teacherAccountId: string
+  learnerName: string
+  teacherName: string
+  amountKopecks: number
+  paymentChannel: PaymentChannel
+  itemsSummary: string
+}): Promise<void> {
+  try {
+    const { sendSbpClaimNotificationToTeacher } = await import(
+      '@/lib/email/dispatch'
+    )
+    const pool = getDbPool()
+    const r = await pool.query<{ email: string }>(
+      `select email from accounts where id = $1 limit 1`,
+      [args.teacherAccountId],
+    )
+    const to = r.rows[0]?.email
+    if (!to) return
+    const amountRub = new Intl.NumberFormat('ru-RU', {
+      style: 'currency',
+      currency: 'RUB',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(args.amountKopecks / 100)
+    await sendSbpClaimNotificationToTeacher(to, {
+      teacherName: args.teacherName,
+      learnerName: args.learnerName,
+      amountRub,
+      itemsSummary: args.itemsSummary,
+      paymentChannel: args.paymentChannel,
+    })
+  } catch {
+    // swallow — email errors must not propagate
   }
 }
 

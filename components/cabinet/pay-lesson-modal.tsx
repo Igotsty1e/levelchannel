@@ -7,9 +7,10 @@
 // GET /api/learner/payment-context/[slotId], после нажатия «Я оплатил»
 // создаёт claim через POST /api/learner/payment-claims.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Button, Banner } from '@/components/ui/primitives'
+import { useFocusTrap } from '@/lib/util/focus-trap'
 
 export type PayLessonModalProps = {
   slotId: string
@@ -46,6 +47,8 @@ export function PayLessonModal({
   const [showOtherChannel, setShowOtherChannel] = useState(false)
   const [otherNote, setOtherNote] = useState('')
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
+  const trapRef = useRef<HTMLDivElement | null>(null)
+  useFocusTrap(trapRef, () => (busy ? undefined : onClose()))
 
   useEffect(() => {
     let cancelled = false
@@ -145,6 +148,7 @@ export function PayLessonModal({
       }}
     >
       <div
+        ref={trapRef}
         onClick={(e) => e.stopPropagation()}
         className="card"
         style={{ padding: 24, minWidth: 320, maxWidth: 480, width: '100%' }}

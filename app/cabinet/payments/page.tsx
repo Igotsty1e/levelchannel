@@ -10,7 +10,8 @@ import { redirect } from 'next/navigation'
 import { AuthShell } from '@/components/auth-shell'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { listClaimsForLearner } from '@/lib/payments/sbp-claims'
-import { Pill } from '@/components/ui/primitives'
+
+import { LearnerPaymentsList } from './list'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -18,24 +19,6 @@ export const runtime = 'nodejs'
 export const metadata = {
   title: 'История оплат — LevelChannel',
   robots: { index: false, follow: false },
-}
-
-function formatRub(kopecks: number): string {
-  return new Intl.NumberFormat('ru-RU', {
-    style: 'currency',
-    currency: 'RUB',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(kopecks / 100)
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }
 
 export default async function LearnerPaymentsHistoryPage() {
@@ -87,96 +70,7 @@ export default async function LearnerPaymentsHistoryPage() {
           не держит.
         </p>
 
-        {claims.length === 0 ? (
-          <div
-            className="card"
-            style={{
-              padding: 24,
-              color: 'var(--secondary)',
-              fontSize: 14,
-              lineHeight: 1.6,
-            }}
-          >
-            Пока пусто. Когда вы оплатите занятие через кнопку «Оплатить»
-            в карточке занятия, история появится здесь.
-          </div>
-        ) : (
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 12 }}>
-            {claims.map((c) => {
-              const pill = (() => {
-                switch (c.status) {
-                  case 'claimed':
-                    return { label: 'Ждёт подтверждения', tone: 'warning' as const }
-                  case 'confirmed':
-                    return { label: 'Подтверждено', tone: 'success' as const }
-                  case 'declined':
-                    return { label: 'Не подтверждено', tone: 'danger' as const }
-                  case 'cancelled':
-                    return { label: 'Отменено', tone: 'default' as const }
-                }
-              })()
-              return (
-                <li key={c.id} className="card" style={{ padding: 16 }}>
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      gap: 12,
-                      flexWrap: 'wrap',
-                      alignItems: 'flex-start',
-                    }}
-                  >
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: 15 }}>
-                        Учитель {c.teacherName}
-                      </div>
-                      <div
-                        style={{
-                          color: 'var(--secondary)',
-                          fontSize: 12,
-                          marginTop: 2,
-                        }}
-                      >
-                        Заявлено {formatDate(c.claimedAt)} ·{' '}
-                        {c.paymentChannel === 'sbp' ? 'СБП' : 'Другой способ'}
-                      </div>
-                      {c.items.length > 0 ? (
-                        <div
-                          style={{
-                            color: 'var(--secondary)',
-                            fontSize: 13,
-                            marginTop: 8,
-                          }}
-                        >
-                          За: {c.items.map((it) => it.label).join('; ')}
-                        </div>
-                      ) : null}
-                      {c.noteTeacher ? (
-                        <div
-                          style={{
-                            color: 'var(--secondary)',
-                            fontSize: 13,
-                            marginTop: 6,
-                          }}
-                        >
-                          Учитель: {c.noteTeacher}
-                        </div>
-                      ) : null}
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>
-                        {formatRub(c.amountKopecks)}
-                      </div>
-                      <Pill tone={pill.tone} size="sm">
-                        {pill.label}
-                      </Pill>
-                    </div>
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-        )}
+        <LearnerPaymentsList initial={claims} />
       </div>
     </AuthShell>
   )
