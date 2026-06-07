@@ -8,6 +8,7 @@ import { useState } from 'react'
 
 import { Button, Pill } from '@/components/ui/primitives'
 import type { ClaimRow, ClaimStatus } from '@/lib/payments/sbp-claims'
+import type { RefundRow } from '@/lib/payments/sbp-refunds'
 
 function formatRub(kopecks: number): string {
   return new Intl.NumberFormat('ru-RU', {
@@ -40,12 +41,37 @@ function statusPill(status: ClaimStatus): { label: string; tone: 'success' | 'wa
   }
 }
 
-export function ClaimsFeed({ initialClaims }: { initialClaims: ClaimRow[] }) {
+export function ClaimsFeed({
+  initialClaims,
+  initialRefunds = [],
+}: {
+  initialClaims: ClaimRow[]
+  initialRefunds?: RefundRow[]
+}) {
   const router = useRouter()
   const [claims, setClaims] = useState(initialClaims)
+  const [refunds, setRefunds] = useState(initialRefunds)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [tab, setTab] = useState<'pending' | 'history'>('pending')
+  const [declineTarget, setDeclineTarget] = useState<ClaimRow | null>(null)
+  const [declineNote, setDeclineNote] = useState('')
+  const [refundTarget, setRefundTarget] = useState<ClaimRow | null>(null)
+  const [refundAmountRub, setRefundAmountRub] = useState('')
+  const [refundReason, setRefundReason] = useState<
+    'slot_cancelled' | 'overpaid' | 'goodwill' | 'duplicate' | 'other'
+  >('slot_cancelled')
+  const [refundNote, setRefundNote] = useState('')
+
+  const refundsByClaim = refunds.reduce<Record<string, RefundRow[]>>(
+    (acc, r) => {
+      const list = acc[r.claimId] ?? []
+      list.push(r)
+      acc[r.claimId] = list
+      return acc
+    },
+    {},
+  )
 
   async function confirm(claimId: string) {
     setBusyId(claimId)
@@ -72,15 +98,17 @@ export function ClaimsFeed({ initialClaims }: { initialClaims: ClaimRow[] }) {
     }
   }
 
-  async function decline(claimId: string) {
-    const note = prompt('Причина (опционально):') ?? ''
+  async function submitDecline() {
+    if (!declineTarget) return
+    const claimId = declineTarget.id
+    const note = declineNote.trim()
     setBusyId(claimId)
     setErr(null)
     try {
       const r = await fetch(`/api/teacher/payment-claims/${claimId}/decline`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ note: note.trim() || null }),
+        body: JSON.stringify({ note: note || null }),
       })
       if (!r.ok) {
         const data = await r.json().catch(() => ({}))
@@ -94,11 +122,61 @@ export function ClaimsFeed({ initialClaims }: { initialClaims: ClaimRow[] }) {
                 ...c,
                 status: 'declined' as ClaimStatus,
                 resolvedAt: new Date().toISOString(),
-                noteTeacher: note.trim() || c.noteTeacher,
+                noteTeacher: note || c.noteTeacher,
               }
             : c,
         ),
       )
+      setDeclineTarget(null)
+      setDeclineNote('')
+      router.refresh()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function submitRefund() {
+    if (!refundTarget) return
+    const amountKopecks = Math.round(Number(refundAmountRub) * 100)
+    if (!Number.isFinite(amountKopecks) || amountKopecks <= 0) {
+      setErr('Введите сумму больше 0.')
+      return
+    }
+    setBusyId(refundTarget.id)
+    setErr(null)
+    try {
+      const r = await fetch('/api/teacher/payment-refunds', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          claimId: refundTarget.id,
+          amountKopecks,
+          reason: refundReason,
+          note: refundNote.trim() || null,
+        }),
+      })
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}))
+        const map: Record<string, string> = {
+          refund_exceeds_claim: 'Сумма возврата больше, чем была оплачена.',
+          claim_not_confirmed: 'Можно возвращать только подтверждённые оплаты.',
+        }
+        setErr(map[data?.error] || data?.error || `HTTP ${r.status}`)
+        return
+      }
+      const body = await r.json()
+      const created: RefundRow = {
+        id: body.refundId,
+        claimId: refundTarget.id,
+        amountKopecks,
+        reason: refundReason,
+        note: refundNote.trim() || null,
+        refundedAt: new Date().toISOString(),
+      }
+      setRefunds((prev) => [created, ...prev])
+      setRefundTarget(null)
+      setRefundAmountRub('')
+      setRefundNote('')
       router.refresh()
     } finally {
       setBusyId(null)
@@ -252,6 +330,25 @@ export function ClaimsFeed({ initialClaims }: { initialClaims: ClaimRow[] }) {
                     {formatRub(c.amountMismatchKopecks)}
                   </div>
                 ) : null}
+                {(refundsByClaim[c.id] ?? []).length > 0 ? (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      paddingTop: 8,
+                      borderTop: '1px solid var(--border)',
+                      fontSize: 13,
+                      color: 'var(--secondary)',
+                    }}
+                  >
+                    {(refundsByClaim[c.id] ?? []).map((r) => (
+                      <div key={r.id}>
+                        Возврат: {formatRub(r.amountKopecks)}{' '}
+                        ({REFUND_REASON_LABEL[r.reason]})
+                        {r.note ? ` · ${r.note}` : ''}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 {c.status === 'claimed' ? (
                   <div
                     style={{
@@ -264,7 +361,10 @@ export function ClaimsFeed({ initialClaims }: { initialClaims: ClaimRow[] }) {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => decline(c.id)}
+                      onClick={() => {
+                        setDeclineTarget(c)
+                        setDeclineNote('')
+                      }}
                       disabled={busyId === c.id}
                     >
                       Не пришло
@@ -278,13 +378,225 @@ export function ClaimsFeed({ initialClaims }: { initialClaims: ClaimRow[] }) {
                     </Button>
                   </div>
                 ) : null}
+                {c.status === 'confirmed' ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 8,
+                      marginTop: 12,
+                      justifyContent: 'flex-end',
+                    }}
+                  >
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setRefundTarget(c)
+                        const remaining =
+                          c.amountKopecks
+                          - (refundsByClaim[c.id] ?? []).reduce(
+                              (a, r) => a + r.amountKopecks,
+                              0,
+                            )
+                        setRefundAmountRub(
+                          String(Math.max(0, Math.round(remaining / 100))),
+                        )
+                        setRefundReason('slot_cancelled')
+                        setRefundNote('')
+                      }}
+                      disabled={busyId === c.id}
+                    >
+                      Оформить возврат
+                    </Button>
+                  </div>
+                ) : null}
               </li>
             )
           })}
         </ul>
       )}
+
+      {declineTarget ? (
+        <div role="dialog" aria-modal="true" style={modalOverlay} onClick={() => setDeclineTarget(null)}>
+          <div className="card" style={modalCard} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0, marginBottom: 8 }}>
+              Не пришло
+            </h2>
+            <p style={{ color: 'var(--secondary)', fontSize: 13, margin: 0, marginBottom: 16 }}>
+              Заявка {declineTarget.learnerName} · {formatRub(declineTarget.amountKopecks)}
+            </p>
+            <label
+              style={{
+                display: 'block',
+                fontSize: 12,
+                fontWeight: 600,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+                color: 'var(--secondary)',
+                marginBottom: 6,
+              }}
+            >
+              Комментарий ученику (опционально)
+            </label>
+            <textarea
+              value={declineNote}
+              onChange={(e) => setDeclineNote(e.target.value)}
+              rows={3}
+              maxLength={300}
+              placeholder="Например: проверьте назначение перевода"
+              disabled={busyId === declineTarget.id}
+              style={textareaStyle}
+            />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <Button variant="ghost" onClick={() => setDeclineTarget(null)} disabled={busyId === declineTarget.id}>
+                Отмена
+              </Button>
+              <Button variant="danger" onClick={submitDecline} disabled={busyId === declineTarget.id}>
+                Отклонить заявку
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {refundTarget ? (
+        <div role="dialog" aria-modal="true" style={modalOverlay} onClick={() => setRefundTarget(null)}>
+          <div className="card" style={modalCard} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0, marginBottom: 8 }}>
+              Оформить возврат
+            </h2>
+            <p style={{ color: 'var(--secondary)', fontSize: 13, margin: 0, marginBottom: 16 }}>
+              Платформа только фиксирует факт — деньги вы возвращаете
+              из своего банка вручную. Эта запись отразится у ученика
+              в его истории.
+            </p>
+            <label
+              style={{
+                display: 'block',
+                fontSize: 12,
+                fontWeight: 600,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+                color: 'var(--secondary)',
+                marginBottom: 6,
+              }}
+            >
+              Сумма (₽)
+            </label>
+            <input
+              type="number"
+              min="1"
+              value={refundAmountRub}
+              onChange={(e) => setRefundAmountRub(e.target.value)}
+              disabled={busyId === refundTarget.id}
+              style={inputStyle}
+            />
+            <label
+              style={{
+                display: 'block',
+                fontSize: 12,
+                fontWeight: 600,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+                color: 'var(--secondary)',
+                marginTop: 12,
+                marginBottom: 6,
+              }}
+            >
+              Причина
+            </label>
+            <select
+              value={refundReason}
+              onChange={(e) =>
+                setRefundReason(e.target.value as typeof refundReason)
+              }
+              disabled={busyId === refundTarget.id}
+              style={inputStyle}
+            >
+              <option value="slot_cancelled">Занятие отменилось</option>
+              <option value="overpaid">Переплата</option>
+              <option value="goodwill">Возврат по доброй воле</option>
+              <option value="duplicate">Дублирующий перевод</option>
+              <option value="other">Другое</option>
+            </select>
+            <label
+              style={{
+                display: 'block',
+                fontSize: 12,
+                fontWeight: 600,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+                color: 'var(--secondary)',
+                marginTop: 12,
+                marginBottom: 6,
+              }}
+            >
+              Комментарий (опционально)
+            </label>
+            <textarea
+              value={refundNote}
+              onChange={(e) => setRefundNote(e.target.value)}
+              rows={2}
+              maxLength={300}
+              disabled={busyId === refundTarget.id}
+              style={textareaStyle}
+            />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <Button variant="ghost" onClick={() => setRefundTarget(null)} disabled={busyId === refundTarget.id}>
+                Отмена
+              </Button>
+              <Button onClick={submitRefund} disabled={busyId === refundTarget.id}>
+                Зафиксировать возврат
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   )
+}
+
+const REFUND_REASON_LABEL: Record<string, string> = {
+  slot_cancelled: 'занятие отменилось',
+  overpaid: 'переплата',
+  goodwill: 'добрая воля',
+  duplicate: 'дубль',
+  other: 'другое',
+}
+
+const modalOverlay: React.CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  background: 'rgba(0,0,0,0.55)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  zIndex: 1000,
+  padding: 16,
+}
+
+const modalCard: React.CSSProperties = {
+  padding: 24,
+  minWidth: 320,
+  maxWidth: 480,
+  width: '100%',
+}
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  background: 'var(--surface-2)',
+  border: '1px solid var(--border)',
+  borderRadius: 8,
+  padding: '10px 12px',
+  color: 'var(--text)',
+  fontSize: 14,
+  fontFamily: 'inherit',
+  boxSizing: 'border-box',
+}
+
+const textareaStyle: React.CSSProperties = {
+  ...inputStyle,
+  resize: 'vertical',
 }
 
 function tabBtnStyle(active: boolean): React.CSSProperties {

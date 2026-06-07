@@ -18,6 +18,461 @@ export type PaymentClaimItemInput = {
   expectedAmountKopecks: number
 }
 
+export type CreateTeacherMarkPaidInput = {
+  teacherAccountId: string
+  learnerAccountId: string
+  amountKopecks: number
+  paymentChannel: PaymentChannel
+  paymentMethodId?: string | null
+  items: PaymentClaimItemInput[]
+  paidAt?: string | null
+  note?: string
+}
+
+export async function createTeacherMarkPaid(
+  input: CreateTeacherMarkPaidInput,
+): Promise<CreateClaimResult> {
+  if (!Number.isInteger(input.amountKopecks) || input.amountKopecks <= 0) {
+    return { ok: false, reason: 'invalid_amount' }
+  }
+  if (input.amountKopecks >= 100_000_000) {
+    return { ok: false, reason: 'amount_too_large' }
+  }
+  if (!Array.isArray(input.items) || input.items.length === 0) {
+    return { ok: false, reason: 'no_items' }
+  }
+  if (input.items.length > 20) {
+    return { ok: false, reason: 'too_many_items' }
+  }
+  if (input.paidAt) {
+    const paidDate = new Date(input.paidAt)
+    if (!Number.isFinite(paidDate.getTime())) {
+      return { ok: false, reason: 'invalid_paid_at' }
+    }
+    if (paidDate.getTime() > Date.now() + 86_400_000) {
+      return { ok: false, reason: 'paid_at_in_future' }
+    }
+  }
+
+  const pool = getDbPool()
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+
+    for (const item of input.items) {
+      if (item.slotId) {
+        await client.query(
+          `select pg_advisory_xact_lock(hashtext('pay-claim:' || $1::text))`,
+          [item.slotId],
+        )
+      }
+    }
+
+    if (input.paymentChannel === 'sbp' && input.paymentMethodId) {
+      const mr = await client.query<{
+        teacher_account_id: string
+        phone_display: string
+        bank_label: string
+        archived_at: string | null
+      }>(
+        `select teacher_account_id, phone_display, bank_label, archived_at::text
+           from teacher_payment_methods
+          where id = $1`,
+        [input.paymentMethodId],
+      )
+      const m = mr.rows[0]
+      if (!m || m.teacher_account_id !== input.teacherAccountId) {
+        await client.query('rollback')
+        return { ok: false, reason: 'method_not_found' }
+      }
+    }
+
+    const itemRecords: {
+      slotId: string | null
+      packagePurchaseId: string | null
+      expected: number
+      label: string
+    }[] = []
+    for (const item of input.items) {
+      if (item.slotId && item.packagePurchaseId) {
+        await client.query('rollback')
+        return { ok: false, reason: 'item_xor_violation' }
+      }
+      if (!item.slotId && !item.packagePurchaseId) {
+        await client.query('rollback')
+        return { ok: false, reason: 'item_xor_violation' }
+      }
+      if (item.slotId) {
+        const snap = await loadSlotSnapshot(client, item.slotId)
+        if (!snap) {
+          await client.query('rollback')
+          return { ok: false, reason: 'slot_not_found' }
+        }
+        if (
+          snap.teacherAccountId !== input.teacherAccountId
+          || snap.learnerAccountId !== input.learnerAccountId
+        ) {
+          await client.query('rollback')
+          return { ok: false, reason: 'slot_not_belongs_to_pair' }
+        }
+        const ex = await client.query<{ id: string }>(
+          `select c.id
+             from payment_claim_items i
+             join payment_claims c on c.id = i.claim_id
+            where i.slot_id = $1
+              and c.status in ('claimed', 'confirmed')
+            limit 1`,
+          [item.slotId],
+        )
+        if (ex.rows[0]) {
+          await client.query('rollback')
+          return { ok: false, reason: 'slot_has_active_claim' }
+        }
+        itemRecords.push({
+          slotId: item.slotId,
+          packagePurchaseId: null,
+          expected: item.expectedAmountKopecks,
+          label: snap.label,
+        })
+      } else if (item.packagePurchaseId) {
+        const pr = await client.query<{
+          account_id: string
+          title_snapshot: string
+        }>(
+          `select account_id, title_snapshot
+             from package_purchases
+            where id = $1
+            limit 1`,
+          [item.packagePurchaseId],
+        )
+        const p = pr.rows[0]
+        if (!p || p.account_id !== input.learnerAccountId) {
+          await client.query('rollback')
+          return { ok: false, reason: 'package_not_found' }
+        }
+        itemRecords.push({
+          slotId: null,
+          packagePurchaseId: item.packagePurchaseId,
+          expected: item.expectedAmountKopecks,
+          label: p.title_snapshot,
+        })
+      }
+    }
+
+    const learnerName = await loadDisplayName(client, input.learnerAccountId)
+    const teacherName = await loadDisplayName(client, input.teacherAccountId)
+
+    let methodPhoneSnapshot: string | null = null
+    let methodBankSnapshot: string | null = null
+    if (input.paymentMethodId) {
+      const mr = await client.query<{
+        phone_display: string
+        bank_label: string
+      }>(
+        `select phone_display, bank_label
+           from teacher_payment_methods
+          where id = $1`,
+        [input.paymentMethodId],
+      )
+      const m = mr.rows[0]
+      if (m) {
+        methodPhoneSnapshot = m.phone_display
+        methodBankSnapshot = m.bank_label
+      }
+    }
+
+    const expectedSum = itemRecords.reduce((acc, it) => acc + it.expected, 0)
+    const mismatch = input.amountKopecks - expectedSum
+
+    const claimRow = await client.query<{ id: string }>(
+      `insert into payment_claims
+         (learner_account_id, learner_display_name_snapshot,
+          teacher_account_id, teacher_display_name_snapshot,
+          amount_kopecks, payment_method_id,
+          payment_method_phone_snapshot, payment_method_bank_snapshot,
+          payment_channel, initiated_by, status, amount_mismatch_kopecks,
+          note_teacher, paid_at, resolved_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'teacher', 'confirmed', $10, $11, $12, now())
+       returning id`,
+      [
+        input.learnerAccountId,
+        learnerName,
+        input.teacherAccountId,
+        teacherName,
+        input.amountKopecks,
+        input.paymentMethodId ?? null,
+        methodPhoneSnapshot,
+        methodBankSnapshot,
+        input.paymentChannel,
+        mismatch,
+        input.note ?? null,
+        input.paidAt ?? null,
+      ],
+    )
+    const claimId = claimRow.rows[0].id
+
+    for (const it of itemRecords) {
+      await client.query(
+        `insert into payment_claim_items
+           (claim_id, slot_id, package_purchase_id,
+            expected_amount_kopecks, item_label_snapshot)
+         values ($1, $2, $3, $4, $5)`,
+        [claimId, it.slotId, it.packagePurchaseId, it.expected, it.label],
+      )
+    }
+
+    await client.query('commit')
+    return { ok: true, claimId }
+  } catch (e) {
+    await client.query('rollback').catch(() => {})
+    throw e
+  } finally {
+    client.release()
+  }
+}
+
+// Helper for teacher mark-paid UI: list unpaid booked/completed slots
+// for a given learner (no active claim attached).
+export async function listUnpaidSlotsForPair(
+  teacherAccountId: string,
+  learnerAccountId: string,
+): Promise<{ id: string; label: string; expectedKopecks: number; startAt: string; status: string }[]> {
+  const r = await getDbPool().query<{
+    id: string
+    start_at: string
+    duration_minutes: number
+    status: string
+    snapshot_amount_kopecks: number | null
+  }>(
+    `select s.id,
+            s.start_at::text as start_at,
+            s.duration_minutes,
+            s.status,
+            s.snapshot_amount_kopecks
+       from lesson_slots s
+      where s.teacher_account_id = $1
+        and s.learner_account_id = $2
+        and s.status in ('booked', 'completed', 'no_show_learner')
+        and not exists (
+          select 1 from payment_claim_items i
+           join payment_claims c on c.id = i.claim_id
+          where i.slot_id = s.id
+            and c.status in ('claimed', 'confirmed')
+        )
+      order by s.start_at desc
+      limit 50`,
+    [teacherAccountId, learnerAccountId],
+  )
+  return r.rows.map((row) => {
+    const dt = new Date(row.start_at)
+    const label = `${dt.toLocaleString('ru-RU', {
+      timeZone: 'Europe/Moscow',
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    })} · ${row.duration_minutes} мин · ${row.status}`
+    return {
+      id: row.id,
+      label,
+      expectedKopecks: row.snapshot_amount_kopecks ?? 0,
+      startAt: row.start_at,
+      status: row.status,
+    }
+  })
+}
+
+export async function listLearnersWithUnpaidSlots(
+  teacherAccountId: string,
+): Promise<{ learnerId: string; learnerName: string; unpaidCount: number; unpaidAmount: number }[]> {
+  // round-2 BL-10: учительская policy charge_on_no_show / charge_on_late_cancel
+  // фильтрует, какие slot.status включать в долг.
+  const r = await getDbPool().query<{
+    learner_id: string
+    display_name: string | null
+    first_name: string | null
+    last_name: string | null
+    email: string
+    unpaid_count: string
+    unpaid_amount: string
+  }>(
+    `with policy as (
+       select teacher_charge_on_no_show, teacher_charge_on_late_cancel
+         from accounts where id = $1
+     )
+     select la.id as learner_id,
+            la.email,
+            ap.display_name,
+            ap.first_name,
+            ap.last_name,
+            count(*)::text as unpaid_count,
+            coalesce(sum(s.snapshot_amount_kopecks), 0)::text as unpaid_amount
+       from lesson_slots s
+       join accounts la on la.id = s.learner_account_id
+       left join account_profiles ap on ap.account_id = la.id
+       cross join policy p
+      where s.teacher_account_id = $1
+        and coalesce(s.snapshot_amount_kopecks, 0) > 0
+        and (
+          s.status = 'completed'
+          or (s.status = 'booked' and s.start_at <= now())
+          or (s.status = 'no_show_learner' and p.teacher_charge_on_no_show)
+          or (s.status = 'cancelled' and p.teacher_charge_on_late_cancel)
+        )
+        and not exists (
+          select 1 from payment_claim_items i
+           join payment_claims c on c.id = i.claim_id
+          where i.slot_id = s.id
+            and c.status in ('claimed', 'confirmed')
+        )
+      group by la.id, la.email, ap.display_name, ap.first_name, ap.last_name
+      order by sum(s.snapshot_amount_kopecks) desc nulls last
+      limit 30`,
+    [teacherAccountId],
+  )
+  return r.rows.map((row) => {
+    const composed = [row.first_name, row.last_name].filter(Boolean).join(' ').trim()
+    return {
+      learnerId: row.learner_id,
+      learnerName: composed || row.display_name || row.email,
+      unpaidCount: Number(row.unpaid_count),
+      unpaidAmount: Number(row.unpaid_amount),
+    }
+  })
+}
+
+export async function listExpiringPackagesForTeacher(
+  teacherAccountId: string,
+): Promise<
+  {
+    purchaseId: string
+    learnerName: string
+    learnerId: string
+    title: string
+    countRemaining: number
+    countInitial: number
+    expiresAt: string
+    reason: 'low_remaining' | 'expiring_soon'
+  }[]
+> {
+  // package_purchases имеет teacher_account_id (mig 0076c).
+  const r = await getDbPool().query<{
+    purchase_id: string
+    learner_id: string
+    display_name: string | null
+    first_name: string | null
+    last_name: string | null
+    email: string
+    title_snapshot: string
+    count_initial: number
+    count_remaining: string
+    expires_at: string
+  }>(
+    `select pp.id as purchase_id,
+            la.id as learner_id,
+            la.email,
+            ap.display_name,
+            ap.first_name,
+            ap.last_name,
+            pp.title_snapshot,
+            pp.count_initial,
+            (pp.count_initial - coalesce((
+              select count(*) from package_consumptions pc
+               where pc.package_purchase_id = pp.id
+                 and pc.restored_at is null
+            ), 0))::text as count_remaining,
+            pp.expires_at::text as expires_at
+       from package_purchases pp
+       join accounts la on la.id = pp.account_id
+       left join account_profiles ap on ap.account_id = la.id
+      where pp.teacher_id = $1
+        and pp.voided_at is null
+        and pp.expires_at > now()
+      order by pp.expires_at asc`,
+    [teacherAccountId],
+  )
+
+  const now = Date.now()
+  const cutoff14d = now + 14 * 86_400_000
+
+  return r.rows
+    .map((row) => {
+      const remaining = Number(row.count_remaining)
+      const expiresMs = new Date(row.expires_at).getTime()
+      const composed = [row.first_name, row.last_name]
+        .filter(Boolean)
+        .join(' ')
+        .trim()
+      const lowRemaining = remaining > 0 && remaining <= 2
+      const expiringSoon = expiresMs <= cutoff14d
+      if (!lowRemaining && !expiringSoon) return null
+      return {
+        purchaseId: row.purchase_id,
+        learnerId: row.learner_id,
+        learnerName: composed || row.display_name || row.email,
+        title: row.title_snapshot,
+        countRemaining: remaining,
+        countInitial: row.count_initial,
+        expiresAt: row.expires_at,
+        reason: lowRemaining ? ('low_remaining' as const) : ('expiring_soon' as const),
+      }
+    })
+    .filter(
+      (
+        x,
+      ): x is {
+        purchaseId: string
+        learnerId: string
+        learnerName: string
+        title: string
+        countRemaining: number
+        countInitial: number
+        expiresAt: string
+        reason: 'low_remaining' | 'expiring_soon'
+      } => x !== null,
+    )
+}
+
+export async function getTeacherPaymentPolicy(
+  teacherAccountId: string,
+): Promise<{ chargeOnNoShow: boolean; chargeOnLateCancel: boolean }> {
+  const r = await getDbPool().query<{
+    teacher_charge_on_no_show: boolean
+    teacher_charge_on_late_cancel: boolean
+  }>(
+    `select teacher_charge_on_no_show, teacher_charge_on_late_cancel
+       from accounts where id = $1`,
+    [teacherAccountId],
+  )
+  return {
+    chargeOnNoShow: r.rows[0]?.teacher_charge_on_no_show ?? false,
+    chargeOnLateCancel: r.rows[0]?.teacher_charge_on_late_cancel ?? false,
+  }
+}
+
+export async function setTeacherPaymentPolicy(
+  teacherAccountId: string,
+  policy: { chargeOnNoShow?: boolean; chargeOnLateCancel?: boolean },
+): Promise<void> {
+  const parts: string[] = []
+  const params: unknown[] = []
+  let idx = 1
+  if (policy.chargeOnNoShow !== undefined) {
+    parts.push(`teacher_charge_on_no_show = $${idx++}`)
+    params.push(policy.chargeOnNoShow)
+  }
+  if (policy.chargeOnLateCancel !== undefined) {
+    parts.push(`teacher_charge_on_late_cancel = $${idx++}`)
+    params.push(policy.chargeOnLateCancel)
+  }
+  if (parts.length === 0) return
+  params.push(teacherAccountId)
+  await getDbPool().query(
+    `update accounts set ${parts.join(', ')} where id = $${idx}`,
+    params,
+  )
+}
+
 export type CreateLearnerClaimInput = {
   learnerAccountId: string
   teacherAccountId: string

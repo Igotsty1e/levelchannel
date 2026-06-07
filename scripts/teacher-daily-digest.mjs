@@ -147,8 +147,17 @@ export async function selectCandidateTeachers(db, maxAttempts, rateLimit) {
             p.display_name  as display_name,
             p.first_name    as first_name,
             p.last_name     as last_name,
-            (now() AT TIME ZONE coalesce(p.timezone, 'Europe/Moscow'))::date
-              as their_today_local
+            -- 2026-06-07: must come back as text, not ::date - the
+            -- pg-driver re-parses ::date in the Node process timezone
+            -- and the JS new-Date / toISOString slice(0,10) approach
+            -- below subtracts a day when Node sits east of UTC. This
+            -- silently shifted digest subjects to "yesterday" on
+            -- MSK / Asia/* runtimes. Mirrors the lib-side fix in
+            -- lib/notifications/teacher-digest-preview.ts.
+            to_char(
+              (now() AT TIME ZONE coalesce(p.timezone, 'Europe/Moscow'))::date,
+              'YYYY-MM-DD'
+            ) as their_today_local
        from current_teachers ct
        join accounts a              on a.id = ct.account_id
        left join account_profiles p on p.account_id = a.id
@@ -199,9 +208,10 @@ export async function selectCandidateTeachers(db, maxAttempts, rateLimit) {
       accountEmail,
       rawTz: String(row.raw_tz),
       displayName: greetingDisplayName,
-      theirTodayLocal: new Date(String(row.their_today_local))
-        .toISOString()
-        .slice(0, 10),
+      // their_today_local is now returned as a 'YYYY-MM-DD' text from
+      // SQL (see comment in the candidate query above) — no Date round-
+      // trip needed.
+      theirTodayLocal: String(row.their_today_local),
     }
   })
 }

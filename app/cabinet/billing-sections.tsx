@@ -1,9 +1,18 @@
 'use client'
 
-import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
+import { Button, Pill } from '@/components/ui/primitives'
 import { TZ_DEFAULT } from '@/lib/util/tz'
+
+function formatRub(rub: number): string {
+  return new Intl.NumberFormat('ru-RU', {
+    style: 'currency',
+    currency: 'RUB',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(rub)
+}
 
 // Billing wave PR 3 — cabinet sections for prepaid packages and
 // postpaid debt. Two parallel containers, no merged ledger.
@@ -70,11 +79,11 @@ function safeFmtDate(iso: string, tz: string): string {
 function statusLabel(s: string): string {
   switch (s) {
     case 'completed':
-      return 'проведён'
+      return 'проведено'
     case 'no_show_learner':
-      return 'не пришёл'
+      return 'вы не пришли'
     case 'no_show_teacher':
-      return 'не пришёл учитель'
+      return 'учитель не пришёл'
     default:
       return s
   }
@@ -144,28 +153,22 @@ export function BillingSections({
               to /cabinet/packages, only rendered when the server says
               the account is buy-eligible. */}
           {canBuyPackages ? (
-            <Link
-              href="/cabinet/packages"
-              style={{
-                fontSize: 13,
-                color: 'var(--accent, #5b8ef7)',
-                textDecoration: 'none',
-                fontWeight: 600,
-              }}
-            >
+            <Button variant="ghost" size="sm" href="/cabinet/packages">
               Купить пакет →
-            </Link>
+            </Button>
           ) : null}
         </div>
         {error ? (
-          <p style={{ color: '#ff8a8a', fontSize: 13 }}>Ошибка: {error}</p>
+          <p style={{ color: 'var(--danger)', fontSize: 13 }}>
+            Не удалось загрузить пакеты. Обновите страницу.
+          </p>
         ) : packages === null ? (
           <p style={{ color: 'var(--secondary)', fontSize: 13 }}>Загружаем…</p>
         ) : packages.length === 0 ? (
           <p style={{ color: 'var(--secondary)', fontSize: 14, lineHeight: 1.6 }}>
-            У вас нет активных пакетов. Каждое занятие нужно оплачивать
-            отдельно, или приобретите пакет, чтобы записываться без
-            повторной оплаты.
+            Активных пакетов нет. Можно оплачивать каждое занятие
+            отдельно — или купить пакет, чтобы записываться без оплаты
+            каждый раз.
           </p>
         ) : (
           <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
@@ -191,21 +194,16 @@ export function BillingSections({
                     <strong style={{ fontSize: 15 }}>
                       {p.titleSnapshot}
                     </strong>
-                    <span
-                      style={{
-                        fontSize: 13,
-                        color: expired ? '#ff8a8a' : '#9bdf9b',
-                      }}
-                    >
+                    <Pill tone={expired ? 'danger' : 'success'} size="sm">
                       {expired
                         ? 'истёк'
-                        : `осталось ${p.countRemaining} из ${p.countInitial}`}
-                    </span>
+                        : `${p.countRemaining} из ${p.countInitial}`}
+                    </Pill>
                   </div>
                   <div
                     style={{
                       height: 6,
-                      background: 'rgba(255,255,255,0.06)',
+                      background: 'var(--surface-2)',
                       borderRadius: 3,
                       marginTop: 8,
                       overflow: 'hidden',
@@ -217,8 +215,9 @@ export function BillingSections({
                         width: `${Math.round(ratio * 100)}%`,
                         height: '100%',
                         background: expired
-                          ? 'rgba(220,80,80,0.5)'
-                          : 'rgba(155,223,155,0.55)',
+                          ? 'var(--danger)'
+                          : 'var(--accent)',
+                        transition: 'width 240ms ease-out',
                       }}
                     />
                   </div>
@@ -239,17 +238,17 @@ export function BillingSections({
         )}
       </div>
 
-      <div className="card" style={{ padding: 24, marginBottom: 24 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
-          К оплате
-        </h2>
-        {debt === null ? (
-          <p style={{ color: 'var(--secondary)', fontSize: 13 }}>Загружаем…</p>
-        ) : debt.length === 0 ? (
-          <p style={{ color: 'var(--secondary)', fontSize: 14 }}>
-            Нет неоплаченных проведённых занятий.
-          </p>
-        ) : (
+      {/* 2026-06-07: «К оплате» полностью скрыто, пока платёжная модель
+          per-tariff перерабатывается. Когда оплата вернётся — поставить
+          `LESSON_PAYMENT_UI_ENABLED = true` (см. lessons-section.tsx
+          для парного флага). Раньше до этого тут уже стояло «debt > 0»
+          — это шум, но именно карточка как UI-инициатива пока убрана. */}
+      {/* eslint-disable-next-line @typescript-eslint/no-unnecessary-condition */}
+      {(false as boolean) && debt !== null && debt.length > 0 ? (
+        <div className="card" style={{ padding: 24, marginBottom: 24 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
+            К оплате
+          </h2>
           <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
             {debt.map((s) => {
               const rub =
@@ -276,39 +275,29 @@ export function BillingSections({
                   </span>
                   {s.legacyGrandfathered ? (
                     <span style={{ color: 'var(--secondary)', fontSize: 12 }}>
-                      Унаследованный · оплата по договорённости
+                      Оплата по договорённости
                     </span>
-                  ) : rub !== null ? (
-                    <a
-                      href={
-                        s.tariffSlug
-                          ? `/checkout/${encodeURIComponent(
-                              s.tariffSlug,
-                            )}?slot=${encodeURIComponent(s.slotId)}`
-                          : '#'
-                      }
-                      style={{
-                        padding: '4px 12px',
-                        background: 'var(--accent)',
-                        color: 'var(--accent-contrast)',
-                        borderRadius: 6,
-                        fontSize: 12,
-                        textDecoration: 'none',
-                      }}
+                  ) : rub !== null && s.tariffSlug ? (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      href={`/checkout/${encodeURIComponent(
+                        s.tariffSlug,
+                      )}?slot=${encodeURIComponent(s.slotId)}`}
                     >
-                      Оплатить {rub.toLocaleString('ru-RU')} ₽
-                    </a>
+                      Оплатить {formatRub(rub)}
+                    </Button>
                   ) : (
                     <span style={{ color: 'var(--secondary)', fontSize: 12 }}>
-                      Без цены — оператор свяжется
+                      Цены нет — с вами свяжется оператор
                     </span>
                   )}
                 </li>
               )
             })}
           </ul>
-        )}
-      </div>
+        </div>
+      ) : null}
     </>
   )
 }

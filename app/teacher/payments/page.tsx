@@ -8,12 +8,21 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { getOnboardingState } from '@/lib/onboarding/state'
 import {
   listClaimsForTeacher,
   countPendingClaimsForTeacher,
+  listLearnersWithUnpaidSlots,
+  listExpiringPackagesForTeacher,
+  getTeacherPaymentPolicy,
 } from '@/lib/payments/sbp-claims'
+import { listActivePaymentMethods } from '@/lib/payments/sbp-methods'
+import { listRefundsForTeacher } from '@/lib/payments/sbp-refunds'
 
 import { ClaimsFeed } from './feed'
+import { PaymentsExplainer } from './explainer'
+import { PolicyEditor } from './policy-editor'
+import { UnpaidLearners } from './unpaid-learners'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -41,10 +50,32 @@ export default async function TeacherPaymentsPage() {
 
   const teacherAccountId = session.account.id
 
-  const [claims, pendingCount] = await Promise.all([
+  const [
+    claims,
+    pendingCount,
+    unpaidLearners,
+    methods,
+    refunds,
+    policy,
+    expiring,
+    onboardingState,
+  ] = await Promise.all([
     listClaimsForTeacher(teacherAccountId, ['claimed', 'confirmed', 'declined'], 100),
     countPendingClaimsForTeacher(teacherAccountId),
+    listLearnersWithUnpaidSlots(teacherAccountId),
+    listActivePaymentMethods(teacherAccountId),
+    listRefundsForTeacher(teacherAccountId, 50),
+    getTeacherPaymentPolicy(teacherAccountId),
+    listExpiringPackagesForTeacher(teacherAccountId),
+    getOnboardingState(teacherAccountId),
   ])
+  const explainerDismissed =
+    'teacher_payments_explainer' in onboardingState.dismissedHints
+
+  const totalUnpaidAmount = unpaidLearners.reduce(
+    (a, l) => a + l.unpaidAmount,
+    0,
+  )
 
   const pendingClaims = claims.filter((c) => c.status === 'claimed')
   const confirmedThisMonth = (() => {
@@ -91,6 +122,8 @@ export default async function TeacherPaymentsPage() {
         Оплаты
       </h1>
 
+      {!explainerDismissed ? <PaymentsExplainer /> : null}
+
       <div
         style={{
           display: 'grid',
@@ -110,9 +143,116 @@ export default async function TeacherPaymentsPage() {
           value={`${confirmedThisMonth.length}`}
           subtitle={confirmedThisMonth.length > 0 ? formatRub(confirmedSum) : null}
         />
+        <SummaryCard
+          title="Должны оплатить"
+          value={`${unpaidLearners.length}`}
+          subtitle={
+            unpaidLearners.length > 0 ? formatRub(totalUnpaidAmount) : null
+          }
+          accent={unpaidLearners.length > 0}
+        />
       </div>
 
-      <ClaimsFeed initialClaims={claims} />
+      {unpaidLearners.length > 0 ? (
+        <UnpaidLearners
+          learners={unpaidLearners}
+          methods={methods.map((m) => ({
+            id: m.id,
+            phoneDisplay: m.phoneDisplay,
+            bankLabel: m.bankLabel,
+            isDefault: m.isDefault,
+          }))}
+        />
+      ) : null}
+
+      {expiring.length > 0 ? (
+        <div className="card" style={{ padding: 24, marginBottom: 24 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
+            Заканчиваются абонементы
+          </h2>
+          <p
+            style={{
+              color: 'var(--secondary)',
+              fontSize: 13,
+              marginBottom: 16,
+            }}
+          >
+            У этих учеников осталось ≤ 2 занятий или абонемент истекает в
+            ближайшие 14 дней — самое время напомнить про продление.
+          </p>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 8 }}>
+            {expiring.map((p) => (
+              <li
+                key={p.purchaseId}
+                style={{
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  padding: 12,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 15 }}>
+                    {p.learnerName}
+                  </div>
+                  <div
+                    style={{
+                      color: 'var(--secondary)',
+                      fontSize: 12,
+                      marginTop: 2,
+                    }}
+                  >
+                    {p.title} · осталось {p.countRemaining} из {p.countInitial}{' '}
+                    · до{' '}
+                    {new Date(p.expiresAt).toLocaleDateString('ru-RU', {
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric',
+                    })}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    color:
+                      p.reason === 'low_remaining'
+                        ? 'var(--warning)'
+                        : 'var(--secondary)',
+                    fontSize: 12,
+                  }}
+                >
+                  {p.reason === 'low_remaining'
+                    ? 'мало занятий'
+                    : 'скоро истекает'}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <ClaimsFeed initialClaims={claims} initialRefunds={refunds} />
+
+      <PolicyEditor initial={policy} />
+
+      <div style={{ marginTop: 24 }}>
+        <a
+          href={`/api/teacher/payment-claims/export.csv?from=${encodeURIComponent(
+            new Date(new Date().getFullYear(), new Date().getMonth() - 3, 1)
+              .toISOString()
+              .slice(0, 10),
+          )}`}
+          style={{
+            color: 'var(--secondary)',
+            textDecoration: 'underline',
+            fontSize: 13,
+          }}
+        >
+          Скачать CSV за последние 3 месяца (для налоговой)
+        </a>
+      </div>
     </div>
   )
 }
