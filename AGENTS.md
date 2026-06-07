@@ -78,8 +78,10 @@ The general doc-maintenance rule (`rg`-sweep, drift = real bug) is in
 | `ROADMAP.md` | Outcome-level priorities. Product, operations, compliance. No low-level implementation queue here. |
 | `ENGINEERING_BACKLOG.md` | Concrete engineering queue. System tasks not yet shipped. |
 | `PRD.md` | Public-safe note that points to the private historical PRD. Do not decide current behaviour from it. |
-| `docs/design-system.md` | Apple-HIG token palette + type scale + spacing + radii + motion + primitive components. **Mandatory read before any UI change in admin / cabinet / auth shells.** New colors, shadows, radii must use the documented tokens; introducing a one-off `rgba(...)` or hex that doesn't fit the scale = doc drift. |
+| `docs/design-system.md` | **v2.0 (2026-06-07)** — Living document. Cabinet is dark-only. Tokens in `app/globals.css`. UI primitives in `components/ui/primitives/` (`<Button>`, `<ChipGroup>`, `<Pill>`, `<Banner>`, `<EmptyState>`, `<FloatingActionButton>`). Anti-patterns with examples. Tone of voice (ты/вы matrix). **Mandatory read before any UI change in cabinet / auth / payment shells.** New colors, shadows, radii must use the documented tokens; introducing a one-off `rgba(...)` or hex that doesn't fit the scale = doc drift. |
 | `docs/content-style.md` | Russian copy style guide: tone rules, audience matrix (учащийся / учитель / оператор), forbidden-words glossary (40+ entries), microcopy patterns, admin menu rename proposal. **Mandatory read before any user-visible Russian string change.** The glossary is authoritative — don't introduce «Реконсилиация» / «Webhook» / «Слот» as user-visible text. |
+| `docs/audit/frontend-audit-routes.md` | Page-by-page audit route map. Status of each cabinet/auth/payment screen (done / pending / out-of-scope). Updated as polish passes ship. |
+| `scripts/seed-qa-fixtures.mjs` | **Canonical seed for realistic test users.** Idempotent, prefix-isolated (`qa-fixture-*@levelchannel.test`), safe to run on prod for smoke-checks. 1 teacher + 5 learners with mixed scenarios (active pkg / debt / expired / empty). Run via `npm run seed:qa`. Shared password `QaFix!2026`. **Rule: any future audit / demo / QA pass uses these fixtures, not hand-rolled accounts.** |
 
 If your diff touches `lib/payments/` and you did not update
 `ARCHITECTURE.md` or `PAYMENTS_SETUP.md`, you did not finish.
@@ -244,6 +246,9 @@ the diff being correct.
 - **Do not change the HMAC verification path** (`cloudpayments-webhook.ts`) without updating the regression tests in `tests/payments/cloudpayments-webhook.test.ts`. The exact wire format is `base64(HMAC-SHA256(rawBody, ApiSecret))` over **raw** bytes: no re-encoding, no decoding, no JSON-vs-form branching for signature input.
 - **Do not email-normalize with `.toLowerCase()` alone.** Use `normalizeAccountEmail()` (`trim().toLowerCase()`). Trailing-whitespace duplicates create shadow accounts. DB CHECK constraint `accounts_email_normalized` catches bypasses.
 - **Do not cut the `ARCHITECTURE.md` file map.** Every file added or moved goes in. Without it, the next agent has to re-discover the structure from scratch.
+- **Do not hand-roll cabinet UI primitives.** Buttons, banners, empty states, status badges, chip groups, FABs — all live in `components/ui/primitives/`. Inline-styled `<button>` / `<div>` in new code = automatic anti-pattern unless there's a documented layout-specific reason. See `docs/design-system.md` §9.
+- **Do not return `::date` from Postgres and then `new Date(...).toISOString().slice(0,10)` in JS.** The pg driver parses `::date` in the Node process timezone, and `.toISOString()` then shifts to UTC, silently subtracting a day for any Node runtime east of UTC. Use `to_char((... )::date, 'YYYY-MM-DD')` in SQL and `String(row.col)` in JS. This bug shipped in `lib/notifications/teacher-digest-preview.ts` (fixed 2026-06-07) and `scripts/teacher-daily-digest.mjs` (fixed 2026-06-07 — was sending the daily teacher email with yesterday's date in subject).
+- **Do not expose internal identifiers (slug, UUID prefix, display_order, tariff_id) in cabinet UI.** They're a server-side handle. Tutor sees title / price / status. The 2026-06-07 `customerComment` PII leak (slot UUID + tariff slug ended up on the CloudPayments receipt the operator sees) is the failure mode this rule prevents.
 
 ## 6. Final test (LevelChannel bar)
 

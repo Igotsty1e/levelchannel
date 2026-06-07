@@ -3,6 +3,8 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
+import { Button } from '@/components/ui/primitives'
+
 export function LogoutButton() {
   const router = useRouter()
   const [pending, setPending] = useState(false)
@@ -26,22 +28,14 @@ export function LogoutButton() {
   }
 
   return (
-    <button
+    <Button
+      variant="ghost"
+      size="sm"
       type="button"
       onClick={onClick}
       disabled={pending}
-      style={{
-        color: 'var(--text)',
-        background: 'rgba(255,255,255,0.05)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        fontSize: 14,
-        padding: '6px 14px',
-        borderRadius: 8,
-        cursor: pending ? 'default' : 'pointer',
-        opacity: pending ? 0.6 : 1,
-      }}
     >
       {pending ? 'Выходим…' : 'Выйти'}
-    </button>
+    </Button>
   )
 }

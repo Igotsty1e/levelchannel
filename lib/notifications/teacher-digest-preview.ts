@@ -93,8 +93,13 @@ export async function getTeacherDigestPreview(
     learner_email: string | null
     learner_display_name: string | null
     zoom_url: string | null
-    today_local: Date | string
+    today_local: string
   }>(
+    // today_local is returned as a TEXT 'YYYY-MM-DD' string (via
+    // to_char) so the Node-tz of the server can't drift the day boundary
+    // when the row is parsed. Previously we returned ::date and called
+    // .toISOString().slice(0,10) on it, which silently subtracted a day
+    // for any Node process running east of UTC.
     `select s.id,
             s.start_at,
             s.duration_minutes,
@@ -102,7 +107,7 @@ export async function getTeacherDigestPreview(
             la.email          as learner_email,
             lp.display_name   as learner_display_name,
             s.zoom_url,
-            (now() AT TIME ZONE $2)::date as today_local
+            to_char((now() AT TIME ZONE $2)::date, 'YYYY-MM-DD') as today_local
        from lesson_slots s
        left join accounts la         on la.id = s.learner_account_id
        left join account_profiles lp on lp.account_id = s.learner_account_id
@@ -114,22 +119,15 @@ export async function getTeacherDigestPreview(
     [teacherAccountId, teacherTz],
   )
 
-  // Pull today_local from the first row if any. If empty, recompute
-  // via a single-shot SELECT — kept cheap and the cabinet renders one
-  // tile per request so we never run this in a hot loop.
   let todayLocalYmd: string
   if (slotRes.rows.length > 0) {
-    todayLocalYmd = new Date(String(slotRes.rows[0].today_local))
-      .toISOString()
-      .slice(0, 10)
+    todayLocalYmd = String(slotRes.rows[0].today_local)
   } else {
-    const dateRes = await pool.query<{ today_local: Date | string }>(
-      `select (now() AT TIME ZONE $1)::date as today_local`,
+    const dateRes = await pool.query<{ today_local: string }>(
+      `select to_char((now() AT TIME ZONE $1)::date, 'YYYY-MM-DD') as today_local`,
       [teacherTz],
     )
-    todayLocalYmd = new Date(String(dateRes.rows[0].today_local))
-      .toISOString()
-      .slice(0, 10)
+    todayLocalYmd = String(dateRes.rows[0].today_local)
   }
 
   const slots: PreviewSlot[] = slotRes.rows.map((row) => ({

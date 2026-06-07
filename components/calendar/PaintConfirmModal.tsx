@@ -102,65 +102,74 @@ export function PaintConfirmModal({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: '#1f1f23',
-          border: '1px solid rgba(255,255,255,0.1)',
+          background: 'var(--surface-1, #1f1f23)',
+          border: '1px solid var(--border)',
           borderRadius: 12,
           padding: 24,
           minWidth: 360,
-          maxWidth: 480,
-          color: '#e4e4e7',
+          maxWidth: 520,
+          color: 'var(--text)',
         }}
       >
-        <h2 id="paint-confirm-title" style={{ fontSize: 18, marginBottom: 12 }}>
-          Создать слоты — {span.ymd}
+        <h2 id="paint-confirm-title" style={{ fontSize: 18, marginBottom: 16, marginTop: 0 }}>
+          Новые занятия · {formatYmdRu(span.ymd)}
         </h2>
 
-        <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-          <Field label="Длительность">
-            <select
-              value={duration}
-              onChange={(e) =>
-                setDuration(Number(e.target.value) as PaintDurationMinutes)
-              }
-              style={selectStyle}
-            >
-              {ALLOWED_PAINT_DURATIONS_MIN.map((d) => (
-                <option key={d} value={d}>
-                  {d} мин
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Тариф (необязательно)">
-            <select
-              value={tariffId}
-              onChange={(e) => setTariffId(e.target.value)}
-              style={selectStyle}
-            >
-              <option value="">— без тарифа —</option>
-              {tariffs.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.titleRu} ·{' '}
-                  {(t.amountKopecks / 100).toLocaleString('ru-RU')} ₽
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
+        <FieldLabel>Длительность</FieldLabel>
+        <ChipGroup
+          name="duration"
+          value={String(duration)}
+          options={ALLOWED_PAINT_DURATIONS_MIN.map((d) => ({
+            value: String(d),
+            label: `${d} мин`,
+          }))}
+          onChange={(v) => setDuration(Number(v) as PaintDurationMinutes)}
+        />
+
+        <FieldLabel style={{ marginTop: 16 }}>Тариф</FieldLabel>
+        {tariffs.length <= 3 ? (
+          <ChipGroup
+            name="tariff"
+            value={tariffId}
+            options={[
+              { value: '', label: 'Без цены' },
+              ...tariffs.map((t) => ({
+                value: t.id,
+                label: `${t.titleRu} · ${(t.amountKopecks / 100).toLocaleString('ru-RU')} ₽`,
+              })),
+            ]}
+            onChange={setTariffId}
+          />
+        ) : (
+          <select
+            value={tariffId}
+            onChange={(e) => setTariffId(e.target.value)}
+            style={selectStyle}
+          >
+            <option value="">Без цены</option>
+            {tariffs.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.titleRu} · {(t.amountKopecks / 100).toLocaleString('ru-RU')} ₽
+              </option>
+            ))}
+          </select>
+        )}
 
         <div
           style={{
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.1)',
+            background: 'var(--surface-2, rgba(255,255,255,0.04))',
+            border: '1px solid var(--border)',
             borderRadius: 8,
             padding: 12,
+            marginTop: 16,
             marginBottom: 16,
           }}
         >
           {synth ? (
             <>
-              <p style={{ fontSize: 12, color: '#9ca3af', marginBottom: 6 }}>
-                Будет создано слотов: <strong>{synth.startsIso.length}</strong>
+              <p style={{ fontSize: 13, color: 'var(--secondary)', marginTop: 0, marginBottom: 8 }}>
+                Создадим <strong style={{ color: 'var(--text)' }}>{synth.startsIso.length}</strong>{' '}
+                {pluralRu(synth.startsIso.length, 'занятие', 'занятия', 'занятий')}
               </p>
               <ul
                 style={{
@@ -182,6 +191,7 @@ export function PaintConfirmModal({
                       borderRadius: 4,
                       fontSize: 12,
                       color: '#bbf7d0',
+                      fontVariantNumeric: 'tabular-nums',
                     }}
                   >
                     {hhmm}
@@ -190,10 +200,8 @@ export function PaintConfirmModal({
               </ul>
             </>
           ) : (
-            <p style={{ fontSize: 13, color: '#fbbf24', margin: 0 }}>
-              Выбранный диапазон короче длительности — ни одного слота
-              не помещается. Увеличьте диапазон или уменьшите
-              длительность.
+            <p style={{ fontSize: 13, color: 'var(--warning, #fbbf24)', margin: 0 }}>
+              Диапазон короче выбранной длительности.
             </p>
           )}
         </div>
@@ -203,10 +211,10 @@ export function PaintConfirmModal({
             role="alert"
             style={{
               padding: 12,
-              background: 'rgba(239, 68, 68, 0.1)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
+              background: 'var(--danger-bg)',
+              border: '1px solid var(--danger)',
               borderRadius: 6,
-              color: '#fecaca',
+              color: 'var(--text)',
               fontSize: 13,
               marginBottom: 12,
             }}
@@ -226,7 +234,8 @@ export function PaintConfirmModal({
             type="button"
             onClick={onCancel}
             disabled={busy}
-            style={btnSecondary}
+            className="btn-secondary"
+            style={{ minHeight: 36 }}
           >
             Отмена
           </button>
@@ -234,7 +243,8 @@ export function PaintConfirmModal({
             type="button"
             onClick={handleConfirm}
             disabled={busy || !synth}
-            style={btnPrimary}
+            className="btn-primary"
+            style={{ minHeight: 36 }}
           >
             {busy ? 'Создаём…' : 'Создать'}
           </button>
@@ -244,65 +254,102 @@ export function PaintConfirmModal({
   )
 }
 
-function Field({
-  label,
+function FieldLabel({
   children,
+  style,
 }: {
-  label: string
   children: React.ReactNode
+  style?: React.CSSProperties
 }) {
   return (
-    <label
+    <div
       style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 4,
-        flex: 1,
-        // Wave 14 #4 — collapse the column's intrinsic min-content
-        // contribution so a wide <select> doesn't blow the row out.
-        minWidth: 0,
+        fontSize: 12,
+        color: 'var(--secondary)',
+        marginBottom: 6,
+        ...style,
       }}
     >
-      <span style={{ fontSize: 12, color: '#9ca3af' }}>{label}</span>
       {children}
-    </label>
+    </div>
   )
+}
+
+function ChipGroup({
+  name,
+  value,
+  options,
+  onChange,
+}: {
+  name: string
+  value: string
+  options: ReadonlyArray<{ value: string; label: string }>
+  onChange: (v: string) => void
+}) {
+  return (
+    <div role="radiogroup" aria-label={name} style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      {options.map((opt) => {
+        const isActive = opt.value === value
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={isActive}
+            onClick={() => onChange(opt.value)}
+            style={{
+              padding: '6px 12px',
+              borderRadius: 999,
+              fontSize: 13,
+              fontWeight: isActive ? 600 : 500,
+              border: `1px solid ${isActive ? 'var(--accent, #D88A82)' : 'var(--border)'}`,
+              background: isActive
+                ? 'var(--accent-bg, rgba(216,138,130,0.10))'
+                : 'transparent',
+              color: 'var(--text)',
+              cursor: 'pointer',
+              lineHeight: 1.2,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function pluralRu(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return one
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few
+  return many
+}
+
+function formatYmdRu(ymd: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd)
+  if (!m) return ymd
+  const [, y, mo, d] = m
+  const date = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)))
+  const sameYear = new Date().getUTCFullYear() === Number(y)
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    ...(sameYear ? {} : { year: 'numeric' }),
+    timeZone: 'UTC',
+  }).format(date)
 }
 
 const selectStyle: React.CSSProperties = {
   padding: '6px 10px',
-  background: 'rgba(255,255,255,0.05)',
-  border: '1px solid rgba(255,255,255,0.1)',
+  background: 'var(--surface-2, rgba(255,255,255,0.05))',
+  border: '1px solid var(--border)',
   borderRadius: 6,
-  color: '#e4e4e7',
+  color: 'var(--text)',
   fontSize: 13,
-  // Wave 14 #4 — keep <select> inside its flex column. Without these
-  // the select grew to fit its longest <option> content (e.g. a long
-  // tariff title), pushing the modal wider than its maxWidth.
   width: '100%',
   boxSizing: 'border-box',
-  // Long option labels truncate visually instead of stretching the
-  // select horizontally (Chrome respects this for the closed control).
   textOverflow: 'ellipsis',
-}
-
-const btnSecondary: React.CSSProperties = {
-  padding: '8px 16px',
-  background: 'rgba(255,255,255,0.05)',
-  border: '1px solid rgba(255,255,255,0.1)',
-  borderRadius: 6,
-  color: '#e4e4e7',
-  cursor: 'pointer',
-  fontSize: 13,
-}
-
-const btnPrimary: React.CSSProperties = {
-  padding: '8px 16px',
-  background: 'rgba(34, 197, 94, 0.18)',
-  border: '1px solid rgba(34, 197, 94, 0.55)',
-  borderRadius: 6,
-  color: '#bbf7d0',
-  cursor: 'pointer',
-  fontSize: 13,
-  fontWeight: 600,
 }

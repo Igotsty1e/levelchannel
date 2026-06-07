@@ -79,13 +79,8 @@ export function LearnerTelegramBinding({
     return (
       <section
         data-testid="learner-telegram-binding"
-        style={{
-          marginTop: 24,
-          padding: '16px 20px',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          background: 'var(--surface)',
-        }}
+        className="card"
+        style={{ padding: 24, marginBottom: 24 }}
       >
         <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
           Напоминания в&nbsp;Telegram
@@ -100,13 +95,8 @@ export function LearnerTelegramBinding({
   return (
     <section
       data-testid="learner-telegram-binding"
-      style={{
-        marginTop: 24,
-        padding: '16px 20px',
-        border: '1px solid var(--border)',
-        borderRadius: 8,
-        background: 'var(--surface)',
-      }}
+      className="card"
+      style={{ padding: 24, marginBottom: 24 }}
     >
       <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
         Напоминания в&nbsp;Telegram

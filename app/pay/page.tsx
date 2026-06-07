@@ -44,11 +44,8 @@ export default async function PayPage() {
   return (
     <>
       <main style={{ minHeight: '100vh', background: 'var(--bg)' }}>
-      {/* Codex 2026-05-08 (Wave 10 #5) — CloudPayments widget script
-          loads only on this payment page (and on /checkout/[tariffSlug]),
-          not globally from app/layout.tsx. Privacy text frames the
-          provider as a payment-stage processor; page-level injection
-          matches that framing. */}
+      {/* Codex 2026-05-08 (Wave 10 #5) — платёжный виджет грузится
+          только здесь (и на /checkout/[tariffSlug]), не из layout. */}
       <Script
         src="https://widget.cloudpayments.ru/bundles/cloudpayments.js"
         strategy="beforeInteractive"
@@ -57,8 +54,7 @@ export default async function PayPage() {
         style={{
           padding: '20px 0',
           borderBottom: '1px solid var(--border)',
-          background: 'rgba(11, 11, 12, 0.85)',
-          backdropFilter: 'blur(12px)',
+          background: 'var(--bg)',
         }}
       >
         <div
@@ -85,9 +81,9 @@ export default async function PayPage() {
           <Link
             href={backHref}
             style={{
-              color: 'var(--secondary)',
+              color: 'var(--text-secondary)',
               textDecoration: 'none',
-              fontSize: 14,
+              fontSize: 13,
             }}
           >
             {backLabel}

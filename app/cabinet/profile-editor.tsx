@@ -88,9 +88,9 @@ export function ProfileEditor({
 
   return (
     <div className="card" style={{ padding: 24, marginBottom: 24 }}>
-      <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>
-        Профиль
-      </h2>
+      {/* Заголовок «Профиль» убран в 2026-06-07 — дублировал H1 страницы
+          /cabinet/profile (там это единственный контент). На /cabinet
+          (хост-карточка) заголовок не нужен — раздел очевиден по форме. */}
       <p
         style={{
           color: 'var(--secondary)',

@@ -1,0 +1,314 @@
+/* Variant V3 — Editorial scroll narrative.
+ * Inspiration: rauno.me, mymind.com, soulver.app, darkrise-astro.
+ * Palette: brand dark + warm accent gradient #C87878 → #E8A890. */
+
+html:has(.landing-v3) {
+  scroll-behavior: smooth;
+}
+
+.landing-v3 {
+  --v3-bg: #0B0B0C;
+  --v3-bg-warm: #1A1818;
+  --v3-surface: #111113;
+  --v3-surface-elevated: #16161A;
+  --v3-rule: rgba(255, 255, 255, 0.07);
+  --v3-rule-strong: rgba(255, 255, 255, 0.12);
+  --v3-accent-start: #C87878;
+  --v3-accent-end: #E8A890;
+  --v3-text-primary: #F5F5F7;
+  --v3-text-secondary: #A1A1AA;
+  --v3-text-muted: #6B6B73;
+
+  background-color: var(--v3-bg);
+  background-image:
+    radial-gradient(ellipse 90% 70% at 50% -10%, rgba(232, 168, 144, 0.05), transparent 60%),
+    radial-gradient(ellipse 70% 50% at 50% 100%, rgba(200, 120, 120, 0.04), transparent 65%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  color: var(--v3-text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Anchor offset for sticky header */
+.landing-v3 section[id] {
+  scroll-margin-top: 96px;
+}
+
+.landing-v3 ::selection {
+  background: var(--v3-accent-start);
+  color: var(--v3-bg);
+}
+
+.landing-v3-eyebrow {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--v3-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.landing-v3-eyebrow::before {
+  content: '';
+  width: 28px;
+  height: 1px;
+  background: var(--v3-accent-start);
+}
+
+.landing-v3-h1 {
+  font-size: clamp(48px, 9vw, 112px);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+  margin: 0;
+  padding-bottom: 0.12em;
+}
+
+.landing-v3-h1--gradient {
+  background: linear-gradient(135deg, var(--v3-accent-start) 0%, var(--v3-accent-end) 50%, var(--v3-text-primary) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-block;
+}
+
+.landing-v3-h2 {
+  font-size: clamp(32px, 6vw, 72px);
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  margin: 0;
+}
+
+.landing-v3-h2--serif {
+  font-family: 'Charter', 'Iowan Old Style', 'Georgia', serif;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+.landing-v3-h2--serif em {
+  font-style: italic;
+  color: var(--v3-accent-end);
+}
+
+.landing-v3-lede {
+  font-size: clamp(18px, 1.6vw, 22px);
+  line-height: 1.55;
+  color: var(--v3-text-secondary);
+  max-width: 60ch;
+  margin: 0;
+}
+
+.landing-v3-body-editorial {
+  font-size: 19px;
+  line-height: 1.7;
+  color: var(--v3-text-primary);
+  max-width: 64ch;
+  margin: 0 0 24px;
+}
+
+.landing-v3-pullquote {
+  margin: 40px 0;
+  padding: 24px 32px;
+  border-left: 2px solid var(--v3-accent-start);
+  background: var(--v3-surface);
+  font-family: 'Charter', 'Iowan Old Style', 'Georgia', serif;
+  font-style: italic;
+  font-size: 22px;
+  line-height: 1.5;
+  color: var(--v3-text-primary);
+}
+
+.landing-v3-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 36px;
+  background: linear-gradient(135deg, var(--v3-accent-start), var(--v3-accent-end));
+  color: #1a1a1a;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 999px;
+  text-decoration: none;
+  position: relative;
+  transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 200ms ease;
+  box-shadow: 0 12px 28px -8px rgba(232, 168, 144, 0.4);
+}
+
+.landing-v3-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 40px -12px rgba(232, 168, 144, 0.55);
+}
+
+.landing-v3-cta--ghost {
+  background: transparent;
+  color: var(--v3-text-primary);
+  border: 1px solid var(--v3-rule-strong);
+  box-shadow: none;
+}
+
+.landing-v3-cta--ghost:hover {
+  background: var(--v3-surface-elevated);
+  box-shadow: none;
+}
+
+.landing-v3-link {
+  color: var(--v3-accent-end);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(232, 168, 144, 0.35);
+  padding-bottom: 1px;
+  transition: color 200ms ease, border-color 200ms ease;
+}
+
+.landing-v3-link:hover {
+  color: var(--v3-text-primary);
+  border-bottom-color: var(--v3-text-primary);
+}
+
+.landing-v3-section {
+  position: relative;
+  padding: 120px 24px;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.landing-v3-section--tight {
+  padding: 80px 24px;
+}
+
+.landing-v3-section--full {
+  max-width: none;
+  padding: 0;
+}
+
+.landing-v3-grid-editorial {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 80px;
+  align-items: start;
+}
+
+.landing-v3-editorial-num {
+  position: sticky;
+  top: 80px;
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--v3-text-muted);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.landing-v3-editorial-num span {
+  display: block;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 64px;
+  font-weight: 200;
+  color: var(--v3-accent-start);
+  line-height: 1;
+  margin-bottom: 8px;
+  letter-spacing: -0.04em;
+}
+
+@media (max-width: 880px) {
+  .landing-v3-grid-editorial {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+  .landing-v3-editorial-num {
+    position: static;
+  }
+}
+
+.landing-v3-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  background: linear-gradient(135deg, #1a1a1a 0%, #2a2424 100%);
+  border: 1px dashed var(--v3-rule);
+  border-radius: 12px;
+  color: var(--v3-text-muted);
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  min-height: 200px;
+}
+
+/* Hover card lift (универсальный класс для карточек) */
+.landing-v3-card {
+  background: var(--v3-surface);
+  border: 1px solid var(--v3-rule);
+  border-radius: 16px;
+  transition:
+    transform 320ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 320ms ease,
+    box-shadow 320ms ease,
+    background 320ms ease;
+}
+
+.landing-v3-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(232, 168, 144, 0.22);
+  background: var(--v3-surface-elevated);
+  box-shadow: 0 24px 40px -20px rgba(0, 0, 0, 0.5);
+}
+
+/* Scroll progress bar */
+.landing-v3-scroll-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--v3-accent-start), var(--v3-accent-end));
+  transform-origin: 0 0;
+  z-index: 60;
+  pointer-events: none;
+}
+
+/* CTA glow pulse — субтильная dynamic подсветка кнопки */
+.landing-v3-cta {
+  position: relative;
+}
+.landing-v3-cta::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(232, 168, 144, 0.18), transparent 70%);
+  filter: blur(16px);
+  opacity: 0;
+  transition: opacity 320ms ease;
+  z-index: -1;
+}
+.landing-v3-cta:hover::before {
+  opacity: 1;
+}
+
+/* Image — мягкий glow rim вокруг иллюстраций */
+.landing-v3-illust {
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow:
+    0 32px 64px -32px rgba(0, 0, 0, 0.7),
+    0 0 0 1px var(--v3-rule);
+  position: relative;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:has(.landing-v3) { scroll-behavior: auto; }
+  .landing-v3 *,
+  .landing-v3 *::before,
+  .landing-v3 *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

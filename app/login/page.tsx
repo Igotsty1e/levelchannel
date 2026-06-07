@@ -43,8 +43,8 @@ export default function LoginPage() {
       if (data?.inviteRedeem && data.inviteRedeem !== 'ok') {
         setInviteNotice(
           data.inviteRedeem === 'invalid'
-            ? 'Ссылка-приглашение испорчена. Войти удалось — но привязка к учителю не сделана.'
-            : 'Ссылка-приглашение уже использована или истёк срок. Войти удалось — но привязка к учителю не сделана.',
+            ? 'Ссылка-приглашение испорчена. Вход выполнен, но привязка к учителю не сделана.'
+            : 'Ссылка-приглашение уже использована или её срок истёк. Вход выполнен, но привязка к учителю не сделана.',
         )
         // Don't redirect — let user read the notice; they can navigate
         // to /cabinet manually via the link below or the next CTA.
@@ -54,7 +54,17 @@ export default function LoginPage() {
       router.push('/cabinet')
       return
     }
-    setError(result.error)
+    // Normalize known auth errors to user-safe copy (no codes/HTTP
+    // status leaks). Design-system §11: "Не получилось войти.
+    // Проверьте email и пароль." is the canonical phrasing.
+    const raw = result.error
+    const friendly =
+      raw === 'Неверный e-mail или пароль.'
+        ? 'Не получилось войти. Проверьте e-mail и пароль.'
+        : raw === 'Invalid request body.'
+          ? 'Проверьте, что e-mail и пароль заполнены.'
+          : raw
+    setError(friendly)
     setSubmitting(false)
   }
 
@@ -108,27 +118,32 @@ export default function LoginPage() {
           <div
             role="status"
             style={{
-              padding: '10px 12px',
-              borderRadius: 6,
-              background: 'rgba(224, 168, 80, 0.10)',
-              border: '1px solid rgba(224, 168, 80, 0.45)',
+              padding: '12px 14px',
+              borderRadius: 10,
+              background: 'var(--warning-bg, rgba(245,194,107,0.10))',
+              border: '1px solid var(--warning, #F5C26B)',
               color: 'var(--text)',
-              fontSize: 13,
+              fontSize: 14,
               lineHeight: 1.5,
-              marginBottom: 12,
+              marginBottom: 16,
             }}
           >
             {inviteNotice}{' '}
             <Link
               href="/cabinet"
-              style={{ color: 'var(--accent, #6ea8fe)', textDecoration: 'underline' }}
+              style={{ color: 'var(--accent)', textDecoration: 'underline' }}
             >
               Перейти в кабинет
             </Link>
           </div>
         ) : null}
 
-        <button type="submit" disabled={submitting} className="btn-primary" style={{ width: '100%' }}>
+        <button
+          type="submit"
+          disabled={submitting}
+          className="btn-primary"
+          style={{ width: '100%', justifyContent: 'center' }}
+        >
           {submitting ? 'Входим…' : 'Войти'}
         </button>
       </form>

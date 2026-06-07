@@ -90,8 +90,8 @@ export default async function BookDayPage({
             width: 32,
             height: 32,
             borderRadius: '50%',
-            border: '1px solid var(--accent, #3b82f6)',
-            color: 'var(--accent, #3b82f6)',
+            border: '1px solid var(--accent)',
+            color: 'var(--accent)',
             textDecoration: 'none',
           }}
         >
@@ -125,7 +125,7 @@ export default async function BookDayPage({
               color: 'var(--secondary)',
             }}
           >
-            🌐 {tz}
+            Часовой пояс: {tz}
           </p>
         </div>
 

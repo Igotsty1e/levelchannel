@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
+import { Button } from '@/components/ui/primitives'
+
 // SAAS-PIVOT Epic 5A Day 5A — un-mark client button.
 //
 // Plan: docs/plans/saas-pivot-master.md §2.6.
@@ -10,6 +12,8 @@ import { useRouter } from 'next/navigation'
 // POSTs to /api/teacher/lessons/[id]/uncomplete. The route checks
 // teacher ownership + 48h window + settlement/earnings gates and
 // returns 409 on failure. We surface those reasons to the user.
+//
+// Cabinet polish 2026-06-07 (B4): inline-styled button → <Button>.
 
 export default function UncompleteButton({
   completionId,
@@ -48,25 +52,19 @@ export default function UncompleteButton({
   }
 
   return (
-    <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 4 }}>
-      <button
+    <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+      <Button
         type="button"
+        variant="ghost"
+        size="sm"
         onClick={onClick}
         disabled={pending}
-        style={{
-          padding: '4px 8px',
-          background: 'transparent',
-          color: 'var(--accent)',
-          border: '1px solid var(--accent)',
-          borderRadius: 4,
-          cursor: pending ? 'wait' : 'pointer',
-          fontSize: 13,
-        }}
+        loading={pending}
       >
-        {pending ? '…' : 'Снять'}
-      </button>
+        Снять
+      </Button>
       {error && (
-        <span style={{ color: 'var(--danger, #c0392b)', fontSize: 11 }}>
+        <span style={{ color: 'var(--danger)', fontSize: 11 }}>
           {error}
         </span>
       )}

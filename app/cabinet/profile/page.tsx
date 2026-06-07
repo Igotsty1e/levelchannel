@@ -2,8 +2,8 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
-import { AuthInfoBox } from '@/components/auth-form-bits'
 import { SiteHeader } from '@/components/site-header'
+import { Banner } from '@/components/ui/primitives'
 import { LearnerPushSubscription } from '@/components/cabinet/learner-push-subscription'
 import { LearnerTelegramBinding } from '@/components/cabinet/learner-telegram-binding'
 import { resolveOperatorSettingsForProbe } from '@/lib/admin/operator-settings'
@@ -14,7 +14,6 @@ import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { resolveLearnerPushState } from '@/lib/notifications/learner-push-state'
 
 import { DangerZone } from '../danger-zone'
-import { LogoutButton } from '../logout-button'
 import { ProfileEditor } from '../profile-editor'
 import { ResendVerifyButton } from '../resend-verify-button'
 
@@ -114,37 +113,38 @@ export default async function CabinetProfilePage() {
         }}
       >
         <div style={{ width: '100%', maxWidth: 640 }}>
-          <div
+          {/* «Выйти» теперь в глобальном SiteHeader (2026-06-07); ранее
+              дублировался отдельной кнопкой справа в этой шапке. */}
+          <Link
+            href="/cabinet"
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 16,
+              color: 'var(--secondary)',
+              textDecoration: 'none',
+              fontSize: 14,
+              display: 'inline-block',
               marginBottom: 16,
             }}
           >
-            <Link
-              href="/cabinet"
-              style={{
-                color: 'var(--secondary)',
-                textDecoration: 'none',
-                fontSize: 14,
-              }}
-            >
-              ← Назад в кабинет
-            </Link>
-            <LogoutButton />
-          </div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 24 }}>
+            ← Назад в кабинет
+          </Link>
+          <h1
+            style={{
+              fontSize: 28,
+              fontWeight: 700,
+              margin: 0,
+              marginBottom: 24,
+              letterSpacing: '-0.01em',
+            }}
+          >
             Профиль
           </h1>
 
           {!isVerified ? (
-            <AuthInfoBox>
-              E-mail ещё не подтверждён. Откройте письмо, которое мы отправили
-              при регистрации, и нажмите ссылку в нём. Если письма нет —{' '}
-              <ResendVerifyButton />.
-            </AuthInfoBox>
+            <Banner tone="warning">
+              E-mail ещё не подтверждён. Откройте письмо, которое мы
+              отправили при регистрации, и нажмите ссылку в нём. Если
+              письма нет — <ResendVerifyButton />.
+            </Banner>
           ) : null}
 
           <ProfileEditor

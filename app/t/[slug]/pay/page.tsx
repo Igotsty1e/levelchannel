@@ -104,8 +104,7 @@ export default async function TeacherPayPage({
           style={{
             padding: '20px 0',
             borderBottom: '1px solid var(--border)',
-            background: 'rgba(11, 11, 12, 0.85)',
-            backdropFilter: 'blur(12px)',
+            background: 'var(--bg)',
           }}
         >
           <div
@@ -132,9 +131,9 @@ export default async function TeacherPayPage({
             <Link
               href={backHref}
               style={{
-                color: 'var(--secondary)',
+                color: 'var(--text-secondary)',
                 textDecoration: 'none',
-                fontSize: 14,
+                fontSize: 13,
               }}
             >
               {backLabel}

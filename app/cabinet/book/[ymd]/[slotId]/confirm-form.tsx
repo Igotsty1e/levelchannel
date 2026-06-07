@@ -3,6 +3,8 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
+import { Button } from '@/components/ui/primitives'
+
 const MAX_AGENDA_CHARS = 1000
 
 // BCS-B.frontend — Calendly screen 3 client island.
@@ -92,18 +94,16 @@ export function ConfirmForm({
         value={agenda}
         onChange={(e) => setAgenda(e.target.value)}
         disabled={busy}
-        placeholder="Например: разобрать present perfect, потренировать speaking"
+        placeholder="Например: разобрать Present Perfect, потренировать разговорную речь"
         rows={4}
         style={{
           width: '100%',
           padding: 12,
           fontSize: 14,
           fontFamily: 'inherit',
-          background: 'transparent',
+          background: 'var(--surface-2)',
           color: 'var(--text)',
-          border: `1px solid ${
-            overCap ? '#ff8a8a' : 'var(--border)'
-          }`,
+          border: `1px solid ${overCap ? 'var(--danger)' : 'var(--border)'}`,
           borderRadius: 8,
           resize: 'vertical',
           minHeight: 96,
@@ -113,9 +113,10 @@ export function ConfirmForm({
       <div
         style={{
           fontSize: 11,
-          color: overCap ? '#ff8a8a' : 'var(--secondary)',
+          color: overCap ? 'var(--danger)' : 'var(--secondary)',
           textAlign: 'right',
           marginTop: 4,
+          fontVariantNumeric: 'tabular-nums',
         }}
       >
         {agenda.length} / {MAX_AGENDA_CHARS}
@@ -124,31 +125,23 @@ export function ConfirmForm({
       {error ? (
         <p
           role="alert"
-          style={{ color: '#ff8a8a', fontSize: 13, marginTop: 8 }}
+          style={{ color: 'var(--danger)', fontSize: 13, marginTop: 8 }}
         >
           {error}
         </p>
       ) : null}
 
-      <button
-        type="submit"
-        disabled={busy || overCap}
-        style={{
-          marginTop: 20,
-          width: '100%',
-          padding: '14px 20px',
-          background: 'var(--accent, #3b82f6)',
-          color: 'var(--accent-contrast, #ffffff)',
-          border: 'none',
-          borderRadius: 999,
-          fontSize: 16,
-          fontWeight: 600,
-          cursor: busy || overCap ? 'not-allowed' : 'pointer',
-          opacity: busy || overCap ? 0.6 : 1,
-        }}
-      >
-        {busy ? 'Записываем…' : 'Записаться на занятие'}
-      </button>
+      <div style={{ marginTop: 20 }}>
+        <Button
+          type="submit"
+          size="lg"
+          fullWidth
+          disabled={busy || overCap}
+          loading={busy}
+        >
+          Записаться на занятие
+        </Button>
+      </div>
     </form>
   )
 }

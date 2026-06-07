@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
+import { MobileCreateFab } from '@/components/calendar/MobileCreateFab'
 import { PaintConfirmModal } from '@/components/calendar/PaintConfirmModal'
 import { SlotCalendar } from '@/components/calendar/SlotCalendar'
 import type { PaintSpan, MoveTarget } from '@/lib/calendar/drag-state'
@@ -165,6 +166,15 @@ export default function TeacherCalendarClient({
           onCancel={() => setPendingPaint(null)}
         />
       ) : null}
+
+      <MobileCreateFab
+        tariffs={tariffs}
+        onCreated={() => {
+          showToast('Занятие создано.')
+          bumpReload()
+          router.refresh()
+        }}
+      />
     </div>
   )
 }
@@ -256,7 +266,7 @@ function TeacherSlotDetailModal({
         throw new Error(body.message || body.error || `HTTP ${res.status}`)
       }
       onSuccess(
-        'Конфликт снят. Если событие в Google остаётся — оно вернётся на следующей синхронизации.',
+        'Конфликт убран. Если событие в Google остаётся, метка вернётся.',
       )
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err))
@@ -293,7 +303,7 @@ function TeacherSlotDetailModal({
         }
         if (body.error === 'token_unavailable') {
           setLocalError(
-            'Не удалось обратиться к Google Calendar. Переподключите календарь в Настройках интеграции или попробуйте позже.',
+            'Не получилось обратиться к Google. Переподключите календарь в настройках.',
           )
           return
         }
@@ -336,23 +346,23 @@ function TeacherSlotDetailModal({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: '#1f1f23',
-          border: '1px solid rgba(255,255,255,0.1)',
+          background: 'var(--surface-1, #1f1f23)',
+          border: '1px solid var(--border)',
           borderRadius: 12,
           padding: 24,
           minWidth: 360,
           maxWidth: 480,
-          color: '#e4e4e7',
+          color: 'var(--text)',
         }}
       >
-        <h2 id="teacher-slot-title" style={{ fontSize: 18, marginBottom: 12 }}>
-          Слот {row.startLabel} – {row.endLabel}{' '}
-          <span style={{ fontSize: 12, color: '#71717a', fontWeight: 400 }}>
-            (МСК)
+        <h2 id="teacher-slot-title" style={{ fontSize: 18, marginBottom: 12, marginTop: 0 }}>
+          Занятие {row.startLabel} – {row.endLabel}{' '}
+          <span style={{ fontSize: 12, color: 'var(--secondary)', fontWeight: 400 }}>
+            · МСК
           </span>
         </h2>
-        <dl style={{ fontSize: 13, color: '#9ca3af', lineHeight: 1.7 }}>
-          <Row label="Дата" value={row.dayYmd} />
+        <dl style={{ fontSize: 13, color: 'var(--secondary)', lineHeight: 1.7, margin: 0 }}>
+          <Row label="Дата" value={formatDayYmdRu(row.dayYmd)} />
           <Row label="Длительность" value={`${slot.durationMinutes} мин`} />
           <Row label="Статус" value={statusLabel(slot.kind)} />
           {'learnerEmail' in slot && slot.learnerEmail ? (
@@ -374,38 +384,16 @@ function TeacherSlotDetailModal({
             style={{
               marginTop: 16,
               padding: 12,
-              background: 'rgba(239, 68, 68, 0.12)',
-              border: '1px solid rgba(239, 68, 68, 0.4)',
+              background: 'var(--danger-bg)',
+              border: '1px solid var(--danger)',
               borderRadius: 6,
-              color: '#fecaca',
+              color: 'var(--text)',
               fontSize: 13,
               lineHeight: 1.5,
             }}
           >
-            <strong>⚠ Конфликт с Google Calendar.</strong> Этот урок
-            пересекается с событием из вашего внешнего календаря. Можно:
-            <ul
-              style={{
-                margin: '8px 0 0 18px',
-                padding: 0,
-                listStyle: 'disc',
-              }}
-            >
-              <li>
-                <strong>«Я разрулю сам»</strong> — снять отметку конфликта.
-                Если событие в Google остаётся — на следующей синхронизации
-                отметка вернётся.
-              </li>
-              <li>
-                <strong>«Удалить в Google»</strong> — удалить событие из
-                Google Calendar (только если ваш OAuth даёт право записи в
-                этот календарь).
-              </li>
-              <li>
-                <strong>«Отменить занятие»</strong> — стандартная отмена урока
-                (форма ниже). Событие в Google остаётся.
-              </li>
-            </ul>
+            <strong>⚠ Это занятие пересекается с событием в Google.</strong>{' '}
+            Выберите ниже, что сделать.
           </div>
         ) : null}
 
@@ -420,7 +408,7 @@ function TeacherSlotDetailModal({
               }}
             >
               {reasonRequired
-                ? 'Причина отмены (обязательно для ученика):'
+                ? 'Что сказать ученику (обязательно):'
                 : 'Причина отмены (необязательно):'}
             </label>
             <input
@@ -431,20 +419,20 @@ function TeacherSlotDetailModal({
               style={{
                 width: '100%',
                 padding: '8px 12px',
-                background: 'rgba(255,255,255,0.05)',
+                background: 'var(--surface-2, rgba(255,255,255,0.05))',
                 border: `1px solid ${
                   reasonRequired && reason.trim() === '' && localError
-                    ? 'rgba(239, 68, 68, 0.5)'
-                    : 'rgba(255,255,255,0.1)'
+                    ? 'var(--danger)'
+                    : 'var(--border)'
                 }`,
                 borderRadius: 6,
-                color: '#e4e4e7',
+                color: 'var(--text)',
                 fontSize: 13,
               }}
               placeholder={
                 reasonRequired
-                  ? 'Например: заболел, смог только перенести'
-                  : 'Например: освобождаю слот'
+                  ? 'Например: заболел, перенесём на другой день'
+                  : 'Например: освобождаю время'
               }
             />
           </div>
@@ -456,10 +444,10 @@ function TeacherSlotDetailModal({
             style={{
               marginTop: 16,
               padding: 12,
-              background: 'rgba(239, 68, 68, 0.1)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
+              background: 'var(--danger-bg)',
+              border: '1px solid var(--danger)',
               borderRadius: 6,
-              color: '#fecaca',
+              color: 'var(--text)',
               fontSize: 13,
             }}
           >
@@ -490,16 +478,16 @@ function TeacherSlotDetailModal({
                 onClick={handleDismissConflict}
                 disabled={busy}
                 style={btnSecondary}
-                title="Снять отметку конфликта (re-stamp на следующей синхронизации, если событие в Google остаётся)"
+                title="Уберите событие в Google вручную — метка вернётся, если оно всё ещё там"
               >
-                {busy ? '…' : 'Я разрулю сам'}
+                {busy ? '…' : 'Уберу самостоятельно'}
               </button>
               <button
                 type="button"
                 onClick={handleDeleteExternal}
                 disabled={busy}
                 style={btnSecondary}
-                title="Удалить событие в Google Calendar (требует write-доступа)"
+                title="Удалить событие в Google — работает только если LevelChannel подключён с правом записи"
               >
                 {busy ? '…' : 'Удалить в Google'}
               </button>
@@ -512,7 +500,7 @@ function TeacherSlotDetailModal({
               disabled={busy}
               style={btnDanger}
             >
-              {busy ? 'Отменяем…' : 'Отменить слот'}
+              {busy ? 'Отменяем…' : 'Отменить занятие'}
             </button>
           ) : null}
         </div>
@@ -524,25 +512,40 @@ function TeacherSlotDetailModal({
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: 'flex', gap: 12 }}>
-      <dt style={{ minWidth: 100, color: '#71717a' }}>{label}:</dt>
-      <dd>{value}</dd>
+      <dt style={{ minWidth: 100, color: 'var(--secondary)' }}>{label}:</dt>
+      <dd style={{ color: 'var(--text)', margin: 0 }}>{value}</dd>
     </div>
   )
+}
+
+function formatDayYmdRu(ymd: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd)
+  if (!m) return ymd
+  const [, y, mo, d] = m
+  const date = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)))
+  const sameYear = new Date().getUTCFullYear() === Number(y)
+  return new Intl.DateTimeFormat('ru-RU', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    ...(sameYear ? {} : { year: 'numeric' }),
+    timeZone: 'UTC',
+  }).format(date)
 }
 
 function statusLabel(kind: CalendarRow['slot']['kind']): string {
   switch (kind) {
     case 'open':
-      return 'Свободен'
+      return 'Свободно'
     case 'booked-self':
-      return 'Забронирован вами'
+      return 'Ваше занятие'
     case 'booked-other':
       return 'Занято'
     case 'booked-full':
-      return 'Забронирован'
+      return 'Занято'
     case 'past-full':
     case 'past-redacted':
-      return 'Прошедший'
+      return 'Прошло'
   }
 }
 
@@ -563,20 +566,20 @@ function halfHourToUtcIso(ymd: string, halfHour: number): string | null {
 
 const btnSecondary: React.CSSProperties = {
   padding: '8px 16px',
-  background: 'rgba(255,255,255,0.05)',
-  border: '1px solid rgba(255,255,255,0.1)',
+  background: 'var(--surface-2, rgba(255,255,255,0.05))',
+  border: '1px solid var(--border)',
   borderRadius: 6,
-  color: '#e4e4e7',
+  color: 'var(--text)',
   cursor: 'pointer',
   fontSize: 13,
 }
 
 const btnDanger: React.CSSProperties = {
   padding: '8px 16px',
-  background: 'rgba(239, 68, 68, 0.15)',
-  border: '1px solid rgba(239, 68, 68, 0.5)',
+  background: 'var(--danger-bg)',
+  border: '1px solid var(--danger)',
   borderRadius: 6,
-  color: '#fecaca',
+  color: 'var(--text)',
   cursor: 'pointer',
   fontSize: 13,
   fontWeight: 600,

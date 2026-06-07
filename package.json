@@ -20,6 +20,7 @@
     "check:content-style": "node scripts/check-content-style.mjs",
     "check:migration-prefixes": "node scripts/check-migration-prefixes.mjs",
     "test:e2e:seed": "node tests/e2e/seed.mjs",
+    "seed:qa": "node scripts/seed-qa-fixtures.mjs",
     "test:e2e:product-flows": "next build && playwright test --config=playwright.config.ts",
     "test:e2e:product-flows:only": "playwright test --config=playwright.config.ts",
     "test:mutation": "stryker run",
@@ -31,12 +32,15 @@
   "dependencies": {
     "@sentry/nextjs": "^10.55.0",
     "bcryptjs": "^3.0.3",
+    "clsx": "^2.1.1",
+    "framer-motion": "^11.18.2",
     "next": "16.2.7",
     "pg": "^8.21.0",
     "react": "^18",
     "react-dom": "^18",
     "recharts": "^3.8.1",
     "resend": "^6.12.4",
+    "tailwind-merge": "^3.6.0",
     "web-push": "^3.6.7"
   },
   "overrides": {

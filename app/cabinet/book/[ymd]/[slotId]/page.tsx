@@ -110,8 +110,8 @@ export default async function BookConfirmPage({ params }: RouteParams) {
             width: 32,
             height: 32,
             borderRadius: '50%',
-            border: '1px solid var(--accent, #3b82f6)',
-            color: 'var(--accent, #3b82f6)',
+            border: '1px solid var(--accent)',
+            color: 'var(--accent)',
             textDecoration: 'none',
           }}
         >
@@ -124,31 +124,43 @@ export default async function BookConfirmPage({ params }: RouteParams) {
               fontSize: 22,
               fontWeight: 700,
               margin: 0,
-              marginBottom: 8,
+              marginBottom: 12,
             }}
           >
             Подтвердите запись
           </h1>
-          <ul
+          <dl
             style={{
-              listStyle: 'none',
-              padding: 0,
               margin: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 6,
+              display: 'grid',
+              gridTemplateColumns: 'max-content 1fr',
+              columnGap: 12,
+              rowGap: 6,
               fontSize: 14,
               color: 'var(--secondary)',
             }}
           >
-            <li>🕒 {slot.durationMinutes} мин</li>
-            <li>📹 Ссылку на встречу пришлём после подтверждения.</li>
-            <li>
-              📅 {fmt(start)} – {fmt(end)}, {weekday}, {dayOfMonth} {month}{' '}
-              {year}
-            </li>
-            <li>🌐 {tz}</li>
-          </ul>
+            <dt style={{ color: 'var(--text-tertiary)' }}>Когда</dt>
+            <dd
+              style={{
+                margin: 0,
+                color: 'var(--text)',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {weekday}, {dayOfMonth} {month} {year}, {fmt(start)} – {fmt(end)}
+            </dd>
+            <dt style={{ color: 'var(--text-tertiary)' }}>Длительность</dt>
+            <dd style={{ margin: 0, color: 'var(--text)' }}>
+              {slot.durationMinutes} мин
+            </dd>
+            <dt style={{ color: 'var(--text-tertiary)' }}>Часовой пояс</dt>
+            <dd style={{ margin: 0, color: 'var(--text)' }}>{tz}</dd>
+            <dt style={{ color: 'var(--text-tertiary)' }}>Ссылка</dt>
+            <dd style={{ margin: 0, color: 'var(--text)' }}>
+              Пришлём после подтверждения
+            </dd>
+          </dl>
         </div>
 
         <hr

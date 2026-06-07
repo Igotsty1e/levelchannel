@@ -6,8 +6,12 @@
 // POSTs к PATCH /api/teacher/learners/[id]/billing. Сервер enforces
 // Q1 invariant (no switch postpaid→packages с открытым долгом) и
 // возвращает 409 `debt_open` — рендерим как банер с CTA к балансу.
+//
+// Cabinet polish 2026-06-07 (B4): tokens + <Button>.
 
 import { useState, useTransition } from 'react'
+
+import { Button } from '@/components/ui/primitives'
 
 type Method = 'postpaid' | 'prepaid_packages' | 'none'
 
@@ -83,12 +87,13 @@ export function PaymentMethodToggle({
     <section
       style={{
         padding: 16,
-        background: 'var(--surface)',
-        borderRadius: 8,
+        background: 'var(--surface-1)',
+        border: '1px solid var(--border)',
+        borderRadius: 12,
         marginBottom: 24,
       }}
     >
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
+      <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 8 }}>
         Способ оплаты
       </h2>
       <p style={{ color: 'var(--secondary)', fontSize: 13, marginBottom: 12 }}>
@@ -108,12 +113,14 @@ export function PaymentMethodToggle({
               display: 'flex',
               alignItems: 'flex-start',
               gap: 8,
-              padding: 8,
-              borderRadius: 6,
+              padding: 10,
+              borderRadius: 8,
               cursor: isPending ? 'wait' : 'pointer',
+              background:
+                current === m ? 'var(--accent-bg)' : 'transparent',
               border:
                 current === m
-                  ? '1px solid var(--accent, #c2811e)'
+                  ? '1px solid var(--accent)'
                   : '1px solid var(--border)',
             }}
           >
@@ -128,7 +135,7 @@ export function PaymentMethodToggle({
             />
             <span style={{ display: 'flex', flexDirection: 'column' }}>
               <strong style={{ fontSize: 14 }}>{METHOD_LABEL[m]}</strong>
-              <span style={{ fontSize: 12, color: 'var(--secondary)' }}>
+              <span style={{ fontSize: 12, color: 'var(--secondary)', lineHeight: 1.5 }}>
                 {HELP_TEXT[m]}
               </span>
             </span>
@@ -141,11 +148,11 @@ export function PaymentMethodToggle({
           role="alert"
           style={{
             marginTop: 12,
-            color: '#ff8a8a',
+            color: 'var(--danger)',
             fontSize: 13,
-            background: 'rgba(255,140,140,0.12)',
+            background: 'var(--danger-bg)',
             padding: '8px 12px',
-            borderRadius: 6,
+            borderRadius: 8,
           }}
         >
           {error}
@@ -156,7 +163,7 @@ export function PaymentMethodToggle({
           role="status"
           style={{
             marginTop: 12,
-            color: '#9bdf9b',
+            color: '#9BDF9B',
             fontSize: 13,
           }}
         >
@@ -165,23 +172,11 @@ export function PaymentMethodToggle({
       ) : null}
 
       {dirty ? (
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={isPending}
-          style={{
-            marginTop: 12,
-            padding: '8px 16px',
-            border: '1px solid var(--accent, #c2811e)',
-            background: 'var(--accent, #c2811e)',
-            color: '#fff',
-            borderRadius: 6,
-            fontSize: 14,
-            cursor: isPending ? 'wait' : 'pointer',
-          }}
-        >
-          {isPending ? 'Сохраняем…' : 'Сохранить'}
-        </button>
+        <div style={{ marginTop: 12 }}>
+          <Button type="button" onClick={onSave} disabled={isPending} loading={isPending}>
+            Сохранить
+          </Button>
+        </div>
       ) : null}
     </section>
   )

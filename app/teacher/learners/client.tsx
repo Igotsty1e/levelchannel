@@ -4,10 +4,14 @@
 //
 // 3 фильтра вверху: поиск + tabs (Активные / Архив / Все).
 // На mobile (<768px) — карточки. На desktop — таблица.
+//
+// Cabinet polish 2026-06-07 (B3) — empty-state теперь через <EmptyState>
+// + Pill для read-only «архив»/«оплата». ChipGroup для фильтра.
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
 
 import { formatProfileNameForRender } from '@/lib/auth/profile-name'
+import { Button, ChipGroup, EmptyState, Pill } from '@/components/ui/primitives'
 
 type LearnerRow = {
   learnerId: string
@@ -101,49 +105,30 @@ export function LearnersListClient({ learners }: { learners: LearnerRow[] }) {
           }}
         />
 
-        <div
-          role="tablist"
-          aria-label="Фильтр учеников"
-          style={{
-            display: 'flex',
-            gap: 6,
-            flexWrap: 'wrap',
-          }}
-        >
-          {(['active', 'archive', 'all'] as Filter[]).map((f) => {
-            const isActive = filter === f
-            return (
-              <button
-                key={f}
-                type="button"
-                role="tab"
-                aria-selected={isActive}
-                onClick={() => setFilter(f)}
-                style={{
-                  padding: '8px 14px',
-                  borderRadius: 8,
-                  border: '1px solid var(--border)',
-                  background: isActive ? 'var(--border)' : 'transparent',
-                  color: isActive ? 'var(--text)' : 'var(--secondary)',
-                  fontSize: 13,
-                  fontWeight: isActive ? 600 : 500,
-                  cursor: 'pointer',
-                  minHeight: 36,
-                }}
-              >
-                {FILTER_LABELS[f]} · {counts[f]}
-              </button>
-            )
-          })}
-        </div>
+        <ChipGroup
+          name="Фильтр учеников"
+          value={filter}
+          onChange={setFilter}
+          options={(['active', 'archive', 'all'] as Filter[]).map((f) => ({
+            value: f,
+            label: `${FILTER_LABELS[f]} · ${counts[f]}`,
+          }))}
+        />
       </div>
 
       {filtered.length === 0 ? (
-        <p style={{ color: 'var(--secondary)', fontSize: 14 }}>
-          {learners.length === 0
-            ? 'У вас пока нет учеников. Пригласите первого через ссылку в кабинете.'
-            : 'Никто не найден по этому фильтру и поиску.'}
-        </p>
+        learners.length === 0 ? (
+          <EmptyState
+            title="Пока учеников нет"
+            body="Пригласите первого ученика — ссылка приходит ему в e-mail и действует 7 дней."
+            action={<Button href="/teacher">Создать приглашение</Button>}
+          />
+        ) : (
+          <EmptyState
+            title="Никто не найден"
+            body="Поправьте запрос или переключите фильтр выше."
+          />
+        )
       ) : (
         <>
           {/* Карточный layout — основной для mobile, для desktop тоже OK. */}
@@ -172,17 +157,7 @@ export function LearnersListClient({ learners }: { learners: LearnerRow[] }) {
                         {name}
                       </span>
                       {!l.isAssigned ? (
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: 'var(--secondary)',
-                            padding: '2px 8px',
-                            border: '1px solid var(--border)',
-                            borderRadius: 100,
-                          }}
-                        >
-                          архив
-                        </span>
+                        <Pill size="sm">архив</Pill>
                       ) : null}
                     </div>
                     {showEmail ? (
@@ -219,7 +194,7 @@ export function LearnersListClient({ learners }: { learners: LearnerRow[] }) {
                         style={{
                           color:
                             l.paymentMethod === 'none'
-                              ? 'var(--accent, #c2811e)'
+                              ? 'var(--warning)'
                               : undefined,
                         }}
                         title="Способ оплаты — выбирается на странице ученика"

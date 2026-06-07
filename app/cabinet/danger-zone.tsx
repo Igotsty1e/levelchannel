@@ -12,21 +12,19 @@ import { useState } from 'react'
 // operator within those 30 days; after that the row is anonymized.
 
 export function DangerZone() {
+  // 2026-06-07 verstka fix: было кастомное `<div>` с border-radius 8,
+  // padding 20 и pink-border #ff8a8a55 — это визуально выбивалось из
+  // остальных карточек профиля (`.card` использует --border, radius 16,
+  // padding 24). Теперь карточка использует общий `.card` класс, а
+  // «опасную» семантику несут заголовок + красные кнопки ниже.
   return (
-    <div
-      style={{
-        border: '1px solid #ff8a8a55',
-        borderRadius: 8,
-        padding: 20,
-        marginBottom: 24,
-      }}
-    >
+    <div className="card" style={{ padding: 24, marginBottom: 24 }}>
       <h2
         style={{
-          fontSize: 15,
+          fontSize: 16,
           fontWeight: 600,
           marginBottom: 8,
-          color: '#ffcfcf',
+          color: 'var(--danger, #ffcfcf)',
         }}
       >
         Опасные действия

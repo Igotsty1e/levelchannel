@@ -3,6 +3,8 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
+import { Button } from '@/components/ui/primitives'
+
 // Phase 6 tariff-bound checkout client island.
 //
 // Mirrors a tiny subset of components/payments/pricing-section.tsx —
@@ -26,8 +28,12 @@ import { useState } from 'react'
 
 type Props = {
   tariffTitle: string
-  tariffSlug: string
-  amountKopecks: number
+  // tariffSlug + amountKopecks are received but not currently rendered or
+  // logged in UI (jargon-leak avoidance per docs/design-system.md §11).
+  // We accept them as an optional pass-through so the parent contract is
+  // stable; if you need them again, plumb them through explicitly.
+  tariffSlug?: string
+  amountKopecks?: number
   amountRub: number
   descriptionRu: string | null
   slotId: string | null
@@ -44,8 +50,6 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export function CheckoutForm({
   tariffTitle,
-  tariffSlug,
-  amountKopecks,
   amountRub,
   descriptionRu,
   slotId,
@@ -75,14 +79,18 @@ export function CheckoutForm({
           customerEmail: email.trim(),
           personalDataConsentAccepted: true,
           customerComment: slotId
-            ? `Занятие ${slotId.slice(0, 8)} — тариф ${tariffSlug}`
-            : `Тариф ${tariffSlug}`,
+            ? `Занятие — ${tariffTitle}`
+            : tariffTitle,
           ...(slotId ? { slotId } : {}),
         }),
       })
       const data = await res.json()
       if (!res.ok) {
-        setErr(data?.message || data?.error || `HTTP `)
+        setErr(
+          data?.message ||
+            data?.error ||
+            'Не получилось начать оплату. Попробуйте ещё раз.',
+        )
         setBusy(false)
         return
       }
@@ -108,7 +116,7 @@ export function CheckoutForm({
           router.push(thankYouHref(invoiceId))
         } else {
           setErr(
-            'Не удалось запустить оплату. Обновите страницу и попробуйте снова.',
+            'Не получилось открыть форму оплаты. Обновите страницу и попробуйте снова.',
           )
         }
         setBusy(false)
@@ -138,30 +146,43 @@ export function CheckoutForm({
         router.push(thankYouHref(invoiceId!))
       } else {
         setErr(
-          'Оплата не завершена. Можно попробовать ещё раз — этот же тариф откроется заново.',
+          'Оплата не прошла. Можно попробовать ещё раз — этот же тариф откроется заново.',
         )
         setBusy(false)
       }
     } catch (caught) {
-      setErr(caught instanceof Error ? caught.message : 'unknown')
+      setErr(
+        caught instanceof Error
+          ? caught.message
+          : 'Не получилось связаться с сервером оплаты. Попробуйте ещё раз.',
+      )
       setBusy(false)
     }
   }
 
+  const amountFormatted = new Intl.NumberFormat('ru-RU').format(amountRub)
   return (
     <section
       className="container"
       style={{ padding: '64px 16px 96px', maxWidth: 540 }}
     >
-      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>
-        Оплата: {tariffTitle}
+      <h1
+        style={{
+          fontSize: 28,
+          fontWeight: 700,
+          lineHeight: 1.2,
+          marginBottom: 8,
+          color: 'var(--text-primary)',
+        }}
+      >
+        {tariffTitle}
       </h1>
       {descriptionRu ? (
         <p
           style={{
-            color: 'var(--secondary)',
-            fontSize: 14,
-            lineHeight: 1.6,
+            color: 'var(--text-secondary)',
+            fontSize: 15,
+            lineHeight: 1.5,
             marginBottom: 16,
           }}
         >
@@ -176,24 +197,23 @@ export function CheckoutForm({
             borderRadius: 8,
             padding: 14,
             marginBottom: 20,
-            background: 'rgba(255,255,255,0.02)',
+            background: 'var(--surface-1)',
             fontSize: 13,
-            lineHeight: 1.6,
+            lineHeight: 1.5,
           }}
         >
-          <div style={{ color: 'var(--secondary)', marginBottom: 4 }}>
-            Оплата за бронь:
+          <div style={{ color: 'var(--text-secondary)', marginBottom: 4 }}>
+            Оплата за занятие:
           </div>
-          <div>
+          <div style={{ color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>
             {new Date(slotStartAt).toLocaleString('ru-RU', {
               timeZone: 'Europe/Moscow',
-              weekday: 'short',
-              day: '2-digit',
-              month: 'short',
+              day: 'numeric',
+              month: 'long',
               hour: '2-digit',
               minute: '2-digit',
-            })}{' '}
-            · {slotDurationMinutes} мин
+            })}
+            {slotDurationMinutes ? ` · ${slotDurationMinutes} мин` : ''}
           </div>
         </div>
       ) : null}
@@ -203,19 +223,21 @@ export function CheckoutForm({
           fontSize: 32,
           fontWeight: 700,
           marginBottom: 4,
+          color: 'var(--text-primary)',
+          fontVariantNumeric: 'tabular-nums',
         }}
       >
-        {new Intl.NumberFormat('ru-RU').format(amountRub)} ₽
+        {amountFormatted} ₽
       </div>
       <p
         style={{
-          color: 'var(--secondary)',
-          fontSize: 12,
+          color: 'var(--text-secondary)',
+          fontSize: 13,
+          lineHeight: 1.5,
           marginBottom: 24,
         }}
       >
-        Сумма зафиксирована тарифом «{tariffSlug}». Оплата проходит через
-        CloudPayments — форма откроется поверх сайта.
+        Сумма зафиксирована тарифом. Форма оплаты откроется поверх страницы.
       </p>
 
       <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -223,10 +245,9 @@ export function CheckoutForm({
           <span
             style={{
               display: 'block',
-              color: 'var(--secondary)',
-              fontSize: 12,
-              textTransform: 'uppercase',
-              letterSpacing: 0.4,
+              color: 'var(--text-secondary)',
+              fontSize: 13,
+              fontWeight: 500,
               marginBottom: 6,
             }}
           >
@@ -242,11 +263,12 @@ export function CheckoutForm({
             style={{
               width: '100%',
               padding: '12px 14px',
-              background: 'transparent',
+              background: 'var(--surface-2)',
               border: '1px solid var(--border)',
-              borderRadius: 8,
+              borderRadius: 6,
               color: 'var(--text)',
               fontSize: 15,
+              lineHeight: 1.5,
             }}
           />
         </label>
@@ -256,8 +278,8 @@ export function CheckoutForm({
             display: 'flex',
             gap: 8,
             fontSize: 13,
-            lineHeight: 1.6,
-            color: 'var(--secondary)',
+            lineHeight: 1.5,
+            color: 'var(--text-secondary)',
           }}
         >
           <input
@@ -287,33 +309,23 @@ export function CheckoutForm({
           </span>
         </label>
 
-        <button
+        <Button
           type="submit"
+          variant="primary"
+          size="lg"
+          fullWidth
           disabled={!submittable}
-          style={{
-            marginTop: 8,
-            padding: '14px 18px',
-            background: 'var(--accent)',
-            color: 'var(--accent-contrast)',
-            border: 'none',
-            borderRadius: 10,
-            fontSize: 15,
-            fontWeight: 600,
-            cursor: submittable ? 'pointer' : 'not-allowed',
-            opacity: submittable ? 1 : 0.6,
-          }}
+          loading={busy}
         >
-          {busy ? 'Открываем форму…' : 'Перейти к оплате'}
-        </button>
+          {busy ? 'Открываем форму' : 'Перейти к оплате'}
+        </Button>
 
         {err ? (
-          <p style={{ color: '#FCA5A5', fontSize: 13, marginTop: 4 }}>{err}</p>
-        ) : null}
-
-        {/* slotId hidden field is informational only — ?slot is in the URL */}
-        {process.env.NODE_ENV !== 'production' && slotId ? (
-          <p style={{ color: 'var(--secondary)', fontSize: 11 }}>
-            slotId={slotId}, amountKopecks={amountKopecks}
+          <p
+            role="alert"
+            style={{ color: 'var(--danger)', fontSize: 13, marginTop: 4 }}
+          >
+            {err}
           </p>
         ) : null}
       </form>

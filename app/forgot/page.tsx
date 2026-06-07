@@ -80,7 +80,12 @@ export default function ForgotPage() {
 
         {error ? <AuthErrorBox>{error}</AuthErrorBox> : null}
 
-        <button type="submit" disabled={submitting} className="btn-primary" style={{ width: '100%' }}>
+        <button
+          type="submit"
+          disabled={submitting}
+          className="btn-primary"
+          style={{ width: '100%', justifyContent: 'center' }}
+        >
           {submitting ? 'Отправляем…' : 'Отправить письмо'}
         </button>
 

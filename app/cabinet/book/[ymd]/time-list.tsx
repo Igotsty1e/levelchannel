@@ -91,8 +91,8 @@ export function TimeList({
   }
   if (error) {
     return (
-      <p style={{ color: '#ff8a8a', fontSize: 13, textAlign: 'center' }}>
-        Не удалось загрузить: {error}
+      <p style={{ color: 'var(--danger)', fontSize: 13, textAlign: 'center' }}>
+        Не удалось загрузить времена. Обновите страницу.
       </p>
     )
   }
@@ -105,7 +105,7 @@ export function TimeList({
           textAlign: 'center',
         }}
       >
-        На эту дату свободного времени нет.
+        На этот день свободного времени нет. Выберите другой день.
       </p>
     )
   }
@@ -146,9 +146,9 @@ export function TimeList({
                 width: '100%',
                 padding: '12px 16px',
                 background: 'transparent',
-                border: '1px solid var(--accent, #3b82f6)',
+                border: '1px solid var(--accent)',
                 borderRadius: 8,
-                color: 'var(--accent, #3b82f6)',
+                color: 'var(--accent)',
                 fontSize: 16,
                 fontWeight: 600,
                 cursor: 'pointer',

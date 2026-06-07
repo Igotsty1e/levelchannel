@@ -741,38 +741,128 @@ html, body {
   margin-right: 4px;
 }
 
-/* Settings hub card grid. */
-.settings-hub-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 16px;
+/* ──────────────────────────────────────────────────────────────────
+   /teacher/settings — DEEP UX redesign, 2026-06-07.
+
+   6 tap-to-navigate tiles (Профиль / Цены / Пакеты / Подписка /
+   Google Calendar / Уведомления). Each tile = accent-stripe icon
+   slot + body (title + 1-line desc, optional <Pill> status) +
+   trailing chevron.
+
+   Responsive breakpoints:
+     ≤480px  — 1 column
+     481-899 — 2 columns
+     ≥900px  — 3 columns
+
+   Tokens from design-system.md §3 — no hardcoded hex/rgba.
+   ────────────────────────────────────────────────────────────────── */
+.settings-hub {
+  max-width: 1080px;
+  margin: 0 auto;
 }
-.settings-hub-card {
-  display: flex;
-  flex-direction: column;
-  padding: 20px;
+.settings-hub-grid {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+@media (min-width: 481px) {
+  .settings-hub-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+@media (min-width: 900px) {
+  .settings-hub-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.settings-tile {
+  position: relative;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: var(--surface);
-  text-decoration: none;
+  background: var(--surface-1);
   color: var(--text);
-  transition: border-color 0.12s ease, transform 0.12s ease;
-  min-height: 110px;
+  text-decoration: none;
+  min-height: 72px;
+  transition:
+    border-color 120ms ease-out,
+    background 120ms ease-out,
+    transform 160ms ease-out;
 }
-.settings-hub-card:hover,
-.settings-hub-card:focus-visible {
-  border-color: rgba(232, 168, 144, 0.4);
-  transform: translateY(-2px);
+.settings-tile:hover,
+.settings-tile:focus-visible {
+  border-color: var(--accent);
+  background: var(--surface-2);
+  transform: translateY(-1px);
+  outline: none;
 }
-.settings-hub-card-title {
-  font-size: 16px;
+.settings-tile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* All 6 hub icons share the same chip — accent-tinted rounded square,
+   so the ₽ glyph, ✉ glyph и semantic SVG-иконки выглядят одного
+   визуального веса (owner feedback 2026-06-07). */
+.settings-tile-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 20px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  transition: background 120ms ease-out, color 120ms ease-out;
+}
+.settings-tile-icon > svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+.settings-tile:hover .settings-tile-icon,
+.settings-tile:focus-visible .settings-tile-icon {
+  background: var(--accent-bg-strong);
+  color: var(--accent-hover, var(--accent));
+}
+
+.settings-tile-body {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+.settings-tile-title {
+  font-size: 17px;
   font-weight: 600;
-  margin-bottom: 6px;
+  line-height: 1.3;
+  color: var(--text-primary, var(--text));
 }
-.settings-hub-card-desc {
-  font-size: 13px;
-  color: var(--secondary);
-  line-height: 1.5;
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-tile {
+    transition: none;
+  }
+  .settings-tile:hover,
+  .settings-tile:focus-visible {
+    transform: none;
+  }
+  .settings-tile-icon {
+    transition: none;
+  }
 }
 
 /* Teacher cabinet padding — учитывает sticky bottom nav на mobile. */
@@ -788,3 +878,1458 @@ html, body {
     padding: 16px 16px calc(96px + env(safe-area-inset-bottom));
   }
 }
+
+/* Onboarding setup-checklist grid — 4 on desktop, 2 on tablet, 1 on phone.
+   Inline styles set repeat(4, …) for desktop; these queries narrow the
+   layout on smaller widths. */
+@media (max-width: 900px) {
+  .onboarding-checklist-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+@media (max-width: 480px) {
+  .onboarding-checklist-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+/* Calendar summary widget — collapse 3-column row into a stack on phone. */
+@media (max-width: 720px) {
+  .calendar-summary {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 12px !important;
+  }
+}
+
+/* Calendar mobile FAB — hidden on desktop. The component still mounts,
+   only the floating button is dropped. */
+.calendar-mobile-fab {
+  display: contents;
+}
+@media (min-width: 600px) {
+  .calendar-mobile-fab {
+    display: none !important;
+  }
+}
+
+/* Cabinet mobile bottom-nav lives at the bottom of the viewport on
+   ≤767px (.cabinet-nav-mobile, padding ~80px including safe-area).
+   Lift FABs above it so they don't sit on top of «Календарь / Ученики».
+   Desktop keeps the default 16px-from-bottom. */
+@media (max-width: 767px) {
+  .saas-chrome .lc-fab,
+  .teacher-cabinet-main .lc-fab {
+    bottom: calc(88px + env(safe-area-inset-bottom)) !important;
+  }
+}
+
+/* Calendar toolbar — Apple-Calendar pattern.
+   Desktop: range as H2 on the left, tools (nav + refresh) right.
+   Mobile: range stacks above a centered tools cluster. */
+.calendar-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  flex-wrap: wrap;
+}
+.calendar-toolbar-range {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.calendar-toolbar-tools {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.calendar-toolbar-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.calendar-toolbar-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.calendar-toolbar-updated {
+  font-size: 12px;
+  color: var(--secondary);
+  white-space: nowrap;
+}
+@media (max-width: 767px) {
+  .calendar-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .calendar-toolbar-range {
+    font-size: 18px;
+    text-align: center;
+  }
+  .calendar-toolbar-tools {
+    justify-content: center;
+  }
+  .calendar-toolbar-updated {
+    font-size: 11px;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   /teacher/tariffs (Цены) + /teacher/packages (Пакеты) — 2026-06-07.
+
+   Card-based read-by-default layout. Tap a card → it expands in-place
+   into an edit form. «+ Новая цена» / «+ Новый пакет» — top-right
+   button on desktop, FAB on mobile (sat above the bottom nav).
+
+   Breakpoints used here:
+     ≥768px  — desktop (header CTA, no FAB, padding-comfortable)
+     481-767 — tablet (FAB visible, single column cards)
+     ≤480px  — phone (FAB visible, edge-to-edge create sheet)
+
+   Tokens: --bg, --surface, --surface-1, --surface-2, --border,
+   --text, --secondary, --accent, --accent-bg, --warning, --danger,
+   --danger-bg. Aligns with `docs/design-system.md` §3.
+   ────────────────────────────────────────────────────────────────── */
+
+.pricing-page {
+  max-width: 720px;
+  margin: 0 auto;
+}
+.pricing-page-back {
+  margin-bottom: 16px;
+}
+.pricing-back-link {
+  color: var(--secondary);
+  text-decoration: none;
+  font-size: 14px;
+}
+.pricing-back-link:hover {
+  color: var(--text);
+}
+.pricing-page-header {
+  margin-bottom: 24px;
+}
+.pricing-page-title {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0 0 8px;
+  color: var(--text);
+}
+.pricing-page-sub {
+  color: var(--secondary);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+  max-width: 60ch;
+}
+
+.pricing-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.pricing-header-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 4px;
+}
+
+.pricing-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pricing-card {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+  transition: border-color 0.12s ease, transform 0.12s ease;
+}
+.pricing-card:hover {
+  border-color: rgba(216, 138, 130, 0.35);
+}
+.pricing-card-expanded {
+  border-color: rgba(216, 138, 130, 0.6);
+}
+.pricing-card-archived-soft {
+  opacity: 0.72;
+}
+.pricing-card-archived {
+  border-style: dashed;
+  opacity: 0.78;
+}
+
+/* Read-mode tap target — the whole card area. Looks like a card
+   visually; behaves as a button for keyboard / screen-reader / mouse. */
+.pricing-card-read {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 16px 56px 16px 20px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+  font: inherit;
+}
+.pricing-card-read-static {
+  cursor: default;
+  pointer-events: none;
+}
+.pricing-card-read:focus-visible {
+  outline: 2px solid rgba(216, 138, 130, 0.6);
+  outline-offset: -2px;
+}
+.pricing-card-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pricing-card-title {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text);
+}
+.pricing-card-amount {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--accent, #D88A82);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+.pricing-card-amount-muted {
+  color: var(--secondary);
+}
+.pricing-card-amount-sep {
+  color: var(--secondary);
+  font-weight: 400;
+}
+.pricing-card-amount-meta {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--secondary);
+}
+.pricing-card-description {
+  font-size: 13px;
+  color: var(--secondary);
+  line-height: 1.5;
+  margin: 0;
+  max-width: 56ch;
+}
+.pricing-card-archive-meta {
+  font-size: 12px;
+  color: var(--secondary);
+}
+.pricing-card-chevron {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--secondary);
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* Inline edit form, revealed on expand. */
+.pricing-card-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 20px 20px;
+  border-top: 1px solid var(--border);
+  margin-top: 0;
+}
+.pricing-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pricing-field-grow {
+  flex: 1;
+  min-width: 0;
+}
+.pricing-field-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.pricing-field-row > .pricing-field {
+  min-width: 120px;
+}
+.pricing-field-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.pricing-field-label-aux {
+  color: var(--secondary);
+  font-weight: 400;
+}
+.pricing-field-hint {
+  font-size: 12px;
+  color: var(--secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+.pricing-field-error {
+  padding: 10px 12px;
+  background: var(--danger-bg, rgba(255,110,110,0.12));
+  border: 1px solid var(--danger, #FF6E6E);
+  border-radius: 8px;
+  color: var(--danger, #FF6E6E);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.pricing-input {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.3;
+  font: inherit;
+  font-weight: 500;
+  transition: border-color 0.12s ease;
+}
+.pricing-input:focus-visible {
+  outline: none;
+  border-color: rgba(216, 138, 130, 0.6);
+}
+.pricing-input-money {
+  font-variant-numeric: tabular-nums;
+  max-width: 160px;
+}
+.pricing-textarea {
+  resize: vertical;
+  min-height: 72px;
+  font-size: 14px;
+  font-weight: 400;
+}
+.pricing-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text);
+  user-select: none;
+  cursor: pointer;
+}
+.pricing-toggle input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent, #D88A82);
+  cursor: pointer;
+}
+
+.pricing-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.pricing-card-actions-spacer {
+  flex: 1;
+  min-width: 16px;
+}
+
+.pricing-immutable-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 3px solid var(--warning, #F5C26B);
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.5;
+}
+.pricing-immutable-note strong {
+  color: var(--warning, #F5C26B);
+  font-weight: 600;
+}
+.pricing-immutable-note span {
+  color: var(--secondary);
+}
+
+/* Archive section toggle. */
+.pricing-archive-toggle {
+  display: flex;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.pricing-archive-link {
+  color: var(--secondary);
+  font-size: 13px;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  padding-bottom: 1px;
+}
+.pricing-archive-link:hover {
+  color: var(--text);
+  border-bottom-color: rgba(255, 255, 255, 0.4);
+}
+.pricing-archive-section {
+  margin-top: 12px;
+}
+.pricing-archive-empty {
+  font-size: 13px;
+  color: var(--secondary);
+  margin: 0;
+}
+.pricing-list-archive {
+  opacity: 1;
+}
+
+/* Modal + bottom-sheet shell — reused by archive-confirm + create
+   sheets for both /teacher/tariffs and /teacher/packages. On phone we
+   anchor to the bottom edge (thumb-zone), full-width; on tablet/desktop
+   it's a centred modal capped at 480px. */
+.pricing-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: pricing-fade-in 0.16s ease-out;
+}
+@keyframes pricing-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.pricing-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  color: var(--text);
+  width: 100%;
+  max-width: 480px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+.pricing-modal-sm {
+  max-width: 440px;
+}
+.pricing-sheet {
+  display: flex;
+  flex-direction: column;
+}
+.pricing-sheet-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 20px 12px;
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  z-index: 1;
+}
+.pricing-sheet-title {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0 0 4px;
+  color: var(--text);
+}
+.pricing-sheet-description {
+  font-size: 13px;
+  color: var(--secondary);
+  line-height: 1.5;
+  margin: 0;
+  max-width: 50ch;
+}
+.pricing-sheet-close {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--secondary);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.pricing-sheet-close:hover:not(:disabled) {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+.pricing-sheet-close:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.pricing-sheet-body {
+  padding: 20px;
+}
+.pricing-modal-title {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0;
+  padding: 20px 20px 8px;
+  color: var(--text);
+}
+.pricing-modal-body {
+  font-size: 14px;
+  color: var(--secondary);
+  line-height: 1.5;
+  margin: 0;
+  padding: 0 20px 16px;
+}
+.pricing-modal-error {
+  margin: 0 20px 16px;
+  padding: 10px 12px;
+  background: var(--danger-bg, rgba(255,110,110,0.12));
+  border: 1px solid var(--danger, #FF6E6E);
+  border-radius: 8px;
+  color: var(--danger, #FF6E6E);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.pricing-modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 0 20px 20px;
+}
+
+.pricing-create-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.pricing-create-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+/* FAB lives above the mobile sticky bottom nav (72px tall on
+   teacher cabinet, ≤767px); on desktop the bottom nav is gone and
+   we render the top-right primary button instead. */
+.pricing-fab {
+  bottom: calc(88px + env(safe-area-inset-bottom)) !important;
+}
+@media (min-width: 768px) {
+  .pricing-fab {
+    display: none !important;
+  }
+}
+
+/* Phone — bottom-sheet styling for create modal; archive-confirm
+   stays centred since it's a smaller confirmation. */
+@media (max-width: 480px) {
+  .pricing-page-title {
+    font-size: 24px;
+  }
+  .pricing-page-sub {
+    font-size: 13px;
+  }
+  .pricing-modal-overlay {
+    padding: 0;
+    align-items: flex-end;
+  }
+  .pricing-sheet {
+    border-radius: 16px 16px 0 0;
+    max-height: calc(100vh - 48px);
+    width: 100%;
+    max-width: 100%;
+  }
+  .pricing-modal-sm {
+    margin: 16px;
+    max-width: calc(100% - 32px);
+    border-radius: 12px;
+    align-self: center;
+  }
+  .pricing-header-actions {
+    /* Mobile uses FAB; hide the top button to avoid duplicate CTA. */
+    display: none;
+  }
+  .pricing-card-read {
+    padding: 14px 48px 14px 16px;
+  }
+  .pricing-card-chevron {
+    top: 14px;
+    right: 16px;
+  }
+  .pricing-card-amount {
+    font-size: 20px;
+  }
+  .pricing-card-edit {
+    padding: 4px 16px 16px;
+  }
+  .pricing-field-row {
+    flex-direction: column;
+  }
+  .pricing-input-money {
+    max-width: 100%;
+  }
+}
+
+/* ----------------------------------------------------------------------
+   /teacher/settings/calendar — DEEP UX redesign (2026-06-07).
+
+   Same layout language as /teacher/tariffs: 720px column, ghost back-
+   link, single H1 + sub, full-width cards on a 12px gap stack.
+
+   The page composes 4 cards top-down:
+     1. <Banner> slot — at most ONE banner; priority below in the page
+        component picks which one (timezone-gate > connect-success >
+        connect-error).
+     2. .cal-settings-status — connection status card with state pill,
+        meta (connected-at, syncing dot), primary action (Connect /
+        Disconnect).
+     3. .cal-settings-how — “Как работает” explainer; <details> open by
+        default for not-connected, collapsed for connected.
+     4. .cal-settings-orphans — only when orphans exist.
+     5. .cal-settings-faq — list of <details> with tightened copy.
+   ---------------------------------------------------------------------- */
+
+.calendar-settings-page {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.calendar-settings-back {
+  margin-bottom: 0;
+}
+.calendar-settings-header {
+  margin-bottom: 4px;
+}
+.calendar-settings-title {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0 0 8px;
+  color: var(--text);
+}
+.calendar-settings-sub {
+  color: var(--secondary);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+  max-width: 60ch;
+}
+
+/* Connection-state card (top section). */
+.cal-status-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  transition: border-color 0.12s ease;
+}
+.cal-status-card-connected {
+  border-color: rgba(155, 223, 155, 0.35);
+}
+.cal-status-card-degraded {
+  border-color: rgba(245, 194, 107, 0.45);
+}
+.cal-status-meta-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.cal-status-meta-secondary {
+  font-size: 12px;
+  color: var(--secondary);
+  font-variant-numeric: tabular-nums;
+}
+.cal-status-body {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+  margin: 0;
+}
+.cal-status-body-muted {
+  color: var(--secondary);
+}
+.cal-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.cal-status-error {
+  padding: 10px 12px;
+  background: var(--danger-bg, rgba(255, 110, 110, 0.12));
+  border: 1px solid var(--danger, #FF6E6E);
+  border-radius: 8px;
+  color: var(--danger, #FF6E6E);
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 0;
+}
+
+/* "Скоро будет" tile — env-misconfig branch. Same shell as the
+   connection-state card so the page geometry doesn't jump. */
+.cal-status-card-soon {
+  border-style: dashed;
+}
+.cal-status-card-soon p {
+  color: var(--secondary);
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Standalone <details> card — "Как работает интеграция" + FAQ section. */
+.cal-details-card {
+  padding: 16px 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.cal-details-card[open] {
+  padding-bottom: 20px;
+}
+.cal-details-summary {
+  cursor: pointer;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+  margin: 0;
+  padding: 4px 0;
+  list-style: revert;
+}
+.cal-details-summary:focus-visible {
+  outline: 2px solid rgba(216, 138, 130, 0.6);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+.cal-details-list {
+  padding-left: 20px;
+  margin: 12px 0 0;
+  color: var(--secondary);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.cal-details-list li + li {
+  margin-top: 6px;
+}
+.cal-details-list strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* FAQ container — list of small <details> rows. */
+.cal-faq-card {
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.cal-faq-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 12px;
+}
+.cal-faq-item {
+  border-top: 1px solid var(--border);
+  padding: 4px 0;
+}
+.cal-faq-item:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+.cal-faq-summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  padding: 10px 0;
+  list-style: revert;
+}
+.cal-faq-summary:focus-visible {
+  outline: 2px solid rgba(216, 138, 130, 0.6);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+.cal-faq-answer {
+  color: var(--secondary);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0 0 10px;
+}
+
+/* Orphan-self section — only renders when orphans exist. Warning-toned
+   card; per-row affordances live in a vertical stack. */
+.cal-orphans-card {
+  padding: 20px;
+  background: var(--warning-bg, rgba(245, 194, 107, 0.10));
+  border: 1px solid var(--warning, #F5C26B);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cal-orphans-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--warning, #F5C26B);
+  margin: 0;
+}
+.cal-orphans-body {
+  font-size: 13px;
+  color: var(--secondary);
+  line-height: 1.6;
+  margin: 0;
+  max-width: 60ch;
+}
+.cal-orphans-bulk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cal-orphans-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cal-orphan-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.cal-orphan-row-main {
+  min-width: 0;
+}
+.cal-orphan-row-headline {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.cal-orphan-row-meta {
+  color: var(--secondary);
+  font-size: 12px;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+
+@media (max-width: 480px) {
+  .calendar-settings-title {
+    font-size: 24px;
+  }
+  .calendar-settings-sub {
+    font-size: 13px;
+  }
+  .cal-status-card,
+  .cal-details-card,
+  .cal-details-card[open],
+  .cal-faq-card,
+  .cal-orphans-card {
+    padding: 16px;
+  }
+  .cal-orphan-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   /teacher/profile — deep UX redesign (2026-06-07).
+   Single class used by <TeacherProfileCard>: name row is a 2-col grid
+   on ≥640px and stacks on phone. Everything else in the card lives in
+   inline styles via tokens; this rule exists only because grid /
+   container queries can't be done cleanly inline. Scope: card only.
+   ────────────────────────────────────────────────────────────────── */
+.tprofile-name-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 639px) {
+  .tprofile-name-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   /teacher/settings/digest — channel cards (2026-06-07 redesign).
+
+   Three стек-карточек (e-mail / Telegram / Push). Каждая — surface
+   c статус-пиллом справа и action-row внизу. Bind-code модалка
+   переиспользует `.pricing-modal*` оболочку из /teacher/tariffs.
+   ────────────────────────────────────────────────────────────────── */
+.digest-page {
+  max-width: 720px;
+  margin: 0 auto;
+}
+.digest-page-back {
+  margin-bottom: 16px;
+}
+.digest-back-link {
+  color: var(--secondary);
+  text-decoration: none;
+  font-size: 14px;
+  transition: color 0.12s ease;
+}
+.digest-back-link:hover,
+.digest-back-link:focus-visible {
+  color: var(--text);
+}
+.digest-page-header {
+  margin-bottom: 24px;
+}
+.digest-page-title {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0 0 8px;
+  color: var(--text);
+}
+.digest-page-sub {
+  color: var(--secondary);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+  max-width: 60ch;
+}
+.digest-channel-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.digest-card {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: border-color 0.12s ease;
+}
+.digest-card:hover {
+  border-color: rgba(216, 138, 130, 0.25);
+}
+.digest-card-bound {
+  border-color: rgba(155, 223, 155, 0.25);
+}
+.digest-card-soon {
+  opacity: 0.72;
+}
+.digest-card-soon:hover {
+  border-color: var(--border);
+}
+.digest-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.digest-card-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.digest-card-title {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0;
+  color: var(--text);
+}
+.digest-card-sub {
+  font-size: 13px;
+  color: var(--secondary);
+  margin: 0;
+  line-height: 1.4;
+}
+.digest-card-body {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--secondary);
+  margin: 0;
+  max-width: 56ch;
+}
+.digest-card-link {
+  color: var(--secondary);
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.2);
+  text-underline-offset: 2px;
+  transition: color 0.12s ease, text-decoration-color 0.12s ease;
+}
+.digest-card-link:hover,
+.digest-card-link:focus-visible {
+  color: var(--text);
+  text-decoration-color: rgba(255, 255, 255, 0.5);
+}
+.digest-email-address {
+  color: var(--text);
+  font-weight: 600;
+}
+.digest-email-fallback {
+  color: var(--secondary);
+}
+.digest-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.digest-card-error {
+  color: var(--danger, #FF6E6E);
+  font-size: 13px;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Bind-code modal: extends `.pricing-modal` with code-specific bits. */
+.digest-bind-modal {
+  max-width: 480px;
+}
+.digest-bind-modal .pricing-sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.digest-bind-code-block {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  background: var(--surface-2, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  flex-wrap: wrap;
+}
+.digest-bind-code-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  user-select: all;
+  line-height: 1.2;
+}
+.digest-bind-meta {
+  font-size: 13px;
+  color: var(--secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+.digest-bind-meta strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.digest-bind-steps {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.digest-bind-steps li::marker {
+  color: var(--secondary);
+}
+.digest-bind-steps strong {
+  font-weight: 600;
+}
+.digest-bind-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding-top: 4px;
+}
+
+@media (max-width: 480px) {
+  .digest-page-title {
+    font-size: 24px;
+  }
+  .digest-page-sub {
+    font-size: 13px;
+  }
+  .digest-card {
+    padding: 16px;
+  }
+  .digest-card-head {
+    flex-wrap: wrap;
+  }
+  .digest-bind-code-value {
+    font-size: 22px;
+    letter-spacing: 0.14em;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   /teacher/subscription (Подписка) — DEEP UX redesign 2026-06-07.
+
+   Layout:
+     <div.subscription-page>
+       .subscription-page-back            — «← Назад в настройки»
+       header.subscription-page-header    — h1 + sub copy
+       <TeacherSubscriptionClient>
+         div.subscription-page-stack       — flex column, gap 16
+           <CurrentStateCard>              — current tier + status + Отменить
+           <Banner>                        — optional warning/danger
+           section.subscription-compare    — h2 + sub + 3-up grid
+             div.subscription-plan-grid    — 3-up ≥900px, 1-up ≤900px
+
+   Breakpoints:
+     ≥900px   — 3 columns in the compare grid
+     481-899  — 1 column stack, normal padding
+     ≤480px   — 1 column stack, slightly tighter type/padding
+
+   Tokens consumed: --bg, --surface, --surface-1, --surface-2, --border,
+   --text, --text-primary, --secondary, --accent, --accent-bg,
+   --accent-bg-strong, --warning, --danger. Aligns with
+   `docs/design-system.md` §3.
+   ────────────────────────────────────────────────────────────────── */
+
+.subscription-page {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+.subscription-page-back {
+  margin-bottom: 16px;
+}
+.subscription-back-link {
+  color: var(--secondary);
+  text-decoration: none;
+  font-size: 14px;
+}
+.subscription-back-link:hover {
+  color: var(--text);
+}
+.subscription-page-header {
+  margin-bottom: 24px;
+}
+.subscription-page-title {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0 0 8px;
+  color: var(--text);
+}
+.subscription-page-sub {
+  color: var(--secondary);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+  max-width: 60ch;
+}
+
+.subscription-page-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Current state card ─────────────────────────────────────────── */
+
+.subscription-current {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+}
+.subscription-current-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.subscription-current-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.subscription-current-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--secondary);
+}
+.subscription-current-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.subscription-current-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text-primary, var(--text));
+}
+.subscription-current-status {
+  font-size: 14px;
+  color: var(--secondary);
+  font-variant-numeric: tabular-nums;
+}
+.subscription-current-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Compare section header ─────────────────────────────────────── */
+
+.subscription-compare {
+  margin-top: 8px;
+}
+.subscription-compare-header {
+  margin-bottom: 16px;
+}
+.subscription-compare-title {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+  margin: 0 0 6px;
+  color: var(--text);
+}
+.subscription-compare-sub {
+  font-size: 13px;
+  color: var(--secondary);
+  line-height: 1.6;
+  margin: 0;
+  max-width: 60ch;
+}
+
+/* ── 3-up plan grid ─────────────────────────────────────────────── */
+
+.subscription-plan-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+@media (min-width: 900px) {
+  .subscription-plan-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+
+.subscription-plan {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px 20px 20px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: border-color 0.12s ease;
+}
+.subscription-plan:hover {
+  border-color: rgba(216, 138, 130, 0.35);
+}
+.subscription-plan-highlight {
+  border-color: var(--accent, #D88A82);
+  box-shadow: 0 0 0 1px var(--accent, #D88A82) inset;
+}
+.subscription-plan-current {
+  background: var(--surface-2);
+  border-color: var(--accent, #D88A82);
+}
+.subscription-plan-current:hover {
+  border-color: var(--accent, #D88A82);
+}
+
+.subscription-plan-badge {
+  position: absolute;
+  top: -10px;
+  right: 16px;
+  padding: 4px 10px;
+  background: var(--accent, #D88A82);
+  color: var(--text-on-accent, #fff);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  border-radius: 6px;
+}
+
+.subscription-plan-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.subscription-plan-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-primary, var(--text));
+}
+
+.subscription-plan-price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.subscription-plan-price {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.1;
+}
+.subscription-plan-period {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--secondary);
+}
+.subscription-plan-cap {
+  font-size: 13px;
+  color: var(--secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.subscription-plan-features {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.subscription-plan-feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.subscription-plan-bullet {
+  color: var(--accent, #D88A82);
+  font-size: 9px;
+  line-height: 1.5;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.subscription-plan-cta {
+  margin-top: auto;
+  padding-top: 12px;
+}
+.subscription-plan-current-chip,
+.subscription-plan-default-chip {
+  text-align: center;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.subscription-plan-current-chip {
+  background: var(--accent-bg, rgba(216, 138, 130, 0.10));
+  color: var(--accent, #D88A82);
+  border: 1px solid transparent;
+}
+.subscription-plan-default-chip {
+  background: transparent;
+  color: var(--secondary);
+  border: 1px dashed var(--border);
+}
+
+@media (max-width: 480px) {
+  .subscription-page-title {
+    font-size: 24px;
+  }
+  .subscription-page-sub {
+    font-size: 13px;
+  }
+  .subscription-current {
+    padding: 16px 18px;
+  }
+  .subscription-current-title {
+    font-size: 20px;
+  }
+  .subscription-compare-title {
+    font-size: 20px;
+  }
+  .subscription-plan {
+    padding: 20px 16px 16px;
+  }
+  .subscription-plan-price {
+    font-size: 26px;
+  }
+}
+

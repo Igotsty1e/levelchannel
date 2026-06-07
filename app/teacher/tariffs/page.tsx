@@ -2,6 +2,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { TariffFirstCreateHint } from '@/components/onboarding/tariff-first-create-hint'
+import { TariffList } from '@/components/teacher/pricing/tariff-list'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { resolveTeacherWriteCaps } from '@/lib/billing/teacher-subscription'
 import { getOnboardingState } from '@/lib/onboarding/state'
@@ -10,32 +11,30 @@ import {
   listTariffsForTeacher,
 } from '@/lib/pricing/tariffs'
 
-import { TeacherTariffEditor } from './tariff-editor'
-
-// SAAS-PIVOT Epic 2 Day 3 — teacher-owned tariffs CRUD page.
+// /teacher/tariffs — «Цены».
 //
-// Plan: docs/plans/saas-pivot-master.md §3 Epic 2 + §5 Day 3.
+// Component tree (DEEP UX redesign, 2026-06-07):
+//   <TeacherTariffsPage> (SSR)
+//   ├─ back-to-settings link
+//   ├─ <h1>Цены</h1> + sub
+//   ├─ <TariffFirstCreateHint>      — onboarding card (empty-state only)
+//   └─ <TariffList>                  — client island (cards + modal + FAB)
 //
-// Security model:
-//   - Outer /teacher layout already gates: anonymous → /login, hybrid
-//     admin → /admin/slots, non-teacher → /cabinet, unverified-email
-//     → /cabinet. This page re-reads the session ONLY to surface the
-//     teacher's account id to the data layer (NOT a security gate).
-//   - All mutations go through /api/teacher/tariffs[/[id]] which gates
-//     with requireTeacherAndVerified + uses guard.account.id (NOT the
-//     body) as the teacher_id. Anti-spoof at every write.
+// All interactive UI is read-by-default; tap a card to expand to an
+// inline edit form. The previous always-on table view is gone —
+// admin paradigm, not the tutor's.
 //
-// What the editor renders:
-//   - Active tariffs (deleted_at IS NULL): list + inline edit.
-//   - "Show archived" toggle reveals deleted_at IS NOT NULL rows
-//     (read-only — restoring an archive is out of scope for Day 3).
-//   - "Create new" form at the bottom.
+// Security model unchanged: outer /teacher layout gates auth + role +
+// verified-email; this page re-reads the session ONLY to surface the
+// teacher account id to the data layer. All mutations are routed via
+// /api/teacher/tariffs[/[id]] with `teacher_id` bound from session, so
+// the body never carries account ids.
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export const metadata = {
-  title: 'Цены занятий — LevelChannel',
+  title: 'Цены — LevelChannel',
   robots: { index: false, follow: false },
 }
 
@@ -64,52 +63,36 @@ export default async function TeacherTariffsPage({ searchParams }: SearchParams)
   const hasAnyTariff = tariffs.length > 0 || currentActiveCount > 0
 
   // Free-tier 1pkg+1tariff unlock (2026-06-02). Plan:
-  // docs/plans/free-tier-1pkg-1tariff-unlock.md §4 (UI data contract).
-  // -1 = unlimited (operator-managed); 0+ = literal cap.
+  // docs/plans/free-tier-1pkg-1tariff-unlock.md §4. `-1 = unlimited`
+  // wire format (we can't ship Infinity through the RSC boundary).
   const writeCap = Number.isFinite(caps.maxTariffs) ? caps.maxTariffs : -1
 
   return (
-    <>
-      <div style={{ marginBottom: 16 }}>
-        <a
-          href="/teacher/settings"
-          style={{
-            color: 'var(--secondary)',
-            textDecoration: 'none',
-            fontSize: 14,
-          }}
-        >
+    <div className="pricing-page">
+      <div className="pricing-page-back">
+        <a href="/teacher/settings" className="pricing-back-link">
           ← Назад в настройки
         </a>
       </div>
-      <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 8 }}>
-        Цены занятий
-      </h1>
-      <p
-        style={{
-          color: 'var(--secondary)',
-          fontSize: 13,
-          marginBottom: 20,
-          lineHeight: 1.6,
-        }}
-      >
-        Здесь задаются цены отдельных занятий. Если цена уже
-        использовалась в занятиях, создайте новую цену и архивируйте
-        старую.
-      </p>
-      {/* Onboarding Sub-PR B2 — empty-state hint explaining what a
-          "цена занятия" is + snapshot-immutability behaviour. Auto-hides
-          once the first tariff is created. */}
+      <header className="pricing-page-header">
+        <h1 className="pricing-page-title">Цены</h1>
+        <p className="pricing-page-sub">
+          Стоимость одиночных занятий для учеников на постоплате. Когда цена
+          встанет в проведённое занятие, поменять её нельзя — создайте новую
+          и архивируйте старую.
+        </p>
+      </header>
+      {/* Onboarding hint — auto-hides once the first tariff exists. */}
       <TariffFirstCreateHint
         hasTariff={hasAnyTariff}
         dismissed={tariffHintDismissed}
       />
-      <TeacherTariffEditor
+      <TariffList
         initialTariffs={tariffs}
         showArchived={showArchived}
         writeCap={writeCap}
         currentActiveCount={currentActiveCount}
       />
-    </>
+    </div>
   )
 }

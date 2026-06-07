@@ -30,7 +30,7 @@ function ResetContent() {
       <AuthShell>
         <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 12 }}>Ссылка повреждена</h1>
         <p style={{ color: 'var(--secondary)', fontSize: 15, lineHeight: 1.6, marginBottom: 24 }}>
-          Сcылка для сброса пароля отсутствует или повреждена. Запросите письмо повторно.
+          Ссылка для сброса пароля отсутствует или повреждена. Запросите письмо повторно.
         </p>
         <Link href="/forgot" className="btn-primary">
           Запросить новое письмо
@@ -115,7 +115,12 @@ function ResetContent() {
 
         {error ? <AuthErrorBox>{error}</AuthErrorBox> : null}
 
-        <button type="submit" disabled={submitting} className="btn-primary" style={{ width: '100%' }}>
+        <button
+          type="submit"
+          disabled={submitting}
+          className="btn-primary"
+          style={{ width: '100%', justifyContent: 'center' }}
+        >
           {submitting ? 'Сохраняем…' : 'Сохранить новый пароль'}
         </button>
       </form>

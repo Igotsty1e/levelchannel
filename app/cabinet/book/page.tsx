@@ -157,22 +157,21 @@ export default async function BookPage() {
               fontWeight: 700,
               margin: 0,
               marginBottom: 12,
-              color: 'var(--text-strong, #1a1a2e)',
+              color: 'var(--text-primary)',
             }}
           >
             Запись на занятие
           </h1>
-          <div
+          <p
             style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8,
+              margin: 0,
               fontSize: 14,
               color: 'var(--secondary)',
+              lineHeight: 1.5,
             }}
           >
-            <div>📹 Ссылку на встречу пришлёт учитель — обычно за день до занятия.</div>
-          </div>
+            Ссылку на встречу учитель пришлёт обычно за день до занятия.
+          </p>
         </div>
 
         <hr
