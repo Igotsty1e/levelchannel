@@ -1,4 +1,8 @@
 import { sendEmail } from '@/lib/email/client'
+import {
+  renderSbpClaimEmail,
+  type SbpClaimEmailParams,
+} from '@/lib/email/sbp-claim-template'
 import { renderAlreadyRegisteredEmail } from '@/lib/email/templates/already-registered'
 import {
   renderLearnerLessonReminderEmail,
@@ -110,6 +114,20 @@ export async function sendOperatorPaymentFailureNotification(
     text: tpl.text,
   })
   return { ...result, recipient: to } as const
+}
+
+// teacher-payments-sbp-self-service: учитель узнаёт о новой SBP-заявке.
+// Best-effort: вызывающий код оборачивает в try/catch — отказ email-
+// провайдера не должен ломать создание claim.
+export async function sendSbpClaimNotificationToTeacher(
+  to: string,
+  params: Omit<SbpClaimEmailParams, 'cabinetUrl'> & { cabinetUrl?: string },
+) {
+  const tpl = renderSbpClaimEmail({
+    ...params,
+    cabinetUrl: params.cabinetUrl ?? `${paymentConfig.siteUrl}/teacher/payments`,
+  })
+  return sendEmail({ to, subject: tpl.subject, html: tpl.html, text: tpl.text })
 }
 
 // BCS-DEF-4 (2026-05-19) — learner lesson reminder dispatch. Used

@@ -29,6 +29,8 @@ export const ONBOARDING_HINT_KEYS = [
   'pwa_install',
   // Sub-PR C CT1 — verify-email pending banner on /cabinet.
   'verify_email_reminder',
+  // SBP self-service epic — explainer на первом входе в /teacher/payments.
+  'teacher_payments_explainer',
 ] as const
 
 export type OnboardingHintKey = (typeof ONBOARDING_HINT_KEYS)[number]

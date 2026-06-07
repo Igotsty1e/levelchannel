@@ -1,9 +1,7 @@
 import { cookies } from 'next/headers'
-import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { AuthShell } from '@/components/auth-shell'
-import { AuthInfoBox } from '@/components/auth-form-bits'
 import { listAccountRoles } from '@/lib/auth/accounts'
 import { formatProfileNameForRender } from '@/lib/auth/profile-name'
 import { getAccountProfile } from '@/lib/auth/profiles'
@@ -20,6 +18,8 @@ import { getLearnerCancelWindowHours } from '@/lib/scheduling/policy'
 import { listLearnersForTeacher } from '@/lib/scheduling/teacher-learners'
 
 import { isLearnerArchetypeCandidate } from '@/lib/auth/learner-archetype'
+import { resolveMethodForLearner } from '@/lib/payments/sbp-methods'
+import { greetingForHour } from '@/lib/util/greeting'
 
 import { loadTeacherBlocks } from '@/lib/cabinet/teacher-blocks'
 import { shouldShowLearnerCabinetTour } from '@/lib/onboarding/learner-cabinet-tour'
@@ -28,9 +28,10 @@ import { getOnboardingState } from '@/lib/onboarding/state'
 import { LearnerAfterBookReminder } from '@/components/onboarding/learner-after-book-reminder'
 import { LearnerCabinetTour } from '@/components/onboarding/learner-cabinet-tour'
 
+import { Banner, Button, EmptyState } from '@/components/ui/primitives'
+
 import { BillingSections } from './billing-sections'
 import { LessonsSection } from './lessons-section'
-import { LogoutButton } from './logout-button'
 import { VerifyEmailReminderDismissButton } from '@/components/onboarding/verify-email-reminder-dismiss'
 
 import { ResendVerifyButton } from './resend-verify-button'
@@ -176,6 +177,13 @@ export default async function CabinetPage({
       : Promise.resolve('none' as const),
   ])
 
+  // teacher-payments-sbp-self-service Sub-PR C: enabled когда у учителя
+  // есть active SBP method (default или per-learner assignment).
+  const sbpPayEnabled =
+    isLearner && !isMultiTeacher && primaryTeacherId
+      ? (await resolveMethodForLearner(primaryTeacherId, account.id)) !== null
+      : false
+
   // PKG-LEARNER-BUY epic-close WARN #3 — server SoT for "should the
   // BillingSections show the Купить пакет CTA?". Matches the same
   // predicate /cabinet/packages + /api/checkout/package/[slug] use.
@@ -243,49 +251,35 @@ export default async function CabinetPage({
 
   return (
     <AuthShell>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 16,
-          marginBottom: 16,
-        }}
-      >
-        <span aria-hidden="true" />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Link
-            href="/cabinet/profile"
-            style={{
-              color: 'var(--text)',
-              textDecoration: 'none',
-              fontSize: 14,
-              padding: '6px 14px',
-              borderRadius: 8,
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.08)',
-            }}
-          >
-            Профиль
-          </Link>
-          <LogoutButton />
-        </div>
-      </div>
-      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>
-        Личный кабинет
-      </h1>
-      <p style={{ color: 'var(--secondary)', fontSize: 15, marginBottom: 24 }}>
-        Здравствуйте,{' '}
-        <span style={{ color: 'var(--text)' }}>{greetingName}</span>.
-      </p>
+      {/* Cabinet header — 2026-06-07 round 3.
+          Дублирующий H1 «Личный кабинет» убран: страница и есть кабинет.
+          Шапка теперь только H1 с приветствием — кнопка «Профиль и
+          настройки» переехала в самый низ страницы (см. ниже). «Выйти»
+          живёт глобально в SiteHeader. */}
+      <header style={{ marginBottom: 24 }}>
+        <h1
+          style={{
+            fontSize: 28,
+            fontWeight: 700,
+            margin: 0,
+            letterSpacing: '-0.01em',
+            lineHeight: 1.2,
+          }}
+        >
+          {greetingForHour(new Date(), profile?.timezone ?? 'Europe/Moscow')},{' '}
+          {greetingName}
+        </h1>
+      </header>
 
       {showVerifyEmailHint ? (
-        <AuthInfoBox>
-          E-mail ещё не подтверждён. Откройте письмо, которое мы отправили при
-          регистрации, и нажмите ссылку в нём. Если письма нет —{' '}
+        <Banner
+          tone="warning"
+          action={<VerifyEmailReminderDismissButton />}
+        >
+          E-mail ещё не подтверждён. Откройте письмо, которое мы отправили
+          при регистрации, и нажмите ссылку в нём. Если письма нет —{' '}
           <ResendVerifyButton />.
-          <VerifyEmailReminderDismissButton />
-        </AuthInfoBox>
+        </Banner>
       ) : null}
 
       {isTeacher ? (
@@ -332,24 +326,17 @@ export default async function CabinetPage({
               />
             </>
           ) : linkCount === 0 ? (
-            <div className="card" style={{ padding: 24, marginBottom: 24 }}>
-              <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
-                Вас пока не пригласил ни один учитель
-              </h2>
-              <p
-                style={{
-                  color: 'var(--secondary)',
-                  fontSize: 14,
-                  lineHeight: 1.6,
-                  margin: 0,
-                }}
-              >
-                Попросите своего учителя выслать пригласительную ссылку —
-                после регистрации по ней вы окажетесь связаны и в этом
-                разделе появится ваше расписание. Если ссылка у вас уже
-                есть — откройте её в текущем браузере и подтвердите
-                согласие.
-              </p>
+            <div style={{ marginBottom: 24 }}>
+              <EmptyState
+                title="Учитель пока не подключён"
+                body={
+                  <>
+                    Попросите учителя прислать вам пригласительную ссылку.
+                    Откройте её в этом браузере — и здесь появится ваше
+                    расписание.
+                  </>
+                }
+              />
             </div>
           ) : (
             <LessonsSection
@@ -375,6 +362,7 @@ export default async function CabinetPage({
               cancelWindowHours={getLearnerCancelWindowHours()}
               paymentMethodNotSet={paymentMethodNotSet}
               canBuyPackages={canBuyPackages}
+              sbpPayEnabled={sbpPayEnabled}
             />
           )}
 
@@ -382,6 +370,35 @@ export default async function CabinetPage({
             learnerTimezone={profile?.timezone ?? null}
             canBuyPackages={canBuyPackages}
           />
+
+          {/* «Профиль и настройки» — secondary action на самом дне
+              кабинета (2026-06-07 owner ask). Раньше эта кнопка
+              висела в шапке и конкурировала с приветствием — у учеников
+              нет bottom-nav, поэтому единственный вход в /cabinet/profile
+              мы оставляем, но переносим ниже основного контента. */}
+          <div
+            style={{
+              marginTop: 8,
+              marginBottom: 24,
+              display: 'grid',
+              gap: 8,
+            }}
+          >
+            <Button
+              variant="secondary"
+              href="/cabinet/profile"
+              fullWidth
+            >
+              Профиль и настройки
+            </Button>
+            <Button
+              variant="ghost"
+              href="/cabinet/payments"
+              fullWidth
+            >
+              История оплат
+            </Button>
+          </div>
         </>
       ) : null}
     </AuthShell>
