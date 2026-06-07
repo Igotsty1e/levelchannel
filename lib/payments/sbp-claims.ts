@@ -115,23 +115,36 @@ export async function createTeacherMarkPaid(
           await client.query('rollback')
           return { ok: false, reason: 'slot_not_belongs_to_pair' }
         }
-        const ex = await client.query<{ id: string }>(
-          `select c.id
+        // Codex round-1 BL-1: reject if slot already paid by ANY channel
+        // (SBP claim, package consumption, legacy CloudPayments).
+        const ex = await client.query<{ src: string }>(
+          `select 'sbp' as src
              from payment_claim_items i
              join payment_claims c on c.id = i.claim_id
-            where i.slot_id = $1
-              and c.status in ('claimed', 'confirmed')
+            where i.slot_id = $1 and c.status in ('claimed', 'confirmed')
+            union all
+           select 'package' as src
+             from package_consumptions
+            where slot_id = $1 and restored_at is null
+            union all
+           select 'cp' as src
+             from payment_allocations pa
+             join payment_orders po on po.invoice_id = pa.payment_order_id
+            where pa.kind = 'lesson_slot'
+              and pa.target_id = $1::text
+              and po.status = 'paid'
             limit 1`,
           [item.slotId],
         )
         if (ex.rows[0]) {
           await client.query('rollback')
-          return { ok: false, reason: 'slot_has_active_claim' }
+          return { ok: false, reason: 'slot_already_paid' }
         }
+        // Codex round-1 WN-4: server snapshot for expected (anti-spoof).
         itemRecords.push({
           slotId: item.slotId,
           packagePurchaseId: null,
-          expected: item.expectedAmountKopecks,
+          expected: snap.expected,
           label: snap.label,
         })
       } else if (item.packagePurchaseId) {
@@ -139,8 +152,9 @@ export async function createTeacherMarkPaid(
           account_id: string
           teacher_id: string | null
           title_snapshot: string
+          amount_kopecks: number
         }>(
-          `select account_id, teacher_id, title_snapshot
+          `select account_id, teacher_id, title_snapshot, amount_kopecks
              from package_purchases
             where id = $1
             limit 1`,
@@ -157,10 +171,11 @@ export async function createTeacherMarkPaid(
           await client.query('rollback')
           return { ok: false, reason: 'package_not_belongs_to_pair' }
         }
+        // Codex round-1 WN-4: server snapshot for expected.
         itemRecords.push({
           slotId: null,
           packagePurchaseId: item.packagePurchaseId,
-          expected: item.expectedAmountKopecks,
+          expected: Number(p.amount_kopecks),
           label: p.title_snapshot,
         })
       }
@@ -244,6 +259,9 @@ export async function listUnpaidSlotsForPair(
   teacherAccountId: string,
   learnerAccountId: string,
 ): Promise<{ id: string; label: string; expectedKopecks: number; startAt: string; status: string }[]> {
+  // Codex round-1 BL-2 fix: добавили cancelled, чтобы учитель мог
+  // вручную закрыть late-cancel долг.
+  // Codex round-1 BL-1 fix: исключаем package-paid и legacy CP-paid.
   const r = await getDbPool().query<{
     id: string
     start_at: string
@@ -259,12 +277,24 @@ export async function listUnpaidSlotsForPair(
        from lesson_slots s
       where s.teacher_account_id = $1
         and s.learner_account_id = $2
-        and s.status in ('booked', 'completed', 'no_show_learner')
+        and s.status in ('booked', 'completed', 'no_show_learner', 'cancelled')
         and not exists (
           select 1 from payment_claim_items i
            join payment_claims c on c.id = i.claim_id
           where i.slot_id = s.id
             and c.status in ('claimed', 'confirmed')
+        )
+        and not exists (
+          select 1 from package_consumptions pc
+           where pc.slot_id = s.id
+             and pc.restored_at is null
+        )
+        and not exists (
+          select 1 from payment_allocations pa
+           join payment_orders po on po.invoice_id = pa.payment_order_id
+          where pa.kind = 'lesson_slot'
+            and pa.target_id = s.id::text
+            and po.status = 'paid'
         )
       order by s.start_at desc
       limit 50`,
@@ -294,6 +324,9 @@ export async function listLearnersWithUnpaidSlots(
 ): Promise<{ learnerId: string; learnerName: string; unpaidCount: number; unpaidAmount: number }[]> {
   // round-2 BL-10: учительская policy charge_on_no_show / charge_on_late_cancel
   // фильтрует, какие slot.status включать в долг.
+  // Codex round-1 BL-1 fix: исключаем package-paid и legacy CP-paid слоты.
+  // Codex round-1 BL-2 fix: 'cancelled' только если cancelled_at < start_at - 24h
+  // (late-cancel window). Cancel-window default 24ч; см. cancel-policy в slot.
   const r = await getDbPool().query<{
     learner_id: string
     display_name: string | null
@@ -324,13 +357,33 @@ export async function listLearnersWithUnpaidSlots(
           s.status = 'completed'
           or (s.status = 'booked' and s.start_at <= now())
           or (s.status = 'no_show_learner' and p.teacher_charge_on_no_show)
-          or (s.status = 'cancelled' and p.teacher_charge_on_late_cancel)
+          or (
+            s.status = 'cancelled'
+            and p.teacher_charge_on_late_cancel
+            and s.cancelled_at is not null
+            and s.start_at - s.cancelled_at < interval '24 hours'
+          )
         )
+        -- exclude slots paid via SBP claim (active or confirmed)
         and not exists (
           select 1 from payment_claim_items i
            join payment_claims c on c.id = i.claim_id
           where i.slot_id = s.id
             and c.status in ('claimed', 'confirmed')
+        )
+        -- exclude slots paid via package consumption (round-1 BL-1)
+        and not exists (
+          select 1 from package_consumptions pc
+           where pc.slot_id = s.id
+             and pc.restored_at is null
+        )
+        -- exclude slots paid via legacy CloudPayments allocation
+        and not exists (
+          select 1 from payment_allocations pa
+           join payment_orders po on po.invoice_id = pa.payment_order_id
+          where pa.kind = 'lesson_slot'
+            and pa.target_id = s.id::text
+            and po.status = 'paid'
         )
       group by la.id, la.email, ap.display_name, ap.first_name, ap.last_name
       order by sum(s.snapshot_amount_kopecks) desc nulls last
@@ -639,23 +692,36 @@ export async function createLearnerClaim(
           await client.query('rollback')
           return { ok: false, reason: 'slot_not_belongs_to_pair' }
         }
-        const ex = await client.query<{ id: string }>(
-          `select c.id
+        // Codex round-1 BL-1: reject if slot already paid by ANY channel
+        // (SBP claim, package consumption, legacy CloudPayments).
+        const ex = await client.query<{ src: string }>(
+          `select 'sbp' as src
              from payment_claim_items i
              join payment_claims c on c.id = i.claim_id
-            where i.slot_id = $1
-              and c.status in ('claimed', 'confirmed')
+            where i.slot_id = $1 and c.status in ('claimed', 'confirmed')
+            union all
+           select 'package' as src
+             from package_consumptions
+            where slot_id = $1 and restored_at is null
+            union all
+           select 'cp' as src
+             from payment_allocations pa
+             join payment_orders po on po.invoice_id = pa.payment_order_id
+            where pa.kind = 'lesson_slot'
+              and pa.target_id = $1::text
+              and po.status = 'paid'
             limit 1`,
           [item.slotId],
         )
         if (ex.rows[0]) {
           await client.query('rollback')
-          return { ok: false, reason: 'slot_has_active_claim' }
+          return { ok: false, reason: 'slot_already_paid' }
         }
+        // Codex round-1 WN-4: server snapshot for expected (anti-spoof).
         itemRecords.push({
           slotId: item.slotId,
           packagePurchaseId: null,
-          expected: item.expectedAmountKopecks,
+          expected: snap.expected,
           label: snap.label,
         })
       } else if (item.packagePurchaseId) {
@@ -680,10 +746,11 @@ export async function createLearnerClaim(
           await client.query('rollback')
           return { ok: false, reason: 'package_not_belongs_to_pair' }
         }
+        // Codex round-1 WN-4: server snapshot for expected.
         itemRecords.push({
           slotId: null,
           packagePurchaseId: item.packagePurchaseId,
-          expected: item.expectedAmountKopecks,
+          expected: Number(p.amount_kopecks),
           label: p.title_snapshot,
         })
       }
@@ -1095,6 +1162,7 @@ export async function countPendingClaimsForTeacher(
 }
 
 // Helper for learner cabinet: returns SBP details + slot expected amount.
+// Codex round-1 BL-1 fix: rejects already-paid slots (package, CP, SBP).
 export async function getPayContextForSlot(
   learnerAccountId: string,
   slotId: string,
@@ -1114,6 +1182,29 @@ export async function getPayContextForSlot(
   if (!snap) return { ok: false, reason: 'slot_not_found' }
   if (snap.learnerAccountId !== learnerAccountId) {
     return { ok: false, reason: 'not_your_slot' }
+  }
+  // Reject if already paid by ANY channel.
+  const paidCheck = await pool.query<{ src: string }>(
+    `select 'sbp' as src
+       from payment_claim_items i
+       join payment_claims c on c.id = i.claim_id
+      where i.slot_id = $1 and c.status in ('claimed', 'confirmed')
+      union all
+     select 'package' as src
+       from package_consumptions
+      where slot_id = $1 and restored_at is null
+      union all
+     select 'cp' as src
+       from payment_allocations pa
+       join payment_orders po on po.invoice_id = pa.payment_order_id
+      where pa.kind = 'lesson_slot'
+        and pa.target_id = $1::text
+        and po.status = 'paid'
+      limit 1`,
+    [slotId],
+  )
+  if (paidCheck.rows.length > 0) {
+    return { ok: false, reason: 'already_paid' }
   }
   const method = await resolveMethodForLearner(
     snap.teacherAccountId,

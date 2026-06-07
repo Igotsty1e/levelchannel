@@ -89,6 +89,7 @@ export async function POST(request: Request) {
       package_not_belongs_to_pair: 403,
       slot_not_found: 404,
       slot_has_active_claim: 409,
+      slot_already_paid: 409,
       method_archived: 409,
       invalid_amount: 400,
       amount_too_large: 400,
