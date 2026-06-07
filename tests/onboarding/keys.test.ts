@@ -27,6 +27,8 @@ describe('ONBOARDING_HINT_KEYS', () => {
       'pwa_install',
       // Sub-PR C CT1 (2026-06-06):
       'verify_email_reminder',
+      // teacher-payments-sbp-self-service epic (2026-06-07):
+      'teacher_payments_explainer',
     ])
   })
 
