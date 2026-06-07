@@ -376,13 +376,27 @@ export default async function CabinetPage({
               висела в шапке и конкурировала с приветствием — у учеников
               нет bottom-nav, поэтому единственный вход в /cabinet/profile
               мы оставляем, но переносим ниже основного контента. */}
-          <div style={{ marginTop: 8, marginBottom: 24 }}>
+          <div
+            style={{
+              marginTop: 8,
+              marginBottom: 24,
+              display: 'grid',
+              gap: 8,
+            }}
+          >
             <Button
               variant="secondary"
               href="/cabinet/profile"
               fullWidth
             >
               Профиль и настройки
+            </Button>
+            <Button
+              variant="ghost"
+              href="/cabinet/payments"
+              fullWidth
+            >
+              История оплат
             </Button>
           </div>
         </>
