@@ -17,21 +17,33 @@ function escape(s: string): string {
     .replace(/"/g, '&quot;')
 }
 
+// Strip CR/LF — prevents SMTP header injection via subject + plain-text
+// body. Также убираем control chars и нормализуем whitespace до пробела.
+function sanitizeHeader(s: string): string {
+  return s.replace(/[\r\n\t\x00-\x1f\x7f]+/g, ' ').slice(0, 200)
+}
+
 export function renderSbpClaimEmail(p: SbpClaimEmailParams): {
   subject: string
   html: string
   text: string
 } {
   const channelLabel = p.paymentChannel === 'sbp' ? 'СБП' : 'другим способом'
-  const subject = `Новая заявка на оплату от ${p.learnerName}`
+  // Sanitize all user-controlled inputs before interpolation into
+  // subject/text. HTML body escapes via escape() below.
+  const safeLearnerName = sanitizeHeader(p.learnerName)
+  const safeTeacherName = sanitizeHeader(p.teacherName)
+  const safeAmountRub = sanitizeHeader(p.amountRub)
+  const safeItemsSummary = sanitizeHeader(p.itemsSummary)
+  const subject = `Новая заявка на оплату от ${safeLearnerName}`
   const text = [
-    `Здравствуйте, ${p.teacherName}!`,
+    `Здравствуйте, ${safeTeacherName}!`,
     '',
-    `${p.learnerName} заявил(а) оплату ${p.amountRub} ${channelLabel}.`,
-    `За: ${p.itemsSummary}.`,
+    `${safeLearnerName} заявил(а) оплату ${safeAmountRub} ${channelLabel}.`,
+    `За: ${safeItemsSummary}.`,
     '',
     `Проверьте поступление и подтвердите заявку в кабинете:`,
-    p.cabinetUrl,
+    sanitizeHeader(p.cabinetUrl),
     '',
     'Если деньги не пришли — нажмите «Не пришло» в той же карточке заявки.',
   ].join('\n')

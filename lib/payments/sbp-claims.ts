@@ -8,6 +8,16 @@
 import { getDbPool } from '@/lib/db/pool'
 import { resolveMethodForLearner } from '@/lib/payments/sbp-methods'
 
+// Защита от typo: верхняя граница 1 млн ₽ на claim, item, refund.
+export const MAX_AMOUNT_KOPECKS = 100_000_000
+
+const MS_PER_DAY = 86_400_000
+// Round-1 BL-2: late-cancel window для charge_on_late_cancel.
+const LATE_CANCEL_WINDOW_HOURS = 24
+// "Заканчиваются абонементы" cutoff — < 14 дней до экспирации ИЛИ ≤ 2 уроков.
+const EXPIRING_PACKAGE_DAYS = 14
+const EXPIRING_PACKAGE_REMAINING_THRESHOLD = 2
+
 export type ClaimStatus = 'claimed' | 'confirmed' | 'declined' | 'cancelled'
 export type PaymentChannel = 'sbp' | 'other'
 export type InitiatedBy = 'learner' | 'teacher'
@@ -35,7 +45,7 @@ export async function createTeacherMarkPaid(
   if (!Number.isInteger(input.amountKopecks) || input.amountKopecks <= 0) {
     return { ok: false, reason: 'invalid_amount' }
   }
-  if (input.amountKopecks >= 100_000_000) {
+  if (input.amountKopecks >= MAX_AMOUNT_KOPECKS) {
     return { ok: false, reason: 'amount_too_large' }
   }
   if (!Array.isArray(input.items) || input.items.length === 0) {
@@ -49,7 +59,7 @@ export async function createTeacherMarkPaid(
     if (!Number.isFinite(paidDate.getTime())) {
       return { ok: false, reason: 'invalid_paid_at' }
     }
-    if (paidDate.getTime() > Date.now() + 86_400_000) {
+    if (paidDate.getTime() > Date.now() + MS_PER_DAY) {
       return { ok: false, reason: 'paid_at_in_future' }
     }
   }
@@ -453,7 +463,7 @@ export async function listExpiringPackagesForTeacher(
   )
 
   const now = Date.now()
-  const cutoff14d = now + 14 * 86_400_000
+  const cutoff14d = now + EXPIRING_PACKAGE_DAYS * MS_PER_DAY
 
   return r.rows
     .map((row) => {
@@ -463,7 +473,8 @@ export async function listExpiringPackagesForTeacher(
         .filter(Boolean)
         .join(' ')
         .trim()
-      const lowRemaining = remaining > 0 && remaining <= 2
+      const lowRemaining =
+        remaining > 0 && remaining <= EXPIRING_PACKAGE_REMAINING_THRESHOLD
       const expiringSoon = expiresMs <= cutoff14d
       if (!lowRemaining && !expiringSoon) return null
       return {
@@ -615,7 +626,7 @@ export async function createLearnerClaim(
   if (!Number.isInteger(input.amountKopecks) || input.amountKopecks <= 0) {
     return { ok: false, reason: 'invalid_amount' }
   }
-  if (input.amountKopecks >= 100_000_000) {
+  if (input.amountKopecks >= MAX_AMOUNT_KOPECKS) {
     return { ok: false, reason: 'amount_too_large' }
   }
   if (!Array.isArray(input.items) || input.items.length === 0) {

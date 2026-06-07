@@ -7,7 +7,7 @@
 // Plan: docs/plans/teacher-payments-sbp-self-service.md §3.1, §3.2
 
 import { getDbPool } from '@/lib/db/pool'
-import { normalizePhoneRu, formatPhoneRu, isValidPhoneRu } from '@/lib/util/phone'
+import { normalizePhoneRu, formatPhoneRu } from '@/lib/util/phone'
 
 const MAX_ACTIVE_METHODS_PER_TEACHER = 10 // round-7 WN-68
 
