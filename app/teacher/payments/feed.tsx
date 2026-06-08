@@ -4,11 +4,12 @@
 // Feed pending + history claims с actions «Подтвердить» / «Не пришло».
 
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Button, Pill } from '@/components/ui/primitives'
 import type { ClaimRow, ClaimStatus } from '@/lib/payments/sbp-claims'
 import type { RefundRow } from '@/lib/payments/sbp-refunds'
+import { useFocusTrap } from '@/lib/util/focus-trap'
 
 function formatRub(kopecks: number): string {
   return new Intl.NumberFormat('ru-RU', {
@@ -51,6 +52,16 @@ export function ClaimsFeed({
   const router = useRouter()
   const [claims, setClaims] = useState(initialClaims)
   const [refunds, setRefunds] = useState(initialRefunds)
+  // After router.refresh() Next.js re-renders this client component with
+  // a new `initialClaims` prop but our local useState would otherwise
+  // freeze the first snapshot. Resync the local state whenever the
+  // server props change.
+  useEffect(() => {
+    setClaims(initialClaims)
+  }, [initialClaims])
+  useEffect(() => {
+    setRefunds(initialRefunds)
+  }, [initialRefunds])
   const [busyId, setBusyId] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [tab, setTab] = useState<'pending' | 'history'>('pending')
@@ -62,6 +73,10 @@ export function ClaimsFeed({
     'slot_cancelled' | 'overpaid' | 'goodwill' | 'duplicate' | 'other'
   >('slot_cancelled')
   const [refundNote, setRefundNote] = useState('')
+  const declineDialogRef = useRef<HTMLDivElement | null>(null)
+  const refundDialogRef = useRef<HTMLDivElement | null>(null)
+  useFocusTrap(declineDialogRef, () => setDeclineTarget(null), declineTarget !== null)
+  useFocusTrap(refundDialogRef, () => setRefundTarget(null), refundTarget !== null)
 
   const refundsByClaim = refunds.reduce<Record<string, RefundRow[]>>(
     (acc, r) => {
@@ -417,9 +432,9 @@ export function ClaimsFeed({
       )}
 
       {declineTarget ? (
-        <div role="dialog" aria-modal="true" style={modalOverlay} onClick={() => setDeclineTarget(null)}>
-          <div className="card" style={modalCard} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0, marginBottom: 8 }}>
+        <div role="dialog" aria-modal="true" aria-labelledby="decline-claim-title" style={modalOverlay} onClick={() => setDeclineTarget(null)}>
+          <div ref={declineDialogRef} className="card" style={modalCard} onClick={(e) => e.stopPropagation()}>
+            <h2 id="decline-claim-title" style={{ fontSize: 18, fontWeight: 600, margin: 0, marginBottom: 8 }}>
               Не пришло
             </h2>
             <p style={{ color: 'var(--secondary)', fontSize: 13, margin: 0, marginBottom: 16 }}>
@@ -460,9 +475,9 @@ export function ClaimsFeed({
       ) : null}
 
       {refundTarget ? (
-        <div role="dialog" aria-modal="true" style={modalOverlay} onClick={() => setRefundTarget(null)}>
-          <div className="card" style={modalCard} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0, marginBottom: 8 }}>
+        <div role="dialog" aria-modal="true" aria-labelledby="refund-claim-title" style={modalOverlay} onClick={() => setRefundTarget(null)}>
+          <div ref={refundDialogRef} className="card" style={modalCard} onClick={(e) => e.stopPropagation()}>
+            <h2 id="refund-claim-title" style={{ fontSize: 18, fontWeight: 600, margin: 0, marginBottom: 8 }}>
               Оформить возврат
             </h2>
             <p style={{ color: 'var(--secondary)', fontSize: 13, margin: 0, marginBottom: 16 }}>

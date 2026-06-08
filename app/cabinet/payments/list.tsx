@@ -4,10 +4,11 @@
 // Список + cancel button для status='claimed'.
 
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Button, Pill } from '@/components/ui/primitives'
 import type { ClaimRow, ClaimStatus } from '@/lib/payments/sbp-claims'
+import type { RefundRow } from '@/lib/payments/sbp-refunds'
 
 function formatRub(kopecks: number): string {
   return new Intl.NumberFormat('ru-RU', {
@@ -40,9 +41,46 @@ function pillFor(status: ClaimStatus) {
   }
 }
 
-export function LearnerPaymentsList({ initial }: { initial: ClaimRow[] }) {
+function refundReasonLabel(reason: RefundRow['reason']): string {
+  switch (reason) {
+    case 'slot_cancelled':
+      return 'Занятие отменилось'
+    case 'overpaid':
+      return 'Переплата'
+    case 'goodwill':
+      return 'Возврат по доброй воле'
+    case 'duplicate':
+      return 'Дублирующий перевод'
+    case 'other':
+      return 'Другое'
+  }
+}
+
+export function LearnerPaymentsList({
+  initial,
+  initialRefunds = [],
+}: {
+  initial: ClaimRow[]
+  initialRefunds?: RefundRow[]
+}) {
   const router = useRouter()
   const [claims, setClaims] = useState(initial)
+  const [refunds, setRefunds] = useState(initialRefunds)
+  useEffect(() => {
+    setClaims(initial)
+  }, [initial])
+  useEffect(() => {
+    setRefunds(initialRefunds)
+  }, [initialRefunds])
+  const refundsByClaim = refunds.reduce<Record<string, RefundRow[]>>(
+    (acc, r) => {
+      const list = acc[r.claimId] ?? []
+      list.push(r)
+      acc[r.claimId] = list
+      return acc
+    },
+    {},
+  )
   const [busyId, setBusyId] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
@@ -162,6 +200,39 @@ export function LearnerPaymentsList({ initial }: { initial: ClaimRow[] }) {
                   </Pill>
                 </div>
               </div>
+              {refundsByClaim[c.id]?.length ? (
+                <ul
+                  style={{
+                    listStyle: 'none',
+                    margin: '12px 0 0',
+                    padding: '12px 0 0',
+                    borderTop: '1px solid var(--border)',
+                    display: 'grid',
+                    gap: 8,
+                  }}
+                >
+                  {refundsByClaim[c.id].map((r) => (
+                    <li
+                      key={r.id}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        fontSize: 13,
+                        color: 'var(--secondary)',
+                      }}
+                    >
+                      <span>
+                        Возврат {formatDate(r.refundedAt)} ·{' '}
+                        {refundReasonLabel(r.reason)}
+                        {r.note ? ` · ${r.note}` : ''}
+                      </span>
+                      <strong style={{ color: 'var(--foreground)' }}>
+                        −{formatRub(r.amountKopecks)}
+                      </strong>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               {c.status === 'claimed' ? (
                 <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
                   <Button

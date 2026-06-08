@@ -99,7 +99,7 @@ export default async function TeacherPaymentsPage() {
   return (
     <div style={{ maxWidth: 880, margin: '0 auto' }}>
       <Link
-        href="/teacher/settings"
+        href="/teacher"
         style={{
           color: 'var(--secondary)',
           textDecoration: 'none',
@@ -108,7 +108,7 @@ export default async function TeacherPaymentsPage() {
           marginBottom: 16,
         }}
       >
-        ← Назад в настройки
+        ← В кабинет
       </Link>
       <h1
         style={{

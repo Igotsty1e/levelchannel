@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/primitives'
+import { pluralLessons } from '@/lib/util/plural-ru'
 
 type LearnerRow = {
   learnerId: string
@@ -40,6 +41,7 @@ function formatRub(kopecks: number): string {
     maximumFractionDigits: 0,
   }).format(kopecks / 100)
 }
+
 
 export function UnpaidLearners({
   learners,
@@ -185,7 +187,7 @@ export function UnpaidLearners({
                     {l.learnerName}
                   </div>
                   <div style={{ color: 'var(--secondary)', fontSize: 12, marginTop: 2 }}>
-                    {l.unpaidCount} занятий · {formatRub(l.unpaidAmount)}
+                    {pluralLessons(l.unpaidCount)} · {formatRub(l.unpaidAmount)}
                   </div>
                 </div>
                 <Button

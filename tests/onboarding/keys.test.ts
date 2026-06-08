@@ -29,6 +29,10 @@ describe('ONBOARDING_HINT_KEYS', () => {
       'verify_email_reminder',
       // teacher-payments-sbp-self-service epic (2026-06-07):
       'teacher_payments_explainer',
+      // SBP self-service learner-side (2026-06-08):
+      'learner_pay_sbp_intro',
+      'learner_pay_claim_waiting_explained',
+      'learner_pay_refund_explained',
     ])
   })
 
