@@ -394,7 +394,9 @@ export async function evaluateSaasOfferGate(
   if (consent.legalDocumentVersionId === live.id) return { kind: 'ok' }
   // mig 0116 auto-pass: if every link from `live` down to the consented
   // version is editorial, accept the existing consent (non-material
-  // typo-fix shouldn't force re-acceptance).
+  // typo-fix shouldn't force re-acceptance). Consent without anchor row
+  // can't be walked — treat as needing re-acceptance.
+  if (!consent.legalDocumentVersionId) return { kind: 'consent_required' }
   const editorialOk = await isEditorialOnlyChain(
     live.id,
     consent.legalDocumentVersionId,
