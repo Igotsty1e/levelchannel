@@ -281,7 +281,7 @@ export function ScreenMultiplatform() {
             transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
             className="landing-v3-h2 landing-v3-h2--serif"
           >
-            Ничего ставить не надо. <em>Открывается в браузере.</em>
+            Без скачиваний и установок. <em>Открывается в браузере.</em>
           </motion.h2>
           <motion.p
             {...reveal}

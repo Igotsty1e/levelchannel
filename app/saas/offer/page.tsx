@@ -38,7 +38,7 @@ export default async function SaasOfferPage() {
       }}
     >
       <p style={{ fontSize: 13, marginBottom: 8 }}>
-        <Link href="/saas" style={{ color: 'var(--secondary)' }}>
+        <Link href="/" style={{ color: 'var(--secondary)' }}>
           ← К лендингу LevelChannel
         </Link>
       </p>
