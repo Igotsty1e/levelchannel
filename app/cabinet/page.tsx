@@ -9,6 +9,7 @@ import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getPaymentMethodForPair } from '@/lib/billing/learner-payment-method'
 import { listAccountActivePackages } from '@/lib/billing/packages'
 import { listSlotPaymentState } from '@/lib/payments/allocations'
+import { listClaimedOrConfirmedSlotIds } from '@/lib/payments/sbp-claims'
 import {
   listOpenFutureSlots,
   listSlotsAsTeacher,
@@ -27,6 +28,7 @@ import { getOnboardingState } from '@/lib/onboarding/state'
 
 import { LearnerAfterBookReminder } from '@/components/onboarding/learner-after-book-reminder'
 import { LearnerCabinetTour } from '@/components/onboarding/learner-cabinet-tour'
+import { LearnerPaymentsExplainer } from '@/components/cabinet/payments-explainer'
 
 import { Banner, Button, EmptyState } from '@/components/ui/primitives'
 
@@ -202,11 +204,19 @@ export default async function CabinetPage({
   const paymentStateMap = isLearner
     ? await listSlotPaymentState(mySlots.map((s) => s.id))
     : new Map<string, 'paid' | 'refunded'>()
+  // SBP-claim covered slots (claimed/confirmed) гасим как paid, чтобы
+  // UI не показывал кнопку «Оплатить» поверх уже отслеженной оплаты.
+  const sbpClaimSlotIds = isLearner
+    ? await listClaimedOrConfirmedSlotIds(mySlots.map((s) => s.id))
+    : new Set<string>()
   const paidSlotIds: string[] = []
   const refundedSlotIds: string[] = []
   for (const [slotId, state] of paymentStateMap) {
     if (state === 'paid') paidSlotIds.push(slotId)
     else refundedSlotIds.push(slotId)
+  }
+  for (const slotId of sbpClaimSlotIds) {
+    if (!paidSlotIds.includes(slotId)) paidSlotIds.push(slotId)
   }
   // Bug #1 (2026-06-02). For single-link learners only — this is the
   // input to BookingCta's banner short-circuit. Multi-link learners
@@ -248,6 +258,16 @@ export default async function CabinetPage({
     ? 'verify_email_reminder' in verifyEmailHintState.dismissedHints
     : false
   const showVerifyEmailHint = !isVerified && !verifyEmailHintDismissed
+
+  // SBP self-service learner explainer №1 — «Как платить через СБП».
+  // Видим только тем учащимся, у кого учитель уже принимает СБП.
+  const sbpIntroState =
+    isLearner && sbpPayEnabled ? await getOnboardingState(account.id) : null
+  const sbpIntroDismissed = sbpIntroState
+    ? 'learner_pay_sbp_intro' in sbpIntroState.dismissedHints
+    : false
+  const showSbpPayIntroExplainer =
+    isLearner && sbpPayEnabled && !sbpIntroDismissed
 
   return (
     <AuthShell>
@@ -302,6 +322,19 @@ export default async function CabinetPage({
           {/* Onboarding Sub-PR C1 — learner welcome tour shown only
               before the first lesson is completed. */}
           <LearnerCabinetTour shouldRender={showLearnerTour} />
+          {showSbpPayIntroExplainer ? (
+            <LearnerPaymentsExplainer
+              hintKey="learner_pay_sbp_intro"
+              initiallyDismissed={false}
+            >
+              <strong>Как платить за занятия.</strong> Кнопка{' '}
+              <em>«Оплатить»</em> у каждого занятия откроет реквизиты СБП
+              учителя — телефон и банк. Переведите сумму из своего банка и
+              нажмите <em>«Я оплатил»</em>: учитель увидит вашу заявку и
+              подтвердит. Платформа деньги не хранит — это прямой перевод
+              между вами и учителем.
+            </LearnerPaymentsExplainer>
+          ) : null}
           {/* SAAS-PIVOT Day 7 — multi-teacher branch. 2+ active links:
               show per-teacher blocks + unified timeline. The single-
               teacher LessonsSection (booking CTA, paid pill, etc.) is

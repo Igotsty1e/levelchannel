@@ -318,6 +318,15 @@ export function LessonsSection({
                                   {s.durationMinutes} мин ·{' '}
                                   {statusLabel(s.status)}
                                 </span>
+                                {s.status === 'booked'
+                                && !s.tariffSlug
+                                && paidSet.has(s.id) ? (
+                                  <span style={{ marginLeft: 8 }}>
+                                    <Pill tone="success" size="sm">
+                                      оплачено
+                                    </Pill>
+                                  </span>
+                                ) : null}
                                 {LESSON_PAYMENT_UI_ENABLED && s.status === 'booked' && s.tariffSlug ? (
                                   paidSet.has(s.id) ? (
                                     <span style={{ marginLeft: 8 }}>
@@ -368,7 +377,10 @@ export function LessonsSection({
                                   </Button>
                                 </span>
                               ) : null}
-                              {sbpPayEnabled && s.status === 'booked' ? (
+                              {sbpPayEnabled
+                              && s.status === 'booked'
+                              && !paidSet.has(s.id)
+                              && !refundedSet.has(s.id) ? (
                                 <span style={{ marginRight: 8 }}>
                                   <Button
                                     variant="secondary"

@@ -31,7 +31,7 @@ describe('getStatusContent — hasSession=false (anonymous buyer)', () => {
   it('cancelled → landing pricing anchor with "back to pay" copy', () => {
     const c = getStatusContent('cancelled', false)
     expect(c.primaryHref).toBe('/#teacher')
-    expect(c.primaryLabel).toBe('Вернуться к оплате')
+    expect(c.primaryLabel).toBe('Вернуться к форме оплаты')
     expect(c.showTelegram).toBe(false)
   })
 
