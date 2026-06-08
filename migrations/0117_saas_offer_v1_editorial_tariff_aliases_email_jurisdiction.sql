@@ -122,16 +122,22 @@ begin
     raise exception 'mig 0117: no substitutions matched — source body drift; aborting';
   end if;
 
+  -- change_kind = 'editorial' критично: позволяет evaluateSaasOfferGate
+  -- walk через previous_version_id chain (mig 0116) и автопропустить
+  -- существующих teachers'ов, акцептовавших предыдущие editorial-row.
+  -- Без явного 'editorial' default 'material' (mig 0116) сломал бы
+  -- chain → forced re-accept на /saas-offer-accept для всех.
   insert into legal_document_versions
     (doc_kind, version_label, effective_from, body_md,
-     previous_version_id, created_by_account_id)
+     previous_version_id, created_by_account_id, change_kind)
   values
     ('saas_offer',
      'v1-2026-06-09-editorial-2',
      now(),
      v_new_body,
      v_old_id,
-     null)
+     null,
+     'editorial')
   returning id into v_new_id;
 
   raise notice 'mig 0117: editorial-2 row % chained to %', v_new_id, v_old_id;
