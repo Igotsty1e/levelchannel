@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 
-export function LandingHeader({ variantHref = '/saas/v4-c' }: { variantHref?: string }) {
+export function LandingHeader() {
   return (
     <header
       style={{
@@ -21,7 +21,7 @@ export function LandingHeader({ variantHref = '/saas/v4-c' }: { variantHref?: st
       }}
     >
       <Link
-        href="/saas"
+        href="/"
         style={{
           fontFamily: 'var(--v4-font-serif)',
           fontSize: 20,

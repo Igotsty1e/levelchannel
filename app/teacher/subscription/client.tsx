@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
+import { track } from '@/lib/analytics/track'
 import type { CloudPaymentsWidgetIntent } from '@/lib/payments/types'
 
 // free-tier-saas-card-and-subscription-row plan §1 item 2 + §0a-3 closure:
@@ -132,8 +133,11 @@ export function TeacherSubscriptionClient({ active, tariffs }: Props) {
   const handleSubscribe = useCallback(
     async (tier: 'mid' | 'pro') => {
       setError(null)
+      const tierKey = tier === 'mid' ? 'basic' : 'pro'
+      track('subscription_plan_clicked', { tier: tierKey })
       setLoading(tier)
       try {
+        track('payment_widget_opened', { surface: 'teacher_subscription', tier: tierKey })
         const res = await fetch('/api/teacher/subscribe', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },

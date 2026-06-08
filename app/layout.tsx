@@ -3,6 +3,8 @@ import { Inter } from 'next/font/google'
 import { headers } from 'next/headers'
 import './globals.css'
 
+import { TrackingProvider } from '@/components/analytics/TrackingProvider'
+
 import { ServiceWorkerRegistration } from './service-worker-registration'
 
 const inter = Inter({
@@ -102,6 +104,7 @@ export default async function RootLayout({
         />
         {children}
         <ServiceWorkerRegistration />
+        <TrackingProvider />
       </body>
     </html>
   )
