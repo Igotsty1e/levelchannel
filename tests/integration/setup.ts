@@ -79,6 +79,24 @@ afterEach(async () => {
        '_Полный текст: см. https://levelchannel.ru/consent/personal-data на момент эффективной даты._')
     on conflict (doc_kind, version_label) do nothing
   `)
+  // Codex paranoia round 3 BLOCKER #1+#2 closure. The TRUNCATE
+  // CASCADE above wipes saas_offer / saas_processor_terms rows as a
+  // side-effect of the legal_document_versions CASCADE chain.
+  // Re-seed the v0-placeholder baseline that mig 0096/0097 install
+  // so every test starts from the same post-migrate:up state.
+  // We do NOT seed a v1 publish row — mig 0099's v1 publish step is
+  // production-only and tests that need a non-placeholder live row
+  // seed it themselves.
+  await pool.query(`
+    insert into legal_document_versions
+      (doc_kind, version_label, effective_from, body_md, change_kind)
+    values
+      ('saas_offer', 'v0-placeholder-do-not-accept',
+       now(), '# placeholder body for tests', 'material'),
+      ('saas_processor_terms', 'v0-placeholder-do-not-accept',
+       now(), '# placeholder body for tests', 'material')
+    on conflict (doc_kind, version_label) do nothing
+  `)
   // SAAS-PIVOT Day 1 (2026-05-22) — re-seed teacher_subscription_plans
   // baseline rows (mig 0073 INSERTs four canonical slugs; TRUNCATE
   // above wipes them between tests). Same pattern as the legal

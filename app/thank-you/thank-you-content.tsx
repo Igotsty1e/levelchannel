@@ -252,7 +252,7 @@ export function getStatusContent(
         description:
           'Оплата не была завершена. Если списания не было, можно вернуться на сайт и создать новую оплату.',
         primaryHref: retryHref,
-        primaryLabel: hasSession ? 'Вернуться в кабинет' : 'Вернуться к оплате',
+        primaryLabel: hasSession ? 'Вернуться в кабинет' : 'Вернуться к форме оплаты',
         showTelegram: false,
       }
     default:

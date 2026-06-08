@@ -318,6 +318,29 @@ export function LessonsSection({
                                   {s.durationMinutes} мин ·{' '}
                                   {statusLabel(s.status)}
                                 </span>
+                                {s.status === 'booked' && !s.tariffSlug ? (
+                                  paidSet.has(s.id) ? (
+                                    <span style={{ marginLeft: 8 }}>
+                                      <Pill tone="success" size="sm">
+                                        оплачено
+                                      </Pill>
+                                    </span>
+                                  ) : refundedSet.has(s.id) ? (
+                                    // Codex paranoia round 1 WARN #3 —
+                                    // SBP-claim slot fully refunded by
+                                    // the teacher. Mirror the CP-allocation
+                                    // refund-pill so the learner doesn't
+                                    // think the slot is still paid.
+                                    <span
+                                      style={{ marginLeft: 8 }}
+                                      title="Учитель оформил возврат за это занятие. Если нужно оплатить снова — напишите учителю."
+                                    >
+                                      <Pill tone="default" size="sm">
+                                        возврат оформлен
+                                      </Pill>
+                                    </span>
+                                  ) : null
+                                ) : null}
                                 {LESSON_PAYMENT_UI_ENABLED && s.status === 'booked' && s.tariffSlug ? (
                                   paidSet.has(s.id) ? (
                                     <span style={{ marginLeft: 8 }}>
@@ -368,7 +391,10 @@ export function LessonsSection({
                                   </Button>
                                 </span>
                               ) : null}
-                              {sbpPayEnabled && s.status === 'booked' ? (
+                              {sbpPayEnabled
+                              && s.status === 'booked'
+                              && !paidSet.has(s.id)
+                              && !refundedSet.has(s.id) ? (
                                 <span style={{ marginRight: 8 }}>
                                   <Button
                                     variant="secondary"

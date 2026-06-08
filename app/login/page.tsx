@@ -18,7 +18,11 @@ export default function LoginPage() {
   // bind to a NEW teacher without re-registering — the symmetric
   // counterpart of /register?invite= for fresh accounts.
   const inviteToken = searchParams.get('invite') ?? null
-  const [email, setEmail] = useState('')
+  // Allow prefilling email via `/login?email=...` — used by QA seed
+  // output, "switch account" links and CTA-on-marketing-page entries.
+  // Only the first sync read; user typing replaces it as expected.
+  const prefilledEmail = searchParams.get('email') ?? ''
+  const [email, setEmail] = useState(prefilledEmail)
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [inviteNotice, setInviteNotice] = useState<string | null>(null)

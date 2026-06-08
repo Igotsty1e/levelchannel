@@ -60,7 +60,11 @@ export default async function TeacherPaymentsPage() {
     expiring,
     onboardingState,
   ] = await Promise.all([
-    listClaimsForTeacher(teacherAccountId, ['claimed', 'confirmed', 'declined'], 100),
+    // Codex paranoia round 2 WARN #3 closure — include 'cancelled' so
+    // learner-cancelled claims surface in teacher history (audit trail)
+    // rather than silently disappearing. feed.tsx already knows how to
+    // render the «Отменено учеником» pill.
+    listClaimsForTeacher(teacherAccountId, ['claimed', 'confirmed', 'declined', 'cancelled'], 100),
     countPendingClaimsForTeacher(teacherAccountId),
     listLearnersWithUnpaidSlots(teacherAccountId),
     listActivePaymentMethods(teacherAccountId),
@@ -99,7 +103,7 @@ export default async function TeacherPaymentsPage() {
   return (
     <div style={{ maxWidth: 880, margin: '0 auto' }}>
       <Link
-        href="/teacher/settings"
+        href="/teacher"
         style={{
           color: 'var(--secondary)',
           textDecoration: 'none',
@@ -108,7 +112,7 @@ export default async function TeacherPaymentsPage() {
           marginBottom: 16,
         }}
       >
-        ← Назад в настройки
+        ← В кабинет
       </Link>
       <h1
         style={{

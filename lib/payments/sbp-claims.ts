@@ -1159,6 +1159,58 @@ export async function cancelClaimByLearner(
   }
 }
 
+// Cabinet (learner) needs to gate the «Оплатить» button for slots that
+// are already covered by an SBP-claim — both confirmed (teacher saw the
+// money) AND claimed (learner already pressed «Я оплатил», waiting for
+// confirmation). Без этого UI продолжает звать ученика платить второй
+// раз, а /api/learner/payment-context отвечает 404 already_paid.
+export async function listClaimedOrConfirmedSlotIds(
+  slotIds: string[],
+): Promise<Set<string>> {
+  const out = new Set<string>()
+  if (slotIds.length === 0) return out
+  const r = await getDbPool().query<{ slot_id: string }>(
+    `select distinct i.slot_id
+       from payment_claim_items i
+       join payment_claims c on c.id = i.claim_id
+      where c.status in ('claimed', 'confirmed')
+        and i.slot_id = any($1)`,
+    [slotIds],
+  )
+  for (const row of r.rows) out.add(row.slot_id)
+  return out
+}
+
+// Codex paranoia round 1 WARN #3 closure. A confirmed SBP claim can be
+// fully refunded — the slot then sits in «оплачено» pill but the money
+// is back in the learner's pocket. Mirror the CloudPayments-allocation
+// behaviour (lib/payments/allocations.ts:listSlotPaymentState =
+// 'refunded'): slot is FULLY refunded when sum(payment_refunds.amount)
+// >= the claim's amount AND the claim is confirmed. Partial refund
+// keeps the slot in «оплачено» state (learner still effectively paid).
+export async function listFullyRefundedClaimSlotIds(
+  slotIds: string[],
+): Promise<Set<string>> {
+  const out = new Set<string>()
+  if (slotIds.length === 0) return out
+  const r = await getDbPool().query<{ slot_id: string }>(
+    `select distinct i.slot_id
+       from payment_claim_items i
+       join payment_claims c on c.id = i.claim_id
+       join lateral (
+         select coalesce(sum(amount_kopecks), 0)::bigint as refunded_sum
+           from payment_refunds r
+          where r.claim_id = c.id
+       ) refund on true
+      where c.status = 'confirmed'
+        and refund.refunded_sum >= c.amount_kopecks
+        and i.slot_id = any($1)`,
+    [slotIds],
+  )
+  for (const row of r.rows) out.add(row.slot_id)
+  return out
+}
+
 export async function countPendingClaimsForTeacher(
   teacherAccountId: string,
 ): Promise<number> {

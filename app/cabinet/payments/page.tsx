@@ -9,7 +9,10 @@ import { redirect } from 'next/navigation'
 
 import { AuthShell } from '@/components/auth-shell'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { LearnerPaymentsExplainer } from '@/components/cabinet/payments-explainer'
+import { getOnboardingState } from '@/lib/onboarding/state'
 import { listClaimsForLearner } from '@/lib/payments/sbp-claims'
+import { listRefundsForLearner } from '@/lib/payments/sbp-refunds'
 
 import { LearnerPaymentsList } from './list'
 
@@ -28,7 +31,17 @@ export default async function LearnerPaymentsHistoryPage() {
   const session = await lookupSession(cookieValue)
   if (!session) redirect('/login')
 
-  const claims = await listClaimsForLearner(session.account.id, 100)
+  const [claims, refunds, onboardingState] = await Promise.all([
+    listClaimsForLearner(session.account.id, 100),
+    listRefundsForLearner(session.account.id, 100),
+    getOnboardingState(session.account.id),
+  ])
+  const hasPending = claims.some((c) => c.status === 'claimed')
+  const hasRefunds = refunds.length > 0
+  const claimWaitingDismissed =
+    'learner_pay_claim_waiting_explained' in onboardingState.dismissedHints
+  const refundDismissed =
+    'learner_pay_refund_explained' in onboardingState.dismissedHints
 
   return (
     <AuthShell>
@@ -65,12 +78,37 @@ export default async function LearnerPaymentsHistoryPage() {
             marginBottom: 24,
           }}
         >
-          Здесь видно, что вы заявили как оплаченное, что учитель подтвердил
-          и что отклонил. Деньги идут напрямую учителю — платформа их
-          не держит.
+          Здесь видны все ваши заявки на оплату — те, что вы отметили
+          сами, и те, что зафиксировал учитель. Деньги идут напрямую
+          учителю — платформа их не держит.
         </p>
 
-        <LearnerPaymentsList initial={claims} />
+        {hasPending && !claimWaitingDismissed ? (
+          <LearnerPaymentsExplainer
+            hintKey="learner_pay_claim_waiting_explained"
+            initiallyDismissed={false}
+          >
+            <strong>«Ждёт подтверждения».</strong> Учитель ещё не проверил
+            ваш перевод. Обычно это занимает один-два дня — мы покажем
+            «Подтверждено», когда учитель увидит деньги. Если что-то пошло
+            не так — учитель сможет нажать «Не пришло», и тогда заявка
+            станет «Не подтверждено».
+          </LearnerPaymentsExplainer>
+        ) : null}
+        {hasRefunds && !refundDismissed ? (
+          <LearnerPaymentsExplainer
+            hintKey="learner_pay_refund_explained"
+            initiallyDismissed={false}
+            tone="warning"
+          >
+            <strong>Возврат — это запись, не операция.</strong> Деньги
+            возвращает учитель напрямую вам через свой банк. Эта строка
+            здесь нужна только для вашей истории — чтобы было видно, что
+            возврат состоялся. Если деньги не пришли — напишите учителю.
+          </LearnerPaymentsExplainer>
+        ) : null}
+
+        <LearnerPaymentsList initial={claims} initialRefunds={refunds} />
       </div>
     </AuthShell>
   )
