@@ -42,6 +42,16 @@ const KINDS: LegalDocKind[] = [
 ]
 
 describe('legal_document_versions — label/body version coherence', () => {
+  // Codex paranoia round 2 BLOCKER #1 closure. We do NOT wipe and
+  // re-seed legal_document_versions here — the regression we want to
+  // catch lives in the post-migrate:up state (mig 0099 + 0115 + 0116).
+  // If a sibling test leaves dirty fixtures, the FIX is in the sibling
+  // test (afterEach cleanup), not here — silent-passing on synthetic
+  // bodies defeats the whole guard. tests/integration/setup.ts and
+  // tests/integration/legal/saas-offer-gate-editorial-auto-pass.test.ts
+  // restore the post-migration baseline so this assertion runs against
+  // real shipped rows.
+
   // We assert coherence only on the ACTIVE row (greatest effective_from
   // ≤ now()). Historical rows are append-only and may carry drift
   // that has since been chained over by an editorial successor; that
@@ -60,10 +70,38 @@ describe('legal_document_versions — label/body version coherence', () => {
           limit 1`,
         [kind],
       )
-      if (r.rows.length === 0) return // fresh test DB w/o seed for this kind.
+      // Migration baseline guarantees a row for every kind. A missing
+      // row is itself a regression — fail loudly instead of skipping.
+      expect(
+        r.rows.length,
+        `${kind}: no row found; migrate:up must seed at least one row per legal kind`,
+      ).toBeGreaterThan(0)
       const row = r.rows[0]
       const bodyMajor = extractBodyMajor(row.body_md)
-      if (!bodyMajor) return // body never claims a version — fine.
+      expect(
+        row.body_md.length,
+        `${kind}: empty body_md is a regression`,
+      ).toBeGreaterThan(0)
+      // Placeholder rows ('v0-placeholder-do-not-accept') skip version-
+      // line assertions — they exist as bootstrap before legal-rf
+      // SIGN-OFF. For saas_* kinds we REQUIRE the body to declare its
+      // «Версия vN» and match label major (this is the guard that
+      // catches the 2026-06-08 drift). For legacy kinds (offer /
+      // privacy / personal_data) the seed bodies reference an external
+      // URL instead of an in-body version line — that is honest, not
+      // drift.
+      if (row.version_label.startsWith('v0-placeholder-')) return
+      const requiresVersionLine =
+        kind === 'saas_offer' || kind === 'saas_processor_terms'
+      if (!requiresVersionLine) {
+        if (!bodyMajor) return
+      } else {
+        expect(
+          bodyMajor,
+          `${kind}: live row "${row.version_label}" has a body without a `
+            + `«Версия vN» line — this is the drift this guard exists to catch.`,
+        ).not.toBeNull()
+      }
       const labelMajor = extractLabelMajor(row.version_label)
       expect(
         labelMajor,

@@ -15,7 +15,7 @@ Already in place:
 - `Cross-Origin-Opener-Policy`
 - `Cross-Origin-Resource-Policy`
 - DNS prefetch disabled
-- origin checks for browser-initiated payment requests
+- origin checks for browser-initiated payment requests (whitelist built in `lib/security/request.ts::getAllowedOrigins`: `NEXT_PUBLIC_SITE_URL` + literal loopback. **Dev-only** escape hatch `DEV_EXTRA_ALLOWED_ORIGINS` adds extra opt-in origins for LAN/tunnel testing — hard-gated on `NODE_ENV !== 'production'`, so an accidental prod entry cannot widen the trusted set; covered by `tests/security/origin.test.ts`.)
 - `sec-fetch-site` filtering
 - shared-store rate limiting per IP (Postgres-backed `rate_limit_buckets`; in-memory fallback when `DATABASE_URL` is unset or transiently unreachable)
 - a secondary IP-keyed rate limit on the CloudPayments webhook endpoints (60/min per kind) sitting AFTER HMAC verify, so unauth flood (HMAC-fail → 401) consumes zero budget while a key-leak flood is bounded

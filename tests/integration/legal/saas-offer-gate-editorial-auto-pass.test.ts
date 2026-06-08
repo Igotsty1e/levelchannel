@@ -20,6 +20,13 @@ afterAll(() => {
   delete process.env[ENV_KEY]
 })
 
+// Note: this test file wipes saas_offer / saas_processor_terms rows in
+// its own seed helper to set up specific chain shapes. The global
+// `tests/integration/setup.ts` afterEach truncates the parent accounts
+// table CASCADE and then re-seeds the v0-placeholder baseline for both
+// saas_* kinds, so sibling test files see the same post-migrate:up
+// state regardless of test order.
+
 async function seedTeacherWithConsent(opts: {
   offerLabel: string
   offerChangeKind?: 'material' | 'editorial'

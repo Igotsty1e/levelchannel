@@ -9,7 +9,10 @@ import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getPaymentMethodForPair } from '@/lib/billing/learner-payment-method'
 import { listAccountActivePackages } from '@/lib/billing/packages'
 import { listSlotPaymentState } from '@/lib/payments/allocations'
-import { listClaimedOrConfirmedSlotIds } from '@/lib/payments/sbp-claims'
+import {
+  listClaimedOrConfirmedSlotIds,
+  listFullyRefundedClaimSlotIds,
+} from '@/lib/payments/sbp-claims'
 import {
   listOpenFutureSlots,
   listSlotsAsTeacher,
@@ -206,9 +209,16 @@ export default async function CabinetPage({
     : new Map<string, 'paid' | 'refunded'>()
   // SBP-claim covered slots (claimed/confirmed) гасим как paid, чтобы
   // UI не показывал кнопку «Оплатить» поверх уже отслеженной оплаты.
-  const sbpClaimSlotIds = isLearner
-    ? await listClaimedOrConfirmedSlotIds(mySlots.map((s) => s.id))
-    : new Set<string>()
+  // Codex paranoia round 1 WARN #3 — also collect fully-refunded SBP
+  // slots so the cabinet flips them to the neutral «возврат оформлен»
+  // pill instead of the green «оплачено» pill (mirroring the existing
+  // CloudPayments-allocation refunded-state handling).
+  const [sbpClaimSlotIds, sbpRefundedSlotIds] = isLearner
+    ? await Promise.all([
+        listClaimedOrConfirmedSlotIds(mySlots.map((s) => s.id)),
+        listFullyRefundedClaimSlotIds(mySlots.map((s) => s.id)),
+      ])
+    : [new Set<string>(), new Set<string>()]
   const paidSlotIds: string[] = []
   const refundedSlotIds: string[] = []
   for (const [slotId, state] of paymentStateMap) {
@@ -216,7 +226,12 @@ export default async function CabinetPage({
     else refundedSlotIds.push(slotId)
   }
   for (const slotId of sbpClaimSlotIds) {
+    // Fully-refunded SBP-claim slots flip to refunded — never paid.
+    if (sbpRefundedSlotIds.has(slotId)) continue
     if (!paidSlotIds.includes(slotId)) paidSlotIds.push(slotId)
+  }
+  for (const slotId of sbpRefundedSlotIds) {
+    if (!refundedSlotIds.includes(slotId)) refundedSlotIds.push(slotId)
   }
   // Bug #1 (2026-06-02). For single-link learners only — this is the
   // input to BookingCta's banner short-circuit. Multi-link learners

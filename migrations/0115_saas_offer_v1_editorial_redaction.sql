@@ -66,6 +66,28 @@ begin
   -- versions.ts). Held until commit.
   perform pg_advisory_xact_lock(hashtext('legal:saas_offer'));
 
+  -- Codex paranoia round 1 BLOCKER #1 closure. Re-check head-of-chain
+  -- AFTER lock acquisition: chain editorial successor only when the
+  -- target row is the current head. If a newer saas_offer was published
+  -- between this migration being written and applied, we must NOT fork
+  -- a side-branch off v1-2026-06-01 and make a stale editorial row the
+  -- new live version. Skip with notice — operator will publish an
+  -- editorial successor for the actually-current row by separate
+  -- migration if still needed.
+  declare
+    v_head_id uuid;
+  begin
+    select id into v_head_id
+      from legal_document_versions
+     where doc_kind = 'saas_offer'
+     order by effective_from desc, created_at desc
+     limit 1;
+    if v_head_id is null or v_head_id <> v_old_id then
+      raise notice 'mig 0115: v1-2026-06-01 is no longer the head row (head=%); skipping to preserve chain integrity', v_head_id;
+      return;
+    end if;
+  end;
+
   -- ----- Editorial substitutions -----
   --
   -- 1) Replace the «Версия v2…» redaction stamp with a neutral

@@ -88,6 +88,7 @@ Minimum local set:
 - `PAYMENTS_MOCK_AUTO_CONFIRM_SECONDS=20`
 - `PAYMENTS_ALLOW_MOCK_CONFIRM=true|false`
 - `NEXT_PUBLIC_SITE_URL=http://localhost:3000` (dev) or `https://your-domain` (prod — **must** be https + non-loopback in prod regardless of `PAYMENTS_PROVIDER`; boot fails fast on `http://...`, `https://localhost`, `https://*.localhost`, `https://127.0.0.1`, `https://0.0.0.0`, `https://[::1]`. See `lib/payments/config.ts` + `lib/api/origin.ts`)
+- `DEV_EXTRA_ALLOWED_ORIGINS=` (dev/test only; comma-separated extra origins trusted by `enforceTrustedBrowserOrigin`. Ignored when `NODE_ENV=production` — an accidental prod env entry cannot widen the trusted origin set. Useful for LAN device testing and tunnel UIs (cloudflared / ngrok). See `lib/security/request.ts::getAllowedOrigins`.)
 - `DATABASE_URL=postgresql://...`
 - `DB_SSL=require|disable` (optional; production refuses `disable` for **non-loopback** hosts. Auto-detect via `lib/security/local-host.ts::isLiteralLoopbackHostname`: only literal loopback (`localhost` / `127.0.0.1` / `::1` / `[::1]`) → no TLS in any env, everything else → strict TLS with cert verify. `*.local` is NOT loopback (mDNS attack surface — Codex 2026-05-07). See `lib/db/pool.ts`)
 - `DB_SSL_REJECT_UNAUTHORIZED=false` (optional, **dev or local-only**; rejected in production for non-local hosts. Allows encrypted-but-lax cert verification when targeting a managed host with a self-signed cert)
