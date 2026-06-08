@@ -120,4 +120,23 @@ describe('evaluateSaasOfferGate — editorial auto-pass (mig 0116)', () => {
     const verdict = await evaluateSaasOfferGate(accountId)
     expect(verdict.kind).toBe('ok')
   })
+
+  it('returns consent_required for legacy consent rows with NULL legal_document_version_id', async () => {
+    const { accountId } = await seedTeacherWithConsent({
+      consentLabel: 'v1-2026-06-01',
+      offerLabel: 'v1-2026-06-08-editorial',
+      offerChangeKind: 'editorial',
+      termsLabel: 'v1-terms',
+    })
+    // Drop the FK pointer to simulate a pre-FK-era legacy consent row.
+    await getAuthPool().query(
+      `update account_consents
+          set legal_document_version_id = null
+        where account_id = $1::uuid
+          and document_kind = 'saas_offer'`,
+      [accountId],
+    )
+    const verdict = await evaluateSaasOfferGate(accountId)
+    expect(verdict.kind).toBe('consent_required')
+  })
 })
