@@ -10,6 +10,7 @@ export type LandingLegalProfile = {
   legalBankAccount: string
   legalBankName: string
   legalBankBik: string
+  legalBankCity?: string
 }
 
 export function loadLegalProfile(): LandingLegalProfile {
@@ -20,5 +21,6 @@ export function loadLegalProfile(): LandingLegalProfile {
     legalBankAccount: '',
     legalBankName: '',
     legalBankBik: '',
+    legalBankCity: '',
   }
 }

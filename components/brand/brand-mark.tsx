@@ -48,7 +48,14 @@ export function BrandMark({
         style={style}
       >
         <defs>
-          <linearGradient id="brand-mark-grad" x1="0" y1="1" x2="1" y2="0">
+          <linearGradient
+            id="brand-mark-grad"
+            gradientUnits="userSpaceOnUse"
+            x1="0"
+            y1="80"
+            x2="80"
+            y2="0"
+          >
             <stop offset="0%" stopColor="#C87878" />
             <stop offset="100%" stopColor="#E8A890" />
           </linearGradient>
@@ -96,7 +103,15 @@ export function BrandMark({
       style={style}
     >
       <defs>
-        <linearGradient id="brand-full-grad" x1="0" y1="1" x2="1" y2="0">
+        {/* userSpaceOnUse — иначе градиент в tspan не резолвится на iOS Safari */}
+        <linearGradient
+          id="brand-full-grad"
+          gradientUnits="userSpaceOnUse"
+          x1="72"
+          y1="60"
+          x2="300"
+          y2="20"
+        >
           <stop offset="0%" stopColor="#C87878" />
           <stop offset="100%" stopColor="#E8A890" />
         </linearGradient>

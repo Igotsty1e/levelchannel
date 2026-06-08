@@ -1,102 +1,231 @@
 'use client'
 
-import { motion, AnimatePresence } from 'framer-motion'
-import { useState } from 'react'
+import { motion } from 'framer-motion'
 
-const fadeUp = { initial: { opacity: 0, y: 40 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, margin: '-100px' } }
+const reveal = {
+  initial: { opacity: 0, y: 28 },
+  whileInView: { opacity: 1, y: 0 },
+  viewport: { once: true, margin: '-100px' },
+}
+
+type Guarantee = {
+  n: string
+  title: string
+  body: string
+}
+
+const GUARANTEES: Guarantee[] = [
+  {
+    n: '01',
+    title: 'Серверы в России',
+    body: 'Первичная запись и хранение — на территории РФ, как требует ч. 5 ст. 18 152-ФЗ.',
+  },
+  {
+    n: '02',
+    title: 'Пароли никто не видит',
+    body: 'Хранятся bcrypt-хэшем, cost=12. Даже мы не знаем твой пароль и не можем его узнать.',
+  },
+  {
+    n: '03',
+    title: 'Платежи подписаны HMAC',
+    body: 'Webhook'+'\u200B'+'и от банка подписываются HMAC-SHA256. Подделать «оплата пришла» извне невозможно.',
+  },
+  {
+    n: '04',
+    title: 'Ноль рекламных трекеров',
+    body: 'Никаких Google Analytics, Метрики, Hotjar и пикселей. Один внутренний счётчик кликов без имён и сумм.',
+  },
+  {
+    n: '05',
+    title: 'TLS на всех соединениях',
+    body: 'Между тобой, нами и банком — только шифрованные соединения. В транзите никто посторонний не подсмотрит.',
+  },
+  {
+    n: '06',
+    title: 'Согласия — append-only',
+    body: 'Каждое согласие ученика — отдельная запись с датой, версией документа, IP и устройством. Перезаписать историю нельзя.',
+  },
+]
 
 export function ScreenSecurity() {
-  const [open, setOpen] = useState(false)
-
   return (
-    <section id="security" className="landing-v3-section">
-      <div style={{ maxWidth: 760, margin: '0 auto', textAlign: 'center' }}>
-        <motion.h2
-          {...fadeUp}
-          transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-          className="landing-v3-h2 landing-v3-h2--serif"
+    <section id="security" className="landing-v3-section" style={{ position: 'relative', overflow: 'hidden' }}>
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background:
+            'radial-gradient(ellipse 60% 50% at 80% 30%, rgba(232,168,144,0.07) 0%, transparent 60%)',
+        }}
+      />
+
+      <div style={{ maxWidth: 1180, margin: '0 auto', position: 'relative' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr',
+            gap: 48,
+            alignItems: 'start',
+          }}
+          className="security-grid"
         >
-          Имена твоих учеников и их балансы. <em>Это твоё.</em>
-        </motion.h2>
+          {/* Left — заголовок + лида + штамп */}
+          <div style={{ display: 'grid', gap: 32 }}>
+            <motion.h2 {...reveal} transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }} className="landing-v3-h2 landing-v3-h2--serif">
+              Имена и балансы — <em>это твоё.</em>
+            </motion.h2>
 
-        <motion.p {...fadeUp} transition={{ duration: 0.7, delay: 0.1 }} className="landing-v3-body-editorial" style={{ marginTop: 40, marginLeft: 'auto', marginRight: 'auto' }}>
-          Мы не передаём твои данные третьим лицам. Не показываем их в рекламе. Не отправляем
-          в аналитические системы. На сайте есть один счётчик. Он считает клики по кнопкам,
-          без имён, без email, без сумм.
-        </motion.p>
+            <motion.p {...reveal} transition={{ duration: 0.8, delay: 0.1 }} className="landing-v3-lede" style={{ margin: 0 }}>
+              Мы не продаём данные и не пускаем их в рекламные сети. А 152-ФЗ берём на себя — серверы, согласия, журналы. Тебе остаётся учить.
+            </motion.p>
 
-        <motion.p {...fadeUp} transition={{ duration: 0.7, delay: 0.2 }} className="landing-v3-body-editorial" style={{ marginLeft: 'auto', marginRight: 'auto' }}>
-          Согласия учеников на обработку персональных данных фиксируются по правилам 152-ФЗ.
-          С штампом времени, версией документа, IP-адресом и user-agent'ом. Если когда-то понадобится
-          показать налоговой или Роскомнадзору, вся история готова к выгрузке.
-        </motion.p>
-
-        <motion.div {...fadeUp} transition={{ duration: 0.6, delay: 0.3 }} style={{ marginTop: 32 }}>
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 10,
-              padding: '12px 20px',
-              borderRadius: 999,
-              background: 'transparent',
-              border: '1px solid var(--v3-rule-strong)',
-              color: 'var(--v3-text-secondary)',
-              fontSize: 14,
-              fontFamily: 'inherit',
-              cursor: 'pointer',
-              transition: 'background 200ms ease, color 200ms ease, border-color 200ms ease',
-            }}
-            aria-expanded={open}
-            aria-controls="security-details"
-          >
-            <span>{open ? 'Скрыть технические подробности' : 'Технические подробности'}</span>
-            <span
+            {/* Печать-stamp */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.7, rotate: -10 }}
+              whileInView={{ opacity: 1, scale: 1, rotate: -6 }}
+              viewport={{ once: true, margin: '-100px' }}
+              transition={{ duration: 0.9, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
               style={{
-                display: 'inline-block',
-                transition: 'transform 200ms ease',
-                transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
-                fontSize: 12,
+                width: 220,
+                height: 220,
+                borderRadius: '50%',
+                border: '3px double rgba(232, 168, 144, 0.5)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                position: 'relative',
+                fontFamily: 'var(--v3-font-serif, Charter, Georgia, serif)',
+                color: 'rgba(232, 168, 144, 0.85)',
+                textAlign: 'center',
+                marginTop: 8,
+                boxShadow: '0 0 0 1px rgba(232,168,144,0.08), 0 20px 40px -20px rgba(232,168,144,0.25)',
               }}
             >
-              ▾
-            </span>
-          </button>
-
-          <AnimatePresence initial={false}>
-            {open ? (
-              <motion.ul
-                key="tech-details"
-                id="security-details"
-                initial={{ height: 0, opacity: 0, marginTop: 0 }}
-                animate={{ height: 'auto', opacity: 1, marginTop: 24 }}
-                exit={{ height: 0, opacity: 0, marginTop: 0 }}
-                transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-                style={{
-                  overflow: 'hidden',
-                  listStyle: 'none',
-                  padding: 0,
-                  margin: 0,
-                  color: 'var(--v3-text-secondary)',
-                  fontSize: 14,
-                  lineHeight: 2,
-                  textAlign: 'left',
-                  maxWidth: 520,
-                  marginLeft: 'auto',
-                  marginRight: 'auto',
-                }}
+              <svg
+                viewBox="0 0 220 220"
+                width="220"
+                height="220"
+                style={{ position: 'absolute', inset: 0 }}
+                aria-hidden
               >
-                <li>· TLS на каждом соединении между тобой, нами и банком.</li>
-                <li>· Пароли хранятся в виде bcrypt-хэшей. Никто, включая нас, не видит твой пароль.</li>
-                <li>· Платёжные webhook'и подписаны HMAC. Никто не подделает «оплата пришла».</li>
-                <li>· Сессии истекают через 7 дней. При выходе отзываются мгновенно.</li>
-              </motion.ul>
-            ) : null}
-          </AnimatePresence>
-        </motion.div>
+                <defs>
+                  <path id="stamp-arc" d="M 110,110 m -86,0 a 86,86 0 1,1 172,0 a 86,86 0 1,1 -172,0" fill="none" />
+                </defs>
+                <text style={{ fontSize: 11, letterSpacing: '0.32em', fill: 'rgba(232,168,144,0.55)' }}>
+                  <textPath href="#stamp-arc" startOffset="0%">
+                    LEVELCHANNEL · ДАННЫЕ В РФ · 152-ФЗ · LEVELCHANNEL ·
+                  </textPath>
+                </text>
+              </svg>
+              <div style={{ position: 'relative', zIndex: 1, lineHeight: 1.2 }}>
+                <div style={{ fontSize: 11, letterSpacing: '0.22em', color: 'rgba(232,168,144,0.55)' }}>
+                  СООТВЕТСТВУЕТ
+                </div>
+                <div style={{ fontSize: 32, marginTop: 6, fontWeight: 500 }}>152-ФЗ</div>
+                <div
+                  style={{
+                    fontSize: 10,
+                    marginTop: 8,
+                    color: 'rgba(232,168,144,0.5)',
+                    letterSpacing: '0.12em',
+                  }}
+                >
+                  с 2025 года
+                </div>
+              </div>
+            </motion.div>
+          </div>
+
+          {/* Right — vertical timeline гарантий */}
+          <div style={{ position: 'relative' }}>
+            <div
+              aria-hidden
+              style={{
+                position: 'absolute',
+                left: 16,
+                top: 8,
+                bottom: 60,
+                width: 1,
+                background:
+                  'linear-gradient(180deg, transparent 0%, rgba(232,168,144,0.35) 10%, rgba(232,168,144,0.25) 90%, transparent 100%)',
+              }}
+            />
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 28 }}>
+              {GUARANTEES.map((g, i) => (
+                <motion.li
+                  key={g.n}
+                  initial={{ opacity: 0, x: -16 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true, margin: '-80px' }}
+                  transition={{ duration: 0.5, delay: 0.15 + i * 0.08, ease: [0.16, 1, 0.3, 1] }}
+                  style={{ position: 'relative', paddingLeft: 56 }}
+                >
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 4,
+                      top: 2,
+                      width: 26,
+                      height: 26,
+                      borderRadius: '50%',
+                      background: 'var(--v3-bg)',
+                      border: '1px solid rgba(232,168,144,0.45)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 10,
+                      color: 'var(--v3-accent-end)',
+                      letterSpacing: '0.05em',
+                      fontFamily: 'JetBrains Mono, monospace',
+                    }}
+                  >
+                    {g.n}
+                  </div>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, margin: 0, color: 'var(--v3-text-primary)' }}>
+                    {g.title}
+                  </h3>
+                  <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--v3-text-secondary)', margin: '6px 0 0' }}>
+                    {g.body}
+                  </p>
+                </motion.li>
+              ))}
+            </ul>
+
+            <motion.div
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 1 }}
+              viewport={{ once: true, margin: '-80px' }}
+              transition={{ duration: 0.6, delay: 0.7 }}
+              style={{
+                marginTop: 36,
+                paddingLeft: 56,
+                fontSize: 13,
+                color: 'var(--v3-text-muted)',
+              }}
+            >
+              Подробно про 152-ФЗ, обработку и согласия —{' '}
+              <a
+                href="/saas/learn/security"
+                className="landing-v3-link"
+                style={{ color: 'var(--v3-accent-end)' }}
+              >
+                как мы это делаем
+              </a>
+              .
+            </motion.div>
+          </div>
+        </div>
       </div>
+
+      <style>{`
+        @media (min-width: 960px) {
+          .security-grid {
+            grid-template-columns: 1fr 1fr !important;
+            gap: 80px !important;
+          }
+        }
+      `}</style>
     </section>
   )
 }

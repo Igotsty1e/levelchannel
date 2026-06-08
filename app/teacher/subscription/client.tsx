@@ -360,6 +360,22 @@ export function TeacherSubscriptionClient({ active, tariffs }: Props) {
           )
         })}
       </div>
+      <p
+        style={{
+          marginTop: 24,
+          fontSize: 12,
+          lineHeight: 1.55,
+          color: 'var(--secondary)',
+          textAlign: 'center',
+        }}
+      >
+        Нажимая «Подписаться», вы акцептуете{' '}
+        <a href="/saas/offer" style={{ color: 'var(--accent)' }} target="_blank" rel="noopener noreferrer">SaaS-оферту</a>,{' '}
+        <a href="/saas/processor-terms" style={{ color: 'var(--accent)' }} target="_blank" rel="noopener noreferrer">Приложение № 1 (Условия поручения оператору ПДн)</a>,{' '}
+        <a href="/privacy" style={{ color: 'var(--accent)' }} target="_blank" rel="noopener noreferrer">политику</a> и{' '}
+        <a href="/consent/personal-data" style={{ color: 'var(--accent)' }} target="_blank" rel="noopener noreferrer">согласие на обработку персональных данных</a>.
+        Подписка месячная, продлевается автоматически. Отмена — в любой момент через кабинет.
+      </p>
     </section>
   )
 }

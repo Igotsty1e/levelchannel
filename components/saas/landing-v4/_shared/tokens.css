@@ -1,0 +1,374 @@
+/* landing-v4 design tokens — shared between variant-a and variant-c.
+ * Inherits brand palette from landing-v3 but adds editorial + reduced-motion
+ * primitives. Each variant supplies its OWN scene tokens via *-variant.css.
+ *
+ * Inspiration:
+ *   - rauno.me — dense typography, точечные micro-interactions
+ *   - mymind.com — warm editorial narrative
+ *   - linear.app — high-density information at rest
+ *   - stripe.com — sectional layered animations
+ */
+
+:root {
+  /* Brand palette (consistent with landing-v3) */
+  --v4-bg: #0B0B0C;
+  --v4-surface: #111113;
+  --v4-elevated: #16161A;
+  --v4-rule: rgba(255, 255, 255, 0.08);
+  --v4-rule-strong: rgba(255, 255, 255, 0.16);
+  --v4-text-primary: #F5F5F7;
+  --v4-text-secondary: #A1A1AA;
+  --v4-text-muted: #6B6B73;
+  --v4-accent-start: #C87878;
+  --v4-accent-end: #E8A890;
+  --v4-warm-surface: #1A1818;
+  --v4-warm-glow: rgba(232, 168, 144, 0.12);
+
+  /* Typography */
+  --v4-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --v4-font-serif: 'Charter', 'Iowan Old Style', Georgia, 'Times New Roman', serif;
+  --v4-font-mono: 'JetBrains Mono', SF Mono, ui-monospace, monospace;
+
+  /* Spacing rhythm (8pt) */
+  --v4-scene-py: clamp(80px, 14vh, 160px);
+  --v4-scene-px: clamp(24px, 4vw, 80px);
+  --v4-prose-w: 60ch;
+  --v4-narrow-w: 720px;
+  --v4-wide-w: 1180px;
+
+  /* Easing */
+  --v4-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --v4-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+/* Reset for v4 surface */
+.landing-v4 {
+  background: var(--v4-bg);
+  color: var(--v4-text-primary);
+  font-family: var(--v4-font-sans);
+  font-feature-settings: 'ss01' on, 'cv11' on;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+.landing-v4 * {
+  box-sizing: border-box;
+}
+
+/* Scene primitives */
+.v4-scene {
+  position: relative;
+  min-height: 100vh;
+  padding: var(--v4-scene-py) var(--v4-scene-px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.v4-scene--short {
+  min-height: 70vh;
+}
+
+.v4-scene__content {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: var(--v4-wide-w);
+}
+
+.v4-scene__bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Typography */
+.v4-h1 {
+  font-size: clamp(40px, 6.5vw, 88px);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  margin: 0;
+  font-weight: 700;
+}
+
+.v4-h1--serif {
+  font-family: var(--v4-font-serif);
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  line-height: 1.08;
+}
+
+.v4-h2 {
+  font-size: clamp(28px, 4.5vw, 56px);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin: 0;
+  font-weight: 600;
+}
+
+.v4-h2--serif {
+  font-family: var(--v4-font-serif);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.v4-h3 {
+  font-size: clamp(20px, 2.6vw, 28px);
+  line-height: 1.25;
+  margin: 0;
+  font-weight: 600;
+  color: var(--v4-text-primary);
+}
+
+.v4-lede {
+  font-size: clamp(17px, 1.6vw, 22px);
+  line-height: 1.55;
+  max-width: var(--v4-prose-w);
+  color: var(--v4-text-secondary);
+  margin: 0;
+}
+
+.v4-body {
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--v4-text-secondary);
+  margin: 0;
+}
+
+.v4-eyebrow {
+  font-size: 13px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--v4-text-muted);
+  font-weight: 500;
+  padding: 6px 14px;
+  border: 1px solid var(--v4-rule);
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.v4-pullquote {
+  font-family: var(--v4-font-serif);
+  font-size: clamp(22px, 3vw, 32px);
+  line-height: 1.4;
+  color: var(--v4-text-primary);
+  font-style: italic;
+  margin: 0;
+  padding-left: 24px;
+  border-left: 2px solid var(--v4-accent-start);
+}
+
+.v4-em-warm {
+  font-family: var(--v4-font-serif);
+  font-style: italic;
+  color: var(--v4-accent-end);
+  font-weight: 500;
+}
+
+.v4-em-warm--solid {
+  color: var(--v4-accent-end);
+  font-style: italic;
+}
+
+/* CTA */
+.v4-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 32px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--v4-accent-start), var(--v4-accent-end));
+  color: var(--v4-bg);
+  font-weight: 600;
+  font-size: 16px;
+  text-decoration: none;
+  transition: transform 250ms var(--v4-ease-out), box-shadow 250ms var(--v4-ease-out);
+  box-shadow: 0 12px 40px -12px rgba(200, 120, 120, 0.45);
+}
+
+.v4-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 50px -16px rgba(232, 168, 144, 0.55);
+}
+
+.v4-cta--lg {
+  padding: 22px 40px;
+  font-size: 18px;
+}
+
+.v4-cta--ghost {
+  background: transparent;
+  color: var(--v4-text-primary);
+  border: 1px solid var(--v4-rule-strong);
+  box-shadow: none;
+}
+
+.v4-cta--ghost:hover {
+  border-color: var(--v4-accent-end);
+  background: var(--v4-warm-glow);
+  box-shadow: none;
+  transform: none;
+}
+
+/* Card surface */
+.v4-card {
+  background: var(--v4-elevated);
+  border: 1px solid var(--v4-rule);
+  border-radius: 16px;
+  padding: 28px;
+  transition: border-color 200ms var(--v4-ease-out), transform 250ms var(--v4-ease-out);
+}
+
+.v4-card:hover {
+  border-color: var(--v4-rule-strong);
+}
+
+/* Link */
+.v4-link {
+  color: var(--v4-text-primary);
+  text-decoration: underline;
+  text-decoration-color: var(--v4-rule-strong);
+  text-underline-offset: 4px;
+  transition: text-decoration-color 200ms var(--v4-ease-out);
+}
+
+.v4-link:hover {
+  text-decoration-color: var(--v4-accent-end);
+}
+
+/* Device frames (CSS-only, no SVG dependency) */
+.v4-laptop {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 1000px;
+  aspect-ratio: 16 / 10;
+  margin: 0 auto;
+  border-radius: 18px 18px 4px 4px;
+  background: linear-gradient(180deg, #1c1c20, #0e0e10);
+  padding: 22px 18px 18px;
+  border: 1px solid var(--v4-rule-strong);
+  box-shadow: 0 60px 120px -40px rgba(0, 0, 0, 0.7),
+              0 24px 48px -16px rgba(232, 168, 144, 0.08);
+}
+
+.v4-laptop::after {
+  content: '';
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 76px;
+  height: 6px;
+  background: #2a2a2e;
+  border-radius: 0 0 6px 6px;
+}
+
+.v4-laptop__screen {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background: var(--v4-bg);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.v4-laptop__screen img,
+.v4-laptop__screen video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  display: block;
+}
+
+.v4-phone {
+  position: relative;
+  display: block;
+  width: 240px;
+  aspect-ratio: 9 / 19.5;
+  margin: 0 auto;
+  border-radius: 36px;
+  background: linear-gradient(180deg, #1c1c20, #0e0e10);
+  padding: 10px;
+  border: 1px solid var(--v4-rule-strong);
+  box-shadow: 0 40px 80px -24px rgba(0, 0, 0, 0.7),
+              0 16px 32px -8px rgba(232, 168, 144, 0.1);
+}
+
+.v4-phone__screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--v4-bg);
+  border-radius: 28px;
+  overflow: hidden;
+}
+
+.v4-phone__screen::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80px;
+  height: 22px;
+  background: #0e0e10;
+  border-radius: 14px;
+  z-index: 2;
+}
+
+.v4-phone__screen img,
+.v4-phone__screen video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  display: block;
+}
+
+/* Scroll progress bar */
+.v4-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--v4-rule);
+  z-index: 60;
+}
+
+.v4-progress__bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--v4-accent-start), var(--v4-accent-end));
+  transform-origin: left center;
+}
+
+/* Mobile tweaks */
+@media (max-width: 720px) {
+  :root {
+    --v4-scene-py: clamp(64px, 12vh, 100px);
+  }
+  .v4-laptop {
+    max-width: 100%;
+    padding: 14px 10px 10px;
+  }
+  .v4-phone {
+    width: 180px;
+  }
+}
+
+/* Reduced motion contract */
+@media (prefers-reduced-motion: reduce) {
+  .landing-v4 *,
+  .landing-v4 *::before,
+  .landing-v4 *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

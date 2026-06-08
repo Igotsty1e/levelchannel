@@ -19,13 +19,32 @@ export function ScreenHero() {
       }}
     >
       {/* Veo 3.1 ambient loop behind everything */}
-      <div style={{ position: 'absolute', inset: 0, opacity: 0.22, mixBlendMode: 'screen', pointerEvents: 'none' }}>
-        <AssetOrPlaceholder
+      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
+        <video
           src="/assets/landing-v3/video/hero-ambient.mp4"
-          alt="ambient desk loop"
-          aspectRatio="auto"
-          className=""
-          video
+          autoPlay
+          muted
+          loop
+          playsInline
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            opacity: 0.28,
+            mixBlendMode: 'screen',
+          }}
+        />
+        {/* Bottom-to-top warm fade so text + CTA сидят на чёрном, не обрезаясь визуально */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background:
+              'linear-gradient(180deg, rgba(11,11,12,0.55) 0%, rgba(11,11,12,0.25) 30%, rgba(11,11,12,0.55) 65%, rgba(11,11,12,0.92) 100%)',
+          }}
         />
       </div>
 
@@ -33,13 +52,12 @@ export function ScreenHero() {
 
       <div style={{ position: 'relative', zIndex: 2, maxWidth: 1100, textAlign: 'center' }}>
         <h1 className="landing-v3-h1 landing-v3-h1--gradient" style={{ fontSize: 'clamp(40px, 7vw, 88px)' }}>
-          Занимайся преподаванием,
+          Преподавай.
           <br />
-          а не <em style={{ fontStyle: 'italic', fontFamily: 'Charter, Iowan Old Style, Georgia, serif' }}>бесконечными переписками</em> с учениками.
+          А переписки <em style={{ fontStyle: 'italic', fontFamily: 'Charter, Iowan Old Style, Georgia, serif' }}>возьмём на себя.</em>
         </h1>
         <p className="landing-v3-lede" style={{ marginTop: 32, marginLeft: 'auto', marginRight: 'auto' }}>
-          Расписание, ученики, балансы, пакеты. То, что репетитор реально открывает
-          каждый день — собрано в одном месте. Бесплатно, навсегда, для первого ученика.
+          Кабинет частного репетитора: расписание, ученики, балансы и оплаты — в одном месте. Без шести вкладок, Excel-таблиц и блокнотов.
         </p>
         <div style={{ marginTop: 48, display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
           <Link
@@ -48,12 +66,12 @@ export function ScreenHero() {
           >
             Начать бесплатно →
           </Link>
-          <a href="#features" className="landing-v3-cta landing-v3-cta--ghost">
-            Посмотреть, как выглядит
+          <a href="#screens" className="landing-v3-cta landing-v3-cta--ghost">
+            Посмотреть кабинет
           </a>
         </div>
         <p style={{ marginTop: 24, fontSize: 13, color: '#6B6B73' }}>
-          Без карты при регистрации · Данные не передаются третьим лицам
+          Карта не нужна · Стартовый навсегда бесплатно · Без e-mail-спама
         </p>
       </div>
     </section>

@@ -47,24 +47,13 @@ export function LandingV3Header() {
           gap: 32,
         }}
       >
-        <Link href="/saas/v3" style={{ display: 'inline-flex', alignItems: 'center', textDecoration: 'none', color: '#F5F5F7' }}>
+        <Link href="/" style={{ display: 'inline-flex', alignItems: 'center', textDecoration: 'none', color: '#F5F5F7' }}>
           <BrandMark variant="full" width={180} />
         </Link>
 
-        <nav style={{ display: 'flex', alignItems: 'center', gap: 24, marginLeft: 16 }}>
+        <nav className="landing-v3-nav" aria-label="Главное меню" style={{ display: 'flex', alignItems: 'center', gap: 24, marginLeft: 16 }}>
           {NAV.map((n) => (
-            <a
-              key={n.href}
-              href={n.href}
-              style={{
-                color: 'var(--v3-text-secondary)',
-                fontSize: 14,
-                textDecoration: 'none',
-                transition: 'color 180ms ease',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = '#F5F5F7')}
-              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--v3-text-secondary)')}
-            >
+            <a key={n.href} href={n.href} className="landing-v3-nav-link">
               {n.label}
             </a>
           ))}
@@ -73,32 +62,64 @@ export function LandingV3Header() {
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
           <Link
             href="/login"
+            className="landing-v3-login-link"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              padding: '8px 18px',
-              borderRadius: 999,
-              background: 'transparent',
-              color: '#F5F5F7',
+              padding: '8px 16px',
+              color: 'var(--v3-text-secondary)',
               fontSize: 14,
               fontWeight: 500,
-              border: '1px solid rgba(255,255,255,0.18)',
               textDecoration: 'none',
-              transition: 'background 180ms ease, border-color 180ms ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255,255,255,0.06)'
-              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.3)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent'
-              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.18)'
+              transition: 'color 180ms ease',
             }}
           >
             Войти
           </Link>
+          <Link
+            href="/register?role=teacher&utm_source=landing-v3&utm_content=header"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '10px 22px',
+              borderRadius: 999,
+              background: 'linear-gradient(135deg, #C87878, #E8A890)',
+              color: '#0B0B0C',
+              fontSize: 14,
+              fontWeight: 600,
+              textDecoration: 'none',
+              boxShadow: '0 8px 24px -10px rgba(232,168,144,0.4)',
+              transition: 'transform 200ms ease, box-shadow 200ms ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-1px)'
+              e.currentTarget.style.boxShadow = '0 14px 32px -10px rgba(232,168,144,0.55)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)'
+              e.currentTarget.style.boxShadow = '0 8px 24px -10px rgba(232,168,144,0.4)'
+            }}
+          >
+            Начать бесплатно
+          </Link>
         </div>
       </div>
+
+      <style>{`
+        .landing-v3-nav-link {
+          color: var(--v3-text-secondary);
+          font-size: 14px;
+          text-decoration: none;
+          transition: color 180ms ease;
+        }
+        .landing-v3-nav-link:hover,
+        .landing-v3-nav-link:focus-visible { color: #F5F5F7; }
+        .landing-v3-login-link:hover,
+        .landing-v3-login-link:focus-visible { color: #F5F5F7 !important; }
+        @media (max-width: 768px) {
+          .landing-v3-nav { display: none !important; }
+        }
+      `}</style>
     </header>
   )
 }
