@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 
+import { track } from '@/lib/analytics/track'
 import { BackgroundBeams } from '@/components/ui/aceternity'
 import { AssetOrPlaceholder } from '../_shared/placeholder'
 
@@ -63,10 +64,15 @@ export function ScreenHero() {
           <Link
             href="/register?role=teacher&utm_source=landing-v3&utm_content=hero"
             className="landing-v3-cta"
+            onClick={() => track('hero_cta_clicked', { cta: 'primary_start_free' })}
           >
             Начать бесплатно →
           </Link>
-          <a href="#screens" className="landing-v3-cta landing-v3-cta--ghost">
+          <a
+            href="#screens"
+            className="landing-v3-cta landing-v3-cta--ghost"
+            onClick={() => track('hero_cta_clicked', { cta: 'secondary_see_pricing' })}
+          >
             Посмотреть кабинет
           </a>
         </div>

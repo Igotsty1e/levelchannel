@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 
+import { track } from '@/lib/analytics/track'
 import { BorderBeam } from '@/components/ui/aceternity'
 
 const fadeUp = { initial: { opacity: 0, y: 40 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, margin: '-100px' } }
@@ -123,6 +124,7 @@ export function ScreenPricing() {
             <Link
               href={tier.ctaHref}
               className="landing-v3-cta"
+              onClick={() => track('pricing_tier_clicked', { tier: tier.id, tier_name: tier.name as 'Стартовый' | 'Базовый' | 'Расширенный' })}
               style={{
                 width: '100%',
                 justifyContent: 'center',

@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
+import { track } from '@/lib/analytics/track'
 import { Button } from '@/components/ui/primitives'
 import type { CloudPaymentsWidgetIntent } from '@/lib/payments/types'
 
@@ -47,8 +48,10 @@ export function BuyButton({ slug, titleRu, amountRub, packageId }: Props) {
 
   async function onClick() {
     setErr(null)
+    track('buy_clicked', { package_id: packageId })
     if (!confirm(`Купить пакет «${titleRu}» за ${amountRub} ₽?`)) return
     setBusy(true)
+    track('payment_widget_opened', { surface: 'cabinet_packages', amount_rub: amountRub })
     try {
       const res = await fetch(
         `/api/checkout/package/${encodeURIComponent(slug)}?packageId=${encodeURIComponent(packageId)}`,

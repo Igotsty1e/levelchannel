@@ -7,6 +7,7 @@ import { FormEvent, useEffect, useState } from 'react'
 import { AuthShell } from '@/components/auth-shell'
 import { AuthErrorBox, AuthField, authInputStyle } from '@/components/auth-form-bits'
 import { postAuthJson } from '@/lib/auth/client'
+import { track } from '@/lib/analytics/track'
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -137,6 +138,7 @@ export default function RegisterPage() {
       return
     }
     setSubmitting(true)
+    track('signup_submit_started', { role: (inviteToken ? 'student' : role) === 'student' ? 'learner' : 'teacher' })
     const result = await postAuthJson('/api/auth/register', {
       email: email.trim(),
       password,
@@ -152,9 +154,11 @@ export default function RegisterPage() {
         : {}),
     })
     if (result.ok) {
+      track('signup_completed', { role: (inviteToken ? 'student' : role) === 'student' ? 'learner' : 'teacher' })
       router.push(`/verify-pending?email=${encodeURIComponent(email.trim())}`)
       return
     }
+    track('signup_failed', { reason: result.error ?? 'unknown' })
     if (result.error === 'saas_offer_version_changed') {
       // Operator опубликовал новую версию между mount и submit. Перетянем
       // version-id и попросим заново согласиться.
