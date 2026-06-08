@@ -123,12 +123,13 @@ export async function isEditorialOnlyChain(
   if (fromVersionId === toVersionId) return true
   const r = runner ?? getDbPool()
   let cursor: string | null = fromVersionId
+  type ChainRow = {
+    previous_version_id: string | null
+    change_kind: string
+  }
   for (let hop = 0; hop < 16; hop += 1) {
     if (cursor === null) return false
-    const result = await r.query<{
-      previous_version_id: string | null
-      change_kind: string
-    }>(
+    const result: import('pg').QueryResult<ChainRow> = await r.query<ChainRow>(
       `select previous_version_id, change_kind
          from legal_document_versions
         where id = $1`,
