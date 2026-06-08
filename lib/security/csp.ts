@@ -49,16 +49,16 @@ export function assembleCsp({ nonce }: CspOptions): string {
     // deferred 2026-05-08); will be dropped once GA wiring intent is
     // resolved.
     `script-src 'self' 'nonce-${nonce}' https://widget.cloudpayments.ru https://www.googletagmanager.com https://www.google-analytics.com`,
-    // PR 4 — split: `style-src` no longer carries `'unsafe-inline'`;
-    // `style-src-attr 'unsafe-inline'` (below) covers JSX `style={...}`
-    // attributes which compile to inline DOM `style="..."` attributes.
-    // Empirical: 0 inline `<style>` blocks in rendered HTML (Next.js
-    // CSS extraction emits external `.css` files), so the nonce in
-    // `style-src` is also dropped — there's nothing to stamp it onto.
+    // PR 4 — split: `style-src` originally dropped `'unsafe-inline'`
+    // because empirically there were 0 inline `<style>` blocks. PR
+    // 2026-06-09 (landing-v3 promote) added 6 `<style>{...}</style>`
+    // blocks in landing-v3 screens for @media queries + :hover states.
+    // Re-add `'unsafe-inline'` temporarily; DEBT to extract those
+    // blocks into landing-v3.css (external, covered by `'self'`) and
+    // drop `'unsafe-inline'` again.
     // `fonts.googleapis.com` / `fonts.gstatic.com` removed because
-    // `next/font/google` self-hosts the font files since Next 13+
-    // (verified 2026-05-08: 0 references to those hosts in HTML).
-    `style-src 'self'`,
+    // `next/font/google` self-hosts the font files since Next 13+.
+    `style-src 'self' 'unsafe-inline'`,
     `style-src-attr 'unsafe-inline'`,
     `font-src 'self'`,
     `img-src 'self' data: https://*.cloudpayments.ru`,

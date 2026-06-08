@@ -11,17 +11,25 @@ const inter = Inter({
   display: 'swap',
 })
 
+// metadataBase fixes og:image/twitter:image generation in prod —
+// without it Next.js falls back to localhost:3000 (broken unfurls
+// on LinkedIn/Telegram/FB). Pulls from NEXT_PUBLIC_SITE_URL env so
+// staging vs prod resolve correctly.
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') || 'https://levelchannel.ru'
+
 export const metadata: Metadata = {
-  title: 'LevelChannel — Индивидуальный английский под вашу цель',
+  metadataBase: new URL(SITE_URL),
+  // Neutral default for routes that don't set their own metadata
+  // (e.g. /login, /register, /thank-you). Anastasia + landing-v3
+  // override via page-level metadata exports.
+  title: 'LevelChannel',
   description:
-    'Индивидуальные онлайн-занятия по английскому 1:1. Подготовка к IELTS, английский для работы, разговорный английский. 8 лет опыта, 10 000+ часов преподавания.',
-  keywords:
-    'английский онлайн, репетитор английского, IELTS подготовка, индивидуальные занятия, английский для работы',
+    'LevelChannel — продукты для онлайн-обучения: CRM-кабинет для частного репетитора и индивидуальные занятия английским.',
   openGraph: {
-    title: 'LevelChannel — Индивидуальный английский под вашу цель',
-    description:
-      'Индивидуальные занятия 1:1. 8 лет опыта, 10 000+ часов преподавания.',
+    title: 'LevelChannel',
+    description: 'CRM-кабинет для частного репетитора и индивидуальные занятия английским.',
     type: 'website',
+    url: SITE_URL,
   },
   icons: {
     icon: '/favicon.svg',
@@ -66,9 +74,32 @@ export default async function RootLayout({
   // framing AND added a third-party connection on every page view.
   // Page-level injection keeps the script next to its only consumers
   // (PricingSection, CheckoutForm).
+  // Organization schema — global JSON-LD for entire site. Each
+  // page can stack additional schema (e.g. SoftwareApplication for
+  // SEO learn-pages via SeoArticle, Service for Anastasia page).
+  const orgSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: 'LevelChannel',
+    url: SITE_URL,
+    logo: `${SITE_URL}/favicon.svg`,
+    sameAs: [],
+    contactPoint: {
+      '@type': 'ContactPoint',
+      email: 'support@levelchannel.ru',
+      contactType: 'customer support',
+      areaServed: 'RU',
+      availableLanguage: ['ru'],
+    },
+  }
+
   return (
     <html lang="ru" className={inter.variable}>
       <body>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(orgSchema) }}
+        />
         {children}
         <ServiceWorkerRegistration />
       </body>

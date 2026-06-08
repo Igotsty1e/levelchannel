@@ -21,15 +21,16 @@ describe('assembleCsp', () => {
     expect(scriptSrc).toMatch(/'nonce-x'/)
   })
 
-  it('does NOT carry unsafe-inline on style-src (PR 4 contract)', () => {
-    // PR 4 split style-src: the directive controlling <style> tags +
-    // <link rel="stylesheet"> is now strict (`'self'` only). The
-    // separate style-src-attr keeps `'unsafe-inline'` for the 198
-    // inline JSX `style={...}` attributes which compile to DOM
-    // `style="..."` HTML attributes.
+  it('carries unsafe-inline on style-src (temporary post-landing-v3, debt)', () => {
+    // PR 4 dropped `'unsafe-inline'` from `style-src` (empirically 0
+    // inline `<style>` blocks at that time). PR 2026-06-09 (landing-v3
+    // promote) introduced 6 inline `<style>{...}</style>` blocks in
+    // landing-v3 screens for @media + :hover. Re-added 'unsafe-inline'
+    // temporarily; DEBT to extract those blocks to landing-v3.css and
+    // restore strict directive.
     const csp = assembleCsp({ nonce: 'x' })
     const styleSrc = csp.match(/(?:^|; )style-src [^;]*/)?.[0] ?? ''
-    expect(styleSrc).not.toMatch(/'unsafe-inline'/)
+    expect(styleSrc).toMatch(/'unsafe-inline'/)
     expect(csp).toMatch(/style-src-attr 'unsafe-inline'/)
   })
 
