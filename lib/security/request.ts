@@ -27,6 +27,19 @@ function getAllowedOrigins() {
   origins.add('http://localhost:3000')
   origins.add('http://127.0.0.1:3000')
 
+  // Dev-only escape hatch — local network testing (other devices on
+  // the same LAN) + tunnels (cloudflared / ngrok) need an opt-in list
+  // of extra origins. Hard-gated behind NODE_ENV !== 'production': in
+  // prod we ignore the env var even if it leaks into the runtime, so
+  // an accidental .env entry on the VPS cannot widen the trusted set.
+  if (process.env.NODE_ENV !== 'production') {
+    const extra = process.env.DEV_EXTRA_ALLOWED_ORIGINS ?? ''
+    for (const raw of extra.split(',')) {
+      const normalised = normalizeOrigin(raw.trim())
+      if (normalised) origins.add(normalised)
+    }
+  }
+
   return origins
 }
 

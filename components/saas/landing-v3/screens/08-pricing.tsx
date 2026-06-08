@@ -8,6 +8,7 @@ import { BorderBeam } from '@/components/ui/aceternity'
 const fadeUp = { initial: { opacity: 0, y: 40 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, margin: '-100px' } }
 
 type Tier = {
+  id: 'free' | 'basic' | 'pro'
   name: string
   price: string
   period: string
@@ -21,6 +22,7 @@ type Tier = {
 
 const TIERS: Tier[] = [
   {
+    id: 'free',
     name: 'Стартовый',
     price: '0 ₽',
     period: 'навсегда',
@@ -35,6 +37,7 @@ const TIERS: Tier[] = [
     ctaHref: '/register?role=teacher&utm_source=landing-v3&utm_content=pricing_free',
   },
   {
+    id: 'basic',
     name: 'Базовый',
     price: '300 ₽',
     period: 'в месяц',
@@ -49,6 +52,7 @@ const TIERS: Tier[] = [
     ctaHref: '/teacher/subscription',
   },
   {
+    id: 'pro',
     name: 'Расширенный',
     price: '800 ₽',
     period: 'в месяц',
@@ -74,18 +78,17 @@ export function ScreenPricing() {
           Тарифы
         </motion.div>
         <motion.h2 {...fadeUp} transition={{ duration: 0.7, delay: 0.1 }} className="landing-v3-h2 landing-v3-h2--serif" style={{ marginTop: 16 }}>
-          Простая цена за <em>активных учеников.</em>
+          Платишь только <em>за активных учеников.</em>
         </motion.h2>
         <motion.p {...fadeUp} transition={{ duration: 0.7, delay: 0.2 }} className="landing-v3-lede" style={{ margin: '16px auto 0' }}>
-          Стартовый навсегда. Базовый и Расширенный, когда у тебя становится больше учеников.
-          Платишь только за активных.
+          Стартовый — навсегда. Базовый и Расширенный включаются сами, когда у тебя становится больше одного ученика.
         </motion.p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 20, maxWidth: 1080, margin: '0 auto' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 20, maxWidth: 1080, margin: '0 auto' }} className="landing-v3-tiers-grid">
         {TIERS.map((tier, idx) => (
           <motion.div
-            key={tier.name}
+            key={tier.id}
             initial={{ opacity: 0, y: 40 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: '-100px' }}
@@ -138,6 +141,12 @@ export function ScreenPricing() {
       <p style={{ textAlign: 'center', marginTop: 32, fontSize: 13, color: 'var(--v3-text-muted)' }}>
         Без карты при регистрации. Оплата только при переходе на платный тариф.
       </p>
+
+      <style>{`
+        @media (max-width: 760px) {
+          .landing-v3-tiers-grid { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
     </section>
   )
 }

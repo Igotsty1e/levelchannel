@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   enforceTrustedBrowserOrigin,
@@ -51,6 +51,49 @@ describe('enforceTrustedBrowserOrigin', () => {
       buildRequest({ origin: 'https://attacker.example' }),
     )
     expect(response?.status).toBe(403)
+  })
+
+  // DEV_EXTRA_ALLOWED_ORIGINS — restores the dev/test escape hatch that
+  // was reverted from PR #551. Test pins both halves of the contract:
+  //   - opt-in entries pass when set
+  //   - they are ignored in production NODE_ENV (no widening on prod)
+  describe('DEV_EXTRA_ALLOWED_ORIGINS', () => {
+    const ORIGINAL = process.env.DEV_EXTRA_ALLOWED_ORIGINS
+    const ORIGINAL_NODE_ENV = process.env.NODE_ENV
+    afterEach(() => {
+      process.env.DEV_EXTRA_ALLOWED_ORIGINS = ORIGINAL
+      process.env.NODE_ENV = ORIGINAL_NODE_ENV
+    })
+
+    it('passes when origin is listed in DEV_EXTRA_ALLOWED_ORIGINS (dev)', () => {
+      process.env.NODE_ENV = 'development'
+      process.env.DEV_EXTRA_ALLOWED_ORIGINS =
+        'http://192.168.6.31:3010,https://abc.trycloudflare.com'
+      expect(
+        enforceTrustedBrowserOrigin(
+          buildRequest({ origin: 'https://abc.trycloudflare.com' }),
+        ),
+      ).toBeNull()
+    })
+
+    it('ignores DEV_EXTRA_ALLOWED_ORIGINS in production', () => {
+      process.env.NODE_ENV = 'production'
+      process.env.DEV_EXTRA_ALLOWED_ORIGINS = 'https://abc.trycloudflare.com'
+      const response = enforceTrustedBrowserOrigin(
+        buildRequest({ origin: 'https://abc.trycloudflare.com' }),
+      )
+      expect(response?.status).toBe(403)
+    })
+
+    it('tolerates whitespace and empty entries', () => {
+      process.env.NODE_ENV = 'development'
+      process.env.DEV_EXTRA_ALLOWED_ORIGINS = ' , https://abc.trycloudflare.com , '
+      expect(
+        enforceTrustedBrowserOrigin(
+          buildRequest({ origin: 'https://abc.trycloudflare.com' }),
+        ),
+      ).toBeNull()
+    })
   })
 })
 

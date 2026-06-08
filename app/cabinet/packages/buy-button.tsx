@@ -138,6 +138,12 @@ export function BuyButton({ slug, titleRu, amountRub, packageId }: Props) {
       <Button onClick={onClick} disabled={busy} loading={busy} fullWidth>
         {busy ? 'Открываем оплату' : 'Купить'}
       </Button>
+      <p style={{ fontSize: 11, lineHeight: 1.45, color: 'var(--muted)', margin: '4px 0 0' }}>
+        Нажимая «Купить», вы акцептуете{' '}
+        <a href="/offer" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>оферту</a>,{' '}
+        <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>политику</a> и{' '}
+        <a href="/consent/personal-data" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>согласие на обработку ПДн</a>.
+      </p>
       {err ? (
         <div style={{ color: 'var(--danger)', fontSize: 12 }}>{err}</div>
       ) : null}

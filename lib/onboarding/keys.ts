@@ -31,6 +31,13 @@ export const ONBOARDING_HINT_KEYS = [
   'verify_email_reminder',
   // SBP self-service epic — explainer на первом входе в /teacher/payments.
   'teacher_payments_explainer',
+  // SBP self-service learner-side — три объяснялки в кабинете ученика.
+  // 1) Как платить через СБП (на /cabinet рядом с уроками).
+  // 2) Что значит «ждёт подтверждения» (на /cabinet/payments).
+  // 3) Возврат — это уже не платформа держит деньги (под refund-строкой).
+  'learner_pay_sbp_intro',
+  'learner_pay_claim_waiting_explained',
+  'learner_pay_refund_explained',
 ] as const
 
 export type OnboardingHintKey = (typeof ONBOARDING_HINT_KEYS)[number]

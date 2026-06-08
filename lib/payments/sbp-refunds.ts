@@ -126,6 +126,41 @@ export async function listRefundsForTeacher(
   }))
 }
 
+// Mirror of listRefundsForTeacher для ученика: возвращает только refunds
+// по тем claims, где ученик — это `learner_account_id`. Учитель и
+// ученик видят одну и ту же запись о возврате, но fetch'ат её
+// разными join-ами.
+export async function listRefundsForLearner(
+  learnerAccountId: string,
+  limit = 50,
+): Promise<RefundRow[]> {
+  const r = await getDbPool().query<{
+    id: string
+    claim_id: string
+    amount_kopecks: number
+    reason: string
+    note: string | null
+    refunded_at: string
+  }>(
+    `select r.id, r.claim_id, r.amount_kopecks, r.reason, r.note,
+            r.refunded_at::text
+       from payment_refunds r
+       join payment_claims c on c.id = r.claim_id
+      where c.learner_account_id = $1
+      order by r.refunded_at desc
+      limit $2`,
+    [learnerAccountId, limit],
+  )
+  return r.rows.map((row) => ({
+    id: row.id,
+    claimId: row.claim_id,
+    amountKopecks: row.amount_kopecks,
+    reason: row.reason as RefundReason,
+    note: row.note,
+    refundedAt: row.refunded_at,
+  }))
+}
+
 export async function listRefundsForClaim(claimId: string): Promise<RefundRow[]> {
   const r = await getDbPool().query<{
     id: string

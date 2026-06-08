@@ -5,7 +5,7 @@ import { getActiveConsent } from '@/lib/auth/consents'
 import { isLearnerArchetypeCandidate } from '@/lib/auth/learner-archetype'
 import { type Session, getCurrentSession } from '@/lib/auth/sessions'
 import { resolveOperatorSetting } from '@/lib/admin/operator-settings'
-import { getCurrentLegalVersion } from '@/lib/legal/versions'
+import { getCurrentLegalVersion, isEditorialOnlyChain } from '@/lib/legal/versions'
 
 export type GuardResult =
   | { ok: true; account: Account; session: Session }
@@ -390,10 +390,19 @@ export async function evaluateSaasOfferGate(
     return { kind: 'awaiting_publication' }
   }
   const consent = await getActiveConsent(accountId, 'saas_offer')
-  if (!consent || consent.legalDocumentVersionId !== live.id) {
-    return { kind: 'consent_required' }
-  }
-  return { kind: 'ok' }
+  if (!consent) return { kind: 'consent_required' }
+  if (consent.legalDocumentVersionId === live.id) return { kind: 'ok' }
+  // mig 0116 auto-pass: if every link from `live` down to the consented
+  // version is editorial, accept the existing consent (non-material
+  // typo-fix shouldn't force re-acceptance). Consent without anchor row
+  // can't be walked — treat as needing re-acceptance.
+  if (!consent.legalDocumentVersionId) return { kind: 'consent_required' }
+  const editorialOk = await isEditorialOnlyChain(
+    live.id,
+    consent.legalDocumentVersionId,
+  )
+  if (editorialOk) return { kind: 'ok' }
+  return { kind: 'consent_required' }
 }
 
 // MUTATION-PATH GATE — Class C race closure from plan §0af.
@@ -453,11 +462,13 @@ export async function evaluateSaasOfferGateForMutation(
   // (revoked_at IS NULL + order by accepted_at desc).
   const res = await client.query<{
     live_offer_label: string | null
+    live_offer_id: string | null
     live_terms_label: string | null
     consent_combined_version: string | null
+    consent_legal_document_version_id: string | null
   }>(
     `with live_offer as (
-       select version_label
+       select id, version_label
          from legal_document_versions
         where doc_kind = 'saas_offer'
           and effective_from <= now()
@@ -473,7 +484,7 @@ export async function evaluateSaasOfferGateForMutation(
         limit 1
      ),
      consent as (
-       select document_version
+       select document_version, legal_document_version_id
          from account_consents
         where account_id = $1::uuid
           and document_kind = 'saas_offer'
@@ -483,8 +494,10 @@ export async function evaluateSaasOfferGateForMutation(
      )
      select
        (select version_label from live_offer) as live_offer_label,
+       (select id from live_offer) as live_offer_id,
        (select version_label from live_terms) as live_terms_label,
-       (select document_version from consent) as consent_combined_version`,
+       (select document_version from consent) as consent_combined_version,
+       (select legal_document_version_id from consent) as consent_legal_document_version_id`,
     [accountId],
   )
   const row = res.rows[0]
@@ -502,14 +515,29 @@ export async function evaluateSaasOfferGateForMutation(
   }
   const { parseCombinedVersion } = await import('@/lib/legal/combined-version')
   const parsed = parseCombinedVersion(row.consent_combined_version)
+  if (parsed === null) return { kind: 'consent_required' }
+  const labelsMatch =
+    parsed.saasOfferLabel === row.live_offer_label
+    && parsed.processorTermsLabel === row.live_terms_label
+  if (labelsMatch) return { kind: 'ok' }
+  // mig 0116 auto-pass — accept if the saas_offer chain from live down
+  // to the consented row is editorial-only. Reads run on the caller's
+  // PoolClient so they stay inside the same REPEATABLE READ snapshot.
+  // We DO NOT skip processor_terms mismatch (different doc; would need
+  // its own chain walk + separate editorial successor).
   if (
-    parsed === null
-    || parsed.saasOfferLabel !== row.live_offer_label
-    || parsed.processorTermsLabel !== row.live_terms_label
+    row.live_offer_id
+    && row.consent_legal_document_version_id
+    && parsed.processorTermsLabel === row.live_terms_label
   ) {
-    return { kind: 'consent_required' }
+    const editorialOk = await isEditorialOnlyChain(
+      row.live_offer_id,
+      row.consent_legal_document_version_id,
+      client,
+    )
+    if (editorialOk) return { kind: 'ok' }
   }
-  return { kind: 'ok' }
+  return { kind: 'consent_required' }
 }
 
 // REQUEST WRAPPER: combines requireTeacherAndVerified with the gate.

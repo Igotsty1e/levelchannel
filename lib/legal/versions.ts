@@ -99,6 +99,51 @@ export async function listLegalVersions(
   return result.rows.map((r) => rowToVersion(r as Record<string, unknown>))
 }
 
+// Editorial-only chain walk: starting from `fromVersionId`, follow
+// `previous_version_id` back until we either reach `toVersionId` (the
+// consent's version), or hit a row whose `change_kind` is NOT 'editorial'.
+// Returns true iff every link from `from` (exclusive) back to `to`
+// (inclusive) is an editorial successor — meaning the body change is
+// non-material and the existing consent should auto-pass per mig 0116.
+//
+// Used by `evaluateSaasOfferGate` to skip re-acceptance UX for typo
+// fixes (e.g. mig 0115 v1-2026-06-08-editorial after v1-2026-06-01).
+type LegalQueryRunner = {
+  query: <R extends import('pg').QueryResultRow = import('pg').QueryResultRow>(
+    text: string,
+    values?: unknown[],
+  ) => Promise<import('pg').QueryResult<R>>
+}
+
+export async function isEditorialOnlyChain(
+  fromVersionId: string,
+  toVersionId: string,
+  runner?: LegalQueryRunner,
+): Promise<boolean> {
+  if (fromVersionId === toVersionId) return true
+  const r = runner ?? getDbPool()
+  let cursor: string | null = fromVersionId
+  type ChainRow = {
+    previous_version_id: string | null
+    change_kind: string
+  }
+  for (let hop = 0; hop < 16; hop += 1) {
+    if (cursor === null) return false
+    const result: import('pg').QueryResult<ChainRow> = await r.query<ChainRow>(
+      `select previous_version_id, change_kind
+         from legal_document_versions
+        where id = $1`,
+      [cursor],
+    )
+    if (result.rows.length === 0) return false
+    const row = result.rows[0]
+    if (row.change_kind !== 'editorial') return false
+    if (row.previous_version_id === toVersionId) return true
+    cursor = row.previous_version_id
+  }
+  return false
+}
+
 // Wave 19 — operator publishes a new version. The previous-version
 // chain MUST stay strictly linear, including under (a) concurrent
 // admin sessions and (b) future-dated `effective_from`.
