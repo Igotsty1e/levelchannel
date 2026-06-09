@@ -7,7 +7,6 @@ import {
   RecurrenceInputError,
   expandRecurrence,
   type DayOfWeek,
-  type TimeInterval,
 } from '@/lib/calendar/recurrence'
 import { getDbPool } from '@/lib/db/pool'
 import {
@@ -73,22 +72,12 @@ export async function POST(request: Request) {
     typeof raw.durationMinutes === 'number' ? raw.durationMinutes : 0
   const daysOfWeekRaw = Array.isArray(raw.daysOfWeek) ? raw.daysOfWeek : []
   const timesRaw = Array.isArray(raw.times) ? raw.times : []
-  const intervalsRaw = Array.isArray(raw.intervals) ? raw.intervals : []
   const daysOfWeek = daysOfWeekRaw
     .map(asDayOfWeek)
     .filter((v): v is DayOfWeek => v !== null)
   const times = timesRaw.filter(
     (t): t is string => typeof t === 'string' && TIME_RE.test(t),
   )
-  const intervals: TimeInterval[] = []
-  for (const iv of intervalsRaw) {
-    if (!iv || typeof iv !== 'object') continue
-    const from = (iv as { from?: unknown }).from
-    const to = (iv as { to?: unknown }).to
-    if (typeof from !== 'string' || typeof to !== 'string') continue
-    if (!TIME_RE.test(from) || !TIME_RE.test(to)) continue
-    intervals.push({ from, to })
-  }
 
   try {
     const expanded = expandRecurrence({
@@ -97,7 +86,6 @@ export async function POST(request: Request) {
       daysOfWeek,
       times,
       durationMinutes,
-      intervals: intervals.length > 0 ? intervals : undefined,
     })
 
     const willCreate = expanded.slots

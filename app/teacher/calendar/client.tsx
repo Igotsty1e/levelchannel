@@ -3,11 +3,8 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
-import { CreateSlotFab } from '@/components/calendar/CreateSlotFab'
-import {
-  CreateSlotSheet,
-  type CreateMode,
-} from '@/components/calendar/CreateSlotSheet'
+import { BulkAddSlotsModal } from '@/components/calendar/BulkAddSlotsModal'
+import { MobileCreateFab, type CreateMode } from '@/components/calendar/MobileCreateFab'
 import { PaintConfirmModal } from '@/components/calendar/PaintConfirmModal'
 import { SlotCalendar } from '@/components/calendar/SlotCalendar'
 import type { PaintSpan, MoveTarget } from '@/lib/calendar/drag-state'
@@ -146,7 +143,6 @@ export default function TeacherCalendarClient({
         <button
           type="button"
           onClick={() => setCreateMode('bulk')}
-          aria-label="Добавить несколько слотов"
           style={{
             padding: '8px 14px',
             border: '1px solid var(--border)',
@@ -198,18 +194,26 @@ export default function TeacherCalendarClient({
         />
       ) : null}
 
-      <CreateSlotFab onOpen={(mode) => setCreateMode(mode)} />
-      <CreateSlotSheet
+      <MobileCreateFab
+        tariffs={tariffs}
         mode={createMode}
         onModeChange={setCreateMode}
-        tariffs={tariffs}
         onCreated={() => {
-          showToast(
-            createMode === 'bulk' ? 'Слоты созданы.' : 'Занятие создано.',
-          )
+          showToast('Занятие создано.')
           bumpReload()
           router.refresh()
         }}
+      />
+      <BulkAddSlotsModal
+        open={createMode === 'bulk'}
+        onClose={() => setCreateMode('closed')}
+        onSwitchToSingle={() => setCreateMode('single')}
+        onCreated={() => {
+          showToast('Слоты созданы.')
+          bumpReload()
+          router.refresh()
+        }}
+        tariffs={tariffs}
       />
     </div>
   )
