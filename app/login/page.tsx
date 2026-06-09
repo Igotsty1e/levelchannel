@@ -7,6 +7,7 @@ import { FormEvent, useState } from 'react'
 import { AuthShell } from '@/components/auth-shell'
 import { AuthErrorBox, AuthField, authInputStyle } from '@/components/auth-form-bits'
 import { postAuthJson } from '@/lib/auth/client'
+import { track } from '@/lib/analytics/track'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -34,6 +35,7 @@ export default function LoginPage() {
     setError(null)
     setInviteNotice(null)
     setSubmitting(true)
+    track('login_submit_started', {})
     const result = await postAuthJson('/api/auth/login', {
       email: email.trim(),
       password,
@@ -55,6 +57,7 @@ export default function LoginPage() {
         setSubmitting(false)
         return
       }
+      track('login_completed', {})
       router.push('/cabinet')
       return
     }
@@ -68,6 +71,7 @@ export default function LoginPage() {
         : raw === 'Invalid request body.'
           ? 'Проверьте, что e-mail и пароль заполнены.'
           : raw
+    track('login_failed', { reason: String(raw || 'unknown').slice(0, 64) })
     setError(friendly)
     setSubmitting(false)
   }
@@ -91,6 +95,7 @@ export default function LoginPage() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            onFocus={() => track('login_form_focused', { field: 'email' })}
             disabled={submitting}
             style={authInputStyle}
           />
@@ -103,6 +108,7 @@ export default function LoginPage() {
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            onFocus={() => track('login_form_focused', { field: 'password' })}
             disabled={submitting}
             style={authInputStyle}
           />

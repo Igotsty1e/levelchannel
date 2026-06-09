@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { motion } from 'framer-motion'
 
 import { Spotlight } from '@/components/ui/aceternity'
+import { track } from '@/lib/analytics/track'
 
 const reveal = {
   initial: { opacity: 0, y: 28 },
@@ -298,6 +299,7 @@ export function ScreenMultiplatform() {
           initial={{ opacity: 0, y: 80 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-80px' }}
+          onViewportEnter={() => track('multiplatform_visible', {})}
           transition={{ duration: 1.4, ease: [0.16, 1, 0.3, 1], delay: 0.3 }}
           className="landing-v3-mp-stage"
           style={{

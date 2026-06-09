@@ -236,3 +236,39 @@ export const ANONYMOUS_ID_COOKIE = COOKIE_NAME
 
 /** Cookie max-age = 2 years. */
 export const ANONYMOUS_ID_MAX_AGE_SEC = 2 * 365 * 24 * 60 * 60
+
+/**
+ * Server-side identify: вызывается в /api/auth/register + login после
+ * успешного создания/верификации аккаунта.
+ *
+ * Reads lc_aid cookie from request, verifies HMAC, runs UPDATE backfill
+ * на pre-signup events (account_id IS NULL → set to account_id).
+ *
+ * Best-effort: если cookie нет / invalid / DB error — возвращает 0,
+ * auth flow не падает из-за analytics.
+ */
+export async function identifyAccountFromRequest(
+  request: Request,
+  accountId: string,
+): Promise<number> {
+  try {
+    const cookieHeader = request.headers.get('cookie') ?? ''
+    const aidRaw = cookieHeader
+      .split(/;\s*/)
+      .find((c) => c.startsWith(`${COOKIE_NAME}=`))
+      ?.slice(COOKIE_NAME.length + 1)
+    const anonymousId = verifySignedAnonymousId(aidRaw)
+    if (!anonymousId) return 0
+
+    const { getDbPool } = await import('@/lib/db/pool')
+    const pool = getDbPool()
+    const client = await pool.connect()
+    try {
+      return await linkAnonymousIdToAccount(client, anonymousId, accountId)
+    } finally {
+      client.release()
+    }
+  } catch {
+    return 0
+  }
+}

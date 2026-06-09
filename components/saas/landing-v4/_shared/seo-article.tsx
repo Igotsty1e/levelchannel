@@ -1,10 +1,12 @@
 'use client'
 
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { motion } from 'framer-motion'
 import type { ReactNode } from 'react'
 
 import { BackgroundBeams } from '@/components/ui/aceternity/background-beams'
+import { track } from '@/lib/analytics/track'
 
 const reveal = {
   initial: { opacity: 0, y: 24 },
@@ -35,6 +37,8 @@ export function SeoArticle({
   ctaHref?: string
   ctaText?: string
 }) {
+  const pathname = usePathname()
+  const slug = (pathname ?? '').replace(/^\/saas\/learn\//, '').replace(/\/$/, '').slice(0, 64) || 'unknown'
   const softwareSchema = {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
@@ -214,7 +218,11 @@ export function SeoArticle({
             Один ученик включён. Карта не нужна.
           </motion.p>
           <motion.div {...reveal} transition={{ duration: 0.9, delay: 0.3 }} style={{ marginTop: 40 }}>
-            <Link href={ctaHref} className="v4-cta v4-cta--lg">
+            <Link
+              href={ctaHref}
+              className="v4-cta v4-cta--lg"
+              onClick={() => track('seo_cta_clicked', { page: slug, cta: 'open_cabinet' })}
+            >
               {ctaText} →
             </Link>
           </motion.div>

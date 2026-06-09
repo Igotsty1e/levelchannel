@@ -1,7 +1,6 @@
-import Link from 'next/link'
-
 import { BrandMark } from '@/components/brand/brand-mark'
 import type { LandingLegalProfile } from '@/lib/landing/legal-profile-loader'
+import { TrackedAnchor, TrackedLink } from './tracked-link'
 
 export function LandingV3Footer({ legalProfile }: { legalProfile: LandingLegalProfile }) {
   return (
@@ -21,9 +20,9 @@ export function LandingV3Footer({ legalProfile }: { legalProfile: LandingLegalPr
             Кабинет для частного репетитора. Спокойный день, понятные деньги.
           </p>
           <p style={{ fontSize: 12, lineHeight: 1.6, color: '#6B6B73', marginTop: 14 }}>
-            <a href="mailto:support@levelchannel.ru" className="landing-v3-link">support@levelchannel.ru</a>
+            <TrackedAnchor href="mailto:support@levelchannel.ru" className="landing-v3-link" target="footer:email">support@levelchannel.ru</TrackedAnchor>
             <br />
-            <Link href="/pay" className="landing-v3-link">Уже учишься? — Оплатить</Link>
+            <TrackedLink href="/pay" className="landing-v3-link" target="footer:pay">Уже учишься? — Оплатить</TrackedLink>
           </p>
         </div>
 
@@ -32,12 +31,12 @@ export function LandingV3Footer({ legalProfile }: { legalProfile: LandingLegalPr
             Узнать больше
           </h3>
           <ul style={{ listStyle: 'none', margin: 0, padding: 0, fontSize: 13, lineHeight: 2, color: '#A1A1AA' }}>
-            <li><Link href="/saas/learn/cabinet" className="landing-v3-link">Как устроен кабинет</Link></li>
-            <li><Link href="/saas/learn/crm-for-tutors" className="landing-v3-link">CRM для репетитора</Link></li>
-            <li><Link href="/saas/learn/schedule" className="landing-v3-link">Расписание</Link></li>
-            <li><Link href="/saas/learn/students" className="landing-v3-link">Карточка ученика</Link></li>
-            <li><Link href="/saas/learn/sbp" className="landing-v3-link">Оплата через СБП</Link></li>
-            <li><Link href="/saas/learn/packages" className="landing-v3-link">Пакеты уроков</Link></li>
+            <li><TrackedLink href="/saas/learn/cabinet" className="landing-v3-link" target="footer:learn:cabinet">Как устроен кабинет</TrackedLink></li>
+            <li><TrackedLink href="/saas/learn/crm-for-tutors" className="landing-v3-link" target="footer:learn:crm">CRM для репетитора</TrackedLink></li>
+            <li><TrackedLink href="/saas/learn/schedule" className="landing-v3-link" target="footer:learn:schedule">Расписание</TrackedLink></li>
+            <li><TrackedLink href="/saas/learn/students" className="landing-v3-link" target="footer:learn:students">Карточка ученика</TrackedLink></li>
+            <li><TrackedLink href="/saas/learn/sbp" className="landing-v3-link" target="footer:learn:sbp">Оплата через СБП</TrackedLink></li>
+            <li><TrackedLink href="/saas/learn/packages" className="landing-v3-link" target="footer:learn:packages">Пакеты уроков</TrackedLink></li>
           </ul>
         </div>
 
@@ -46,16 +45,16 @@ export function LandingV3Footer({ legalProfile }: { legalProfile: LandingLegalPr
             И ещё
           </h3>
           <ul style={{ listStyle: 'none', margin: 0, padding: 0, fontSize: 13, lineHeight: 2, color: '#A1A1AA' }}>
-            <li><Link href="/saas/learn/notifications" className="landing-v3-link">Уведомления и дайджест</Link></li>
-            <li><Link href="/saas/learn/multiplatform" className="landing-v3-link">На любом устройстве</Link></li>
-            <li><Link href="/saas/learn/security" className="landing-v3-link">Безопасность и 152-ФЗ</Link></li>
-            <li><Link href="/saas/learn/free" className="landing-v3-link">Бесплатный тариф</Link></li>
+            <li><TrackedLink href="/saas/learn/notifications" className="landing-v3-link" target="footer:learn:notifications">Уведомления и дайджест</TrackedLink></li>
+            <li><TrackedLink href="/saas/learn/multiplatform" className="landing-v3-link" target="footer:learn:multiplatform">На любом устройстве</TrackedLink></li>
+            <li><TrackedLink href="/saas/learn/security" className="landing-v3-link" target="footer:learn:security">Безопасность и 152-ФЗ</TrackedLink></li>
+            <li><TrackedLink href="/saas/learn/free" className="landing-v3-link" target="footer:learn:free">Бесплатный тариф</TrackedLink></li>
             <li style={{ marginTop: 10 }}>
-              <Link href="/saas/offer" className="landing-v3-link">Оферта</Link>
+              <TrackedLink href="/saas/offer" className="landing-v3-link" target="footer:legal:offer">Оферта</TrackedLink>
               {' · '}
-              <Link href="/privacy" className="landing-v3-link">Политика</Link>
+              <TrackedLink href="/privacy" className="landing-v3-link" target="footer:legal:privacy">Политика</TrackedLink>
               {' · '}
-              <Link href="/consent/personal-data" className="landing-v3-link">Согласие</Link>
+              <TrackedLink href="/consent/personal-data" className="landing-v3-link" target="footer:legal:consent">Согласие</TrackedLink>
             </li>
           </ul>
         </div>

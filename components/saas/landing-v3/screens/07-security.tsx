@@ -2,6 +2,8 @@
 
 import { motion } from 'framer-motion'
 
+import { track } from '@/lib/analytics/track'
+
 const reveal = {
   initial: { opacity: 0, y: 28 },
   whileInView: { opacity: 1, y: 0 },
@@ -209,6 +211,7 @@ export function ScreenSecurity() {
                 href="/saas/learn/security"
                 className="landing-v3-link"
                 style={{ color: 'var(--v3-accent-end)' }}
+                onClick={() => track('security_link_clicked', {})}
               >
                 как мы это делаем
               </a>
