@@ -17,7 +17,9 @@ import { redirect } from 'next/navigation'
 
 import { TeacherSetupChecklist } from '@/components/onboarding/teacher-setup-checklist'
 import { DigestPreviewTile } from '@/components/teacher/digest-preview-tile'
+import { TeacherFinanceSummary } from '@/components/teacher/home/finance-summary'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { getTeacherFinanceSnapshot } from '@/lib/billing/teacher-finance'
 import { getDbPool } from '@/lib/db/pool'
 import { getTeacherDigestPreview } from '@/lib/notifications/teacher-digest-preview'
 import { computeTeacherSetupChecklist } from '@/lib/onboarding/teacher-setup-checklist'
@@ -133,16 +135,19 @@ export default async function TeacherHomePage() {
 
   const teacherAccountId = current.account.id
 
+  const todayYmd = new Date().toISOString().slice(0, 10)
   const [
     upcomingSlots,
     digestPreview,
     setupChecklist,
     teacherFirstName,
+    financeSnapshot,
   ] = await Promise.all([
     listUpcomingSlotsForTeacher(teacherAccountId, 3),
     getTeacherDigestPreview(teacherAccountId),
     computeTeacherSetupChecklist(teacherAccountId),
     loadTeacherFirstName(teacherAccountId),
+    getTeacherFinanceSnapshot(teacherAccountId, todayYmd),
   ])
 
   const teacherTz = digestPreview.teacherTz || 'Europe/Moscow'
@@ -170,6 +175,11 @@ export default async function TeacherHomePage() {
           SSR-rendered when not all 4 setup items are done AND user
           hasn't dismissed. */}
       <TeacherSetupChecklist state={setupChecklist} />
+
+      {/* Finance summary — plan docs/plans/finance-on-teacher-home-2026-06-09.md.
+          4 cards: this-month confirmed / unpaid / active packages /
+          expected this week. Hidden entirely if all zero (новый teacher). */}
+      <TeacherFinanceSummary snapshot={financeSnapshot} />
 
       {/* Дайджест на сегодня — Sub-PR D из teacher-cabinet-polish.
           Превью today_local списка занятий, тот же предикат, что и у
