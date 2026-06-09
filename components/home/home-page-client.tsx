@@ -5,6 +5,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 
 import { BrandMark } from '@/components/brand/brand-mark'
+import { track } from '@/lib/analytics/track'
 
 const TELEGRAM_URL = 'https://t.me/anastasiia_englishcoach'
 
@@ -35,10 +36,12 @@ function CTAButton({
   className = '',
   size = 'md',
   label = 'Написать в Telegram',
+  cta = 'record_lesson',
 }: {
   className?: string
   size?: 'sm' | 'md' | 'lg'
   label?: string
+  cta?: 'record_lesson' | 'see_pricing' | 'see_offer'
 }) {
   const sizeClass = size === 'lg' ? 'text-lg py-4 px-8' : ''
   const smStyle: React.CSSProperties =
@@ -52,7 +55,10 @@ function CTAButton({
       rel="noopener noreferrer"
       className={`btn-primary ${sizeClass} ${className}`}
       style={smStyle}
-      onClick={() => trackEvent('telegram_click')}
+      onClick={() => {
+        trackEvent('telegram_click')
+        track('anastasiia_cta_clicked', { cta })
+      }}
     >
       <TelegramIcon size={size === 'lg' ? 22 : 18} />
       {label}
@@ -165,6 +171,11 @@ function Header() {
               }}
               onMouseEnter={(e) => ((e.target as HTMLElement).style.color = '#fff')}
               onMouseLeave={(e) => ((e.target as HTMLElement).style.color = '#A1A1AA')}
+              onClick={() => {
+                if (href === '#pricing') {
+                  track('anastasiia_cta_clicked', { cta: 'see_pricing' })
+                }
+              }}
             >
               {label}
             </a>

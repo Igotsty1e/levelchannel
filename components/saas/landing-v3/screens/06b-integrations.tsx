@@ -2,16 +2,21 @@
 
 import { motion } from 'framer-motion'
 
+import { track } from '@/lib/analytics/track'
+
 const fadeUp = {
   initial: { opacity: 0, y: 30 },
   whileInView: { opacity: 1, y: 0 },
   viewport: { once: true, margin: '-80px' },
 }
 
+type IntegrationTarget = 'google_calendar' | 'telegram' | 'email' | 'digest'
+
 type Integration = {
   brand: string
   what: string
   body: string
+  target: IntegrationTarget
 }
 
 const INTEGRATIONS: Integration[] = [
@@ -19,21 +24,25 @@ const INTEGRATIONS: Integration[] = [
     brand: 'Google Calendar',
     what: 'Слот → событие',
     body: 'Создал слот в кабинете — он сразу появляется в Google-календаре у тебя и у ученика. Без переноса вручную.',
+    target: 'google_calendar',
   },
   {
     brand: 'Telegram',
     what: 'Напоминание ученику',
     body: 'За час до занятия ученик получает напоминание в Telegram. «Забыл, что у нас сегодня» исчезает.',
+    target: 'telegram',
   },
   {
     brand: 'E-mail',
     what: 'Подтверждения и переносы',
     body: 'Подтверждение записи, перенос, отмена — уходят на почту ученику и родителю автоматически. Не нужно копировать-вставлять.',
+    target: 'email',
   },
   {
     brand: 'Дайджест',
     what: 'Утром одной строкой',
     body: 'Что произошло за день: кто пришёл, кто перенёс, у кого истёк пакет. В кабинете и на почту. Без рысканья по экранам.',
+    target: 'digest',
   },
 ]
 
@@ -68,17 +77,23 @@ export function ScreenIntegrations() {
           }}
         >
           {INTEGRATIONS.map((it, idx) => (
-            <motion.div
+            <motion.a
               key={it.brand}
+              href={it.target === 'google_calendar' ? '/integrations/google-calendar' : '#integrations'}
               initial={{ opacity: 0, y: 24 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: '-80px' }}
               transition={{ duration: 0.6, delay: idx * 0.08 }}
+              onClick={() => track('integrations_link_clicked', { target: it.target })}
               style={{
                 padding: '28px 28px 28px',
                 borderRight: '1px solid var(--v3-rule)',
                 borderBottom: '1px solid var(--v3-rule)',
                 position: 'relative',
+                cursor: 'pointer',
+                textDecoration: 'none',
+                color: 'inherit',
+                display: 'block',
               }}
             >
               <div
@@ -106,9 +121,24 @@ export function ScreenIntegrations() {
               <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--v3-text-secondary)', margin: 0 }}>
                 {it.body}
               </p>
-            </motion.div>
+            </motion.a>
           ))}
         </div>
+
+        <motion.div
+          {...fadeUp}
+          transition={{ duration: 0.7, delay: 0.3 }}
+          style={{ textAlign: 'center', marginTop: 32, fontSize: 14, color: 'var(--v3-text-muted)' }}
+        >
+          Подробнее про интеграцию с{' '}
+          <a
+            href="/integrations/google-calendar"
+            style={{ color: 'var(--v3-accent-end)', textDecoration: 'underline', textUnderlineOffset: 4 }}
+          >
+            Google Calendar
+          </a>
+          {' '}— какие данные читаем и пишем, кто их видит.
+        </motion.div>
       </div>
     </section>
   )

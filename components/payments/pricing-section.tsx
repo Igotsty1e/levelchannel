@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { logCheckoutEvent } from '@/lib/analytics/client'
+import { track } from '@/lib/analytics/track'
 import {
   PERSONAL_DATA_CONSENT_LABEL,
   PERSONAL_DATA_CONSENT_PATH,
@@ -490,6 +491,10 @@ export function PricingSection({ teacherSlug }: { teacherSlug?: string } = {}) {
       emailValid: emailValidation.ok,
       reason: emailValidation.ok ? undefined : emailValidation.reason,
     })
+    track('pay_clicked', {
+      plan_id: 'custom',
+      amount_rub: Number.isFinite(Number(amountRub)) ? Number(amountRub) : 0,
+    })
 
     if (hasLockedPendingOrder) {
       void logCheckoutEvent({
@@ -601,6 +606,10 @@ export function PricingSection({ teacherSlug }: { teacherSlug?: string } = {}) {
         amountRub: payload.order.amountRub,
         email: emailValidation.email,
         emailValid: true,
+      })
+      track('payment_widget_opened', {
+        surface: 'pay',
+        amount_rub: payload.order.amountRub,
       })
 
       // PAY-CP-RESCUE (2026-05-20) — wrap widget-open in a nested

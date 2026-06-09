@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { identifyAccountFromRequest } from '@/lib/analytics/server'
 import { NO_STORE } from '@/lib/api/http-headers'
 import { recordAuthAuditEvent } from '@/lib/audit/auth-events'
 import {
@@ -270,6 +271,8 @@ export async function POST(request: Request) {
       email,
       passwordHash,
     })
+    // Analytics identify backfill (best-effort, non-fatal)
+    void identifyAccountFromRequest(request, account.id).catch(() => {})
     // SAAS-3 (2026-05-18) — self-registered teacher gets an explicit
     // teacher role on the new-email path.
     //

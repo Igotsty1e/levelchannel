@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { identifyAccountFromRequest } from '@/lib/analytics/server'
 import { NO_STORE } from '@/lib/api/http-headers'
 import { recordAuthAuditEvent } from '@/lib/audit/auth-events'
 import { getAccountByEmail, listAccountRoles, setAccountPassword } from '@/lib/auth/accounts'
@@ -136,6 +137,10 @@ export async function POST(request: Request) {
     clientIp: getClientIp(request),
     userAgent: request.headers.get('user-agent'),
   })
+
+  // Analytics identify backfill — связать pre-login события (anonymous_id
+  // в cookie lc_aid) с account_id. Best-effort, не падает.
+  await identifyAccountFromRequest(request, account.id)
 
   const roles = await listAccountRoles(account.id)
 

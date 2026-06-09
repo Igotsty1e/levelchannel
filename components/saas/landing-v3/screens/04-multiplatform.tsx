@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { motion } from 'framer-motion'
 
 import { Spotlight } from '@/components/ui/aceternity'
+import { track } from '@/lib/analytics/track'
 
 const reveal = {
   initial: { opacity: 0, y: 28 },
@@ -298,6 +299,7 @@ export function ScreenMultiplatform() {
           initial={{ opacity: 0, y: 80 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-80px' }}
+          onViewportEnter={() => track('multiplatform_visible', {})}
           transition={{ duration: 1.4, ease: [0.16, 1, 0.3, 1], delay: 0.3 }}
           className="landing-v3-mp-stage"
           style={{
@@ -397,14 +399,19 @@ export function ScreenMultiplatform() {
           .landing-v3-mp-stage {
             flex-direction: column !important;
             align-items: center !important;
-            gap: 32px !important;
+            gap: 56px !important;
+            padding-inline: 16px !important;
           }
           .landing-v3-mp-laptop {
+            flex: none !important;
+            width: 92% !important;
             max-width: 92% !important;
             transform: none !important;
           }
           .landing-v3-mp-phone {
-            flex: 0 0 200px !important;
+            flex: none !important;
+            width: 56% !important;
+            max-width: 240px !important;
             margin-left: 0 !important;
             margin-bottom: 0 !important;
             transform: perspective(1600px) rotateY(-4deg) rotateX(1deg) !important;

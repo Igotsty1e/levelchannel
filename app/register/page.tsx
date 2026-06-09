@@ -218,6 +218,7 @@ export default function RegisterPage() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            onFocus={() => track('signup_form_focused', { field: 'email' })}
             disabled={submitting}
             style={authInputStyle}
           />
@@ -231,6 +232,7 @@ export default function RegisterPage() {
             minLength={10}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            onFocus={() => track('signup_form_focused', { field: 'password' })}
             disabled={submitting}
             style={authInputStyle}
           />
@@ -314,6 +316,7 @@ export default function RegisterPage() {
                 value="student"
                 checked={role === 'student'}
                 onChange={() => setRole('student')}
+                onFocus={() => track('signup_form_focused', { field: 'role' })}
                 disabled={submitting}
                 style={{ accentColor: 'var(--accent)' }}
               />
