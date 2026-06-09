@@ -64,8 +64,8 @@ export default async function TeacherProfilePage() {
       <header className="pricing-page-header">
         <h1 className="pricing-page-title">Профиль</h1>
         <p className="pricing-page-sub">
-          Имя и часовой пояс — то, что видят ученики. E-mail и пароль
-          живут в настройках безопасности (скоро).
+          Имя и часовой пояс — то, что видят ученики. Пароль и e-mail —
+          в разделе <a href="/teacher/security" style={{ color: 'var(--accent)' }}>Безопасность</a>.
         </p>
       </header>
 
