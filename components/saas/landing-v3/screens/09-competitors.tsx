@@ -27,7 +27,7 @@ const VALUES: Value[] = [
 export function ScreenCompetitors() {
   return (
     <section className="landing-v3-section">
-      <div style={{ textAlign: 'center', marginBottom: 64 }}>
+      <div style={{ textAlign: 'center', marginBottom: 44 }}>
         <motion.h2 {...fadeUp} transition={{ duration: 0.7 }} className="landing-v3-h2 landing-v3-h2--serif">
           Сделан <em>специально для тебя.</em> Без лишнего.
         </motion.h2>
