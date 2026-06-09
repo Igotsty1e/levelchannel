@@ -159,6 +159,13 @@ export default async function TeacherSettingsHubPage() {
         </li>
         <li>
           <SettingsTile
+            href="/teacher/security"
+            icon="🔒"
+            title="Безопасность"
+          />
+        </li>
+        <li>
+          <SettingsTile
             href="/teacher/settings/digest"
             icon="✉"
             title="Уведомления"

@@ -123,6 +123,20 @@ export const EVENT_REGISTRY = {
     seconds: z.number().int().nonnegative().max(86400),
   }),
 
+  // ─── Password change (in-cabinet) ───
+  password_change_form_opened: z.object({}),
+  password_change_submitted: z.object({}),
+  password_change_succeeded: z.object({}),
+  password_change_failed: z.object({
+    reason: z.enum([
+      'current_invalid',
+      'new_weak',
+      'same_as_current',
+      'rate_limited',
+      'unknown',
+    ]),
+  }),
+
   // ─── Promo codes (Sub-PR C) ───
   promo_code_form_focused: z.object({}),
   promo_code_redeem_attempted: z.object({

@@ -20,6 +20,7 @@ import {
   renderOperatorPaymentNotifyEmail,
   type OperatorPaymentNotifyParams,
 } from '@/lib/email/templates/operator-payment-notify'
+import { renderPasswordChangedEmail } from '@/lib/email/templates/password-changed'
 import { renderResetEmail } from '@/lib/email/templates/reset'
 import { renderVerifyEmail } from '@/lib/email/templates/verify'
 import { paymentConfig } from '@/lib/payments/config'
@@ -56,6 +57,24 @@ export async function sendVerifyEmail(to: string, token: string) {
 
 export async function sendResetEmail(to: string, token: string) {
   const tpl = renderResetEmail({ resetUrl: buildResetUrl(token) })
+  return sendEmail({ to, subject: tpl.subject, html: tpl.html, text: tpl.text })
+}
+
+/**
+ * Fire-and-forget security notification after a successful in-cabinet
+ * password change. Caller wraps in try/catch — Resend outage MUST NOT
+ * fail the password-change route.
+ */
+export async function sendPasswordChangedEmail(
+  to: string,
+  meta: { ipPrefix: string | null; uaSummary: string | null; changedAtIso: string },
+) {
+  const tpl = renderPasswordChangedEmail({
+    ipPrefix: meta.ipPrefix,
+    uaSummary: meta.uaSummary,
+    changedAtIso: meta.changedAtIso,
+    forgotUrl: buildForgotUrl(),
+  })
   return sendEmail({ to, subject: tpl.subject, html: tpl.html, text: tpl.text })
 }
 

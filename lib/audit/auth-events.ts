@@ -56,6 +56,9 @@ export const AUTH_AUDIT_EVENT_TYPES = [
   'push.subscription.revived',
   'push.subscription.unsubscribed.user',
   'push.subscription.unsubscribed.auto',
+  // 2026-06-09 — in-cabinet password change (mig 0121).
+  'password.changed.in_cabinet',
+  'password.changed.in_cabinet.bad_current',
 ] as const
 
 export type AuthAuditEventType = (typeof AUTH_AUDIT_EVENT_TYPES)[number]
