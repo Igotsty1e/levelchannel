@@ -399,14 +399,19 @@ export function ScreenMultiplatform() {
           .landing-v3-mp-stage {
             flex-direction: column !important;
             align-items: center !important;
-            gap: 32px !important;
+            gap: 56px !important;
+            padding-inline: 16px !important;
           }
           .landing-v3-mp-laptop {
+            flex: none !important;
+            width: 92% !important;
             max-width: 92% !important;
             transform: none !important;
           }
           .landing-v3-mp-phone {
-            flex: 0 0 200px !important;
+            flex: none !important;
+            width: 56% !important;
+            max-width: 240px !important;
             margin-left: 0 !important;
             margin-bottom: 0 !important;
             transform: perspective(1600px) rotateY(-4deg) rotateX(1deg) !important;
