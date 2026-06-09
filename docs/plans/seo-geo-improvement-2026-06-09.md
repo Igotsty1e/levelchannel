@@ -1,6 +1,6 @@
 # SEO & GEO Improvement Plan — 2026-06-09
 
-Status: DRAFT
+Status: SHIPPED Sub-PR A 2026-06-09 (PR #569 `f828581`). Sub-PR B deferred pending owner Q1-Q5 answers (§5).
 Scope: `/`, `/saas/learn/*` (10 pages), `/integrations/google-calendar`, `/anastasiia`
 Out of scope: cabinet, teacher, admin, checkout, legal docs (already `disallow`-ed in robots).
 

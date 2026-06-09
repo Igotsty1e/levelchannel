@@ -1,8 +1,8 @@
 # Critical-path inventory
 
 **Status:** approved (2026-05-18; product-owner request).
-**Last refresh:** 2026-05-22 (SAAS-PIVOT close) — 4 new files added (items 26-29): `lib/teacher-ledger/{mark-lesson-completed,settle-lessons}.ts`, `lib/billing/teacher-grant.ts`, `lib/payments/teacher-derivation.ts`. Previous refresh 2026-05-21 added item 25 (`scripts/learner-reminder-dispatch.mjs`, BCS-DEF-4). Items 22-24 added 2026-05-19 (SBP-PAY, BCS-DEF-2 conflict-feed, BCS-DEF-5 teacher-daily-digest). Item 17 (`lib/calendar/pull-runner.ts`) still on the list — BCS-DEF-7 Phase 2 expanded its surface to include the delta-merge read path under the same atomicity invariant.
-**Scope:** 29 files whose breakage = production incident (money, security, scheduling integrity, or silent comms drop). PRs that touch any file in this list MUST land `Codex-Paranoia: SIGN-OFF` (full paranoia loop), NOT `SUB-WAVE self-reviewed`.
+**Last refresh:** 2026-06-09 (PROMO-CODES close) — item 30 added: `lib/promo/codes.ts` (money-equivalent entitlement grant). Prior refresh 2026-05-22 (SAAS-PIVOT close) added 4 files (items 26-29): `lib/teacher-ledger/{mark-lesson-completed,settle-lessons}.ts`, `lib/billing/teacher-grant.ts`, `lib/payments/teacher-derivation.ts`. Previous refresh 2026-05-21 added item 25 (`scripts/learner-reminder-dispatch.mjs`, BCS-DEF-4). Items 22-24 added 2026-05-19 (SBP-PAY, BCS-DEF-2 conflict-feed, BCS-DEF-5 teacher-daily-digest). Item 17 (`lib/calendar/pull-runner.ts`) still on the list — BCS-DEF-7 Phase 2 expanded its surface to include the delta-merge read path under the same atomicity invariant.
+**Scope:** 30 files whose breakage = production incident (money, security, scheduling integrity, or silent comms drop). PRs that touch any file in this list MUST land `Codex-Paranoia: SIGN-OFF` (full paranoia loop), NOT `SUB-WAVE self-reviewed`.
 
 ## Selection criteria
 
@@ -78,6 +78,10 @@ Grouped by failure mode. Each entry: path + the specific invariant it owns.
 ### Silent comms drop — burst additions (1 file)
 
 25. **`scripts/learner-reminder-dispatch.mjs`** (BCS-DEF-4, 2026-05-20 — PR #392). Owns: the per-minute learner 60-min-before-lesson email reminder cron driver. Idempotent atomic claim via `INSERT INTO learner_reminder_dispatches (slot_id, channel, ...) ON CONFLICT DO NOTHING RETURNING id`; a worker crash between claim and the `status='sent'`/`status='skipped'` UPDATE strands the row at `status='claimed'` and the UNIQUE `(slot_id, channel)` constraint blocks any retry — only operator `DELETE` unblocks. Operator knobs go through `lib/admin/operator-settings.ts` (DB → env → default chain) for the master switch, the `LEARNER_REMINDER_WINDOW_MINUTES` (clamped 5..360), and the per-tick rate-limit. A bug here either spams a learner with duplicate reminders 1h before their lesson (PK conflict + audit noise) or silently drops the entire tick (operator catches via the per-tick `probe_runs` row on `/admin/settings/alerts`).
+
+### Money-equivalent entitlement grant — promo voucher (1 file)
+
+30. **`lib/promo/codes.ts`** (PROMO-CODES, 2026-06-09 — PRs #562 + #566). Owns: `redeemPromoCode` flow that grants a learner a free paid-tier subscription (effective monetary equivalent). Critical invariants: (a) `pg_advisory_xact_lock(hashtext(code_lower))` serializes per-code attempts so the `max_redemptions` cap is race-safe; (b) `select for update` on `promo_codes` row inside the same TX prevents stale-read over-redemption; (c) 7-gate stack order (unknown/revoked/not_yet_valid/expired/exhausted/account_unavailable/email_not_verified/active_paid_subscription/already_redeemed) must run in exact sequence; (d) `setAccountPassword`-equivalent — but for subscription state — UPSERTs `teacher_subscriptions` with `cancelled_at = null` AFTER the audit row insert; (e) IP audit uses `redeemed_ip_prefix` (truncated /24) per 152-ФЗ, NEVER raw `client_ip`. A bug here either lets an attacker mint unlimited free Pro subscriptions (revenue loss + capacity drain) or skips the active-paid-subscription gate (double-billing dispute + tax-period chek issuance corruption). Codex paranoia debt outstanding until 2026-06-11 quota return.
 
 ## Process gate
 

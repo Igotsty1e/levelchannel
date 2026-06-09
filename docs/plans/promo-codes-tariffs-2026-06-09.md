@@ -1,6 +1,6 @@
 # Promo codes на странице тарифов (LK учителя)
 
-**Status**: round 2 — ВСЕ вопросы отвечены, в pre-paranoia self-review
+**Status**: SHIPPED 2026-06-09 (PRs #562 `e31cc2e` + #566 `a865dcd`). Codex paranoia debt — SIGN-OFF owed after 2026-06-11.
 **Owner**: @ivankhanaev
 **Author**: Claude (sonnet/opus)
 **Date created**: 2026-06-09

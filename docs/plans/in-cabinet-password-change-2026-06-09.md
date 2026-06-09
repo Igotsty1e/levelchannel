@@ -1,6 +1,6 @@
 # In-cabinet password change (settings/security)
 
-**Status**: round 2 — owner accepted defaults, pre-implementation self-review
+**Status**: SHIPPED 2026-06-09 (PR #572 `0b5904c`)
 **Owner**: @ivankhanaev
 **Author**: Claude (sonnet/opus)
 **Codex-Paranoia**: SELF-REVIEW round 2/2 (Codex quota exhausted until 2026-06-11)
