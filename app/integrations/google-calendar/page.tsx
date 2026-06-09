@@ -39,9 +39,9 @@ export const metadata: Metadata = {
 export default function IntegrationGoogleCalendarPage() {
   return (
     <SeoArticle
-      eyebrow="Интеграция · Google Calendar"
-      h1={<>Google Calendar — теперь видит твоё расписание занятий</>}
-      lede="LevelChannel — это CRM для частного репетитора. Когда ты создаёшь слот занятия в кабинете, мы автоматически создаём событие в твоём Google-календаре и в календаре ученика, чтобы оба видели расписание там, где привыкли."
+      eyebrow="LevelChannel · Интеграция с Google Calendar"
+      h1={<>LevelChannel × Google Calendar</>}
+      lede="LevelChannel — это веб-приложение CRM для частного репетитора (страница приложения: https://levelchannel.ru). Эта страница описывает, как LevelChannel интегрируется с Google Calendar: какие OAuth-разрешения мы запрашиваем, какие данные мы читаем и пишем, и кто их видит. Авторизация Google нужна, чтобы автоматически создавать события занятий в календаре учителя и ученика, когда учитель назначает слот в кабинете LevelChannel."
       sections={[
         {
           id: 'what',
