@@ -253,11 +253,6 @@ export function TeacherProfileCard({
         >
           Сохранить
         </Button>
-        {!dirty && state.kind === 'idle' ? (
-          <span style={mutedHintStyle}>
-            Изменений нет — поменяй поле, чтобы стало можно сохранить.
-          </span>
-        ) : null}
       </div>
     </section>
   )
@@ -355,8 +350,3 @@ const actionsRowStyle: React.CSSProperties = {
   marginTop: 20,
 }
 
-const mutedHintStyle: React.CSSProperties = {
-  color: 'var(--text-tertiary, var(--secondary))',
-  fontSize: 12,
-  lineHeight: 1.4,
-}
