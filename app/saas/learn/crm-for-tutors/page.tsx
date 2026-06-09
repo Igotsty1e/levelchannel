@@ -13,12 +13,19 @@ export const metadata: Metadata = {
     type: 'article',
     images: ['/saas/learn/opengraph-image'],
   },
+  twitter: {
+    card: 'summary_large_image',
+    images: ['/saas/learn/opengraph-image'],
+  },
 }
 
 export default function LearnCrmForTutorsPage() {
   return (
     <SeoArticle
       eyebrow="CRM для репетитора"
+      publishedAt="2026-05-22"
+      updatedAt="2026-06-09"
+      breadcrumbTitle="CRM для репетитора"
       h1={<>CRM для частного репетитора — почему обычная не подходит</>}
       lede="Bitrix24, Salesforce, amoCRM сделаны для отделов продаж. Когда репетитор пытается их использовать, оказывается, что 90% функций мешают, а нужных нет."
       sections={[

@@ -21,10 +21,12 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') || 'https:
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  // Neutral default for routes that don't set their own metadata
-  // (e.g. /login, /register, /thank-you). Anastasia + landing-v3
-  // override via page-level metadata exports.
-  title: 'LevelChannel',
+  // SEO 2026-06-09 §4.9 — title template lets every untitled child
+  // route inherit a brand suffix instead of bare 'LevelChannel'.
+  title: {
+    default: 'LevelChannel — CRM для частного репетитора',
+    template: '%s | LevelChannel',
+  },
   description:
     'LevelChannel — продукты для онлайн-обучения: CRM-кабинет для частного репетитора и индивидуальные занятия английским.',
   openGraph: {
@@ -32,6 +34,14 @@ export const metadata: Metadata = {
     description: 'CRM-кабинет для частного репетитора и индивидуальные занятия английским.',
     type: 'website',
     url: SITE_URL,
+    locale: 'ru_RU',
+  },
+  // SEO 2026-06-09 §4.1 — Twitter card defaults so X/Telegram unfurls
+  // pick `summary_large_image` not the bare summary card.
+  twitter: {
+    card: 'summary_large_image',
+    title: 'LevelChannel',
+    description: 'CRM-кабинет для частного репетитора и индивидуальные занятия английским.',
   },
   icons: {
     icon: '/favicon.svg',

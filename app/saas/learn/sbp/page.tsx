@@ -13,12 +13,19 @@ export const metadata: Metadata = {
     type: 'article',
     images: ['/saas/learn/opengraph-image'],
   },
+  twitter: {
+    card: 'summary_large_image',
+    images: ['/saas/learn/opengraph-image'],
+  },
 }
 
 export default function LearnSbpPage() {
   return (
     <SeoArticle
       eyebrow="Оплата через СБП"
+      publishedAt="2026-05-22"
+      updatedAt="2026-06-09"
+      breadcrumbTitle="СБП"
       h1={<>Как репетитор принимает оплату через СБП</>}
       lede="Без касс, без эквайринга, без скриншотов перевода в Telegram. Ученик нажимает «Я оплатил» — ты подтверждаешь одной кнопкой."
       sections={[

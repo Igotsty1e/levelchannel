@@ -13,12 +13,19 @@ export const metadata: Metadata = {
     type: 'article',
     images: ['/saas/learn/opengraph-image'],
   },
+  twitter: {
+    card: 'summary_large_image',
+    images: ['/saas/learn/opengraph-image'],
+  },
 }
 
 export default function LearnSchedulePage() {
   return (
     <SeoArticle
       eyebrow="Расписание"
+      publishedAt="2026-05-22"
+      updatedAt="2026-06-09"
+      breadcrumbTitle="Расписание"
       h1={<>Расписание, которое видит и ученик</>}
       lede="Слот появляется у тебя и у ученика одновременно. Перенос — два клика, без переписок и подтверждений «а свободно во вторник в 18?»."
       sections={[

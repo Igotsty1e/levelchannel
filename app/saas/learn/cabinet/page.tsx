@@ -13,12 +13,19 @@ export const metadata: Metadata = {
     type: 'article',
     images: ['/saas/learn/opengraph-image'],
   },
+  twitter: {
+    card: 'summary_large_image',
+    images: ['/saas/learn/opengraph-image'],
+  },
 }
 
 export default function LearnCabinetPage() {
   return (
     <SeoArticle
       eyebrow="Как устроен кабинет"
+      publishedAt="2026-05-22"
+      updatedAt="2026-06-09"
+      breadcrumbTitle="Кабинет"
       h1={<>Кабинет, который делает за тебя всё, что не урок</>}
       lede="Расписание, ученики, балансы, оплаты и месячный отчёт — в одной открытой странице. Не нужно ставить приложение, не нужно учиться софту с тремя уровнями меню."
       sections={[

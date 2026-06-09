@@ -28,6 +28,10 @@ export function SeoArticle({
   faq,
   ctaHref = '/register?role=teacher&utm_source=landing-v4-seo&utm_content=article',
   ctaText = 'Открыть кабинет',
+  headline,
+  publishedAt,
+  updatedAt,
+  breadcrumbTitle,
 }: {
   eyebrow: string
   h1: ReactNode
@@ -36,9 +40,19 @@ export function SeoArticle({
   faq?: Array<{ q: string; a: string }>
   ctaHref?: string
   ctaText?: string
+  /** ≤110 char headline for Article schema (truncate of h1 if absent). */
+  headline?: string
+  /** YYYY-MM-DD — Article datePublished. */
+  publishedAt?: string
+  /** YYYY-MM-DD — Article dateModified. */
+  updatedAt?: string
+  /** Short label for BreadcrumbList (e.g. "Расписание"). */
+  breadcrumbTitle?: string
 }) {
   const pathname = usePathname()
   const slug = (pathname ?? '').replace(/^\/saas\/learn\//, '').replace(/\/$/, '').slice(0, 64) || 'unknown'
+  const SITE_URL = 'https://levelchannel.ru'
+  const canonicalUrl = `${SITE_URL}${pathname || '/'}`
   const softwareSchema = {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
@@ -56,6 +70,8 @@ export function SeoArticle({
         price: '0',
         priceCurrency: 'RUB',
         description: 'Один ученик. Все функции. Навсегда бесплатно.',
+        availability: 'https://schema.org/InStock',
+        priceValidUntil: '2027-12-31',
       },
       {
         '@type': 'Offer',
@@ -63,6 +79,8 @@ export function SeoArticle({
         price: '300',
         priceCurrency: 'RUB',
         description: 'До 5 учеников. Подписка через CloudPayments.',
+        availability: 'https://schema.org/InStock',
+        priceValidUntil: '2027-12-31',
       },
       {
         '@type': 'Offer',
@@ -70,6 +88,8 @@ export function SeoArticle({
         price: '800',
         priceCurrency: 'RUB',
         description: 'До 30 учеников. Подписка через CloudPayments.',
+        availability: 'https://schema.org/InStock',
+        priceValidUntil: '2027-12-31',
       },
     ],
     publisher: {
@@ -95,6 +115,73 @@ export function SeoArticle({
         }
       : null
 
+  // SEO 2026-06-09 §4.3 — BreadcrumbList helps Search snippets +
+  // gives AI Overview context. Three-level hierarchy: Home → SEO →
+  // current page.
+  const breadcrumbSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      {
+        '@type': 'ListItem',
+        position: 1,
+        name: 'Главная',
+        item: `${SITE_URL}/`,
+      },
+      ...(pathname?.startsWith('/saas/learn/')
+        ? [
+            {
+              '@type': 'ListItem',
+              position: 2,
+              name: 'База знаний',
+              item: `${SITE_URL}/saas/learn`,
+            },
+            {
+              '@type': 'ListItem',
+              position: 3,
+              name: breadcrumbTitle ?? slug,
+              item: canonicalUrl,
+            },
+          ]
+        : [
+            {
+              '@type': 'ListItem',
+              position: 2,
+              name: breadcrumbTitle ?? slug,
+              item: canonicalUrl,
+            },
+          ]),
+    ],
+  }
+
+  // SEO 2026-06-09 §4.3 — Article schema for E-E-A-T signals. headline
+  // capped at 110 chars (Google's published limit).
+  const articleSchema =
+    publishedAt
+      ? {
+          '@context': 'https://schema.org',
+          '@type': 'Article',
+          headline: (headline ?? slug.replace(/-/g, ' ')).slice(0, 110),
+          datePublished: publishedAt,
+          dateModified: updatedAt ?? publishedAt,
+          mainEntityOfPage: canonicalUrl,
+          author: {
+            '@type': 'Organization',
+            name: 'LevelChannel',
+            url: SITE_URL,
+          },
+          publisher: {
+            '@type': 'Organization',
+            name: 'LevelChannel',
+            url: SITE_URL,
+            logo: {
+              '@type': 'ImageObject',
+              url: `${SITE_URL}/favicon.svg`,
+            },
+          },
+        }
+      : null
+
   return (
     <article className="v4-seo-article">
       {/* SoftwareApplication structured data — для всех SEO-страниц */}
@@ -106,6 +193,16 @@ export function SeoArticle({
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
+        />
+      ) : null}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+      />
+      {articleSchema ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(articleSchema) }}
         />
       ) : null}
       <section className="v4-scene v4-scene--short" id="seo-hero">
