@@ -24,26 +24,12 @@ const MSK_OFFSET_MIN = 3 * 60
 
 export type DayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6
 
-export type TimeInterval = {
-  /** MSK wall-clock start, HH:mm (30-min aligned). */
-  from: string
-  /** MSK wall-clock end, HH:mm (30-min aligned, must be > from). */
-  to: string
-}
-
-/**
- * Two forms supported:
- *   - legacy: `times` + global `durationMinutes` (used by older clients).
- *   - new: `intervals` per-row (each carries its own duration).
- * If both provided, `intervals` wins. At least one is required.
- */
 export type RecurrenceInput = {
   startDate: string
   endDate: string
   daysOfWeek: ReadonlyArray<DayOfWeek>
-  times?: ReadonlyArray<string>
-  durationMinutes?: number
-  intervals?: ReadonlyArray<TimeInterval>
+  times: ReadonlyArray<string>
+  durationMinutes: number
 }
 
 export type ExpandedSlot = {
@@ -120,52 +106,6 @@ export const MAX_RECURRENCE_SPAN_DAYS = 90
 export const MAX_EXPANDED_SLOTS = 200
 export const ALLOWED_DURATIONS = [30, 45, 50, 60, 75, 90, 120] as const
 
-type CompiledInterval = { startMin: number; durationMin: number }
-
-function compileIntervals(input: RecurrenceInput): CompiledInterval[] {
-  // New `intervals` path — each row carries its own duration.
-  if (input.intervals && input.intervals.length > 0) {
-    return input.intervals.map((iv) => {
-      const startMin = parseMskTimeToMinutes(iv.from)
-      const endMin = parseMskTimeToMinutes(iv.to)
-      if (endMin <= startMin) {
-        throw new RecurrenceInputError('intervals', 'end_not_after_start')
-      }
-      const durationMin = endMin - startMin
-      if (
-        !ALLOWED_DURATIONS.includes(
-          durationMin as (typeof ALLOWED_DURATIONS)[number],
-        )
-      ) {
-        throw new RecurrenceInputError('intervals', 'duration_not_allowed')
-      }
-      return { startMin, durationMin }
-    })
-  }
-  // Legacy `times + durationMinutes` path. Empty `times` is an error
-  // because the old contract required at least one entry; matches old
-  // behaviour for clients still on legacy payloads.
-  if (typeof input.times === 'undefined') {
-    throw new RecurrenceInputError('intervals', 'empty')
-  }
-  if (input.times.length === 0) {
-    throw new RecurrenceInputError('times', 'empty')
-  }
-  const dur = input.durationMinutes
-  if (typeof dur !== 'number' || !Number.isFinite(dur)) {
-    throw new RecurrenceInputError('durationMinutes', 'missing_for_times')
-  }
-  if (
-    !ALLOWED_DURATIONS.includes(dur as (typeof ALLOWED_DURATIONS)[number])
-  ) {
-    throw new RecurrenceInputError('durationMinutes', 'not_allowed')
-  }
-  return input.times.map((t) => ({
-    startMin: parseMskTimeToMinutes(t),
-    durationMin: dur,
-  }))
-}
-
 export function expandRecurrence(input: RecurrenceInput): ExpandResult {
   const startMs = parseUtcMidnightMs(input.startDate)
   const endMs = parseUtcMidnightMs(input.endDate)
@@ -176,12 +116,22 @@ export function expandRecurrence(input: RecurrenceInput): ExpandResult {
   if (spanDays > MAX_RECURRENCE_SPAN_DAYS) {
     throw new RecurrenceInputError('endDate', 'span_too_long')
   }
+  if (input.times.length === 0) {
+    throw new RecurrenceInputError('times', 'empty')
+  }
+  if (
+    !ALLOWED_DURATIONS.includes(
+      input.durationMinutes as (typeof ALLOWED_DURATIONS)[number],
+    )
+  ) {
+    throw new RecurrenceInputError('durationMinutes', 'not_allowed')
+  }
   const days = new Set(input.daysOfWeek)
   if (days.size === 0 && spanDays > 0) {
     throw new RecurrenceInputError('daysOfWeek', 'empty_for_range')
   }
 
-  const compiled = compileIntervals(input)
+  const minutesList = input.times.map((t) => parseMskTimeToMinutes(t))
 
   const slots: ExpandedSlot[] = []
   const skipped: ExpandedSkip[] = []
@@ -189,13 +139,13 @@ export function expandRecurrence(input: RecurrenceInput): ExpandResult {
 
   for (let dMs = startMs; dMs <= endMs; dMs += 24 * 60 * 60 * 1000) {
     if (spanDays > 0 && !days.has(mskDayOfWeek(dMs))) continue
-    for (const { startMin, durationMin } of compiled) {
-      const utcIso = mskWallToUtcIso(dMs, startMin)
-      if (!isAligned30(startMin)) {
+    for (const mskMinutes of minutesList) {
+      const utcIso = mskWallToUtcIso(dMs, mskMinutes)
+      if (!isAligned30(mskMinutes)) {
         skipped.push({ startUtcIso: utcIso, reason: 'not_30min_aligned' })
         continue
       }
-      if (!withinBusinessHours(startMin)) {
+      if (!withinBusinessHours(mskMinutes)) {
         skipped.push({ startUtcIso: utcIso, reason: 'outside_business_hours' })
         continue
       }
@@ -203,7 +153,7 @@ export function expandRecurrence(input: RecurrenceInput): ExpandResult {
         skipped.push({ startUtcIso: utcIso, reason: 'past_start' })
         continue
       }
-      slots.push({ startUtcIso: utcIso, durationMinutes: durationMin })
+      slots.push({ startUtcIso: utcIso, durationMinutes: input.durationMinutes })
       if (slots.length > MAX_EXPANDED_SLOTS) {
         return { slots, skipped }
       }
