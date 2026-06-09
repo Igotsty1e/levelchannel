@@ -305,7 +305,7 @@ export function ScreenMultiplatform() {
           style={{
             position: 'relative',
             maxWidth: 1080,
-            margin: '80px auto 80px',
+            margin: '56px auto 56px',
             display: 'flex',
             alignItems: 'flex-end',
             justifyContent: 'center',

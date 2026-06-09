@@ -202,13 +202,18 @@ html:has(.landing-v3) {
 
 .landing-v3-section {
   position: relative;
-  padding: 120px 24px;
+  padding: 84px 24px;
   max-width: 1280px;
   margin: 0 auto;
 }
 
 .landing-v3-section--tight {
-  padding: 80px 24px;
+  padding: 56px 24px;
+}
+
+@media (max-width: 760px) {
+  .landing-v3-section { padding: 60px 20px; }
+  .landing-v3-section--tight { padding: 40px 20px; }
 }
 
 .landing-v3-section--full {

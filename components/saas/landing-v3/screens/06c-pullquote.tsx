@@ -17,7 +17,7 @@ export function ScreenPullquote() {
       className="landing-v3-section"
       style={{
         position: 'relative',
-        padding: 'clamp(80px, 14vh, 160px) clamp(24px, 5vw, 80px)',
+        padding: 'clamp(56px, 10vh, 112px) clamp(24px, 5vw, 80px)',
       }}
     >
       <div

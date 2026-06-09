@@ -105,7 +105,7 @@ export function LandingV3Header() {
             }}
           >
             <span className="landing-v3-cta-long">Начать бесплатно</span>
-            <span className="landing-v3-cta-short">Бесплатно</span>
+            <span className="landing-v3-cta-short">Попробовать</span>
           </Link>
         </div>
       </div>

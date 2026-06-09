@@ -72,7 +72,7 @@ export function ScreenPain2() {
             // тонкая линовка через repeating gradient
             backgroundImage:
               'repeating-linear-gradient(180deg, transparent 0, transparent 35px, rgba(255, 220, 180, 0.05) 35px, rgba(255, 220, 180, 0.05) 36px)',
-            padding: 'clamp(36px, 5vw, 64px) clamp(40px, 6vw, 80px) clamp(40px, 5vw, 60px)',
+            padding: 'clamp(28px, 5vw, 64px) clamp(22px, 6vw, 80px) clamp(28px, 5vw, 60px)',
             transform: 'rotate(-0.4deg)',
           }}
         >
@@ -108,9 +108,9 @@ export function ScreenPain2() {
           <div
             style={{
               fontFamily: 'Caveat, "Bradley Hand", cursive',
-              fontSize: 28,
+              fontSize: 'clamp(20px, 5vw, 28px)',
               color: 'rgba(245, 245, 247, 0.92)',
-              marginBottom: 18,
+              marginBottom: 14,
               transform: 'rotate(0.6deg)',
             }}
           >
@@ -119,9 +119,9 @@ export function ScreenPain2() {
           <div
             style={{
               fontFamily: 'Caveat, "Bradley Hand", cursive',
-              fontSize: 18,
+              fontSize: 'clamp(14px, 4vw, 18px)',
               color: 'rgba(232, 168, 144, 0.85)',
-              marginBottom: 24,
+              marginBottom: 20,
             }}
           >
             (восстанавливаю по чатам и переводам)
@@ -134,10 +134,10 @@ export function ScreenPain2() {
               padding: 0,
               margin: 0,
               display: 'grid',
-              gap: 8,
+              gap: 6,
               fontFamily: 'Caveat, "Bradley Hand", cursive',
-              fontSize: 22,
-              lineHeight: 1.6,
+              fontSize: 'clamp(16px, 4.4vw, 22px)',
+              lineHeight: 1.5,
               color: 'rgba(245, 245, 247, 0.85)',
             }}
           >
@@ -177,9 +177,9 @@ export function ScreenPain2() {
           {/* нижняя помарка — авторская приписка */}
           <div
             style={{
-              marginTop: 36,
+              marginTop: 28,
               fontFamily: 'Caveat, "Bradley Hand", cursive',
-              fontSize: 20,
+              fontSize: 'clamp(15px, 4vw, 20px)',
               color: 'rgba(232, 168, 144, 0.85)',
               transform: 'rotate(-1.2deg)',
               textAlign: 'right',

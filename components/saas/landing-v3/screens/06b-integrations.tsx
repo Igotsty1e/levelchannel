@@ -50,7 +50,7 @@ export function ScreenIntegrations() {
   return (
     <section id="integrations" className="landing-v3-section">
       <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-        <div style={{ textAlign: 'center', marginBottom: 64, maxWidth: 760, marginInline: 'auto' }}>
+        <div style={{ textAlign: 'center', marginBottom: 44, maxWidth: 760, marginInline: 'auto' }}>
           <motion.h2
             {...fadeUp}
             transition={{ duration: 0.7 }}
