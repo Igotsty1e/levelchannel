@@ -215,7 +215,7 @@ function PasswordField({
           aria-label={show ? 'Скрыть пароль' : 'Показать пароль'}
           style={eyeBtnStyle}
         >
-          {show ? '🙈' : '👁'}
+          {show ? <EyeOffIcon /> : <EyeIcon />}
         </button>
       </div>
       {error ? (
@@ -224,6 +224,46 @@ function PasswordField({
         </p>
       ) : null}
     </div>
+  )
+}
+
+function EyeIcon() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />
+      <circle cx="12" cy="12" r="2.75" />
+    </svg>
+  )
+}
+
+function EyeOffIcon() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 4l16 16" />
+      <path d="M9.5 5.5c.8-.15 1.65-.25 2.5-.25 6 0 9.5 6.5 9.5 6.5a13.8 13.8 0 0 1-3.2 3.85" />
+      <path d="M6.4 7.05A14 14 0 0 0 2.5 12s3.5 6.5 9.5 6.5c1.55 0 2.95-.45 4.2-1.15" />
+      <path d="M9.8 9.8a3 3 0 0 0 4.4 4.4" />
+    </svg>
   )
 }
 
@@ -254,15 +294,17 @@ const inputStyle: CSSProperties = {
 
 const eyeBtnStyle: CSSProperties = {
   position: 'absolute',
-  right: 6,
+  right: 4,
   top: '50%',
   transform: 'translateY(-50%)',
   border: 'none',
   background: 'transparent',
   cursor: 'pointer',
-  fontSize: 18,
-  padding: '6px 8px',
+  padding: 8,
   color: 'var(--secondary)',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
 }
 
 const fieldErrorStyle: CSSProperties = {

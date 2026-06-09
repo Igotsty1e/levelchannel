@@ -2,12 +2,21 @@
 
 import { CSSProperties, FormEvent, useEffect, useMemo, useState } from 'react'
 
+import { ChipGroup } from '@/components/ui/primitives'
+
 type Tariff = {
   id: string
   slug: string
   titleRu: string
   amountKopecks: number
 }
+
+const MODE_OPTIONS = [
+  { value: 'single', label: 'Один слот' },
+  { value: 'bulk', label: 'Несколько слотов' },
+] as const
+
+const BULK_PREF_KEY = 'lc_calendar_create_bulk_mode'
 
 const DAYS_OF_WEEK: Array<{ value: 0 | 1 | 2 | 3 | 4 | 5 | 6; label: string }> = [
   { value: 1, label: 'Пн' },
@@ -46,11 +55,18 @@ export function BulkAddSlotsModal({
   open,
   onClose,
   onCreated,
+  onSwitchToSingle,
   tariffs,
 }: {
   open: boolean
   onClose: () => void
   onCreated: () => void
+  /**
+   * Called when the user flips the segmented switcher back to «Один
+   * слот». Parent closes this modal and opens MobileCreateFab sheet in
+   * single mode.
+   */
+  onSwitchToSingle?: () => void
   tariffs: ReadonlyArray<Tariff>
 }) {
   const [startDate, setStartDate] = useState(todayYmd())
@@ -196,6 +212,26 @@ export function BulkAddSlotsModal({
             ×
           </button>
         </header>
+
+        <div style={{ padding: '12px 20px 0' }}>
+          <ChipGroup
+            name="create-mode"
+            value="bulk"
+            options={MODE_OPTIONS}
+            onChange={(next) => {
+              if (next === 'single' && onSwitchToSingle) {
+                try {
+                  if (typeof window !== 'undefined') {
+                    window.localStorage.removeItem(BULK_PREF_KEY)
+                  }
+                } catch {
+                  // ignore
+                }
+                onSwitchToSingle()
+              }
+            }}
+          />
+        </div>
 
         <form onSubmit={runCreate} style={bodyStyle}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
