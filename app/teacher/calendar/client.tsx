@@ -133,6 +133,7 @@ export default function TeacherCalendarClient({
         </div>
       ) : null}
       <div
+        className="calendar-bulk-add-desktop"
         style={{
           display: 'flex',
           justifyContent: 'flex-end',
@@ -200,6 +201,7 @@ export default function TeacherCalendarClient({
           bumpReload()
           router.refresh()
         }}
+        onSwitchToBulk={() => setBulkOpen(true)}
       />
       <BulkAddSlotsModal
         open={bulkOpen}
