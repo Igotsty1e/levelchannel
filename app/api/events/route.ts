@@ -29,7 +29,11 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { getDbPool } from '@/lib/db/pool'
-import { enforceRateLimit, getClientIp } from '@/lib/security/request'
+import {
+  enforceRateLimit,
+  enforceTrustedBrowserOrigin,
+  getClientIp,
+} from '@/lib/security/request'
 import {
   ANONYMOUS_ID_COOKIE,
   ANONYMOUS_ID_MAX_AGE_SEC,
@@ -81,6 +85,13 @@ function setAnonymousCookieHeader(value: string): Record<string, string> {
 }
 
 export async function POST(request: Request) {
+  // Security audit 2026-06-09 H7: same-origin gate. sendBeacon
+  // delivers cross-origin per spec but `Origin` header is still set;
+  // we reject cross-origin to defeat forged analytics from compromised
+  // 3rd-party sites that share a top-level navigation flow.
+  const originGate = enforceTrustedBrowserOrigin(request)
+  if (originGate) return originGate
+
   // Rate limit — hybrid anonymous_id + IP prefix.
   const ip = getClientIp(request) ?? 'unknown'
   const rlIp = await enforceRateLimit(request, `events:ip:${ip}`, 600, 60_000)
