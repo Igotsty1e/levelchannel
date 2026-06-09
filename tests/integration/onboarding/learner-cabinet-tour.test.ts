@@ -102,9 +102,20 @@ describe('shouldShowLearnerCabinetTour', () => {
     // Seed a slot + completion. Schema: lesson_slots(teacher_account_id, learner_account_id, ...) + lesson_completions(slot_id, teacher_id, amount_kopecks, completed_at).
     const pool = getDbPool()
     // Align start_at to 30-min boundary (lesson_slots CHECK constraint).
+    // Pin to yesterday 12:00 Moscow so the row stays inside
+    // `lesson_slots_start_in_business_hours` (06:00-22:00 MSK)
+    // regardless of UTC wall clock — `now() - 2 hours` was flaky when
+    // CI ran during early-UTC hours (pre-06:00 Moscow).
     const slot = await pool.query<{ id: string }>(
       `insert into lesson_slots (teacher_account_id, learner_account_id, start_at, duration_minutes, status, created_at)
-       values ($1::uuid, $2::uuid, date_trunc('hour', now() - interval '2 hours'), 60, 'completed', now())
+       values (
+         $1::uuid,
+         $2::uuid,
+         (date_trunc('day', now() at time zone 'Europe/Moscow') - interval '1 day' + interval '12 hours') at time zone 'Europe/Moscow',
+         60,
+         'completed',
+         now()
+       )
        returning id`,
       [teacher.accountId, learner.accountId],
     )
