@@ -13,11 +13,13 @@ import {
 // desktop paint flow (`/api/teacher/slots/bulk-create` with a single
 // startAt).
 //
-// Visibility: the FAB itself is hidden on ≥600px via the
+// Visibility: the FAB button is hidden on ≥600px via the
 // `.calendar-mobile-fab` class (rule lives in app/globals.css). The
-// modal is rendered regardless of width — when invoked it covers the
-// screen on any viewport. Today desktop uses drag-paint; if we ever
-// want a form path there too, this component is the seed.
+// single-slot sheet is rendered when `mode === 'single'` — both
+// viewports share the same form. Bulk mode is owned by parent
+// (BulkAddSlotsModal); the segmented `ChipGroup` switcher at the top
+// of either sheet flips between modes without closing the create flow,
+// so the user can toggle back.
 
 export type TariffOption = {
   id: string
@@ -26,12 +28,21 @@ export type TariffOption = {
   amountKopecks: number
 }
 
+export type CreateMode = 'closed' | 'single' | 'bulk'
+
+const BULK_PREF_KEY = 'lc_calendar_create_bulk_mode'
+
 const DURATIONS: ReadonlyArray<{ value: string; label: string }> = [
   { value: '30', label: '30 мин' },
   { value: '60', label: '60 мин' },
   { value: '90', label: '90 мин' },
   { value: '120', label: '120 мин' },
 ]
+
+const MODE_OPTIONS = [
+  { value: 'single', label: 'Один слот' },
+  { value: 'bulk', label: 'Несколько слотов' },
+] as const
 
 function isoLocalToUtcIso(dateYmd: string, hhmm: string, ianaTz: string): string | null {
   // `dateYmd` = 'YYYY-MM-DD', `hhmm` = 'HH:mm' — interpreted in `ianaTz`.
@@ -49,10 +60,7 @@ function isoLocalToUtcIso(dateYmd: string, hhmm: string, ianaTz: string): string
   const di = Number(d)
   const hi = Number(hh)
   const mi = Number(mm)
-  // Naive UTC interpretation of the local wall-clock.
   const naiveUtc = Date.UTC(yi, moi - 1, di, hi, mi, 0)
-  // Re-format that instant back through the target tz; compute the
-  // diff between what we asked for and what comes out, and shift.
   try {
     const dtf = new Intl.DateTimeFormat('en-US', {
       timeZone: ianaTz,
@@ -98,20 +106,21 @@ function todayInTz(ianaTz: string): string {
 export function MobileCreateFab({
   tariffs,
   teacherTz = 'Europe/Moscow',
+  mode,
+  onModeChange,
   onCreated,
-  onSwitchToBulk,
 }: {
   tariffs: ReadonlyArray<TariffOption>
   teacherTz?: string
-  onCreated?: () => void
   /**
-   * Called when the user flips the «Создавать несколько слотов»
-   * checkbox inside the FAB sheet. Parent should close this modal
-   * (handled here via setOpen(false)) AND open BulkAddSlotsModal.
+   * Controlled create-mode state owned by parent so the segmented
+   * switcher can flip between single and bulk without each modal
+   * tearing down the other.
    */
-  onSwitchToBulk?: () => void
+  mode: CreateMode
+  onModeChange: (next: CreateMode) => void
+  onCreated?: () => void
 }) {
-  const [open, setOpen] = useState(false)
   const [date, setDate] = useState(() => todayInTz(teacherTz))
   const [time, setTime] = useState('10:00')
   const [duration, setDuration] = useState<string>('60')
@@ -119,32 +128,28 @@ export function MobileCreateFab({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const BULK_PREF_KEY = 'lc_calendar_create_bulk_mode'
-
-  function openFab() {
-    // If user previously toggled bulk-mode ON, route directly to bulk
-    // without flashing the single-form sheet.
+  function openFromFab() {
+    let preferredMode: CreateMode = 'single'
     try {
       if (typeof window !== 'undefined' && window.localStorage.getItem(BULK_PREF_KEY) === '1') {
-        onSwitchToBulk?.()
-        return
+        preferredMode = 'bulk'
       }
     } catch {
       // ignore localStorage errors (private mode, etc.)
     }
-    setOpen(true)
+    onModeChange(preferredMode)
   }
 
-  function switchToBulk() {
+  function handleModeChange(next: 'single' | 'bulk') {
     try {
       if (typeof window !== 'undefined') {
-        window.localStorage.setItem(BULK_PREF_KEY, '1')
+        if (next === 'bulk') window.localStorage.setItem(BULK_PREF_KEY, '1')
+        else window.localStorage.removeItem(BULK_PREF_KEY)
       }
     } catch {
       // ignore
     }
-    setOpen(false)
-    onSwitchToBulk?.()
+    onModeChange(next)
   }
 
   async function handleSubmit() {
@@ -170,7 +175,7 @@ export function MobileCreateFab({
       if (!res.ok) {
         throw new Error(body?.message || body?.error || `HTTP ${res.status}`)
       }
-      setOpen(false)
+      onModeChange('closed')
       onCreated?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -179,18 +184,20 @@ export function MobileCreateFab({
     }
   }
 
+  const isOpen = mode === 'single'
+
   return (
     <>
       <div className="calendar-mobile-fab">
-        <FloatingActionButton label="Создать" onClick={openFab} />
+        <FloatingActionButton label="Создать" onClick={openFromFab} />
       </div>
 
-      {open ? (
+      {isOpen ? (
         <div
           role="dialog"
           aria-modal="true"
           aria-labelledby="mobile-create-title"
-          onClick={busy ? undefined : () => setOpen(false)}
+          onClick={busy ? undefined : () => onModeChange('closed')}
           style={{
             position: 'fixed',
             inset: 0,
@@ -225,35 +232,21 @@ export function MobileCreateFab({
                 margin: '0 auto 16px',
               }}
             />
-            <h2 id="mobile-create-title" style={{ fontSize: 17, fontWeight: 600, marginTop: 0, marginBottom: 12 }}>
+            <h2
+              id="mobile-create-title"
+              style={{ fontSize: 17, fontWeight: 600, marginTop: 0, marginBottom: 12 }}
+            >
               Новое занятие
             </h2>
 
-            <label
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                fontSize: 14,
-                color: 'var(--text)',
-                marginBottom: 16,
-                padding: '10px 12px',
-                background: 'var(--bg)',
-                border: '1px solid var(--border)',
-                borderRadius: 8,
-                cursor: 'pointer',
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={false}
-                onChange={(e) => {
-                  if (e.target.checked) switchToBulk()
-                }}
-                style={{ width: 18, height: 18, accentColor: 'var(--accent)' }}
+            <div style={{ marginBottom: 18 }}>
+              <ChipGroup
+                name="create-mode"
+                value="single"
+                options={MODE_OPTIONS}
+                onChange={(v) => handleModeChange(v)}
               />
-              <span>Создавать несколько слотов</span>
-            </label>
+            </div>
 
             <FieldLabel htmlFor="mcf-date">Дата</FieldLabel>
             <input
@@ -332,7 +325,7 @@ export function MobileCreateFab({
               <Button
                 variant="secondary"
                 fullWidth
-                onClick={() => setOpen(false)}
+                onClick={() => onModeChange('closed')}
                 disabled={busy}
               >
                 Отмена

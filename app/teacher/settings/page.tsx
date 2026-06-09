@@ -160,14 +160,14 @@ export default async function TeacherSettingsHubPage() {
         <li>
           <SettingsTile
             href="/teacher/security"
-            icon="🔒"
+            icon={<SecurityShieldIcon />}
             title="Безопасность"
           />
         </li>
         <li>
           <SettingsTile
             href="/teacher/settings/digest"
-            icon="✉"
+            icon={<NotificationsBellIcon />}
             title="Уведомления"
             status={
               teacherTgBound
@@ -259,6 +259,48 @@ function SbpAcceptIcon() {
       <path d="M11 18.5h2" />
       <path d="M10.25 9.5h2.5a2 2 0 1 1 0 4h-2.5v3" />
       <path d="M9 13.5h4" />
+    </svg>
+  )
+}
+
+function SecurityShieldIcon() {
+  // Щит с замочной скважиной — однозначный сигнал «безопасность /
+  // приватность аккаунта». Замочная скважина чётко на 20×20 за счёт
+  // короткого vertical-stroke под кругом.
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 3 4.5 6v6.25c0 4.5 3.25 7.75 7.5 8.75 4.25-1 7.5-4.25 7.5-8.75V6L12 3z" />
+      <circle cx="12" cy="11.5" r="1.6" />
+      <path d="M12 13.1v2.4" />
+    </svg>
+  )
+}
+
+function NotificationsBellIcon() {
+  // Колокольчик в Linear/Apple-стиле — плечо звонка чистым arc'ом, плоская
+  // нижняя линия, отдельный маленький clapper-arc. Соответствует пропорциям
+  // ProfileIcon / IntegrationsGearIcon на 24×24 viewBox.
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 16.5V11a6 6 0 0 1 12 0v5.5" />
+      <path d="M4.5 16.5h15" />
+      <path d="M10.25 19.5a2 2 0 0 0 3.5 0" />
     </svg>
   )
 }

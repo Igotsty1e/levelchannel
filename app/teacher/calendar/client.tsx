@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
 import { BulkAddSlotsModal } from '@/components/calendar/BulkAddSlotsModal'
-import { MobileCreateFab } from '@/components/calendar/MobileCreateFab'
+import { MobileCreateFab, type CreateMode } from '@/components/calendar/MobileCreateFab'
 import { PaintConfirmModal } from '@/components/calendar/PaintConfirmModal'
 import { SlotCalendar } from '@/components/calendar/SlotCalendar'
 import type { PaintSpan, MoveTarget } from '@/lib/calendar/drag-state'
@@ -37,7 +37,7 @@ export default function TeacherCalendarClient({
   const [pendingPaint, setPendingPaint] = useState<PaintSpan | null>(null)
   const [reloadCounter, setReloadCounter] = useState(0)
   const [toast, setToast] = useState<string | null>(null)
-  const [bulkOpen, setBulkOpen] = useState(false)
+  const [createMode, setCreateMode] = useState<CreateMode>('closed')
 
   function showToast(msg: string) {
     setToast(msg)
@@ -142,7 +142,7 @@ export default function TeacherCalendarClient({
       >
         <button
           type="button"
-          onClick={() => setBulkOpen(true)}
+          onClick={() => setCreateMode('bulk')}
           style={{
             padding: '8px 14px',
             border: '1px solid var(--border)',
@@ -196,16 +196,18 @@ export default function TeacherCalendarClient({
 
       <MobileCreateFab
         tariffs={tariffs}
+        mode={createMode}
+        onModeChange={setCreateMode}
         onCreated={() => {
           showToast('Занятие создано.')
           bumpReload()
           router.refresh()
         }}
-        onSwitchToBulk={() => setBulkOpen(true)}
       />
       <BulkAddSlotsModal
-        open={bulkOpen}
-        onClose={() => setBulkOpen(false)}
+        open={createMode === 'bulk'}
+        onClose={() => setCreateMode('closed')}
+        onSwitchToSingle={() => setCreateMode('single')}
         onCreated={() => {
           showToast('Слоты созданы.')
           bumpReload()
