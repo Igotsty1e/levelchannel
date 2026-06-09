@@ -1,6 +1,6 @@
 # Массовое добавление слотов — форма + мобилка
 
-**Status**: DRAFT — round 0 — открытые вопросы к владельцу
+**Status**: round 2 — ВСЕ ответы локированы, pre-paranoia self-review
 **Owner**: @ivankhanaev
 **Author**: Claude (sonnet/opus)
 **Date created**: 2026-06-09
@@ -245,7 +245,19 @@ Codex-paranoia: plan-mode round по `docs/plans/slot-bulk-add-form-mobile-2026-
 
 ## 6. Ответы владельца
 
-_заполняется владельцем — Q1 ... Q12_
+**Round 1 (2026-06-09)** — владелец принял все мои дефолты Q1-Q12:
+- Q1 → (c) modal на десктопе + full-screen sheet на мобилке.
+- Q2 → (a) drag-paint оставляем рядом с формой.
+- Q3 → (a) один общий UI для recurring и one-shot (по диапазону дат).
+- Q4 → (a) до 90 дней вперёд.
+- Q5 → (a) preview с конфликтами, кнопка «Создать» работает (skipped silently).
+- Q6 → (b) дефолтный тариф — первый по `sort_order`.
+- Q7 → (a) FAB заменяем — теперь bulk-form.
+- Q8 → (всё) 4 события в analytics.
+- Q9 → (a) праздники не парим, слот создаётся как обычно.
+- Q10 → (a) кнопка в шапке `/teacher/calendar` + sticky FAB на мобилке.
+- Q11 → (a) zoom_url не задаём в bulk-create (оставляем как сейчас).
+- Q12 → (a) empty-state подсказка про drag-paint на календаре.
 
 ---
 
@@ -273,7 +285,53 @@ _заполняется владельцем — Q1 ... Q12_
 
 ---
 
-## 10. Self-review (round 1)
+## 10. Self-review (round 2 — после verify реальной схемы)
+
+### 10.0. Что починено vs. round 1
+- Прочитал `lib/scheduling/slots/mutations-write.ts:151-246` — `bulkCreateSlots()` НЕ использует advisory lock, полагается на `ON CONFLICT DO NOTHING` против partial unique index (mig 0035). Новый preview-endpoint + новая form НЕ нуждаются в advisory lock — следуем тому же паттерну.
+- Прочитал `migrations/0031_lesson_slots_domain_invariants.sql:77-90` — **duration НЕ ограничен** check'ом. Comment: «pricing has 50-min product». Это меняет form UI:
+  - Раньше предлагал select `30 / 45 / 60 / 90 / 120` — это произвольный белый список.
+  - Реально: duration привязана к **тарифу**, через `assertTariffDurationMatches()` в bulkCreateSlots (строка 184).
+  - **Implication**: в form поле «Длительность» появляется ТОЛЬКО когда тариф НЕ выбран; когда тариф выбран — duration берётся из тарифа автоматически. UI явно показывает «60 мин (из тарифа Стандарт)» disabled.
+
+### 10.1. Новые [BLOCKER]-кандидаты (round 2)
+- **B1. assertTariffDurationMatches**: если в форме learner выбрал тариф «Стандарт 60мин» — кнопка «Создать» должна быть disabled пока он не подгонит duration. Лучше: duration auto-set из тарифа, нельзя править. **Action в Sub-PR B**: имплементировать derived-duration-from-tariff.
+- **B2. lesson_slots_start_in_business_hours** (06-22 МСК): expandRecurrence() должна явно фильтровать out-of-band candidates ДО preview. Иначе backend выдаст error 23514 ON CONFLICT не поймает (это check_violation, не unique). UX-impact: учитель видит preview с N слотами, нажимает Create, получает 500. **Fix**: `expandRecurrence()` фильтрует + reports `{ skipped: [...], skippedReason: 'outside_business_hours' }`. Preview показывает оба списка.
+- **B3. lesson_slots_start_30min_aligned** (mig 0031:80-90): start_at MUST быть на :00 или :30 MSK. Если в form пользователь ввёл 16:15 — это invalid. **Fix**: time-picker step=1800 (30 мин) ИЛИ снизу формы валидация «время должно быть кратно 30 мин». Лучше — step="1800" в `<input type="time">`.
+- **B4. Размер batch'а**: backend cap = 200. expandRecurrence() может произвести 7×5×13 = 455. Form должна:
+  - (a) live-counter: показывает реальное число валидных слотов (после фильтрации business hours).
+  - (b) если > 200 — disabled «Создать» с надписью «Слишком много. Уменьшите диапазон или число времён.»
+  - Это уже было в плане; теперь проверяем что counter учитывает business-hours filtering.
+- **B5. Конфликты — учитываем CANCELLED**: unique partial index (mig 0035) `where status <> 'cancelled'`. Это значит cancelled слот — НЕ конфликт. Preview-endpoint должен искать конфликты только с активными статусами. **Fix**: `select start_at, status from lesson_slots where teacher_account_id = $1 and start_at = any($2::timestamptz[]) and status <> 'cancelled'`.
+
+### 10.2. Drag-paint hint (Q12 → a)
+- Где живёт hint: в `components/calendar/SlotCalendar.tsx` (он рисует grid). Простой dismissible баннер сверху календаря: «Совет: зажмите ЛКМ и протяните по ячейкам, чтобы создать несколько слотов сразу.»
+- Persist dismissal: `localStorage.lc_drag_paint_hint_dismissed_at`. Не показывается если установлено.
+- Mobile: hint показывает «На телефоне нажмите + чтобы добавить слоты». Разные подсказки по `window.matchMedia`.
+
+### 10.3. Точки расхождения / risks
+- **Events для analytics** (Q8): добавить в `lib/analytics/registry.ts` 4 новых Zod-схемы:
+  ```ts
+  slot_bulk_form_opened: z.object({ surface: z.enum(['desktop_modal', 'mobile_sheet']) }),
+  slot_bulk_preview_requested: z.object({ slot_count: z.number().int().nonnegative(), conflict_count: z.number().int().nonnegative() }),
+  slot_bulk_created: z.object({ slot_count: z.number().int().min(1).max(200), days_span: z.number().int().nonnegative().max(90) }),
+  slot_bulk_cancelled: z.object({ at_step: z.enum(['config', 'preview']) }),
+  ```
+- **A11y**: modal требует focus-trap, ESC закрывает, ARIA-live для preview-counter. **Action**: подключить `web-accessibility-wizard` в Sub-PR B.
+- **TimePicker UX**: native `<input type="time" step="1800">` на iOS Safari не уважает step. **Workaround**: добавить onBlur валидацию + snap to nearest 30min.
+
+### 10.4. Готовность к /codex-paranoia plan
+**Готов**. Открытые [BLOCKER]-кандидаты B1-B5 нужно решить в plan-mode paranoia. Plan-mode round зацепит:
+- Constraints из mig 0031 (B2, B3)
+- Tariff-duration derived (B1)
+- Backend cap + counter UX (B4)
+- Partial unique index semantics (B5)
+
+**Action перед запуском**: owner подтверждает запуск paranoia (per global mandate).
+
+---
+
+## OLD: Self-review (round 1)
 
 Прошёл по документу — нашёл несколько gaps:
 
