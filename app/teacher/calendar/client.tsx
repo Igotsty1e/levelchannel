@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
+import { BulkAddSlotsModal } from '@/components/calendar/BulkAddSlotsModal'
 import { MobileCreateFab } from '@/components/calendar/MobileCreateFab'
 import { PaintConfirmModal } from '@/components/calendar/PaintConfirmModal'
 import { SlotCalendar } from '@/components/calendar/SlotCalendar'
@@ -36,6 +37,7 @@ export default function TeacherCalendarClient({
   const [pendingPaint, setPendingPaint] = useState<PaintSpan | null>(null)
   const [reloadCounter, setReloadCounter] = useState(0)
   const [toast, setToast] = useState<string | null>(null)
+  const [bulkOpen, setBulkOpen] = useState(false)
 
   function showToast(msg: string) {
     setToast(msg)
@@ -130,6 +132,30 @@ export default function TeacherCalendarClient({
           {toast}
         </div>
       ) : null}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          marginBottom: 8,
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setBulkOpen(true)}
+          style={{
+            padding: '8px 14px',
+            border: '1px solid var(--border)',
+            borderRadius: 8,
+            background: 'var(--accent)',
+            color: '#fff',
+            cursor: 'pointer',
+            fontSize: 13,
+            fontWeight: 600,
+          }}
+        >
+          + Добавить слоты
+        </button>
+      </div>
       <SlotCalendar
         teacherId={teacherId}
         initialFromYmd={initialFromYmd}
@@ -174,6 +200,16 @@ export default function TeacherCalendarClient({
           bumpReload()
           router.refresh()
         }}
+      />
+      <BulkAddSlotsModal
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        onCreated={() => {
+          showToast('Слоты созданы.')
+          bumpReload()
+          router.refresh()
+        }}
+        tariffs={tariffs}
       />
     </div>
   )
