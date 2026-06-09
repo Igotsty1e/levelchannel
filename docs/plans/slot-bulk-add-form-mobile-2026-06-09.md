@@ -1,6 +1,6 @@
 # Массовое добавление слотов — форма + мобилка
 
-**Status**: round 2 — ВСЕ ответы локированы, pre-paranoia self-review
+**Status**: SHIPPED 2026-06-09 (PRs #563 `08d2d4e` + #567 `9979a3f`). Codex paranoia debt — SIGN-OFF owed after 2026-06-11.
 **Owner**: @ivankhanaev
 **Author**: Claude (sonnet/opus)
 **Date created**: 2026-06-09

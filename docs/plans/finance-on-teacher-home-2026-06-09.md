@@ -1,6 +1,6 @@
 # Финансы на главной странице учителя
 
-**Status**: round 1 — pre-implementation self-review
+**Status**: SHIPPED 2026-06-09 (PR #573 `b8cfe86`)
 **Owner**: @ivankhanaev
 **Author**: Claude (sonnet/opus)
 **Codex-Paranoia**: SELF-REVIEW round 2/2 (Codex quota exhausted до 2026-06-11)

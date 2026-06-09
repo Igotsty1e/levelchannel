@@ -116,6 +116,34 @@ Owner reported 4 bugs + asked for security + code-quality audits. Whole wave shi
 
 - **No dedicated plan-doc** — PR #551 squash `2e0e4ad`, ~3500 lines design system + page restructures parallel to SBP epic. Includes: `app/globals.css` ~1600 lines of tokens + `.saas-chrome` scope + settings-tile chip backgrounds + calendar Apple-style toolbar; full `docs/design-system.md` rewrite; `/cabinet` greeting refit + bottom CTA cleanup; `/cabinet/profile` H2-дубль убран, DangerZone + LearnerTelegramBinding в `.card`; `/teacher` greeting + primary CTA reorg; `/teacher/calendar` Apple toolbar; `/teacher/learners` polish; `/teacher/settings` hub with SVG icons + chip backgrounds; auth flow polish (`/login`, `/register`, `/forgot`, `/reset`); checkout polish. **5 reverts during CI** for trailer/test compliance: `app/privacy/page.tsx` (Legal-Pipeline trailer), `lib/security/request.ts` (DEV_EXTRA_ALLOWED_ORIGINS — Codex-Paranoia trailer), `/cabinet/settings/calendar/page.tsx` + `/teacher/settings/calendar/page.tsx` (copy diverged from state-matrix tests), `/teacher/subscription/*` (data-testid lookup broke), `/thank-you/thank-you-content.tsx` (copy diverged). These reverts need own follow-up PR with proper trailers + test updates.
 
+## 2026-06-08/09 push-PWA + landing-v3 wave
+
+- **`bcs-def-4-push-pwa-reminders.md`** — Web Push channel for learner reminders. Status: SHIPPED 2026-06-06 (PR #545 squash `3966f39`). Plan-paranoia: 9 substantive Codex rounds + round-10 self-review fallback (user-authorized §7). Migrations 0108-0109. Codex paranoia debt tracked in auto-memory `2026-06-06_push_pwa_codex_debt.md`.
+- **`calendar-onboarding-cleanup.md` + `calendar-onboarding-followup-2026-06-06.md`** — calendar/onboarding owner backlog. Status: SHIPPED via PR #537 (`f0c0bfa`) + #539 (`32fe5b3`). Mig 0106 drops Moscow-only triggers; mig 0107 timezone triggers + advisory lock.
+- **landing-v3 promote** — PR #555 (`abba606`) promotes landing-v3 to `/`. PR #556 (`337488e`) post-deploy smoke metadataBase + CSP + JSON-LD. **No dedicated plan-doc.**
+
+## 2026-06-09 self-hosted analytics + cinematic mega-wave
+
+- **Analytics foundation** — PRs #558 (`665da49`) + #559 (`b21cb9a`). `migrations/0119_events_partitioned_table.sql` + `lib/analytics/{server,track,registry}.ts` + `/admin/analytics`. Anonymous_id via signed HMAC cookie `lc_aid`; UPDATE-on-signup backfill. Docs at `docs/analytics/{events,queries,identification,privacy}.md`. **No dedicated plan-doc.**
+- **Analytics phase 6** — PR #560 (`d794fb1`). 13 events instrumented. Server-side `identifyAccountFromRequest()` in `/api/auth/login` + `/api/auth/register`. Mobile header CTA fix. New `/integrations/google-calendar` SEO + OAuth-verification landing.
+- **mobile-rhythm-followup** — PR #561 (`ad35127`). CTA copy + −30% padding + clamp() on notebook. **No dedicated plan-doc.**
+
+## 2026-06-09 promo-codes + slot-bulk-form epics
+
+- **`promo-codes-tariffs-2026-06-09.md`** — voucher mechanism. Status: SHIPPED 2026-06-09 (PRs #562 `e31cc2e` + #566 `a865dcd`). Mig 0120 + `lib/promo/codes.ts` + `/admin/promo-codes` + `/teacher/subscription#promo` + 4 analytics events. Defaults Q1-Q12 + Q3.1 owner-locked. Codex paranoia debt — SIGN-OFF owed after 2026-06-11.
+- **`slot-bulk-add-form-mobile-2026-06-09.md`** — bulk-add slots form. Status: SHIPPED 2026-06-09 (PRs #563 `08d2d4e` + #567 `9979a3f`). `lib/calendar/recurrence.ts` + 11/11 unit tests. `POST /api/teacher/slots/preview-bulk` + `BulkAddSlotsModal`. Defaults Q1-Q12 owner-locked.
+
+## 2026-06-09 SEO/GEO + security audit
+
+- **`seo-geo-improvement-2026-06-09.md`** — Google fundamentals + AI Overview eligibility. Status: SHIPPED 2026-06-09 (PR #569 `f828581`). Twitter cards + sitemap clean + `BreadcrumbList` + `Article` JSON-LD + offer availability/priceValidUntil. Sub-PR B (anastasia/related-articles/hreflang) deferred.
+- **`security-audit-2026-06-09.md`** — top-1 company depth audit (21 categories). Status: PARTIAL SHIPPED 2026-06-09 (PR #570 `bfb798b`, H5+H7). M3+M6 deferred to PR #568 awaiting Codex SIGN-OFF.
+
+## 2026-06-09 in-cabinet auth + finance + mobile-ux
+
+- **`in-cabinet-password-change-2026-06-09.md`** — `/teacher/security` + `POST /api/account/password/change`. Status: SHIPPED 2026-06-09 (PR #572). Mig 0121 widens audit event-type CHECK. Round-2 defaults Q1-Q5 owner-locked. Constant-time both-step verify. Fire-and-forget email notification. 4 analytics events. Profile «(скоро)» replaced with link.
+- **`finance-on-teacher-home-2026-06-09.md`** — 4 finance cards on `/teacher`. Status: SHIPPED 2026-06-09 (PR #573). `lib/billing/teacher-finance.ts` (6 parallel SQL aggregates) + `<TeacherFinanceSummary />` server component. Warn-badges (overdue ≥7d / packages expiring ≤14d). All-zero → hidden.
+- **`mobile-calendar-ui-cleanup-2026-06-09.md`** — unified «+ Создать» + bulk toggle on mobile. Status: SHIPPED 2026-06-09 (PR #574). Top button hidden <600px. FAB sheet checkbox + localStorage. `MobileFallback.tsx` drops «Откройте календарь с компьютера…».
+
 ## Foundational pre-2026-05 waves (kept for git blame continuity)
 
 - **`csp-hardening.md`** (CSP hardening, CLOSED 2026-05-09) — Content-Security-Policy lockdown for production.
