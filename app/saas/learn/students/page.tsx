@@ -13,12 +13,19 @@ export const metadata: Metadata = {
     type: 'article',
     images: ['/saas/learn/opengraph-image'],
   },
+  twitter: {
+    card: 'summary_large_image',
+    images: ['/saas/learn/opengraph-image'],
+  },
 }
 
 export default function LearnStudentsPage() {
   return (
     <SeoArticle
       eyebrow="Карточка ученика"
+      publishedAt="2026-05-22"
+      updatedAt="2026-06-09"
+      breadcrumbTitle="Карточка ученика"
       h1={<>Карточка ученика — то, что ты обещал помнить</>}
       lede="Уровень, цели, заметки про слабые места, что разбирали на прошлом уроке и что задал на дом. Открыл — готов к занятию."
       sections={[

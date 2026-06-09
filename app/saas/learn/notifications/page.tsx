@@ -13,12 +13,19 @@ export const metadata: Metadata = {
     type: 'article',
     images: ['/saas/learn/opengraph-image'],
   },
+  twitter: {
+    card: 'summary_large_image',
+    images: ['/saas/learn/opengraph-image'],
+  },
 }
 
 export default function LearnNotificationsPage() {
   return (
     <SeoArticle
       eyebrow="Уведомления"
+      publishedAt="2026-05-22"
+      updatedAt="2026-06-09"
+      breadcrumbTitle="Уведомления"
       h1={<>Ученик не забудет. Тебе не надо писать «не забудь»</>}
       lede="Напоминание о занятии в Telegram за час. Подтверждение переноса на e-mail. Утренний дайджест учителю — что произошло за день."
       sections={[

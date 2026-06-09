@@ -13,12 +13,19 @@ export const metadata: Metadata = {
     type: 'article',
     images: ['/saas/learn/opengraph-image'],
   },
+  twitter: {
+    card: 'summary_large_image',
+    images: ['/saas/learn/opengraph-image'],
+  },
 }
 
 export default function LearnFreePage() {
   return (
     <SeoArticle
       eyebrow="Бесплатный тариф"
+      publishedAt="2026-05-31"
+      updatedAt="2026-06-09"
+      breadcrumbTitle="Бесплатный тариф"
       h1={<>Стартовый — бесплатно, навсегда</>}
       lede="Один ученик, все функции, без карты при регистрации, без таймера, без хитростей."
       sections={[

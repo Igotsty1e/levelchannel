@@ -13,12 +13,19 @@ export const metadata: Metadata = {
     type: 'article',
     images: ['/saas/learn/opengraph-image'],
   },
+  twitter: {
+    card: 'summary_large_image',
+    images: ['/saas/learn/opengraph-image'],
+  },
 }
 
 export default function LearnSecurityPage() {
   return (
     <SeoArticle
       eyebrow="Безопасность и 152-ФЗ"
+      publishedAt="2026-05-22"
+      updatedAt="2026-06-09"
+      breadcrumbTitle="Безопасность"
       h1={<>Имена твоих учеников и их балансы. Это твоё.</>}
       lede="Мы не передаём твои данные третьим лицам. Не продаём рекламу по ним. Не отправляем в чужие аналитические системы."
       sections={[

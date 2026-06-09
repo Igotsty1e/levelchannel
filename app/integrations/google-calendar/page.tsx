@@ -34,6 +34,12 @@ export const metadata: Metadata = {
     type: 'article',
     images: ['/saas/learn/opengraph-image'],
   },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'LevelChannel × Google Calendar',
+    description: 'Какие данные читаем и пишем; кто видит события.',
+    images: ['/saas/learn/opengraph-image'],
+  },
 }
 
 export default function IntegrationGoogleCalendarPage() {
@@ -41,6 +47,10 @@ export default function IntegrationGoogleCalendarPage() {
     <SeoArticle
       eyebrow="LevelChannel · Интеграция с Google Calendar"
       h1={<>LevelChannel × Google Calendar</>}
+      headline="LevelChannel × Google Calendar — интеграция для репетитора"
+      breadcrumbTitle="Google Calendar"
+      publishedAt="2026-06-06"
+      updatedAt="2026-06-09"
       lede="LevelChannel — это веб-приложение CRM для частного репетитора (страница приложения: https://levelchannel.ru). Эта страница описывает, как LevelChannel интегрируется с Google Calendar: какие OAuth-разрешения мы запрашиваем, какие данные мы читаем и пишем, и кто их видит. Авторизация Google нужна, чтобы автоматически создавать события занятий в календаре учителя и ученика, когда учитель назначает слот в кабинете LevelChannel."
       sections={[
         {

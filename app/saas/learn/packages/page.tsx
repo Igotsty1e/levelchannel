@@ -13,12 +13,19 @@ export const metadata: Metadata = {
     type: 'article',
     images: ['/saas/learn/opengraph-image'],
   },
+  twitter: {
+    card: 'summary_large_image',
+    images: ['/saas/learn/opengraph-image'],
+  },
 }
 
 export default function LearnPackagesPage() {
   return (
     <SeoArticle
       eyebrow="Пакеты и абонементы"
+      publishedAt="2026-05-22"
+      updatedAt="2026-06-09"
+      breadcrumbTitle="Пакеты"
       h1={<>Пакеты на 4, 8, 16 уроков — без шаблонов в Word</>}
       lede="Настроил пакет один раз. Назначил ученику. Урок прошёл — пакет уменьшился. Не нужно помнить, сколько занятий «отыграно» из абонемента."
       sections={[

@@ -13,12 +13,19 @@ export const metadata: Metadata = {
     type: 'article',
     images: ['/saas/learn/opengraph-image'],
   },
+  twitter: {
+    card: 'summary_large_image',
+    images: ['/saas/learn/opengraph-image'],
+  },
 }
 
 export default function LearnMultiplatformPage() {
   return (
     <SeoArticle
       eyebrow="Где открывается"
+      publishedAt="2026-05-22"
+      updatedAt="2026-06-09"
+      breadcrumbTitle="Любое устройство"
       h1={<>Кабинет, который открывается на любом устройстве</>}
       lede="Это веб-приложение. Не приложение в магазине, а сайт, у которого есть кабинет. Поэтому он открывается там же, где у тебя браузер."
       sections={[
