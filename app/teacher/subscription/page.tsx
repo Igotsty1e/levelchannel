@@ -17,6 +17,7 @@ import {
   getActiveTeacherSubscription,
 } from '@/lib/billing/teacher-subscription'
 import { TeacherSubscriptionClient } from './client'
+import { PromoCodeInput } from './promo-input'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -94,6 +95,7 @@ export default async function TeacherSubscriptionPage() {
         Подписка на платформу
       </h1>
       <TeacherSubscriptionClient active={active} tariffs={tariffs} />
+      <PromoCodeInput />
     </>
   )
 }

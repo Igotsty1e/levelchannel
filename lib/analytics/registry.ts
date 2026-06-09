@@ -122,6 +122,20 @@ export const EVENT_REGISTRY = {
   time_on_page: z.object({
     seconds: z.number().int().nonnegative().max(86400),
   }),
+
+  // ─── Promo codes (Sub-PR C) ───
+  promo_code_form_focused: z.object({}),
+  promo_code_redeem_attempted: z.object({
+    code_prefix: z.string().max(8),
+  }),
+  promo_code_redeem_succeeded: z.object({
+    code_prefix: z.string().max(8),
+    granted_days: z.number().int().min(1).max(365),
+  }),
+  promo_code_redeem_failed: z.object({
+    code_prefix: z.string().max(8),
+    reason: z.string().max(64),
+  }),
 } as const
 
 export type EventName = keyof typeof EVENT_REGISTRY
