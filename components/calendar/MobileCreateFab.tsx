@@ -99,10 +99,17 @@ export function MobileCreateFab({
   tariffs,
   teacherTz = 'Europe/Moscow',
   onCreated,
+  onSwitchToBulk,
 }: {
   tariffs: ReadonlyArray<TariffOption>
   teacherTz?: string
   onCreated?: () => void
+  /**
+   * Called when the user flips the «Создавать несколько слотов»
+   * checkbox inside the FAB sheet. Parent should close this modal
+   * (handled here via setOpen(false)) AND open BulkAddSlotsModal.
+   */
+  onSwitchToBulk?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [date, setDate] = useState(() => todayInTz(teacherTz))
@@ -111,6 +118,34 @@ export function MobileCreateFab({
   const [tariffId, setTariffId] = useState<string>('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const BULK_PREF_KEY = 'lc_calendar_create_bulk_mode'
+
+  function openFab() {
+    // If user previously toggled bulk-mode ON, route directly to bulk
+    // without flashing the single-form sheet.
+    try {
+      if (typeof window !== 'undefined' && window.localStorage.getItem(BULK_PREF_KEY) === '1') {
+        onSwitchToBulk?.()
+        return
+      }
+    } catch {
+      // ignore localStorage errors (private mode, etc.)
+    }
+    setOpen(true)
+  }
+
+  function switchToBulk() {
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(BULK_PREF_KEY, '1')
+      }
+    } catch {
+      // ignore
+    }
+    setOpen(false)
+    onSwitchToBulk?.()
+  }
 
   async function handleSubmit() {
     setBusy(true)
@@ -147,7 +182,7 @@ export function MobileCreateFab({
   return (
     <>
       <div className="calendar-mobile-fab">
-        <FloatingActionButton label="Создать" onClick={() => setOpen(true)} />
+        <FloatingActionButton label="Создать" onClick={openFab} />
       </div>
 
       {open ? (
@@ -190,9 +225,35 @@ export function MobileCreateFab({
                 margin: '0 auto 16px',
               }}
             />
-            <h2 id="mobile-create-title" style={{ fontSize: 17, fontWeight: 600, marginTop: 0, marginBottom: 16 }}>
+            <h2 id="mobile-create-title" style={{ fontSize: 17, fontWeight: 600, marginTop: 0, marginBottom: 12 }}>
               Новое занятие
             </h2>
+
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                fontSize: 14,
+                color: 'var(--text)',
+                marginBottom: 16,
+                padding: '10px 12px',
+                background: 'var(--bg)',
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={false}
+                onChange={(e) => {
+                  if (e.target.checked) switchToBulk()
+                }}
+                style={{ width: 18, height: 18, accentColor: 'var(--accent)' }}
+              />
+              <span>Создавать несколько слотов</span>
+            </label>
 
             <FieldLabel htmlFor="mcf-date">Дата</FieldLabel>
             <input
