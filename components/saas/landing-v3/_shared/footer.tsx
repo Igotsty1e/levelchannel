@@ -49,6 +49,7 @@ export function LandingV3Footer({ legalProfile }: { legalProfile: LandingLegalPr
             <li><TrackedLink href="/saas/learn/multiplatform" className="landing-v3-link" target="footer:learn:multiplatform">На любом устройстве</TrackedLink></li>
             <li><TrackedLink href="/saas/learn/security" className="landing-v3-link" target="footer:learn:security">Безопасность и 152-ФЗ</TrackedLink></li>
             <li><TrackedLink href="/saas/learn/free" className="landing-v3-link" target="footer:learn:free">Бесплатный тариф</TrackedLink></li>
+            <li><TrackedLink href="/integrations/google-calendar" className="landing-v3-link" target="footer:integration:google-calendar">Google Calendar — интеграция</TrackedLink></li>
             <li style={{ marginTop: 10 }}>
               <TrackedLink href="/saas/offer" className="landing-v3-link" target="footer:legal:offer">Оферта</TrackedLink>
               {' · '}

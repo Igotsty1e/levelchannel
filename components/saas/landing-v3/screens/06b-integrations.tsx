@@ -77,8 +77,9 @@ export function ScreenIntegrations() {
           }}
         >
           {INTEGRATIONS.map((it, idx) => (
-            <motion.div
+            <motion.a
               key={it.brand}
+              href={it.target === 'google_calendar' ? '/integrations/google-calendar' : '#integrations'}
               initial={{ opacity: 0, y: 24 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: '-80px' }}
@@ -90,6 +91,9 @@ export function ScreenIntegrations() {
                 borderBottom: '1px solid var(--v3-rule)',
                 position: 'relative',
                 cursor: 'pointer',
+                textDecoration: 'none',
+                color: 'inherit',
+                display: 'block',
               }}
             >
               <div
@@ -117,9 +121,24 @@ export function ScreenIntegrations() {
               <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--v3-text-secondary)', margin: 0 }}>
                 {it.body}
               </p>
-            </motion.div>
+            </motion.a>
           ))}
         </div>
+
+        <motion.div
+          {...fadeUp}
+          transition={{ duration: 0.7, delay: 0.3 }}
+          style={{ textAlign: 'center', marginTop: 32, fontSize: 14, color: 'var(--v3-text-muted)' }}
+        >
+          Подробнее про интеграцию с{' '}
+          <a
+            href="/integrations/google-calendar"
+            style={{ color: 'var(--v3-accent-end)', textDecoration: 'underline', textUnderlineOffset: 4 }}
+          >
+            Google Calendar
+          </a>
+          {' '}— какие данные читаем и пишем, кто их видит.
+        </motion.div>
       </div>
     </section>
   )
