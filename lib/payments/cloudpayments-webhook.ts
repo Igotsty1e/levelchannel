@@ -85,7 +85,12 @@ export function parseCloudPaymentsPayload(
   const params = new URLSearchParams(rawBody)
   const payload: CloudPaymentsWebhookPayload = {}
 
+  // Security audit 2026-06-09 M6: skip prototype-pollution keys.
+  // CloudPayments only emits known TitleCase field names; never these.
+  const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
   params.forEach((value, key) => {
+    if (FORBIDDEN_KEYS.has(key)) return
     payload[key] = value
   })
 

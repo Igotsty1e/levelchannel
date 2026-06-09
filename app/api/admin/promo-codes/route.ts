@@ -14,6 +14,11 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
+  // Security audit 2026-06-09 H5: admin endpoints returning bearer
+  // material (promo codes) need origin gate even on GET to defeat
+  // cross-origin CSRF reads.
+  const originGate = enforceTrustedBrowserOrigin(request)
+  if (originGate) return originGate
   const rl = await enforceRateLimit(request, 'admin:promo:ip', 60, 60_000)
   if (rl) return rl
   const guard = await requireAdminRole(request)
