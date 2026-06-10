@@ -112,7 +112,7 @@ export function PaintConfirmModal({
         }}
       >
         <h2 id="paint-confirm-title" style={{ fontSize: 18, marginBottom: 16, marginTop: 0 }}>
-          Новые занятия · {formatYmdRu(span.ymd)}
+          Новые слоты · {formatYmdRu(span.ymd)}
         </h2>
 
         <FieldLabel>Длительность</FieldLabel>
@@ -169,7 +169,7 @@ export function PaintConfirmModal({
             <>
               <p style={{ fontSize: 13, color: 'var(--secondary)', marginTop: 0, marginBottom: 8 }}>
                 Создадим <strong style={{ color: 'var(--text)' }}>{synth.startsIso.length}</strong>{' '}
-                {pluralRu(synth.startsIso.length, 'занятие', 'занятия', 'занятий')}
+                {pluralRu(synth.startsIso.length, 'слот', 'слота', 'слотов')}
               </p>
               <ul
                 style={{

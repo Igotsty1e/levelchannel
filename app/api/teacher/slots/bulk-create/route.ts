@@ -6,6 +6,7 @@ import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import {
   type BulkCreateInput,
   bulkCreateSlots,
+  SlotTariffDurationMismatchError,
   SlotTeacherRoleError,
   TariffNotActiveError,
   TariffOwnershipError,
@@ -115,6 +116,15 @@ export async function POST(request: Request) {
           message: 'Внутренняя ошибка проверки роли.',
         },
         { status: 500, headers: NO_STORE },
+      )
+    }
+    if (err instanceof SlotTariffDurationMismatchError) {
+      return NextResponse.json(
+        {
+          error: 'slot/tariffId/duration_mismatch',
+          message: `Длительность слота (${err.slotDuration} мин) не совпадает с длительностью тарифа (${err.tariffDuration} мин). Выберите другую длительность или тариф.`,
+        },
+        { status: 400, headers: NO_STORE },
       )
     }
     // Unknown errors → 500 with logging; mirrors single-create.
