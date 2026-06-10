@@ -81,15 +81,18 @@ export function LearnerTariffAccessCard({
         const body = (await res.json().catch(() => null)) as
           | { error?: string; message?: string }
           | null
-        setError(body?.message ?? body?.error ?? `HTTP ${res.status}`)
+        setError(
+          body?.message ??
+            'Не получилось закрыть доступ. Попробуйте ещё раз.',
+        )
         return
       }
       setCollapsed(false)
       setAnnouncement(`Доступ к тарифу «${titleRu}» закрыт.`)
       window.setTimeout(() => setAnnouncement(null), 4000)
       router.refresh()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'unknown')
+    } catch {
+      setError('Нет связи. Попробуйте ещё раз.')
     } finally {
       setBusyId(null)
     }

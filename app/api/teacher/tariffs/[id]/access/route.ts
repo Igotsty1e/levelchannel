@@ -66,13 +66,19 @@ export async function POST(
   const { id: tariffId } = await params
   if (!UUID_PATTERN.test(tariffId)) {
     return NextResponse.json(
-      { error: 'invalid_tariff_id' },
+      {
+        error: 'invalid_tariff_id',
+        message: 'Тариф не найден. Обновите страницу.',
+      },
       { status: 400, headers: NO_STORE },
     )
   }
   if (!(await assertTeacherOwnsTariff(teacherId, tariffId))) {
     return NextResponse.json(
-      { error: 'tariff_not_owned' },
+      {
+        error: 'tariff_not_owned',
+        message: 'Этот тариф не привязан к вам. Обновите страницу.',
+      },
       { status: 404, headers: NO_STORE },
     )
   }
@@ -81,14 +87,21 @@ export async function POST(
     body = await request.json()
   } catch {
     return NextResponse.json(
-      { error: 'invalid_json' },
+      {
+        error: 'invalid_json',
+        message: 'Что-то пошло не так. Попробуйте ещё раз.',
+      },
       { status: 400, headers: NO_STORE },
     )
   }
   const learnerId = body.learnerId
   if (!learnerId || !UUID_PATTERN.test(learnerId)) {
     return NextResponse.json(
-      { error: 'invalid_learner_id' },
+      {
+        error: 'invalid_learner_id',
+        message:
+          'Не получилось определить ученика. Обновите страницу и попробуйте ещё раз.',
+      },
       { status: 400, headers: NO_STORE },
     )
   }
@@ -101,7 +114,10 @@ export async function POST(
     (typeof override !== 'number' || override < 100 || override > 100_000_000)
   ) {
     return NextResponse.json(
-      { error: 'invalid_override_amount' },
+      {
+        error: 'invalid_override_amount',
+        message: 'Цена должна быть от 1 ₽ до 1 000 000 ₽.',
+      },
       { status: 400, headers: NO_STORE },
     )
   }
@@ -121,13 +137,20 @@ export async function POST(
     const msg = e instanceof Error ? e.message : String(e)
     if (/no active link/.test(msg)) {
       return NextResponse.json(
-        { error: 'learner_unlinked' },
+        {
+          error: 'learner_unlinked',
+          message:
+            'Этот ученик больше не привязан к вам. Откройте список учеников и выпустите новый инвайт.',
+        },
         { status: 409, headers: NO_STORE },
       )
     }
     if (/owned by/.test(msg)) {
       return NextResponse.json(
-        { error: 'tariff_not_owned' },
+        {
+          error: 'tariff_not_owned',
+          message: 'Этот тариф не привязан к вам. Обновите страницу.',
+        },
         { status: 404, headers: NO_STORE },
       )
     }
@@ -155,13 +178,19 @@ export async function DELETE(
   const { id: tariffId } = await params
   if (!UUID_PATTERN.test(tariffId)) {
     return NextResponse.json(
-      { error: 'invalid_tariff_id' },
+      {
+        error: 'invalid_tariff_id',
+        message: 'Тариф не найден. Обновите страницу.',
+      },
       { status: 400, headers: NO_STORE },
     )
   }
   if (!(await assertTeacherOwnsTariff(teacherId, tariffId))) {
     return NextResponse.json(
-      { error: 'tariff_not_owned' },
+      {
+        error: 'tariff_not_owned',
+        message: 'Этот тариф не привязан к вам. Обновите страницу.',
+      },
       { status: 404, headers: NO_STORE },
     )
   }
@@ -169,7 +198,11 @@ export async function DELETE(
   const learnerId = url.searchParams.get('learnerId')
   if (!learnerId || !UUID_PATTERN.test(learnerId)) {
     return NextResponse.json(
-      { error: 'invalid_learner_id' },
+      {
+        error: 'invalid_learner_id',
+        message:
+          'Не получилось определить ученика. Обновите страницу и попробуйте ещё раз.',
+      },
       { status: 400, headers: NO_STORE },
     )
   }

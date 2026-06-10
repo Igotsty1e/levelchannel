@@ -76,7 +76,7 @@ export function GrantTariffAccessModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          learnerAccountId: learnerId,
+          learnerId,
         }),
       })
       if (res.status === 401) {
@@ -95,7 +95,7 @@ export function GrantTariffAccessModal({
         })
         return
       }
-      setError(body?.message ?? body?.error ?? 'Не получилось открыть доступ.')
+      setError(mapTariffAccessError(body))
     } catch {
       setError('Нет связи. Попробуйте ещё раз.')
     } finally {
@@ -199,6 +199,28 @@ export function GrantTariffAccessModal({
       `}</style>
     </div>
   )
+}
+
+function mapTariffAccessError(
+  body: { error?: string; message?: string } | null,
+): string {
+  const code = body?.error
+  switch (code) {
+    case 'invalid_tariff_id':
+      return 'Тариф не найден. Обновите страницу.'
+    case 'tariff_not_owned':
+      return 'Этот тариф не привязан к вам. Обновите страницу.'
+    case 'invalid_learner_id':
+      return 'Не получилось определить ученика. Обновите страницу и попробуйте ещё раз.'
+    case 'invalid_override_amount':
+      return 'Цена должна быть от 1 ₽ до 1 000 000 ₽.'
+    case 'invalid_json':
+      return 'Что-то пошло не так. Попробуйте ещё раз.'
+    case 'learner_unlinked':
+      return 'Этот ученик больше не привязан к вам. Откройте список учеников и выпустите новый инвайт.'
+    default:
+      return body?.message ?? 'Не получилось открыть доступ к тарифу. Попробуйте ещё раз.'
+  }
 }
 
 const overlayStyle: CSSProperties = {

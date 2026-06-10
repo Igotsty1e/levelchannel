@@ -55,7 +55,10 @@ export async function POST(request: Request, { params }: RouteParams) {
   const { id: packageId } = await params
   if (!UUID_PATTERN.test(packageId)) {
     return NextResponse.json(
-      { error: 'invalid_package_id' },
+      {
+        error: 'invalid_package_id',
+        message: 'Пакет не найден. Обновите страницу.',
+      },
       { status: 400, headers: NO_STORE },
     )
   }
@@ -71,7 +74,10 @@ export async function POST(request: Request, { params }: RouteParams) {
     body = rawBody.length > 0 ? JSON.parse(rawBody) : {}
   } catch {
     return NextResponse.json(
-      { error: 'invalid_body' },
+      {
+        error: 'invalid_body',
+        message: 'Что-то пошло не так. Попробуйте ещё раз.',
+      },
       { status: 400, headers: NO_STORE },
     )
   }
@@ -80,7 +86,11 @@ export async function POST(request: Request, { params }: RouteParams) {
     typeof body.learnerAccountId === 'string' ? body.learnerAccountId : null
   if (!learnerAccountId || !UUID_PATTERN.test(learnerAccountId)) {
     return NextResponse.json(
-      { error: 'invalid_learner_account_id' },
+      {
+        error: 'invalid_learner_account_id',
+        message:
+          'Не получилось определить ученика. Обновите страницу и попробуйте ещё раз.',
+      },
       { status: 400, headers: NO_STORE },
     )
   }
@@ -121,14 +131,18 @@ export async function POST(request: Request, { params }: RouteParams) {
           // Anti-spoof: same 404 for both — don't leak ownership.
           return {
             status: 404,
-            body: { error: 'package_not_found' },
+            body: {
+              error: 'package_not_found',
+              message: 'Пакет не найден. Обновите страницу.',
+            },
           }
         case 'package_inactive':
           return {
             status: 422,
             body: {
               error: 'package_inactive',
-              message: 'Cannot issue an inactive package.',
+              message:
+                'Этот пакет архивирован. Сделайте его активным в каталоге пакетов.',
             },
           }
         case 'learner_not_linked':
@@ -137,7 +151,7 @@ export async function POST(request: Request, { params }: RouteParams) {
             body: {
               error: 'learner_not_linked',
               message:
-                'Этот ученик не привязан к вашему учителю. Выпустите инвайт и подождите регистрации.',
+                'Этот ученик пока не привязан к вам. Откройте список учеников и выпустите инвайт.',
             },
           }
         case 'learner_account_missing':
@@ -145,7 +159,8 @@ export async function POST(request: Request, { params }: RouteParams) {
             status: 404,
             body: {
               error: 'learner_account_missing',
-              message: 'Учётная запись ученика не найдена.',
+              message:
+                'Учётная запись ученика не найдена. Возможно, ученик удалил аккаунт.',
             },
           }
         case 'already_owns_active_package':
@@ -165,7 +180,10 @@ export async function POST(request: Request, { params }: RouteParams) {
           void _exhaustive
           return {
             status: 500,
-            body: { error: 'unknown_grant_result' },
+            body: {
+              error: 'unknown_grant_result',
+              message: 'Не получилось выдать пакет. Попробуйте ещё раз.',
+            },
           }
         }
       }

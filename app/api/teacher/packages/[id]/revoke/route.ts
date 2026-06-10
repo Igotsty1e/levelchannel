@@ -54,7 +54,10 @@ export async function POST(request: Request, { params }: RouteParams) {
   const { id: invoiceId } = await params
   if (!INVOICE_ID_PATTERN.test(invoiceId)) {
     return NextResponse.json(
-      { error: 'invalid_invoice_id' },
+      {
+        error: 'invalid_invoice_id',
+        message: 'Пакет не найден. Обновите страницу.',
+      },
       { status: 400, headers: NO_STORE },
     )
   }
@@ -75,7 +78,10 @@ export async function POST(request: Request, { params }: RouteParams) {
     case 'order_not_owned_by_teacher':
       // Anti-spoof: same 404 for both.
       return NextResponse.json(
-        { error: 'order_not_found' },
+        {
+          error: 'order_not_found',
+          message: 'Пакет не найден. Обновите страницу.',
+        },
         { status: 404, headers: NO_STORE },
       )
     case 'order_not_teacher_grant':
@@ -83,13 +89,16 @@ export async function POST(request: Request, { params }: RouteParams) {
         {
           error: 'order_not_teacher_grant',
           message:
-            'Этот заказ не выдан учителем — отмена возможна только для teacher_grant.',
+            'Этот пакет был куплен учеником — отозвать можно только пакеты, которые вы выдали сами.',
         },
         { status: 422, headers: NO_STORE },
       )
     case 'already_revoked':
       return NextResponse.json(
-        { error: 'already_revoked' },
+        {
+          error: 'already_revoked',
+          message: 'Этот пакет уже отозван. Обновите страницу.',
+        },
         { status: 409, headers: NO_STORE },
       )
     case 'has_completed_consumptions':
@@ -97,20 +106,26 @@ export async function POST(request: Request, { params }: RouteParams) {
         {
           error: 'has_completed_consumptions',
           message:
-            'У пакета есть проведённые занятия — отмена невозможна.',
+            'У пакета есть проведённые занятия — отозвать его уже нельзя.',
         },
         { status: 422, headers: NO_STORE },
       )
     case 'purchase_not_found':
       return NextResponse.json(
-        { error: 'purchase_not_found' },
+        {
+          error: 'purchase_not_found',
+          message: 'Не получилось отозвать пакет. Попробуйте ещё раз.',
+        },
         { status: 500, headers: NO_STORE },
       )
     default: {
       const _exhaustive: never = result
       void _exhaustive
       return NextResponse.json(
-        { error: 'unknown_revoke_result' },
+        {
+          error: 'unknown_revoke_result',
+          message: 'Не получилось отозвать пакет. Попробуйте ещё раз.',
+        },
         { status: 500, headers: NO_STORE },
       )
     }

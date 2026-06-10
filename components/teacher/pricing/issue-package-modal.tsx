@@ -286,13 +286,14 @@ function mapServerError(
     case 'package_not_found':
       return {
         reason: 'package_not_found',
-        message: message ?? 'Пакет не найден или удалён. Обновите страницу.',
+        message: message ?? 'Пакет не найден. Обновите страницу.',
       }
     case 'package_inactive':
       return {
         reason: 'package_inactive',
         message:
-          message ?? 'Этот пакет архивирован. Активируйте его в каталоге.',
+          message ??
+          'Этот пакет архивирован. Сделайте его активным в каталоге пакетов.',
       }
     case 'already_owns_active_package':
       return {
@@ -304,18 +305,35 @@ function mapServerError(
     case 'learner_not_linked':
       return {
         reason: 'learner_not_linked',
-        message: message ?? 'Этот ученик не привязан к вам.',
+        message:
+          message ??
+          'Этот ученик пока не привязан к вам. Откройте список учеников и выпустите инвайт.',
         ctaHref: '/teacher/learners',
         ctaLabel: 'Открыть список учеников →',
       }
     case 'learner_account_missing':
       return {
         reason: 'learner_account_missing',
-        message: message ?? 'Учётная запись ученика не найдена.',
+        message:
+          message ??
+          'Учётная запись ученика не найдена. Возможно, ученик удалил аккаунт.',
+      }
+    case 'invalid_learner_account_id':
+      return {
+        reason: 'unknown',
+        message:
+          message ??
+          'Не получилось определить ученика. Обновите страницу и попробуйте ещё раз.',
+      }
+    case 'invalid_package_id':
+    case 'invalid_body':
+      return {
+        reason: 'unknown',
+        message: message ?? 'Что-то пошло не так. Обновите страницу.',
       }
     default:
       return {
-        reason: status >= 500 ? 'unknown' : 'unknown',
+        reason: 'unknown',
         message: message ?? 'Не получилось выдать пакет. Попробуйте ещё раз.',
       }
   }

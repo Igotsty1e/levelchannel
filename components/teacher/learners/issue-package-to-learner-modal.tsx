@@ -232,16 +232,33 @@ function mapErr(body: { error?: string; message?: string } | null): string {
     case 'package_not_found':
       return message ?? 'Пакет не найден. Обновите страницу.'
     case 'package_inactive':
-      return message ?? 'Этот пакет архивирован.'
+      return (
+        message ??
+        'Этот пакет архивирован. Сделайте его активным в каталоге пакетов.'
+      )
     case 'already_owns_active_package':
       return (
         message ??
         'У ученика уже есть активный пакет такой же длительности. Включите «Разрешить стэкинг», чтобы выдать ещё один.'
       )
     case 'learner_not_linked':
-      return message ?? 'Этот ученик не привязан к вам.'
+      return (
+        message ??
+        'Этот ученик пока не привязан к вам. Откройте список учеников и выпустите инвайт.'
+      )
     case 'learner_account_missing':
-      return message ?? 'Учётная запись ученика не найдена.'
+      return (
+        message ??
+        'Учётная запись ученика не найдена. Возможно, ученик удалил аккаунт.'
+      )
+    case 'invalid_learner_account_id':
+      return (
+        message ??
+        'Не получилось определить ученика. Обновите страницу и попробуйте ещё раз.'
+      )
+    case 'invalid_package_id':
+    case 'invalid_body':
+      return message ?? 'Что-то пошло не так. Обновите страницу.'
     default:
       return message ?? 'Не получилось выдать пакет. Попробуйте ещё раз.'
   }
