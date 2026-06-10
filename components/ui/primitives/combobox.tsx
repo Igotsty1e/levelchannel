@@ -90,7 +90,6 @@ export function Combobox({
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const searchRef = useRef<HTMLInputElement | null>(null)
   const listRef = useRef<HTMLUListElement | null>(null)
-  const popstatePushed = useRef(false)
   const listboxId = useId()
 
   useEffect(() => {
@@ -125,49 +124,21 @@ export function Combobox({
     setQuery('')
     setActiveIndex(-1)
     triggerRef.current?.focus()
-    if (popstatePushed.current) {
-      popstatePushed.current = false
-      // back out the placeholder history entry we pushed on open. Use
-      // history.back() so the natural popstate sequence runs once for
-      // the placeholder entry.
-      try {
-        if (typeof window !== 'undefined') window.history.back()
-      } catch {
-        // ignore
-      }
-    }
   }, [])
 
   const openPanel = useCallback(() => {
     if (disabled) return
     setOpen(true)
-    setActiveIndex(
-      selectedOption ? options.indexOf(selectedOption) : -1,
-    )
-    if (!popstatePushed.current && typeof window !== 'undefined') {
-      try {
-        window.history.pushState({ comboboxOpen: true }, '', window.location.href)
-        popstatePushed.current = true
-      } catch {
-        // ignore
-      }
-    }
+    setActiveIndex(selectedOption ? options.indexOf(selectedOption) : -1)
   }, [disabled, options, selectedOption])
 
-  useEffect(() => {
-    if (!open) return
-    function onPopState() {
-      if (popstatePushed.current) {
-        popstatePushed.current = false
-      }
-      setOpen(false)
-      setQuery('')
-      setActiveIndex(-1)
-      triggerRef.current?.focus()
-    }
-    window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
-  }, [open])
+  // Note: Combobox does NOT push a history entry on open. Pushing one
+  // created a tangle when nested inside a parent modal that already
+  // pushed its own entry: closing the Combobox via an option-click
+  // popped the history, which fired `popstate` on the parent modal's
+  // listener and closed it before the option's onChange could fire.
+  // The parent modal owns the back-button contract; Combobox just
+  // closes via tap-outside / Esc / option click.
 
   // Autofocus on open. With the search input rendered → focus it
   // so the teacher can immediately start typing. Without it → focus
