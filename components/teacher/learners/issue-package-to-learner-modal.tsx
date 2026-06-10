@@ -150,8 +150,13 @@ export function IssuePackageToLearnerModal({
             Получит: <strong style={{ color: 'var(--text)' }}>{learnerLabel}</strong>
           </p>
 
-          <label style={fieldStyle}>
-            Пакет
+          {/* Use <div> not <label>: <label> redirects clicks inside it
+              to the first focusable child (the Combobox trigger button),
+              which re-opens the panel right after we close it on option
+              pick. Combobox is custom — no native form-control to
+              associate with. */}
+          <div style={fieldStyle}>
+            <span>Пакет</span>
             <Combobox
               value={packageId}
               onChange={(v) => {
@@ -167,7 +172,7 @@ export function IssuePackageToLearnerModal({
               emptyMessage="Нет активных пакетов"
               searchable={false}
             />
-          </label>
+          </div>
 
           <label style={checkboxLabelStyle}>
             <input
@@ -231,7 +236,7 @@ function mapErr(body: { error?: string; message?: string } | null): string {
     case 'already_owns_active_package':
       return (
         message ??
-        'У ученика уже есть активный пакет той же длительности. Включите стэкинг ниже.'
+        'У ученика уже есть активный пакет такой же длительности. Включите «Разрешить стэкинг», чтобы выдать ещё один.'
       )
     case 'learner_not_linked':
       return message ?? 'Этот ученик не привязан к вам.'

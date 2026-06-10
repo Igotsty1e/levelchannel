@@ -191,8 +191,11 @@ export function IssuePackageModal({
         </header>
 
         <div style={bodyStyle}>
-          <label style={fieldStyle}>
-            Ученик
+          {/* <div> not <label>: <label> redirects clicks to the first
+              focusable child (the Combobox trigger), reopening the
+              panel right after we close it on option pick. */}
+          <div style={fieldStyle}>
+            <span>Ученик</span>
             <Combobox
               value={learnerId}
               onChange={(v) => {
@@ -204,7 +207,7 @@ export function IssuePackageModal({
               emptyMessage="Никого не найдено"
               searchable={false}
             />
-          </label>
+          </div>
 
           <label style={checkboxLabelStyle}>
             <input
@@ -296,7 +299,7 @@ function mapServerError(
         reason: 'already_owns_active_package',
         message:
           message ??
-          'У ученика уже есть активный пакет той же длительности. Включите стэкинг ниже, чтобы выдать всё равно.',
+          'У ученика уже есть активный пакет такой же длительности. Включите «Разрешить стэкинг», чтобы выдать ещё один.',
       }
     case 'learner_not_linked':
       return {

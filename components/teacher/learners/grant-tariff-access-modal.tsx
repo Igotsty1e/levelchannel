@@ -141,8 +141,13 @@ export function GrantTariffAccessModal({
             <strong style={{ color: 'var(--text)' }}>{learnerLabel}</strong>
           </p>
 
-          <label style={fieldStyle}>
-            Тариф
+          {/* Use <div> not <label>: <label> redirects clicks inside it
+              to the first focusable child (the Combobox trigger button),
+              which re-opens the panel right after we close it on option
+              pick. Combobox is custom — no native form-control to
+              associate with. */}
+          <div style={fieldStyle}>
+            <span>Тариф</span>
             <Combobox
               value={tariffId}
               onChange={(v) => {
@@ -158,7 +163,7 @@ export function GrantTariffAccessModal({
               emptyMessage="Нет активных тарифов"
               searchable={false}
             />
-          </label>
+          </div>
 
           {error ? (
             <div role="alert" aria-live="assertive" style={errorBannerStyle}>
