@@ -47,6 +47,15 @@ export type ComboboxProps = {
   disabled?: boolean
   size?: 'sm' | 'md'
   /**
+   * Show the search-by-text input above the list. Default `true` —
+   * kept for backwards compat with existing callers. When `false`,
+   * the list renders as a plain «select from these» picker: no
+   * input, focus jumps straight to the active option on open. Use
+   * this when the option set is short (≤30) and obviously
+   * scannable.
+   */
+  searchable?: boolean
+  /**
    * Custom trigger render. Receives the props it must spread on a
    * focusable element. Defaults to an internal chip-style button.
    */
@@ -71,6 +80,7 @@ export function Combobox({
   disabled,
   size = 'md',
   renderTrigger,
+  searchable = true,
 }: ComboboxProps) {
   const [isDesktop, setIsDesktop] = useState(false)
   const [open, setOpen] = useState(false)
@@ -80,7 +90,6 @@ export function Combobox({
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const searchRef = useRef<HTMLInputElement | null>(null)
   const listRef = useRef<HTMLUListElement | null>(null)
-  const popstatePushed = useRef(false)
   const listboxId = useId()
 
   useEffect(() => {
@@ -115,58 +124,36 @@ export function Combobox({
     setQuery('')
     setActiveIndex(-1)
     triggerRef.current?.focus()
-    if (popstatePushed.current) {
-      popstatePushed.current = false
-      // back out the placeholder history entry we pushed on open. Use
-      // history.back() so the natural popstate sequence runs once for
-      // the placeholder entry.
-      try {
-        if (typeof window !== 'undefined') window.history.back()
-      } catch {
-        // ignore
-      }
-    }
   }, [])
 
   const openPanel = useCallback(() => {
     if (disabled) return
     setOpen(true)
-    setActiveIndex(
-      selectedOption ? options.indexOf(selectedOption) : -1,
-    )
-    if (!popstatePushed.current && typeof window !== 'undefined') {
-      try {
-        window.history.pushState({ comboboxOpen: true }, '', window.location.href)
-        popstatePushed.current = true
-      } catch {
-        // ignore
-      }
-    }
+    setActiveIndex(selectedOption ? options.indexOf(selectedOption) : -1)
   }, [disabled, options, selectedOption])
 
-  useEffect(() => {
-    if (!open) return
-    function onPopState() {
-      if (popstatePushed.current) {
-        popstatePushed.current = false
-      }
-      setOpen(false)
-      setQuery('')
-      setActiveIndex(-1)
-      triggerRef.current?.focus()
-    }
-    window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
-  }, [open])
+  // Note: Combobox does NOT push a history entry on open. Pushing one
+  // created a tangle when nested inside a parent modal that already
+  // pushed its own entry: closing the Combobox via an option-click
+  // popped the history, which fired `popstate` on the parent modal's
+  // listener and closed it before the option's onChange could fire.
+  // The parent modal owns the back-button contract; Combobox just
+  // closes via tap-outside / Esc / option click.
 
-  // autofocus search on open
+  // Autofocus on open. With the search input rendered → focus it
+  // so the teacher can immediately start typing. Without it → focus
+  // the list container so arrow keys work right away.
   useEffect(() => {
     if (!open) return
     const id = window.setTimeout(() => {
-      searchRef.current?.focus()
+      if (searchable) {
+        searchRef.current?.focus()
+      } else {
+        listRef.current?.focus()
+      }
     }, 30)
     return () => window.clearTimeout(id)
-  }, [open])
+  }, [open, searchable])
 
   // ---------------------------------------------------------------------
   // keyboard handling
@@ -288,22 +275,25 @@ export function Combobox({
                 }}
               />
             ) : null}
-            <input
-              ref={searchRef}
-              type="search"
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value)
-                setActiveIndex(filteredOptions.length > 0 ? 0 : -1)
-              }}
-              placeholder="Поиск"
-              aria-label="Поиск по списку"
-              style={searchInputStyle}
-            />
+            {searchable ? (
+              <input
+                ref={searchRef}
+                type="search"
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value)
+                  setActiveIndex(filteredOptions.length > 0 ? 0 : -1)
+                }}
+                placeholder="Поиск"
+                aria-label="Поиск по списку"
+                style={searchInputStyle}
+              />
+            ) : null}
             <ul
               ref={listRef}
               id={listboxId}
               role="listbox"
+              tabIndex={searchable ? undefined : -1}
               aria-label={placeholder}
               style={listStyle(isDesktop)}
             >

@@ -126,7 +126,11 @@ export function PackageList({
         }),
       })
       const body = (await res.json().catch(() => null)) as
-        | { id?: string; titleRu?: string; error?: string; message?: string }
+        | {
+            package?: { id?: string; titleRu?: string }
+            error?: string
+            message?: string
+          }
         | null
       if (!res.ok) {
         const message: string =
@@ -135,10 +139,13 @@ export function PackageList({
       }
       setOpenCreate(false)
       // Plan v3 §3.2 — surface the post-create Banner so the teacher
-      // immediately sees the «Выдать ученикам →» CTA. `key={id}` on
-      // the Banner makes the re-render animate (R25-1).
-      if (body?.id && body?.titleRu) {
-        setPostCreatePkg({ id: body.id, titleRu: body.titleRu })
+      // immediately sees the «Выдать ученикам →» CTA. POST returns the
+      // created package wrapped in `{ package: ... }`; destructure
+      // here. `key={pkg.id}` on the Banner makes the re-render animate
+      // on subsequent creates (R25-1).
+      const created = body?.package
+      if (created?.id && created?.titleRu) {
+        setPostCreatePkg({ id: created.id, titleRu: created.titleRu })
       }
       router.refresh()
       return { ok: true }

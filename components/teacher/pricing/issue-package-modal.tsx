@@ -202,6 +202,7 @@ export function IssuePackageModal({
               options={learners.map((l) => ({ value: l.id, label: l.label }))}
               placeholder="Выберите ученика"
               emptyMessage="Никого не найдено"
+              searchable={false}
             />
           </label>
 

@@ -165,6 +165,7 @@ export function IssuePackageToLearnerModal({
               }))}
               placeholder="Выберите пакет"
               emptyMessage="Нет активных пакетов"
+              searchable={false}
             />
           </label>
 

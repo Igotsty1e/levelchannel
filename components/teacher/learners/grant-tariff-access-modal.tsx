@@ -156,6 +156,7 @@ export function GrantTariffAccessModal({
               }))}
               placeholder="Выберите тариф"
               emptyMessage="Нет активных тарифов"
+              searchable={false}
             />
           </label>
 
