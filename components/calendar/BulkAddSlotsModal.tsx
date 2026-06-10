@@ -4,6 +4,8 @@ import { CSSProperties, FormEvent, useEffect, useMemo, useState } from 'react'
 
 import { ChipGroup } from '@/components/ui/primitives'
 
+import { TimeRangeRow } from './TimeRangeRow'
+
 type Tariff = {
   id: string
   slug: string
@@ -83,12 +85,11 @@ export function BulkAddSlotsModal({
     () => tariffs.find((t) => t.id === tariffId) ?? null,
     [tariffs, tariffId],
   )
-  const durationMinutes = useMemo(() => {
-    if (!selectedTariff) return 60
-    // Best-effort: pricing tariff carries a single canonical duration.
-    // For MVP we fall back to 60 if metadata absent.
-    return 60
-  }, [selectedTariff])
+  // Single duration shared across all rows in this batch — matches the
+  // tariff invariant in `assertTariffDurationMatches`. Editing the
+  // «До» chip in any TimeRangeRow updates this state.
+  const [durationMinutes, setDurationMinutes] = useState(60)
+  void selectedTariff
 
   useEffect(() => {
     if (!open) {
@@ -123,7 +124,22 @@ export function BulkAddSlotsModal({
   }
 
   function addTime() {
-    setTimes([...times, '18:00'])
+    // Default the new «От» to (last «От» + durationMinutes) so the
+    // user can stack intervals back-to-back. If the result lands past
+    // 22:00 we wrap back to 18:00.
+    const last = times[times.length - 1] ?? '18:00'
+    const [hh, mm] = last.split(':').map(Number)
+    const lastMin = (Number.isInteger(hh) ? hh : 18) * 60 + (Number.isInteger(mm) ? mm : 0)
+    const nextMin = lastMin + durationMinutes
+    let next: string
+    if (nextMin + durationMinutes > 22 * 60) {
+      next = '18:00'
+    } else {
+      const nh = Math.floor(nextMin / 60)
+      const nm = nextMin % 60
+      next = `${String(nh).padStart(2, '0')}:${String(nm).padStart(2, '0')}`
+    }
+    setTimes([...times, next])
   }
 
   async function runPreview() {
@@ -294,44 +310,22 @@ export function BulkAddSlotsModal({
 
           <div style={{ marginTop: 12 }}>
             <div style={{ fontSize: 13, color: 'var(--secondary)', marginBottom: 6 }}>
-              Время начала (МСК, шаг 30 мин)
+              Интервалы (МСК, шаг 30 мин)
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {times.map((t, idx) => (
-                <div key={idx} style={{ display: 'flex', gap: 6 }}>
-                  <input
-                    type="time"
-                    value={t}
-                    step={1800}
-                    onChange={(e) => updateTime(idx, e.target.value)}
-                    onBlur={(e) => {
-                      const [hh, mm] = e.target.value.split(':').map(Number)
-                      if (!Number.isInteger(hh) || !Number.isInteger(mm)) return
-                      const snapped = mm < 15 ? 0 : mm < 45 ? 30 : 0
-                      const hhAdj = mm >= 45 ? hh + 1 : hh
-                      const safeHh = Math.min(23, Math.max(0, hhAdj))
-                      updateTime(
-                        idx,
-                        `${String(safeHh).padStart(2, '0')}:${String(snapped).padStart(2, '0')}`,
-                      )
-                    }}
-                    required
-                    style={{ ...inputStyle, flex: 1 }}
-                  />
-                  {times.length > 1 ? (
-                    <button
-                      type="button"
-                      onClick={() => removeTime(idx)}
-                      aria-label="Удалить время"
-                      style={removeBtnStyle}
-                    >
-                      −
-                    </button>
-                  ) : null}
-                </div>
+                <TimeRangeRow
+                  key={idx}
+                  from={t}
+                  durationMinutes={durationMinutes}
+                  onFromChange={(next) => updateTime(idx, next)}
+                  onDurationChange={(nextDur) => setDurationMinutes(nextDur)}
+                  allowRemove={times.length > 1}
+                  onRemove={() => removeTime(idx)}
+                />
               ))}
               <button type="button" onClick={addTime} style={addTimeBtnStyle}>
-                + Ещё время
+                + Ещё интервал
               </button>
             </div>
           </div>

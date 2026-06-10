@@ -1,25 +1,18 @@
 'use client'
 
-import { useState } from 'react'
+import { CSSProperties, useEffect, useState } from 'react'
 
-import {
-  Button,
-  ChipGroup,
-  FloatingActionButton,
-} from '@/components/ui/primitives'
+import { ChipGroup, FloatingActionButton } from '@/components/ui/primitives'
 
-// Mobile entry-point for slot creation. Drag-paint is unusable on phone;
-// this gives the tutor a form path that POSTs the same endpoint as the
-// desktop paint flow (`/api/teacher/slots/bulk-create` with a single
-// startAt).
-//
-// Visibility: the FAB button is hidden on ≥600px via the
-// `.calendar-mobile-fab` class (rule lives in app/globals.css). The
-// single-slot sheet is rendered when `mode === 'single'` — both
-// viewports share the same form. Bulk mode is owned by parent
-// (BulkAddSlotsModal); the segmented `ChipGroup` switcher at the top
-// of either sheet flips between modes without closing the create flow,
-// so the user can toggle back.
+import { TimeRangeRow } from './TimeRangeRow'
+
+// Single-slot entry-point. The FAB itself is hidden on ≥600px via
+// `.calendar-mobile-fab` (rule in app/globals.css). The modal that
+// opens visually matches `BulkAddSlotsModal` — same centered chrome,
+// same `Добавить слоты`-style header + segmented switcher. Only the
+// body differs: one date input + one `TimeRangeRow` + tariff picker
+// + cancel/submit. Switching the segmented to «Несколько слотов»
+// closes this sheet and opens the bulk modal (parent owns mode).
 
 export type TariffOption = {
   id: string
@@ -32,35 +25,18 @@ export type CreateMode = 'closed' | 'single' | 'bulk'
 
 const BULK_PREF_KEY = 'lc_calendar_create_bulk_mode'
 
-const DURATIONS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: '30', label: '30 мин' },
-  { value: '60', label: '60 мин' },
-  { value: '90', label: '90 мин' },
-  { value: '120', label: '120 мин' },
-]
-
 const MODE_OPTIONS = [
   { value: 'single', label: 'Один слот' },
   { value: 'bulk', label: 'Несколько слотов' },
 ] as const
 
 function isoLocalToUtcIso(dateYmd: string, hhmm: string, ianaTz: string): string | null {
-  // `dateYmd` = 'YYYY-MM-DD', `hhmm` = 'HH:mm' — interpreted in `ianaTz`.
-  // We don't have a TZ-aware parser in the browser; compute the UTC
-  // offset via the round-trip trick (Intl.DateTimeFormat → parts).
-  // Cheap and accurate to the minute, which is what the half-hour
-  // grid demands anyway.
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateYmd)
   const t = /^(\d{2}):(\d{2})$/.exec(hhmm)
   if (!m || !t) return null
   const [, y, mo, d] = m
   const [, hh, mm] = t
-  const yi = Number(y)
-  const moi = Number(mo)
-  const di = Number(d)
-  const hi = Number(hh)
-  const mi = Number(mm)
-  const naiveUtc = Date.UTC(yi, moi - 1, di, hi, mi, 0)
+  const naiveUtc = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(hh), Number(mm), 0)
   try {
     const dtf = new Intl.DateTimeFormat('en-US', {
       timeZone: ianaTz,
@@ -112,35 +88,36 @@ export function MobileCreateFab({
 }: {
   tariffs: ReadonlyArray<TariffOption>
   teacherTz?: string
-  /**
-   * Controlled create-mode state owned by parent so the segmented
-   * switcher can flip between single and bulk without each modal
-   * tearing down the other.
-   */
   mode: CreateMode
   onModeChange: (next: CreateMode) => void
   onCreated?: () => void
 }) {
   const [date, setDate] = useState(() => todayInTz(teacherTz))
-  const [time, setTime] = useState('10:00')
-  const [duration, setDuration] = useState<string>('60')
+  const [from, setFrom] = useState('10:00')
+  const [durationMinutes, setDurationMinutes] = useState(60)
   const [tariffId, setTariffId] = useState<string>('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const isOpen = mode === 'single'
+
   function openFromFab() {
-    let preferredMode: CreateMode = 'single'
+    let next: CreateMode = 'single'
     try {
-      if (typeof window !== 'undefined' && window.localStorage.getItem(BULK_PREF_KEY) === '1') {
-        preferredMode = 'bulk'
+      if (
+        typeof window !== 'undefined' &&
+        window.localStorage.getItem(BULK_PREF_KEY) === '1'
+      ) {
+        next = 'bulk'
       }
     } catch {
-      // ignore localStorage errors (private mode, etc.)
+      // ignore (private mode etc.)
     }
-    onModeChange(preferredMode)
+    onModeChange(next)
   }
 
-  function handleModeChange(next: 'single' | 'bulk') {
+  function handleModeChange(next: string) {
+    if (next !== 'single' && next !== 'bulk') return
     try {
       if (typeof window !== 'undefined') {
         if (next === 'bulk') window.localStorage.setItem(BULK_PREF_KEY, '1')
@@ -152,11 +129,19 @@ export function MobileCreateFab({
     onModeChange(next)
   }
 
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && isOpen && !busy) onModeChange('closed')
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [isOpen, busy, onModeChange])
+
   async function handleSubmit() {
     setBusy(true)
     setError(null)
     try {
-      const startIso = isoLocalToUtcIso(date, time, teacherTz)
+      const startIso = isoLocalToUtcIso(date, from, teacherTz)
       if (!startIso) {
         setError('Не получилось разобрать дату или время.')
         setBusy(false)
@@ -166,7 +151,7 @@ export function MobileCreateFab({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          durationMinutes: Number(duration),
+          durationMinutes,
           tariffId: tariffId || null,
           slots: [{ startAt: startIso }],
         }),
@@ -184,8 +169,6 @@ export function MobileCreateFab({
     }
   }
 
-  const isOpen = mode === 'single'
-
   return (
     <>
       <div className="calendar-mobile-fab">
@@ -196,189 +179,212 @@ export function MobileCreateFab({
         <div
           role="dialog"
           aria-modal="true"
-          aria-labelledby="mobile-create-title"
+          aria-label="Новое занятие"
+          style={overlayStyle}
           onClick={busy ? undefined : () => onModeChange('closed')}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.55)',
-            display: 'flex',
-            alignItems: 'flex-end',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
         >
           <div
+            className="single-add-sheet"
+            style={sheetStyle}
             onClick={(e) => e.stopPropagation()}
-            style={{
-              width: '100%',
-              maxWidth: 480,
-              background: 'var(--surface-1, #141416)',
-              border: '1px solid var(--border)',
-              borderTopLeftRadius: 16,
-              borderTopRightRadius: 16,
-              padding: '20px 20px calc(20px + env(safe-area-inset-bottom))',
-              color: 'var(--text)',
-              boxShadow: '0 -12px 40px rgba(0,0,0,0.45)',
-            }}
           >
-            <div
-              aria-hidden="true"
-              style={{
-                width: 40,
-                height: 4,
-                borderRadius: 999,
-                background: 'var(--border)',
-                margin: '0 auto 16px',
-              }}
-            />
-            <h2
-              id="mobile-create-title"
-              style={{ fontSize: 17, fontWeight: 600, marginTop: 0, marginBottom: 12 }}
-            >
-              Новое занятие
-            </h2>
+            <header style={headerStyle}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>
+                Новое занятие
+              </h2>
+              <button
+                type="button"
+                onClick={() => onModeChange('closed')}
+                aria-label="Закрыть"
+                disabled={busy}
+                style={closeBtnStyle}
+              >
+                ×
+              </button>
+            </header>
 
-            <div style={{ marginBottom: 18 }}>
+            <div style={{ padding: '12px 16px 0' }}>
               <ChipGroup
                 name="create-mode"
                 value="single"
                 options={MODE_OPTIONS}
-                onChange={(v) => handleModeChange(v)}
+                onChange={handleModeChange}
               />
             </div>
 
-            <FieldLabel htmlFor="mcf-date">Дата</FieldLabel>
-            <input
-              id="mcf-date"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              style={inputStyle}
-            />
+            <div style={bodyStyle}>
+              <label style={fieldStyle}>
+                Дата
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  required
+                  style={inputStyle}
+                />
+              </label>
 
-            <FieldLabel htmlFor="mcf-time" style={{ marginTop: 14 }}>Время начала</FieldLabel>
-            <input
-              id="mcf-time"
-              type="time"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-              step={1800}
-              style={inputStyle}
-            />
-
-            <FieldLabel style={{ marginTop: 14 }}>Длительность</FieldLabel>
-            <ChipGroup
-              name="duration"
-              value={duration}
-              options={DURATIONS}
-              onChange={setDuration}
-            />
-
-            <FieldLabel style={{ marginTop: 14 }}>Тариф</FieldLabel>
-            {tariffs.length <= 3 ? (
-              <ChipGroup
-                name="tariff"
-                value={tariffId}
-                options={[
-                  { value: '', label: 'Без цены' },
-                  ...tariffs.map((t) => ({
-                    value: t.id,
-                    label: `${t.titleRu} · ${(t.amountKopecks / 100).toLocaleString('ru-RU')} ₽`,
-                  })),
-                ]}
-                onChange={setTariffId}
-              />
-            ) : (
-              <select
-                value={tariffId}
-                onChange={(e) => setTariffId(e.target.value)}
-                style={inputStyle}
-              >
-                <option value="">Без цены</option>
-                {tariffs.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.titleRu} · {(t.amountKopecks / 100).toLocaleString('ru-RU')} ₽
-                  </option>
-                ))}
-              </select>
-            )}
-
-            {error ? (
-              <div
-                role="alert"
-                style={{
-                  marginTop: 16,
-                  padding: 12,
-                  background: 'var(--danger-bg)',
-                  border: '1px solid var(--danger)',
-                  borderRadius: 6,
-                  color: 'var(--text)',
-                  fontSize: 13,
-                }}
-              >
-                {error}
+              <div style={{ ...fieldStyle, marginTop: 12 }}>
+                <span>Интервал (МСК, шаг 30 мин)</span>
+                <div style={{ marginTop: 6 }}>
+                  <TimeRangeRow
+                    from={from}
+                    durationMinutes={durationMinutes}
+                    onFromChange={setFrom}
+                    onDurationChange={setDurationMinutes}
+                  />
+                </div>
               </div>
-            ) : null}
 
-            <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-              <Button
-                variant="secondary"
-                fullWidth
-                onClick={() => onModeChange('closed')}
-                disabled={busy}
-              >
-                Отмена
-              </Button>
-              <Button
-                variant="primary"
-                fullWidth
-                onClick={handleSubmit}
-                loading={busy}
-              >
-                Создать
-              </Button>
+              <label style={{ ...fieldStyle, marginTop: 12 }}>
+                Тариф
+                <select
+                  value={tariffId}
+                  onChange={(e) => setTariffId(e.target.value)}
+                  style={inputStyle}
+                >
+                  <option value="">Без цены</option>
+                  {tariffs.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.titleRu} ({Math.round(t.amountKopecks / 100)} ₽)
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {error ? (
+                <div role="alert" style={errorStyle}>
+                  {error}
+                </div>
+              ) : null}
+
+              <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => onModeChange('closed')}
+                  disabled={busy}
+                  style={cancelBtnStyle}
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={busy}
+                  style={submitBtnStyle}
+                >
+                  {busy ? 'Создаём…' : 'Создать'}
+                </button>
+              </div>
             </div>
           </div>
+
+          <style>{`
+            @media (max-width: 640px) {
+              .single-add-sheet {
+                border-radius: 16px 16px 0 0 !important;
+                margin: auto 0 0 0 !important;
+                min-height: 92vh;
+              }
+            }
+          `}</style>
         </div>
       ) : null}
     </>
   )
 }
 
-function FieldLabel({
-  htmlFor,
-  children,
-  style,
-}: {
-  htmlFor?: string
-  children: React.ReactNode
-  style?: React.CSSProperties
-}) {
-  return (
-    <label
-      htmlFor={htmlFor}
-      style={{
-        display: 'block',
-        fontSize: 12,
-        color: 'var(--secondary)',
-        marginBottom: 6,
-        ...style,
-      }}
-    >
-      {children}
-    </label>
-  )
+// Style mirrors BulkAddSlotsModal so the two modals are visually
+// interchangeable chrome — only the body differs.
+
+const overlayStyle: CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  background: 'rgba(0,0,0,0.55)',
+  zIndex: 200,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 16,
 }
 
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '10px 12px',
-  background: 'var(--surface-2, rgba(255,255,255,0.05))',
+const sheetStyle: CSSProperties = {
+  background: 'var(--bg)',
+  color: 'var(--text)',
   border: '1px solid var(--border)',
-  borderRadius: 8,
+  borderRadius: 12,
+  maxWidth: 520,
+  width: '100%',
+  maxHeight: '92vh',
+  overflowY: 'auto',
+  boxShadow: '0 30px 60px -20px rgba(0,0,0,0.5)',
+}
+
+const headerStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  padding: '14px 16px',
+  borderBottom: '1px solid var(--border)',
+}
+
+const closeBtnStyle: CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  color: 'var(--text)',
+  fontSize: 24,
+  cursor: 'pointer',
+  padding: '0 8px',
+}
+
+const bodyStyle: CSSProperties = {
+  padding: 16,
+}
+
+const fieldStyle: CSSProperties = {
+  fontSize: 13,
+  color: 'var(--secondary)',
+  display: 'grid',
+  gap: 4,
+}
+
+const inputStyle: CSSProperties = {
+  padding: '8px 10px',
+  borderRadius: 6,
+  border: '1px solid var(--border)',
+  background: 'var(--bg)',
   color: 'var(--text)',
   fontSize: 14,
-  boxSizing: 'border-box',
-  colorScheme: 'dark',
+}
+
+const cancelBtnStyle: CSSProperties = {
+  padding: '10px 16px',
+  borderRadius: 8,
+  border: '1px solid var(--border)',
+  background: 'transparent',
+  color: 'var(--text)',
+  cursor: 'pointer',
+  fontSize: 14,
+  fontWeight: 600,
+}
+
+const submitBtnStyle: CSSProperties = {
+  padding: '10px 16px',
+  borderRadius: 8,
+  border: 'none',
+  background: 'var(--accent)',
+  color: '#fff',
+  cursor: 'pointer',
+  fontSize: 14,
+  fontWeight: 600,
+}
+
+const errorStyle: CSSProperties = {
+  marginTop: 12,
+  padding: 10,
+  background: 'rgba(248,113,113,0.08)',
+  border: '1px solid rgba(248,113,113,0.4)',
+  borderRadius: 6,
+  color: 'var(--text)',
+  fontSize: 13,
 }
