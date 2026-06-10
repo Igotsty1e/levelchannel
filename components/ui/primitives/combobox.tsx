@@ -47,6 +47,15 @@ export type ComboboxProps = {
   disabled?: boolean
   size?: 'sm' | 'md'
   /**
+   * Show the search-by-text input above the list. Default `true` —
+   * kept for backwards compat with existing callers. When `false`,
+   * the list renders as a plain «select from these» picker: no
+   * input, focus jumps straight to the active option on open. Use
+   * this when the option set is short (≤30) and obviously
+   * scannable.
+   */
+  searchable?: boolean
+  /**
    * Custom trigger render. Receives the props it must spread on a
    * focusable element. Defaults to an internal chip-style button.
    */
@@ -71,6 +80,7 @@ export function Combobox({
   disabled,
   size = 'md',
   renderTrigger,
+  searchable = true,
 }: ComboboxProps) {
   const [isDesktop, setIsDesktop] = useState(false)
   const [open, setOpen] = useState(false)
@@ -159,14 +169,20 @@ export function Combobox({
     return () => window.removeEventListener('popstate', onPopState)
   }, [open])
 
-  // autofocus search on open
+  // Autofocus on open. With the search input rendered → focus it
+  // so the teacher can immediately start typing. Without it → focus
+  // the list container so arrow keys work right away.
   useEffect(() => {
     if (!open) return
     const id = window.setTimeout(() => {
-      searchRef.current?.focus()
+      if (searchable) {
+        searchRef.current?.focus()
+      } else {
+        listRef.current?.focus()
+      }
     }, 30)
     return () => window.clearTimeout(id)
-  }, [open])
+  }, [open, searchable])
 
   // ---------------------------------------------------------------------
   // keyboard handling
@@ -288,22 +304,25 @@ export function Combobox({
                 }}
               />
             ) : null}
-            <input
-              ref={searchRef}
-              type="search"
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value)
-                setActiveIndex(filteredOptions.length > 0 ? 0 : -1)
-              }}
-              placeholder="Поиск"
-              aria-label="Поиск по списку"
-              style={searchInputStyle}
-            />
+            {searchable ? (
+              <input
+                ref={searchRef}
+                type="search"
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value)
+                  setActiveIndex(filteredOptions.length > 0 ? 0 : -1)
+                }}
+                placeholder="Поиск"
+                aria-label="Поиск по списку"
+                style={searchInputStyle}
+              />
+            ) : null}
             <ul
               ref={listRef}
               id={listboxId}
               role="listbox"
+              tabIndex={searchable ? undefined : -1}
               aria-label={placeholder}
               style={listStyle(isDesktop)}
             >
