@@ -88,15 +88,12 @@ export default async function TeacherSettingsHubPage() {
     <div className="settings-hub">
       <ul className="settings-hub-grid" role="list">
         <li>
+          {/* Профиль: без status/indicator — раздел низкой важности,
+              лишний бейдж создавал визуальный шум (owner 2026-06-10). */}
           <SettingsTile
             href="/teacher/profile"
             icon={<ProfileIcon />}
             title="Профиль"
-            status={
-              checklist.profileFilled
-                ? { label: 'Заполнен', tone: 'success' }
-                : { label: 'Требует данных', tone: 'warning' }
-            }
           />
         </li>
         <li>
@@ -134,27 +131,23 @@ export default async function TeacherSettingsHubPage() {
           />
         </li>
         <li>
+          {/* Приём оплат: text-pill → icon-indicator (owner 2026-06-10).
+              href conditional: ведём на /teacher/payments, если методы
+              настроены; иначе на /teacher/settings/payment-methods. */}
           <SettingsTile
             href={paymentMethodsCount > 0 ? '/teacher/payments' : '/teacher/settings/payment-methods'}
             icon={<SbpAcceptIcon />}
             title="Приём оплат"
-            status={
-              paymentMethodsCount > 0
-                ? { label: `${paymentMethodsCount} активных`, tone: 'success' }
-                : { label: 'Не настроено', tone: 'warning' }
-            }
+            indicator={paymentMethodsCount > 0 ? 'connected' : 'not-connected'}
           />
         </li>
         <li>
+          {/* Интеграции: text-pill → icon-indicator (owner 2026-06-10). */}
           <SettingsTile
             href="/teacher/settings/calendar"
             icon={<IntegrationsGearIcon />}
             title="Интеграции"
-            status={
-              calendarConnected
-                ? { label: 'Подключён', tone: 'success' }
-                : { label: 'Не подключён', tone: 'default' }
-            }
+            indicator={calendarConnected ? 'connected' : 'not-connected'}
           />
         </li>
         <li>

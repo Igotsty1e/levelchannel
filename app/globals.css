@@ -852,6 +852,33 @@ html, body {
   color: var(--text-primary, var(--text));
 }
 
+/* Connection indicator (settings-tile): зелёная галочка / серый крестик
+   в правом краю tile вместо text-pill (owner 2026-06-10). Tokens —
+   --success / --success-bg существующие; см. docs/design-system.md §3.5. */
+.settings-tile-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.settings-tile-indicator--connected {
+  background: var(--success-bg);
+  color: var(--success);
+}
+.settings-tile-indicator--not-connected {
+  background: var(--surface-2);
+  color: var(--text-tertiary);
+  border: 1px solid var(--border);
+}
+.settings-tile-indicator > svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .settings-tile {
     transition: none;
