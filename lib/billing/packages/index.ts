@@ -27,8 +27,10 @@ export {
 
 export {
   accountHasPendingPackageGrantForDuration,
+  aggregateActiveLearnersByPackage,
   createPackagePurchase,
   listAccountActivePackages,
+  listLearnerPackagesByTeacher,
   listPackagePurchasesByIds,
 } from './purchases'
 
