@@ -2,10 +2,16 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 
+import { LearnerPackagesCard } from '@/components/teacher/learners/learner-packages-card'
+import { LearnerTariffAccessCard } from '@/components/teacher/learners/learner-tariff-access-card'
 import { Button, EmptyState, Pill } from '@/components/ui/primitives'
 import { formatProfileNameForRender } from '@/lib/auth/profile-name'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { listLearnerTariffAccessByTeacher } from '@/lib/billing/learner-tariff-access'
+import { listPackagesByTeacher } from '@/lib/billing/packages/catalog'
+import { listLearnerPackagesByTeacher } from '@/lib/billing/packages/purchases'
 import { getDbPool } from '@/lib/db/pool'
+import { listTariffsForTeacher } from '@/lib/pricing/tariffs'
 
 import { PaymentMethodToggle } from './payment-method-toggle'
 import { RenameLearnerForm } from './rename-form'
@@ -162,6 +168,49 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
       | 'none'
       | undefined) ?? 'none'
 
+  // Plan v3 §3.3 — learner-card sections need:
+  //   * the teacher's full active catalog (for the «Выдать пакет» and
+  //     «Открыть доступ к тарифу» picker options)
+  //   * this learner's active package_purchases and tariff_access rows
+  // All 4 reads run in parallel via the helpers landed in Phase A.
+  const [
+    teacherPackages,
+    teacherTariffs,
+    learnerPackages,
+    learnerTariffAccess,
+  ] = await Promise.all([
+    listPackagesByTeacher(teacherId),
+    listTariffsForTeacher(teacherId),
+    listLearnerPackagesByTeacher(teacherId, learnerId),
+    listLearnerTariffAccessByTeacher(teacherId, learnerId),
+  ])
+  const availablePackages = teacherPackages
+    .filter((p) => p.isActive)
+    .map((p) => ({
+      id: p.id,
+      titleRu: p.titleRu,
+      count: p.count,
+      durationMinutes: p.durationMinutes,
+      amountKopecks: p.amountKopecks,
+    }))
+  const availableTariffs = teacherTariffs
+    .filter((t) => t.isActive)
+    .map((t) => ({
+      id: t.id,
+      titleRu: t.titleRu,
+      amountKopecks: t.amountKopecks,
+      durationMinutes: t.durationMinutes,
+    }))
+  const packageRows = learnerPackages.map((p) => ({
+    purchaseId: p.id,
+    titleRu: p.titleRu,
+    countRemaining: p.countRemaining,
+    countInitial: p.countInitial,
+    expiresAt: p.expiresAt,
+    grantedAt: p.createdAt,
+    hasActiveConsumptions: p.hasActiveConsumptions,
+  }))
+
   const completions: CompletionRow[] = completionsResult.rows.map((r) => ({
     id: String(r.id),
     slotId: String(r.slot_id),
@@ -225,9 +274,29 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
         initialEmail={learner.email}
       />
 
-      <PaymentMethodToggle
+<PaymentMethodToggle
         learnerId={learnerId}
         initialMethod={currentPaymentMethod}
+      />
+
+      {/* Plan v3 §3.3 — package + tariff-access management for this
+          learner. Both sections are mounted unconditionally; they
+          render their own EmptyState when the list is empty, with a
+          context-aware CTA that points at /teacher/{packages,tariffs}
+          if the teacher hasn't created anything yet. */}
+      <LearnerPackagesCard
+        teacherId={teacherId}
+        learnerId={learnerId}
+        learnerLabel={learnerNameForRender}
+        rows={packageRows}
+        availablePackages={availablePackages}
+      />
+      <LearnerTariffAccessCard
+        teacherId={teacherId}
+        learnerId={learnerId}
+        learnerLabel={learnerNameForRender}
+        rows={learnerTariffAccess}
+        availableTariffs={availableTariffs}
       />
 
       <section
