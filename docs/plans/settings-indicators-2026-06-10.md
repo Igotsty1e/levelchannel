@@ -1,7 +1,8 @@
 ---
 title: settings-indicators — убрать badge с Профиль + заменить badge интеграций/приёма на icon-indicator
-status: PLAN
+status: SHIPPED
 date: 2026-06-10
+shipped: 2026-06-10 (PR #592 squash 6f6f1ee)
 scope: standalone one-PR epic (small UI surface)
 owner: ivankhanaev
 author: claude
