@@ -90,7 +90,10 @@ export function LearnerPackagesSection({
         const body = (await res.json().catch(() => null)) as
           | { error?: string; message?: string }
           | null
-        setError(body?.message || body?.error || `HTTP ${res.status}`)
+        setError(
+          body?.message ??
+            'Не получилось отозвать пакет. Попробуйте ещё раз.',
+        )
         return
       }
       // ensure section is expanded so the teacher sees the update
@@ -98,8 +101,8 @@ export function LearnerPackagesSection({
       setAnnouncement(`Пакет «${titleRu}» отозван.`)
       window.setTimeout(() => setAnnouncement(null), 4000)
       router.refresh()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'unknown')
+    } catch {
+      setError('Нет связи. Попробуйте ещё раз.')
     } finally {
       setBusyId(null)
     }
@@ -149,21 +152,23 @@ export function LearnerPackagesSection({
           <>
             <ul style={listStyle}>
               {rows.map((r) => (
-                <li key={r.purchaseId} style={rowStyle}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <div style={{ fontWeight: 600 }}>{r.titleRu}</div>
+                <li key={r.purchaseId} className="learner-pkg-row" style={rowStyle}>
+                  <div style={pkgInfoStyle}>
+                    <div style={titleAndPillStyle}>
+                      <span style={pkgTitleStyle}>{r.titleRu}</span>
+                      {r.hasActiveConsumptions ? (
+                        <Pill tone="warning">с бронированиями</Pill>
+                      ) : null}
+                    </div>
                     <div style={metaRowStyle}>
                       <span style={{ fontVariantNumeric: 'tabular-nums' }}>
                         {r.countRemaining} из {r.countInitial} {plural(r.countRemaining, 'осталось', 'осталось', 'осталось')}
                       </span>
-                      <span> · </span>
+                      <span aria-hidden="true"> · </span>
                       <span>до {formatRu(r.expiresAt)}</span>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {r.hasActiveConsumptions ? (
-                      <Pill tone="warning">с бронированиями</Pill>
-                    ) : null}
+                  <div className="learner-pkg-actions" style={actionsStyle}>
                     <Button
                       type="button"
                       variant="ghost"
@@ -184,12 +189,7 @@ export function LearnerPackagesSection({
                   {r.hasActiveConsumptions ? (
                     <small
                       id={`revoke-disabled-${r.purchaseId}`}
-                      style={{
-                        gridColumn: '1 / -1',
-                        fontSize: 11,
-                        color: 'var(--secondary)',
-                        marginTop: 4,
-                      }}
+                      style={hintStyle}
                     >
                       Сначала отмените забронированные занятия.
                     </small>
@@ -236,6 +236,15 @@ export function LearnerPackagesSection({
         @media (max-width: 639px) {
           .learner-section[data-mobile-collapsed="true"] > div[id="${sectionId}"] {
             display: none;
+          }
+          .learner-pkg-row {
+            grid-template-columns: 1fr !important;
+          }
+          .learner-pkg-row .learner-pkg-actions {
+            justify-content: stretch !important;
+          }
+          .learner-pkg-row .learner-pkg-actions > * {
+            width: 100%;
           }
         }
       `}</style>
@@ -315,6 +324,39 @@ const rowStyle: CSSProperties = {
   gridTemplateColumns: '1fr auto',
   alignItems: 'center',
   gap: 10,
+}
+
+const pkgInfoStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 6,
+  minWidth: 0,
+}
+
+const titleAndPillStyle: CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  alignItems: 'center',
+  gap: 6,
+}
+
+const pkgTitleStyle: CSSProperties = {
+  fontWeight: 600,
+  wordBreak: 'break-word',
+}
+
+const actionsStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  justifyContent: 'flex-end',
+}
+
+const hintStyle: CSSProperties = {
+  gridColumn: '1 / -1',
+  fontSize: 11,
+  color: 'var(--secondary)',
+  marginTop: 4,
 }
 
 const metaRowStyle: CSSProperties = {
