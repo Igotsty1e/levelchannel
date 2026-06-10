@@ -155,7 +155,7 @@ export async function POST(request: Request, { params }: RouteParams) {
               error: 'already_owns_active_package',
               existingPurchaseId: result.existingPurchaseId,
               titleSnapshot: result.titleSnapshot,
-              message: `У ученика уже есть активный пакет той же длительности (${result.titleSnapshot}). Передайте allowStacking: true для стэкинга.`,
+              message: `У ученика уже есть активный пакет «${result.titleSnapshot}». Включите «Разрешить стэкинг», чтобы выдать ещё один.`,
             },
           }
         default: {
