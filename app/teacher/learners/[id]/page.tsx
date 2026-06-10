@@ -8,8 +8,10 @@ import { Button, EmptyState, Pill } from '@/components/ui/primitives'
 import { formatProfileNameForRender } from '@/lib/auth/profile-name'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { listLearnerTariffAccessByTeacher } from '@/lib/billing/learner-tariff-access'
-import { listPackagesByTeacher } from '@/lib/billing/packages/catalog'
-import { listLearnerPackagesByTeacher } from '@/lib/billing/packages/purchases'
+import {
+  listLearnerPackagesByTeacher,
+  listPackagesByTeacher,
+} from '@/lib/billing/packages'
 import { getDbPool } from '@/lib/db/pool'
 import { listTariffsForTeacher } from '@/lib/pricing/tariffs'
 
