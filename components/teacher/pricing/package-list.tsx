@@ -11,6 +11,11 @@ import {
 } from '@/components/ui/primitives'
 
 import { CapBanners } from './cap-banners'
+import {
+  IssuePackageModal,
+  type IssuePackageModalLearner,
+  type IssuePackageModalPackage,
+} from './issue-package-modal'
 import { PackageCard, type PackageView } from './package-card'
 import { PackageCreateSheet } from './package-create-sheet'
 
@@ -23,6 +28,11 @@ export type PackageListProps = {
   initialPackages: PackageView[]
   writeCap: number
   currentActiveCount: number
+  /**
+   * Learners eligible for package issuance — embedded as SSR JSON-prop
+   * (≤30 expected). Drives the IssuePackageModal Combobox.
+   */
+  learners: ReadonlyArray<IssuePackageModalLearner>
 }
 
 // SaaS-pivot R1-BLOCKER closure (free-tier-1pkg-1tariff wave): the
@@ -35,10 +45,25 @@ export function PackageList({
   initialPackages,
   writeCap,
   currentActiveCount,
+  learners,
 }: PackageListProps) {
   const router = useRouter()
   const [openCreate, setOpenCreate] = useState(false)
   const [pageError, setPageError] = useState<string | null>(null)
+  // Plan v3 §3.2 — Banner after successful create. Either nudges the
+  // teacher to issue the new package to a learner OR (when learnersCount
+  // is zero) to invite a learner first.
+  const [postCreatePkg, setPostCreatePkg] = useState<
+    IssuePackageModalPackage | null
+  >(null)
+  // Plan v3 §3.5 — singleton IssuePackageModal owned by this client
+  // island. Open state derived from `issuePkg`.
+  const [issuePkg, setIssuePkg] = useState<IssuePackageModalPackage | null>(
+    null,
+  )
+  const [successAnnouncement, setSuccessAnnouncement] = useState<string | null>(
+    null,
+  )
 
   const isUnlimited = writeCap < 0
   const noCreatesAtAll = !isUnlimited && writeCap === 0
@@ -100,15 +125,21 @@ export function PackageList({
           amountKopecks: input.amountKopecks,
         }),
       })
+      const body = (await res.json().catch(() => null)) as
+        | { id?: string; titleRu?: string; error?: string; message?: string }
+        | null
       if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as
-          | { error?: string; message?: string }
-          | null
         const message: string =
-          data?.message || data?.error || `HTTP ${res.status}`
+          body?.message || body?.error || `HTTP ${res.status}`
         return { ok: false, message }
       }
       setOpenCreate(false)
+      // Plan v3 §3.2 — surface the post-create Banner so the teacher
+      // immediately sees the «Выдать ученикам →» CTA. `key={id}` on
+      // the Banner makes the re-render animate (R25-1).
+      if (body?.id && body?.titleRu) {
+        setPostCreatePkg({ id: body.id, titleRu: body.titleRu })
+      }
       router.refresh()
       return { ok: true }
     } catch (err) {
@@ -134,6 +165,47 @@ export function PackageList({
         <Banner tone="danger" icon="⚠">
           {pageError}
         </Banner>
+      ) : null}
+
+      {/* Plan v3 §3.2 — post-create activation nudge. Stays visible until
+          the teacher dismisses it via the close-button-equivalent (clicks
+          a CTA) or opens the issue modal. `key={pkg.id}` re-mounts the
+          Banner on subsequent creates so the enter animation fires (R25-1). */}
+      {postCreatePkg ? (
+        <Banner
+          key={postCreatePkg.id}
+          tone="success"
+          action={
+            learners.length > 0 ? (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  setIssuePkg(postCreatePkg)
+                  setPostCreatePkg(null)
+                }}
+              >
+                Выдать ученикам →
+              </Button>
+            ) : (
+              <Button variant="primary" size="sm" href="/teacher/learners">
+                Пригласить ученика →
+              </Button>
+            )
+          }
+        >
+          {learners.length > 0
+            ? `Пакет «${postCreatePkg.titleRu}» создан.`
+            : `Пакет «${postCreatePkg.titleRu}» создан. Пригласите ученика, чтобы выдать.`}
+        </Banner>
+      ) : null}
+
+      {/* Screen-reader announcement after a successful issue (A11Y-R2-3).
+          Lives 4 seconds then clears. Not visible — sr-only. */}
+      {successAnnouncement ? (
+        <div role="status" aria-live="polite" style={srOnlyStyle}>
+          {successAnnouncement}
+        </div>
       ) : null}
 
       {canCreate ? (
@@ -188,6 +260,22 @@ export function PackageList({
         />
       ) : null}
 
+      {/* Singleton IssuePackageModal. State owned here (DSA-R3-3). */}
+      <IssuePackageModal
+        open={issuePkg !== null}
+        pkg={issuePkg}
+        learners={learners}
+        onClose={() => setIssuePkg(null)}
+        onIssued={({ learnerLabel, pkgTitle }) => {
+          setIssuePkg(null)
+          setPostCreatePkg(null) // close any lingering create banner
+          const announcement = `Пакет «${pkgTitle}» выдан ${learnerLabel}.`
+          setSuccessAnnouncement(announcement)
+          window.setTimeout(() => setSuccessAnnouncement(null), 4000)
+          router.refresh()
+        }}
+      />
+
       {canCreate ? (
         <FloatingActionButton
           label="Новый пакет"
@@ -197,6 +285,18 @@ export function PackageList({
       ) : null}
     </div>
   )
+}
+
+const srOnlyStyle = {
+  position: 'absolute' as const,
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: 'hidden',
+  clip: 'rect(0, 0, 0, 0)',
+  whiteSpace: 'nowrap' as const,
+  border: 0,
 }
 
 // Slug is server-owned, but the route handler currently REQUIRES a
