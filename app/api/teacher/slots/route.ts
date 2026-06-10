@@ -6,6 +6,7 @@ import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import {
   type CreateSlotInput,
   createSlot,
+  SlotTariffDurationMismatchError,
   SlotTeacherRoleError,
   TariffNotActiveError,
   TariffOwnershipError,
@@ -144,6 +145,15 @@ export async function POST(request: Request) {
           message: 'У вас уже есть слот на это время.',
         },
         { status: 409, headers: NO_STORE },
+      )
+    }
+    if (err instanceof SlotTariffDurationMismatchError) {
+      return NextResponse.json(
+        {
+          error: 'slot/tariffId/duration_mismatch',
+          message: `Длительность слота (${err.slotDuration} мин) не совпадает с длительностью тарифа (${err.tariffDuration} мин). Выберите другую длительность или тариф.`,
+        },
+        { status: 400, headers: NO_STORE },
       )
     }
     // Codex 2026-05-08 review fix: don't 400 on unknown errors —

@@ -7,6 +7,7 @@ import {
   type CreateSlotInput,
   createSlot,
   listAllSlotsForAdmin,
+  SlotTariffDurationMismatchError,
   SlotTeacherRoleError,
   TariffNotActiveError,
   TariffOwnershipError,
@@ -126,6 +127,15 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: 'У этого учителя уже есть слот в это время.' },
         { status: 409, headers: NO_STORE },
+      )
+    }
+    if (err instanceof SlotTariffDurationMismatchError) {
+      return NextResponse.json(
+        {
+          error: 'slot/tariffId/duration_mismatch',
+          message: `Длительность слота (${err.slotDuration} мин) не совпадает с длительностью тарифа (${err.tariffDuration} мин). Выберите другую длительность или тариф.`,
+        },
+        { status: 400, headers: NO_STORE },
       )
     }
     // lib/scheduling/slots.ts intentionally throws `slot/<field>/<reason>`

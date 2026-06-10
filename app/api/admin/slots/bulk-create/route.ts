@@ -6,6 +6,7 @@ import { requireAdminRole } from '@/lib/auth/guards'
 import {
   type BulkCreateInput,
   bulkCreateSlots,
+  SlotTariffDurationMismatchError,
   SlotTeacherRoleError,
   TariffNotActiveError,
   TariffOwnershipError,
@@ -119,6 +120,15 @@ export async function POST(request: Request) {
         {
           error:
             'Этот аккаунт не зарегистрирован как преподаватель. Сначала выдайте роль teacher.',
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
+    if (err instanceof SlotTariffDurationMismatchError) {
+      return NextResponse.json(
+        {
+          error: 'slot/tariffId/duration_mismatch',
+          message: `Длительность слота (${err.slotDuration} мин) не совпадает с длительностью тарифа (${err.tariffDuration} мин).`,
         },
         { status: 400, headers: NO_STORE },
       )

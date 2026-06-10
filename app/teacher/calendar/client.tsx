@@ -243,6 +243,11 @@ function TeacherSlotDetailModal({
   // learner; reason required). past-* and cancelled = no action.
   const canCancel = slot.kind === 'open' || slot.kind === 'booked-full'
   const reasonRequired = slot.kind === 'booked-full'
+  // Entity naming: open/free time = «слот», booked = «занятие».
+  // Drives modal title + cancel button copy + cancel-reason label.
+  const isFreeSlot = slot.kind === 'open'
+  const entityWord = isFreeSlot ? 'слот' : 'занятие'
+  const entityWordCap = isFreeSlot ? 'Слот' : 'Занятие'
   const slotId = 'id' in slot ? slot.id : null
   // BCS-F.3 — surface conflict resolution actions when this booked
   // slot has an external_conflict_at stamp. Plan §4.7 actions
@@ -396,7 +401,7 @@ function TeacherSlotDetailModal({
         }}
       >
         <h2 id="teacher-slot-title" style={{ fontSize: 18, marginBottom: 12, marginTop: 0 }}>
-          Занятие {row.startLabel} – {row.endLabel}{' '}
+          {entityWordCap} {row.startLabel} – {row.endLabel}{' '}
           <span style={{ fontSize: 12, color: 'var(--secondary)', fontWeight: 400 }}>
             · МСК
           </span>
@@ -449,7 +454,7 @@ function TeacherSlotDetailModal({
             >
               {reasonRequired
                 ? 'Что сказать ученику (обязательно):'
-                : 'Причина отмены (необязательно):'}
+                : 'Заметка (необязательно):'}
             </label>
             <input
               type="text"
@@ -472,7 +477,7 @@ function TeacherSlotDetailModal({
               placeholder={
                 reasonRequired
                   ? 'Например: заболел, перенесём на другой день'
-                  : 'Например: освобождаю время'
+                  : 'Например: для себя'
               }
             />
           </div>
@@ -540,7 +545,13 @@ function TeacherSlotDetailModal({
               disabled={busy}
               style={btnDanger}
             >
-              {busy ? 'Отменяем…' : 'Отменить занятие'}
+              {busy
+                ? isFreeSlot
+                  ? 'Удаляем…'
+                  : 'Отменяем…'
+                : isFreeSlot
+                  ? 'Удалить слот'
+                  : 'Отменить занятие'}
             </button>
           ) : null}
         </div>

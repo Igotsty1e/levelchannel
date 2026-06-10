@@ -69,6 +69,7 @@ export {
 } from './lifecycle'
 
 export {
+  SlotTariffDurationMismatchError,
   SlotTeacherRoleError,
   TariffNotActiveError,
   TariffOwnershipError,
