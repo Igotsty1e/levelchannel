@@ -153,6 +153,90 @@ export async function listAccountActivePackages(
     .filter((p) => p.countRemaining > 0)
 }
 
+// Package issuance UX (plan 2026-06-10 v3) — list one learner's
+// active purchases owned by this teacher, augmented with the
+// `hasActiveConsumptions` flag so the UI can disable the `[Отозвать]`
+// button when revoking would orphan booked slots. (R7-3, R15-6.)
+//
+// Used by `/teacher/learners/[id]` LearnerPackagesSection.
+export async function listLearnerPackagesByTeacher(
+  teacherId: string,
+  learnerAccountId: string,
+): Promise<
+  Array<
+    PackagePurchase & {
+      countRemaining: number
+      countConsumed: number
+      hasActiveConsumptions: boolean
+      titleRu: string
+    }
+  >
+> {
+  const pool = getDbPool()
+  const result = await pool.query(
+    `select pp.${PURCHASE_COLS.replace(/, /g, ', pp.')},
+            lp.title_ru as title_ru,
+            pp.count_initial - coalesce(consumed.n, 0) as count_remaining,
+            coalesce(consumed.n, 0) as count_consumed,
+            coalesce(active.n, 0) > 0 as has_active_consumptions
+       from package_purchases pp
+       join lesson_packages lp on lp.id = pp.package_id
+       left join lateral (
+         select count(*)::int as n
+           from package_consumptions pc
+          where pc.package_purchase_id = pp.id
+            and pc.restored_at is null
+       ) consumed on true
+       left join lateral (
+         select count(*)::int as n
+           from package_consumptions pc
+           join lesson_slots ls on ls.id = pc.slot_id
+          where pc.package_purchase_id = pp.id
+            and pc.restored_at is null
+            and ls.status in ('open', 'booked')
+            and ls.start_at > now()
+       ) active on true
+      where pp.teacher_id = $1::uuid
+        and pp.account_id = $2::uuid
+        and pp.expires_at > now()
+        and pp.voided_at is null
+      order by pp.expires_at asc, pp.id`,
+    [teacherId, learnerAccountId],
+  )
+  return result.rows.map((row) => {
+    const r = row as Record<string, unknown>
+    const purchase = rowToPurchase(r)
+    return {
+      ...purchase,
+      titleRu: String(r.title_ru),
+      countRemaining: Number(r.count_remaining),
+      countConsumed: Number(r.count_consumed),
+      hasActiveConsumptions: Boolean(r.has_active_consumptions),
+    }
+  })
+}
+
+// Single aggregated SQL that returns the distinct learner-count for
+// EVERY package owned by this teacher. Used by the catalog tile
+// footer pill «Выдан N ученикам» without N round-trips. (R8-3.)
+export async function aggregateActiveLearnersByPackage(
+  teacherId: string,
+): Promise<Map<string, number>> {
+  const pool = getDbPool()
+  const r = await pool.query<{ package_id: string; n: string }>(
+    `select pp.package_id, count(distinct pp.account_id)::text as n
+       from package_purchases pp
+      where pp.teacher_id = $1::uuid
+        and pp.expires_at > now()
+        and pp.voided_at is null
+      group by pp.package_id`,
+    [teacherId],
+  )
+  const out = new Map<string, number>()
+  for (const row of r.rows) out.set(row.package_id, Number(row.n))
+  return out
+}
+
 // PKG-RECON RECON.1 — bulk load purchases by id for admin payment
 // detail rendering. Used by `app/admin/(gated)/payments/[invoiceId]`
 // to surface `title_snapshot` + `count_initial` + `duration_minutes`
