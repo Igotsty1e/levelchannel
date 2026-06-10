@@ -51,6 +51,16 @@ export type TeacherFinanceSnapshot = {
     kopecks: number
     bookedSlotsCount: number
   }
+  /**
+   * Tiny existence flags that drive the empty-state coach-hint on the
+   * home page. Cheap to compute (2 EXISTS queries) and answer the
+   * sequential «what's the next step?» state machine when all four
+   * finance metrics above are zero.
+   */
+  emptyState: {
+    hasAnySlot: boolean
+    hasAnyBookedSlot: boolean
+  }
 }
 
 function monthStartUtc(date: Date): Date {
@@ -177,6 +187,7 @@ export async function getTeacherFinanceSnapshot(
     new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)),
   )
 
+  const pool = getDbPool()
   const [
     thisMonth,
     lastMonth,
@@ -184,6 +195,8 @@ export async function getTeacherFinanceSnapshot(
     oldestDays,
     packages,
     calendar,
+    hasAnySlotRow,
+    hasAnyBookedSlotRow,
   ] = await Promise.all([
     fetchMonthlyConfirmed(
       teacherAccountId,
@@ -199,6 +212,23 @@ export async function getTeacherFinanceSnapshot(
     fetchOldestUnpaidDays(teacherAccountId),
     fetchActivePackages(teacherAccountId),
     getTeacherCalendarSummary(teacherAccountId, todayYmd),
+    pool.query<{ exists: boolean }>(
+      `select exists(
+         select 1 from lesson_slots
+          where teacher_account_id = $1::uuid
+            and status <> 'cancelled'
+       ) as exists`,
+      [teacherAccountId],
+    ),
+    pool.query<{ exists: boolean }>(
+      `select exists(
+         select 1 from lesson_slots
+          where teacher_account_id = $1::uuid
+            and status <> 'cancelled'
+            and learner_account_id is not null
+       ) as exists`,
+      [teacherAccountId],
+    ),
   ])
 
   const unpaidTotal = unpaidLearners.reduce((acc, r) => acc + r.unpaidAmount, 0)
@@ -225,6 +255,10 @@ export async function getTeacherFinanceSnapshot(
     expectedThisWeek: {
       kopecks: calendar.weekEarningsKopecks ?? 0,
       bookedSlotsCount: calendar.weekBookedCount ?? 0,
+    },
+    emptyState: {
+      hasAnySlot: Boolean(hasAnySlotRow.rows[0]?.exists),
+      hasAnyBookedSlot: Boolean(hasAnyBookedSlotRow.rows[0]?.exists),
     },
   }
 }
