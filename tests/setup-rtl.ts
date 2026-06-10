@@ -18,3 +18,20 @@ expect.extend(matchers)
 afterEach(() => {
   cleanup()
 })
+
+// jsdom doesn't implement `matchMedia`. Polyfill to a "no match" stub
+// so components calling `window.matchMedia('(min-width: 600px)')` for
+// responsive branching get a predictable shape (matches=false) instead
+// of crashing on undefined.
+if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
+  window.matchMedia = ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  })) as typeof window.matchMedia
+}

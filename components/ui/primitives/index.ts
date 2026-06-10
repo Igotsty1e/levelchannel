@@ -13,6 +13,9 @@ export type { ButtonProps, ButtonVariant, ButtonSize } from './button'
 export { ChipGroup } from './chip-group'
 export type { ChipGroupProps, ChipOption } from './chip-group'
 
+export { Combobox } from './combobox'
+export type { ComboboxOption, ComboboxProps } from './combobox'
+
 export { Pill } from './pill'
 export type { PillProps, PillTone } from './pill'
 
