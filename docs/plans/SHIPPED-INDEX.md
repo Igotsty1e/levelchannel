@@ -144,6 +144,10 @@ Owner reported 4 bugs + asked for security + code-quality audits. Whole wave shi
 - **`finance-on-teacher-home-2026-06-09.md`** — 4 finance cards on `/teacher`. Status: SHIPPED 2026-06-09 (PR #573). `lib/billing/teacher-finance.ts` (6 parallel SQL aggregates) + `<TeacherFinanceSummary />` server component. Warn-badges (overdue ≥7d / packages expiring ≤14d). All-zero → hidden.
 - **`mobile-calendar-ui-cleanup-2026-06-09.md`** — unified «+ Создать» + bulk toggle on mobile. Status: SHIPPED 2026-06-09 (PR #574). Top button hidden <600px. FAB sheet checkbox + localStorage. `MobileFallback.tsx` drops «Откройте календарь с компьютера…».
 
+## 2026-06-10 settings hub polish
+
+- **`settings-indicators-2026-06-10.md`** — `/teacher/settings`: убран status-pill у «Профиль» + text-pill заменён на connection icon-indicator (✓/✕) у «Интеграции» и «Приём оплат». Status: SHIPPED 2026-06-10 (PR #592 `6f6f1ee`). `SettingsTile` primitive — discriminated union (`status | indicator`). Tokens переиспользованы (`--success`/`--success-bg`/`--text-tertiary`/`--surface-2`/`--border`). A11y via aria-label на span / aria-hidden на svg.
+
 ## Foundational pre-2026-05 waves (kept for git blame continuity)
 
 - **`csp-hardening.md`** (CSP hardening, CLOSED 2026-05-09) — Content-Security-Policy lockdown for production.
