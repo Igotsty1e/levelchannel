@@ -140,6 +140,28 @@ export function Combobox({
   // The parent modal owns the back-button contract; Combobox just
   // closes via tap-outside / Esc / option click.
 
+  // Click-outside-to-close on desktop. We can't use a full-viewport
+  // wrapper div with pointerEvents:auto for this — it intercepts
+  // every click on the parent page (and the parent modal's Submit
+  // button never receives it). Instead, we attach a single document
+  // mousedown listener while open and check whether the click landed
+  // inside the panel. Mobile uses a real overlay sheet, so this
+  // listener is desktop-only.
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!open) return
+    if (!isDesktop) return
+    function onDocDown(e: MouseEvent) {
+      const t = e.target as Node | null
+      if (!t) return
+      if (panelRef.current && panelRef.current.contains(t)) return
+      if (triggerRef.current && triggerRef.current.contains(t)) return
+      closePanel()
+    }
+    document.addEventListener('mousedown', onDocDown)
+    return () => document.removeEventListener('mousedown', onDocDown)
+  }, [open, isDesktop, closePanel])
+
   // Autofocus on open. With the search input rendered → focus it
   // so the teacher can immediately start typing. Without it → focus
   // the list container so arrow keys work right away.
@@ -245,24 +267,24 @@ export function Combobox({
     </button>
   )
 
-  return (
-    <>
-      {Trigger}
-      {open ? (
-        <div
-          role="presentation"
-          onKeyDown={handleKeyDown}
-          style={isDesktop ? desktopWrapperStyle : mobileOverlayStyle}
-          onClick={isDesktop ? undefined : closePanel}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={
-              isDesktop
-                ? desktopPanelStyle(triggerRef.current?.getBoundingClientRect())
-                : mobileSheetStyle
-            }
-          >
+  // Desktop: render the panel directly (no full-viewport wrapper that
+  // would intercept clicks on the parent page — that broke the parent
+  // modal's Submit button on first ship). Click-outside is handled by
+  // the document mousedown listener above.
+  //
+  // Mobile: render an overlay backdrop + bottom-sheet. Tap on overlay
+  // closes the picker.
+  const Panel = open ? (
+    <div
+      ref={panelRef}
+      onKeyDown={handleKeyDown}
+      onClick={(e) => e.stopPropagation()}
+      style={
+        isDesktop
+          ? desktopPanelStyle(triggerRef.current?.getBoundingClientRect())
+          : mobileSheetStyle
+      }
+    >
             {!isDesktop ? (
               <div
                 aria-hidden="true"
@@ -340,9 +362,25 @@ export function Combobox({
                 })
               )}
             </ul>
-          </div>
         </div>
-      ) : null}
+  ) : null
+
+  return (
+    <>
+      {Trigger}
+      {Panel
+        ? isDesktop
+          ? Panel
+          : (
+              <div
+                role="presentation"
+                style={mobileOverlayStyle}
+                onClick={closePanel}
+              >
+                {Panel}
+              </div>
+            )
+        : null}
     </>
   )
 }
