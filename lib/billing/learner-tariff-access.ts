@@ -126,3 +126,63 @@ export async function listActiveTariffAccessForPair(
   )
   return r.rows.map(rowToAccess)
 }
+
+// Package-issuance UX (plan 2026-06-10 v3) — list active tariff
+// access rows for one learner under this teacher, augmented with
+// the tariff's titleRu + effective amountKopecks so the UI section
+// can render «Урок 60 минут · 1 600 ₽» without N+1.
+export async function listLearnerTariffAccessByTeacher(
+  teacherId: string,
+  learnerAccountId: string,
+): Promise<
+  Array<{
+    tariffId: string
+    titleRu: string
+    amountKopecks: number
+    grantedAt: string
+  }>
+> {
+  const r = await getDbPool().query<{
+    tariff_id: string
+    title_ru: string
+    amount_kopecks: string
+    granted_at: Date
+  }>(
+    `select lta.tariff_id,
+            pt.title_ru,
+            coalesce(lta.override_amount_kopecks, pt.amount_kopecks)::text as amount_kopecks,
+            lta.granted_at
+       from learner_tariff_access lta
+       join pricing_tariffs pt on pt.id = lta.tariff_id
+      where lta.teacher_id = $1::uuid
+        and lta.learner_account_id = $2::uuid
+        and lta.revoked_at is null
+      order by lta.granted_at asc`,
+    [teacherId, learnerAccountId],
+  )
+  return r.rows.map((row) => ({
+    tariffId: String(row.tariff_id),
+    titleRu: String(row.title_ru),
+    amountKopecks: Number(row.amount_kopecks),
+    grantedAt: row.granted_at.toISOString(),
+  }))
+}
+
+// Single SQL aggregated counter — distinct learners per tariff for
+// this teacher. Used by the catalog tile pill «N ученикам открыт
+// доступ». No N+1.
+export async function aggregateActiveLearnersByTariff(
+  teacherId: string,
+): Promise<Map<string, number>> {
+  const r = await getDbPool().query<{ tariff_id: string; n: string }>(
+    `select tariff_id, count(distinct learner_account_id)::text as n
+       from learner_tariff_access
+      where teacher_id = $1::uuid
+        and revoked_at is null
+      group by tariff_id`,
+    [teacherId],
+  )
+  const out = new Map<string, number>()
+  for (const row of r.rows) out.set(row.tariff_id, Number(row.n))
+  return out
+}
