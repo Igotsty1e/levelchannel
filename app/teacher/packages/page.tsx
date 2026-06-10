@@ -10,6 +10,7 @@ import {
 } from '@/lib/billing/packages'
 import { resolveTeacherWriteCaps } from '@/lib/billing/teacher-subscription'
 import { getOnboardingState } from '@/lib/onboarding/state'
+import { listTeacherLearnersForPicker } from '@/lib/teacher/learners'
 
 // /teacher/packages — «Пакеты».
 //
@@ -46,12 +47,13 @@ export default async function TeacherPackagesPage() {
     redirect('/login')
   }
 
-  const [packages, caps, currentActiveCount, onboardingState] =
+  const [packages, caps, currentActiveCount, onboardingState, learners] =
     await Promise.all([
       listPackagesByTeacher(current.account.id),
       resolveTeacherWriteCaps(current.account.id),
       countActivePackagesByTeacher(current.account.id),
       getOnboardingState(current.account.id),
+      listTeacherLearnersForPicker(current.account.id),
     ])
   const explainerDismissed =
     'packages_vs_tariffs_explainer' in onboardingState.dismissedHints
@@ -94,6 +96,7 @@ export default async function TeacherPackagesPage() {
         initialPackages={view}
         writeCap={writeCap}
         currentActiveCount={currentActiveCount}
+        learners={learners.map((l) => ({ id: l.id, label: l.label }))}
       />
     </div>
   )
