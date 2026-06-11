@@ -225,14 +225,36 @@ export default async function TeacherHomePage() {
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
+                  alignItems: 'baseline',
                   gap: 12,
                   padding: '10px 0',
                   borderBottom: '1px solid var(--border)',
                   fontSize: 14,
                 }}
               >
-                <span style={{ fontWeight: 500 }}>{s.learnerLabel}</span>
-                <span style={{ color: 'var(--secondary)', fontSize: 13 }}>
+                {/* learnerLabel длинный (часто email вида user@domain.tld).
+                    min-width:0 нужен flex-child'у чтобы overflow:hidden
+                    сработал; иначе flexbox сохраняет intrinsic width. */}
+                <span
+                  title={s.learnerLabel}
+                  style={{
+                    fontWeight: 500,
+                    minWidth: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {s.learnerLabel}
+                </span>
+                <span
+                  style={{
+                    color: 'var(--secondary)',
+                    fontSize: 13,
+                    flexShrink: 0,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   {formatSlotDateTime(s.startAt)} · {s.durationMinutes} мин
                 </span>
               </li>
