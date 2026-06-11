@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
+import { AssignDirectModal } from '@/components/calendar/AssignDirectModal'
 import { BulkAddSlotsModal } from '@/components/calendar/BulkAddSlotsModal'
 import { MobileCreateFab, type CreateMode } from '@/components/calendar/MobileCreateFab'
 import { PaintConfirmModal } from '@/components/calendar/PaintConfirmModal'
@@ -21,6 +22,9 @@ export type TariffOption = {
   slug: string
   titleRu: string
   amountKopecks: number
+  // teacher-direct-assign (2026-06-11): нужен для AssignDirectModal,
+  // duration берётся из тарифа (нельзя редактировать в форме).
+  durationMinutes?: number
 }
 
 export default function TeacherCalendarClient({
@@ -137,9 +141,26 @@ export default function TeacherCalendarClient({
         style={{
           display: 'flex',
           justifyContent: 'flex-end',
+          gap: 8,
           marginBottom: 8,
         }}
       >
+        <button
+          type="button"
+          onClick={() => setCreateMode('assign')}
+          style={{
+            padding: '8px 14px',
+            border: '1px solid var(--border)',
+            borderRadius: 8,
+            background: 'var(--surface-2)',
+            color: 'var(--text)',
+            cursor: 'pointer',
+            fontSize: 13,
+            fontWeight: 600,
+          }}
+        >
+          + Назначить ученику
+        </button>
         <button
           type="button"
           onClick={() => setCreateMode('bulk')}
@@ -210,6 +231,20 @@ export default function TeacherCalendarClient({
         onSwitchToSingle={() => setCreateMode('single')}
         onCreated={() => {
           showToast('Слоты созданы.')
+          bumpReload()
+          router.refresh()
+        }}
+        tariffs={tariffs}
+      />
+      <AssignDirectModal
+        open={createMode === 'assign'}
+        onClose={() => setCreateMode('closed')}
+        onCreated={(info) => {
+          showToast(
+            info.emailSkipped
+              ? 'Занятие назначено. Письмо не отправлено (anti-spam).'
+              : 'Занятие назначено, ученик получит письмо.',
+          )
           bumpReload()
           router.refresh()
         }}

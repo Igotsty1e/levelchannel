@@ -19,15 +19,19 @@ export type TariffOption = {
   slug: string
   titleRu: string
   amountKopecks: number
+  durationMinutes?: number
 }
 
-export type CreateMode = 'closed' | 'single' | 'bulk'
+// teacher-direct-assign (Задача 2.2, Sub-PR B, 2026-06-11) — добавили
+// третий режим 'assign' для прямого назначения занятия ученику.
+export type CreateMode = 'closed' | 'single' | 'bulk' | 'assign'
 
 const BULK_PREF_KEY = 'lc_calendar_create_bulk_mode'
 
 const MODE_OPTIONS = [
   { value: 'single', label: 'Один слот' },
-  { value: 'bulk', label: 'Несколько слотов' },
+  { value: 'bulk', label: 'Несколько' },
+  { value: 'assign', label: 'Назначить ученику' },
 ] as const
 
 function isoLocalToUtcIso(dateYmd: string, hhmm: string, ianaTz: string): string | null {
@@ -117,7 +121,7 @@ export function MobileCreateFab({
   }
 
   function handleModeChange(next: string) {
-    if (next !== 'single' && next !== 'bulk') return
+    if (next !== 'single' && next !== 'bulk' && next !== 'assign') return
     try {
       if (typeof window !== 'undefined') {
         if (next === 'bulk') window.localStorage.setItem(BULK_PREF_KEY, '1')
