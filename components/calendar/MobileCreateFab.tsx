@@ -3,6 +3,7 @@
 import { CSSProperties, useEffect, useState } from 'react'
 
 import { ChipGroup, FloatingActionButton } from '@/components/ui/primitives'
+import type { CalendarSlotMode } from '@/lib/scheduling/slot-mode'
 
 import { TimeRangeRow } from './TimeRangeRow'
 
@@ -28,9 +29,16 @@ export type CreateMode = 'closed' | 'single' | 'bulk' | 'assign'
 
 const BULK_PREF_KEY = 'lc_calendar_create_bulk_mode'
 
-const MODE_OPTIONS = [
+const MODE_OPTIONS_OPEN_SLOTS = [
   { value: 'single', label: 'Один слот' },
   { value: 'bulk', label: 'Несколько' },
+  { value: 'assign', label: 'Назначить ученику' },
+] as const
+
+// teacher-no-slots-mode (Задача 2.1, 2026-06-11): когда учитель в
+// direct_assign режиме, slot-create опции скрыты — только «Назначить
+// ученику».
+const MODE_OPTIONS_DIRECT_ASSIGN = [
   { value: 'assign', label: 'Назначить ученику' },
 ] as const
 
@@ -89,13 +97,21 @@ export function MobileCreateFab({
   mode,
   onModeChange,
   onCreated,
+  slotMode = 'open_slots',
 }: {
   tariffs: ReadonlyArray<TariffOption>
   teacherTz?: string
   mode: CreateMode
   onModeChange: (next: CreateMode) => void
   onCreated?: () => void
+  // teacher-no-slots-mode (Задача 2.1): когда 'direct_assign', single
+  // и bulk опции скрыты — оставляем только Назначить ученику.
+  slotMode?: CalendarSlotMode
 }) {
+  const modeOptions =
+    slotMode === 'direct_assign'
+      ? MODE_OPTIONS_DIRECT_ASSIGN
+      : MODE_OPTIONS_OPEN_SLOTS
   const [date, setDate] = useState(() => todayInTz(teacherTz))
   const [from, setFrom] = useState('10:00')
   const [durationMinutes, setDurationMinutes] = useState(60)
@@ -106,6 +122,12 @@ export function MobileCreateFab({
   const isOpen = mode === 'single'
 
   function openFromFab() {
+    // teacher-no-slots-mode (Задача 2.1): в direct_assign режиме open-slot
+    // опций нет — FAB сразу открывает AssignDirectModal.
+    if (slotMode === 'direct_assign') {
+      onModeChange('assign')
+      return
+    }
     let next: CreateMode = 'single'
     try {
       if (
@@ -211,7 +233,7 @@ export function MobileCreateFab({
               <ChipGroup
                 name="create-mode"
                 value="single"
-                options={MODE_OPTIONS}
+                options={modeOptions}
                 onChange={handleModeChange}
               />
             </div>
