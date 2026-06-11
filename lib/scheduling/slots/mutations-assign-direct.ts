@@ -130,26 +130,30 @@ export async function assignSlotDirect(
     }
 
     // Step 3: tariff gates — active + owned + duration matches.
+    // Note: pricing_tariffs.teacher_id (not teacher_account_id) per
+    // migration 0088. is_active=false OR deleted_at IS NOT NULL → not
+    // active (we treat both as same "tariff_not_active" surface).
     const tariffRow = await client.query<{
       duration_minutes: number
-      teacher_account_id: string | null
+      teacher_id: string | null
+      is_active: boolean
       deleted_at: string | null
       amount_kopecks: number
       currency: string
     }>(
-      `select duration_minutes, teacher_account_id, deleted_at,
+      `select duration_minutes, teacher_id, is_active, deleted_at,
               amount_kopecks, currency
          from pricing_tariffs where id = $1::uuid`,
       [input.tariffId],
     )
     const tariff = tariffRow.rows[0]
-    if (!tariff || tariff.deleted_at !== null) {
+    if (!tariff || tariff.deleted_at !== null || tariff.is_active === false) {
       await client.query('rollback')
       return { ok: false, reason: 'tariff_not_active' }
     }
     if (
-      tariff.teacher_account_id === null
-      || String(tariff.teacher_account_id) !== input.teacherAccountId
+      tariff.teacher_id === null
+      || String(tariff.teacher_id) !== input.teacherAccountId
     ) {
       await client.query('rollback')
       return { ok: false, reason: 'tariff_not_owned' }
