@@ -49,31 +49,14 @@ export default async function TeacherLearnersListPage() {
   // Удалили H1 «Ученики» — дублирует активную вкладку в `<TeacherCabinetNav>`
   // (см. docs/design-system.md §10.3). Длинный объясняющий параграф убран —
   // содержание раздела очевидно из вкладки и из самих карточек ниже.
-  const activeLearnerCount = learners.filter((l) => l.isAssigned).length
+  //
+  // 2026-06-11 (learners-list-polish): список вынесен ВВЕРХ; приглашение
+  // нового ученика — ПОСЛЕ. Учитель чаще приходит к списку, чем к
+  // приглашению. Дублирующая подпись «X активных учеников.» удалена —
+  // ChipGroup в LearnersListClient уже показывает counts.
 
   return (
     <div style={{ maxWidth: 960, margin: '0 auto' }}>
-      {/* Приглашение нового ученика — перенесено сюда с /teacher
-          2026-06-07: главная держит один primary CTA («Открыть
-          календарь»), а приглашение логически принадлежит «Ученикам». */}
-      <TeacherInviteSection
-        isVerified={isVerified}
-        planLearnerLimit={planLearnerLimit}
-      />
-
-      <p
-        style={{
-          color: 'var(--secondary)',
-          marginBottom: 20,
-          fontSize: 14,
-          fontVariantNumeric: 'tabular-nums',
-        }}
-      >
-        {activeLearnerCount > 0
-          ? `${activeLearnerCount} активных учеников.`
-          : 'Активных учеников пока нет.'}
-      </p>
-
       <LearnersListClient
         learners={learners.map((l) => ({
           learnerId: l.learnerId,
@@ -89,6 +72,15 @@ export default async function TeacherLearnersListPage() {
           paymentMethod: l.paymentMethod,
         }))}
       />
+
+      {/* Приглашение нового ученика — ПОСЛЕ списка. Список — primary
+          action (учитель чаще приходит к нему); приглашение — secondary. */}
+      <div style={{ marginTop: 24 }}>
+        <TeacherInviteSection
+          isVerified={isVerified}
+          planLearnerLimit={planLearnerLimit}
+        />
+      </div>
     </div>
   )
 }
