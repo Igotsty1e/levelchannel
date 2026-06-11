@@ -100,6 +100,9 @@ export { bookSlot } from './booking'
 
 export { assignSlotDirect } from './mutations-assign-direct'
 
+export { rescheduleSlotByLearner } from './mutations-reschedule'
+export type { RescheduleSlotResult } from './mutations-reschedule'
+
 export {
   isValidIanaTz,
   isValidYmd,
