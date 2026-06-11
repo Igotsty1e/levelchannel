@@ -302,33 +302,11 @@ export async function bookSlot(
       return { ok: false, reason: 'pending_package_grant' }
     }
 
-    // Step 6: branch on method.
-    if (method === 'prepaid_packages') {
-      // T3 epic-end R1-BLOCKER#3 closure: scope the hint to packages
-      // the learner could actually buy (same teacher + catalog OR
-      // granted-private).
-      const matching = await listActivePackagesByDuration(
-        slot.durationMinutes,
-        3,
-        {
-          teacherAccountId: slot.teacherAccountId,
-          viewerAccountId: learnerAccountId,
-        },
-      )
-      await client.query('rollback')
-      return {
-        ok: false,
-        reason: 'package_required',
-        availablePackages: matching.map((p) => ({
-          slug: p.slug,
-          titleRu: p.titleRu,
-          amountKopecks: p.amountKopecks,
-          durationMinutes: p.durationMinutes,
-        })),
-      }
-    }
+    // Step 6: method === 'postpaid' (epic-b dropped 'prepaid_packages') —
+    // slot booked, debt surfaces at completion. Mix позволяет package
+    // consume first → postpaid fallback (already handled выше в Step 4).
+    void listActivePackagesByDuration
 
-    // method === 'postpaid' — slot booked, debt surfaces at completion.
     if (!slot.tariffId) {
       await client.query('rollback')
       return { ok: false, reason: 'tariff_required' }

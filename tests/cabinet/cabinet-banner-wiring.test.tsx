@@ -150,15 +150,9 @@ describe('<TeacherBlocksList> — Bug #1 per-block banner', () => {
     expect(links).toHaveLength(1)
   })
 
-  it("block.paymentMethod='prepaid_packages' renders the link, NOT the banner", () => {
-    render(
-      <TeacherBlocksList
-        blocks={[block({ paymentMethod: 'prepaid_packages' })]}
-        learnerTimezone="Europe/Moscow"
-        canBuyPackages={false}
-      />,
-    )
-    expect(screen.queryByTestId('missing-payment-method-banner')).toBeNull()
-    expect(screen.queryByText('Записаться к этому учителю')).not.toBeNull()
-  })
+  // epic-b Sub-PR B.1 (2026-06-11): removed the
+  // "block.paymentMethod='prepaid_packages' renders the link, NOT the
+  // banner" case — the value is dropped from the PaymentMethod union
+  // (mig 0126), so the test would fail type-check. The remaining
+  // 'postpaid' case pins the non-'none' branch identically.
 })

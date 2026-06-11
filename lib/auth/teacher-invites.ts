@@ -177,14 +177,15 @@ export const TEACHER_INVITE_DEFAULT_TTL_SECONDS = 7 * 24 * 60 * 60
 // DB-bound primitives (TINV.3+4)
 // =============================================================================
 
-export type InviteDefaultPaymentMethod =
-  | 'postpaid'
-  | 'prepaid_packages'
-  | 'none'
+// epic-b Sub-PR B.1 (2026-06-11): dropped 'prepaid_packages' — mig 0126
+// also drops it from teacher_invites.default_payment_method CHECK +
+// converts legacy rows to 'postpaid'. The redeem CTE still defensively
+// re-validates via `isValidInviteDefaultPaymentMethod` so any row that
+// somehow carries an unexpected value collapses to 'none'.
+export type InviteDefaultPaymentMethod = 'postpaid' | 'none'
 
 const VALID_DEFAULT_PAYMENT_METHODS: ReadonlyArray<InviteDefaultPaymentMethod> = [
   'postpaid',
-  'prepaid_packages',
   'none',
 ]
 

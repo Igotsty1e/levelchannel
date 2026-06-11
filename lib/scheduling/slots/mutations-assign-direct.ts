@@ -285,33 +285,10 @@ export async function assignSlotDirect(
       return { ok: false, reason: 'pending_package_grant' }
     }
 
-    // Step 9: branch on method.
-    if (method === 'prepaid_packages') {
-      // Surface available packages to UI (consistent with bookSlot
-      // `package_required`). Direct-assign rejects with friendlier
-      // copy: «У ученика нет активного пакета на эту длительность».
-      const matching = await listActivePackagesByDuration(
-        input.durationMinutes,
-        3,
-        {
-          teacherAccountId: input.teacherAccountId,
-          viewerAccountId: input.learnerAccountId,
-        },
-      )
-      await client.query('rollback')
-      return {
-        ok: false,
-        reason: 'no_package_no_postpaid',
-        availablePackages: matching.map((p) => ({
-          slug: p.slug,
-          titleRu: p.titleRu,
-          amountKopecks: p.amountKopecks,
-          durationMinutes: p.durationMinutes,
-        })),
-      }
-    }
+    // Step 9: method === 'postpaid' (epic-b dropped 'prepaid_packages') —
+    // slot booked, debt at completion. Mix already handled выше.
+    void listActivePackagesByDuration
 
-    // method === 'postpaid' — slot booked, debt at completion.
     await client.query('commit')
     return {
       ok: true,

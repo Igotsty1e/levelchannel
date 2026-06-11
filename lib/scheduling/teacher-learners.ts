@@ -30,7 +30,7 @@ export type TeacherLearnerSummary = {
   // mig 0101 — per-pair payment method выбранный учителем. 'none' = не
   // выбран (default) — booking блокируется до выбора. NULL не бывает,
   // SQL ниже coalesces к 'none'.
-  paymentMethod: 'postpaid' | 'prepaid_packages' | 'none'
+  paymentMethod: 'postpaid' | 'none'
 }
 
 export async function listLearnersForTeacher(
@@ -120,6 +120,6 @@ export async function listLearnersForTeacher(
     completedCount: Number(row.completed_count),
     cancelledCount: Number(row.cancelled_count),
     noShowCount: Number(row.no_show_count),
-    paymentMethod: (String(row.payment_method) as 'postpaid' | 'prepaid_packages' | 'none'),
+    paymentMethod: (String(row.payment_method) as 'postpaid' | 'none'),
   }))
 }

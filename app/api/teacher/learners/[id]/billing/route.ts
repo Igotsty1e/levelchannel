@@ -36,11 +36,8 @@ import { getDbPool } from '@/lib/db/pool'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const VALID_METHODS: ReadonlyArray<PaymentMethod> = [
-  'postpaid',
-  'prepaid_packages',
-  'none',
-]
+// epic-b Sub-PR B.1 (2026-06-11): dropped 'prepaid_packages'.
+const VALID_METHODS: ReadonlyArray<PaymentMethod> = ['postpaid', 'none']
 
 function isValidMethod(value: unknown): value is PaymentMethod {
   return (
