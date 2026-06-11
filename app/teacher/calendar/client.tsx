@@ -5,6 +5,7 @@ import { useState } from 'react'
 
 import { AssignDirectModal } from '@/components/calendar/AssignDirectModal'
 import { BulkAddSlotsModal } from '@/components/calendar/BulkAddSlotsModal'
+import { BulkAssignDirectModal } from '@/components/calendar/BulkAssignDirectModal'
 import { MobileCreateFab, type CreateMode } from '@/components/calendar/MobileCreateFab'
 import { PaintConfirmModal } from '@/components/calendar/PaintConfirmModal'
 import { SlotCalendar } from '@/components/calendar/SlotCalendar'
@@ -170,6 +171,24 @@ export default function TeacherCalendarClient({
         >
           + Назначить ученику
         </button>
+        {/* epic-b Sub-PR B.3 (2026-06-11) — bulk назначения сразу N
+            занятий конкретному ученику. */}
+        <button
+          type="button"
+          onClick={() => setCreateMode('bulk_assign')}
+          style={{
+            padding: '8px 14px',
+            border: '1px solid var(--border)',
+            borderRadius: 8,
+            background: 'var(--surface-2)',
+            color: 'var(--text)',
+            cursor: 'pointer',
+            fontSize: 13,
+            fontWeight: 600,
+          }}
+        >
+          + Назначить N
+        </button>
         {/* teacher-no-slots-mode (Задача 2.1): открытые слоты убираем
             из UI, если учитель выбрал режим direct_assign. Сам ход
             «добавить открытый слот» больше не нужен — только direct
@@ -260,6 +279,21 @@ export default function TeacherCalendarClient({
             info.emailSkipped
               ? 'Занятие назначено. Письмо не отправлено (anti-spam).'
               : 'Занятие назначено, ученик получит письмо.',
+          )
+          bumpReload()
+          router.refresh()
+        }}
+        tariffs={tariffs}
+      />
+      <BulkAssignDirectModal
+        open={createMode === 'bulk_assign'}
+        onClose={() => setCreateMode('closed')}
+        onSwitchToSingle={() => setCreateMode('assign')}
+        onCreated={(info) => {
+          showToast(
+            info.emailSkipped
+              ? `Назначено ${info.createdCount} занятий. Часть писем перенесена в дайджест (anti-spam).`
+              : `Назначено ${info.createdCount} занятий, ученик получит письма.`,
           )
           bumpReload()
           router.refresh()
