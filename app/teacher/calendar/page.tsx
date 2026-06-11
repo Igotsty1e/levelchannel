@@ -106,6 +106,7 @@ export default async function TeacherPage() {
           slug: t.slug,
           titleRu: t.titleRu,
           amountKopecks: t.amountKopecks,
+          durationMinutes: t.durationMinutes,
         }))}
       />
     </>

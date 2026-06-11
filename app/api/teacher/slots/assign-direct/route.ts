@@ -23,7 +23,11 @@ import { NextResponse } from 'next/server'
 
 import { NO_STORE } from '@/lib/api/http-headers'
 import { readJsonObjectOr400 } from '@/lib/api/json-body'
+import { getAccountById } from '@/lib/auth/accounts'
+import { formatProfileNameForRender } from '@/lib/auth/profile-name'
+import { getAccountProfile } from '@/lib/auth/profiles'
 import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
+import { sendLearnerDirectAssignNoticeEmail } from '@/lib/email/dispatch'
 import {
   type AssignSlotDirectInput,
   assignSlotDirect,
@@ -100,15 +104,63 @@ export async function POST(request: Request) {
     )
   }
 
-  // Sub-PR B will wire email-notify here (rate-limited, fire-and-forget).
-  // For Sub-PR A we return slot + billing; UI is not yet shipped, so the
-  // endpoint is reachable only via the test harness.
+  // Email notification — anti-spam: per-learner rate-limit (5/hour).
+  // On limit-hit we don't fail the request; slot уже создан. UI получает
+  // emailSkipped=true и может показать operator-friendly hint.
+  let emailSkipped = false
+  const emailRl = await enforceRateLimit(
+    request,
+    `learner-direct-assign-notice:${input.learnerAccountId}`,
+    5,
+    60 * 60_000,
+  )
+  if (emailRl) {
+    emailSkipped = true
+  } else {
+    // Best-effort fire-and-forget. Resend outage не должна ломать ответ.
+    try {
+      const [learnerAcc, learnerProfile, teacherProfile] = await Promise.all([
+        getAccountById(input.learnerAccountId),
+        getAccountProfile(input.learnerAccountId),
+        getAccountProfile(input.teacherAccountId),
+      ])
+      if (learnerAcc?.email) {
+        const teacherName = teacherProfile
+          ? formatProfileNameForRender({
+              firstName: teacherProfile.firstName ?? null,
+              lastName: teacherProfile.lastName ?? null,
+              displayName: teacherProfile.displayName ?? null,
+              fallbackEmail: '',
+            })
+          : null
+        const learnerName = learnerProfile
+          ? formatProfileNameForRender({
+              firstName: learnerProfile.firstName ?? null,
+              lastName: learnerProfile.lastName ?? null,
+              displayName: learnerProfile.displayName ?? null,
+              fallbackEmail: '',
+            })
+          : null
+        await sendLearnerDirectAssignNoticeEmail(learnerAcc.email, {
+          teacherDisplayName: teacherName && teacherName.length > 0 ? teacherName : null,
+          startAt: new Date(result.slot.startAt),
+          durationMinutes: result.slot.durationMinutes,
+          learnerTimezone: learnerProfile?.timezone ?? null,
+          learnerDisplayName: learnerName && learnerName.length > 0 ? learnerName : null,
+        })
+      } else {
+        emailSkipped = true
+      }
+    } catch (_err) {
+      emailSkipped = true
+    }
+  }
 
   return NextResponse.json(
     {
       slot: result.slot,
       billing: result.billing,
-      emailSkipped: result.emailSkipped,
+      emailSkipped,
     },
     { status: 201, headers: NO_STORE },
   )

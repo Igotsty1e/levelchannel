@@ -5,6 +5,10 @@ import {
 } from '@/lib/email/sbp-claim-template'
 import { renderAlreadyRegisteredEmail } from '@/lib/email/templates/already-registered'
 import {
+  renderLearnerDirectAssignNoticeEmail,
+  type LearnerDirectAssignNoticeParams,
+} from '@/lib/email/templates/learner-direct-assign-notice'
+import {
   renderLearnerLessonReminderEmail,
   type LearnerLessonReminderParams,
 } from '@/lib/email/templates/learner-lesson-reminder'
@@ -166,6 +170,23 @@ export async function sendLearnerLessonReminderEmail(
   },
 ) {
   const tpl = renderLearnerLessonReminderEmail({
+    ...params,
+    cabinetUrl: params.cabinetUrl ?? `${paymentConfig.siteUrl}/cabinet`,
+  })
+  return sendEmail({ to, subject: tpl.subject, html: tpl.html, text: tpl.text })
+}
+
+// teacher-direct-assign (Задача 2.2, Sub-PR B, 2026-06-11).
+// Учитель назначил конкретное занятие конкретному ученику —
+// notification at booking-time. Best-effort: caller wraps in try/catch
+// (Resend outage не должна блокировать создание slot'а).
+export async function sendLearnerDirectAssignNoticeEmail(
+  to: string,
+  params: Omit<LearnerDirectAssignNoticeParams, 'cabinetUrl'> & {
+    cabinetUrl?: string
+  },
+) {
+  const tpl = renderLearnerDirectAssignNoticeEmail({
     ...params,
     cabinetUrl: params.cabinetUrl ?? `${paymentConfig.siteUrl}/cabinet`,
   })
