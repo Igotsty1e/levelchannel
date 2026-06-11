@@ -25,21 +25,25 @@ export type TariffOption = {
 
 // teacher-direct-assign (Задача 2.2, Sub-PR B, 2026-06-11) — добавили
 // третий режим 'assign' для прямого назначения занятия ученику.
-export type CreateMode = 'closed' | 'single' | 'bulk' | 'assign'
+// epic-b Sub-PR B.3 (2026-06-11, epic-close) — четвёртый режим
+// 'bulk_assign' для назначения сразу N занятий одному ученику.
+export type CreateMode = 'closed' | 'single' | 'bulk' | 'assign' | 'bulk_assign'
 
 const BULK_PREF_KEY = 'lc_calendar_create_bulk_mode'
 
 const MODE_OPTIONS_OPEN_SLOTS = [
   { value: 'single', label: 'Один слот' },
   { value: 'bulk', label: 'Несколько' },
-  { value: 'assign', label: 'Назначить ученику' },
+  { value: 'assign', label: 'Назначить' },
+  { value: 'bulk_assign', label: 'Назначить N' },
 ] as const
 
 // teacher-no-slots-mode (Задача 2.1, 2026-06-11): когда учитель в
 // direct_assign режиме, slot-create опции скрыты — только «Назначить
-// ученику».
+// ученику» (single / bulk).
 const MODE_OPTIONS_DIRECT_ASSIGN = [
-  { value: 'assign', label: 'Назначить ученику' },
+  { value: 'assign', label: 'Назначить' },
+  { value: 'bulk_assign', label: 'Назначить N' },
 ] as const
 
 function isoLocalToUtcIso(dateYmd: string, hhmm: string, ianaTz: string): string | null {
