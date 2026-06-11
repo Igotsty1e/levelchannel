@@ -16,9 +16,12 @@ import type { PoolClient } from 'pg'
 
 import { getDbPool } from '@/lib/db/pool'
 
-export type PaymentMethod = 'postpaid' | 'prepaid_packages' | 'none'
+// epic-b Sub-PR B.1 (2026-06-11): dropped 'prepaid_packages'. Mix
+// (package consume → postpaid fallback) is always allowed when method
+// is 'postpaid'. 'none' still blocks booking until teacher chooses.
+export type PaymentMethod = 'postpaid' | 'none'
 
-const ALL_METHODS: ReadonlyArray<PaymentMethod> = ['postpaid', 'prepaid_packages', 'none']
+const ALL_METHODS: ReadonlyArray<PaymentMethod> = ['postpaid', 'none']
 
 function assertMethod(value: string): PaymentMethod {
   if ((ALL_METHODS as ReadonlyArray<string>).includes(value)) {
@@ -141,17 +144,13 @@ export async function setPaymentMethodForPair(input: {
       ? assertMethod(String(prior.rows[0].payment_method))
       : 'none'
 
-    // Q1 — block switch from postpaid → prepaid_packages with open debt.
-    if (
-      previousMethod === 'postpaid'
-      && input.method === 'prepaid_packages'
-    ) {
-      const debtOpen = await hasOpenPostpaidDebt(input.teacherId, input.learnerId)
-      if (debtOpen) {
-        await client.query('rollback')
-        return { ok: false, reason: 'debt_open' }
-      }
-    }
+    // epic-b Sub-PR B.1 (2026-06-11): Q1 invariant retired — было block
+    // switch postpaid → prepaid_packages with open debt. После drop
+    // 'prepaid_packages' switch может быть только postpaid ↔ none. Drop
+    // 'postpaid' → 'none' с open debt тоже не критично (учитель ставит
+    // 'none' для остановки booking — долг остаётся pending для settle).
+    void previousMethod
+    void hasOpenPostpaidDebt
 
     await client.query(
       `insert into learner_billing_preferences

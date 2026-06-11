@@ -260,7 +260,9 @@ export async function loadTeacherBlocks(
   for (const id of teacherIds) paymentMethodByTeacher.set(id, 'none')
   for (const r of paymentMethodRows.rows) {
     const raw = String(r.payment_method)
-    if (raw === 'postpaid' || raw === 'prepaid_packages' || raw === 'none') {
+    // epic-b Sub-PR B.1 (2026-06-11): dropped 'prepaid_packages';
+    // legacy rows after migration 0126 = 'postpaid'.
+    if (raw === 'postpaid' || raw === 'none') {
       paymentMethodByTeacher.set(String(r.teacher_account_id), raw)
     }
     // Unknown / future enum values silently collapse to the existing
