@@ -4,7 +4,6 @@ import { useState, type ChangeEvent, type FormEvent } from 'react'
 
 import {
   Button,
-  ChipGroup,
   Pill,
 } from '@/components/ui/primitives'
 import type { PricingTariff } from '@/lib/pricing/tariffs'
@@ -25,15 +24,12 @@ import { formatDurationMinutes, formatRubles } from './format'
 // "has any slot used this"), but we show the conflict copy + a
 // secondary CTA to «создать новую цену» on the 409.
 
-const DURATION_CHIPS = [
-  { value: '30', label: '30 мин' },
-  { value: '45', label: '45 мин' },
-  { value: '60', label: '60 мин' },
-  { value: '90', label: '90 мин' },
-  { value: '120', label: '120 мин' },
-] as const
-
-type DurationChipValue = (typeof DURATION_CHIPS)[number]['value']
+// 2026-06-11 (minute-duration epic): ChipGroup на пресеты 30/45/60/90/120
+// убрана. Учителю нужна минутная точность (например 47-min lesson). DB
+// CHECK уже допускает range 15..240. Inline clamp + server CHECK как
+// safety net.
+const TARIFF_DURATION_MIN = 15
+const TARIFF_DURATION_MAX = 240
 
 export type TariffCardProps = {
   tariff: PricingTariff
@@ -62,10 +58,6 @@ export function TariffCard({ tariff, onSave, onArchive }: TariffCardProps) {
   const [confirmArchive, setConfirmArchive] = useState(false)
   const [archiveError, setArchiveError] = useState<string | null>(null)
 
-  const isCustomDuration = !DURATION_CHIPS.some(
-    (c) => c.value === String(tariff.durationMinutes),
-  )
-
   function reset(): void {
     setTitleRu(tariff.titleRu)
     setAmountRub(String(Math.round(tariff.amountKopecks / 100)))
@@ -85,11 +77,23 @@ export function TariffCard({ tariff, onSave, onArchive }: TariffCardProps) {
     setBusy(true)
     setSaveError(null)
     setSaveErrorCode(null)
+    const durationNum = Number(duration)
+    if (
+      !Number.isInteger(durationNum)
+      || durationNum < TARIFF_DURATION_MIN
+      || durationNum > TARIFF_DURATION_MAX
+    ) {
+      setSaveError(
+        `Длительность — целое число от ${TARIFF_DURATION_MIN} до ${TARIFF_DURATION_MAX} минут.`,
+      )
+      setBusy(false)
+      return
+    }
     try {
       const r = await onSave({
         titleRu: titleRu.trim(),
         amountKopecks: Math.round(Number(amountRub) * 100),
-        durationMinutes: Number(duration),
+        durationMinutes: durationNum,
         isActive,
       })
       if (!r.ok) {
@@ -188,21 +192,28 @@ export function TariffCard({ tariff, onSave, onArchive }: TariffCardProps) {
               />
             </div>
             <div className="pricing-field pricing-field-grow">
-              <span className="pricing-field-label">Длительность</span>
-              {isCustomDuration ? (
-                <p className="pricing-field-hint">
-                  {formatDurationMinutes(Number(duration))} — нестандартная,
-                  останется как есть.
-                </p>
-              ) : (
-                <ChipGroup
-                  name="duration"
-                  value={duration as DurationChipValue}
-                  options={DURATION_CHIPS}
-                  onChange={(next) => setDuration(next)}
-                  size="sm"
-                />
-              )}
+              <label
+                htmlFor={`tariff-duration-${tariff.id}`}
+                className="pricing-field-label"
+              >
+                Длительность, мин
+              </label>
+              <input
+                id={`tariff-duration-${tariff.id}`}
+                className="pricing-input pricing-input-money"
+                type="number"
+                inputMode="numeric"
+                step="1"
+                min={TARIFF_DURATION_MIN}
+                max={TARIFF_DURATION_MAX}
+                value={duration}
+                onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                  setDuration(e.target.value.replace(/[^0-9]/g, ''))
+                }
+              />
+              <p className="pricing-field-hint">
+                От {TARIFF_DURATION_MIN} до {TARIFF_DURATION_MAX} минут.
+              </p>
             </div>
           </div>
 

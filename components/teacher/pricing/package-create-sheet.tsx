@@ -23,15 +23,10 @@ const COUNT_CHIPS = [
 
 type CountChipValue = (typeof COUNT_CHIPS)[number]['value'] | 'custom'
 
-const DURATION_CHIPS = [
-  { value: '30', label: '30 мин' },
-  { value: '45', label: '45 мин' },
-  { value: '60', label: '60 мин' },
-  { value: '90', label: '90 мин' },
-  { value: '120', label: '120 мин' },
-] as const
-
-type DurationChipValue = (typeof DURATION_CHIPS)[number]['value']
+// 2026-06-11 (minute-duration epic): убрали chip-presets, перешли на
+// минутный input. DB CHECK на lesson_packages.duration_minutes — [15, 180].
+const PACKAGE_DURATION_MIN = 15
+const PACKAGE_DURATION_MAX = 180
 
 export type PackageCreateSheetProps = {
   onClose: () => void
@@ -52,7 +47,7 @@ export function PackageCreateSheet({
   const [descriptionRu, setDescriptionRu] = useState('')
   const [countChoice, setCountChoice] = useState<CountChipValue>('8')
   const [customCount, setCustomCount] = useState('10')
-  const [duration, setDuration] = useState<DurationChipValue>('60')
+  const [duration, setDuration] = useState('60')
   const [amountRub, setAmountRub] = useState('11500')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -67,13 +62,24 @@ export function PackageCreateSheet({
       setError('Укажите количество занятий в пакете.')
       return
     }
+    const durationNum = Number(duration)
+    if (
+      !Number.isInteger(durationNum)
+      || durationNum < PACKAGE_DURATION_MIN
+      || durationNum > PACKAGE_DURATION_MAX
+    ) {
+      setError(
+        `Длительность — целое число от ${PACKAGE_DURATION_MIN} до ${PACKAGE_DURATION_MAX} минут.`,
+      )
+      return
+    }
     setBusy(true)
     setError(null)
     try {
       const r = await onCreate({
         titleRu: titleRu.trim(),
         descriptionRu: descriptionRu.trim() || null,
-        durationMinutes: Number(duration),
+        durationMinutes: durationNum,
         count: effectiveCount,
         amountKopecks: Math.round(Number(amountRub) * 100),
       })
@@ -141,13 +147,25 @@ export function PackageCreateSheet({
         </div>
 
         <div className="pricing-field">
-          <span className="pricing-field-label">Длительность одного занятия</span>
-          <ChipGroup
-            name="duration"
+          <label htmlFor="pkg-new-duration" className="pricing-field-label">
+            Длительность одного занятия, мин
+          </label>
+          <input
+            id="pkg-new-duration"
+            className="pricing-input pricing-input-money"
+            type="number"
+            inputMode="numeric"
+            step="1"
+            min={PACKAGE_DURATION_MIN}
+            max={PACKAGE_DURATION_MAX}
             value={duration}
-            options={DURATION_CHIPS}
-            onChange={(next) => setDuration(next as DurationChipValue)}
+            onChange={(e: ChangeEvent<HTMLInputElement>) =>
+              setDuration(e.target.value.replace(/[^0-9]/g, ''))
+            }
           />
+          <p className="pricing-field-hint">
+            От {PACKAGE_DURATION_MIN} до {PACKAGE_DURATION_MAX} минут.
+          </p>
         </div>
 
         <div className="pricing-field">

@@ -2,26 +2,21 @@
 
 import { useState, type ChangeEvent, type FormEvent } from 'react'
 
-import { Button, ChipGroup } from '@/components/ui/primitives'
+import { Button } from '@/components/ui/primitives'
 
 import { ModalSheet } from './modal-sheet'
 
 // Create-new-tariff modal/sheet. Triggered from top-of-page «+ Новая
 // цена» CTA (desktop) and the FAB (mobile). Behaviour:
-//   - title required, price required (integer rubles), duration from
-//     ChipGroup (default 60).
+//   - title required, price required (integer rubles), duration —
+//     minute-level input (15..240). Был ChipGroup на 30/45/60/90/120;
+//     убран 2026-06-11 (minute-duration epic) — учителю нужна точная
+//     минутная длительность.
 //   - on success: parent closes sheet + reloads via SSR refresh.
 //   - on error: surface inline; keep input so user can fix.
 
-const DURATION_CHIPS = [
-  { value: '30', label: '30 мин' },
-  { value: '45', label: '45 мин' },
-  { value: '60', label: '60 мин' },
-  { value: '90', label: '90 мин' },
-  { value: '120', label: '120 мин' },
-] as const
-
-type DurationChipValue = (typeof DURATION_CHIPS)[number]['value']
+const TARIFF_DURATION_MIN = 15
+const TARIFF_DURATION_MAX = 240
 
 export type TariffCreateSheetProps = {
   onClose: () => void
@@ -38,20 +33,31 @@ export function TariffCreateSheet({
 }: TariffCreateSheetProps) {
   const [titleRu, setTitleRu] = useState('')
   const [amountRub, setAmountRub] = useState('1500')
-  const [duration, setDuration] = useState<DurationChipValue>('60')
+  const [duration, setDuration] = useState('60')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function handleSubmit(e: FormEvent): Promise<void> {
     e.preventDefault()
     if (titleRu.trim().length === 0) return
+    const durationNum = Number(duration)
+    if (
+      !Number.isInteger(durationNum)
+      || durationNum < TARIFF_DURATION_MIN
+      || durationNum > TARIFF_DURATION_MAX
+    ) {
+      setError(
+        `Длительность — целое число от ${TARIFF_DURATION_MIN} до ${TARIFF_DURATION_MAX} минут.`,
+      )
+      return
+    }
     setBusy(true)
     setError(null)
     try {
       const r = await onCreate({
         titleRu: titleRu.trim(),
         amountKopecks: Math.round(Number(amountRub) * 100),
-        durationMinutes: Number(duration),
+        durationMinutes: durationNum,
       })
       if (!r.ok) {
         setError(r.message)
@@ -110,13 +116,25 @@ export function TariffCreateSheet({
         </div>
 
         <div className="pricing-field">
-          <span className="pricing-field-label">Длительность</span>
-          <ChipGroup
-            name="duration"
+          <label htmlFor="tariff-new-duration" className="pricing-field-label">
+            Длительность, мин
+          </label>
+          <input
+            id="tariff-new-duration"
+            className="pricing-input pricing-input-money"
+            type="number"
+            inputMode="numeric"
+            step="1"
+            min={TARIFF_DURATION_MIN}
+            max={TARIFF_DURATION_MAX}
             value={duration}
-            options={DURATION_CHIPS}
-            onChange={(next) => setDuration(next as DurationChipValue)}
+            onChange={(e: ChangeEvent<HTMLInputElement>) =>
+              setDuration(e.target.value.replace(/[^0-9]/g, ''))
+            }
           />
+          <p className="pricing-field-hint">
+            От {TARIFF_DURATION_MIN} до {TARIFF_DURATION_MAX} минут.
+          </p>
         </div>
 
         {error ? (
