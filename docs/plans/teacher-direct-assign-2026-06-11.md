@@ -1,7 +1,8 @@
 ---
 title: teacher-direct-assign — учитель напрямую назначает занятие конкретному ученику с тарифом/пакетом
-status: PLAN
+status: SHIPPED
 date: 2026-06-11
+shipped: 2026-06-11 (PR #594 backend f38ec60 + PR #595 UI/email 4040110)
 scope: 2-PR epic (backend + UI/email)
 owner: ivankhanaev
 author: claude
