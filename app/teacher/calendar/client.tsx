@@ -179,24 +179,9 @@ export default function TeacherCalendarClient({
         >
           + Назначить ученику
         </button>
-        {/* epic-b Sub-PR B.3 (2026-06-11) — bulk назначения серии
-            занятий конкретному ученику. */}
-        <button
-          type="button"
-          onClick={() => setCreateMode('bulk_assign')}
-          style={{
-            padding: '8px 14px',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            background: 'var(--surface-2)',
-            color: 'var(--text)',
-            cursor: 'pointer',
-            fontSize: 13,
-            fontWeight: 600,
-          }}
-        >
-          + Серия занятий
-        </button>
+        {/* epic-b Sub-PR B.3 polish (2026-06-11): убрали дубль-CTA
+            «+ Серия занятий». Режим «Одно / Серия» теперь чипом
+            ВНУТРИ модалки — единая точка входа на главном UI. */}
         {/* teacher-no-slots-mode (Задача 2.1): открытые слоты убираем
             из UI, если учитель выбрал режим direct_assign. Сам ход
             «добавить открытый слот» больше не нужен — только direct
@@ -282,6 +267,7 @@ export default function TeacherCalendarClient({
       <AssignDirectModal
         open={createMode === 'assign'}
         onClose={() => setCreateMode('closed')}
+        onSwitchToBulk={() => setCreateMode('bulk_assign')}
         onCreated={(info) => {
           showToast(
             info.emailSkipped

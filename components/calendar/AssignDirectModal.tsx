@@ -3,11 +3,17 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 
 import {
+  ChipGroup,
   Combobox,
   type ComboboxOption,
   DatePicker,
   TimePicker,
 } from '@/components/ui/primitives'
+
+const MODE_OPTIONS = [
+  { value: 'single', label: 'Одно занятие' },
+  { value: 'bulk', label: 'Серия' },
+] as const
 
 // teacher-direct-assign (Задача 2.2, Sub-PR B, 2026-06-11).
 //
@@ -141,12 +147,17 @@ export function AssignDirectModal({
   open,
   onClose,
   onCreated,
+  onSwitchToBulk,
 }: {
   tariffs: ReadonlyArray<AssignTariffOption>
   teacherTz?: string
   open: boolean
   onClose: () => void
   onCreated?: (info: { emailSkipped: boolean }) => void
+  /** epic-b polish (2026-06-11): user-flip to «Серия» mode → parent
+   * closes this и открывает BulkAssignDirectModal. Симметрично
+   * onSwitchToSingle в bulk-модалке. */
+  onSwitchToBulk?: () => void
 }) {
   const [learners, setLearners] = useState<LearnerListResponse['items']>([])
   const [learnersLoading, setLearnersLoading] = useState(false)
@@ -401,6 +412,19 @@ export function AssignDirectModal({
             Время фиксируется сразу как занятое; ученик получит письмо.
           </p>
         </header>
+
+        {onSwitchToBulk ? (
+          <div style={{ marginBottom: 12 }}>
+            <ChipGroup
+              name="assign-mode"
+              value="single"
+              options={MODE_OPTIONS}
+              onChange={(next) => {
+                if (next === 'bulk') onSwitchToBulk()
+              }}
+            />
+          </div>
+        ) : null}
 
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: '12px' }}>
