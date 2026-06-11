@@ -8,10 +8,12 @@
 // Cabinet polish 2026-06-07 (B3) — empty-state теперь через <EmptyState>
 // + Pill для read-only «архив»/«оплата». ChipGroup для фильтра.
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { formatProfileNameForRender } from '@/lib/auth/profile-name'
 import { Button, ChipGroup, EmptyState, Pill } from '@/components/ui/primitives'
+
+const PAGE_SIZE = 10
 
 type LearnerRow = {
   learnerId: string
@@ -55,10 +57,11 @@ function renderName(l: LearnerRow): string {
 export function LearnersListClient({ learners }: { learners: LearnerRow[] }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('active')
+  const [currentPage, setCurrentPage] = useState(1)
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return learners.filter((l) => {
+    const matches = learners.filter((l) => {
       if (filter === 'active' && !l.isAssigned) return false
       if (filter === 'archive' && l.isAssigned) return false
       if (q) {
@@ -67,6 +70,14 @@ export function LearnersListClient({ learners }: { learners: LearnerRow[] }) {
       }
       return true
     })
+    // Sort by display name a-z, case-insensitive, RU-aware (owner ask
+    // 2026-06-11). Was previously DB-order (undefined for the UI).
+    matches.sort((a, b) =>
+      renderName(a)
+        .toLocaleLowerCase('ru-RU')
+        .localeCompare(renderName(b).toLocaleLowerCase('ru-RU'), 'ru-RU'),
+    )
+    return matches
   }, [learners, query, filter])
 
   const counts = useMemo(() => {
@@ -76,6 +87,19 @@ export function LearnersListClient({ learners }: { learners: LearnerRow[] }) {
       all: learners.length,
     }
   }, [learners])
+
+  // Reset to page 1 when the filter/search narrows the result set.
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [query, filter])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(currentPage, totalPages)
+  const paged = filtered.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE,
+  )
+  const showPagination = filtered.length > PAGE_SIZE
 
   return (
     <>
@@ -136,7 +160,8 @@ export function LearnersListClient({ learners }: { learners: LearnerRow[] }) {
             className="learner-card-list"
             style={{ listStyle: 'none', padding: 0, margin: 0 }}
           >
-            {filtered.map((l) => {
+            {paged.map((l) => {
+              // first render — same as full list iter
               const name = renderName(l)
               const showEmail = name !== l.learnerEmail
               return (
@@ -207,8 +232,71 @@ export function LearnersListClient({ learners }: { learners: LearnerRow[] }) {
               )
             })}
           </ul>
+
+          {showPagination ? (
+            <nav
+              aria-label="Постраничная навигация"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 12,
+                marginTop: 16,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={safePage <= 1}
+                aria-label="Предыдущая страница"
+                style={paginationBtnStyle(safePage <= 1)}
+              >
+                ←
+              </button>
+              <span
+                style={{
+                  fontSize: 13,
+                  color: 'var(--text-secondary, var(--secondary))',
+                  fontVariantNumeric: 'tabular-nums',
+                  minWidth: 64,
+                  textAlign: 'center',
+                }}
+              >
+                {safePage} из {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setCurrentPage((p) => Math.min(totalPages, p + 1))
+                }
+                disabled={safePage >= totalPages}
+                aria-label="Следующая страница"
+                style={paginationBtnStyle(safePage >= totalPages)}
+              >
+                →
+              </button>
+            </nav>
+          ) : null}
         </>
       )}
     </>
   )
+}
+
+function paginationBtnStyle(disabled: boolean): React.CSSProperties {
+  return {
+    minWidth: 40,
+    minHeight: 40,
+    padding: '8px 12px',
+    background: disabled ? 'transparent' : 'var(--surface-2)',
+    color: disabled
+      ? 'var(--text-tertiary)'
+      : 'var(--text-primary, var(--text))',
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    fontSize: 16,
+    fontWeight: 600,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.5 : 1,
+  }
 }
