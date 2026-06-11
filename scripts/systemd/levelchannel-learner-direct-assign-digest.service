@@ -1,0 +1,39 @@
+# Reference systemd unit for scripts/learner-direct-assign-digest.mjs.
+# `scripts/activate-prod-ops.sh` renders the placeholders below during
+# installation.
+#
+# teacher-no-slots-mode Sub-PR C (2026-06-11): hourly digest cron для
+# учеников с pending direct-assign занятиями. Plan:
+# docs/plans/teacher-no-slots-mode-2026-06-11.md §Sub-PR C.
+
+[Unit]
+Description=LevelChannel learner direct-assign hourly digest
+After=network.target
+
+[Service]
+Type=oneshot
+User=levelchannel
+Group=levelchannel
+WorkingDirectory=__LEVELCHANNEL_APP_DIR__
+EnvironmentFile=__LEVELCHANNEL_ENV_FILE__
+ExecStart=/usr/bin/node scripts/learner-direct-assign-digest.mjs
+StandardOutput=journal
+StandardError=journal
+
+ReadWritePaths=__LEVELCHANNEL_APP_DIR__/var
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service pkey_alloc pkey_mprotect pkey_free
+SystemCallFilter=~@privileged @resources @debug @mount @cpu-emulation @obsolete

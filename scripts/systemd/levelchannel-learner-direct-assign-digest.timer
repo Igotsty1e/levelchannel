@@ -1,0 +1,23 @@
+# Reference systemd timer for scripts/learner-direct-assign-digest.mjs.
+# Copy to /etc/systemd/system/ on the VPS.
+#
+# teacher-no-slots-mode Sub-PR C (2026-06-11): hourly digest для
+# ученика. Когда учитель direct-assign-ит >5 занятий за час одному
+# ученику, per-event email rate-limit fires → notify_pending=true.
+# Этот cron каждый час групирует pending по learner_account_id и
+# шлёт один digest вместо N писем.
+#
+# Persistent=true так что пропущенный tick (deploy / reboot) сработает
+# на следующем включении.
+
+[Unit]
+Description=Run LevelChannel learner direct-assign digest hourly
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+Persistent=true
+Unit=levelchannel-learner-direct-assign-digest.service
+
+[Install]
+WantedBy=timers.target
