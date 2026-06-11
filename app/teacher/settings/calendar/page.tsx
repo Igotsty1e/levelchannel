@@ -14,8 +14,11 @@ import { getGoogleCalendarOauthConfig } from '@/lib/calendar/google/config'
 import { getGoogleIntegrationMeta } from '@/lib/calendar/integrations'
 import { listOrphanSelfSlotsForTeacher } from '@/lib/calendar/orphan-cleanup'
 
+import { getCalendarSlotMode } from '@/lib/scheduling/slot-mode'
+
 import { CalendarConnectCard } from './connect-card'
 import { OrphanSection } from './orphan-section'
+import { SlotModeToggle } from './slot-mode-toggle'
 
 // BCS-C.4 + C.6 — teacher's Google Calendar settings page.
 //
@@ -165,6 +168,7 @@ export default async function TeacherCalendarSettingsPage({
   // BCS-G.4 — orphan-self slots (stale binding from a prior epoch).
   // Surfaced when present so the teacher can clear the local link.
   const orphanSlots = await listOrphanSelfSlotsForTeacher(session.account.id)
+  const slotMode = await getCalendarSlotMode(session.account.id)
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', padding: '24px 16px' }}>
@@ -378,6 +382,8 @@ export default async function TeacherCalendarSettingsPage({
       </details>
 
       <OrphanSection initialSlots={orphanSlots} />
+
+      <SlotModeToggle initialMode={slotMode} />
 
       <section
         style={{

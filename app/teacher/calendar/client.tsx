@@ -8,6 +8,7 @@ import { BulkAddSlotsModal } from '@/components/calendar/BulkAddSlotsModal'
 import { MobileCreateFab, type CreateMode } from '@/components/calendar/MobileCreateFab'
 import { PaintConfirmModal } from '@/components/calendar/PaintConfirmModal'
 import { SlotCalendar } from '@/components/calendar/SlotCalendar'
+import type { CalendarSlotMode } from '@/lib/scheduling/slot-mode'
 import type { PaintSpan, MoveTarget } from '@/lib/calendar/drag-state'
 import type { CalendarRow } from '@/lib/calendar/view-model'
 
@@ -31,10 +32,16 @@ export default function TeacherCalendarClient({
   teacherId,
   initialFromYmd,
   tariffs,
+  slotMode = 'open_slots',
 }: {
   teacherId: string
   initialFromYmd: string
   tariffs: ReadonlyArray<TariffOption>
+  // teacher-no-slots-mode (Задача 2.1): 'direct_assign' hides the
+  // open-slot create buttons (desktop bulk + mobile single/bulk chip
+  // options). Only "Назначить ученику" remains. Default to 'open_slots'
+  // for safety on prop omission.
+  slotMode?: CalendarSlotMode
 }) {
   const router = useRouter()
   const [activeRow, setActiveRow] = useState<CalendarRow | null>(null)
@@ -152,8 +159,10 @@ export default function TeacherCalendarClient({
             padding: '8px 14px',
             border: '1px solid var(--border)',
             borderRadius: 8,
-            background: 'var(--surface-2)',
-            color: 'var(--text)',
+            background: slotMode === 'direct_assign'
+              ? 'var(--accent)'
+              : 'var(--surface-2)',
+            color: slotMode === 'direct_assign' ? '#fff' : 'var(--text)',
             cursor: 'pointer',
             fontSize: 13,
             fontWeight: 600,
@@ -161,22 +170,28 @@ export default function TeacherCalendarClient({
         >
           + Назначить ученику
         </button>
-        <button
-          type="button"
-          onClick={() => setCreateMode('bulk')}
-          style={{
-            padding: '8px 14px',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            background: 'var(--accent)',
-            color: '#fff',
-            cursor: 'pointer',
-            fontSize: 13,
-            fontWeight: 600,
-          }}
-        >
-          + Добавить слоты
-        </button>
+        {/* teacher-no-slots-mode (Задача 2.1): открытые слоты убираем
+            из UI, если учитель выбрал режим direct_assign. Сам ход
+            «добавить открытый слот» больше не нужен — только direct
+            assign. */}
+        {slotMode === 'open_slots' ? (
+          <button
+            type="button"
+            onClick={() => setCreateMode('bulk')}
+            style={{
+              padding: '8px 14px',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              background: 'var(--accent)',
+              color: '#fff',
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
+            + Добавить слоты
+          </button>
+        ) : null}
       </div>
       <SlotCalendar
         teacherId={teacherId}
@@ -219,6 +234,7 @@ export default function TeacherCalendarClient({
         tariffs={tariffs}
         mode={createMode}
         onModeChange={setCreateMode}
+        slotMode={slotMode}
         onCreated={() => {
           showToast('Занятие создано.')
           bumpReload()
