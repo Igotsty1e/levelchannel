@@ -148,6 +148,13 @@ Owner reported 4 bugs + asked for security + code-quality audits. Whole wave shi
 
 - **`settings-indicators-2026-06-10.md`** — `/teacher/settings`: убран status-pill у «Профиль» + text-pill заменён на connection icon-indicator (✓/✕) у «Интеграции» и «Приём оплат». Status: SHIPPED 2026-06-10 (PR #592 `6f6f1ee`). `SettingsTile` primitive — discriminated union (`status | indicator`). Tokens переиспользованы (`--success`/`--success-bg`/`--text-tertiary`/`--surface-2`/`--border`). A11y via aria-label на span / aria-hidden на svg.
 
+## 2026-06-11 teacher direct-assign epic (Задача 2.2)
+
+- **`teacher-direct-assign-2026-06-11.md`** — учитель в `/teacher/calendar` назначает занятие конкретному ученику с тарифом; slot создаётся сразу в state `booked`, billing pipeline зеркалит `bookSlot`. Status: SHIPPED 2026-06-11. Sub-PRs:
+  - **Sub-PR A backend (PR #594 `f38ec60`)** — `assignSlotDirect()` в `lib/scheduling/slots/mutations-assign-direct.ts`; `POST /api/teacher/slots/assign-direct`. Migration 0122 добавляет `lesson_slots.source` discriminator (`open_slot` | `direct_assign`). Per-learner advisory lock (`pkg_consume:` — общий с `bookSlot`) серializует package consumption между учительским direct-assign и учени́ческим pickup. 5 integration tests (happy postpaid, learner_not_assigned, tariff_not_owned cross-teacher, in_past, slot_collision concurrent insert). Plan-paranoia SIGN-OFF round 3/3 self-review fallback (Codex quota exhausted; debt записан).
+  - **Sub-PR B UI + email (PR #595 `4040110`)** — `AssignDirectModal` с Combobox для ученика + тариф (длительность read-only из тарифа). `MobileCreateFab` третий chip-option «Назначить ученику». Desktop кнопка рядом с «Добавить слоты». Email template `learner-direct-assign-notice.ts` (Russian copy per docs/content-style.md). Endpoint после успешного slot'a — best-effort `sendLearnerDirectAssignNoticeEmail` с rate-limit 5/час/ученик (на hit → `emailSkipped: true`). 6 unit-тестов на template. Новый endpoint `GET /api/teacher/learners/list-for-assign` для Combobox data.
+  - Foundation для Задачи 2.1 (глобальный режим «без слотов» = direct-assign по умолчанию).
+
 ## Foundational pre-2026-05 waves (kept for git blame continuity)
 
 - **`csp-hardening.md`** (CSP hardening, CLOSED 2026-05-09) — Content-Security-Policy lockdown for production.
