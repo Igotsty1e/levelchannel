@@ -36,7 +36,8 @@ describe('expandRecurrence', () => {
     ])
   })
 
-  it('skips non-30-min-aligned times', () => {
+  it('accepts non-30-min-aligned times (minute-start epic 2026-06-11)', () => {
+    // Был 30-min whitelist; теперь любая HH:MM в business hours.
     const r = expandRecurrence({
       startDate: '2026-09-01',
       endDate: '2026-09-01',
@@ -44,11 +45,8 @@ describe('expandRecurrence', () => {
       times: ['12:15', '12:30', '12:45'],
       durationMinutes: 60,
     })
-    expect(r.slots).toHaveLength(1) // only 12:30
-    expect(r.skipped.map((s) => s.reason)).toEqual([
-      'not_30min_aligned',
-      'not_30min_aligned',
-    ])
+    expect(r.slots).toHaveLength(3)
+    expect(r.skipped).toHaveLength(0)
   })
 
   it('day-of-week filter — only matching weekdays in range', () => {

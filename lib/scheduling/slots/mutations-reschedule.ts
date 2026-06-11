@@ -69,9 +69,7 @@ export async function rescheduleSlotByLearner(
   if (mskHour < MSK_BUSINESS_HOUR_MIN || mskHour >= MSK_BUSINESS_HOUR_MAX) {
     return { ok: false, reason: 'start_out_of_band' }
   }
-  if ((mskHour * 60) % SLOT_GRID_MINUTES !== 0) {
-    return { ok: false, reason: 'start_not_30min_aligned' }
-  }
+  // minute-start epic (2026-06-11): 30-min grid check dropped.
 
   const { restorePackageConsumption, consumePackageUnit } = await import(
     '@/lib/billing/consumption'

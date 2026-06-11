@@ -45,10 +45,14 @@ export function validateSlotStartMsk(
       message: `Slot start must be ${String(MSK_BUSINESS_HOUR_MIN).padStart(2, '0')}:00–${String(MSK_BUSINESS_HOUR_MAX).padStart(2, '0')}:00 MSK.`,
     }
   }
-  if ((minute !== 0 && minute !== SLOT_GRID_MINUTES) || second !== 0) {
+  // minute-start epic (2026-06-11): был 30-min grid check; теперь
+  // разрешена любая минута, только seconds=0 (sanity invariant —
+  // совпадает с migration 0125).
+  void minute
+  if (second !== 0) {
     return {
       code: 'slot/start_not_30min_aligned',
-      message: `Slot start must be on a ${SLOT_GRID_MINUTES}-min boundary in MSK.`,
+      message: 'Slot start must have zero seconds.',
     }
   }
   return null
