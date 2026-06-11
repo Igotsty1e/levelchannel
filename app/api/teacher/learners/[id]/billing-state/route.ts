@@ -27,7 +27,7 @@ import {
 import { NO_STORE } from '@/lib/api/http-headers'
 import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import { getPaymentMethodForPair } from '@/lib/billing/learner-payment-method'
-import { listLearnerPackagesByTeacher } from '@/lib/billing/packages/purchases'
+import { listLearnerPackagesByTeacher } from '@/lib/billing/packages'
 import { getDbPool } from '@/lib/db/pool'
 
 export const runtime = 'nodejs'
