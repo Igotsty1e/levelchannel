@@ -13,6 +13,14 @@ import type { CalendarSlotMode } from '@/lib/scheduling/slot-mode'
 import type { PaintSpan, MoveTarget } from '@/lib/calendar/drag-state'
 import type { CalendarRow } from '@/lib/calendar/view-model'
 
+function pluralLessons(n: number): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return 'занятие'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'занятия'
+  return 'занятий'
+}
+
 // Wave C — teacher self-create surface. Mounts <SlotCalendar /> with
 // drag interactions wired to /api/teacher/slots/* endpoints. Click on
 // an existing slot opens TeacherSlotDetailModal which can cancel
@@ -171,7 +179,7 @@ export default function TeacherCalendarClient({
         >
           + Назначить ученику
         </button>
-        {/* epic-b Sub-PR B.3 (2026-06-11) — bulk назначения сразу N
+        {/* epic-b Sub-PR B.3 (2026-06-11) — bulk назначения серии
             занятий конкретному ученику. */}
         <button
           type="button"
@@ -187,7 +195,7 @@ export default function TeacherCalendarClient({
             fontWeight: 600,
           }}
         >
-          + Назначить N
+          + Серия занятий
         </button>
         {/* teacher-no-slots-mode (Задача 2.1): открытые слоты убираем
             из UI, если учитель выбрал режим direct_assign. Сам ход
@@ -290,10 +298,11 @@ export default function TeacherCalendarClient({
         onClose={() => setCreateMode('closed')}
         onSwitchToSingle={() => setCreateMode('assign')}
         onCreated={(info) => {
+          const word = pluralLessons(info.createdCount)
           showToast(
             info.emailSkipped
-              ? `Назначено ${info.createdCount} занятий. Часть писем перенесена в дайджест (anti-spam).`
-              : `Назначено ${info.createdCount} занятий, ученик получит письма.`,
+              ? `Назначено ${info.createdCount} ${word}. Часть писем перенесена в дайджест (anti-spam).`
+              : `Назначено ${info.createdCount} ${word}, ученик получит письма.`,
           )
           bumpReload()
           router.refresh()

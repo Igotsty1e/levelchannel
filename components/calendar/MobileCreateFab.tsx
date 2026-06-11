@@ -35,7 +35,7 @@ const MODE_OPTIONS_OPEN_SLOTS = [
   { value: 'single', label: 'Один слот' },
   { value: 'bulk', label: 'Несколько' },
   { value: 'assign', label: 'Назначить' },
-  { value: 'bulk_assign', label: 'Назначить N' },
+  { value: 'bulk_assign', label: 'Серия' },
 ] as const
 
 // teacher-no-slots-mode (Задача 2.1, 2026-06-11): когда учитель в
@@ -43,7 +43,7 @@ const MODE_OPTIONS_OPEN_SLOTS = [
 // ученику» (single / bulk).
 const MODE_OPTIONS_DIRECT_ASSIGN = [
   { value: 'assign', label: 'Назначить' },
-  { value: 'bulk_assign', label: 'Назначить N' },
+  { value: 'bulk_assign', label: 'Серия' },
 ] as const
 
 function isoLocalToUtcIso(dateYmd: string, hhmm: string, ianaTz: string): string | null {
