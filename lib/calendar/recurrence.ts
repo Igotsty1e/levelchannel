@@ -104,7 +104,11 @@ function mskDayOfWeek(dateMs: number): DayOfWeek {
 
 export const MAX_RECURRENCE_SPAN_DAYS = 90
 export const MAX_EXPANDED_SLOTS = 200
-export const ALLOWED_DURATIONS = [30, 45, 50, 60, 75, 90, 120] as const
+// 2026-06-11 (minute-duration epic): был whitelist [30, 45, 50, 60, 75,
+// 90, 120]. Owner ask — минутная точность. Range matches backend
+// `validateSlotInput` (slot duration [15..180]).
+export const RECURRENCE_DURATION_MIN = 15
+export const RECURRENCE_DURATION_MAX = 180
 
 export function expandRecurrence(input: RecurrenceInput): ExpandResult {
   const startMs = parseUtcMidnightMs(input.startDate)
@@ -120,9 +124,9 @@ export function expandRecurrence(input: RecurrenceInput): ExpandResult {
     throw new RecurrenceInputError('times', 'empty')
   }
   if (
-    !ALLOWED_DURATIONS.includes(
-      input.durationMinutes as (typeof ALLOWED_DURATIONS)[number],
-    )
+    !Number.isInteger(input.durationMinutes)
+    || input.durationMinutes < RECURRENCE_DURATION_MIN
+    || input.durationMinutes > RECURRENCE_DURATION_MAX
   ) {
     throw new RecurrenceInputError('durationMinutes', 'not_allowed')
   }

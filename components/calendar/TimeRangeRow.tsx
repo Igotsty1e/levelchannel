@@ -11,10 +11,13 @@ import { TimePickerButton } from './TimePickerButton'
 // `assertTariffDurationMatches`, which assumes one duration per
 // bulk-create batch).
 //
-// New duration is snapped to the ALLOWED whitelist (matches
-// `lib/calendar/recurrence.ts`).
+// 2026-06-11 (minute-duration epic): snap-to-allowed whitelist убран.
+// «До» теперь поддерживает минутную точность (input type="time"
+// step="60"). Длительность = (toMin - fromMin), wrap +24h если < 0.
+// Backend `validateSlotInput` гейтит [15..180] минут.
 
-const ALLOWED_DURATIONS_MIN = [30, 45, 50, 60, 75, 90, 120] as const
+const DURATION_MIN = 15
+const DURATION_MAX = 180
 
 function hhmmToMin(hhmm: string): number {
   const [h, m] = hhmm.split(':').map(Number)
@@ -28,12 +31,11 @@ function minToHhmm(min: number): string {
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
 }
 
-function snapToAllowedDuration(minutes: number): number {
-  if (minutes <= ALLOWED_DURATIONS_MIN[0]) return ALLOWED_DURATIONS_MIN[0]
-  for (const d of ALLOWED_DURATIONS_MIN) {
-    if (d >= minutes) return d
-  }
-  return ALLOWED_DURATIONS_MIN[ALLOWED_DURATIONS_MIN.length - 1]
+function clampDuration(minutes: number): number {
+  if (!Number.isFinite(minutes)) return DURATION_MIN
+  if (minutes < DURATION_MIN) return DURATION_MIN
+  if (minutes > DURATION_MAX) return DURATION_MAX
+  return Math.round(minutes)
 }
 
 export type TimeRangeRowProps = {
@@ -60,7 +62,7 @@ export function TimeRangeRow({
     const nextToMin = hhmmToMin(nextTo)
     let nextDuration = nextToMin - fromMin
     if (nextDuration <= 0) nextDuration += 24 * 60
-    onDurationChange(snapToAllowedDuration(nextDuration))
+    onDurationChange(clampDuration(nextDuration))
   }
 
   return (
@@ -76,7 +78,45 @@ export function TimeRangeRow({
       <span aria-hidden="true" style={{ color: 'var(--secondary)', fontSize: 14 }}>
         →
       </span>
-      <TimePickerButton label="До" value={to} onSelect={handleToChange} />
+      {/* «До» — нативный HTML5 time input со step=60 (1 минута). Позволяет
+          минутную точность вместо chip-presets [30/45/50/60/75/90/120].
+          «От» остаётся 30-min picker (start_at DB CHECK requires :00 / :30). */}
+      <label
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          fontSize: 13,
+          color: 'var(--text)',
+          background: 'var(--surface-2)',
+          border: '1px solid var(--border)',
+          borderRadius: 6,
+          padding: '4px 8px',
+          cursor: 'pointer',
+        }}
+      >
+        <span aria-hidden="true" style={{ color: 'var(--secondary)', fontSize: 12 }}>
+          До
+        </span>
+        <input
+          type="time"
+          step={60}
+          value={to}
+          onChange={(e) => handleToChange(e.target.value)}
+          aria-label="До (время окончания)"
+          style={{
+            background: 'transparent',
+            color: 'var(--text)',
+            border: 'none',
+            outline: 'none',
+            fontSize: 14,
+            fontWeight: 600,
+            fontVariantNumeric: 'tabular-nums',
+            width: 70,
+            padding: 0,
+          }}
+        />
+      </label>
       <span
         style={{
           fontSize: 12,
