@@ -66,8 +66,8 @@ async function seedTariff(
   const slug = opts.slug ?? `slug-${Math.random().toString(36).slice(2, 10)}`
   const amount = opts.amountKopecks ?? 200000
   const r = await getDbPool().query<{ id: string }>(
-    `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes, is_active, teacher_id, visibility)
-       values ($1, 'Test', $2, $3, true, $4, 'public')
+    `insert into pricing_tariffs (slug, title_ru, amount_kopecks, duration_minutes, is_active, teacher_id)
+       values ($1, 'Test', $2, $3, true, $4)
      returning id`,
     [slug, amount, durationMinutes, teacherId],
   )
