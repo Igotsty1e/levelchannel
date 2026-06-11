@@ -1,11 +1,16 @@
 ---
 title: minute-start epic — drop 30-min grid в start_at + design-system date/time pickers
-status: PLAN
+status: SHIPPED
 date: 2026-06-11
 scope: 4-sub-PR epic (DB+backend gate removal → DS pickers → Grid pixel-precise → bulk+reschedule)
 owner: ivankhanaev
 author: claude
 context_clean: no live users — migrations clean drop, no backfill
+shipped:
+  - 2026-06-11 — A.1 PR #610 (drop 30-min grid invariant + mig 0125)
+  - 2026-06-11 — A.2 PR #614 (DS DatePicker + TimePicker primitives)
+  - 2026-06-11 — A.3 PR #615 (DS pickers in remaining modals, epic-close)
+codex_paranoia: self-review fallback applied (codex quota exhausted until 2026-06-11+)
 ---
 
 # minute-start epic (2026-06-11)
