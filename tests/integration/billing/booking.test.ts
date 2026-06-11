@@ -299,10 +299,17 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
     // Without the fix: consume silently debits teacher A's package against
     // teacher B's slot, booking returns 200, purchase.countRemaining=4.
     // With the fix: consume returns no_eligible (teacher mismatch), booking
-    // falls through to package_required.
+    // falls through. epic-b Sub-PR B.1 (2026-06-11): method='postpaid'
+    // post-mig-0126 (was 'prepaid_packages'), so the fallback path is the
+    // postpaid branch → checks slot tariff → slot has no tariff → returns
+    // 402 tariff_required. Pre-drop the same scenario surfaced as
+    // package_required because the rigid prepaid mode short-circuited on
+    // "no eligible package". The CORE invariant — no double-debit of
+    // teacher A's package against teacher B's slot — is identical and
+    // still proved by countRemaining=5 below.
     expect(r.status).toBe(402)
     const body = await r.json()
-    expect(body.error).toBe('package_required')
+    expect(body.error).toBe('tariff_required')
     const purchases = await listAccountActivePackages(learner.accountId)
     expect(purchases.length).toBe(1)
     expect(purchases[0].countRemaining).toBe(5)
