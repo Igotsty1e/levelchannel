@@ -12,8 +12,15 @@ import {
 
 const MODE_OPTIONS = [
   { value: 'single', label: 'Одно занятие' },
-  { value: 'bulk', label: 'Серия' },
+  { value: 'series', label: 'Серия' },
 ] as const
+
+const labelStyle = {
+  display: 'block',
+  fontSize: '13px',
+  color: 'var(--text-secondary)',
+  marginBottom: '6px',
+} as const
 
 // teacher-direct-assign (Задача 2.2, Sub-PR B, 2026-06-11).
 //
@@ -141,23 +148,57 @@ const REASON_COPY: Record<string, string> = {
     'Подходящего пакета нет (другая длительность, закончились занятия или истёк). Выберите счёт.',
 }
 
+// Russian plural — занятие/занятия/занятий.
+function pluralLessons(n: number): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return 'занятие'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'занятия'
+  return 'занятий'
+}
+
+function ymdPlus(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+const DAYS_OF_WEEK: Array<{
+  value: 0 | 1 | 2 | 3 | 4 | 5 | 6
+  label: string
+}> = [
+  { value: 1, label: 'Пн' },
+  { value: 2, label: 'Вт' },
+  { value: 3, label: 'Ср' },
+  { value: 4, label: 'Чт' },
+  { value: 5, label: 'Пт' },
+  { value: 6, label: 'Сб' },
+  { value: 0, label: 'Вс' },
+]
+
+type PreviewResponse = {
+  willCreate: Array<{ startUtcIso: string; durationMinutes: number }>
+  skippedReasons: Array<{ startUtcIso: string; reason: string }>
+  conflicts: Array<{ startUtcIso: string }>
+  truncatedAt200?: boolean
+}
+
 export function AssignDirectModal({
   tariffs,
   teacherTz = 'Europe/Moscow',
   open,
   onClose,
   onCreated,
-  onSwitchToBulk,
+  onCreatedSeries,
 }: {
   tariffs: ReadonlyArray<AssignTariffOption>
   teacherTz?: string
   open: boolean
   onClose: () => void
   onCreated?: (info: { emailSkipped: boolean }) => void
-  /** epic-b polish (2026-06-11): user-flip to «Серия» mode → parent
-   * closes this и открывает BulkAssignDirectModal. Симметрично
-   * onSwitchToSingle в bulk-модалке. */
-  onSwitchToBulk?: () => void
+  /** 2026-06-12 unified modal: series submit callback. Includes
+   * created count for the toast plural. */
+  onCreatedSeries?: (info: { createdCount: number; emailSkipped: boolean }) => void
 }) {
   const [learners, setLearners] = useState<LearnerListResponse['items']>([])
   const [learnersLoading, setLearnersLoading] = useState(false)
@@ -169,6 +210,14 @@ export function AssignDirectModal({
   )
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // 2026-06-12: unified single+series modal. mode='series' разворачивает
+  // recurrence-поля inline вместо открытия отдельной модалки.
+  const [mode, setMode] = useState<'single' | 'series'>('single')
+  const [endDate, setEndDate] = useState(() => ymdPlus(28))
+  const [daysOfWeek, setDaysOfWeek] = useState<Set<number>>(new Set([2, 4]))
+  const [times, setTimes] = useState<string[]>(['18:00'])
+  const [preview, setPreview] = useState<PreviewResponse | null>(null)
+  const [previewing, setPreviewing] = useState(false)
   // epic-b Sub-PR B.2 (2026-06-11): payment-choice state.
   const [billingState, setBillingState] = useState<BillingStateResponse | null>(
     null,
@@ -213,8 +262,15 @@ export function AssignDirectModal({
       setBillingState(null)
       setPackagePurchaseId(null)
       setBillingChoice('postpaid')
+      setMode('single')
+      setPreview(null)
     }
   }, [open])
+
+  // Invalidate preview when any input affecting expansion changes.
+  useEffect(() => {
+    setPreview(null)
+  }, [mode, learnerId, date, endDate, daysOfWeek, times, tariffId])
 
   // epic-b Sub-PR B.2 (2026-06-11): fetch per-pair billing state when
   // learner changes. Drives the payment-choice radio (package vs
@@ -314,6 +370,56 @@ export function AssignDirectModal({
     [matchingPackages],
   )
 
+  function toggleDay(v: number) {
+    const next = new Set(daysOfWeek)
+    if (next.has(v)) next.delete(v)
+    else next.add(v)
+    setDaysOfWeek(next)
+  }
+
+  function updateTime(idx: number, value: string) {
+    setTimes(times.map((t, i) => (i === idx ? value : t)))
+  }
+  function removeTime(idx: number) {
+    setTimes(times.filter((_, i) => i !== idx))
+  }
+  function addTime() {
+    setTimes([...times, '18:00'])
+  }
+
+  async function runPreview() {
+    if (!learnerId) {
+      setError('Выберите ученика.')
+      return
+    }
+    setPreviewing(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/teacher/slots/preview-bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          startDate: date,
+          endDate,
+          daysOfWeek: Array.from(daysOfWeek),
+          times,
+          durationMinutes,
+        }),
+      })
+      const body = (await res.json()) as PreviewResponse & { error?: string }
+      if (!res.ok) {
+        setError(body.error ?? `Не удалось посчитать (HTTP ${res.status})`)
+        setPreview(null)
+        return
+      }
+      setPreview(body)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Сеть недоступна')
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!learnerId) {
@@ -324,6 +430,52 @@ export function AssignDirectModal({
       setError('Выберите тариф.')
       return
     }
+
+    if (mode === 'series') {
+      // Series path requires a fresh preview before submit. Force user to
+      // see what's going to be created.
+      if (!preview || preview.willCreate.length === 0) {
+        setError('Сначала нажмите «Предпросмотр».')
+        return
+      }
+      if (preview.willCreate.length > 50) {
+        setError('Слишком много занятий (максимум 50). Уменьшите диапазон.')
+        return
+      }
+      setSubmitting(true)
+      setError(null)
+      try {
+        const res = await fetch('/api/teacher/slots/bulk-assign-direct', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            learnerAccountId: learnerId,
+            durationMinutes,
+            tariffId,
+            billingChoice,
+            slots: preview.willCreate.map((s) => ({ startAt: s.startUtcIso })),
+          }),
+        })
+        const body = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          const code = String(body?.error ?? '')
+          setError(REASON_COPY[code] ?? `Не удалось назначить (HTTP ${res.status}).`)
+          setSubmitting(false)
+          return
+        }
+        onCreatedSeries?.({
+          createdCount: Array.isArray(body?.created) ? body.created.length : 0,
+          emailSkipped: Boolean(body?.emailSkipped),
+        })
+        onClose()
+      } catch (err) {
+        setError(`Сеть недоступна: ${err instanceof Error ? err.message : String(err)}`)
+        setSubmitting(false)
+      }
+      return
+    }
+
+    // single mode
     const startAtIso = isoLocalToUtcIso(date, from, teacherTz)
     if (!startAtIso) {
       setError('Не удалось вычислить время.')
@@ -340,7 +492,6 @@ export function AssignDirectModal({
           startAt: startAtIso,
           durationMinutes,
           tariffId,
-          // epic-b Sub-PR B.2 (2026-06-11): explicit billing choice.
           billingChoice,
           ...(billingChoice === 'package' && packagePurchaseId
             ? { packagePurchaseId }
@@ -400,7 +551,7 @@ export function AssignDirectModal({
       >
         <header style={{ marginBottom: '12px' }}>
           <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 600 }}>
-            Назначить занятие
+            {mode === 'series' ? 'Серия занятий' : 'Назначить занятие'}
           </h2>
           <p
             style={{
@@ -409,22 +560,22 @@ export function AssignDirectModal({
               color: 'var(--text-secondary)',
             }}
           >
-            Время фиксируется сразу как занятое; ученик получит письмо.
+            {mode === 'series'
+              ? 'Регулярные занятия одному ученику. Каждое — отдельный booked-слот.'
+              : 'Время фиксируется сразу как занятое; ученик получит письмо.'}
           </p>
         </header>
 
-        {onSwitchToBulk ? (
-          <div style={{ marginBottom: 12 }}>
-            <ChipGroup
-              name="assign-mode"
-              value="single"
-              options={MODE_OPTIONS}
-              onChange={(next) => {
-                if (next === 'bulk') onSwitchToBulk()
-              }}
-            />
-          </div>
-        ) : null}
+        <div style={{ marginBottom: 12 }}>
+          <ChipGroup
+            name="assign-mode"
+            value={mode}
+            options={MODE_OPTIONS}
+            onChange={(next) => {
+              if (next === 'single' || next === 'series') setMode(next)
+            }}
+          />
+        </div>
 
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: '12px' }}>
@@ -452,64 +603,186 @@ export function AssignDirectModal({
             />
           </div>
 
-          <div style={{ marginBottom: '12px' }}>
-            <label
-              htmlFor="assign-direct-date"
-              style={{
-                display: 'block',
-                fontSize: '13px',
-                color: 'var(--text-secondary)',
-                marginBottom: '6px',
-              }}
-            >
-              Дата
-            </label>
-            <DatePicker
-              value={date}
-              onChange={setDate}
-              min={todayYmd()}
-              disabled={submitting}
-              ariaLabel="Дата занятия"
-            />
-          </div>
+          {mode === 'single' ? (
+            <>
+              <div style={{ marginBottom: '12px' }}>
+                <label style={labelStyle}>Дата</label>
+                <DatePicker
+                  value={date}
+                  onChange={setDate}
+                  min={todayYmd()}
+                  disabled={submitting}
+                  ariaLabel="Дата занятия"
+                />
+              </div>
 
-          <div style={{ marginBottom: '12px' }}>
-            <label
-              style={{
-                display: 'block',
-                fontSize: '13px',
-                color: 'var(--text-secondary)',
-                marginBottom: '6px',
-              }}
-            >
-              Время начала
-            </label>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-              }}
-            >
-              <TimePicker
-                value={from}
-                onChange={setFrom}
-                hourMin={6}
-                hourMax={21}
-                granularity={1}
-                disabled={submitting}
-                ariaLabel="Время начала"
-              />
-              <span
+              <div style={{ marginBottom: '12px' }}>
+                <label style={labelStyle}>Время начала</label>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <TimePicker
+                    value={from}
+                    onChange={setFrom}
+                    hourMin={6}
+                    hourMax={21}
+                    granularity={1}
+                    disabled={submitting}
+                    ariaLabel="Время начала"
+                  />
+                  <span
+                    style={{
+                      fontSize: '13px',
+                      color: 'var(--text-secondary)',
+                    }}
+                  >
+                    {durationMinutes}&nbsp;мин (из тарифа)
+                  </span>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* series mode — диапазон дат + дни недели + времена */}
+              <div
                 style={{
-                  fontSize: '13px',
-                  color: 'var(--text-secondary)',
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: 12,
+                  marginBottom: 12,
                 }}
               >
-                {durationMinutes}&nbsp;мин (из тарифа)
-              </span>
-            </div>
-          </div>
+                <div>
+                  <label style={labelStyle}>Дата начала</label>
+                  <DatePicker
+                    value={date}
+                    onChange={setDate}
+                    min={todayYmd()}
+                    disabled={submitting}
+                    ariaLabel="Дата начала"
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Дата окончания</label>
+                  <DatePicker
+                    value={endDate}
+                    onChange={setEndDate}
+                    min={date}
+                    max={ymdPlus(90)}
+                    disabled={submitting}
+                    ariaLabel="Дата окончания"
+                  />
+                </div>
+              </div>
+
+              <fieldset style={{ border: 'none', padding: 0, margin: '0 0 12px' }}>
+                <legend style={{ ...labelStyle, marginBottom: 6 }}>
+                  Дни недели
+                </legend>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {DAYS_OF_WEEK.map((d) => {
+                    const active = daysOfWeek.has(d.value)
+                    return (
+                      <button
+                        key={d.value}
+                        type="button"
+                        onClick={() => toggleDay(d.value)}
+                        disabled={submitting}
+                        aria-pressed={active}
+                        style={{
+                          minWidth: 44,
+                          minHeight: 36,
+                          padding: '6px 10px',
+                          borderRadius: 8,
+                          border: active
+                            ? '1px solid var(--accent)'
+                            : '1px solid var(--border)',
+                          background: active ? 'var(--accent)' : 'transparent',
+                          color: active ? 'var(--text-on-accent)' : 'var(--text)',
+                          fontSize: 14,
+                          fontWeight: 500,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {d.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </fieldset>
+
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>
+                  Время начала ({durationMinutes}&nbsp;мин из тарифа)
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {times.map((t, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <TimePicker
+                        value={t}
+                        onChange={(next) => updateTime(idx, next)}
+                        hourMin={6}
+                        hourMax={21}
+                        granularity={1}
+                        disabled={submitting}
+                        ariaLabel={`Время начала ${idx + 1}`}
+                      />
+                      {times.length > 1 ? (
+                        <button
+                          type="button"
+                          onClick={() => removeTime(idx)}
+                          aria-label="Удалить интервал"
+                          disabled={submitting}
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 6,
+                            border: '1px solid var(--border)',
+                            background: 'transparent',
+                            color: 'var(--text-secondary)',
+                            fontSize: 18,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          ×
+                        </button>
+                      ) : null}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={addTime}
+                    disabled={submitting}
+                    style={{
+                      border: '1px dashed var(--border)',
+                      background: 'transparent',
+                      color: 'var(--text-secondary)',
+                      borderRadius: 6,
+                      padding: '6px 10px',
+                      cursor: 'pointer',
+                      fontSize: 13,
+                      alignSelf: 'flex-start',
+                    }}
+                  >
+                    + Ещё интервал
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
 
           <div style={{ marginBottom: '12px' }}>
             <label
@@ -717,6 +990,85 @@ export function AssignDirectModal({
             </div>
           ) : null}
 
+          {mode === 'series' ? (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={runPreview}
+                  disabled={previewing || submitting || !learnerId}
+                  style={{
+                    padding: '10px 16px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border)',
+                    background: 'transparent',
+                    color: 'var(--text)',
+                    cursor:
+                      previewing || submitting || !learnerId
+                        ? 'not-allowed'
+                        : 'pointer',
+                    fontSize: 14,
+                    fontWeight: 600,
+                  }}
+                >
+                  {previewing ? 'Считаем…' : 'Предпросмотр'}
+                </button>
+              </div>
+              {preview ? (
+                <div
+                  role="status"
+                  style={{
+                    marginTop: 12,
+                    padding: 12,
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    fontSize: 13,
+                  }}
+                >
+                  <div style={{ marginBottom: 6 }}>
+                    Будет назначено:{' '}
+                    <strong>
+                      {preview.willCreate.length}&nbsp;
+                      {pluralLessons(preview.willCreate.length)}
+                    </strong>
+                  </div>
+                  {preview.conflicts.length > 0 ? (
+                    <div
+                      style={{
+                        color: 'var(--warning, #f5c26b)',
+                        marginBottom: 6,
+                      }}
+                    >
+                      Пропущено по конфликтам: {preview.conflicts.length}
+                    </div>
+                  ) : null}
+                  {preview.skippedReasons.length > 0 ? (
+                    <div style={{ color: 'var(--text-secondary)', marginBottom: 6 }}>
+                      Вне рабочих часов: {preview.skippedReasons.length}
+                    </div>
+                  ) : null}
+                  {preview.willCreate.length > 50 ? (
+                    <div style={{ color: 'var(--danger)' }}>
+                      Слишком много (макс 50). Уменьшите диапазон.
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <p
+                  style={{
+                    marginTop: 8,
+                    fontSize: 12,
+                    color: 'var(--text-secondary)',
+                  }}
+                >
+                  Нажмите «Предпросмотр», чтобы увидеть, какие занятия
+                  будут созданы.
+                </p>
+              )}
+            </div>
+          ) : null}
+
           <div
             style={{
               display: 'flex',
@@ -743,7 +1095,13 @@ export function AssignDirectModal({
             </button>
             <button
               type="submit"
-              disabled={submitting || !learnerId || !tariffId}
+              disabled={
+                submitting
+                || !learnerId
+                || !tariffId
+                || (mode === 'series'
+                  && (!preview || preview.willCreate.length === 0))
+              }
               style={{
                 padding: '10px 16px',
                 background: 'var(--accent)',
@@ -759,7 +1117,11 @@ export function AssignDirectModal({
                 opacity: submitting || !learnerId || !tariffId ? 0.6 : 1,
               }}
             >
-              {submitting ? 'Создаём…' : 'Назначить'}
+              {submitting
+                ? 'Создаём…'
+                : mode === 'series' && preview
+                  ? `Назначить ${preview.willCreate.length}\u00A0${pluralLessons(preview.willCreate.length)}`
+                  : 'Назначить'}
             </button>
           </div>
         </form>

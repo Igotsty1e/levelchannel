@@ -269,7 +269,6 @@ function NumberCell({
   return (
     <div
       style={{
-        position: 'relative',
         display: 'inline-flex',
         flexDirection: 'column',
         alignItems: 'stretch',
@@ -281,7 +280,7 @@ function NumberCell({
         aria-label={`${ariaLabel} +${step}`}
         onClick={() => bump(step)}
         disabled={disabled}
-        style={chevronStyle(focused, 'up')}
+        style={chevronStyle(focused)}
       >
         <span aria-hidden="true">▲</span>
       </button>
@@ -348,7 +347,7 @@ function NumberCell({
         aria-label={`${ariaLabel} -${step}`}
         onClick={() => bump(-step)}
         disabled={disabled}
-        style={chevronStyle(focused, 'down')}
+        style={chevronStyle(focused)}
       >
         <span aria-hidden="true">▼</span>
       </button>
@@ -356,25 +355,20 @@ function NumberCell({
   )
 }
 
-function chevronStyle(
-  focused: boolean,
-  dir: 'up' | 'down',
-): React.CSSProperties {
+function chevronStyle(focused: boolean): React.CSSProperties {
+  // In-flow flex child — no absolute positioning, so the chevrons
+  // занимают свою высоту и не залазят на соседние labels.
   return {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    [dir === 'up' ? 'top' : 'bottom']: -18,
-    height: 18,
+    width: '100%',
+    height: 20,
     border: 'none',
     background: 'transparent',
     color: focused ? 'var(--accent)' : 'var(--secondary)',
     fontSize: 10,
-    lineHeight: '18px',
+    lineHeight: '20px',
     cursor: 'pointer',
-    opacity: focused ? 1 : 0.4,
+    opacity: focused ? 1 : 0.5,
     transition: 'opacity 120ms, color 120ms',
-    pointerEvents: focused ? 'auto' : 'auto',
     padding: 0,
   }
 }

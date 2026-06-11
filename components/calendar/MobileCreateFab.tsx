@@ -29,11 +29,11 @@ export type TariffOption = {
   durationMinutes?: number
 }
 
-// teacher-direct-assign (Задача 2.2, Sub-PR B, 2026-06-11) — добавили
-// третий режим 'assign' для прямого назначения занятия ученику.
-// epic-b Sub-PR B.3 (2026-06-11, epic-close) — четвёртый режим
-// 'bulk_assign' для назначения сразу N занятий одному ученику.
-export type CreateMode = 'closed' | 'single' | 'bulk' | 'assign' | 'bulk_assign'
+// teacher-direct-assign (Задача 2.2, Sub-PR B, 2026-06-11) — режим
+// 'assign' для прямого назначения занятия ученику. 2026-06-12 polish:
+// single + series теперь живут внутри одной модалки (AssignDirectModal),
+// отдельный `bulk_assign` мод убран.
+export type CreateMode = 'closed' | 'single' | 'bulk' | 'assign'
 
 const BULK_PREF_KEY = 'lc_calendar_create_bulk_mode'
 
@@ -233,7 +233,7 @@ export function MobileCreateFab({
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="Новое занятие"
+          aria-label="Новый слот"
           style={overlayStyle}
           onClick={busy ? undefined : () => onModeChange('closed')}
         >
@@ -244,7 +244,7 @@ export function MobileCreateFab({
           >
             <header style={headerStyle}>
               <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>
-                Новое занятие
+                Новый слот
               </h2>
               <button
                 type="button"

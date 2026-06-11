@@ -5,7 +5,6 @@ import { useState } from 'react'
 
 import { AssignDirectModal } from '@/components/calendar/AssignDirectModal'
 import { BulkAddSlotsModal } from '@/components/calendar/BulkAddSlotsModal'
-import { BulkAssignDirectModal } from '@/components/calendar/BulkAssignDirectModal'
 import { MobileCreateFab, type CreateMode } from '@/components/calendar/MobileCreateFab'
 import { PaintConfirmModal } from '@/components/calendar/PaintConfirmModal'
 import { SlotCalendar } from '@/components/calendar/SlotCalendar'
@@ -267,7 +266,6 @@ export default function TeacherCalendarClient({
       <AssignDirectModal
         open={createMode === 'assign'}
         onClose={() => setCreateMode('closed')}
-        onSwitchToBulk={() => setCreateMode('bulk_assign')}
         onCreated={(info) => {
           showToast(
             info.emailSkipped
@@ -277,13 +275,7 @@ export default function TeacherCalendarClient({
           bumpReload()
           router.refresh()
         }}
-        tariffs={tariffs}
-      />
-      <BulkAssignDirectModal
-        open={createMode === 'bulk_assign'}
-        onClose={() => setCreateMode('closed')}
-        onSwitchToSingle={() => setCreateMode('assign')}
-        onCreated={(info) => {
+        onCreatedSeries={(info) => {
           const word = pluralLessons(info.createdCount)
           showToast(
             info.emailSkipped
