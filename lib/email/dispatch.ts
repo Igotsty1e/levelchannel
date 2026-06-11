@@ -5,6 +5,10 @@ import {
 } from '@/lib/email/sbp-claim-template'
 import { renderAlreadyRegisteredEmail } from '@/lib/email/templates/already-registered'
 import {
+  renderLearnerDirectAssignDigestEmail,
+  type LearnerDirectAssignDigestParams,
+} from '@/lib/email/templates/learner-direct-assign-digest'
+import {
   renderLearnerDirectAssignNoticeEmail,
   type LearnerDirectAssignNoticeParams,
 } from '@/lib/email/templates/learner-direct-assign-notice'
@@ -187,6 +191,23 @@ export async function sendLearnerDirectAssignNoticeEmail(
   },
 ) {
   const tpl = renderLearnerDirectAssignNoticeEmail({
+    ...params,
+    cabinetUrl: params.cabinetUrl ?? `${paymentConfig.siteUrl}/cabinet`,
+  })
+  return sendEmail({ to, subject: tpl.subject, html: tpl.html, text: tpl.text })
+}
+
+// teacher-no-slots-mode (Задача 2.1, Sub-PR C, 2026-06-11).
+// Batched notification — собирает все занятия, назначенные учителем за
+// последний час, в одно письмо. Cron `learner-direct-assign-digest.mjs`
+// собирает pending rows и вызывает this.
+export async function sendLearnerDirectAssignDigestEmail(
+  to: string,
+  params: Omit<LearnerDirectAssignDigestParams, 'cabinetUrl'> & {
+    cabinetUrl?: string
+  },
+) {
+  const tpl = renderLearnerDirectAssignDigestEmail({
     ...params,
     cabinetUrl: params.cabinetUrl ?? `${paymentConfig.siteUrl}/cabinet`,
   })

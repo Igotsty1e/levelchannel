@@ -105,8 +105,9 @@ export async function POST(request: Request) {
   }
 
   // Email notification — anti-spam: per-learner rate-limit (5/hour).
-  // On limit-hit we don't fail the request; slot уже создан. UI получает
-  // emailSkipped=true и может показать operator-friendly hint.
+  // On limit-hit we mark the slot notify_pending=true; the hourly
+  // digest cron groups pending rows per learner and sends one batched
+  // email. UI получает emailSkipped=true (digest is pending, not lost).
   let emailSkipped = false
   const emailRl = await enforceRateLimit(
     request,
@@ -116,6 +117,17 @@ export async function POST(request: Request) {
   )
   if (emailRl) {
     emailSkipped = true
+    // teacher-no-slots-mode Sub-PR C — mark for digest cron.
+    try {
+      const { getDbPool } = await import('@/lib/db/pool')
+      await getDbPool().query(
+        `update lesson_slots set notify_pending = true where id = $1`,
+        [result.slot.id],
+      )
+    } catch (_err) {
+      // Best-effort — if marking fails, learner just won't get the
+      // digest entry. Don't fail the response (slot is real).
+    }
   } else {
     // Best-effort fire-and-forget. Resend outage не должна ломать ответ.
     try {
