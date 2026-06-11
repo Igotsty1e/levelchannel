@@ -15,6 +15,13 @@
 /playwright-report/
 /playwright/.cache/
 /tests/e2e/.fixtures.json
+# Playwright MCP session artifacts (screenshots + DOM snapshots).
+# Generated automatically during browser walkthroughs; never tracked.
+/.playwright-mcp/
+
+# Root-level *.png are session-only screenshots from playwright MCP.
+# Subdirectory PNGs (e.g. public/assets/**/*.png) are still tracked.
+/*.png
 
 # production
 /build
