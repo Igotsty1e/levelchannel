@@ -2,7 +2,7 @@
 
 import { CSSProperties, useEffect, useState } from 'react'
 
-import { ChipGroup, FloatingActionButton } from '@/components/ui/primitives'
+import { ChipGroup, DatePicker, FloatingActionButton } from '@/components/ui/primitives'
 import type { CalendarSlotMode } from '@/lib/scheduling/slot-mode'
 
 import { TimeRangeRow } from './TimeRangeRow'
@@ -239,16 +239,15 @@ export function MobileCreateFab({
             </div>
 
             <div style={bodyStyle}>
-              <label style={fieldStyle}>
-                Дата
-                <input
-                  type="date"
+              <div style={fieldStyle}>
+                <span>Дата</span>
+                <DatePicker
                   value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  required
-                  style={inputStyle}
+                  onChange={setDate}
+                  disabled={busy}
+                  ariaLabel="Дата слота"
                 />
-              </label>
+              </div>
 
               <div style={{ ...fieldStyle, marginTop: 12 }}>
                 <span>Интервал (МСК, шаг 30 мин)</span>

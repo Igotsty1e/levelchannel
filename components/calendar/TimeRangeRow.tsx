@@ -1,6 +1,6 @@
 'use client'
 
-import { TimePickerButton } from './TimePickerButton'
+import { TimePicker } from '@/components/ui/primitives'
 
 // «От HH:mm → До HH:mm · N мин» row — drops into both the bulk modal
 // (one row per interval) and the single modal (one row, no remove).
@@ -74,49 +74,28 @@ export function TimeRangeRow({
         flexWrap: 'wrap',
       }}
     >
-      <TimePickerButton label="От" value={from} onSelect={onFromChange} />
+      {/* minute-start epic A.3/A.4 (2026-06-11): «От» теперь DS TimePicker
+          с granularity=1 — start_at тоже минутная точность после drop
+          DB CHECK lesson_slots_start_30min_aligned (Sub-PR A.1). */}
+      <TimePicker
+        value={from}
+        onChange={onFromChange}
+        hourMin={6}
+        hourMax={21}
+        granularity={1}
+        ariaLabel="От (время начала)"
+      />
       <span aria-hidden="true" style={{ color: 'var(--secondary)', fontSize: 14 }}>
         →
       </span>
-      {/* «До» — нативный HTML5 time input со step=60 (1 минута). Позволяет
-          минутную точность вместо chip-presets [30/45/50/60/75/90/120].
-          «От» остаётся 30-min picker (start_at DB CHECK requires :00 / :30). */}
-      <label
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 4,
-          fontSize: 13,
-          color: 'var(--text)',
-          background: 'var(--surface-2)',
-          border: '1px solid var(--border)',
-          borderRadius: 6,
-          padding: '4px 8px',
-          cursor: 'pointer',
-        }}
-      >
-        <span aria-hidden="true" style={{ color: 'var(--secondary)', fontSize: 12 }}>
-          До
-        </span>
-        <input
-          type="time"
-          step={60}
-          value={to}
-          onChange={(e) => handleToChange(e.target.value)}
-          aria-label="До (время окончания)"
-          style={{
-            background: 'transparent',
-            color: 'var(--text)',
-            border: 'none',
-            outline: 'none',
-            fontSize: 14,
-            fontWeight: 600,
-            fontVariantNumeric: 'tabular-nums',
-            width: 70,
-            padding: 0,
-          }}
-        />
-      </label>
+      <TimePicker
+        value={to}
+        onChange={handleToChange}
+        hourMin={6}
+        hourMax={22}
+        granularity={1}
+        ariaLabel="До (время окончания)"
+      />
       <span
         style={{
           fontSize: 12,

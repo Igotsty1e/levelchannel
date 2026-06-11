@@ -2,7 +2,7 @@
 
 import { CSSProperties, FormEvent, useEffect, useMemo, useState } from 'react'
 
-import { ChipGroup } from '@/components/ui/primitives'
+import { ChipGroup, DatePicker } from '@/components/ui/primitives'
 
 import { TimeRangeRow } from './TimeRangeRow'
 
@@ -251,29 +251,25 @@ export function BulkAddSlotsModal({
 
         <form onSubmit={runCreate} style={bodyStyle}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <label style={fieldStyle}>
-              Дата начала
-              <input
-                type="date"
+            <div style={fieldStyle}>
+              <span>Дата начала</span>
+              <DatePicker
                 value={startDate}
+                onChange={setStartDate}
                 min={todayYmd()}
-                onChange={(e) => setStartDate(e.target.value)}
-                required
-                style={inputStyle}
+                ariaLabel="Дата начала"
               />
-            </label>
-            <label style={fieldStyle}>
-              Дата окончания
-              <input
-                type="date"
+            </div>
+            <div style={fieldStyle}>
+              <span>Дата окончания</span>
+              <DatePicker
                 value={endDate}
+                onChange={setEndDate}
                 min={startDate}
                 max={ymdPlus(90)}
-                onChange={(e) => setEndDate(e.target.value)}
-                required
-                style={inputStyle}
+                ariaLabel="Дата окончания"
               />
-            </label>
+            </div>
           </div>
 
           <fieldset style={{ border: 'none', padding: 0, margin: '12px 0 0' }}>
