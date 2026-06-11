@@ -10,6 +10,9 @@
 
 // Types (erasable at runtime)
 export type {
+  AssignSlotDirectBilling,
+  AssignSlotDirectInput,
+  AssignSlotDirectResult,
   BookSlotBilling,
   BookSlotResult,
   BulkCreateInput,
@@ -28,6 +31,7 @@ export type {
   PublicSlot,
   SlotEvent,
   SlotLifecycleStatus,
+  SlotSource,
   SlotStartValidationError,
   SlotStatus,
   SlotValidationError,
@@ -93,6 +97,8 @@ export {
 } from './mutations-cancel'
 
 export { bookSlot } from './booking'
+
+export { assignSlotDirect } from './mutations-assign-direct'
 
 export {
   isValidIanaTz,

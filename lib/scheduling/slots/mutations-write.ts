@@ -127,8 +127,8 @@ export async function createSlot(
   const pool = getDbPool()
   const result = await pool.query(
     `insert into lesson_slots (
-       teacher_account_id, start_at, duration_minutes, notes, tariff_id, events
-     ) values ($1, $2, $3, $4, $5, $6::jsonb)
+       teacher_account_id, start_at, duration_minutes, notes, tariff_id, source, events
+     ) values ($1, $2, $3, $4, $5, 'open_slot', $6::jsonb)
      returning ${SLOT_COLUMNS}`,
     [
       input.teacherAccountId,
@@ -212,8 +212,8 @@ export async function bulkCreateSlots(
           // preserved: a (teacher,start_at) collision with a
           // non-cancelled row is idempotent-skipped.
           `insert into lesson_slots (
-             teacher_account_id, start_at, duration_minutes, notes, tariff_id, events
-           ) values ($1, $2, $3, $4, $5, $6::jsonb)
+             teacher_account_id, start_at, duration_minutes, notes, tariff_id, source, events
+           ) values ($1, $2, $3, $4, $5, 'open_slot', $6::jsonb)
            on conflict do nothing
            returning ${SLOT_COLUMNS}`,
           [
