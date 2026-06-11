@@ -145,10 +145,8 @@ export function expandRecurrence(input: RecurrenceInput): ExpandResult {
     if (spanDays > 0 && !days.has(mskDayOfWeek(dMs))) continue
     for (const mskMinutes of minutesList) {
       const utcIso = mskWallToUtcIso(dMs, mskMinutes)
-      if (!isAligned30(mskMinutes)) {
-        skipped.push({ startUtcIso: utcIso, reason: 'not_30min_aligned' })
-        continue
-      }
+      // minute-start epic (2026-06-11): 30-min alignment check dropped.
+      // Any HH:MM is allowed; business-hours + past-start still enforced.
       if (!withinBusinessHours(mskMinutes)) {
         skipped.push({ startUtcIso: utcIso, reason: 'outside_business_hours' })
         continue

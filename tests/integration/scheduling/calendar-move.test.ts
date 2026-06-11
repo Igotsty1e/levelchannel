@@ -137,7 +137,9 @@ describe('PATCH /api/admin/slots/[id]/move', () => {
     expect((await r.json()).error).toBe('slot/start_out_of_band')
   })
 
-  it('move with non-30-min-aligned newStartAt returns 400 slot/start_not_30min_aligned', async () => {
+  it('move with minute-precision newStartAt succeeds (minute-start epic 2026-06-11)', async () => {
+    // Был 30-min grid check; теперь minute-precision allowed. Test
+    // обновлён: 18:17 MSK теперь валидное время.
     const admin = await registerAndCookie('mv-admin4@example.com', { role: 'admin' })
     const teacher = await registerAndCookie('mv-t4@example.com', { role: 'teacher' })
     const slotId = await createOpenSlot(
@@ -145,8 +147,8 @@ describe('PATCH /api/admin/slots/[id]/move', () => {
       teacher.accountId,
       futureSlotIso(7 * 24 * 60 + 60),
     )
-    // 18:17 MSK = 15:17 UTC — wrong minute alignment.
-    const misaligned = (() => {
+    // 18:17 MSK = 15:17 UTC — minute-level precision (was 'misaligned').
+    const minutePrecise = (() => {
       const d = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
       d.setUTCHours(15, 17, 0, 0)
       return d.toISOString()
@@ -155,12 +157,11 @@ describe('PATCH /api/admin/slots/[id]/move', () => {
       buildRequest(`/api/admin/slots/${slotId}/move`, {
         method: 'PATCH',
         cookie: admin.cookie,
-        body: { newStartAt: misaligned },
+        body: { newStartAt: minutePrecise },
       }),
       { params: Promise.resolve({ id: slotId }) },
     )
-    expect(r.status).toBe(400)
-    expect((await r.json()).error).toBe('slot/start_not_30min_aligned')
+    expect(r.status).toBe(200)
   })
 
   it('move cancelled slot returns 409 not_open', async () => {

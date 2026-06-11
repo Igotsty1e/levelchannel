@@ -82,9 +82,8 @@ export async function assignSlotDirect(
   if (mskHourFloat < MSK_BUSINESS_HOUR_MIN || mskHourFloat >= MSK_BUSINESS_HOUR_MAX) {
     return { ok: false, reason: 'start_out_of_band' }
   }
-  if (mskHourFloat * 60 % SLOT_GRID_MINUTES !== 0) {
-    return { ok: false, reason: 'start_not_30min_aligned' }
-  }
+  // minute-start epic (2026-06-11): 30-min grid check dropped. Sanity
+  // seconds=0 invariant enforced by DB CHECK (migration 0125).
 
   // Lazy imports — keep billing modules out of bundles that don't touch
   // direct-assign (mirrors bookSlot import discipline).
