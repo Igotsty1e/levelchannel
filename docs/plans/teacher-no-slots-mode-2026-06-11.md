@@ -1,7 +1,8 @@
 ---
 title: teacher-no-slots-mode — глобальный переключатель «без слотов» + reschedule + digest
-status: PLAN
+status: SHIPPED
 date: 2026-06-11
+shipped: 2026-06-11 (PR #601 mode 42744f2 + PR #604 reschedule 0dd000f + PR #605 digest 13de620)
 scope: 3-sub-PR epic (mode foundation + reschedule + digest)
 owner: ivankhanaev
 author: claude
