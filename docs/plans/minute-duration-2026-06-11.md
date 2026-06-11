@@ -1,7 +1,8 @@
 ---
 title: minute-duration — заменить chip-presets 30/45/60/90/120 на минутный input в тарифах, пакетах, слотах
-status: PLAN
+status: SHIPPED
 date: 2026-06-11
+shipped: 2026-06-11 (PR #598 pricing 35c158b + PR #599 slot UI db17b68)
 scope: 2-sub-PR epic (Pricing UI + Slot-create UI)
 owner: ivankhanaev
 author: claude
