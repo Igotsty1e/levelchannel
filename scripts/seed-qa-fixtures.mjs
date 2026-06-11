@@ -228,6 +228,80 @@ async function wipe(client) {
     [fixtureIds],
   )
 
+  // (2a.5) payment_refunds (mig 0113). FK to payment_claims is RESTRICT
+  //        → blocks (2b) below. Must delete refund rows first.
+  await client.query(
+    `delete from payment_refunds
+      where claim_id in (
+        select id from payment_claims
+         where teacher_account_id = any($1::uuid[])
+            or learner_account_id = any($1::uuid[])
+      )`,
+    [fixtureIds],
+  )
+
+  // (2b) payment_claims (mig 0112, SBP self-service journal).
+  //      Cascades to payment_claim_items via claim_id ON DELETE CASCADE.
+  //      MUST run before lesson_slots / package_purchases deletion: the
+  //      items table's FKs to those tables are ON DELETE SET NULL, which
+  //      would null out one column on cascade and leave the row violating
+  //      the XOR check constraint (slot_id XOR package_purchase_id must
+  //      be non-null). Without this step the seed fails on subsequent
+  //      runs with: «new row for relation "payment_claim_items" violates
+  //      check constraint "payment_claim_item_xor"».
+  await client.query(
+    `delete from payment_claims
+      where teacher_account_id = any($1::uuid[])
+         or learner_account_id = any($1::uuid[])`,
+    [fixtureIds],
+  )
+  // Defensive: items from OTHER teachers' claims that happen to reference
+  // a fixture slot or purchase (shouldn't happen in fixture-only flows,
+  // but messy dev DBs from manual testing can have them — keep wipe
+  // robust). Delete the items themselves, not the claim.
+  await client.query(
+    `delete from payment_claim_items
+      where slot_id in (
+        select id from lesson_slots
+         where teacher_account_id = any($1::uuid[])
+            or learner_account_id = any($1::uuid[])
+      )
+        or package_purchase_id in (
+        select id from package_purchases where account_id = any($1::uuid[])
+      )`,
+    [fixtureIds],
+  )
+
+  // (2c) learner_reminder_dispatches (mig 0064, email/TG/push reminders).
+  //      slot_id is FK ON DELETE RESTRICT → would block lesson_slots
+  //      deletion below. Same broad predicate as slots: any dispatch row
+  //      whose slot belongs to a fixture teacher/learner pair.
+  await client.query(
+    `delete from learner_reminder_dispatches
+      where slot_id in (
+        select id from lesson_slots
+         where teacher_account_id = any($1::uuid[])
+            or learner_account_id = any($1::uuid[])
+      )
+        or account_id = any($1::uuid[])`,
+    [fixtureIds],
+  )
+
+  // (2d) learner_push_subscriptions (mig 0109). FK to accounts is
+  //      ON DELETE RESTRICT → blocks final accounts DELETE if any
+  //      fixture learner subscribed during ad-hoc testing.
+  await client.query(
+    `delete from learner_push_subscriptions where account_id = any($1::uuid[])`,
+    [fixtureIds],
+  )
+
+  // (2e) teacher_earnings (mig 0081). FK to accounts is RESTRICT.
+  //      Defensive: any earnings rows for fixture teachers.
+  await client.query(
+    `delete from teacher_earnings where teacher_account_id = any($1::uuid[])`,
+    [fixtureIds],
+  )
+
   // (3) lesson_slots scoped to qa-fixture teacher or learners.
   await client.query(
     `delete from lesson_slots
