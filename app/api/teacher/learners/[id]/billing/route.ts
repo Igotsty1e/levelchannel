@@ -1,5 +1,8 @@
 // PATCH /api/teacher/learners/[id]/billing
-// Body: { method: 'postpaid' | 'prepaid_packages' | 'none' }
+// Body: { method: 'postpaid' | 'none' }
+//        (epic-b Sub-PR B.1, 2026-06-11: dropped 'prepaid_packages';
+//         mix billing = method='postpaid' tries package consume first
+//         and falls back to postpaid debt.)
 //
 // Authorization: caller must be the teacher of this learner (via
 // learner_teacher_links.teacher_account_id = currentTeacher, unlinked_at

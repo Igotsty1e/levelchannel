@@ -32,14 +32,16 @@ type CreatedInvite = {
   id: string
   url: string
   expiresAt: string
-  defaultPaymentMethod?: 'postpaid' | 'prepaid_packages' | 'none'
+  // epic-b Sub-PR B.1/B.2 (2026-06-11): dropped 'prepaid_packages'.
+  defaultPaymentMethod?: 'postpaid' | 'none'
 }
 
-type DefaultPaymentMethod = 'none' | 'postpaid' | 'prepaid_packages'
+type DefaultPaymentMethod = 'none' | 'postpaid'
 
 // Per-learner-payment-method §Scope item 6 — invite-flow default
-// selector. Russian labels mirror the teacher learner-card selector
-// copy ("Постоплата" / "Предоплата пакетами" / "Не выбрано").
+// selector. 2-state copy после epic-b: либо «Постоплата» (открывает
+// бронирование с mix-billing), либо «Не выбирать сейчас» (учитель
+// решает потом).
 const PAYMENT_METHOD_OPTIONS: ReadonlyArray<{
   value: DefaultPaymentMethod
   label: string
@@ -52,13 +54,9 @@ const PAYMENT_METHOD_OPTIONS: ReadonlyArray<{
   },
   {
     value: 'postpaid',
-    label: 'Постоплата',
-    hint: 'Ученик платит после занятия.',
-  },
-  {
-    value: 'prepaid_packages',
-    label: 'Предоплата пакетами',
-    hint: 'Ученик покупает пакет занятий заранее.',
+    label: 'Принимаю оплату (пакеты + счёт)',
+    hint:
+      'Занятие сначала списывается с пакета ученика. Если пакета нет — копится долг, который вы выставляете позже.',
   },
 ]
 

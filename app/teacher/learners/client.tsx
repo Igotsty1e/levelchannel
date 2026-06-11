@@ -28,12 +28,12 @@ type LearnerRow = {
   noShowCount: number
   // mig 0101 — выбранный учителем метод оплаты. 'none' = booking
   // блокируется до выбора. Read-only здесь; toggle на детальной странице.
-  paymentMethod: 'postpaid' | 'prepaid_packages' | 'none'
+  // epic-b Sub-PR B.1/B.2 (2026-06-11): dropped 'prepaid_packages'.
+  paymentMethod: 'postpaid' | 'none'
 }
 
 const PAYMENT_METHOD_LABEL: Record<LearnerRow['paymentMethod'], string> = {
   postpaid: 'постоплата',
-  prepaid_packages: 'пакеты',
   none: 'не выбран',
 }
 

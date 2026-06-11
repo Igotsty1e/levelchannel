@@ -35,7 +35,23 @@ type LearnerListResponse = {
     displayName: string | null
     firstName: string | null
     lastName: string | null
-    paymentMethod: 'postpaid' | 'prepaid_packages' | 'none'
+    // epic-b Sub-PR B.1/B.2 (2026-06-11): dropped 'prepaid_packages'.
+    paymentMethod: 'postpaid' | 'none'
+  }>
+}
+
+// epic-b Sub-PR B.2 (2026-06-11): per-pair billing state for the
+// payment-choice selector. Fetched on learner select; updates the
+// "Способ оплаты" panel.
+type BillingStateResponse = {
+  paymentMethod: 'postpaid' | 'none'
+  postpaidAllowed: boolean
+  activePackages: Array<{
+    id: string
+    titleRu: string
+    durationMinutes: number
+    countRemaining: number
+    expiresAt: string
   }>
 }
 
@@ -115,6 +131,8 @@ const REASON_COPY: Record<string, string> = {
     'У ученика есть оплачиваемый пакет — дождитесь его выдачи.',
   payment_method_not_set:
     'Выберите способ оплаты для этого ученика в карточке ученика.',
+  no_eligible_package:
+    'Подходящего пакета нет (другая длительность, закончились занятия или истёк). Выберите счёт.',
 }
 
 export function AssignDirectModal({
@@ -140,6 +158,17 @@ export function AssignDirectModal({
   )
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // epic-b Sub-PR B.2 (2026-06-11): payment-choice state.
+  const [billingState, setBillingState] = useState<BillingStateResponse | null>(
+    null,
+  )
+  const [billingLoading, setBillingLoading] = useState(false)
+  const [billingChoice, setBillingChoice] = useState<'package' | 'postpaid'>(
+    'postpaid',
+  )
+  const [packagePurchaseId, setPackagePurchaseId] = useState<string | null>(
+    null,
+  )
 
   useEffect(() => {
     if (!open) return
@@ -170,8 +199,48 @@ export function AssignDirectModal({
     if (!open) {
       setError(null)
       setSubmitting(false)
+      setBillingState(null)
+      setPackagePurchaseId(null)
+      setBillingChoice('postpaid')
     }
   }, [open])
+
+  // epic-b Sub-PR B.2 (2026-06-11): fetch per-pair billing state when
+  // learner changes. Drives the payment-choice radio (package vs
+  // postpaid) and the matching-packages dropdown. Cancels in-flight
+  // requests when learner switches mid-flight to avoid stale state.
+  useEffect(() => {
+    if (!open || !learnerId) {
+      setBillingState(null)
+      setPackagePurchaseId(null)
+      return
+    }
+    let cancelled = false
+    setBillingLoading(true)
+    setBillingState(null)
+    setPackagePurchaseId(null)
+    fetch(`/api/teacher/learners/${learnerId}/billing-state`, {
+      headers: { Accept: 'application/json' },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body: BillingStateResponse | null) => {
+        if (cancelled) return
+        if (!body) {
+          setBillingState(null)
+          return
+        }
+        setBillingState(body)
+      })
+      .catch(() => {
+        if (cancelled) return
+      })
+      .finally(() => {
+        if (!cancelled) setBillingLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, learnerId])
 
   const learnerOptions: ComboboxOption[] = useMemo(
     () =>
@@ -199,6 +268,41 @@ export function AssignDirectModal({
   const selectedTariff = tariffs.find((t) => t.id === tariffId)
   const durationMinutes = selectedTariff?.durationMinutes ?? 60
 
+  // epic-b Sub-PR B.2 (2026-06-11): packages that match the selected
+  // tariff's duration. Backend re-validates duration + ownership +
+  // remaining, so this is a UX filter, not a security gate.
+  const matchingPackages = useMemo(
+    () =>
+      (billingState?.activePackages ?? []).filter(
+        (p) => p.durationMinutes === durationMinutes,
+      ),
+    [billingState, durationMinutes],
+  )
+
+  // Auto-select the first matching package when learner+tariff change.
+  // Defaults billingChoice to 'package' if any are available — teacher's
+  // most common path. Otherwise 'postpaid'.
+  useEffect(() => {
+    if (matchingPackages.length === 0) {
+      setBillingChoice('postpaid')
+      setPackagePurchaseId(null)
+      return
+    }
+    setBillingChoice('package')
+    setPackagePurchaseId((prev) => prev ?? matchingPackages[0].id)
+  }, [matchingPackages])
+
+  const packageOptions: ComboboxOption[] = useMemo(
+    () =>
+      matchingPackages.map((p) => ({
+        value: p.id,
+        label: p.titleRu,
+        sub: `${p.countRemaining} осталось · до ${new Date(p.expiresAt)
+          .toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}`,
+      })),
+    [matchingPackages],
+  )
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!learnerId) {
@@ -225,6 +329,11 @@ export function AssignDirectModal({
           startAt: startAtIso,
           durationMinutes,
           tariffId,
+          // epic-b Sub-PR B.2 (2026-06-11): explicit billing choice.
+          billingChoice,
+          ...(billingChoice === 'package' && packagePurchaseId
+            ? { packagePurchaseId }
+            : {}),
         }),
       })
       const body = await res.json().catch(() => ({}))
@@ -378,7 +487,7 @@ export function AssignDirectModal({
             </div>
           </div>
 
-          <div style={{ marginBottom: '16px' }}>
+          <div style={{ marginBottom: '12px' }}>
             <label
               style={{
                 display: 'block',
@@ -399,6 +508,171 @@ export function AssignDirectModal({
               size="md"
               searchable={false}
             />
+          </div>
+
+          {/* epic-b Sub-PR B.2 (2026-06-11): payment-choice selector.
+              Two paths: списать с пакета (если есть подходящие по
+              длительности) или счёт после (postpaid). Default — пакет,
+              если он есть; иначе — счёт. */}
+          <div style={{ marginBottom: '16px' }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '13px',
+                color: 'var(--text-secondary)',
+                marginBottom: '6px',
+              }}
+            >
+              Способ оплаты
+            </label>
+            {learnerId == null ? (
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: '13px',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                Выберите ученика выше.
+              </p>
+            ) : billingLoading ? (
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: '13px',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                Загрузка…
+              </p>
+            ) : (
+              <div
+                role="radiogroup"
+                aria-label="Способ оплаты"
+                style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+              >
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 8,
+                    padding: 10,
+                    borderRadius: 8,
+                    cursor:
+                      matchingPackages.length === 0 || submitting
+                        ? 'not-allowed'
+                        : 'pointer',
+                    background:
+                      billingChoice === 'package'
+                        ? 'var(--accent-bg)'
+                        : 'transparent',
+                    border:
+                      billingChoice === 'package'
+                        ? '1px solid var(--accent)'
+                        : '1px solid var(--border)',
+                    opacity: matchingPackages.length === 0 ? 0.5 : 1,
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="billing-choice"
+                    checked={billingChoice === 'package'}
+                    onChange={() => setBillingChoice('package')}
+                    disabled={
+                      matchingPackages.length === 0 || submitting
+                    }
+                    style={{ marginTop: 3 }}
+                  />
+                  <span
+                    style={{ display: 'flex', flexDirection: 'column', flex: 1 }}
+                  >
+                    <strong style={{ fontSize: 14 }}>
+                      Списать с пакета
+                    </strong>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: 'var(--text-secondary)',
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      {matchingPackages.length === 0
+                        ? `Нет пакетов на ${durationMinutes}\u00A0мин.`
+                        : `${matchingPackages.length} пакет(ов) подходящей длительности.`}
+                    </span>
+                    {billingChoice === 'package' && matchingPackages.length > 0 ? (
+                      <div style={{ marginTop: 8 }}>
+                        <Combobox
+                          value={packagePurchaseId}
+                          onChange={(v) => setPackagePurchaseId(v)}
+                          options={packageOptions}
+                          placeholder="Выберите пакет"
+                          emptyMessage="Нет подходящих пакетов"
+                          disabled={submitting}
+                          size="sm"
+                          searchable={false}
+                        />
+                      </div>
+                    ) : null}
+                  </span>
+                </label>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 8,
+                    padding: 10,
+                    borderRadius: 8,
+                    cursor: submitting ? 'not-allowed' : 'pointer',
+                    background:
+                      billingChoice === 'postpaid'
+                        ? 'var(--accent-bg)'
+                        : 'transparent',
+                    border:
+                      billingChoice === 'postpaid'
+                        ? '1px solid var(--accent)'
+                        : '1px solid var(--border)',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="billing-choice"
+                    checked={billingChoice === 'postpaid'}
+                    onChange={() => setBillingChoice('postpaid')}
+                    disabled={submitting}
+                    style={{ marginTop: 3 }}
+                  />
+                  <span
+                    style={{ display: 'flex', flexDirection: 'column' }}
+                  >
+                    <strong style={{ fontSize: 14 }}>Счёт после</strong>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: 'var(--text-secondary)',
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      Долг копится, вы периодически выставляете счёт за пределами платформы.
+                    </span>
+                  </span>
+                </label>
+                {billingState && billingState.paymentMethod === 'none' ? (
+                  <p
+                    role="alert"
+                    style={{
+                      margin: 0,
+                      fontSize: '12px',
+                      color: 'var(--secondary)',
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    У ученика не выбран способ оплаты — занятие будет назначено,
+                    но «счёт после» не сработает до выбора метода в карточке ученика.
+                  </p>
+                ) : null}
+              </div>
+            )}
           </div>
 
           {error ? (

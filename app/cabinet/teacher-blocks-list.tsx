@@ -37,7 +37,8 @@ type TeacherBlock = {
   // Bug #1 (2026-06-02). Per-pair payment method from
   // learner_billing_preferences. When 'none', the «Записаться к этому
   // учителю» CTA is replaced with the missing-payment-method banner.
-  paymentMethod: 'postpaid' | 'prepaid_packages' | 'none'
+  // epic-b Sub-PR B.1/B.2 (2026-06-11): dropped 'prepaid_packages'.
+  paymentMethod: 'postpaid' | 'none'
 }
 
 type Props = {
