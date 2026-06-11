@@ -1,10 +1,11 @@
 'use client'
 
 import {
+  KeyboardEvent as RKbdEvent,
+  WheelEvent as RWheelEvent,
   useCallback,
   useEffect,
   useId,
-  useMemo,
   useRef,
   useState,
 } from 'react'
@@ -12,15 +13,29 @@ import {
 // LevelChannel time picker — design-system primitive.
 //
 // minute-start epic Sub-PR A.2 (2026-06-11): minute-precision.
-// 2026-06-11 post-review rewrite: scroll-snap "барабан" (iOS-style wheel),
-// not a click-list of buttons. Scroll the column — центральная позиция
-// = выбор. Tap on a non-center item также её центрирует.
+// 2026-06-11 web-redesign: scroll-snap wheel barrel was confusing on
+// desktop (no obvious affordance to scroll, looked like a click-list).
+// Replaced with inline dual-stepper — two number cells (часы и минуты)
+// side-by-side, type-or-arrow editing, no popover.
 //
-// Контракт:
-//   - value: 'HH:MM' string или null.
-//   - onChange: (next: 'HH:MM') => void.
-//   - hourMin/hourMax: bounds (inclusive). Default 0–23.
-//   - granularity: 1 | 5 | 15 | 30 (default 1).
+// References shaping the design:
+//   - Stripe Dashboard datetime — inline 2-cell stepper
+//   - Linear due-date picker — text input + smart parse
+//   - Google Calendar — text + dropdown, but typing is the fast path
+//   - macOS time field — two stepper cells (closest to what we built)
+//
+// Контракт API не изменился — `value: 'HH:MM' | null`, `onChange`,
+// `hourMin`/`hourMax`/`granularity`. Любой existing call-site работает.
+//
+// Behaviour matrix (на КАЖДОЙ из двух ячеек):
+//   Click            → выделить весь текст, готов к набору
+//   Type digit(s)    → буферизуется, padStart до 2, clamp в [min..max]
+//   Enter / Tab      → commit, перейти к следующей ячейке
+//   Blur             → commit (padded и clamped)
+//   ↑ / ↓            → ±step (с wrap)
+//   ⇧ + ↑ / ↓        → ±step×5
+//   Mouse wheel      → ±step (preventDefault)
+//   ▲ / ▼ кнопки     → ±step (для touch и мыши без колеса)
 
 export type TimePickerProps = {
   value: string | null
@@ -32,11 +47,6 @@ export type TimePickerProps = {
   disabled?: boolean
   ariaLabel?: string
 }
-
-const ITEM_HEIGHT = 40 // px — scroll-snap unit
-const VISIBLE_ROWS = 5 // odd number so there's a true center row
-const WHEEL_HEIGHT = ITEM_HEIGHT * VISIBLE_ROWS
-const CENTER_OFFSET = ((VISIBLE_ROWS - 1) / 2) * ITEM_HEIGHT // padding top/bottom
 
 function parseHhmm(s: string | null): { h: number; m: number } | null {
   if (!s) return null
@@ -52,326 +62,319 @@ function formatHhmm(h: number, m: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
+function clampWrap(v: number, min: number, max: number): number {
+  const span = max - min + 1
+  let next = v
+  while (next > max) next -= span
+  while (next < min) next += span
+  return next
+}
+
+function snapToStep(v: number, step: number, min: number, max: number): number {
+  if (step <= 1) return clampWrap(v, min, max)
+  // snap to nearest step boundary within [min..max]
+  const offset = min % step
+  const snapped = Math.round((v - offset) / step) * step + offset
+  return clampWrap(snapped, min, max)
+}
+
 export function TimePicker({
   value,
   onChange,
   hourMin = 0,
   hourMax = 23,
   granularity = 1,
-  placeholder = 'Время',
+  placeholder = '',
   disabled,
   ariaLabel,
 }: TimePickerProps) {
-  const [open, setOpen] = useState(false)
-  const triggerRef = useRef<HTMLButtonElement | null>(null)
-  const sheetRef = useRef<HTMLDivElement | null>(null)
   const id = useId()
+  const minuteRef = useRef<HTMLInputElement | null>(null)
 
   const parsed = parseHhmm(value)
-  const currentH = parsed?.h ?? hourMin
-  const currentM = parsed?.m ?? 0
+  const h = parsed?.h ?? hourMin
+  const m = parsed?.m ?? 0
 
-  const hours = useMemo(() => {
-    const out: number[] = []
-    for (let h = hourMin; h <= hourMax; h++) out.push(h)
-    return out
-  }, [hourMin, hourMax])
-
-  const minutes = useMemo(() => {
-    const out: number[] = []
-    for (let m = 0; m < 60; m += granularity) out.push(m)
-    return out
-  }, [granularity])
-
-  useEffect(() => {
-    if (!open) return
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [open])
-
-  useEffect(() => {
-    if (!open) return
-    function onClick(e: MouseEvent) {
-      const t = e.target as Node
-      if (
-        sheetRef.current && !sheetRef.current.contains(t)
-        && triggerRef.current && !triggerRef.current.contains(t)
-      ) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', onClick)
-    return () => document.removeEventListener('mousedown', onClick)
-  }, [open])
-
-  const handleHourSelect = useCallback(
-    (h: number) => {
-      onChange(formatHhmm(h, currentM))
+  const emit = useCallback(
+    (nextH: number, nextM: number) => {
+      onChange(formatHhmm(nextH, nextM))
     },
-    [currentM, onChange],
+    [onChange],
   )
 
-  const handleMinuteSelect = useCallback(
-    (m: number) => {
-      onChange(formatHhmm(currentH, m))
+  const onHour = useCallback(
+    (next: number) => {
+      emit(clampWrap(next, hourMin, hourMax), m)
     },
-    [currentH, onChange],
+    [emit, hourMin, hourMax, m],
   )
 
-  const triggerLabel = parsed ? formatHhmm(parsed.h, parsed.m) : placeholder
+  const onMinute = useCallback(
+    (next: number) => {
+      emit(h, snapToStep(next, granularity, 0, 59))
+    },
+    [emit, h, granularity],
+  )
 
   return (
-    <div style={{ position: 'relative' }}>
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={() => !disabled && setOpen((o) => !o)}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-controls={`${id}-sheet`}
-        aria-label={ariaLabel ?? placeholder}
+    <div
+      role="group"
+      aria-label={ariaLabel ?? placeholder}
+      aria-disabled={disabled}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      <NumberCell
+        id={`${id}-h`}
+        value={h}
+        min={hourMin}
+        max={hourMax}
+        step={1}
+        ariaLabel="Час"
         disabled={disabled}
+        onChange={onHour}
+        onCommitNext={() => minuteRef.current?.focus()}
+      />
+      <span
+        aria-hidden="true"
         style={{
-          minHeight: 44,
-          minWidth: 92,
-          padding: '10px 14px',
-          textAlign: 'center',
-          background: 'var(--surface-2)',
-          color: parsed ? 'var(--text)' : 'var(--text-tertiary, var(--secondary))',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          fontSize: 15,
+          fontSize: 18,
           fontWeight: 600,
+          color: 'var(--secondary)',
           fontVariantNumeric: 'tabular-nums',
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          opacity: disabled ? 0.6 : 1,
+          padding: '0 2px',
+          userSelect: 'none',
         }}
       >
-        {triggerLabel}
-      </button>
-
-      {open ? (
-        <div
-          ref={sheetRef}
-          id={`${id}-sheet`}
-          role="dialog"
-          aria-modal="false"
-          aria-label={ariaLabel ?? placeholder}
-          style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            marginTop: 6,
-            zIndex: 1200,
-            background: 'var(--surface-1)',
-            border: '1px solid var(--border)',
-            borderRadius: 12,
-            overflow: 'hidden',
-            boxShadow: '0 12px 32px rgba(0,0,0,0.5)',
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          <div
-            style={{
-              position: 'relative',
-              display: 'flex',
-              padding: '0 4px',
-            }}
-          >
-            {/* central highlight band — фиксированная подсветка центра,
-                под которой крутятся колёса */}
-            <div
-              aria-hidden="true"
-              style={{
-                position: 'absolute',
-                left: 4,
-                right: 4,
-                top: CENTER_OFFSET,
-                height: ITEM_HEIGHT,
-                background: 'var(--accent-bg, rgba(255,255,255,0.06))',
-                borderTop: '1px solid var(--border)',
-                borderBottom: '1px solid var(--border)',
-                pointerEvents: 'none',
-                zIndex: 1,
-              }}
-            />
-            <Wheel
-              label="Час"
-              items={hours}
-              value={currentH}
-              onChange={handleHourSelect}
-            />
-            <div style={{ width: 1, background: 'var(--border)' }} />
-            <Wheel
-              label="Мин"
-              items={minutes}
-              value={currentM}
-              onChange={handleMinuteSelect}
-            />
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              borderTop: '1px solid var(--border)',
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              style={{
-                flex: 1,
-                padding: '12px 14px',
-                background: 'transparent',
-                color: 'var(--text)',
-                border: 'none',
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              Готово
-            </button>
-          </div>
-        </div>
-      ) : null}
+        :
+      </span>
+      <NumberCell
+        id={`${id}-m`}
+        inputRef={minuteRef}
+        value={m}
+        min={0}
+        max={59}
+        step={granularity}
+        ariaLabel="Минута"
+        disabled={disabled}
+        onChange={onMinute}
+      />
     </div>
   )
 }
 
-type WheelProps = {
-  label: string
-  items: number[]
+type NumberCellProps = {
+  id: string
+  inputRef?: React.MutableRefObject<HTMLInputElement | null>
   value: number
-  onChange: (value: number) => void
+  min: number
+  max: number
+  step: number
+  ariaLabel: string
+  disabled?: boolean
+  onChange: (next: number) => void
+  onCommitNext?: () => void
 }
 
-/**
- * Scroll-snap wheel column — крутится как iOS picker. Каждый item занимает
- * ITEM_HEIGHT, scroll-snap-align: center заставляет браузер сам остановиться
- * на ровной позиции. onScroll throttled через rAF → детектим центр →
- * onChange. Tap на не-центральный item также скроллит его в центр.
- */
-function Wheel({ label, items, value, onChange }: WheelProps) {
-  const ref = useRef<HTMLDivElement | null>(null)
-  const valueIndex = items.indexOf(value)
-  const isProgrammaticScroll = useRef(false)
-  const lastEmitted = useRef<number>(value)
-  const rafScheduled = useRef(false)
+function NumberCell({
+  id,
+  inputRef,
+  value,
+  min,
+  max,
+  step,
+  ariaLabel,
+  disabled,
+  onChange,
+  onCommitNext,
+}: NumberCellProps) {
+  const [focused, setFocused] = useState(false)
+  const [buffer, setBuffer] = useState<string | null>(null)
+  const localRef = useRef<HTMLInputElement | null>(null)
+  const ref = inputRef ?? localRef
 
-  // Initial scroll to current value (and on external value change).
+  // When the external value changes (parent state update), clear the
+  // local buffer so the input reflects the canonical 2-digit value.
   useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (valueIndex < 0) return
-    const target = valueIndex * ITEM_HEIGHT
-    if (Math.abs(el.scrollTop - target) < 1) return
-    isProgrammaticScroll.current = true
-    el.scrollTop = target
-    // give the browser one frame to apply, then re-allow detection
-    requestAnimationFrame(() => {
-      isProgrammaticScroll.current = false
-    })
-  }, [valueIndex, items])
+    if (!focused) setBuffer(null)
+  }, [value, focused])
 
-  const handleScroll = useCallback(() => {
-    if (isProgrammaticScroll.current) return
-    if (rafScheduled.current) return
-    rafScheduled.current = true
-    requestAnimationFrame(() => {
-      rafScheduled.current = false
-      const el = ref.current
-      if (!el) return
-      const idx = Math.round(el.scrollTop / ITEM_HEIGHT)
-      const clamped = Math.max(0, Math.min(items.length - 1, idx))
-      const next = items[clamped]
-      if (next !== lastEmitted.current) {
-        lastEmitted.current = next
-        onChange(next)
+  const display = buffer ?? String(value).padStart(2, '0')
+
+  const commit = useCallback(
+    (raw: string) => {
+      const n = Number(raw)
+      if (!Number.isFinite(n)) {
+        setBuffer(null)
+        return
       }
-    })
-  }, [items, onChange])
+      const clamped = Math.max(min, Math.min(max, Math.round(n)))
+      // snap to step if step > 1 (e.g. minute granularity)
+      const stepped = step > 1
+        ? Math.round((clamped - (min % step)) / step) * step + (min % step)
+        : clamped
+      const finalV = Math.max(min, Math.min(max, stepped))
+      setBuffer(null)
+      onChange(finalV)
+    },
+    [min, max, step, onChange],
+  )
+
+  const bump = useCallback(
+    (delta: number) => {
+      const span = max - min + 1
+      let next = value + delta
+      while (next > max) next -= span
+      while (next < min) next += span
+      onChange(next)
+    },
+    [value, min, max, onChange],
+  )
+
+  const onKey = useCallback(
+    (e: RKbdEvent<HTMLInputElement>) => {
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        bump(e.shiftKey ? step * 5 : step)
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        bump(e.shiftKey ? -step * 5 : -step)
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        if (buffer != null) commit(buffer)
+        if (e.key === 'Enter' && onCommitNext) {
+          e.preventDefault()
+          onCommitNext()
+        }
+      } else if (e.key === 'Escape') {
+        setBuffer(null)
+        ref.current?.blur()
+      }
+    },
+    [bump, buffer, commit, onCommitNext, ref, step],
+  )
+
+  const onWheel = useCallback(
+    (e: RWheelEvent<HTMLInputElement>) => {
+      if (!focused) return
+      e.preventDefault()
+      bump(e.deltaY > 0 ? -step : step)
+    },
+    [focused, bump, step],
+  )
 
   return (
     <div
       style={{
-        display: 'flex',
+        position: 'relative',
+        display: 'inline-flex',
         flexDirection: 'column',
-        minWidth: 84,
+        alignItems: 'stretch',
       }}
     >
-      <div
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label={`${ariaLabel} +${step}`}
+        onClick={() => bump(step)}
+        disabled={disabled}
+        style={chevronStyle(focused, 'up')}
+      >
+        <span aria-hidden="true">▲</span>
+      </button>
+      <input
+        ref={(el) => {
+          ref.current = el
+        }}
+        id={id}
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        aria-label={ariaLabel}
+        value={display}
+        disabled={disabled}
+        onFocus={(e) => {
+          setFocused(true)
+          // select all so user can immediately retype
+          e.currentTarget.select()
+        }}
+        onBlur={() => {
+          setFocused(false)
+          if (buffer != null) commit(buffer)
+        }}
+        onChange={(e) => {
+          const raw = e.currentTarget.value.replace(/\D/g, '').slice(0, 2)
+          setBuffer(raw)
+          // auto-advance when 2 digits typed at the top of the range
+          if (raw.length === 2 && onCommitNext) {
+            const n = Number(raw)
+            if (Number.isFinite(n) && n >= min && n <= max) {
+              commit(raw)
+              // micro-defer to let onChange propagate first
+              setTimeout(() => onCommitNext(), 0)
+            }
+          }
+        }}
+        onKeyDown={onKey}
+        onWheel={onWheel}
         style={{
-          padding: '6px 12px',
-          fontSize: 11,
-          color: 'var(--text-secondary, var(--secondary))',
-          textTransform: 'uppercase',
-          letterSpacing: 0.4,
+          width: 60,
+          padding: '10px 8px',
           textAlign: 'center',
-          borderBottom: '1px solid var(--border)',
+          fontSize: 20,
+          fontWeight: 600,
+          fontVariantNumeric: 'tabular-nums',
+          letterSpacing: 0.5,
+          background: 'var(--surface-2)',
+          color: 'var(--text)',
+          border: focused
+            ? '1px solid var(--accent)'
+            : '1px solid var(--border)',
+          borderRadius: 8,
+          outline: 'none',
+          cursor: disabled ? 'not-allowed' : 'text',
+          // dark-mode caret
+          caretColor: 'var(--accent)',
+          // hide native spinner if any user-agent shows one
+          MozAppearance: 'textfield',
         }}
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label={`${ariaLabel} -${step}`}
+        onClick={() => bump(-step)}
+        disabled={disabled}
+        style={chevronStyle(focused, 'down')}
       >
-        {label}
-      </div>
-      <div
-        ref={ref}
-        onScroll={handleScroll}
-        role="listbox"
-        aria-label={label}
-        tabIndex={0}
-        style={{
-          height: WHEEL_HEIGHT,
-          overflowY: 'auto',
-          scrollSnapType: 'y mandatory',
-          scrollbarWidth: 'none',
-          WebkitOverflowScrolling: 'touch',
-          position: 'relative',
-          zIndex: 2,
-        }}
-      >
-        {/* top spacer so first item can center on the highlight band */}
-        <div style={{ height: CENTER_OFFSET, pointerEvents: 'none' }} />
-        {items.map((it) => {
-          const selected = it === value
-          return (
-            <button
-              key={it}
-              type="button"
-              role="option"
-              aria-selected={selected}
-              onClick={() => onChange(it)}
-              style={{
-                display: 'block',
-                width: '100%',
-                height: ITEM_HEIGHT,
-                lineHeight: `${ITEM_HEIGHT}px`,
-                background: 'transparent',
-                color: selected
-                  ? 'var(--text)'
-                  : 'var(--text-secondary, var(--secondary))',
-                border: 'none',
-                fontSize: selected ? 20 : 16,
-                fontWeight: selected ? 700 : 500,
-                fontVariantNumeric: 'tabular-nums',
-                textAlign: 'center',
-                cursor: 'pointer',
-                padding: 0,
-                scrollSnapAlign: 'center',
-                scrollSnapStop: 'always',
-                opacity: selected ? 1 : 0.55,
-                transition: 'opacity 120ms, font-size 120ms, color 120ms',
-              }}
-            >
-              {String(it).padStart(2, '0')}
-            </button>
-          )
-        })}
-        {/* bottom spacer so last item can center on the highlight band */}
-        <div style={{ height: CENTER_OFFSET, pointerEvents: 'none' }} />
-      </div>
+        <span aria-hidden="true">▼</span>
+      </button>
     </div>
   )
+}
+
+function chevronStyle(
+  focused: boolean,
+  dir: 'up' | 'down',
+): React.CSSProperties {
+  return {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    [dir === 'up' ? 'top' : 'bottom']: -18,
+    height: 18,
+    border: 'none',
+    background: 'transparent',
+    color: focused ? 'var(--accent)' : 'var(--secondary)',
+    fontSize: 10,
+    lineHeight: '18px',
+    cursor: 'pointer',
+    opacity: focused ? 1 : 0.4,
+    transition: 'opacity 120ms, color 120ms',
+    pointerEvents: focused ? 'auto' : 'auto',
+    padding: 0,
+  }
 }
