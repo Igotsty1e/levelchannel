@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  ALLOWED_DURATIONS,
   MAX_RECURRENCE_SPAN_DAYS,
+  RECURRENCE_DURATION_MAX,
+  RECURRENCE_DURATION_MIN,
   RecurrenceInputError,
   expandRecurrence,
 } from '@/lib/calendar/recurrence'
@@ -74,14 +75,23 @@ describe('expandRecurrence', () => {
     ).toThrow(RecurrenceInputError)
   })
 
-  it('rejects unknown duration', () => {
+  it('rejects out-of-range duration (2026-06-11: was whitelist [30,45,50,60,75,90,120], now range [15,180])', () => {
     expect(() =>
       expandRecurrence({
         startDate: '2026-09-01',
         endDate: '2026-09-01',
         daysOfWeek: [],
         times: ['12:00'],
-        durationMinutes: 33,
+        durationMinutes: 14,
+      }),
+    ).toThrow(RecurrenceInputError)
+    expect(() =>
+      expandRecurrence({
+        startDate: '2026-09-01',
+        endDate: '2026-09-01',
+        daysOfWeek: [],
+        times: ['12:00'],
+        durationMinutes: 181,
       }),
     ).toThrow(RecurrenceInputError)
   })
@@ -124,11 +134,38 @@ describe('expandRecurrence', () => {
     expect(r.slots.length).toBeGreaterThan(200)
   })
 
-  it('preserves allowed duration whitelist matches mig 0031 plausibility', () => {
-    for (const d of ALLOWED_DURATIONS) {
-      expect(d).toBeGreaterThanOrEqual(30)
-      expect(d).toBeLessThanOrEqual(120)
-    }
+  it('duration range [15, 180] accepted; out-of-range rejected (2026-06-11 minute-duration epic)', () => {
+    expect(RECURRENCE_DURATION_MIN).toBe(15)
+    expect(RECURRENCE_DURATION_MAX).toBe(180)
+    // 47-min non-preset value works now
+    const r = expandRecurrence({
+      startDate: '2026-09-01',
+      endDate: '2026-09-01',
+      daysOfWeek: [],
+      times: ['10:00'],
+      durationMinutes: 47,
+    })
+    expect(r.slots).toHaveLength(1)
+    expect(r.slots[0].durationMinutes).toBe(47)
+    // out-of-range rejected
+    expect(() =>
+      expandRecurrence({
+        startDate: '2026-09-01',
+        endDate: '2026-09-01',
+        daysOfWeek: [],
+        times: ['10:00'],
+        durationMinutes: 14,
+      }),
+    ).toThrow(RecurrenceInputError)
+    expect(() =>
+      expandRecurrence({
+        startDate: '2026-09-01',
+        endDate: '2026-09-01',
+        daysOfWeek: [],
+        times: ['10:00'],
+        durationMinutes: 181,
+      }),
+    ).toThrow(RecurrenceInputError)
   })
 
   it('MAX_RECURRENCE_SPAN_DAYS = 90 (plan §3 Q4)', () => {
