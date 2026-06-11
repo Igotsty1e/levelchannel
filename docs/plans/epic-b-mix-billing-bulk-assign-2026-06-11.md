@@ -1,11 +1,16 @@
 ---
 title: epic-b — bulk-assign + package picker + drop prepaid_packages
-status: PLAN
+status: SHIPPED
 date: 2026-06-11
 scope: 3-sub-PR epic
 owner: ivankhanaev
 author: claude
 context_clean: no live users — migration drops value cleanly
+shipped:
+  - 2026-06-11 — B.1 PR #616 (drop prepaid_packages + mig 0126)
+  - 2026-06-11 — B.2 PR #617 (package picker + billing-state endpoint + UI cleanup)
+  - 2026-06-11 — B.3 PR #618 (BulkAssignDirectModal + bulk-assign-direct endpoint, epic-close)
+codex_paranoia: epic-end review pending (codex quota exhausted until 2026-06-11+)
 ---
 
 # epic-b (2026-06-11)

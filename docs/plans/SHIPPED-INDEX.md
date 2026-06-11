@@ -174,6 +174,20 @@ Owner reported 4 bugs + asked for security + code-quality audits. Whole wave shi
   - **Sub-PR C digest cron (PR #605 `13de620`, epic-close)** — Migration 0124 `lesson_slots.notify_pending BOOLEAN DEFAULT false` + partial index `(learner_account_id, start_at) WHERE notify_pending = true`. `learner-direct-assign-digest.ts` email template. `assign-direct/route.ts` при rate-limit hit → set `notify_pending=true` вместо silent skip. `scripts/learner-direct-assign-digest.mjs` hourly cron: SELECT pending → groupBy learner → send digest → clear flag; fail-soft per-learner.
   - **Operator-wire post-merge:** `systemctl --user enable --now levelchannel-learner-direct-assign-digest.timer` (OnCalendar=hourly). Reference unit files в `scripts/systemd/levelchannel-learner-direct-assign-digest.{timer,service}` (PR #607 `<sha>`).
 
+## 2026-06-11 minute-start epic (drop 30-min grid + DS pickers)
+
+- **`minute-start-epic-2026-06-11.md`** — учитель и ученик указывают время с минутной точностью везде, везде Native HTML5 date/time inputs заменены на собственные design-system pickers. Status: SHIPPED 2026-06-11. Sub-PRs:
+  - **A.1 PR #610** — drop `lesson_slots_start_30min_aligned` CHECK (mig 0125) + relaxed `seconds_zero` invariant; SLOT_GRID_MINUTES checks выкинуты во всех writers; calendar-move test обновлён.
+  - **A.2 PR #614** — `components/ui/primitives/date-picker.tsx` (314 LOC RU-locale grid) + `time-picker.tsx` (240 LOC 1-min granularity) primitives; index re-export.
+  - **A.3 PR #615** — replaced HTML5 inputs in AssignDirectModal + RescheduleLessonModal + MobileCreateFab + BulkAddSlotsModal + TimeRangeRow с DS pickers; legacy `TimePickerButton`/`TimePickerSheet` удалены.
+
+## 2026-06-11 epic-b — mix billing + bulk-assign
+
+- **`epic-b-mix-billing-bulk-assign-2026-06-11.md`** — user-ask: учитель назначает занятие с явным выбором (пакет vs счёт) + bulk-вариант для N занятий сразу + ученик может одновременно иметь и постоплат и пакеты. Status: SHIPPED 2026-06-11. Self-review fallback на codex-paranoia (codex quota exhausted; epic-end review pending). Sub-PRs:
+  - **B.1 PR #616** — drop `'prepaid_packages'` payment_method enum value. mig 0126 UPDATE existing rows → 'postpaid' + drop CHECK на `learner_billing_preferences` AND `teacher_invites.default_payment_method`. `PaymentMethod = 'postpaid' | 'none'`, `InviteDefaultPaymentMethod = 'postpaid' | 'none'`. Booking always mixes: package consume first → postpaid fallback. Q1 invariant retired.
+  - **B.2 PR #617** — package picker в AssignDirectModal + GET /api/teacher/learners/[id]/billing-state endpoint (paymentMethod + postpaidAllowed + activePackages). assignSlotDirect extended с `billingChoice` ('auto'|'package'|'postpaid') + optional `packagePurchaseId`. UI cleanup всех 'prepaid_packages' labels: payment-method-toggle 3-radio → 2-radio с переписанным copy «Принимаю оплату (пакеты + счёт)»; invite-default 3 → 2 опции; union-narrow в teacher-blocks-list, teacher/learners/client, teacher/learners/[id]/page.
+  - **B.3 PR #618 (epic-close)** — POST /api/teacher/slots/bulk-assign-direct endpoint (cap 50 slots, sequential через assignSlotDirect, 23505→skippedConflicts, остальные reason→skippedReasons). `BulkAssignDirectModal` (клон BulkAddSlotsModal + Combobox ученика + payment-choice + preview). MobileCreateFab.CreateMode расширен `'bulk_assign'` + кнопка «+ Назначить N» в calendar header.
+
 ## Foundational pre-2026-05 waves (kept for git blame continuity)
 
 - **`csp-hardening.md`** (CSP hardening, CLOSED 2026-05-09) — Content-Security-Policy lockdown for production.
