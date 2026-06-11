@@ -6,7 +6,13 @@ import { useEffect, useState } from 'react'
 import { CancelLessonModal } from '@/components/cabinet/cancel-lesson-modal'
 import { MissingPaymentMethodBanner } from '@/components/cabinet/missing-payment-method-banner'
 import { PayLessonModal } from '@/components/cabinet/pay-lesson-modal'
-import { Banner, Button, Pill } from '@/components/ui/primitives'
+import {
+  Banner,
+  Button,
+  DatePicker,
+  Pill,
+  TimePicker,
+} from '@/components/ui/primitives'
 import type { LessonSlot } from '@/lib/scheduling/slots'
 import { safeTz } from '@/lib/util/tz'
 
@@ -657,12 +663,11 @@ function RescheduleLessonModal({
           >
             Новая дата
           </label>
-          <input
-            type="date"
+          <DatePicker
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={setDate}
             disabled={busy}
-            style={inputStyle}
+            ariaLabel="Новая дата занятия"
           />
         </div>
 
@@ -675,15 +680,16 @@ function RescheduleLessonModal({
               marginBottom: 6,
             }}
           >
-            Новое время (шаг 30 минут)
+            Новое время
           </label>
-          <input
-            type="time"
-            step={1800}
+          <TimePicker
             value={time}
-            onChange={(e) => setTime(e.target.value)}
+            onChange={setTime}
+            hourMin={6}
+            hourMax={21}
+            granularity={1}
             disabled={busy}
-            style={inputStyle}
+            ariaLabel="Новое время начала"
           />
         </div>
 
