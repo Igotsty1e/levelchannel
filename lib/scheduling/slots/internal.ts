@@ -35,6 +35,7 @@ export const SLOT_COLUMNS = `
   external_conflict_kind,
   conflict_source_calendar_id,
   conflict_source_event_id,
+  source,
   events,
   created_at,
   updated_at
@@ -102,6 +103,10 @@ export function rowToSlot(
     // BCS-DEF-3 — backward-compat: SELECTs that pre-date the column
     // don't include it; row.zoom_url is undefined → null projection.
     zoomUrl: row.zoom_url ? String(row.zoom_url) : null,
+    // 0122 — direct-assign discriminator. NULL → legacy open_slot.
+    source: row.source === 'open_slot' || row.source === 'direct_assign'
+      ? row.source
+      : null,
     events: Array.isArray(row.events)
       ? (row.events as SlotEvent[])
       : [],

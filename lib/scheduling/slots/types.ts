@@ -126,6 +126,10 @@ export type LessonSlot = {
   // validator). Learner sees as a "Join lesson" link in the
   // cabinet on booked slots.
   zoomUrl: string | null
+  // 0122 — direct-assign discriminator. NULL on pre-0122 rows (legacy
+  // open_slot). 'open_slot' on rows created via createSlot/bulkCreate;
+  // 'direct_assign' on rows created via assignSlotDirect.
+  source: SlotSource | null
   events: SlotEvent[]
   createdAt: string
   updatedAt: string
@@ -210,6 +214,56 @@ export type CreateSlotInput = {
   notes?: string | null
   tariffId?: string | null
 }
+
+// 0122 — discriminate teacher direct-assign vs learner open-slot pickup.
+export type SlotSource = 'open_slot' | 'direct_assign'
+
+// teacher-direct-assign (Задача 2.2): teacher creates an already-booked
+// slot for a specific learner with a tariff (or, future, a package).
+// Mirrors bookSlot's billing pipeline; the slot enters status=booked
+// in a single TX with consumption.
+export type AssignSlotDirectInput = {
+  teacherAccountId: string
+  learnerAccountId: string
+  startAt: string
+  durationMinutes: number
+  // Tariff is required in v1 (Sub-PR A). Package-mode (where teacher picks
+  // a specific package) lands as a future iteration if owner needs it —
+  // package consumption ALREADY runs inside consumePackageUnit, which
+  // matches by duration. So tariff is enough to drive billing.
+  tariffId: string
+  notes?: string | null
+}
+
+export type AssignSlotDirectBilling =
+  | { kind: 'prepaid'; packagePurchaseId: string; countRemainingAfter: number; expiresAt: string }
+  | { kind: 'postpaid'; tariffId: string; amountKopecks: number; currency: string }
+
+export type AssignSlotDirectResult =
+  | { ok: true; slot: LessonSlot; billing: AssignSlotDirectBilling; emailSkipped: boolean }
+  | {
+      ok: false
+      reason:
+        | 'learner_not_assigned'
+        | 'tariff_not_active'
+        | 'tariff_not_owned'
+        | 'tariff_duration_mismatch'
+        | 'in_past'
+        | 'start_out_of_band'
+        | 'start_not_30min_aligned'
+        | 'self_booking_blocked'
+        | 'slot_collision'
+        | 'external_conflict'
+        | 'no_package_no_postpaid'
+        | 'pending_package_grant'
+        | 'payment_method_not_set'
+      availablePackages?: ReadonlyArray<{
+        slug: string
+        titleRu: string
+        amountKopecks: number
+        durationMinutes: number
+      }>
+    }
 
 export type BulkCreateInput = {
   teacherAccountId: string
