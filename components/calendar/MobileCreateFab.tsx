@@ -35,15 +35,14 @@ const MODE_OPTIONS_OPEN_SLOTS = [
   { value: 'single', label: 'Один слот' },
   { value: 'bulk', label: 'Несколько' },
   { value: 'assign', label: 'Назначить' },
-  { value: 'bulk_assign', label: 'Назначить N' },
 ] as const
 
 // teacher-no-slots-mode (Задача 2.1, 2026-06-11): когда учитель в
 // direct_assign режиме, slot-create опции скрыты — только «Назначить
-// ученику» (single / bulk).
+// ученику». epic-b polish (2026-06-11): убрали `bulk_assign` опцию —
+// переключение «Одно / Серия» теперь внутри модалки.
 const MODE_OPTIONS_DIRECT_ASSIGN = [
   { value: 'assign', label: 'Назначить' },
-  { value: 'bulk_assign', label: 'Назначить N' },
 ] as const
 
 function isoLocalToUtcIso(dateYmd: string, hhmm: string, ianaTz: string): string | null {

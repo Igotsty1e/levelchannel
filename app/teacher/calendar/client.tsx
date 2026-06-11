@@ -13,6 +13,14 @@ import type { CalendarSlotMode } from '@/lib/scheduling/slot-mode'
 import type { PaintSpan, MoveTarget } from '@/lib/calendar/drag-state'
 import type { CalendarRow } from '@/lib/calendar/view-model'
 
+function pluralLessons(n: number): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return 'занятие'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'занятия'
+  return 'занятий'
+}
+
 // Wave C — teacher self-create surface. Mounts <SlotCalendar /> with
 // drag interactions wired to /api/teacher/slots/* endpoints. Click on
 // an existing slot opens TeacherSlotDetailModal which can cancel
@@ -171,24 +179,9 @@ export default function TeacherCalendarClient({
         >
           + Назначить ученику
         </button>
-        {/* epic-b Sub-PR B.3 (2026-06-11) — bulk назначения сразу N
-            занятий конкретному ученику. */}
-        <button
-          type="button"
-          onClick={() => setCreateMode('bulk_assign')}
-          style={{
-            padding: '8px 14px',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            background: 'var(--surface-2)',
-            color: 'var(--text)',
-            cursor: 'pointer',
-            fontSize: 13,
-            fontWeight: 600,
-          }}
-        >
-          + Назначить N
-        </button>
+        {/* epic-b Sub-PR B.3 polish (2026-06-11): убрали дубль-CTA
+            «+ Серия занятий». Режим «Одно / Серия» теперь чипом
+            ВНУТРИ модалки — единая точка входа на главном UI. */}
         {/* teacher-no-slots-mode (Задача 2.1): открытые слоты убираем
             из UI, если учитель выбрал режим direct_assign. Сам ход
             «добавить открытый слот» больше не нужен — только direct
@@ -274,6 +267,7 @@ export default function TeacherCalendarClient({
       <AssignDirectModal
         open={createMode === 'assign'}
         onClose={() => setCreateMode('closed')}
+        onSwitchToBulk={() => setCreateMode('bulk_assign')}
         onCreated={(info) => {
           showToast(
             info.emailSkipped
@@ -290,10 +284,11 @@ export default function TeacherCalendarClient({
         onClose={() => setCreateMode('closed')}
         onSwitchToSingle={() => setCreateMode('assign')}
         onCreated={(info) => {
+          const word = pluralLessons(info.createdCount)
           showToast(
             info.emailSkipped
-              ? `Назначено ${info.createdCount} занятий. Часть писем перенесена в дайджест (anti-spam).`
-              : `Назначено ${info.createdCount} занятий, ученик получит письма.`,
+              ? `Назначено ${info.createdCount} ${word}. Часть писем перенесена в дайджест (anti-spam).`
+              : `Назначено ${info.createdCount} ${word}, ученик получит письма.`,
           )
           bumpReload()
           router.refresh()

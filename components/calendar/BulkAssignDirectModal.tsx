@@ -80,8 +80,8 @@ const DAYS_OF_WEEK: Array<{
 ]
 
 const MODE_OPTIONS = [
-  { value: 'single', label: 'Один слот' },
-  { value: 'bulk', label: 'Несколько' },
+  { value: 'single', label: 'Одно занятие' },
+  { value: 'bulk', label: 'Серия' },
 ] as const
 
 function todayYmd(): string {
@@ -100,6 +100,15 @@ function fmtTimeRu(iso: string): string {
     `${d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', weekday: 'short' })} `
     + `${d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Moscow' })}`
   )
+}
+
+function pluralLessons(n: number): string {
+  // 1 занятие / 2 занятия / 5 занятий — Russian plural rules.
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return 'занятие'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'занятия'
+  return 'занятий'
 }
 
 function formatLearnerLabel(it: LearnerListResponse['items'][number]): string {
@@ -408,7 +417,7 @@ export function BulkAssignDirectModal({
       >
         <header style={headerStyle}>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>
-            Назначить несколько
+            Серия занятий
           </h2>
           <button
             type="button"
@@ -681,15 +690,19 @@ export function BulkAssignDirectModal({
               {creating
                 ? 'Создаём…'
                 : preview
-                  ? `Назначить ${preview.willCreate.length} занятий`
-                  : 'Назначить'}
+                  ? `Назначить ${preview.willCreate.length}\u00A0${pluralLessons(preview.willCreate.length)}`
+                  : 'Назначить серию'}
             </button>
           </div>
 
           {preview ? (
             <div role="status" style={previewBoxStyle}>
               <div style={{ marginBottom: 6 }}>
-                Будет назначено: <strong>{preview.willCreate.length}</strong>
+                Будет назначено:{' '}
+                <strong>
+                  {preview.willCreate.length}&nbsp;
+                  {pluralLessons(preview.willCreate.length)}
+                </strong>
               </div>
               {preview.conflicts.length > 0 ? (
                 <div

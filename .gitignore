@@ -69,3 +69,4 @@ next-env.d.ts
 .stryker-tmp/
 reports/mutation/
 stryker.log
+/.gstack-audit-screenshots/
