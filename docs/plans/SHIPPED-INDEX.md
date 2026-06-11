@@ -155,6 +155,17 @@ Owner reported 4 bugs + asked for security + code-quality audits. Whole wave shi
   - **Sub-PR B UI + email (PR #595 `4040110`)** — `AssignDirectModal` с Combobox для ученика + тариф (длительность read-only из тарифа). `MobileCreateFab` третий chip-option «Назначить ученику». Desktop кнопка рядом с «Добавить слоты». Email template `learner-direct-assign-notice.ts` (Russian copy per docs/content-style.md). Endpoint после успешного slot'a — best-effort `sendLearnerDirectAssignNoticeEmail` с rate-limit 5/час/ученик (на hit → `emailSkipped: true`). 6 unit-тестов на template. Новый endpoint `GET /api/teacher/learners/list-for-assign` для Combobox data.
   - Foundation для Задачи 2.1 (глобальный режим «без слотов» = direct-assign по умолчанию).
 
+## 2026-06-11 learners-list polish (Задача 3)
+
+- **`learners-list-polish-2026-06-11.md`** — `/teacher/learners` polish: список вынесен ВВЕРХ страницы, приглашение нового ученика ПОСЛЕ. Sort active a-z (RU-aware `localeCompare`). Pagination top-10 (UI controls только когда >10). Дублирующая подпись «X активных учеников» удалена (ChipGroup ниже показывает counts). Status: SHIPPED 2026-06-11 (PR #597 `34c2c82`).
+
+## 2026-06-11 minute-duration epic (Задача 4, Option 2)
+
+- **`minute-duration-2026-06-11.md`** — заменили chip-presets [30/45/60/90/120] на минутный number input по всему стеку (тарифы, пакеты, слоты). Owner ask — учителю нужна минутная точность длительности (47-min, 75-min courses). Strategy: Option 2 (compromise) — duration minute-precision, start_at остаётся 30-min grid. Status: SHIPPED 2026-06-11. Sub-PRs:
+  - **Sub-PR A pricing (PR #598 `35c158b`)** — `tariff-create-sheet`, `tariff-card` (edit), `package-create-sheet` — ChipGroup → number input. Constants `TARIFF_DURATION_MIN=15/MAX=240`, `PACKAGE_DURATION_MIN=15/MAX=180` (matches existing DB CHECKs mig 0033/0046). Client-side validation + inline error. `isCustomDuration` ветка с hint «нестандартная, останется как есть» убрана.
+  - **Sub-PR B slot UI (PR #599 `db17b68`, epic-close)** — `TimeRangeRow.tsx` drop `ALLOWED_DURATIONS_MIN` snap; «До» меняется на HTML5 `<input type="time" step={60}>` (minute-level). «От» остаётся 30-min `TimePickerButton`. `lib/calendar/recurrence.ts` whitelist `ALLOWED_DURATIONS` заменён на range `RECURRENCE_DURATION_MIN=15`/`MAX=180`. Tests updated (positive 47-min case добавлен).
+  - **Что НЕ trogаем (per Option 2):** Paint/drag-paint (`PaintConfirmModal` + `paint-synth.ts`) — cell-based UX осмысленно ограничен multiples of 30. `lesson_slots_start_30min_aligned` DB CHECK — start_at остаётся выровнен. Calendar Grid — block height precise via duration_minutes напрямую.
+
 ## Foundational pre-2026-05 waves (kept for git blame continuity)
 
 - **`csp-hardening.md`** (CSP hardening, CLOSED 2026-05-09) — Content-Security-Policy lockdown for production.
