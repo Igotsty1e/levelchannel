@@ -2,9 +2,12 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 
-import { Combobox, type ComboboxOption } from '@/components/ui/primitives'
-
-import { TimePickerButton } from './TimePickerButton'
+import {
+  Combobox,
+  type ComboboxOption,
+  DatePicker,
+  TimePicker,
+} from '@/components/ui/primitives'
 
 // teacher-direct-assign (Задача 2.2, Sub-PR B, 2026-06-11).
 //
@@ -328,22 +331,12 @@ export function AssignDirectModal({
             >
               Дата
             </label>
-            <input
-              id="assign-direct-date"
-              type="date"
+            <DatePicker
               value={date}
+              onChange={setDate}
               min={todayYmd()}
-              onChange={(e) => setDate(e.target.value)}
               disabled={submitting}
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                fontSize: '15px',
-                background: 'var(--surface-2)',
-                color: 'var(--text)',
-                border: '1px solid var(--border)',
-                borderRadius: '8px',
-              }}
+              ariaLabel="Дата занятия"
             />
           </div>
 
@@ -365,11 +358,14 @@ export function AssignDirectModal({
                 gap: '8px',
               }}
             >
-              <TimePickerButton
-                label="От"
+              <TimePicker
                 value={from}
-                onSelect={setFrom}
+                onChange={setFrom}
+                hourMin={6}
+                hourMax={21}
+                granularity={1}
                 disabled={submitting}
+                ariaLabel="Время начала"
               />
               <span
                 style={{
