@@ -75,7 +75,7 @@ async function setupPair(prefix: string) {
 async function setPairPaymentMethod(
   teacherId: string,
   learnerId: string,
-  method: 'postpaid' | 'prepaid_packages' | 'none',
+  method: 'postpaid' | 'none',
 ) {
   await getDbPool().query(
     `insert into learner_billing_preferences

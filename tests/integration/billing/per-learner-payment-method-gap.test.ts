@@ -122,7 +122,7 @@ async function teacherSessionCookie(teacherId: string): Promise<string> {
 async function setPairPaymentMethod(
   teacherId: string,
   learnerId: string,
-  method: 'postpaid' | 'prepaid_packages' | 'none',
+  method: 'postpaid' | 'none',
 ) {
   await getDbPool().query(
     `insert into learner_billing_preferences
@@ -135,8 +135,14 @@ async function setPairPaymentMethod(
 }
 
 describe('Per-learner payment-method gap — Q1 debt-open guard (control-path)', () => {
-  it('allows PATCH postpaid → prepaid_packages when no open debt exists', async () => {
-    const { teacher, learner } = await setupTeacherAndLearner('plpm-q1-ok')
+  // epic-b Sub-PR B.1 (2026-06-11): Q1 debt-open invariant retired.
+  // 'prepaid_packages' value dropped from the enum (mig 0126); the only
+  // remaining transitions are postpaid ↔ none, so a "switch from
+  // postpaid into packages with open debt" branch no longer exists.
+  // The tests below now pin the rejection contract for the dropped
+  // value instead.
+  it('rejects PATCH to dropped value prepaid_packages with 422', async () => {
+    const { teacher, learner } = await setupTeacherAndLearner('plpm-q1-reject')
     await setPairPaymentMethod(teacher.accountId, learner.accountId, 'postpaid')
 
     const r = await billingPatchHandler(
@@ -147,26 +153,17 @@ describe('Per-learner payment-method gap — Q1 debt-open guard (control-path)',
       }),
       { params: Promise.resolve({ id: learner.accountId }) },
     )
-    expect(r.status).toBe(200)
+    expect(r.status).toBe(422)
     const body = await r.json()
-    expect(body.ok).toBe(true)
-    expect(body.previousMethod).toBe('postpaid')
-    expect(body.method).toBe('prepaid_packages')
-
-    const after = await getPaymentMethodForPair(
-      teacher.accountId,
-      learner.accountId,
-    )
-    expect(after).toBe('prepaid_packages')
+    expect(body.error).toBe('invalid_method')
+    // The pair method must NOT have changed.
+    expect(
+      await getPaymentMethodForPair(teacher.accountId, learner.accountId),
+    ).toBe('postpaid')
   })
 
-  it('allows PATCH none → postpaid and none → prepaid_packages (no debt-check applies)', async () => {
+  it('allows PATCH none → postpaid (target method valid)', async () => {
     const { teacher, learner } = await setupTeacherAndLearner('plpm-q1-none')
-    // From 'none' the debt-check branch is bypassed by design — the
-    // pair was never postpaid so there cannot be a postpaid debt.
-    // Run BOTH transitions back-to-back on the same pair to lock in
-    // the route's behaviour for each target method (the test name
-    // promised both; codex-paranoia wave round-1 WARN #5 closure).
     const r1 = await billingPatchHandler(
       buildRequest(`/api/teacher/learners/${learner.accountId}/billing`, {
         method: 'PATCH',
@@ -176,27 +173,9 @@ describe('Per-learner payment-method gap — Q1 debt-open guard (control-path)',
       { params: Promise.resolve({ id: learner.accountId }) },
     )
     expect(r1.status).toBe(200)
-    expect(await getPaymentMethodForPair(teacher.accountId, learner.accountId)).toBe(
-      'postpaid',
-    )
-
-    // Reset to 'none' before testing the prepaid_packages branch so
-    // we exercise none → prepaid_packages (not postpaid → packages,
-    // which IS the Q1 debt branch covered by the test above).
-    await setPairPaymentMethod(teacher.accountId, learner.accountId, 'none')
-
-    const r2 = await billingPatchHandler(
-      buildRequest(`/api/teacher/learners/${learner.accountId}/billing`, {
-        method: 'PATCH',
-        cookie: teacher.cookie,
-        body: { method: 'prepaid_packages' },
-      }),
-      { params: Promise.resolve({ id: learner.accountId }) },
-    )
-    expect(r2.status).toBe(200)
-    expect(await getPaymentMethodForPair(teacher.accountId, learner.accountId)).toBe(
-      'prepaid_packages',
-    )
+    expect(
+      await getPaymentMethodForPair(teacher.accountId, learner.accountId),
+    ).toBe('postpaid')
   })
 })
 
@@ -318,7 +297,12 @@ describe('Per-learner payment-method gap — Q7 audit row contract', () => {
 })
 
 describe('Per-learner payment-method gap — invite-default flow (§Scope item 6)', () => {
-  it('invite created with default=prepaid_packages seeds pref on redeem + emits audit row', async () => {
+  it('invite created with default=postpaid seeds pref on redeem + emits audit row', async () => {
+    // epic-b Sub-PR B.1 (2026-06-11): rewritten from 'prepaid_packages'
+    // → 'postpaid' default after mig 0126 dropped the prepaid value.
+    // Behaviour under test is identical: invite-default flow seeds
+    // learner_billing_preferences + emits a method_changed audit row.
+
     // 1. Teacher self-registers + creates an invite with default method.
     const teacher = await reg('plpm-inv-pp-teacher@example.com', {
       role: 'teacher',
@@ -327,12 +311,12 @@ describe('Per-learner payment-method gap — invite-default flow (§Scope item 6
     const createRes = await createInviteHandler(
       buildRequest('/api/teacher/invites', {
         cookie,
-        body: { defaultPaymentMethod: 'prepaid_packages' },
+        body: { defaultPaymentMethod: 'postpaid' },
       }),
     )
     expect(createRes.status).toBe(200)
     const createdJson = await createRes.json()
-    expect(createdJson.defaultPaymentMethod).toBe('prepaid_packages')
+    expect(createdJson.defaultPaymentMethod).toBe('postpaid')
 
     // 2. Extract the token. The wire token still encodes only iid/tid;
     //    the default method lives in the DB row.
@@ -352,7 +336,7 @@ describe('Per-learner payment-method gap — invite-default flow (§Scope item 6
       `select default_payment_method from teacher_invites where id = $1`,
       [createdJson.id],
     )
-    expect(inviteRow.rows[0].default_payment_method).toBe('prepaid_packages')
+    expect(inviteRow.rows[0].default_payment_method).toBe('postpaid')
 
     // 4. Learner registers via the invite.
     const regRes = await registerHandler(
@@ -369,15 +353,15 @@ describe('Per-learner payment-method gap — invite-default flow (§Scope item 6
     const learner = await getAccountByEmail('plpm-inv-pp-learner@example.com')
     expect(learner).not.toBeNull()
 
-    // 5. learner_billing_preferences row should be seeded to 'prepaid_packages'.
+    // 5. learner_billing_preferences row should be seeded to 'postpaid'.
     const seeded = await getPaymentMethodForPair(
       teacher.accountId,
       learner!.id,
     )
-    expect(seeded).toBe('prepaid_packages')
+    expect(seeded).toBe('postpaid')
 
     // 6. Audit row written under the teacher's account_id with from='none'
-    //    and to='prepaid_packages' (mirrors a teacher-driven PATCH).
+    //    and to='postpaid' (mirrors a teacher-driven PATCH).
     const audit = await authPool.query<{
       account_id: string
       payload: Record<string, unknown>
@@ -393,7 +377,7 @@ describe('Per-learner payment-method gap — invite-default flow (§Scope item 6
     expect(audit.rows).toHaveLength(1)
     expect(audit.rows[0].payload.learner_account_id).toBe(learner!.id)
     expect(audit.rows[0].payload.from_method).toBe('none')
-    expect(audit.rows[0].payload.to_method).toBe('prepaid_packages')
+    expect(audit.rows[0].payload.to_method).toBe('postpaid')
     expect(audit.rows[0].payload.source).toBe('invite_default')
   })
 
@@ -499,16 +483,21 @@ describe('Per-learner payment-method gap — invite-default flow (§Scope item 6
     expect(c.rows[0].count).toBe('0')
   })
 
-  it('invite redeem with default=prepaid_packages on PRE-EXISTING pref row preserves the prior method AND does NOT emit a method_changed audit', async () => {
+  it('invite redeem on PRE-EXISTING pref row preserves the prior method AND does NOT emit a method_changed audit', async () => {
     // Codex-paranoia wave round-1 BLOCKER #1 coverage:
     //
     // The redeem CTE seeds learner_billing_preferences with
     // `on conflict (teacher, learner) do nothing` — a pre-existing
     // row (e.g. the learner was previously linked to this teacher
     // under 'postpaid', then unlinked, then re-redeems a fresh
-    // invite carrying default='prepaid_packages') must NOT be
-    // clobbered, and we must NOT emit `auth.billing.method_changed`
-    // for a change that never happened.
+    // invite carrying default='none') must NOT be clobbered, and we
+    // must NOT emit `auth.billing.method_changed` for a change that
+    // never happened.
+    //
+    // epic-b Sub-PR B.1 (2026-06-11): rewritten from
+    // default='prepaid_packages' → default='none' after mig 0126
+    // dropped the prepaid value. The conflict-preserve semantic is
+    // the SUT, not the specific default value.
     const teacher = await reg('plpm-inv-conflict-teacher@example.com', {
       role: 'teacher',
     })
@@ -527,19 +516,17 @@ describe('Per-learner payment-method gap — invite-default flow (§Scope item 6
       [teacher.accountId],
     )
 
-    // Build a fresh invite carrying default='prepaid_packages'.
+    // Build a fresh invite carrying default='none' (any non-postpaid
+    // value is enough to detect the on-conflict-do-nothing behaviour).
     const cookie = await teacherSessionCookie(teacher.accountId)
     const createRes = await createInviteHandler(
       buildRequest('/api/teacher/invites', {
         cookie,
-        body: { defaultPaymentMethod: 'prepaid_packages' },
+        body: { defaultPaymentMethod: 'none' },
       }),
     )
     expect(createRes.status).toBe(200)
     const createdJson = await createRes.json()
-    const token = decodeURIComponent(
-      (createdJson.url as string).match(/invite=([^&]+)/)![1],
-    )
 
     // Redeem via register-with-invite for the SAME learner via login
     // path is not the test's concern; the production redeem CTE only
@@ -553,7 +540,7 @@ describe('Per-learner payment-method gap — invite-default flow (§Scope item 6
       learner.accountId,
     )
     expect(redeemed).not.toBeNull()
-    expect(redeemed!.defaultPaymentMethod).toBe('prepaid_packages')
+    expect(redeemed!.defaultPaymentMethod).toBe('none')
     // The seed must report `seededPrefInserted=false` so the caller
     // (register route) skips the audit-row emit.
     expect(redeemed!.seededPrefInserted).toBe(false)

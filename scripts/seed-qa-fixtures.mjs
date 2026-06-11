@@ -699,7 +699,7 @@ async function seedLearnerScenario(client, ctx, spec) {
   switch (spec.scenario) {
     case 'active-8': {
       // 8-lesson package, 3 consumed, 5 remaining. 2 past + 2 future.
-      await setBillingMethod(client, teacherId, learnerId, 'prepaid_packages')
+      await setBillingMethod(client, teacherId, learnerId, 'postpaid')
       const pkg = packageIds[8]
       const purchasedAt = addDays(new Date(), -30)
       const orderId = await createPaidPackageOrder(client, {
@@ -787,7 +787,7 @@ async function seedLearnerScenario(client, ctx, spec) {
 
     case 'active-4': {
       // 4-lesson package, 0 consumed, 4 remaining. 1 future booked.
-      await setBillingMethod(client, teacherId, learnerId, 'prepaid_packages')
+      await setBillingMethod(client, teacherId, learnerId, 'postpaid')
       const pkg = packageIds[4]
       const purchasedAt = addDays(new Date(), -14)
       const orderId = await createPaidPackageOrder(client, {
@@ -858,7 +858,7 @@ async function seedLearnerScenario(client, ctx, spec) {
     case 'expired': {
       // Expired 4-lesson package (purchased 7 months ago, used 4/4).
       // No active package, no future slots.
-      await setBillingMethod(client, teacherId, learnerId, 'prepaid_packages')
+      await setBillingMethod(client, teacherId, learnerId, 'postpaid')
       const pkg = packageIds[4]
       const purchasedAt = addDays(new Date(), -210) // 7 months ago
       const orderId = await createPaidPackageOrder(client, {
@@ -909,7 +909,7 @@ async function seedLearnerScenario(client, ctx, spec) {
       // blocked until the teacher configures a method — that is the
       // designed empty-state for /teacher/learners/[id].
       // TODO: if a future product knob calls for "default to prepaid",
-      // change this to 'prepaid_packages'.
+      // change this to 'postpaid'.
       await setBillingMethod(client, teacherId, learnerId, 'none')
       break
     }

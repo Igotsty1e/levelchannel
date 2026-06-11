@@ -77,10 +77,14 @@ async function setupTeacherAndLearner(prefix: string) {
 }
 
 // mig 0101 — replaces `update accounts set postpaid_allowed = ...` tests.
+// epic-b Sub-PR B.1 (2026-06-11): 'prepaid_packages' dropped (mig 0126).
+// Booking always mixes: package consume first → postpaid fallback when
+// method='postpaid'. Tests that exercised the prepaid-only mode are
+// rewritten or dropped accordingly.
 async function setPairPaymentMethod(
   teacherId: string,
   learnerId: string,
-  method: 'postpaid' | 'prepaid_packages' | 'none',
+  method: 'postpaid' | 'none',
 ) {
   await getDbPool().query(
     `insert into learner_billing_preferences
@@ -160,7 +164,10 @@ async function seedPaidOrder(
 describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)', () => {
   it('learner with active matching package → 200 prepaid; consumption row inserted', async () => {
     const { admin, teacher, learner } = await setupTeacherAndLearner('pr1-prepay')
-    await setPairPaymentMethod(teacher.accountId, learner.accountId, 'prepaid_packages')
+    // method='postpaid' triggers the mix pipeline (package consume first
+    // → postpaid fallback). The package check still fires identically to
+    // the pre-mig-0126 'prepaid_packages' branch.
+    await setPairPaymentMethod(teacher.accountId, learner.accountId, 'postpaid')
     const pkg = await seedPackage({
       slug: 'pr1-prepay-pkg',
       durationMinutes: 60,
@@ -244,7 +251,9 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
        values ($1, $2) on conflict do nothing`,
       [teacherBId, learner.accountId],
     )
-    await setPairPaymentMethod(teacherBId, learner.accountId, 'prepaid_packages')
+    // method='postpaid' → mix pipeline. Package-scope leak is the SUT,
+    // not the rigid mode.
+    await setPairPaymentMethod(teacherBId, learner.accountId, 'postpaid')
     // Package from teacher A.
     const pkgA = await seedPackage({
       slug: 'pkg-ts-fix-pkga',
@@ -299,47 +308,12 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
     expect(purchases[0].countRemaining).toBe(5)
   })
 
-  it('learner with payment_method=prepaid_packages, no package → 402 package_required', async () => {
-    const { admin, teacher, learner } = await setupTeacherAndLearner('pr1-no-pkg')
-    await setPairPaymentMethod(teacher.accountId, learner.accountId, 'prepaid_packages')
-    // T3 epic-end R1-BLOCKER#3 (2026-06-02): listActivePackagesByDuration
-    // is now teacher-scoped; the hint surfaces packages from the slot's
-    // teacher only. Seed the per-test teacher with operator-managed
-    // subscription + seed the package owned by that teacher.
-    await getDbPool().query(
-      `insert into teacher_subscriptions (account_id, plan_slug, state)
-       values ($1, 'operator-managed', 'active')
-       on conflict (account_id) do update
-         set plan_slug = excluded.plan_slug, state = excluded.state`,
-      [teacher.accountId],
-    )
-    await seedPackage({
-      slug: 'pr1-matching-60',
-      durationMinutes: 60,
-      count: 10,
-      amountKopecks: 35000_00,
-      teacherId: teacher.accountId,
-    })
-    const slotId = await makeOpenSlot(
-      admin.cookie,
-      teacher.accountId,
-      futureSlotIso(60 * 24 * 3),
-      60,
-    )
-    const r = await bookHandler(
-      buildRequest(`/api/slots/${slotId}/book`, {
-        cookie: learner.cookie,
-        body: {},
-      }),
-      { params: Promise.resolve({ id: slotId }) },
-    )
-    expect(r.status).toBe(402)
-    const body = await r.json()
-    expect(body.error).toBe('package_required')
-    expect(Array.isArray(body.availablePackages)).toBe(true)
-    expect(body.availablePackages.length).toBeGreaterThanOrEqual(1)
-    expect(body.availablePackages[0].durationMinutes).toBe(60)
-  })
+  // epic-b Sub-PR B.1 (2026-06-11): removed obsolete test
+  // "learner with payment_method=prepaid_packages, no package → 402
+  // package_required". Under mig 0126 the rigid prepaid-only mode is
+  // gone; method='postpaid' attempts package consumption first and
+  // falls through to postpaid debt when no package matches. The
+  // package_required 402 path no longer reachable from this scenario.
 
   it('learner with payment_method=postpaid, slot has tariff → 200 postpaid', async () => {
     const { admin, teacher, learner } = await setupTeacherAndLearner('pr1-postpay')
@@ -484,7 +458,7 @@ describe('PR 1 — booking with package consumption (BILLING_WAVE_ACTIVE=true)',
 describe('PR 1 — restorePackageConsumption (idempotent + race-safe)', () => {
   it('two concurrent restores → exactly one succeeds, second is no-op', async () => {
     const { admin, teacher, learner } = await setupTeacherAndLearner('pr1-restore')
-    await setPairPaymentMethod(teacher.accountId, learner.accountId, 'prepaid_packages')
+    await setPairPaymentMethod(teacher.accountId, learner.accountId, 'postpaid')
     const pkg = await seedPackage({
       slug: 'pr1-restore-pkg',
       durationMinutes: 60,
