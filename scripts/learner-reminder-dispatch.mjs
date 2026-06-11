@@ -898,6 +898,32 @@ async function main() {
   } finally {
     await pool.end()
   }
+
+  // teacher-no-slots-mode Sub-PR C (2026-06-11): piggyback hourly digest
+  // on this every-minute timer. Trigger when current minute is 0 (top
+  // of the hour). Fail-soft — digest spawn failure does not affect
+  // reminder dispatch (already-completed above).
+  // Why piggyback: avoids a separate systemd timer + operator install
+  // step. The reminder dispatch timer is already active in prod.
+  if (new Date().getMinutes() === 0) {
+    try {
+      const { spawn } = await import('node:child_process')
+      const proc = spawn(
+        process.execPath,
+        ['scripts/learner-direct-assign-digest.mjs'],
+        {
+          stdio: 'inherit',
+          detached: true,
+          env: process.env,
+        },
+      )
+      proc.unref()
+    } catch (err) {
+      logJson('warn', 'digest spawn failed (non-blocking)', {
+        message: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
 }
 
 const invokedDirectly =
