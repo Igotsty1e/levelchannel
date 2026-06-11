@@ -96,6 +96,11 @@ type Props = {
   // button рендерим только если у учителя есть активный SBP-метод.
   // Set из `lib/payments/sbp-methods.resolveMethodForLearner` на SSR.
   sbpPayEnabled?: boolean
+  // teacher-no-slots-mode (Задача 2.1, Sub-PR B, 2026-06-11). Когда
+  // 'direct_assign' — скрываем pickup-секцию (доступные слоты + CTA
+  // «Записаться»). Booked-секция остаётся плюс получает кнопку
+  // «Перенести».
+  teacherSlotMode?: 'open_slots' | 'direct_assign'
 }
 
 function fmt(slotIso: string, tz: string): string {
@@ -152,6 +157,7 @@ export function LessonsSection({
   paymentMethodNotSet,
   canBuyPackages,
   sbpPayEnabled = false,
+  teacherSlotMode = 'open_slots',
 }: Props) {
   const effectiveCancelWindowHours =
     Number.isFinite(cancelWindowHours)
@@ -178,6 +184,10 @@ export function LessonsSection({
   // 2026-06-07 — модал подтверждения отмены. Когда не null, рендерим
   // <CancelLessonModal> поверх — слот хранит контекст для заголовка.
   const [cancelTarget, setCancelTarget] = useState<LessonSlot | null>(null)
+  // teacher-no-slots-mode (Задача 2.1, Sub-PR B): reschedule by learner.
+  const [rescheduleTarget, setRescheduleTarget] = useState<LessonSlot | null>(
+    null,
+  )
   // Sub-PR C — модал оплаты выбранного слота.
   const [payTarget, setPayTarget] = useState<LessonSlot | null>(null)
 
@@ -393,14 +403,24 @@ export function LessonsSection({
                                 </span>
                               ) : null}
                               {s.status === 'booked' && !tooLate ? (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setCancelTarget(s)}
-                                  disabled={busy}
-                                >
-                                  Отменить
-                                </Button>
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setRescheduleTarget(s)}
+                                    disabled={busy}
+                                  >
+                                    Перенести
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setCancelTarget(s)}
+                                    disabled={busy}
+                                  >
+                                    Отменить
+                                  </Button>
+                                </>
                               ) : s.status === 'booked' && tooLate ? (
                                 <span
                                   style={{
@@ -457,12 +477,19 @@ export function LessonsSection({
         )}
       </div>
 
-      <BookingCta
-        emailVerified={emailVerified}
-        hasAssignedTeacher={hasAssignedTeacher}
-        paymentMethodNotSet={paymentMethodNotSet}
-        canBuyPackages={canBuyPackages}
-      />
+      {/* teacher-no-slots-mode (Задача 2.1, Sub-PR B): в режиме
+          direct_assign учитель назначает время сам — pickup CTA не
+          показываем, вместо него — info-карточку. */}
+      {teacherSlotMode === 'direct_assign' ? (
+        <DirectAssignInfoCard />
+      ) : (
+        <BookingCta
+          emailVerified={emailVerified}
+          hasAssignedTeacher={hasAssignedTeacher}
+          paymentMethodNotSet={paymentMethodNotSet}
+          canBuyPackages={canBuyPackages}
+        />
+      )}
 
       {cancelTarget ? (
         <CancelLessonModal
@@ -484,7 +511,298 @@ export function LessonsSection({
           }}
         />
       ) : null}
+
+      {rescheduleTarget ? (
+        <RescheduleLessonModal
+          slot={rescheduleTarget}
+          tz={tz}
+          onClose={() => (busy ? undefined : setRescheduleTarget(null))}
+          onSuccess={async () => {
+            setRescheduleTarget(null)
+            setInfo('Занятие перенесено. Учителю отправили уведомление.')
+            await refresh()
+          }}
+        />
+      ) : null}
     </>
+  )
+}
+
+// teacher-no-slots-mode (Задача 2.1, Sub-PR B, 2026-06-11).
+// Inline reschedule modal — выбор новой даты + времени. Тариф и
+// длительность наследуются от исходного слота (backend копирует).
+function RescheduleLessonModal({
+  slot,
+  tz,
+  onClose,
+  onSuccess,
+}: {
+  slot: LessonSlot
+  tz: string
+  onClose: () => void
+  onSuccess: () => void | Promise<void>
+}) {
+  const startDate = new Date(slot.startAt)
+  const initialYmd = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(startDate)
+  const initialHhmm = new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(startDate)
+
+  const [date, setDate] = useState(initialYmd)
+  const [time, setTime] = useState(initialHhmm)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSubmit() {
+    setBusy(true)
+    setError(null)
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+    const t = /^(\d{2}):(\d{2})$/.exec(time)
+    if (!m || !t) {
+      setError('Дата или время некорректные.')
+      setBusy(false)
+      return
+    }
+    // Compose ISO in the learner's tz; backend re-validates MSK
+    // business hours + 30-min grid.
+    const localDate = new Date(`${date}T${time}:00`)
+    const tzOffset = -localDate.getTimezoneOffset()
+    const isoUtc = new Date(
+      localDate.getTime() - tzOffset * 60_000,
+    ).toISOString()
+
+    try {
+      const res = await fetch(`/api/slots/${slot.id}/reschedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newStartAt: isoUtc }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(
+          RESCHEDULE_REASON_COPY[body?.error] ??
+            `Не удалось перенести (HTTP ${res.status}).`,
+        )
+        setBusy(false)
+        return
+      }
+      await onSuccess()
+    } catch (e) {
+      setError(
+        `Сеть недоступна: ${e instanceof Error ? e.message : String(e)}`,
+      )
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Перенести занятие"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.6)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1100,
+        padding: 16,
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !busy) onClose()
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          maxWidth: 420,
+          background: 'var(--surface-1)',
+          border: '1px solid var(--border)',
+          borderRadius: 16,
+          padding: 20,
+          color: 'var(--text)',
+        }}
+      >
+        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 600 }}>
+          Перенести занятие
+        </h2>
+        <p
+          style={{
+            margin: '4px 0 16px',
+            fontSize: 13,
+            color: 'var(--text-secondary, var(--secondary))',
+          }}
+        >
+          Текущее время: {fmt(slot.startAt, tz)}.
+        </p>
+
+        <div style={{ marginBottom: 12 }}>
+          <label
+            style={{
+              display: 'block',
+              fontSize: 13,
+              color: 'var(--text-secondary, var(--secondary))',
+              marginBottom: 6,
+            }}
+          >
+            Новая дата
+          </label>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            disabled={busy}
+            style={inputStyle}
+          />
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <label
+            style={{
+              display: 'block',
+              fontSize: 13,
+              color: 'var(--text-secondary, var(--secondary))',
+              marginBottom: 6,
+            }}
+          >
+            Новое время (шаг 30 минут)
+          </label>
+          <input
+            type="time"
+            step={1800}
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+            disabled={busy}
+            style={inputStyle}
+          />
+        </div>
+
+        {error ? (
+          <div
+            role="alert"
+            style={{
+              marginBottom: 12,
+              padding: 10,
+              background: 'var(--danger-bg)',
+              color: 'var(--danger)',
+              border: '1px solid var(--danger)',
+              borderRadius: 8,
+              fontSize: 13,
+            }}
+          >
+            {error}
+          </div>
+        ) : null}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            style={cancelBtnStyle}
+          >
+            Отмена
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={busy}
+            style={submitBtnStyle}
+          >
+            {busy ? 'Переносим…' : 'Перенести'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const RESCHEDULE_REASON_COPY: Record<string, string> = {
+  not_found: 'Занятие не найдено.',
+  not_owner: 'Это занятие не ваше.',
+  already_terminal: 'Это занятие нельзя перенести — уже завершено или отменено.',
+  too_late_to_reschedule:
+    'Слишком близко к началу. Перенос делайте через учителя напрямую.',
+  in_past: 'Время уже прошло.',
+  start_out_of_band: 'Время вне рабочих часов (06:00–22:00 МСК).',
+  start_not_30min_aligned: 'Время должно быть кратно 30 минутам.',
+  slot_collision: 'На это время у учителя уже есть занятие.',
+  external_conflict:
+    'На это время у учителя — внешняя метка занятости в Google Calendar.',
+}
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '10px 12px',
+  fontSize: 15,
+  background: 'var(--surface-2)',
+  color: 'var(--text)',
+  border: '1px solid var(--border)',
+  borderRadius: 8,
+}
+
+const cancelBtnStyle: React.CSSProperties = {
+  padding: '10px 16px',
+  background: 'transparent',
+  color: 'var(--text-secondary, var(--secondary))',
+  border: '1px solid var(--border)',
+  borderRadius: 8,
+  fontSize: 14,
+  fontWeight: 500,
+  cursor: 'pointer',
+}
+
+const submitBtnStyle: React.CSSProperties = {
+  padding: '10px 16px',
+  background: 'var(--accent)',
+  color: 'var(--text-on-accent, #fff)',
+  border: 'none',
+  borderRadius: 8,
+  fontSize: 14,
+  fontWeight: 600,
+  cursor: 'pointer',
+}
+
+// teacher-no-slots-mode (Задача 2.1, Sub-PR B, 2026-06-11). Info-карточка
+// для учеников, чей учитель в режиме direct_assign. Заменяет BookingCta:
+// pickup-flow для них недоступен.
+function DirectAssignInfoCard() {
+  return (
+    <div
+      role="status"
+      style={{
+        marginTop: 16,
+        padding: 16,
+        background: 'var(--surface-2)',
+        border: '1px solid var(--border)',
+        borderRadius: 12,
+      }}
+    >
+      <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
+        Учитель сам назначает время занятий
+      </div>
+      <p
+        style={{
+          margin: 0,
+          fontSize: 13,
+          color: 'var(--text-secondary, var(--secondary))',
+          lineHeight: 1.5,
+        }}
+      >
+        Когда учитель выберет время для следующего занятия, вы получите письмо.
+        Перенести или отменить занятие можно из карточки выше.
+      </p>
+    </div>
   )
 }
 
