@@ -82,6 +82,22 @@ export async function POST(request: Request) {
         ? raw.notes
         : undefined
 
+  // epic-b Sub-PR B.2 (2026-06-11): explicit billing choice from the
+  // modal. Validates as one of the literal enum strings; an unknown
+  // value (or omitted field) defaults to 'auto' so existing callers
+  // keep their behaviour.
+  const billingChoiceRaw = raw.billingChoice
+  const billingChoice: AssignSlotDirectInput['billingChoice']
+    = billingChoiceRaw === 'package'
+      || billingChoiceRaw === 'postpaid'
+      || billingChoiceRaw === 'auto'
+      ? billingChoiceRaw
+      : undefined
+  const packagePurchaseId
+    = typeof raw.packagePurchaseId === 'string'
+      ? raw.packagePurchaseId
+      : undefined
+
   const input: AssignSlotDirectInput = {
     teacherAccountId: guard.account.id, // bound to session
     learnerAccountId: raw.learnerAccountId,
@@ -89,6 +105,8 @@ export async function POST(request: Request) {
     durationMinutes: raw.durationMinutes,
     tariffId: raw.tariffId,
     notes,
+    billingChoice,
+    packagePurchaseId,
   }
 
   const result = await assignSlotDirect(input)
@@ -198,6 +216,7 @@ function statusForReason(reason: string): number {
     case 'start_not_30min_aligned':
     case 'no_package_no_postpaid':
     case 'payment_method_not_set':
+    case 'no_eligible_package':
       return 422
     case 'slot_collision':
     case 'external_conflict':

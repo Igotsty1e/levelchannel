@@ -13,17 +13,20 @@ import { useState, useTransition } from 'react'
 
 import { Button } from '@/components/ui/primitives'
 
-type Method = 'postpaid' | 'prepaid_packages' | 'none'
+// epic-b Sub-PR B.1/B.2 (2026-06-11): dropped 'prepaid_packages'.
+// Booking always mixes — package consume first, postpaid fallback.
+// The toggle now exposes two states: 'postpaid' (booking open + mix
+// billing) and 'none' (booking blocked until teacher picks).
+type Method = 'postpaid' | 'none'
 
 const METHOD_LABEL: Record<Method, string> = {
-  postpaid: 'Постоплата (счёт после уроков)',
-  prepaid_packages: 'Пакеты (оплата вперёд)',
+  postpaid: 'Принимаю оплату (пакеты + счёт)',
   none: 'Не выбран (бронирование заблокировано)',
 }
 
 const HELP_TEXT: Record<Method, string> = {
-  postpaid: 'Ученик записывается без предварительной оплаты. Долг копится, вы периодически выставляете счёт за пределами платформы.',
-  prepaid_packages: 'Ученик покупает пакет уроков заранее. Каждое занятие списывает один пакетный слот.',
+  postpaid:
+    'Ученик записывается, занятие сначала списывается с активного пакета. Если пакета нет — копится долг, вы периодически выставляете счёт за пределами платформы.',
   none: 'Ученик не может записаться к вам. Выберите способ оплаты, чтобы открыть бронирование.',
 }
 
@@ -106,7 +109,7 @@ export function PaymentMethodToggle({
         aria-label="Способ оплаты"
         style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
       >
-        {(['postpaid', 'prepaid_packages', 'none'] as Method[]).map((m) => (
+        {(['postpaid', 'none'] as Method[]).map((m) => (
           <label
             key={m}
             style={{

@@ -56,7 +56,8 @@ export async function POST(request: Request) {
   // invite is redeemed. Body is optional; missing / empty / null
   // defaults to 'none' (legacy behaviour — booking blocked until the
   // teacher picks a method on the learner card). An explicit value
-  // outside the allow-list ('postpaid' | 'prepaid_packages' | 'none')
+  // outside the allow-list ('postpaid' | 'none' — epic-b dropped
+  // 'prepaid_packages')
   // is rejected with 422 so the client surfaces a validation error
   // rather than silently falling back to 'none' (which would be a
   // foot-gun if the client misspelled an enum constant).
@@ -75,7 +76,8 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error: 'invalid_json',
-          valid: ['postpaid', 'prepaid_packages', 'none'],
+          // epic-b Sub-PR B.1/B.2 (2026-06-11): dropped 'prepaid_packages'.
+          valid: ['postpaid', 'none'],
         },
         { status: 422, headers: NO_STORE },
       )
@@ -87,7 +89,8 @@ export async function POST(request: Request) {
           return NextResponse.json(
             {
               error: 'invalid_default_payment_method',
-              valid: ['postpaid', 'prepaid_packages', 'none'],
+              // epic-b Sub-PR B.1/B.2 (2026-06-11): dropped 'prepaid_packages'.
+          valid: ['postpaid', 'none'],
             },
             { status: 422, headers: NO_STORE },
           )

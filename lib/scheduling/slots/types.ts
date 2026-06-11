@@ -219,20 +219,25 @@ export type CreateSlotInput = {
 export type SlotSource = 'open_slot' | 'direct_assign'
 
 // teacher-direct-assign (Задача 2.2): teacher creates an already-booked
-// slot for a specific learner with a tariff (or, future, a package).
-// Mirrors bookSlot's billing pipeline; the slot enters status=booked
-// in a single TX with consumption.
+// slot for a specific learner with a tariff (or, since epic-b Sub-PR
+// B.2, an explicit package). Mirrors bookSlot's billing pipeline; the
+// slot enters status=booked in a single TX with consumption.
 export type AssignSlotDirectInput = {
   teacherAccountId: string
   learnerAccountId: string
   startAt: string
   durationMinutes: number
-  // Tariff is required in v1 (Sub-PR A). Package-mode (where teacher picks
-  // a specific package) lands as a future iteration if owner needs it —
-  // package consumption ALREADY runs inside consumePackageUnit, which
-  // matches by duration. So tariff is enough to drive billing.
   tariffId: string
   notes?: string | null
+  // epic-b Sub-PR B.2 (2026-06-11): explicit billing choice.
+  //   'auto' (default / undefined) — try package consume first,
+  //          fallback to postpaid (existing behaviour).
+  //   'package' — require package consume; pin to packagePurchaseId if
+  //          provided, else let consumePackageUnit pick by duration.
+  //          If no eligible package → 402 no_eligible_package.
+  //   'postpaid' — skip package consume, go directly to postpaid debt.
+  billingChoice?: 'auto' | 'package' | 'postpaid'
+  packagePurchaseId?: string
 }
 
 export type AssignSlotDirectBilling =
@@ -257,6 +262,10 @@ export type AssignSlotDirectResult =
         | 'no_package_no_postpaid'
         | 'pending_package_grant'
         | 'payment_method_not_set'
+        // epic-b Sub-PR B.2 (2026-06-11): teacher set billingChoice='package'
+        // but no eligible package matched (or the pinned packagePurchaseId
+        // failed visibility/expiry/units-remaining).
+        | 'no_eligible_package'
       availablePackages?: ReadonlyArray<{
         slug: string
         titleRu: string

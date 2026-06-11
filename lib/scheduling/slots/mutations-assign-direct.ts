@@ -237,56 +237,146 @@ export async function assignSlotDirect(
     }
     const slot = rowToSlot(insertResult.rows[0])
 
-    // Step 7: try package consumption (PKG-TEACHER-SCOPE — pass teacher).
-    const consume = await consumePackageUnit(client, {
-      accountId: input.learnerAccountId,
-      slotId: slot.id,
-      durationMinutes: input.durationMinutes,
-      actor: 'teacher',
-      expectedTeacherId: input.teacherAccountId,
-    })
-    if (consume.ok) {
-      const remaining = await client.query(
-        `select pp.count_initial - (
-                  select count(*) from package_consumptions pc
-                   where pc.package_purchase_id = pp.id
-                     and pc.restored_at is null
-                ) as count_remaining,
-                pp.expires_at
-           from package_purchases pp where pp.id = $1`,
-        [consume.packagePurchaseId],
-      )
-      await client.query('commit')
-      return {
-        ok: true,
-        slot,
-        billing: {
-          kind: 'prepaid',
-          packagePurchaseId: consume.packagePurchaseId,
-          countRemainingAfter: Number(
-            remaining.rows[0]?.count_remaining ?? 0,
-          ),
-          expiresAt: new Date(
-            String(remaining.rows[0]?.expires_at),
-          ).toISOString(),
-        },
-        emailSkipped: false, // determined at email-send phase upstream
+    // epic-b Sub-PR B.2 (2026-06-11): explicit billingChoice from the
+    // teacher modal. 'auto' (default) = legacy mix; 'package' = require
+    // package consume (with optional pinned purchase id); 'postpaid' =
+    // skip the package attempt entirely.
+    const billingChoice: 'auto' | 'package' | 'postpaid'
+      = input.billingChoice ?? 'auto'
+
+    // Step 7: package consumption path. 'postpaid' skips this branch.
+    if (billingChoice !== 'postpaid') {
+      // 7a: if teacher pinned a specific packagePurchaseId, validate
+      // ownership + invariants and INSERT consumption with that exact
+      // purchase. FOR UPDATE row-locks against a concurrent restore /
+      // void on the same purchase.
+      if (input.packagePurchaseId) {
+        const pinned = await client.query<{
+          id: string
+          teacher_id: string
+          duration_minutes: number
+          count_remaining: string | number
+          expires_at: string
+        }>(
+          `select pp.id,
+                  pp.teacher_id,
+                  pp.duration_minutes,
+                  pp.count_initial - (
+                    select count(*) from package_consumptions pc
+                     where pc.package_purchase_id = pp.id
+                       and pc.restored_at is null
+                  ) as count_remaining,
+                  pp.expires_at
+             from package_purchases pp
+            where pp.id = $1::uuid
+              and pp.account_id = $2::uuid
+              and pp.expires_at > now()
+              and pp.voided_at is null
+            for update`,
+          [input.packagePurchaseId, input.learnerAccountId],
+        )
+        const row = pinned.rows[0]
+        const remainingOk
+          = row && Number(row.count_remaining) > 0
+        const teacherOk
+          = row && String(row.teacher_id) === input.teacherAccountId
+        const durationOk
+          = row && Number(row.duration_minutes) === input.durationMinutes
+        if (!row || !remainingOk || !teacherOk || !durationOk) {
+          await client.query('rollback')
+          return { ok: false, reason: 'no_eligible_package' }
+        }
+        const consumed = await client.query<{ package_purchase_id: string }>(
+          `insert into package_consumptions
+             (slot_id, package_purchase_id, consumed_by_actor)
+           values ($1, $2, 'teacher')
+           on conflict (slot_id) do nothing
+           returning package_purchase_id`,
+          [slot.id, input.packagePurchaseId],
+        )
+        if (consumed.rows.length === 0) {
+          // Re-INSERT on same slot_id (shouldn't happen — slot was just
+          // INSERTed booked above) — surface as no_eligible_package vs
+          // crashing on the unique constraint.
+          await client.query('rollback')
+          return { ok: false, reason: 'no_eligible_package' }
+        }
+        await client.query('commit')
+        return {
+          ok: true,
+          slot,
+          billing: {
+            kind: 'prepaid',
+            packagePurchaseId: input.packagePurchaseId,
+            countRemainingAfter: Math.max(0, Number(row.count_remaining) - 1),
+            expiresAt: new Date(String(row.expires_at)).toISOString(),
+          },
+          emailSkipped: false,
+        }
+      }
+
+      // 7b: auto-pick / unpinned package path. Identical to bookSlot:
+      // earliest-expiring eligible package wins.
+      const consume = await consumePackageUnit(client, {
+        accountId: input.learnerAccountId,
+        slotId: slot.id,
+        durationMinutes: input.durationMinutes,
+        actor: 'teacher',
+        expectedTeacherId: input.teacherAccountId,
+      })
+      if (consume.ok) {
+        const remaining = await client.query(
+          `select pp.count_initial - (
+                    select count(*) from package_consumptions pc
+                     where pc.package_purchase_id = pp.id
+                       and pc.restored_at is null
+                  ) as count_remaining,
+                  pp.expires_at
+             from package_purchases pp where pp.id = $1`,
+          [consume.packagePurchaseId],
+        )
+        await client.query('commit')
+        return {
+          ok: true,
+          slot,
+          billing: {
+            kind: 'prepaid',
+            packagePurchaseId: consume.packagePurchaseId,
+            countRemainingAfter: Number(
+              remaining.rows[0]?.count_remaining ?? 0,
+            ),
+            expiresAt: new Date(
+              String(remaining.rows[0]?.expires_at),
+            ).toISOString(),
+          },
+          emailSkipped: false,
+        }
+      }
+      // 7c: billingChoice='package' without a pinned id but no eligible
+      // package matched — surface the explicit no_eligible_package
+      // (don't silently fall through to postpaid as 'auto' does).
+      if (billingChoice === 'package') {
+        await client.query('rollback')
+        return { ok: false, reason: 'no_eligible_package' }
       }
     }
 
-    // Step 8: pending-package gate — same as bookSlot.
-    const hasPending = await accountHasPendingPackageGrantForDuration(
-      input.learnerAccountId,
-      input.durationMinutes,
-      input.teacherAccountId,
-    )
-    if (hasPending) {
-      await client.query('rollback')
-      return { ok: false, reason: 'pending_package_grant' }
+    // Step 8: pending-package gate — same as bookSlot. Only applies to
+    // the 'auto' fallback path (postpaid choice short-circuits gates,
+    // teacher made the explicit pick).
+    if (billingChoice === 'auto') {
+      const hasPending = await accountHasPendingPackageGrantForDuration(
+        input.learnerAccountId,
+        input.durationMinutes,
+        input.teacherAccountId,
+      )
+      if (hasPending) {
+        await client.query('rollback')
+        return { ok: false, reason: 'pending_package_grant' }
+      }
     }
 
-    // Step 9: method === 'postpaid' (epic-b dropped 'prepaid_packages') —
-    // slot booked, debt at completion. Mix already handled выше.
+    // Step 9: postpaid path — slot booked, debt accrues at completion.
     void listActivePackagesByDuration
 
     await client.query('commit')

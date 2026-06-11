@@ -163,12 +163,14 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
        limit 1`,
     [teacherId, learnerId],
   )
-  const currentPaymentMethod =
-    (billingPrefsResult.rows[0]?.payment_method as
-      | 'postpaid'
-      | 'prepaid_packages'
-      | 'none'
-      | undefined) ?? 'none'
+  // epic-b Sub-PR B.1/B.2 (2026-06-11): dropped 'prepaid_packages'.
+  // Mig 0126 already normalised legacy DB rows to 'postpaid'; any
+  // unexpected value collapses to 'none' via the cast guard.
+  const currentPaymentMethodRaw = String(
+    billingPrefsResult.rows[0]?.payment_method ?? 'none',
+  )
+  const currentPaymentMethod: 'postpaid' | 'none'
+    = currentPaymentMethodRaw === 'postpaid' ? 'postpaid' : 'none'
 
   // Plan v3 §3.3 — learner-card sections need:
   //   * the teacher's full active catalog (for the «Выдать пакет» and
