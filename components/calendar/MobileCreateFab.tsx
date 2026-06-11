@@ -1,11 +1,17 @@
 'use client'
 
-import { CSSProperties, useEffect, useState } from 'react'
+import { CSSProperties, useEffect, useMemo, useState } from 'react'
 
-import { ChipGroup, DatePicker, FloatingActionButton } from '@/components/ui/primitives'
+import {
+  ChipGroup,
+  Combobox,
+  type ComboboxOption,
+  DatePicker,
+  FloatingActionButton,
+  TimePicker,
+} from '@/components/ui/primitives'
 import type { CalendarSlotMode } from '@/lib/scheduling/slot-mode'
 
-import { TimeRangeRow } from './TimeRangeRow'
 
 // Single-slot entry-point. The FAB itself is hidden on ≥600px via
 // `.calendar-mobile-fab` (rule in app/globals.css). The modal that
@@ -23,27 +29,29 @@ export type TariffOption = {
   durationMinutes?: number
 }
 
-// teacher-direct-assign (Задача 2.2, Sub-PR B, 2026-06-11) — добавили
-// третий режим 'assign' для прямого назначения занятия ученику.
-// epic-b Sub-PR B.3 (2026-06-11, epic-close) — четвёртый режим
-// 'bulk_assign' для назначения сразу N занятий одному ученику.
-export type CreateMode = 'closed' | 'single' | 'bulk' | 'assign' | 'bulk_assign'
+// teacher-direct-assign (Задача 2.2, Sub-PR B, 2026-06-11) — режим
+// 'assign' для прямого назначения занятия ученику. 2026-06-12 polish:
+// single + series теперь живут внутри одной модалки (AssignDirectModal),
+// отдельный `bulk_assign` мод убран.
+export type CreateMode = 'closed' | 'single' | 'bulk' | 'assign'
 
 const BULK_PREF_KEY = 'lc_calendar_create_bulk_mode'
 
+// epic-b polish (2026-06-11): chip group ВНУТРИ open-slot модалки
+// переключает только между «Один слот» / «Несколько» — это open-slot
+// контур. «Назначить ученику» это РАЗНЫЙ flow (direct-assign), ему
+// тут не место. Доступ к нему — через top-level кнопку на /teacher/calendar.
 const MODE_OPTIONS_OPEN_SLOTS = [
   { value: 'single', label: 'Один слот' },
   { value: 'bulk', label: 'Несколько' },
-  { value: 'assign', label: 'Назначить' },
 ] as const
 
 // teacher-no-slots-mode (Задача 2.1, 2026-06-11): когда учитель в
-// direct_assign режиме, slot-create опции скрыты — только «Назначить
-// ученику». epic-b polish (2026-06-11): убрали `bulk_assign` опцию —
-// переключение «Одно / Серия» теперь внутри модалки.
-const MODE_OPTIONS_DIRECT_ASSIGN = [
-  { value: 'assign', label: 'Назначить' },
-] as const
+// direct_assign режиме, FAB сразу открывает AssignDirectModal без чип-
+// группы (см. openFromFab — он шортcut'ит сразу в 'assign'). Этот
+// массив остаётся пустым placeholder'ом — рендер чип-группы пропускает
+// его если length < 2.
+const MODE_OPTIONS_DIRECT_ASSIGN = [] as const
 
 function isoLocalToUtcIso(dateYmd: string, hhmm: string, ianaTz: string): string | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateYmd)
@@ -117,10 +125,27 @@ export function MobileCreateFab({
       : MODE_OPTIONS_OPEN_SLOTS
   const [date, setDate] = useState(() => todayInTz(teacherTz))
   const [from, setFrom] = useState('10:00')
-  const [durationMinutes, setDurationMinutes] = useState(60)
   const [tariffId, setTariffId] = useState<string>('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Duration берётся из выбранного тарифа — тот же подход что в
+  // AssignDirectModal. Default 60 если тариф не выбран.
+  const selectedTariff = tariffs.find((t) => t.id === tariffId)
+  const durationMinutes = selectedTariff?.durationMinutes ?? 60
+
+  const tariffOptions: ComboboxOption[] = useMemo(
+    () =>
+      tariffs.map((t) => ({
+        value: t.id,
+        label: t.titleRu,
+        sub:
+          t.durationMinutes != null
+            ? `${t.durationMinutes} мин · ${Math.round(t.amountKopecks / 100)}\u00A0₽`
+            : `${Math.round(t.amountKopecks / 100)}\u00A0₽`,
+      })),
+    [tariffs],
+  )
 
   const isOpen = mode === 'single'
 
@@ -146,7 +171,7 @@ export function MobileCreateFab({
   }
 
   function handleModeChange(next: string) {
-    if (next !== 'single' && next !== 'bulk' && next !== 'assign') return
+    if (next !== 'single' && next !== 'bulk') return
     try {
       if (typeof window !== 'undefined') {
         if (next === 'bulk') window.localStorage.setItem(BULK_PREF_KEY, '1')
@@ -208,7 +233,7 @@ export function MobileCreateFab({
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="Новое занятие"
+          aria-label="Новый слот"
           style={overlayStyle}
           onClick={busy ? undefined : () => onModeChange('closed')}
         >
@@ -219,7 +244,7 @@ export function MobileCreateFab({
           >
             <header style={headerStyle}>
               <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>
-                Новое занятие
+                Новый слот
               </h2>
               <button
                 type="button"
@@ -232,18 +257,20 @@ export function MobileCreateFab({
               </button>
             </header>
 
-            <div style={{ padding: '12px 16px 0' }}>
-              <ChipGroup
-                name="create-mode"
-                value="single"
-                options={modeOptions}
-                onChange={handleModeChange}
-              />
-            </div>
+            {modeOptions.length >= 2 ? (
+              <div style={{ padding: '12px 16px 0' }}>
+                <ChipGroup
+                  name="create-mode"
+                  value="single"
+                  options={modeOptions}
+                  onChange={handleModeChange}
+                />
+              </div>
+            ) : null}
 
             <div style={bodyStyle}>
-              <div style={fieldStyle}>
-                <span>Дата</span>
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>Дата</label>
                 <DatePicker
                   value={date}
                   onChange={setDate}
@@ -252,33 +279,50 @@ export function MobileCreateFab({
                 />
               </div>
 
-              <div style={{ ...fieldStyle, marginTop: 12 }}>
-                <span>Интервал (МСК, шаг 30 мин)</span>
-                <div style={{ marginTop: 6 }}>
-                  <TimeRangeRow
-                    from={from}
-                    durationMinutes={durationMinutes}
-                    onFromChange={setFrom}
-                    onDurationChange={setDurationMinutes}
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>Время начала</label>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <TimePicker
+                    value={from}
+                    onChange={setFrom}
+                    hourMin={6}
+                    hourMax={21}
+                    granularity={1}
+                    ariaLabel="Время начала"
+                    disabled={busy}
                   />
+                  <span
+                    style={{
+                      fontSize: 13,
+                      color: 'var(--text-secondary)',
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    {durationMinutes}&nbsp;мин
+                  </span>
                 </div>
               </div>
 
-              <label style={{ ...fieldStyle, marginTop: 12 }}>
-                Тариф
-                <select
-                  value={tariffId}
-                  onChange={(e) => setTariffId(e.target.value)}
-                  style={inputStyle}
-                >
-                  <option value="">Без цены</option>
-                  {tariffs.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.titleRu} ({Math.round(t.amountKopecks / 100)} ₽)
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Тариф</label>
+                <Combobox
+                  value={tariffId || null}
+                  onChange={(v) => setTariffId(v ?? '')}
+                  options={tariffOptions}
+                  placeholder="Без цены"
+                  emptyMessage="Нет тарифов"
+                  disabled={busy}
+                  size="md"
+                  searchable={false}
+                />
+              </div>
 
               {error ? (
                 <div role="alert" style={errorStyle}>
@@ -286,7 +330,13 @@ export function MobileCreateFab({
                 </div>
               ) : null}
 
-              <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '8px',
+                  justifyContent: 'flex-end',
+                }}
+              >
                 <button
                   type="button"
                   onClick={() => onModeChange('closed')}
@@ -369,42 +419,34 @@ const bodyStyle: CSSProperties = {
   padding: 16,
 }
 
-const fieldStyle: CSSProperties = {
+// DS-aligned label — копия AssignDirectModal.
+const labelStyle: CSSProperties = {
+  display: 'block',
   fontSize: 13,
-  color: 'var(--secondary)',
-  display: 'grid',
-  gap: 4,
-}
-
-const inputStyle: CSSProperties = {
-  padding: '8px 10px',
-  borderRadius: 6,
-  border: '1px solid var(--border)',
-  background: 'var(--bg)',
-  color: 'var(--text)',
-  fontSize: 14,
+  color: 'var(--text-secondary)',
+  marginBottom: 6,
 }
 
 const cancelBtnStyle: CSSProperties = {
   padding: '10px 16px',
-  borderRadius: 8,
-  border: '1px solid var(--border)',
   background: 'transparent',
-  color: 'var(--text)',
-  cursor: 'pointer',
+  color: 'var(--text-secondary)',
+  border: '1px solid var(--border)',
+  borderRadius: 8,
   fontSize: 14,
-  fontWeight: 600,
+  fontWeight: 500,
+  cursor: 'pointer',
 }
 
 const submitBtnStyle: CSSProperties = {
   padding: '10px 16px',
-  borderRadius: 8,
-  border: 'none',
   background: 'var(--accent)',
-  color: '#fff',
-  cursor: 'pointer',
+  color: 'var(--text-on-accent)',
+  border: 'none',
+  borderRadius: 8,
   fontSize: 14,
   fontWeight: 600,
+  cursor: 'pointer',
 }
 
 const errorStyle: CSSProperties = {
