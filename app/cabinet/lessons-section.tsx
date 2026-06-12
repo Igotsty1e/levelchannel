@@ -145,8 +145,13 @@ function derivedSlotLabel(
   status: string,
   startAtIso: string,
   isPaid: boolean,
+  isRefunded: boolean,
 ): string {
   if (status === 'booked' && new Date(startAtIso).getTime() < Date.now()) {
+    // Posthoc-audit 2026-06-12: PR #627 collapsed "paid then refunded"
+    // into "не оплачено" because derivedSlotLabel only saw `isPaid`.
+    // refundedSet is the source of truth for "оплата возвращена".
+    if (isRefunded) return 'возвращено'
     return isPaid ? 'проведено' : 'не оплачено'
   }
   return statusLabel(status)
@@ -352,6 +357,7 @@ export function LessonsSection({
                                     s.status,
                                     s.startAt,
                                     paidSet.has(s.id),
+                                    refundedSet.has(s.id),
                                   )}
                                 </span>
                                 {s.status === 'booked'
@@ -504,6 +510,7 @@ export function LessonsSection({
                               s.status,
                               s.startAt,
                               paidSet.has(s.id),
+                              refundedSet.has(s.id),
                             )}
                           </li>
                         ))}

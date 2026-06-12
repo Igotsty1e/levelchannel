@@ -89,6 +89,53 @@ async function setPairPaymentMethod(
   )
 }
 
+async function seedPackageForLearner(
+  teacherId: string,
+  learnerId: string,
+  durationMinutes: number,
+): Promise<string> {
+  const pool = getDbPool()
+  const pkg = await pool.query<{ id: string }>(
+    `insert into lesson_packages
+       (slug, title_ru, amount_kopecks, currency, duration_minutes,
+        count, is_active, teacher_id)
+       values ($1, 'Test pkg', 200000, 'RUB', $2, 5, true, $3::uuid)
+     returning id`,
+    [`pkg-${Math.random().toString(36).slice(2, 10)}`, durationMinutes, teacherId],
+  )
+  // Stub payment_order row for FK satisfaction (we don't go through
+  // the buy flow). Uses the legacy column shape (`amount_rub`,
+  // `invoice_id` PK as text).
+  const invoiceId = `seed-pkg-${Math.random().toString(36).slice(2, 12)}`
+  await pool.query(
+    `insert into payment_orders
+       (invoice_id, amount_rub, currency, description, provider, status,
+        created_at, updated_at, paid_at, customer_email, receipt_email,
+        receipt, metadata)
+     values ($1, '2000.00', 'RUB', 'seed pkg', 'mock', 'paid',
+             now(), now(), now(), 'seed@example.com', 'seed@example.com',
+             '{}'::jsonb, jsonb_build_object('seed', true))`,
+    [invoiceId],
+  )
+  const purchase = await pool.query<{ id: string }>(
+    `insert into package_purchases
+       (account_id, package_id, payment_order_id, amount_kopecks,
+        currency, title_snapshot, duration_minutes, count_initial,
+        expires_at, teacher_id)
+       values ($1::uuid, $2::uuid, $3, 200000, 'RUB',
+        'Test pkg', $4, 5, now() + interval '90 days', $5::uuid)
+     returning id`,
+    [
+      learnerId,
+      pkg.rows[0].id,
+      invoiceId,
+      durationMinutes,
+      teacherId,
+    ],
+  )
+  return purchase.rows[0].id
+}
+
 async function activateTeacherSubscription(teacherId: string) {
   await getDbPool().query(
     `insert into teacher_subscriptions (account_id, plan_slug, state)
@@ -232,6 +279,68 @@ describe('assignSlotDirect — Задача 2.2 backend smoke', () => {
     expect(r.ok).toBe(false)
     if (r.ok) return
     expect(r.reason).toBe('in_past')
+  })
+
+  it('paymentMethod=none + matching package + auto → success via package (posthoc-audit 2026-06-12 contract align)', async () => {
+    process.env.BILLING_WAVE_ACTIVE = 'true'
+    const fp = Date.now().toString(36)
+    const teacher = await registerAndCookie(`teacher-${fp}-f@example.com`, {
+      verifyEmail: true,
+      role: 'teacher',
+    })
+    const learner = await registerAndCookie(`learner-${fp}-f@example.com`, {
+      verifyEmail: true,
+    })
+    await activateTeacherSubscription(teacher.accountId)
+    await linkLearnerToTeacher(learner.accountId, teacher.accountId)
+    // method intentionally 'none' — backend gate must NOT block when a
+    // matching package exists.
+    await setPairPaymentMethod(teacher.accountId, learner.accountId, 'none')
+
+    const tariffId = await seedTariff(teacher.accountId, { durationMinutes: 60 })
+    await seedPackageForLearner(teacher.accountId, learner.accountId, 60)
+
+    const result = await assignSlotDirect({
+      teacherAccountId: teacher.accountId,
+      learnerAccountId: learner.accountId,
+      startAt: futureSlotIso(48 * 60),
+      durationMinutes: 60,
+      tariffId,
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.billing.kind).toBe('prepaid')
+  })
+
+  it('paymentMethod=none + matching package + billingChoice=postpaid → still 422 payment_method_not_set', async () => {
+    process.env.BILLING_WAVE_ACTIVE = 'true'
+    const fp = Date.now().toString(36)
+    const teacher = await registerAndCookie(`teacher-${fp}-g@example.com`, {
+      verifyEmail: true,
+      role: 'teacher',
+    })
+    const learner = await registerAndCookie(`learner-${fp}-g@example.com`, {
+      verifyEmail: true,
+    })
+    await activateTeacherSubscription(teacher.accountId)
+    await linkLearnerToTeacher(learner.accountId, teacher.accountId)
+    await setPairPaymentMethod(teacher.accountId, learner.accountId, 'none')
+    const tariffId = await seedTariff(teacher.accountId, { durationMinutes: 60 })
+    await seedPackageForLearner(teacher.accountId, learner.accountId, 60)
+
+    const result = await assignSlotDirect({
+      teacherAccountId: teacher.accountId,
+      learnerAccountId: learner.accountId,
+      startAt: futureSlotIso(72 * 60),
+      durationMinutes: 60,
+      tariffId,
+      billingChoice: 'postpaid',
+    })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toBe('payment_method_not_set')
   })
 
   it('rejects second concurrent assign on same (teacher, start_at) with slot_collision', async () => {

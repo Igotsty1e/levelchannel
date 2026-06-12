@@ -25,6 +25,15 @@ the rationale. Historical / fully-shipped waves live under
   `lib/calendar`, `lib/teacher-ledger`, `lib/audit`, `lib/admin` modules.
   Status: partially shipped (unit + integration ratchet passes landed
   2026-06-03); remaining next-pass priorities refreshed 2026-06-12.
+- [Backend architecture + business-process audit (2026-06-12)](docs/audit/backend-architecture-and-business-process-audit-2026-06-12.md) —
+  owner-facing audit note covering post-MVP backend seams: unstable
+  full-suite signal, reminder-cron fixture/integrity issue, `payment_orders`
+  multi-writer drift, operator-settings mirror debt, and suggested next
+  PR order for Claude follow-up.
+- [Post-hoc review of unreviewed PR cluster (2026-06-11..12)](docs/audit/posthoc-unreviewed-pr-reviews-2026-06-12.md) —
+  merged PRs #617/#618/#620..#627 reviewed after the fact; AssignDirectModal
+  paymentMethod=none contract aligned + rename form errors + refunded label
+  shipped in Wave 1 follow-up (2026-06-12); 0 actionable findings remain.
 - [Product-flow evals registry](evals/PRODUCT_FLOWS.md) +
   [URL/redirect contract](evals/URL_REDIRECT_CONTRACT.md) — live source of truth
   for flow-level expectations enforced by Playwright + content-style +

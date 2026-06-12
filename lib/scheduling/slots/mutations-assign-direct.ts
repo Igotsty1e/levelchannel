@@ -162,18 +162,7 @@ export async function assignSlotDirect(
       return { ok: false, reason: 'tariff_duration_mismatch' }
     }
 
-    // Step 4: per-pair payment_method (default 'none' blocks booking).
-    const method = await getPaymentMethodForPairTx(
-      client,
-      input.teacherAccountId,
-      input.learnerAccountId,
-    )
-    if (method === 'none') {
-      await client.query('rollback')
-      return { ok: false, reason: 'payment_method_not_set' }
-    }
-
-    // Step 5: busy-cache pre-check (advisory). Same freshness contract
+    // Step 4: busy-cache pre-check (advisory). Same freshness contract
     // as bookSlot's BUSY_OVERLAP_GATE_SQL. F3: only enforce when
     // integration is active AND last_pulled_at fresh. degraded or stale
     // → skip cache, rely on post-pull conflict-detector.
@@ -374,6 +363,23 @@ export async function assignSlotDirect(
         await client.query('rollback')
         return { ok: false, reason: 'pending_package_grant' }
       }
+    }
+
+    // Step 8.5: per-pair payment_method (default 'none' blocks postpaid).
+    // Codex posthoc audit 2026-06-12: moved AFTER the package-consume
+    // branch so an unset method does not block a learner who has an
+    // active matching package. Package-paid direct-assign returns
+    // earlier in Step 7. We reach here only on postpaid paths (explicit
+    // 'postpaid' billingChoice OR 'auto' fallback when no package
+    // matched), where method='none' is genuinely a blocker.
+    const method = await getPaymentMethodForPairTx(
+      client,
+      input.teacherAccountId,
+      input.learnerAccountId,
+    )
+    if (method === 'none') {
+      await client.query('rollback')
+      return { ok: false, reason: 'payment_method_not_set' }
     }
 
     // Step 9: postpaid path — slot booked, debt accrues at completion.
