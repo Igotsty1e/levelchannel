@@ -283,6 +283,21 @@ export function AssignDirectModal({
     }
   }, [open, presetLearner, modeProp])
 
+  // ESC закрывает модал — design-review fix 2026-06-12 (WCAG 2.1.2).
+  // submitting блокирует close: случайный ESC во время network-call
+  // не отменит pending submit.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !submitting) {
+        e.stopPropagation()
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, submitting, onClose])
+
   // Invalidate preview when any input affecting expansion changes.
   useEffect(() => {
     setPreview(null)
