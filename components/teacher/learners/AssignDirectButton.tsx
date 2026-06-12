@@ -34,7 +34,8 @@ export function AssignDirectButton({
         disabled={disabled}
         title={disabled ? 'Создайте хотя бы один тариф' : undefined}
         style={{
-          padding: '10px 16px',
+          minHeight: 44,
+          padding: '12px 18px',
           background: disabled ? 'var(--surface-2)' : 'var(--accent)',
           color: disabled ? 'var(--text-secondary)' : 'var(--text-on-accent)',
           border: '1px solid',

@@ -296,7 +296,7 @@ export function TeacherInviteSection({
       title="Пригласить ученика"
       defaultOpen={false}
       meta={headerMeta}
-      description="Создать ссылку для нового ученика и сразу выдать тарифы и пакеты"
+      description="Создать ссылку для нового ученика и сразу открыть доступ к тарифам и пакетам"
     >
       {isHardLimit ? (
         <div style={{ marginBottom: 12 }}>

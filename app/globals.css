@@ -2353,3 +2353,25 @@ html, body {
   }
 }
 
+/* CollapsibleCard primitive — design-review fixes 2026-06-12.
+   Native <details>/<summary> requires CSS hooks for:
+   1. hiding WebKit/Blink default marker so we don't render a double chevron;
+   2. rotating our custom chevron on [open];
+   3. subtle hover affordance on summary;
+   4. focus-visible outline for keyboard users. */
+.lc-collapsible-card > summary::-webkit-details-marker {
+  display: none;
+}
+.lc-collapsible-card > summary::marker {
+  content: '';
+}
+.lc-collapsible-card > summary:hover {
+  background: var(--surface-2, rgba(255, 255, 255, 0.02));
+}
+.lc-collapsible-card[open] > summary .lc-collapsible-chevron {
+  transform: rotate(180deg);
+}
+.lc-collapsible-card > summary:focus-visible {
+  outline: 2px solid var(--accent, #D88A82);
+  outline-offset: 2px;
+}
