@@ -25,8 +25,11 @@
 
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
-import { paymentConfig } from '@/lib/payments/config'
 import { getAuthPool } from '@/lib/auth/pool'
+import { grantLearnerPackageAccess } from '@/lib/billing/learner-package-access'
+import { grantLearnerTariffAccess } from '@/lib/billing/learner-tariff-access'
+import { getDbPool } from '@/lib/db/pool'
+import { paymentConfig } from '@/lib/payments/config'
 
 // Per-call env read (no module-scope memoization, matching the
 // `email-hash.ts` pattern so rotation takes effect on the next
@@ -209,6 +212,74 @@ export type CreatedInvite = {
   expiresAt: Date
   /** Default payment method seeded for the resulting (teacher, learner) pair. */
   defaultPaymentMethod: InviteDefaultPaymentMethod
+  /** Tariff ids seeded into learner_tariff_access at redeem time.
+   *  All UUIDs guaranteed to belong to the inviting teacher (validated
+   *  at insert time). Capped at 20 by mig 0128 CHECK. */
+  defaultTariffIds: ReadonlyArray<string>
+  /** Package ids seeded into learner_package_access at redeem time.
+   *  Same ownership + cap guarantees as defaultTariffIds. */
+  defaultPackageIds: ReadonlyArray<string>
+}
+
+export class TeacherInviteOwnershipError extends Error {
+  constructor(public readonly kind: 'tariff_ownership_violation' | 'package_ownership_violation') {
+    super(`teacher-invites/${kind}`)
+    this.name = 'TeacherInviteOwnershipError'
+  }
+}
+
+const UNIQUE_UUID_ARRAY_LIMIT = 20
+
+function normaliseUuidArray(input: unknown, label: string): string[] {
+  if (input === undefined || input === null) return []
+  if (!Array.isArray(input)) {
+    throw new Error(`teacher-invites/${label}-not-array`)
+  }
+  const seen = new Set<string>()
+  for (const id of input) {
+    if (typeof id !== 'string' || !UUID_RE.test(id)) {
+      throw new Error(`teacher-invites/${label}-invalid-uuid`)
+    }
+    seen.add(id)
+  }
+  if (seen.size > UNIQUE_UUID_ARRAY_LIMIT) {
+    throw new Error(`teacher-invites/${label}-cap-exceeded`)
+  }
+  return Array.from(seen)
+}
+
+async function assertTariffsOwnedByTeacher(
+  teacherAccountId: string,
+  tariffIds: ReadonlyArray<string>,
+): Promise<void> {
+  if (tariffIds.length === 0) return
+  const res = await getDbPool().query<{ id: string }>(
+    `select id from pricing_tariffs
+       where id = any($1::uuid[])
+         and teacher_id = $2::uuid
+         and deleted_at is null`,
+    [tariffIds, teacherAccountId],
+  )
+  if (res.rows.length !== tariffIds.length) {
+    throw new TeacherInviteOwnershipError('tariff_ownership_violation')
+  }
+}
+
+async function assertPackagesOwnedByTeacher(
+  teacherAccountId: string,
+  packageIds: ReadonlyArray<string>,
+): Promise<void> {
+  if (packageIds.length === 0) return
+  const res = await getDbPool().query<{ id: string }>(
+    `select id from lesson_packages
+       where id = any($1::uuid[])
+         and teacher_id = $2::uuid
+         and deleted_at is null`,
+    [packageIds, teacherAccountId],
+  )
+  if (res.rows.length !== packageIds.length) {
+    throw new TeacherInviteOwnershipError('package_ownership_violation')
+  }
 }
 
 /**
@@ -234,6 +305,8 @@ export async function createInviteForTeacher(
     ttlSeconds?: number
     env?: NodeJS.ProcessEnv
     defaultPaymentMethod?: InviteDefaultPaymentMethod
+    defaultTariffIds?: ReadonlyArray<string>
+    defaultPackageIds?: ReadonlyArray<string>
   },
 ): Promise<CreatedInvite> {
   const env = options?.env ?? process.env
@@ -249,13 +322,34 @@ export async function createInviteForTeacher(
       `teacher-invites/invalid-default-payment-method: ${String(defaultPaymentMethod)}`,
     )
   }
+  const defaultTariffIds = normaliseUuidArray(
+    options?.defaultTariffIds ?? [],
+    'default-tariff-ids',
+  )
+  const defaultPackageIds = normaliseUuidArray(
+    options?.defaultPackageIds ?? [],
+    'default-package-ids',
+  )
+  await Promise.all([
+    assertTariffsOwnedByTeacher(teacherAccountId, defaultTariffIds),
+    assertPackagesOwnedByTeacher(teacherAccountId, defaultPackageIds),
+  ])
   const expiresAt = new Date(Date.now() + ttl * 1000)
   const pool = getAuthPool()
   const inserted = await pool.query<{ id: string; expires_at: Date }>(
-    `insert into teacher_invites (teacher_account_id, expires_at, default_payment_method)
-       values ($1, $2, $3)
+    `insert into teacher_invites (
+       teacher_account_id, expires_at, default_payment_method,
+       default_tariff_ids, default_package_ids
+     )
+       values ($1, $2, $3, $4::uuid[], $5::uuid[])
        returning id, expires_at`,
-    [teacherAccountId, expiresAt, defaultPaymentMethod],
+    [
+      teacherAccountId,
+      expiresAt,
+      defaultPaymentMethod,
+      defaultTariffIds,
+      defaultPackageIds,
+    ],
   )
   const row = inserted.rows[0]
   if (!row) {
@@ -277,6 +371,8 @@ export async function createInviteForTeacher(
     url,
     expiresAt: row.expires_at,
     defaultPaymentMethod,
+    defaultTariffIds,
+    defaultPackageIds,
   }
 }
 
@@ -433,6 +529,13 @@ export async function redeemInviteAndBindLearnerAtomic(
       // logging a "change" that never happened would be a falsified
       // audit row (codex-paranoia wave round-1 BLOCKER #1 closure).
       seededPrefInserted: boolean
+      /** Tariff ids that were granted via learner_tariff_access from
+       *  the invite snapshot. Empty if invite carried none OR ids no
+       *  longer pass the learner_tariff_access invariant trigger
+       *  (e.g. tariff archived between invite and redeem). */
+      seededTariffIds: ReadonlyArray<string>
+      /** Same for packages via learner_package_access. */
+      seededPackageIds: ReadonlyArray<string>
     }
   | null
 > {
@@ -481,6 +584,8 @@ export async function redeemInviteAndBindLearnerAtomic(
     const res = await client.query<{
       teacher_account_id: string
       default_payment_method: string
+      default_tariff_ids: string[] | null
+      default_package_ids: string[] | null
       seeded_pref_inserted: boolean
     }>(
       `with verified_invite as (
@@ -496,7 +601,9 @@ export async function redeemInviteAndBindLearnerAtomic(
                where r.account_id = teacher_invites.teacher_account_id
                  and r.role = 'teacher'
             )
-         returning teacher_account_id, id as invite_id, default_payment_method
+         returning teacher_account_id, id as invite_id, default_payment_method,
+                  coalesce(default_tariff_ids, '{}'::uuid[]) as default_tariff_ids,
+                  coalesce(default_package_ids, '{}'::uuid[]) as default_package_ids
        ),
        linked as (
          insert into learner_teacher_links (learner_account_id, teacher_account_id, linked_at, unlinked_at, via_invite_id)
@@ -529,22 +636,67 @@ export async function redeemInviteAndBindLearnerAtomic(
        )
        select vi.teacher_account_id,
               vi.default_payment_method,
+              vi.default_tariff_ids,
+              vi.default_package_ids,
               exists(select 1 from seeded_pref) as seeded_pref_inserted
          from verified_invite vi`,
       [inviteId, learnerAccountId],
     )
-    await client.query('commit')
     const row = res.rows[0]
-    if (!row) return null
+    if (!row) {
+      await client.query('rollback')
+      return null
+    }
     const defaultPaymentMethod = isValidInviteDefaultPaymentMethod(
       row.default_payment_method,
     )
       ? row.default_payment_method
       : 'none'
+    const tariffIds = Array.isArray(row.default_tariff_ids)
+      ? row.default_tariff_ids.filter((id) => UUID_RE.test(id))
+      : []
+    const packageIds = Array.isArray(row.default_package_ids)
+      ? row.default_package_ids.filter((id) => UUID_RE.test(id))
+      : []
+    const seededTariffIds: string[] = []
+    for (const tariffId of tariffIds) {
+      try {
+        await grantLearnerTariffAccess(client, {
+          teacherId: row.teacher_account_id,
+          learnerAccountId,
+          tariffId,
+          grantedByAccountId: row.teacher_account_id,
+        })
+        seededTariffIds.push(tariffId)
+      } catch (err) {
+        // The learner_tariff_access_invariants trigger raises if the
+        // tariff was archived or the link was unlinked between invite
+        // creation and redeem. Skip silently — redeem proceeds, and
+        // the teacher can re-grant manually from the learner card.
+        if (!isTariffPackageGrantSkippable(err)) throw err
+      }
+    }
+    const seededPackageIds: string[] = []
+    for (const packageId of packageIds) {
+      try {
+        await grantLearnerPackageAccess(client, {
+          teacherId: row.teacher_account_id,
+          learnerAccountId,
+          packageId,
+          grantedByAccountId: row.teacher_account_id,
+        })
+        seededPackageIds.push(packageId)
+      } catch (err) {
+        if (!isTariffPackageGrantSkippable(err)) throw err
+      }
+    }
+    await client.query('commit')
     return {
       teacherAccountId: row.teacher_account_id,
       defaultPaymentMethod,
       seededPrefInserted: Boolean(row.seeded_pref_inserted),
+      seededTariffIds,
+      seededPackageIds,
     }
   } catch (err) {
     await client.query('rollback').catch(() => undefined)
@@ -552,4 +704,18 @@ export async function redeemInviteAndBindLearnerAtomic(
   } finally {
     client.release()
   }
+}
+
+// Errors raised by the access-invariant triggers when archive/unlink
+// raced ahead of redeem. Anything else escapes for visibility.
+function isTariffPackageGrantSkippable(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const message = String((err as { message?: string }).message ?? '')
+  return (
+    message.includes('learner_tariff_access_invariants') ||
+    message.includes('learner_package_access_invariants') ||
+    message.includes('learner_tariff_not_owned_or_archived') ||
+    message.includes('learner_package_not_owned_or_archived') ||
+    message.includes('learner_link_not_active')
+  )
 }

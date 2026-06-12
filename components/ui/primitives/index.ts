@@ -33,3 +33,5 @@ export type { DatePickerProps } from './date-picker'
 
 export { TimePicker } from './time-picker'
 export type { TimePickerProps } from './time-picker'
+
+export { CollapsibleCard } from './collapsible-card'

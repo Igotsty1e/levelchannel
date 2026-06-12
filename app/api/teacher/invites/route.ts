@@ -7,6 +7,7 @@ import {
   createInviteForTeacher,
   isValidInviteDefaultPaymentMethod,
   listInvitesForTeacher,
+  TeacherInviteOwnershipError,
   type InviteDefaultPaymentMethod,
 } from '@/lib/auth/teacher-invites'
 import { enforceAccountRateLimit } from '@/lib/security/account-rate-limit'
@@ -67,6 +68,8 @@ export async function POST(request: Request) {
   // round-2 WARN #2 closure: silent fallback would let a misspelled
   // enum-carrying body slip through and create the wrong invite).
   let defaultPaymentMethod: InviteDefaultPaymentMethod = 'none'
+  let defaultTariffIds: string[] = []
+  let defaultPackageIds: string[] = []
   const rawText = await request.text()
   if (rawText.trim().length > 0) {
     let body: unknown
@@ -97,12 +100,47 @@ export async function POST(request: Request) {
         }
         defaultPaymentMethod = raw
       }
+      const tariffParsed = parseInviteUuidArray(
+        (body as { defaultTariffIds?: unknown }).defaultTariffIds,
+        'defaultTariffIds',
+      )
+      if (tariffParsed.error) {
+        return NextResponse.json(
+          { error: tariffParsed.error },
+          { status: 422, headers: NO_STORE },
+        )
+      }
+      defaultTariffIds = tariffParsed.ids
+      const packageParsed = parseInviteUuidArray(
+        (body as { defaultPackageIds?: unknown }).defaultPackageIds,
+        'defaultPackageIds',
+      )
+      if (packageParsed.error) {
+        return NextResponse.json(
+          { error: packageParsed.error },
+          { status: 422, headers: NO_STORE },
+        )
+      }
+      defaultPackageIds = packageParsed.ids
     }
   }
 
-  const invite = await createInviteForTeacher(teacherAccountId, {
-    defaultPaymentMethod,
-  })
+  let invite: Awaited<ReturnType<typeof createInviteForTeacher>>
+  try {
+    invite = await createInviteForTeacher(teacherAccountId, {
+      defaultPaymentMethod,
+      defaultTariffIds,
+      defaultPackageIds,
+    })
+  } catch (err) {
+    if (err instanceof TeacherInviteOwnershipError) {
+      return NextResponse.json(
+        { error: err.kind },
+        { status: 403, headers: NO_STORE },
+      )
+    }
+    throw err
+  }
   await recordAuthAuditEvent({
     eventType: 'auth.invite.created',
     accountId: teacherAccountId,
@@ -113,6 +151,8 @@ export async function POST(request: Request) {
       inviteId: invite.id,
       expiresAt: invite.expiresAt.toISOString(),
       defaultPaymentMethod: invite.defaultPaymentMethod,
+      defaultTariffCount: invite.defaultTariffIds.length,
+      defaultPackageCount: invite.defaultPackageIds.length,
     },
   })
   return NextResponse.json(
@@ -122,9 +162,31 @@ export async function POST(request: Request) {
       url: invite.url,
       expiresAt: invite.expiresAt.toISOString(),
       defaultPaymentMethod: invite.defaultPaymentMethod,
+      defaultTariffIds: invite.defaultTariffIds,
+      defaultPackageIds: invite.defaultPackageIds,
     },
     { status: 200, headers: NO_STORE },
   )
+}
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function parseInviteUuidArray(
+  raw: unknown,
+  field: string,
+): { ids: string[]; error?: string } {
+  if (raw === undefined || raw === null) return { ids: [] }
+  if (!Array.isArray(raw)) return { ids: [], error: `invalid_${field}` }
+  if (raw.length > 20) return { ids: [], error: `${field}_cap_exceeded` }
+  const seen = new Set<string>()
+  for (const v of raw) {
+    if (typeof v !== 'string' || !UUID_PATTERN.test(v)) {
+      return { ids: [], error: `invalid_${field}` }
+    }
+    seen.add(v)
+  }
+  return { ids: Array.from(seen) }
 }
 
 export async function GET(request: Request) {

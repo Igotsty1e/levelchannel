@@ -3,7 +3,9 @@ import { redirect } from 'next/navigation'
 
 import { TeacherInviteSection } from '@/app/cabinet/teacher-invite-section'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { listPackagesByTeacher } from '@/lib/billing/packages/catalog'
 import { getTeacherPlanLearnerLimit } from '@/lib/onboarding/teacher-plan-limit'
+import { listTariffsForTeacher } from '@/lib/pricing/tariffs'
 import { listLearnersForTeacher } from '@/lib/scheduling/teacher-learners'
 
 import { LearnersListClient } from './client'
@@ -40,10 +42,29 @@ export default async function TeacherLearnersListPage() {
 
   const teacherAccountId = current.account.id
   const isVerified = Boolean(current.account.emailVerifiedAt)
-  const [learners, planLearnerLimit] = await Promise.all([
+  const [learners, planLearnerLimit, teacherTariffs, teacherPackages] = await Promise.all([
     listLearnersForTeacher(teacherAccountId),
     getTeacherPlanLearnerLimit(teacherAccountId),
+    listTariffsForTeacher(teacherAccountId),
+    listPackagesByTeacher(teacherAccountId),
   ])
+  const availableTariffs = teacherTariffs
+    .filter((t) => t.isActive)
+    .map((t) => ({
+      id: t.id,
+      titleRu: t.titleRu,
+      amountKopecks: t.amountKopecks,
+      durationMinutes: t.durationMinutes,
+    }))
+  const availablePackages = teacherPackages
+    .filter((p) => p.isActive)
+    .map((p) => ({
+      id: p.id,
+      titleRu: p.titleRu,
+      count: p.count,
+      durationMinutes: p.durationMinutes,
+      amountKopecks: p.amountKopecks,
+    }))
 
   // Cabinet polish 2026-06-07 (B3).
   // Удалили H1 «Ученики» — дублирует активную вкладку в `<TeacherCabinetNav>`
@@ -79,6 +100,8 @@ export default async function TeacherLearnersListPage() {
         <TeacherInviteSection
           isVerified={isVerified}
           planLearnerLimit={planLearnerLimit}
+          availableTariffs={availableTariffs}
+          availablePackages={availablePackages}
         />
       </div>
     </div>
