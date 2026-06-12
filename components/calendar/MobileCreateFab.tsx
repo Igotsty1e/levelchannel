@@ -7,8 +7,9 @@ import {
   Combobox,
   type ComboboxOption,
   DatePicker,
-  TimePicker,
 } from '@/components/ui/primitives'
+
+import { TimeRangeRow } from './TimeRangeRow'
 
 
 // Single-slot mobile sheet. 2026-06-12 teacher-calendar-unify: FAB
@@ -101,14 +102,22 @@ export function MobileCreateFab({
   const modeOptions = MODE_OPTIONS_OPEN_SLOTS
   const [date, setDate] = useState(() => todayInTz(teacherTz))
   const [from, setFrom] = useState('10:00')
+  // 2026-06-12 single-slot range: длительность редактируется отдельно
+  // через «До» в TimeRangeRow (как в bulk-modal). При выборе тарифа
+  // подтягиваем duration из тарифа, чтобы assertTariffDurationMatches
+  // на сервере не отлупил отправку. Пользователь может потом подвинуть
+  // «До» — на сервере 15..180.
+  const [durationMinutes, setDurationMinutes] = useState(60)
   const [tariffId, setTariffId] = useState<string>('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Duration берётся из выбранного тарифа — тот же подход что в
-  // AssignDirectModal. Default 60 если тариф не выбран.
   const selectedTariff = tariffs.find((t) => t.id === tariffId)
-  const durationMinutes = selectedTariff?.durationMinutes ?? 60
+  useEffect(() => {
+    if (selectedTariff?.durationMinutes != null) {
+      setDurationMinutes(selectedTariff.durationMinutes)
+    }
+  }, [selectedTariff?.durationMinutes])
 
   const tariffOptions: ComboboxOption[] = useMemo(
     () =>
@@ -223,34 +232,13 @@ export function MobileCreateFab({
               </div>
 
               <div style={{ marginBottom: 12 }}>
-                <label style={labelStyle}>Время начала</label>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <TimePicker
-                    value={from}
-                    onChange={setFrom}
-                    hourMin={6}
-                    hourMax={21}
-                    granularity={1}
-                    ariaLabel="Время начала"
-                    disabled={busy}
-                  />
-                  <span
-                    style={{
-                      fontSize: 13,
-                      color: 'var(--text-secondary)',
-                      fontVariantNumeric: 'tabular-nums',
-                    }}
-                  >
-                    {durationMinutes}&nbsp;мин
-                  </span>
-                </div>
+                <label style={labelStyle}>Интервал (МСК)</label>
+                <TimeRangeRow
+                  from={from}
+                  durationMinutes={durationMinutes}
+                  onFromChange={setFrom}
+                  onDurationChange={setDurationMinutes}
+                />
               </div>
 
               <div style={{ marginBottom: 16 }}>
