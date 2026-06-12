@@ -2,7 +2,13 @@ import type { CSSProperties } from 'react'
 import Link from 'next/link'
 
 import type { TeacherFinanceSnapshot } from '@/lib/billing/teacher-finance'
-import type { TeacherSetupChecklistState } from '@/lib/onboarding/teacher-setup-checklist'
+
+// Hero-вариант (2026-06-12, owner-выбор).
+//
+// Одна крупная цифра «Заработано в этом месяце» сверху + 3 побочных
+// строки под ней. Без delta-percent, без warning-badges, без coach-
+// hint и skeleton-плитки. Если у учителя ещё нет ни одного слота —
+// секция скрывается полностью (главная остаётся без шума).
 
 const RUB_FORMAT = new Intl.NumberFormat('ru-RU')
 
@@ -11,356 +17,165 @@ function fmtRub(kopecks: number): string {
   return `${RUB_FORMAT.format(Math.round(kopecks / 100))} ₽`
 }
 
-const OVERDUE_ALERT_DAYS = 7
+const MONTH_PREPOSITIONAL: Record<number, string> = {
+  0: 'ЯНВАРЕ',
+  1: 'ФЕВРАЛЕ',
+  2: 'МАРТЕ',
+  3: 'АПРЕЛЕ',
+  4: 'МАЕ',
+  5: 'ИЮНЕ',
+  6: 'ИЮЛЕ',
+  7: 'АВГУСТЕ',
+  8: 'СЕНТЯБРЕ',
+  9: 'ОКТЯБРЕ',
+  10: 'НОЯБРЕ',
+  11: 'ДЕКАБРЕ',
+}
+
+function currentMonthUpper(): string {
+  return MONTH_PREPOSITIONAL[new Date().getMonth()] ?? ''
+}
 
 export function TeacherFinanceSummary({
   snapshot,
-  setupChecklist,
 }: {
   snapshot: TeacherFinanceSnapshot
-  /**
-   * Used by the empty-state coach-hint to decide whether to show the
-   * «next step» line under the skeleton grid. While the onboarding
-   * checklist above is still incomplete the coach-hint stays hidden
-   * to avoid duplicating activation prompts.
-   */
-  setupChecklist?: TeacherSetupChecklistState
 }) {
-  const allZero =
-    snapshot.thisMonth.confirmedKopecks === 0 &&
-    snapshot.unpaid.totalKopecks === 0 &&
-    snapshot.activePackages.sumOfRemainingKopecks === 0 &&
-    snapshot.expectedThisWeek.kopecks === 0
-  if (allZero) {
-    return (
-      <EmptyFinanceSummary
-        emptyState={snapshot.emptyState}
-        setupChecklist={setupChecklist}
-      />
-    )
+  // Hero-вариант скрывает секцию для учителей без слотов: skeleton +
+  // coach-hint выпиливаются вместе со старым UI. Onboarding-checklist
+  // и greeting-CTA уже ведут учителя к первому слоту — финансовая
+  // карточка появляется автоматически, когда деньги/долги уже есть.
+  if (!snapshot.emptyState.hasAnySlot) {
+    return null
   }
 
-  const overdueAlert = snapshot.unpaid.oldestDaysOverdue >= OVERDUE_ALERT_DAYS
-  const packagesAlert = snapshot.activePackages.expiringSoonCount > 0
+  const earned = fmtRub(snapshot.thisMonth.confirmedKopecks)
+  const monthLabel = currentMonthUpper()
 
   return (
     <section aria-labelledby="finance-summary-title" style={sectionStyle}>
-      <h2 id="finance-summary-title" style={titleStyle}>
-        Финансы
-      </h2>
-      <div style={gridStyle}>
-        <FinanceCard
-          href="/teacher/payments"
-          title="Заработано в этом месяце"
-          number={fmtRub(snapshot.thisMonth.confirmedKopecks)}
-          sub={
-            snapshot.thisMonth.deltaPercent !== null
-              ? `${snapshot.thisMonth.deltaPercent > 0 ? '+' : ''}${snapshot.thisMonth.deltaPercent}% к прошлому месяцу`
-              : `с 1 ${snapshot.thisMonth.monthLabel.split(' ')[0]}`
-          }
-        />
-        <FinanceCard
-          href="/teacher/payments"
-          title="Должны прямо сейчас"
-          number={fmtRub(snapshot.unpaid.totalKopecks)}
-          sub={
-            snapshot.unpaid.learnerCount > 0
-              ? `${snapshot.unpaid.learnerCount} ${plural(snapshot.unpaid.learnerCount, 'ученик', 'ученика', 'учеников')}`
-              : 'нет долгов'
-          }
-          tone={overdueAlert ? 'warn' : 'default'}
-          alertText={
-            overdueAlert
-              ? `${snapshot.unpaid.oldestDaysOverdue} дн. просрочки`
-              : undefined
-          }
-        />
-        <FinanceCard
-          href="/teacher/packages"
-          title="Предоплата у учеников"
-          number={fmtRub(snapshot.activePackages.sumOfRemainingKopecks)}
-          sub={
-            snapshot.activePackages.learnersWithPackages > 0
-              ? `${snapshot.activePackages.learnersWithPackages} ${plural(snapshot.activePackages.learnersWithPackages, 'ученик', 'ученика', 'учеников')}`
-              : 'нет активных пакетов'
-          }
-          tone={packagesAlert ? 'warn' : 'default'}
-          alertText={
-            packagesAlert
-              ? `${snapshot.activePackages.expiringSoonCount} заканчиваются`
-              : undefined
-          }
-        />
-        <FinanceCard
-          href="/teacher/calendar"
-          title="Ожидается на этой неделе"
-          number={fmtRub(snapshot.expectedThisWeek.kopecks)}
-          sub={
-            snapshot.expectedThisWeek.bookedSlotsCount > 0
-              ? `${snapshot.expectedThisWeek.bookedSlotsCount} ${plural(snapshot.expectedThisWeek.bookedSlotsCount, 'занятие', 'занятия', 'занятий')} до воскресенья`
-              : 'нет booked-слотов'
-          }
-        />
+      <div style={heroStyle}>
+        <span id="finance-summary-title" style={heroLabelStyle}>
+          ЗАРАБОТАНО В {monthLabel}
+        </span>
+        <strong style={heroNumberStyle}>{earned}</strong>
       </div>
+      <hr style={dividerStyle} aria-hidden="true" />
+      <ul style={listStyle}>
+        <SecondaryRow
+          href="/teacher/payments"
+          label="Должны прямо сейчас"
+          value={fmtRub(snapshot.unpaid.totalKopecks)}
+        />
+        <SecondaryRow
+          href="/teacher/packages"
+          label="Предоплата у учеников"
+          value={fmtRub(snapshot.activePackages.sumOfRemainingKopecks)}
+        />
+        <SecondaryRow
+          href="/teacher/calendar"
+          label="Ожидается на этой неделе"
+          value={fmtRub(snapshot.expectedThisWeek.kopecks)}
+        />
+      </ul>
     </section>
   )
 }
 
-// ---------- Empty state ----------
-
-function EmptyFinanceSummary({
-  emptyState,
-  setupChecklist,
-}: {
-  emptyState: TeacherFinanceSnapshot['emptyState']
-  setupChecklist?: TeacherSetupChecklistState
-}) {
-  const showCoachHint = setupChecklist?.allComplete === true
-  const coachHint = showCoachHint
-    ? pickCoachHint({
-        hasAnyTariff: setupChecklist?.tariffCreated ?? false,
-        hasAnySlot: emptyState.hasAnySlot,
-        hasAnyInvite: setupChecklist?.inviteSent ?? false,
-        hasAnyBookedSlot: emptyState.hasAnyBookedSlot,
-      })
-    : null
-
-  return (
-    <section aria-labelledby="finance-summary-title" style={sectionStyle}>
-      <h2 id="finance-summary-title" style={titleStyle}>
-        Финансы
-      </h2>
-      <div style={gridStyle}>
-        <SkeletonCard
-          href="/teacher/payments"
-          title="Заработано в этом месяце"
-          sub="появится, когда ученик оплатит первое занятие"
-        />
-        <SkeletonCard
-          href="/teacher/payments"
-          title="Должны прямо сейчас"
-          sub="здесь увидите долги учеников"
-        />
-        <SkeletonCard
-          href="/teacher/packages"
-          title="Предоплата у учеников"
-          sub="здесь будут пакеты, купленные учениками"
-        />
-        <SkeletonCard
-          href="/teacher/calendar"
-          title="Ожидается на этой неделе"
-          sub="появится после первого слота с тарифом"
-        />
-      </div>
-      {coachHint ? (
-        <div style={coachHintStyle}>
-          <span>{coachHint.text}</span>
-          {coachHint.cta ? (
-            <Link href={coachHint.cta.href} style={coachHintCtaStyle}>
-              {coachHint.cta.label} →
-            </Link>
-          ) : null}
-        </div>
-      ) : null}
-    </section>
-  )
-}
-
-function SkeletonCard({
+function SecondaryRow({
   href,
-  title,
-  sub,
+  label,
+  value,
 }: {
   href: string
-  title: string
-  sub: string
+  label: string
+  value: string
 }) {
   return (
-    <Link
-      href={href}
-      aria-label={`${title} (пока пусто). ${sub}`}
-      style={{ ...cardStyle, opacity: 0.7 }}
-    >
-      <div style={cardTitleStyle}>{title}</div>
-      <div style={{ ...cardNumberStyle, color: 'var(--secondary)' }}>—</div>
-      <div style={cardSubStyle}>{sub}</div>
-    </Link>
+    <li style={listItemStyle}>
+      <Link href={href} style={rowLinkStyle} aria-label={`${label}: ${value}`}>
+        <span style={rowLabelStyle}>{label}</span>
+        <span style={rowValueStyle}>{value}</span>
+      </Link>
+    </li>
   )
-}
-
-type CoachHint = {
-  text: string
-  cta: { href: string; label: string } | null
-}
-
-function pickCoachHint(flags: {
-  hasAnyTariff: boolean
-  hasAnySlot: boolean
-  hasAnyInvite: boolean
-  hasAnyBookedSlot: boolean
-}): CoachHint {
-  if (!flags.hasAnyTariff) {
-    return {
-      text: 'Начните с тарифа — без него непонятно, сколько стоит занятие.',
-      cta: { href: '/teacher/tariffs', label: 'Создать тариф' },
-    }
-  }
-  if (!flags.hasAnySlot) {
-    return {
-      text: 'Запланируйте первое занятие — это первый шаг к заработку.',
-      cta: { href: '/teacher/calendar', label: 'Открыть календарь' },
-    }
-  }
-  if (!flags.hasAnyInvite) {
-    return {
-      text: 'Пригласите учеников — пока некому записаться на ваши занятия.',
-      cta: { href: '/teacher/learners', label: 'Список учеников' },
-    }
-  }
-  if (!flags.hasAnyBookedSlot) {
-    return {
-      text: 'Учеников добавили — теперь они могут записаться на ваши слоты.',
-      cta: { href: '/teacher/learners', label: 'Поделиться ссылкой' },
-    }
-  }
-  return {
-    text: 'Ждём первую оплату. Когда ученик заплатит — вы увидите сумму здесь.',
-    cta: null,
-  }
-}
-
-// ---------- Loaded state ----------
-
-function FinanceCard({
-  href,
-  title,
-  number,
-  sub,
-  tone = 'default',
-  alertText,
-}: {
-  href: string
-  title: string
-  number: string
-  sub: string
-  tone?: 'default' | 'warn'
-  alertText?: string
-}) {
-  return (
-    <Link href={href} aria-label={`${title}: ${number}. ${sub}`} style={cardStyle}>
-      <div style={cardTitleStyle}>{title}</div>
-      <div style={cardNumberStyle}>{number}</div>
-      <div style={cardSubStyle}>{sub}</div>
-      {alertText ? (
-        <div style={tone === 'warn' ? warnBadgeStyle : defaultBadgeStyle}>
-          {alertText}
-        </div>
-      ) : null}
-    </Link>
-  )
-}
-
-function plural(n: number, one: string, few: string, many: string): string {
-  const mod10 = n % 10
-  const mod100 = n % 100
-  if (mod10 === 1 && mod100 !== 11) return one
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few
-  return many
 }
 
 const sectionStyle: CSSProperties = {
   marginTop: 16,
   marginBottom: 24,
+  padding: '24px 24px 20px',
+  background: 'var(--card)',
+  border: '1px solid var(--border)',
+  borderRadius: 14,
 }
 
-const titleStyle: CSSProperties = {
-  fontSize: 13,
+const heroStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+  marginBottom: 20,
+}
+
+const heroLabelStyle: CSSProperties = {
+  fontSize: 12,
   fontWeight: 600,
   color: 'var(--secondary)',
   textTransform: 'uppercase' as const,
-  letterSpacing: 0.4,
-  margin: '0 0 10px',
+  letterSpacing: '0.06em',
+  lineHeight: 1.2,
 }
 
-const gridStyle: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-  gap: 10,
+const heroNumberStyle: CSSProperties = {
+  fontSize: 'clamp(36px, 5vw, 44px)',
+  fontWeight: 700,
+  color: 'var(--text)',
+  lineHeight: 1.05,
+  fontVariantNumeric: 'tabular-nums',
+  letterSpacing: '-0.01em',
 }
 
-const cardStyle: CSSProperties = {
+const dividerStyle: CSSProperties = {
+  border: 0,
+  borderTop: '1px solid var(--border)',
+  margin: '0 0 12px',
+}
+
+const listStyle: CSSProperties = {
+  listStyle: 'none',
+  padding: 0,
+  margin: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 2,
+}
+
+const listItemStyle: CSSProperties = {
   display: 'block',
-  padding: 16,
-  background: 'var(--card)',
-  border: '1px solid var(--border)',
-  borderRadius: 12,
+}
+
+const rowLinkStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'baseline',
+  justifyContent: 'space-between',
+  gap: 12,
+  padding: '10px 0',
   textDecoration: 'none',
   color: 'inherit',
+  borderBottom: '0',
 }
 
-const cardTitleStyle: CSSProperties = {
-  fontSize: 12,
+const rowLabelStyle: CSSProperties = {
+  fontSize: 14,
   color: 'var(--secondary)',
-  marginBottom: 6,
   lineHeight: 1.3,
 }
 
-const cardNumberStyle: CSSProperties = {
-  fontSize: 22,
-  fontWeight: 700,
+const rowValueStyle: CSSProperties = {
+  fontSize: 16,
+  fontWeight: 600,
   color: 'var(--text)',
-  lineHeight: 1.1,
-}
-
-const cardSubStyle: CSSProperties = {
-  fontSize: 12,
-  color: 'var(--secondary)',
-  marginTop: 6,
-}
-
-const warnBadgeStyle: CSSProperties = {
-  display: 'inline-block',
-  marginTop: 8,
-  padding: '2px 8px',
-  borderRadius: 99,
-  fontSize: 11,
-  fontWeight: 600,
-  background: 'rgba(245, 194, 107, 0.18)',
-  border: '1px solid rgba(245, 194, 107, 0.4)',
-  color: 'var(--text)',
-}
-
-const defaultBadgeStyle: CSSProperties = {
-  display: 'inline-block',
-  marginTop: 8,
-  padding: '2px 8px',
-  borderRadius: 99,
-  fontSize: 11,
-  fontWeight: 600,
-  background: 'var(--bg)',
-  border: '1px solid var(--border)',
-  color: 'var(--secondary)',
-}
-
-const coachHintStyle: CSSProperties = {
-  marginTop: 12,
-  padding: '10px 14px',
-  background: 'var(--card)',
-  border: '1px solid var(--border)',
-  borderRadius: 10,
-  fontSize: 13,
-  color: 'var(--secondary)',
-  lineHeight: 1.45,
-  display: 'flex',
-  alignItems: 'baseline',
-  gap: 12,
-  flexWrap: 'wrap',
-}
-
-const coachHintCtaStyle: CSSProperties = {
-  color: 'var(--accent, #D88A82)',
-  fontWeight: 600,
-  textDecoration: 'none',
-  fontSize: 13,
+  fontVariantNumeric: 'tabular-nums',
+  letterSpacing: '-0.01em',
   whiteSpace: 'nowrap',
 }

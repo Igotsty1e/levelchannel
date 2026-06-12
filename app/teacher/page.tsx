@@ -176,17 +176,11 @@ export default async function TeacherHomePage() {
           hasn't dismissed. */}
       <TeacherSetupChecklist state={setupChecklist} />
 
-      {/* Finance summary — plan docs/plans/finance-on-teacher-home-2026-06-09.md.
-          4 cards: this-month confirmed / unpaid / active packages /
-          expected this week. When all-zero — Variant D empty-state:
-          skeleton 4-grid + sequential coach-hint («next step»), only
-          if the setup checklist above is already complete (avoids
-          duplicating activation prompts). Plan: docs/plans/finance-
-          empty-state-2026-06-10. */}
-      <TeacherFinanceSummary
-        snapshot={financeSnapshot}
-        setupChecklist={setupChecklist}
-      />
+      {/* Финансы — Hero-вариант (2026-06-12). Одна крупная цифра
+          заработка + 3 побочных строки. Скрывается полностью, пока у
+          учителя нет ни одного слота (onboarding-checklist выше уже
+          ведёт к первому слоту, лишний skeleton-блок только шумит). */}
+      <TeacherFinanceSummary snapshot={financeSnapshot} />
 
       {/* Дайджест на сегодня — Sub-PR D из teacher-cabinet-polish.
           Превью today_local списка занятий, тот же предикат, что и у
