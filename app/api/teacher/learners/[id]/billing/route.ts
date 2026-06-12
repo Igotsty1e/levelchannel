@@ -12,8 +12,6 @@
 //   401 — anonymous / no teacher role
 //   403 — not the teacher of this learner
 //   404 — learner not found OR no active link
-//   409 — { error: 'debt_open' } если переключение postpaid→packages
-//         с открытым postpaid-долгом (Q1 invariant в helper)
 //   422 — invalid method value
 //
 // 2026-06-02 (security-audit Sub-PR 1, F1 closure): swapped the
@@ -122,22 +120,11 @@ export async function PATCH(
     byAccountId: teacherId,
   })
 
-  if (!result.ok) {
-    return NextResponse.json(
-      {
-        error: result.reason,
-        message:
-          'Closes postpaid debt before switching to prepaid packages.',
-      },
-      { status: 409, headers: NO_STORE },
-    )
-  }
-
   return NextResponse.json(
     {
-      ok: true,
       previousMethod: result.previousMethod,
       method: result.method,
+      ok: true,
     },
     { headers: NO_STORE },
   )

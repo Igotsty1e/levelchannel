@@ -236,7 +236,6 @@ export function BookConfirmModal({
 
         {canBook && billingWaveActive && matchingPackage ? (
           <BillingPreview
-            tone="package"
             title="Будет списано занятие из пакета"
             body={
               `«${matchingPackage.titleSnapshot}»: после записи останется ` +
@@ -368,20 +367,12 @@ const btnPrimary: React.CSSProperties = {
 }
 
 function BillingPreview({
-  tone,
   title,
   body,
 }: {
-  // Quality Sub-PR A (2026-06-02): the 'postpaid' tone was removed
-  // along with the postpaid-preview branch. Only 'package' remains.
-  // Kept as a discriminated union of one to leave the door open for
-  // the per-pair preview follow-up sub-epic.
-  tone: 'package'
   title: string
   body: string
 }) {
-  // Package preview = green (same accent used for primary actions).
-  void tone
   const palette = {
     bg: 'rgba(34, 197, 94, 0.10)',
     border: 'rgba(34, 197, 94, 0.35)',

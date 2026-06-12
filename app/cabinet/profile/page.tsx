@@ -67,21 +67,18 @@ export default async function CabinetProfilePage() {
   const isTeacher = roles.includes('teacher')
 
   let learnerTgBound = false
-  let learnerTgChatId: string | null = null
   let learnerTgMasterSwitch = false
   if (!isTeacher) {
     const pool = getAuthPool()
     const bindRow = await pool.query<{
       learner_telegram_enabled: boolean
-      learner_telegram_chat_id: string | null
     }>(
-      `select learner_telegram_enabled, learner_telegram_chat_id
+      `select learner_telegram_enabled
          from accounts where id = $1::uuid`,
       [account.id],
     )
     if (bindRow.rows[0]) {
       learnerTgBound = bindRow.rows[0].learner_telegram_enabled === true
-      learnerTgChatId = bindRow.rows[0].learner_telegram_chat_id ?? null
     }
     const settings = await resolveOperatorSettingsForProbe('learner-reminders')
     learnerTgMasterSwitch =
@@ -155,7 +152,6 @@ export default async function CabinetProfilePage() {
           {!isTeacher ? (
             <LearnerTelegramBinding
               initialBound={learnerTgBound}
-              initialChatId={learnerTgChatId}
               masterSwitchOn={learnerTgMasterSwitch}
             />
           ) : null}
@@ -170,4 +166,3 @@ export default async function CabinetProfilePage() {
     </>
   )
 }
-

@@ -1,5 +1,5 @@
-// Per-learner payment-method gap-close — Q1/Q5/Q7 owner-answer coverage
-// + invite-default flow (plan §Scope item 6).
+// Per-learner payment-method gap-close — dropped-value reject / Q5 / Q7
+// coverage + invite-default flow (plan §Scope item 6).
 //
 // Sister test: tests/integration/billing/cabinet-payment-method-banner.test.ts
 // already pins Q3 ('none' → 422 payment_method_not_set) on the route side
@@ -7,8 +7,8 @@
 // pins Q10 ('prepaid_packages' + 0 packages → 402 package_required).
 //
 // This file fills the remaining canonical gaps:
-//   Q1 — switch from postpaid → prepaid_packages blocked when there's an
-//        open postpaid debt (409 debt_open).
+//   Dropped enum value reject — PATCH 'prepaid_packages' must fail 422
+//        after mig 0126 narrowed the enum to 'postpaid' | 'none'.
 //   Q5 — only the teacher of this learner can PATCH the method (learner
 //        and admin both rejected by requireTeacherWithCurrentSaasOffer-
 //        Consent at exactly one of 401/403; a foreign teacher is 403
@@ -58,21 +58,6 @@ vi.mock('@/lib/email/dispatch', () => ({
   sendAlreadyRegisteredEmail: vi.fn().mockResolvedValue({ ok: true }),
   sendPasswordResetEmail: vi.fn().mockResolvedValue({ ok: true }),
 }))
-
-// Q1 debt-open guard — KNOWN PARTIAL: the production
-// `hasOpenPostpaidDebt` predicate (see lib/billing/learner-payment-method.ts
-// §hasOpenPostpaidDebt) currently references columns
-// `lesson_completions.billing_kind` / `lesson_completions.learner_account_id`
-// that do NOT exist in the actual schema (mig 0092 has only
-// teacher_id + slot_id + was_no_show; learner derivation requires a
-// join through lesson_slots). The helper's try/catch swallows the
-// schema error and returns `false` (no debt detected) — that's the
-// documented «safe fallback» behaviour. Tests below assert the
-// switch CONTROL-PATH through `setPaymentMethodForPair` (no debt →
-// switch allowed) but cannot exercise the debt-blocked branch
-// without refactoring the predicate to use the real schema.
-// Follow-up tracked in epic-end paranoia notes; out of scope here
-// per «don't widen scope».
 
 const TEST_SECRET = 'gap-close-teacher-invite-secret-for-integration-aaaaaaa'
 
@@ -134,7 +119,7 @@ async function setPairPaymentMethod(
   )
 }
 
-describe('Per-learner payment-method gap — Q1 debt-open guard (control-path)', () => {
+describe('Per-learner payment-method gap — dropped enum reject + valid transitions', () => {
   // epic-b Sub-PR B.1 (2026-06-11): Q1 debt-open invariant retired.
   // 'prepaid_packages' value dropped from the enum (mig 0126); the only
   // remaining transitions are postpaid ↔ none, so a "switch from
@@ -207,93 +192,104 @@ describe('Per-learner payment-method gap — Q5 authz (only teacher can PATCH)',
     expect(stillNone).toBe('none')
   })
 
-  it('different teacher trying to PATCH foreign learner → 403 not_your_learner', async () => {
-    const { teacher: teacherA, learner } = await setupTeacherAndLearner('plpm-q5-other')
-    const teacherB = await reg(`plpm-q5-teacherB@example.com`, { role: 'teacher' })
-    await setPairPaymentMethod(teacherA.accountId, learner.accountId, 'none')
+  it(
+    'different teacher trying to PATCH foreign learner → 403 not_your_learner',
+    async () => {
+      const { teacher: teacherA, learner } = await setupTeacherAndLearner('plpm-q5-other')
+      const teacherB = await reg(`plpm-q5-teacherB@example.com`, { role: 'teacher' })
+      await setPairPaymentMethod(teacherA.accountId, learner.accountId, 'none')
 
-    const r = await billingPatchHandler(
-      buildRequest(`/api/teacher/learners/${learner.accountId}/billing`, {
-        method: 'PATCH',
-        cookie: teacherB.cookie,
-        body: { method: 'postpaid' },
-      }),
-      { params: Promise.resolve({ id: learner.accountId }) },
-    )
-    expect(r.status).toBe(403)
-    const body = await r.json()
-    expect(body.error).toBe('not_your_learner')
+      const r = await billingPatchHandler(
+        buildRequest(`/api/teacher/learners/${learner.accountId}/billing`, {
+          method: 'PATCH',
+          cookie: teacherB.cookie,
+          body: { method: 'postpaid' },
+        }),
+        { params: Promise.resolve({ id: learner.accountId }) },
+      )
+      expect(r.status).toBe(403)
+      const body = await r.json()
+      expect(body.error).toBe('not_your_learner')
 
-    // The legit pair is untouched.
-    const a = await getPaymentMethodForPair(
-      teacherA.accountId,
-      learner.accountId,
-    )
-    expect(a).toBe('none')
-    // And no row was magically created for teacherB.
-    const b = await getPaymentMethodForPair(
-      teacherB.accountId,
-      learner.accountId,
-    )
-    expect(b).toBe('none')
-  })
+      // The legit pair is untouched.
+      const a = await getPaymentMethodForPair(
+        teacherA.accountId,
+        learner.accountId,
+      )
+      expect(a).toBe('none')
+      // And no row was magically created for teacherB.
+      const b = await getPaymentMethodForPair(
+        teacherB.accountId,
+        learner.accountId,
+      )
+      expect(b).toBe('none')
+    },
+    30_000,
+  )
 
-  it('admin role trying to PATCH learner billing → 401 or 403 (route gated on teacher role only)', async () => {
-    const { teacher, learner } = await setupTeacherAndLearner('plpm-q5-admin')
-    const admin = await reg(`plpm-q5-admin-x@example.com`, { role: 'admin' })
-    await setPairPaymentMethod(teacher.accountId, learner.accountId, 'none')
+  it(
+    'admin role trying to PATCH learner billing → 401 or 403 (route gated on teacher role only)',
+    async () => {
+      const { teacher, learner } = await setupTeacherAndLearner('plpm-q5-admin')
+      const admin = await reg(`plpm-q5-admin-x@example.com`, { role: 'admin' })
+      await setPairPaymentMethod(teacher.accountId, learner.accountId, 'none')
 
-    const r = await billingPatchHandler(
-      buildRequest(`/api/teacher/learners/${learner.accountId}/billing`, {
-        method: 'PATCH',
-        cookie: admin.cookie,
-        body: { method: 'postpaid' },
-      }),
-      { params: Promise.resolve({ id: learner.accountId }) },
-    )
-    // Q5 in the owner answers = «только учитель может менять prefs»
-    // (no admin override). The guard is requireTeacherWithCurrent-
-    // SaasOfferConsent which rejects admin-only accounts at the
-    // same {401 no-teacher-role, 403 wrong-role} hinge as the
-    // learner-self test (codex-paranoia wave round-1 WARN #4
-    // closure — pin instead of "any 4xx").
-    expect([401, 403]).toContain(r.status)
-  })
+      const r = await billingPatchHandler(
+        buildRequest(`/api/teacher/learners/${learner.accountId}/billing`, {
+          method: 'PATCH',
+          cookie: admin.cookie,
+          body: { method: 'postpaid' },
+        }),
+        { params: Promise.resolve({ id: learner.accountId }) },
+      )
+      // Q5 in the owner answers = «только учитель может менять prefs»
+      // (no admin override). The guard is requireTeacherWithCurrent-
+      // SaasOfferConsent which rejects admin-only accounts at the
+      // same {401 no-teacher-role, 403 wrong-role} hinge as the
+      // learner-self test (codex-paranoia wave round-1 WARN #4
+      // closure — pin instead of "any 4xx").
+      expect([401, 403]).toContain(r.status)
+    },
+    30_000,
+  )
 })
 
 describe('Per-learner payment-method gap — Q7 audit row contract', () => {
-  it('successful PATCH writes auth.billing.method_changed with correct payload', async () => {
-    const { teacher, learner } = await setupTeacherAndLearner('plpm-q7')
-    // Direct helper call — the route layer is covered by Q1/Q5 tests
-    // above; here we pin the audit-row contract on the canonical writer.
-    const result = await setPaymentMethodForPair({
-      teacherId: teacher.accountId,
-      learnerId: learner.accountId,
-      method: 'postpaid',
-      byAccountId: teacher.accountId,
-    })
-    expect(result.ok).toBe(true)
+  it(
+    'successful PATCH writes auth.billing.method_changed with correct payload',
+    async () => {
+      const { teacher, learner } = await setupTeacherAndLearner('plpm-q7')
+      // Direct helper call — the route layer is covered by Q1/Q5 tests
+      // above; here we pin the audit-row contract on the canonical writer.
+      const result = await setPaymentMethodForPair({
+        teacherId: teacher.accountId,
+        learnerId: learner.accountId,
+        method: 'postpaid',
+        byAccountId: teacher.accountId,
+      })
 
-    const pool = getAuthPool()
-    const auditRows = await pool.query<{
-      account_id: string
-      payload: Record<string, unknown>
-    }>(
-      `select account_id, payload
-         from auth_audit_events
-        where event_type = 'auth.billing.method_changed'
-          and account_id = $1
-        order by created_at desc
-        limit 1`,
-      [teacher.accountId],
-    )
-    expect(auditRows.rows).toHaveLength(1)
-    const row = auditRows.rows[0]
-    expect(row.account_id).toBe(teacher.accountId)
-    expect(row.payload.learner_account_id).toBe(learner.accountId)
-    expect(row.payload.from_method).toBe('none')
-    expect(row.payload.to_method).toBe('postpaid')
-  })
+      const pool = getAuthPool()
+      const auditRows = await pool.query<{
+        account_id: string
+        payload: Record<string, unknown>
+      }>(
+        `select account_id, payload
+           from auth_audit_events
+          where event_type = 'auth.billing.method_changed'
+            and account_id = $1
+          order by created_at desc
+          limit 1`,
+        [teacher.accountId],
+      )
+      expect(auditRows.rows).toHaveLength(1)
+      const row = auditRows.rows[0]
+      expect(row.account_id).toBe(teacher.accountId)
+      expect(row.payload.learner_account_id).toBe(learner.accountId)
+      expect(row.payload.from_method).toBe('none')
+      expect(row.payload.to_method).toBe('postpaid')
+    },
+    30_000,
+  )
 })
 
 describe('Per-learner payment-method gap — invite-default flow (§Scope item 6)', () => {

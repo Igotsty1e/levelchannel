@@ -6,12 +6,9 @@
 import { describe, expect, it } from 'vitest'
 
 describe('learner-payment-method module', () => {
-  it('exports PaymentMethod type with exactly 3 values', async () => {
+  it('exports the current pair-payment helpers', async () => {
     const mod = await import('@/lib/billing/learner-payment-method')
-    // The type itself can't be runtime-checked, but the helper accepts
-    // these 3 strings — pin via accepting setPaymentMethodForPair input shape.
     expect(typeof mod.getPaymentMethodForPair).toBe('function')
     expect(typeof mod.setPaymentMethodForPair).toBe('function')
-    expect(typeof mod.hasOpenPostpaidDebt).toBe('function')
   })
 })

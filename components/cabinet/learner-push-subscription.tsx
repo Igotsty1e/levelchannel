@@ -1,5 +1,6 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 import type { LearnerPushState } from '@/lib/notifications/learner-push-state'
@@ -66,6 +67,7 @@ export function LearnerPushSubscription({
 }: {
   initialState: Exclude<LearnerPushState, { kind: 'disabled' }>
 }) {
+  const router = useRouter()
   const [state, setState] = useState(initialState)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   const [supportError, setSupportError] = useState<string | null>(null)
@@ -100,16 +102,6 @@ export function LearnerPushSubscription({
         </p>
       </SectionFrame>
     )
-  }
-
-  async function refreshState() {
-    const res = await fetch('/cabinet/profile', { method: 'GET' }).catch(
-      () => null,
-    )
-    void res
-    // SSR is the source of truth; soft-refresh by reloading once the
-    // user is done. Simpler than threading a state-refetch endpoint
-    // through for this MVP.
   }
 
   async function subscribe() {
@@ -170,9 +162,9 @@ export function LearnerPushSubscription({
         kind: 'ok',
         message: 'Уведомления подключены.',
       })
-      await refreshState()
       // Locally append the new device so the user sees feedback
-      // without a full page refresh.
+      // immediately, then refresh the SSR source of truth in case the
+      // server-side device list changed underneath us.
       setState({
         ...state,
         activeDevices: [
@@ -184,6 +176,7 @@ export function LearnerPushSubscription({
           ...state.activeDevices.filter((d) => d.id !== 'pending'),
         ],
       })
+      router.refresh()
     } catch (err) {
       setStatus({
         kind: 'error',
@@ -228,6 +221,7 @@ export function LearnerPushSubscription({
         ...state,
         activeDevices: state.activeDevices.filter((d) => d.id !== deviceId),
       })
+      router.refresh()
     } catch (err) {
       setStatus({
         kind: 'error',
