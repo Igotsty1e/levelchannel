@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 
 import { TeacherInviteSection } from '@/app/cabinet/teacher-invite-section'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
-import { listPackagesByTeacher } from '@/lib/billing/packages/catalog'
+import { listPackagesByTeacher } from '@/lib/billing/packages'
 import { getTeacherPlanLearnerLimit } from '@/lib/onboarding/teacher-plan-limit'
 import { listTariffsForTeacher } from '@/lib/pricing/tariffs'
 import { listLearnersForTeacher } from '@/lib/scheduling/teacher-learners'
