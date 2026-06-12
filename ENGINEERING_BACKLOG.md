@@ -20,10 +20,11 @@ the rationale. Historical / fully-shipped waves live under
 ## Cross-cutting / tech debt
 
 - [Coverage ratchet plan](docs/tech-debt/COVERAGE_RATCHET_PLAN.md) — gradual
-  expansion of `vitest.config.ts` coverage thresholds from the current 12 files
-  to load-bearing `lib/billing`, `lib/scheduling/slots`, `lib/calendar`,
-  `lib/teacher-ledger`, `lib/audit`, `lib/admin` modules. Status: plan only;
-  6 phases pending, one PR per phase.
+  expansion of `vitest.config.ts` coverage thresholds from the original
+  12-file base to load-bearing `lib/billing`, `lib/scheduling/slots`,
+  `lib/calendar`, `lib/teacher-ledger`, `lib/audit`, `lib/admin` modules.
+  Status: partially shipped (unit + integration ratchet passes landed
+  2026-06-03); remaining next-pass priorities refreshed 2026-06-12.
 - [Product-flow evals registry](evals/PRODUCT_FLOWS.md) +
   [URL/redirect contract](evals/URL_REDIRECT_CONTRACT.md) — live source of truth
   for flow-level expectations enforced by Playwright + content-style +
