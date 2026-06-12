@@ -190,6 +190,8 @@ export function AssignDirectModal({
   onClose,
   onCreated,
   onCreatedSeries,
+  presetLearner,
+  mode: modeProp = 'both',
 }: {
   tariffs: ReadonlyArray<AssignTariffOption>
   teacherTz?: string
@@ -199,10 +201,18 @@ export function AssignDirectModal({
   /** 2026-06-12 unified modal: series submit callback. Includes
    * created count for the toast plural. */
   onCreatedSeries?: (info: { createdCount: number; emailSkipped: boolean }) => void
+  /** Если задан — Combobox ученика скрыт, learnerId фиксирован.
+   * Используется из профиля ученика /teacher/learners/[id]. */
+  presetLearner?: { id: string; displayName: string }
+  /** 'single' / 'series' / 'both' (default). При 'single' / 'series'
+   * ChipGroup переключателя режима скрыт. */
+  mode?: 'single' | 'series' | 'both'
 }) {
   const [learners, setLearners] = useState<LearnerListResponse['items']>([])
   const [learnersLoading, setLearnersLoading] = useState(false)
-  const [learnerId, setLearnerId] = useState<string | null>(null)
+  const [learnerId, setLearnerId] = useState<string | null>(
+    presetLearner?.id ?? null,
+  )
   const [date, setDate] = useState(() => todayYmd())
   const [from, setFrom] = useState('10:00')
   const [tariffId, setTariffId] = useState<string>(
@@ -212,7 +222,9 @@ export function AssignDirectModal({
   const [error, setError] = useState<string | null>(null)
   // 2026-06-12: unified single+series modal. mode='series' разворачивает
   // recurrence-поля inline вместо открытия отдельной модалки.
-  const [mode, setMode] = useState<'single' | 'series'>('single')
+  const [mode, setMode] = useState<'single' | 'series'>(
+    modeProp === 'series' ? 'series' : 'single',
+  )
   const [endDate, setEndDate] = useState(() => ymdPlus(28))
   const [daysOfWeek, setDaysOfWeek] = useState<Set<number>>(new Set([2, 4]))
   const [times, setTimes] = useState<string[]>(['18:00'])
@@ -232,6 +244,8 @@ export function AssignDirectModal({
 
   useEffect(() => {
     if (!open) return
+    // Preset learner — Combobox скрыт, fetch не нужен.
+    if (presetLearner) return
     let cancelled = false
     setLearnersLoading(true)
     fetch('/api/teacher/learners/list-for-assign', {
@@ -252,7 +266,7 @@ export function AssignDirectModal({
     return () => {
       cancelled = true
     }
-  }, [open])
+  }, [open, presetLearner])
 
   // Reset form on close so re-open показывает чистое состояние.
   useEffect(() => {
@@ -262,10 +276,12 @@ export function AssignDirectModal({
       setBillingState(null)
       setPackagePurchaseId(null)
       setBillingChoice('postpaid')
-      setMode('single')
+      setMode(modeProp === 'series' ? 'series' : 'single')
       setPreview(null)
+      // Preset learner — учетный id восстанавливаем; иначе очищаем.
+      setLearnerId(presetLearner?.id ?? null)
     }
-  }, [open])
+  }, [open, presetLearner, modeProp])
 
   // Invalidate preview when any input affecting expansion changes.
   useEffect(() => {
@@ -566,16 +582,18 @@ export function AssignDirectModal({
           </p>
         </header>
 
-        <div style={{ marginBottom: 12 }}>
-          <ChipGroup
-            name="assign-mode"
-            value={mode}
-            options={MODE_OPTIONS}
-            onChange={(next) => {
-              if (next === 'single' || next === 'series') setMode(next)
-            }}
-          />
-        </div>
+        {modeProp === 'both' ? (
+          <div style={{ marginBottom: 12 }}>
+            <ChipGroup
+              name="assign-mode"
+              value={mode}
+              options={MODE_OPTIONS}
+              onChange={(next) => {
+                if (next === 'single' || next === 'series') setMode(next)
+              }}
+            />
+          </div>
+        ) : null}
 
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: '12px' }}>
@@ -589,18 +607,35 @@ export function AssignDirectModal({
             >
               Ученик
             </label>
-            <Combobox
-              value={learnerId}
-              onChange={(v) => setLearnerId(v)}
-              options={learnerOptions}
-              placeholder={
-                learnersLoading ? 'Загрузка…' : 'Выберите ученика'
-              }
-              loading={learnersLoading}
-              emptyMessage="Нет привязанных учеников"
-              disabled={submitting}
-              size="md"
-            />
+            {presetLearner ? (
+              <div
+                aria-label={`Ученик: ${presetLearner.displayName}`}
+                style={{
+                  padding: '10px 12px',
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  fontSize: 14,
+                  fontWeight: 500,
+                  color: 'var(--text)',
+                }}
+              >
+                {presetLearner.displayName}
+              </div>
+            ) : (
+              <Combobox
+                value={learnerId}
+                onChange={(v) => setLearnerId(v)}
+                options={learnerOptions}
+                placeholder={
+                  learnersLoading ? 'Загрузка…' : 'Выберите ученика'
+                }
+                loading={learnersLoading}
+                emptyMessage="Нет привязанных учеников"
+                disabled={submitting}
+                size="md"
+              />
+            )}
           </div>
 
           {mode === 'single' ? (

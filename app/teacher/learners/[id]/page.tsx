@@ -2,11 +2,13 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 
+import { AssignDirectButton } from '@/components/teacher/learners/AssignDirectButton'
 import { LearnerPackagesCard } from '@/components/teacher/learners/learner-packages-card'
 import { LearnerTariffAccessCard } from '@/components/teacher/learners/learner-tariff-access-card'
 import { Button, EmptyState, Pill } from '@/components/ui/primitives'
 import { formatProfileNameForRender } from '@/lib/auth/profile-name'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { safeTimezone } from '@/lib/auth/timezones'
 import { listLearnerTariffAccessByTeacher } from '@/lib/billing/learner-tariff-access'
 import {
   listLearnerPackagesByTeacher,
@@ -112,6 +114,14 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
     notFound()
   }
   const learner = learnerRow.rows[0]
+
+  // Учительский timezone — для AssignDirectButton (превращает hh:mm
+  // локального времени учителя в UTC ISO для slot.start_at).
+  const tzRow = await pool.query<{ tz: string | null }>(
+    `select timezone as tz from account_profiles where account_id = $1::uuid`,
+    [teacherId],
+  )
+  const teacherTz = safeTimezone(tzRow.rows[0]?.tz ?? null)
   const learnerNameForRender = formatProfileNameForRender({
     firstName: learner.first_name,
     lastName: learner.last_name,
@@ -201,6 +211,7 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
     .filter((t) => t.isActive)
     .map((t) => ({
       id: t.id,
+      slug: t.slug,
       titleRu: t.titleRu,
       amountKopecks: t.amountKopecks,
       durationMinutes: t.durationMinutes,
@@ -264,9 +275,25 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
           ← Назад к ученикам
         </Link>
       </div>
-      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>
-        {learnerNameForRender}
-      </h1>
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          marginBottom: 8,
+        }}
+      >
+        <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0 }}>
+          {learnerNameForRender}
+        </h1>
+        <AssignDirectButton
+          learner={{ id: learnerId, displayName: learnerNameForRender }}
+          tariffs={availableTariffs}
+          teacherTz={teacherTz}
+        />
+      </div>
       <p style={{ color: 'var(--secondary)', marginBottom: 24 }}>
         {learner.email}
       </p>
