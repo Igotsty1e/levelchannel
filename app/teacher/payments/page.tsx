@@ -110,17 +110,39 @@ export default async function TeacherPaymentsPage() {
       >
         ← В кабинет
       </Link>
-      <h1
+      <div
         style={{
-          fontSize: 28,
-          fontWeight: 700,
-          margin: 0,
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          gap: 12,
+          flexWrap: 'wrap',
           marginBottom: 24,
-          letterSpacing: '-0.01em',
         }}
       >
-        Оплаты
-      </h1>
+        <h1
+          style={{
+            fontSize: 28,
+            fontWeight: 700,
+            margin: 0,
+            letterSpacing: '-0.01em',
+          }}
+        >
+          Оплаты
+        </h1>
+        {/* 2026-06-12: secondary link на editor реквизитов — без неё
+            учитель с feed-страницы не мог дойти до формы CRUD методов. */}
+        <Link
+          href="/teacher/settings/payment-methods"
+          style={{
+            color: 'var(--secondary)',
+            textDecoration: 'underline',
+            fontSize: 13,
+          }}
+        >
+          Настроить реквизиты СБП →
+        </Link>
+      </div>
 
       {!explainerDismissed ? <PaymentsExplainer /> : null}
 

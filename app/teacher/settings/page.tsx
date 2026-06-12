@@ -131,11 +131,14 @@ export default async function TeacherSettingsHubPage() {
           />
         </li>
         <li>
-          {/* Приём оплат: text-pill → icon-indicator (owner 2026-06-10).
-              href conditional: ведём на /teacher/payments, если методы
-              настроены; иначе на /teacher/settings/payment-methods. */}
+          {/* Приём оплат: всегда ведёт на /teacher/settings/payment-methods
+              (editor реквизитов). Раньше (PR #592, 2026-06-10) при N>0
+              redirect'или на /teacher/payments (feed), но там нет formы
+              добавить/архивировать метод — учитель терял доступ к editor
+              из меню. Feed достижим через breadcrumb внутри editor + из
+              /teacher (preview). */}
           <SettingsTile
-            href={paymentMethodsCount > 0 ? '/teacher/payments' : '/teacher/settings/payment-methods'}
+            href="/teacher/settings/payment-methods"
             icon={<SbpAcceptIcon />}
             title="Приём оплат"
             indicator={paymentMethodsCount > 0 ? 'connected' : 'not-connected'}
