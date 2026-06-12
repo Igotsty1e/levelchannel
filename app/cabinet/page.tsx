@@ -8,7 +8,7 @@ import { getAccountProfile } from '@/lib/auth/profiles'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getPaymentMethodForPair } from '@/lib/billing/learner-payment-method'
 import { listAccountActivePackages } from '@/lib/billing/packages'
-import { listPackageConsumedSlotIds } from '@/lib/billing/consumption'
+import { listPackageConsumedSlotIds } from '@/lib/cabinet/package-coverage'
 import { listSlotPaymentState } from '@/lib/payments/allocations'
 import { listClaimedOrConfirmedSlotIds } from '@/lib/payments/sbp-claims'
 import {
