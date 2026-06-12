@@ -3,15 +3,14 @@
 // mig 0101 — UI selector для учительской выбора payment_method per pair.
 // Plan: docs/plans/per-learner-payment-method.md.
 //
-// POSTs к PATCH /api/teacher/learners/[id]/billing. Сервер enforces
-// Q1 invariant (no switch postpaid→packages с открытым долгом) и
-// возвращает 409 `debt_open` — рендерим как банер с CTA к балансу.
+// POSTs к PATCH /api/teacher/learners/[id]/billing.
 //
 // Cabinet polish 2026-06-07 (B4): tokens + <Button>.
 
 import { useState, useTransition } from 'react'
 
 import { Button } from '@/components/ui/primitives'
+import { localizeTeacherError } from '@/lib/i18n/teacher-errors'
 
 // epic-b Sub-PR B.1/B.2 (2026-06-11): dropped 'prepaid_packages'.
 // Booking always mixes — package consume first, postpaid fallback.
@@ -65,20 +64,17 @@ export function PaymentMethodToggle({
         )
         if (!res.ok) {
           const body = await res.json().catch(() => ({}))
-          if (body?.error === 'debt_open') {
-            setError(
-              'У ученика остался незакрытый долг по постоплате. Закройте долг ниже, прежде чем переключаться на пакеты.',
-            )
-          } else {
-            setError(body?.message || body?.error || `HTTP ${res.status}`)
-          }
+          setError(
+            localizeTeacherError(body?.error)
+              ?? 'Не удалось сохранить настройку. Попробуйте позже.',
+          )
           return
         }
         setMethod(next)
         setPendingMethod(null)
         setInfo('Сохранено.')
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'unknown')
+      } catch {
+        setError('Не удалось соединиться с сервером. Проверьте интернет.')
       }
     })
   }

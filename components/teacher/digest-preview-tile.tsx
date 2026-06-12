@@ -171,6 +171,23 @@ export function DigestPreviewTile({ preview }: Props) {
                   >
                     Проведён
                   </span>
+                ) : slot.status === 'booked'
+                && new Date(slot.startAt).getTime() < Date.now() ? (
+                  /* 2026-06-12 payments-copy-and-states: auto-complete
+                     cron отключён, поэтому past booked-слот висит как
+                     «забронирован». Учителю показываем мелкую галочку
+                     «прошло» — без действий, информация только. */
+                  <span
+                    aria-label="Занятие уже прошло"
+                    title="Занятие уже прошло"
+                    style={{
+                      fontSize: 14,
+                      color: 'var(--secondary)',
+                      lineHeight: 1,
+                    }}
+                  >
+                    ✓
+                  </span>
                 ) : null}
               </li>
             )

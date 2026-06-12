@@ -1,12 +1,13 @@
 'use client'
 
 // teacher-payments-sbp-self-service Sub-PR D extras.
-// Учительская политика: считать ли долгом no-show и поздние отмены.
+// Учительская политика: считать ли долгом неявку ученика и поздние отмены.
 
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/primitives'
+import { localizeTeacherError } from '@/lib/i18n/teacher-errors'
 
 export function PolicyEditor({
   initial,
@@ -37,7 +38,11 @@ export function PolicyEditor({
         body: JSON.stringify({ chargeOnNoShow, chargeOnLateCancel }),
       })
       if (!r.ok) {
-        setErr(`HTTP ${r.status}`)
+        const data = await r.json().catch(() => ({}))
+        setErr(
+          localizeTeacherError(data?.error)
+            ?? 'Не удалось сохранить настройки.',
+        )
         return
       }
       setInfo('Сохранено.')
@@ -74,7 +79,7 @@ export function PolicyEditor({
           style={{ marginTop: 4 }}
         />
         <span style={{ fontSize: 14, lineHeight: 1.5 }}>
-          <strong>Брать оплату за no-show</strong>
+          <strong>Брать оплату, если ученик не пришёл</strong>
           <br />
           <span style={{ color: 'var(--secondary)', fontSize: 13 }}>
             Если ученик не пришёл без предупреждения — считать занятие
@@ -100,7 +105,7 @@ export function PolicyEditor({
           style={{ marginTop: 4 }}
         />
         <span style={{ fontSize: 14, lineHeight: 1.5 }}>
-          <strong>Брать оплату за поздние отмены</strong>
+          <strong>Брать оплату при поздней отмене</strong>
           <br />
           <span style={{ color: 'var(--secondary)', fontSize: 13 }}>
             Если ученик отменил позже политики (по умолчанию 24 ч) —

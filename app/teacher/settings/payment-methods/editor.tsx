@@ -10,6 +10,7 @@ import { useState } from 'react'
 
 import type { PaymentMethod } from '@/lib/payments/sbp-methods'
 import { Button, Pill } from '@/components/ui/primitives'
+import { localizeTeacherError } from '@/lib/i18n/teacher-errors'
 
 const KNOWN_BANKS = [
   'Тинькофф',
@@ -66,14 +67,10 @@ export function PaymentMethodsEditor({
       })
       if (!r.ok) {
         const data = await r.json().catch(() => ({}))
-        const map: Record<string, string> = {
-          phone_required: 'Укажите номер телефона.',
-          bank_required: 'Укажите банк.',
-          invalid_phone: 'Неверный формат — введите номер в виде +7 999 123-45-67.',
-          invalid_bank: 'Название банка пустое или слишком длинное.',
-          limit_reached: 'Достигнут лимит активных методов (10).',
-        }
-        setErr(map[data?.error] ?? data?.error ?? `HTTP ${r.status}`)
+        setErr(
+          localizeTeacherError(data?.error)
+            ?? 'Не удалось сохранить способ оплаты.',
+        )
         return
       }
       setPhone('')

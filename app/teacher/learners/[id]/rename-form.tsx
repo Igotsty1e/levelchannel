@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/primitives'
+import { localizeTeacherError } from '@/lib/i18n/teacher-errors'
 
 // SAAS-PIVOT — teacher renames learner client form.
 //
@@ -68,15 +69,18 @@ export function RenameLearnerForm({
         | { ok?: boolean; error?: string; message?: string }
         | null
       if (!res.ok || !data?.ok) {
-        setErr(data?.message || data?.error || `HTTP ${res.status}`)
+        setErr(
+          localizeTeacherError(data?.error)
+            ?? 'Не удалось сохранить. Попробуйте позже.',
+        )
       } else {
         setSavedAt(new Date().toLocaleTimeString('ru-RU'))
         // Server-side data drives the header (display_name + email). Refresh
         // so the page picks up the new values without a manual reload.
         router.refresh()
       }
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'unknown')
+    } catch {
+      setErr('Не удалось соединиться с сервером. Проверьте интернет.')
     } finally {
       setBusy(false)
     }
