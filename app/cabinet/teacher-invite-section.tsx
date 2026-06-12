@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
-import { CollapsibleCard } from '@/components/ui/primitives'
+import { Checkbox, CollapsibleCard } from '@/components/ui/primitives'
 import { postAuthJson } from '@/lib/auth/client'
 import type { TeacherPlanLearnerLimit } from '@/lib/onboarding/teacher-plan-limit'
 
@@ -61,27 +61,9 @@ type CreatedInvite = {
 
 type DefaultPaymentMethod = 'none' | 'postpaid'
 
-// Per-learner-payment-method §Scope item 6 — invite-flow default
-// selector. 2-state copy после epic-b: либо «Постоплата» (открывает
-// бронирование с mix-billing), либо «Не выбирать сейчас» (учитель
-// решает потом).
-const PAYMENT_METHOD_OPTIONS: ReadonlyArray<{
-  value: DefaultPaymentMethod
-  label: string
-  hint: string
-}> = [
-  {
-    value: 'none',
-    label: 'Не выбирать сейчас',
-    hint: 'Решите позже на карточке ученика.',
-  },
-  {
-    value: 'postpaid',
-    label: 'Принимаю оплату (пакеты + счёт)',
-    hint:
-      'Занятие сначала списывается с пакета ученика. Если пакета нет — копится долг, который вы выставляете позже.',
-  },
-]
+// 2026-06-12 (Задача 1): PAYMENT_METHOD_OPTIONS убран — заменено
+// одним чекбоксом «Активный ученик» (active=true → 'postpaid',
+// false → 'none'). См. <Checkbox> в render ниже.
 
 function formatDate(iso: string): string {
   const d = new Date(iso)
@@ -127,8 +109,10 @@ export function TeacherInviteSection({
   const [created, setCreated] = useState<Map<string, string>>(new Map())
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const [defaultMethod, setDefaultMethod] =
-    useState<DefaultPaymentMethod>('none')
+  // 2026-06-12 (Задача 1): «Активный ученик» — по умолчанию включён.
+  // active=true → defaultPaymentMethod='postpaid' (может бронировать).
+  // active=false → 'none' (ученик «спящий», бронирование заблокировано).
+  const [active, setActive] = useState<boolean>(true)
   const [selectedTariffIds, setSelectedTariffIds] = useState<Set<string>>(
     new Set(),
   )
@@ -183,7 +167,7 @@ export function TeacherInviteSection({
     setBusy(true)
     setErr(null)
     const result = await postAuthJson('/api/teacher/invites', {
-      defaultPaymentMethod: defaultMethod,
+      defaultPaymentMethod: active ? 'postpaid' : 'none',
       defaultTariffIds: Array.from(selectedTariffIds),
       defaultPackageIds: Array.from(selectedPackageIds),
     })
@@ -361,50 +345,26 @@ export function TeacherInviteSection({
         Создайте ссылку и отправьте ученику. Действует 7 дней, для одного человека.
       </p>
       <div style={{ marginBottom: 16 }}>
-        <label
-          htmlFor="invite-default-payment-method"
-          style={{
-            display: 'block',
-            fontSize: 13,
-            fontWeight: 600,
-            marginBottom: 6,
-          }}
-        >
-          Как ученик будет платить
-        </label>
-        <select
-          id="invite-default-payment-method"
-          value={defaultMethod}
-          onChange={(e) =>
-            setDefaultMethod(e.target.value as DefaultPaymentMethod)
-          }
+        <Checkbox
+          checked={active}
+          onChange={setActive}
           disabled={busy}
-          style={{
-            width: '100%',
-            padding: '8px 10px',
-            background: 'rgba(255,255,255,0.05)',
-            color: 'var(--text)',
-            border: '1px solid rgba(255,255,255,0.12)',
-            borderRadius: 6,
-            fontSize: 14,
-          }}
-        >
-          {PAYMENT_METHOD_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-        <p
-          style={{
-            color: 'var(--secondary)',
-            fontSize: 12,
-            marginTop: 6,
-            lineHeight: 1.4,
-          }}
-        >
-          {PAYMENT_METHOD_OPTIONS.find((o) => o.value === defaultMethod)?.hint}
-        </p>
+          label="Активный ученик"
+          hint="Может бронировать слоты и тратить пакеты"
+        />
+        {!active ? (
+          <p
+            style={{
+              color: 'var(--secondary)',
+              fontSize: 12,
+              lineHeight: 1.5,
+              marginTop: 10,
+            }}
+          >
+            Без галочки ученик не сможет записаться к вам, пока вы не активируете
+            его на карточке ученика.
+          </p>
+        ) : null}
       </div>
       {availableTariffs.length > 0 ? (
         <InviteMultiSelect
