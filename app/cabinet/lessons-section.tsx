@@ -317,12 +317,14 @@ export function LessonsSection({
                                 display: 'flex',
                                 justifyContent: 'space-between',
                                 alignItems: 'center',
+                                gap: 12,
+                                flexWrap: 'wrap',
                                 padding: '10px 0',
                                 borderTop: '1px solid var(--border)',
                                 fontSize: 14,
                               }}
                             >
-                              <span>
+                              <span style={{ minWidth: 0, flex: '1 1 200px' }}>
                                 {fmt(s.startAt, tz)} ·{' '}
                                 <span style={{ color: 'var(--secondary)' }}>
                                   {s.durationMinutes} мин ·{' '}
@@ -374,8 +376,19 @@ export function LessonsSection({
                                   )
                                 ) : null}
                               </span>
-                              {s.status === 'booked' && s.zoomUrl ? (
-                                <span style={{ marginRight: 8 }}>
+                              {/* 2026-06-12 design-audit fix: actions
+                                  обёрнуты в общий flex-wrap, иначе на
+                                  mobile (375px) переполнялись справа —
+                                  «Отменить» обрезалась. */}
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  gap: 8,
+                                  flexWrap: 'wrap',
+                                  justifyContent: 'flex-end',
+                                }}
+                              >
+                                {s.status === 'booked' && s.zoomUrl ? (
                                   <Button
                                     variant="primary"
                                     size="sm"
@@ -385,13 +398,11 @@ export function LessonsSection({
                                   >
                                     Войти на занятие
                                   </Button>
-                                </span>
-                              ) : null}
-                              {sbpPayEnabled
-                              && s.status === 'booked'
-                              && !paidSet.has(s.id)
-                              && !refundedSet.has(s.id) ? (
-                                <span style={{ marginRight: 8 }}>
+                                ) : null}
+                                {sbpPayEnabled
+                                && s.status === 'booked'
+                                && !paidSet.has(s.id)
+                                && !refundedSet.has(s.id) ? (
                                   <Button
                                     variant="secondary"
                                     size="sm"
@@ -400,38 +411,38 @@ export function LessonsSection({
                                   >
                                     Оплатить
                                   </Button>
-                                </span>
-                              ) : null}
-                              {s.status === 'booked' && !tooLate ? (
-                                <>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setRescheduleTarget(s)}
-                                    disabled={busy}
+                                ) : null}
+                                {s.status === 'booked' && !tooLate ? (
+                                  <>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => setRescheduleTarget(s)}
+                                      disabled={busy}
+                                    >
+                                      Перенести
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => setCancelTarget(s)}
+                                      disabled={busy}
+                                    >
+                                      Отменить
+                                    </Button>
+                                  </>
+                                ) : s.status === 'booked' && tooLate ? (
+                                  <span
+                                    style={{
+                                      color: 'var(--secondary)',
+                                      fontSize: 12,
+                                    }}
+                                    title={`До начала менее ${effectiveCancelWindowHours} ч — отмену делайте через учителя напрямую.`}
                                   >
-                                    Перенести
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setCancelTarget(s)}
-                                    disabled={busy}
-                                  >
-                                    Отменить
-                                  </Button>
-                                </>
-                              ) : s.status === 'booked' && tooLate ? (
-                                <span
-                                  style={{
-                                    color: 'var(--secondary)',
-                                    fontSize: 12,
-                                  }}
-                                  title={`До начала менее ${effectiveCancelWindowHours} ч — отмену делайте через учителя напрямую.`}
-                                >
-                                  до начала &lt; {effectiveCancelWindowHours} ч
-                                </span>
-                              ) : null}
+                                    до начала &lt; {effectiveCancelWindowHours} ч
+                                  </span>
+                                ) : null}
+                              </span>
                             </li>
                           )
                         })}

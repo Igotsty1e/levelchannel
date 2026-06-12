@@ -72,11 +72,6 @@ export default async function TeacherPaymentsPage() {
   const explainerDismissed =
     'teacher_payments_explainer' in onboardingState.dismissedHints
 
-  const totalUnpaidAmount = unpaidLearners.reduce(
-    (a, l) => a + l.unpaidAmount,
-    0,
-  )
-
   const pendingClaims = claims.filter((c) => c.status === 'claimed')
   const confirmedThisMonth = (() => {
     const now = new Date()
@@ -146,6 +141,10 @@ export default async function TeacherPaymentsPage() {
 
       {!explainerDismissed ? <PaymentsExplainer /> : null}
 
+      {/* 2026-06-12 design-audit: summary-grid содержит только числа,
+          которые НЕ дублируются ниже. «Должны оплатить» убран — детальная
+          секция <UnpaidLearners> ниже сама показывает кол-во + сумму +
+          actionable список. Дубль создавал визуальный шум на mobile. */}
       <div
         style={{
           display: 'grid',
@@ -164,14 +163,6 @@ export default async function TeacherPaymentsPage() {
           title="Подтверждено за месяц"
           value={`${confirmedThisMonth.length}`}
           subtitle={confirmedThisMonth.length > 0 ? formatRub(confirmedSum) : null}
-        />
-        <SummaryCard
-          title="Должны оплатить"
-          value={`${unpaidLearners.length}`}
-          subtitle={
-            unpaidLearners.length > 0 ? formatRub(totalUnpaidAmount) : null
-          }
-          accent={unpaidLearners.length > 0}
         />
       </div>
 

@@ -703,7 +703,11 @@ html, body {
   .cabinet-nav-mobile-link[data-active='true'] {
     color: var(--text);
   }
-  body[data-cabinet='teacher'] main {
+  /* 2026-06-12 design-audit fix: селектор был body[data-cabinet=...]
+     но атрибут стоит на самом <main> (см. app/teacher/layout.tsx).
+     Из-за этого clearance не применялся — sticky bottom-nav перекрывал
+     контент во всех /teacher/* страницах на mobile. */
+  main[data-cabinet='teacher'] {
     padding-bottom: calc(72px + env(safe-area-inset-bottom));
   }
 }
