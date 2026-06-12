@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
+import { CollapsibleCard } from '@/components/ui/primitives'
 import { postAuthJson } from '@/lib/auth/client'
 import type { TeacherPlanLearnerLimit } from '@/lib/onboarding/teacher-plan-limit'
 
@@ -13,9 +14,29 @@ import type { TeacherPlanLearnerLimit } from '@/lib/onboarding/teacher-plan-limi
 // AndVerified server-side. Showing a clickable button that 403s is
 // worse than showing the gated state explicitly.
 
+export type InviteTariffOption = {
+  id: string
+  titleRu: string
+  amountKopecks: number
+  durationMinutes: number
+}
+
+export type InvitePackageOption = {
+  id: string
+  titleRu: string
+  count: number
+  durationMinutes: number
+  amountKopecks: number
+}
+
 type Props = {
   isVerified: boolean
   planLearnerLimit?: TeacherPlanLearnerLimit
+  /** Активные тарифы учителя (filtered + scoped server-side). Если
+   *  пусто — multi-select тарифов скрыт целиком. */
+  availableTariffs?: ReadonlyArray<InviteTariffOption>
+  /** Активные пакеты учителя. Если пусто — multi-select пакетов скрыт. */
+  availablePackages?: ReadonlyArray<InvitePackageOption>
 }
 
 type InviteRow = {
@@ -34,6 +55,8 @@ type CreatedInvite = {
   expiresAt: string
   // epic-b Sub-PR B.1/B.2 (2026-06-11): dropped 'prepaid_packages'.
   defaultPaymentMethod?: 'postpaid' | 'none'
+  defaultTariffIds?: ReadonlyArray<string>
+  defaultPackageIds?: ReadonlyArray<string>
 }
 
 type DefaultPaymentMethod = 'none' | 'postpaid'
@@ -83,7 +106,12 @@ function statusLabel(status: InviteRow['status']): string {
   }
 }
 
-export function TeacherInviteSection({ isVerified, planLearnerLimit }: Props) {
+export function TeacherInviteSection({
+  isVerified,
+  planLearnerLimit,
+  availableTariffs = [],
+  availablePackages = [],
+}: Props) {
   const limited = planLearnerLimit?.kind === 'limited' ? planLearnerLimit : null
   const isHardLimit = !!limited && limited.activeCount >= limited.limit
   const isSoftLimit =
@@ -101,6 +129,28 @@ export function TeacherInviteSection({ isVerified, planLearnerLimit }: Props) {
   const [err, setErr] = useState<string | null>(null)
   const [defaultMethod, setDefaultMethod] =
     useState<DefaultPaymentMethod>('none')
+  const [selectedTariffIds, setSelectedTariffIds] = useState<Set<string>>(
+    new Set(),
+  )
+  const [selectedPackageIds, setSelectedPackageIds] = useState<Set<string>>(
+    new Set(),
+  )
+  function toggleTariff(id: string) {
+    setSelectedTariffIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  function togglePackage(id: string) {
+    setSelectedPackageIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
   // Onboarding Sub-PR B3 — `teacher-invite-copy-feedback` toast slot.
   // Spec §1.1: show «Ссылка скопирована» on success OR a fallback
   // «Не удалось скопировать автоматически — выделите ссылку ниже и
@@ -134,6 +184,8 @@ export function TeacherInviteSection({ isVerified, planLearnerLimit }: Props) {
     setErr(null)
     const result = await postAuthJson('/api/teacher/invites', {
       defaultPaymentMethod: defaultMethod,
+      defaultTariffIds: Array.from(selectedTariffIds),
+      defaultPackageIds: Array.from(selectedPackageIds),
     })
     setBusy(false)
     if (!result.ok) {
@@ -146,6 +198,8 @@ export function TeacherInviteSection({ isVerified, planLearnerLimit }: Props) {
       next.set(data.id, data.url)
       return next
     })
+    setSelectedTariffIds(new Set())
+    setSelectedPackageIds(new Set())
     await refresh()
   }
 
@@ -191,72 +245,80 @@ export function TeacherInviteSection({ isVerified, planLearnerLimit }: Props) {
     )
   }
 
+  const activeInviteCount = invites.filter((i) => i.status === 'active').length
+  const headerMeta = (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+      {activeInviteCount > 0 ? (
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: 600,
+            padding: '2px 8px',
+            borderRadius: 999,
+            background: 'rgba(110, 168, 254, 0.14)',
+            color: 'var(--accent, #6ea8fe)',
+          }}
+        >
+          {activeInviteCount} активных
+        </span>
+      ) : null}
+      {limited ? (
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: 600,
+            padding: '2px 8px',
+            borderRadius: 999,
+            background:
+              limitTone === 'hard'
+                ? 'rgba(224,118,118,0.14)'
+                : limitTone === 'soft'
+                  ? 'rgba(243,180,107,0.14)'
+                  : 'rgba(255,255,255,0.05)',
+            color:
+              limitTone === 'hard'
+                ? '#ff8a8a'
+                : limitTone === 'soft'
+                  ? '#f3b46b'
+                  : 'var(--secondary)',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+          title={`Активных учеников на тарифе ${limited.planTitleRu}`}
+        >
+          {limited.activeCount}/{limited.limit}
+        </span>
+      ) : null}
+    </span>
+  )
+
   return (
-    <section
-      className="card"
-      style={{ padding: 24, marginBottom: 24, marginTop: 24 }}
+    <CollapsibleCard
+      title="Пригласить ученика"
+      defaultOpen={false}
+      meta={headerMeta}
+      description="Создать ссылку для нового ученика и сразу выдать тарифы и пакеты"
     >
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: 12,
-          flexWrap: 'wrap',
-          marginBottom: 12,
-        }}
-      >
-        <h3 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>
-          Пригласить ученика
-        </h3>
-        {limited ? (
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-            <span
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                padding: '4px 10px',
-                borderRadius: 999,
-                background:
-                  limitTone === 'hard'
-                    ? 'rgba(224,118,118,0.14)'
-                    : limitTone === 'soft'
-                      ? 'rgba(243,180,107,0.14)'
-                      : 'rgba(255,255,255,0.05)',
-                color:
-                  limitTone === 'hard'
-                    ? '#ff8a8a'
-                    : limitTone === 'soft'
-                      ? '#f3b46b'
-                      : 'var(--secondary)',
-                fontVariantNumeric: 'tabular-nums',
-              }}
-              title={`Активных учеников на тарифе ${limited.planTitleRu}`}
-            >
-              {limited.activeCount}/{limited.limit} учеников
-            </span>
-            {isHardLimit ? (
-              <Link
-                href="/teacher/subscription"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  padding: '6px 12px',
-                  borderRadius: 6,
-                  background: 'var(--danger, #e07676)',
-                  color: '#fff',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  textDecoration: 'none',
-                  lineHeight: 1.2,
-                }}
-              >
-                Обновить тариф
-              </Link>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+      {isHardLimit ? (
+        <div style={{ marginBottom: 12 }}>
+          <Link
+            href="/teacher/subscription"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '8px 14px',
+              borderRadius: 6,
+              background: 'var(--danger, #e07676)',
+              color: '#fff',
+              fontSize: 13,
+              fontWeight: 600,
+              textDecoration: 'none',
+              lineHeight: 1.2,
+            }}
+          >
+            Обновить тариф
+          </Link>
+        </div>
+      ) : null}
       {copyToast ? (
         <div
           key={copyToast.key}
@@ -344,6 +406,34 @@ export function TeacherInviteSection({ isVerified, planLearnerLimit }: Props) {
           {PAYMENT_METHOD_OPTIONS.find((o) => o.value === defaultMethod)?.hint}
         </p>
       </div>
+      {availableTariffs.length > 0 ? (
+        <InviteMultiSelect
+          legend="Открыть тарифы"
+          hint="Ученик сразу увидит выбранные тарифы в своём кабинете и сможет бронировать."
+          options={availableTariffs.map((t) => ({
+            id: t.id,
+            label: t.titleRu,
+            sub: `${t.durationMinutes} мин · ${formatRub(t.amountKopecks)}`,
+          }))}
+          selected={selectedTariffIds}
+          onToggle={toggleTariff}
+          disabled={busy}
+        />
+      ) : null}
+      {availablePackages.length > 0 ? (
+        <InviteMultiSelect
+          legend="Открыть пакеты"
+          hint="Ученик сможет купить выбранные пакеты со скидкой за объём."
+          options={availablePackages.map((p) => ({
+            id: p.id,
+            label: p.titleRu,
+            sub: `${p.count} занятий · ${p.durationMinutes} мин · ${formatRub(p.amountKopecks)}`,
+          }))}
+          selected={selectedPackageIds}
+          onToggle={togglePackage}
+          disabled={busy}
+        />
+      ) : null}
       <button
         type="button"
         onClick={onGenerate}
@@ -470,6 +560,113 @@ export function TeacherInviteSection({ isVerified, planLearnerLimit }: Props) {
           Пока нет ни одного приглашения.
         </p>
       )}
-    </section>
+    </CollapsibleCard>
+  )
+}
+
+function formatRub(kopecks: number): string {
+  return `${Math.round(kopecks / 100).toLocaleString('ru-RU')} ₽`
+}
+
+function InviteMultiSelect({
+  legend,
+  hint,
+  options,
+  selected,
+  onToggle,
+  disabled,
+}: {
+  legend: string
+  hint: string
+  options: ReadonlyArray<{ id: string; label: string; sub: string }>
+  selected: Set<string>
+  onToggle: (id: string) => void
+  disabled: boolean
+}) {
+  return (
+    <fieldset
+      style={{
+        border: 'none',
+        padding: 0,
+        margin: '0 0 16px',
+      }}
+    >
+      <legend
+        style={{
+          fontSize: 13,
+          fontWeight: 600,
+          marginBottom: 6,
+          color: 'var(--text)',
+        }}
+      >
+        {legend} <span style={{ color: 'var(--secondary)', fontWeight: 400 }}>(необязательно)</span>
+      </legend>
+      <p
+        style={{
+          color: 'var(--secondary)',
+          fontSize: 12,
+          margin: '0 0 8px',
+          lineHeight: 1.4,
+        }}
+      >
+        {hint}
+      </p>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+          maxHeight: 220,
+          overflowY: 'auto',
+          padding: 6,
+          borderRadius: 8,
+          border: '1px solid rgba(255,255,255,0.08)',
+          background: 'rgba(255,255,255,0.02)',
+        }}
+      >
+        {options.map((opt) => {
+          const active = selected.has(opt.id)
+          return (
+            <label
+              key={opt.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '8px 10px',
+                borderRadius: 6,
+                background: active
+                  ? 'rgba(110, 168, 254, 0.12)'
+                  : 'transparent',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                fontSize: 13,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={active}
+                onChange={() => onToggle(opt.id)}
+                disabled={disabled}
+                style={{ margin: 0 }}
+              />
+              <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                <span
+                  style={{
+                    color: 'var(--text)',
+                    fontWeight: 500,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {opt.label}
+                </span>
+                <span style={{ color: 'var(--secondary)', fontSize: 12 }}>{opt.sub}</span>
+              </span>
+            </label>
+          )
+        })}
+      </div>
+    </fieldset>
   )
 }
