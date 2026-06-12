@@ -3,7 +3,8 @@
 > Gradual expansion of `vitest.config.ts` (unit) AND
 > `vitest.integration.config.ts` (integration) coverage threshold protection
 > across the load-bearing `lib/` modules.
-> Status: **two ratchet passes shipped 2026-06-03** (PR #503 unit, PR #504 integration).
+> Status: **two ratchet passes shipped 2026-06-03** (PR #503 unit, PR #504 integration),
+> then **refreshed 2026-06-12** with current measured numbers + next-pass priorities.
 >
 > PR #503 (unit): added 9 well-tested files from `lib/calendar/**` and
 > `lib/audit/**` to `vitest.config.ts coverage.include`; thresholds
@@ -18,15 +19,97 @@
 > integration suite is happy-path-heavy and tests fewer error branches
 > than unit suites.
 
+## Refresh snapshot — 2026-06-12
+
+Current unit-coverage scope (`vitest.config.ts coverage.include`) now protects
+21 files. Fresh measurement on 2026-06-12:
+
+- statements: `89.94%`
+- branches: `82.60%`
+- functions: `99.04%`
+- lines: `90.74%`
+
+This still clears the project contract (`85 / 80 / 95 / 85`), but the margin
+has narrowed since the 2026-06-03 ratchet. The next pass should **not** raise
+global floors first. It should close the weakest per-file gaps and stabilise
+the coverage runner itself.
+
+### Weakest files in the current unit scope
+
+- `lib/security/idempotency.ts` — `44%` statements / `37.5%` branches
+- `lib/security/rate-limit.ts` — `60.46%` statements / `55%` branches
+- `lib/calendar/google/config.ts` — `67.92%` statements / `62.79%` branches
+- `lib/calendar/google/push.ts` — `84.04%` statements / `60.86%` branches
+- `lib/calendar/google/state.ts` — `88.67%` statements / `76.31%` branches
+
+### Claude-ready next PR order
+
+1. **Stabilise `npm run test:coverage` first**
+   The current coverage run is timeout-sensitive on `tests/auth/password.test.ts`
+   because bcrypt cases that pass under normal `vitest run` can exceed the
+   default timeout under instrumentation. Before ratcheting further, make the
+   coverage command deterministic again.
+
+   Acceptance:
+   - `npm run test:coverage` passes without ad-hoc CLI overrides
+   - no weakening of bcrypt cost or auth behaviour
+   - if the fix is config-level, document it in this file or `vitest.config.ts`
+
+2. **Close the security helper gaps before touching thresholds**
+   Start with the two weakest files already inside the unit threshold scope:
+
+   - `lib/security/idempotency.ts`
+     Add mocked-Postgres unit tests for:
+     - replay hit with same request hash returns cached body + `Idempotency-Replay: true`
+     - same key with different body returns `409`
+     - `>= 500` executor outcome is returned but not persisted
+     - persist failure logs warn and still returns the original response
+
+   - `lib/security/rate-limit.ts`
+     Add unit coverage for Postgres/error branches that the current tests miss:
+     - `getDbPoolOrNull()` returns `null` -> memory fallback
+     - query returns no row -> memory fallback
+     - query throws -> warn + memory fallback
+     - `count > limit` and reset-window retry-after math
+     - `__resetRateLimitsForTesting()` swallow-on-truncate-error path
+
+3. **Then widen the Google Calendar negative-path matrix**
+   The calendar unit suite exists, but the branch-heavy error paths still drag
+   the weighted average down:
+
+   - `lib/calendar/google/config.ts`
+     Cover invalid protocol, wrong callback pathname, loopback/https/origin
+     production failures, invalid `NEXT_PUBLIC_SITE_URL`, and cache behaviour
+     (`process.env` cache vs explicit env object).
+   - `lib/calendar/google/push.ts`
+     Cover `409 -> events.get` unhappy paths, foreign ownership mismatch,
+     malformed Google response shape, and patch/delete non-OK paths if still
+     uncovered.
+   - `lib/calendar/google/state.ts`
+     Cover malformed base64url / HMAC-length mismatch / future timestamp paths
+     explicitly, not only the happy-path signature checks.
+
+4. **Only after that ratchet the next integration-protected files**
+   The most reasonable next additions are the files already called out as
+   partially-tested or recently cleaned up:
+
+   - `lib/billing/learner-payment-method.ts`
+   - `lib/billing/learner-tariff-access.ts`
+   - `lib/billing/teacher-subscription.ts`
+   - `lib/admin/conflict-feed.ts`
+
+   Rule stays the same: measure first, add to the right `coverage.include`
+   list second, pin a conservative floor third.
+
 ## Why this exists
 
-Today coverage threshold 85/95/80/85 is pinned on **12 files** (`vitest.config.ts`
-lines 17-29):
+Today unit coverage threshold 85/95/80/85 is pinned on **21 files** in
+`vitest.config.ts coverage.include`:
 
-- `lib/payments/{catalog,cloudpayments-api,cloudpayments-webhook,tokens}.ts`
-- `lib/security/{rate-limit,idempotency,request}.ts`
-- `lib/auth/{password,tokens,policy,email-hash}.ts`
-- `lib/email/escape.ts`
+- payments + security + auth + `lib/email/escape.ts`
+- `lib/calendar/{dates,encryption,grid-keyboard,view-model}.ts`
+- `lib/calendar/google/{config,push,state}.ts`
+- `lib/audit/{auth-events,encryption}.ts`
 
 The audit (2026-06-02 — see `docs/plans/code-quality-audit-2026-06-02.md` and
 the AI-assisted maturity audit) found that load-bearing money / scheduling /
