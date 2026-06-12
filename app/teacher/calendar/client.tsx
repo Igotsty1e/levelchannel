@@ -1,14 +1,13 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { CSSProperties, useState } from 'react'
 
 import { AssignDirectModal } from '@/components/calendar/AssignDirectModal'
 import { BulkAddSlotsModal } from '@/components/calendar/BulkAddSlotsModal'
 import { MobileCreateFab, type CreateMode } from '@/components/calendar/MobileCreateFab'
 import { PaintConfirmModal } from '@/components/calendar/PaintConfirmModal'
 import { SlotCalendar } from '@/components/calendar/SlotCalendar'
-import type { CalendarSlotMode } from '@/lib/scheduling/slot-mode'
 import type { PaintSpan, MoveTarget } from '@/lib/calendar/drag-state'
 import type { CalendarRow } from '@/lib/calendar/view-model'
 
@@ -36,20 +35,28 @@ export type TariffOption = {
   durationMinutes?: number
 }
 
+// 2026-06-12 teacher-calendar-unify: убрана настройка slot_mode и
+// sticky bottom FAB. Обе кнопки «Назначить ученику» + «Добавить слоты»
+// живут в одном top-row, имеют одинаковый стиль, видны на всех viewport.
+const topActionBtnStyle: CSSProperties = {
+  padding: '8px 14px',
+  border: '1px solid var(--border)',
+  borderRadius: 8,
+  background: 'var(--surface-2)',
+  color: 'var(--text)',
+  cursor: 'pointer',
+  fontSize: 13,
+  fontWeight: 600,
+}
+
 export default function TeacherCalendarClient({
   teacherId,
   initialFromYmd,
   tariffs,
-  slotMode = 'open_slots',
 }: {
   teacherId: string
   initialFromYmd: string
   tariffs: ReadonlyArray<TariffOption>
-  // teacher-no-slots-mode (Задача 2.1): 'direct_assign' hides the
-  // open-slot create buttons (desktop bulk + mobile single/bulk chip
-  // options). Only "Назначить ученику" remains. Default to 'open_slots'
-  // for safety on prop omission.
-  slotMode?: CalendarSlotMode
 }) {
   const router = useRouter()
   const [activeRow, setActiveRow] = useState<CalendarRow | null>(null)
@@ -151,58 +158,32 @@ export default function TeacherCalendarClient({
           {toast}
         </div>
       ) : null}
-      {/* 2026-06-12 mobile fix: «+ Назначить ученику» теперь видна и на
-          мобилке — это единственный точка входа в direct-assign flow
-          для маленьких экранов (FAB снизу обслуживает только open-slot
-          контур). «+ Добавить слоты» остаётся desktop-only — на мобилке
-          её роль играет FAB. */}
+      {/* 2026-06-12 teacher-calendar-unify: обе кнопки рядом, одинаковый
+          стиль, видны на всех viewport. Mobile FAB снизу убран — top-row
+          единственная точка входа. */}
       <div
         style={{
           display: 'flex',
           justifyContent: 'flex-end',
           gap: 8,
           marginBottom: 8,
+          flexWrap: 'wrap',
         }}
       >
         <button
           type="button"
           onClick={() => setCreateMode('assign')}
-          style={{
-            padding: '8px 14px',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            background: slotMode === 'direct_assign'
-              ? 'var(--accent)'
-              : 'var(--surface-2)',
-            color: slotMode === 'direct_assign' ? '#fff' : 'var(--text)',
-            cursor: 'pointer',
-            fontSize: 13,
-            fontWeight: 600,
-          }}
+          style={topActionBtnStyle}
         >
           + Назначить ученику
         </button>
-        {/* teacher-no-slots-mode (Задача 2.1): открытые слоты убираем
-            из UI, если учитель выбрал режим direct_assign. */}
-        {slotMode === 'open_slots' ? (
-          <button
-            type="button"
-            className="calendar-bulk-add-desktop"
-            onClick={() => setCreateMode('bulk')}
-            style={{
-              padding: '8px 14px',
-              border: '1px solid var(--border)',
-              borderRadius: 8,
-              background: 'var(--accent)',
-              color: '#fff',
-              cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: 600,
-            }}
-          >
-            + Добавить слоты
-          </button>
-        ) : null}
+        <button
+          type="button"
+          onClick={() => setCreateMode('bulk')}
+          style={topActionBtnStyle}
+        >
+          + Добавить слоты
+        </button>
       </div>
       <SlotCalendar
         teacherId={teacherId}
@@ -245,7 +226,6 @@ export default function TeacherCalendarClient({
         tariffs={tariffs}
         mode={createMode}
         onModeChange={setCreateMode}
-        slotMode={slotMode}
         onCreated={() => {
           showToast('Занятие создано.')
           bumpReload()

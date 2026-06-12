@@ -102,11 +102,6 @@ type Props = {
   // button рендерим только если у учителя есть активный SBP-метод.
   // Set из `lib/payments/sbp-methods.resolveMethodForLearner` на SSR.
   sbpPayEnabled?: boolean
-  // teacher-no-slots-mode (Задача 2.1, Sub-PR B, 2026-06-11). Когда
-  // 'direct_assign' — скрываем pickup-секцию (доступные слоты + CTA
-  // «Записаться»). Booked-секция остаётся плюс получает кнопку
-  // «Перенести».
-  teacherSlotMode?: 'open_slots' | 'direct_assign'
 }
 
 function fmt(slotIso: string, tz: string): string {
@@ -163,7 +158,6 @@ export function LessonsSection({
   paymentMethodNotSet,
   canBuyPackages,
   sbpPayEnabled = false,
-  teacherSlotMode = 'open_slots',
 }: Props) {
   const effectiveCancelWindowHours =
     Number.isFinite(cancelWindowHours)
@@ -483,19 +477,12 @@ export function LessonsSection({
         )}
       </div>
 
-      {/* teacher-no-slots-mode (Задача 2.1, Sub-PR B): в режиме
-          direct_assign учитель назначает время сам — pickup CTA не
-          показываем, вместо него — info-карточку. */}
-      {teacherSlotMode === 'direct_assign' ? (
-        <DirectAssignInfoCard />
-      ) : (
-        <BookingCta
-          emailVerified={emailVerified}
-          hasAssignedTeacher={hasAssignedTeacher}
-          paymentMethodNotSet={paymentMethodNotSet}
-          canBuyPackages={canBuyPackages}
-        />
-      )}
+      <BookingCta
+        emailVerified={emailVerified}
+        hasAssignedTeacher={hasAssignedTeacher}
+        paymentMethodNotSet={paymentMethodNotSet}
+        canBuyPackages={canBuyPackages}
+      />
 
       {cancelTarget ? (
         <CancelLessonModal
@@ -777,39 +764,6 @@ const submitBtnStyle: React.CSSProperties = {
   fontSize: 14,
   fontWeight: 600,
   cursor: 'pointer',
-}
-
-// teacher-no-slots-mode (Задача 2.1, Sub-PR B, 2026-06-11). Info-карточка
-// для учеников, чей учитель в режиме direct_assign. Заменяет BookingCta:
-// pickup-flow для них недоступен.
-function DirectAssignInfoCard() {
-  return (
-    <div
-      role="status"
-      style={{
-        marginTop: 16,
-        padding: 16,
-        background: 'var(--surface-2)',
-        border: '1px solid var(--border)',
-        borderRadius: 12,
-      }}
-    >
-      <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
-        Учитель сам назначает время занятий
-      </div>
-      <p
-        style={{
-          margin: 0,
-          fontSize: 13,
-          color: 'var(--text-secondary, var(--secondary))',
-          lineHeight: 1.5,
-        }}
-      >
-        Когда учитель выберет время для следующего занятия, вы получите письмо.
-        Перенести или отменить занятие можно из карточки выше.
-      </p>
-    </div>
-  )
 }
 
 // BCS-B.frontend — replaces the legacy inline BookSection. The dense

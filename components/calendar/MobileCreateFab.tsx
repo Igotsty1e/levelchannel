@@ -7,19 +7,15 @@ import {
   Combobox,
   type ComboboxOption,
   DatePicker,
-  FloatingActionButton,
   TimePicker,
 } from '@/components/ui/primitives'
-import type { CalendarSlotMode } from '@/lib/scheduling/slot-mode'
 
 
-// Single-slot entry-point. The FAB itself is hidden on ≥600px via
-// `.calendar-mobile-fab` (rule in app/globals.css). The modal that
-// opens visually matches `BulkAddSlotsModal` — same centered chrome,
-// same `Добавить слоты`-style header + segmented switcher. Only the
-// body differs: one date input + one `TimeRangeRow` + tariff picker
-// + cancel/submit. Switching the segmented to «Несколько слотов»
-// closes this sheet and opens the bulk modal (parent owns mode).
+// Single-slot mobile sheet. 2026-06-12 teacher-calendar-unify: FAB
+// убрали — sheet триггерится из top-row кнопки «+ Добавить слоты» через
+// onSwitchToSingle в BulkAddSlotsModal. Внутри chip-switcher позволяет
+// вернуться обратно в bulk. Визуально матчит BulkAddSlotsModal —
+// same centered chrome, same header + segmented switcher.
 
 export type TariffOption = {
   id: string
@@ -35,23 +31,10 @@ export type TariffOption = {
 // отдельный `bulk_assign` мод убран.
 export type CreateMode = 'closed' | 'single' | 'bulk' | 'assign'
 
-const BULK_PREF_KEY = 'lc_calendar_create_bulk_mode'
-
-// epic-b polish (2026-06-11): chip group ВНУТРИ open-slot модалки
-// переключает только между «Один слот» / «Несколько» — это open-slot
-// контур. «Назначить ученику» это РАЗНЫЙ flow (direct-assign), ему
-// тут не место. Доступ к нему — через top-level кнопку на /teacher/calendar.
 const MODE_OPTIONS_OPEN_SLOTS = [
   { value: 'single', label: 'Один слот' },
   { value: 'bulk', label: 'Несколько' },
 ] as const
-
-// teacher-no-slots-mode (Задача 2.1, 2026-06-11): когда учитель в
-// direct_assign режиме, FAB сразу открывает AssignDirectModal без чип-
-// группы (см. openFromFab — он шортcut'ит сразу в 'assign'). Этот
-// массив остаётся пустым placeholder'ом — рендер чип-группы пропускает
-// его если length < 2.
-const MODE_OPTIONS_DIRECT_ASSIGN = [] as const
 
 function isoLocalToUtcIso(dateYmd: string, hhmm: string, ianaTz: string): string | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateYmd)
@@ -108,21 +91,14 @@ export function MobileCreateFab({
   mode,
   onModeChange,
   onCreated,
-  slotMode = 'open_slots',
 }: {
   tariffs: ReadonlyArray<TariffOption>
   teacherTz?: string
   mode: CreateMode
   onModeChange: (next: CreateMode) => void
   onCreated?: () => void
-  // teacher-no-slots-mode (Задача 2.1): когда 'direct_assign', single
-  // и bulk опции скрыты — оставляем только Назначить ученику.
-  slotMode?: CalendarSlotMode
 }) {
-  const modeOptions =
-    slotMode === 'direct_assign'
-      ? MODE_OPTIONS_DIRECT_ASSIGN
-      : MODE_OPTIONS_OPEN_SLOTS
+  const modeOptions = MODE_OPTIONS_OPEN_SLOTS
   const [date, setDate] = useState(() => todayInTz(teacherTz))
   const [from, setFrom] = useState('10:00')
   const [tariffId, setTariffId] = useState<string>('')
@@ -149,37 +125,8 @@ export function MobileCreateFab({
 
   const isOpen = mode === 'single'
 
-  function openFromFab() {
-    // teacher-no-slots-mode (Задача 2.1): в direct_assign режиме open-slot
-    // опций нет — FAB сразу открывает AssignDirectModal.
-    if (slotMode === 'direct_assign') {
-      onModeChange('assign')
-      return
-    }
-    let next: CreateMode = 'single'
-    try {
-      if (
-        typeof window !== 'undefined' &&
-        window.localStorage.getItem(BULK_PREF_KEY) === '1'
-      ) {
-        next = 'bulk'
-      }
-    } catch {
-      // ignore (private mode etc.)
-    }
-    onModeChange(next)
-  }
-
   function handleModeChange(next: string) {
     if (next !== 'single' && next !== 'bulk') return
-    try {
-      if (typeof window !== 'undefined') {
-        if (next === 'bulk') window.localStorage.setItem(BULK_PREF_KEY, '1')
-        else window.localStorage.removeItem(BULK_PREF_KEY)
-      }
-    } catch {
-      // ignore
-    }
     onModeChange(next)
   }
 
@@ -225,10 +172,6 @@ export function MobileCreateFab({
 
   return (
     <>
-      <div className="calendar-mobile-fab">
-        <FloatingActionButton label="Создать" onClick={openFromFab} />
-      </div>
-
       {isOpen ? (
         <div
           role="dialog"

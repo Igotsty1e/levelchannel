@@ -7,7 +7,6 @@ import { countHiddenSlotsForTeacher } from '@/lib/calendar/hidden-slots'
 import { getTeacherCalendarSummary } from '@/lib/calendar/summary'
 import { getDbPool } from '@/lib/db/pool'
 import { listActiveTariffs } from '@/lib/pricing/tariffs'
-import { getCalendarSlotMode } from '@/lib/scheduling/slot-mode'
 
 import { CalendarSummary } from '@/components/calendar/CalendarSummary'
 import TeacherCalendarClient from './client'
@@ -55,7 +54,6 @@ export default async function TeacherPage() {
   const tariffs = await listActiveTariffs({ teacherId: current.account.id })
   const conflictCount = await countTeacherConflicts(current.account.id)
   const hiddenCount = await countHiddenSlotsForTeacher(current.account.id)
-  const slotMode = await getCalendarSlotMode(current.account.id)
   const fromYmd = currentMondayYmd()
   const summary = await getTeacherCalendarSummary(current.account.id, fromYmd)
   const nextSlotView = summary.nextSlot
@@ -103,7 +101,6 @@ export default async function TeacherPage() {
       <TeacherCalendarClient
         teacherId={current.account.id}
         initialFromYmd={fromYmd}
-        slotMode={slotMode}
         tariffs={tariffs.map((t) => ({
           id: t.id,
           slug: t.slug,

@@ -928,29 +928,6 @@ html, body {
   }
 }
 
-/* Calendar mobile FAB — hidden on desktop. The component still mounts,
-   only the floating button is dropped. */
-.calendar-mobile-fab {
-  display: contents;
-}
-@media (min-width: 600px) {
-  .calendar-mobile-fab {
-    display: none !important;
-  }
-}
-
-/* «+ Добавить слоты» button is desktop-only. On mobile the FAB owns the
-   open-slot create flow (with a «несколько» toggle inside). The other
-   top button «+ Назначить ученику» remains visible on mobile — это
-   единственный путь к direct-assign модалке на маленьких экранах
-   (2026-06-12 mobile fix).
-   Plan: docs/plans/mobile-calendar-ui-cleanup-2026-06-09.md */
-@media (max-width: 599px) {
-  .calendar-bulk-add-desktop {
-    display: none !important;
-  }
-}
-
 /* Cabinet mobile bottom-nav lives at the bottom of the viewport on
    ≤767px (.cabinet-nav-mobile, padding ~80px including safe-area).
    Lift FABs above it so they don't sit on top of «Календарь / Ученики».

@@ -16,7 +16,6 @@ import {
   listSlotsForLearner,
 } from '@/lib/scheduling/slots'
 import { getLearnerCancelWindowHours } from '@/lib/scheduling/policy'
-import { getCalendarSlotMode } from '@/lib/scheduling/slot-mode'
 import { listLearnersForTeacher } from '@/lib/scheduling/teacher-learners'
 
 import { isLearnerArchetypeCandidate } from '@/lib/auth/learner-archetype'
@@ -134,13 +133,6 @@ export default async function CabinetPage({
   const linkCount = teacherIds.length
   const primaryTeacherId = isLearner ? (teacherIds[0] ?? null) : null
   const hasAnyTeacher = isLearner && linkCount > 0
-  // teacher-no-slots-mode (Задача 2.1, 2026-06-11): fetch primary
-  // teacher's slot-mode. 'direct_assign' = ученик НЕ видит pickup-
-  // секцию (open slots) и видит info-banner «Учитель назначит сам».
-  const teacherSlotMode =
-    isLearner && primaryTeacherId
-      ? await getCalendarSlotMode(primaryTeacherId)
-      : 'open_slots'
   const isMultiTeacher = isLearner && linkCount >= 2
 
   const [
@@ -404,7 +396,6 @@ export default async function CabinetPage({
               paymentMethodNotSet={paymentMethodNotSet}
               canBuyPackages={canBuyPackages}
               sbpPayEnabled={sbpPayEnabled}
-              teacherSlotMode={teacherSlotMode}
             />
           )}
 
