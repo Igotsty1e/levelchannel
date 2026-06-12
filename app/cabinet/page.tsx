@@ -8,6 +8,7 @@ import { getAccountProfile } from '@/lib/auth/profiles'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getPaymentMethodForPair } from '@/lib/billing/learner-payment-method'
 import { listAccountActivePackages } from '@/lib/billing/packages'
+import { listPackageConsumedSlotIds } from '@/lib/billing/consumption'
 import { listSlotPaymentState } from '@/lib/payments/allocations'
 import { listClaimedOrConfirmedSlotIds } from '@/lib/payments/sbp-claims'
 import {
@@ -209,6 +210,15 @@ export default async function CabinetPage({
   const sbpClaimSlotIds = isLearner
     ? await listClaimedOrConfirmedSlotIds(mySlots.map((s) => s.id))
     : new Set<string>()
+  // 2026-06-12 payments-copy-and-states: третий канал оплаты —
+  // package consumption. Раньше только paidSet/sbpClaimSlotIds
+  // прятали кнопку «Оплатить», package-covered слоты пролетали мимо.
+  // Ученик жал «Оплатить» → API возвращал already_paid (вся проверка
+  // на сервере OK), но UI показывал raw англ. строку. Добавляем сет
+  // package-covered ids в общий список paid.
+  const packageConsumedSlotIds = isLearner
+    ? await listPackageConsumedSlotIds(account.id)
+    : new Set<string>()
   const paidSlotIds: string[] = []
   const refundedSlotIds: string[] = []
   for (const [slotId, state] of paymentStateMap) {
@@ -216,6 +226,9 @@ export default async function CabinetPage({
     else refundedSlotIds.push(slotId)
   }
   for (const slotId of sbpClaimSlotIds) {
+    if (!paidSlotIds.includes(slotId)) paidSlotIds.push(slotId)
+  }
+  for (const slotId of packageConsumedSlotIds) {
     if (!paidSlotIds.includes(slotId)) paidSlotIds.push(slotId)
   }
   // Bug #1 (2026-06-02). For single-link learners only — this is the

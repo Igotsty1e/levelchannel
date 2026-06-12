@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/primitives'
+import { localizeTeacherError } from '@/lib/i18n/teacher-errors'
 import { pluralLessons } from '@/lib/util/plural-ru'
 
 type LearnerRow = {
@@ -127,7 +128,10 @@ export function UnpaidLearners({
       })
       if (!r.ok) {
         const data = await r.json().catch(() => ({}))
-        setErr(data?.error || `HTTP ${r.status}`)
+        setErr(
+          localizeTeacherError(data?.error)
+            ?? 'Не удалось отметить оплату. Попробуйте позже.',
+        )
         return
       }
       setInfo(`Отмечено как оплачено: ${formatRub(total)}.`)

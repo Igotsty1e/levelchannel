@@ -13,6 +13,7 @@ import {
   Pill,
   TimePicker,
 } from '@/components/ui/primitives'
+import { localizeLearnerError } from '@/lib/i18n/payment-errors'
 import type { LessonSlot } from '@/lib/scheduling/slots'
 import { safeTz } from '@/lib/util/tz'
 
@@ -134,6 +135,23 @@ function statusLabel(status: string): string {
   }
 }
 
+// 2026-06-12 payments-copy-and-states: для прошедших booked-слотов
+// (auto-complete cron отключён, см. SAAS-PIVOT Day 5A) сервер не
+// переключает status на 'completed' автоматически. На UI пользователь
+// ожидает увидеть «проведено» или «не оплачено», а не «забронировано».
+// Derive: status='booked' + startAt в прошлом → derived label,
+// зависящий от того, оплачен ли слот.
+function derivedSlotLabel(
+  status: string,
+  startAtIso: string,
+  isPaid: boolean,
+): string {
+  if (status === 'booked' && new Date(startAtIso).getTime() < Date.now()) {
+    return isPaid ? 'проведено' : 'не оплачено'
+  }
+  return statusLabel(status)
+}
+
 // POLICY-KNOBS (2026-05-17) — fallback for the cancel window if the
 // prop somehow arrives undefined/NaN. The server component is
 // expected to always pass a finite int from getLearnerCancelWindowHours;
@@ -208,8 +226,8 @@ export function LessonsSection({
       ])
       setMine(m.slots ?? [])
       setAvailable(a.slots ?? [])
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'unknown')
+    } catch {
+      setErr('Не удалось обновить список. Попробуйте позже.')
     }
   }
 
@@ -231,11 +249,10 @@ export function LessonsSection({
       const res = await fetch(bookUrl, { method: 'POST' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        if (data?.error === 'email_not_verified') {
-          setErr('Подтвердите e-mail, чтобы записаться на занятие.')
-        } else {
-          setErr(data?.message || data?.error || `HTTP `)
-        }
+        setErr(
+          localizeLearnerError(data?.error)
+            ?? 'Не удалось записаться на занятие. Попробуйте позже.',
+        )
         return
       }
       setInfo('Записано.')
@@ -262,7 +279,10 @@ export function LessonsSection({
             `До начала менее ${effectiveCancelWindowHours} ч — отменить через систему уже нельзя. Напишите учителю напрямую.`,
           )
         }
-        throw new Error(data?.message || data?.error || `HTTP ${res.status}`)
+        throw new Error(
+          localizeLearnerError(data?.error)
+            ?? 'Не удалось отменить запись. Попробуйте позже.',
+        )
       }
       setInfo('Запись отменена. Учитель получит уведомление.')
       setCancelTarget(null)
@@ -328,7 +348,11 @@ export function LessonsSection({
                                 {fmt(s.startAt, tz)} ·{' '}
                                 <span style={{ color: 'var(--secondary)' }}>
                                   {s.durationMinutes} мин ·{' '}
-                                  {statusLabel(s.status)}
+                                  {derivedSlotLabel(
+                                    s.status,
+                                    s.startAt,
+                                    paidSet.has(s.id),
+                                  )}
                                 </span>
                                 {s.status === 'booked'
                                 && !s.tariffSlug
@@ -475,7 +499,12 @@ export function LessonsSection({
                             }}
                           >
                             {fmt(s.startAt, tz)} ·{' '}
-                            {s.durationMinutes} мин · {statusLabel(s.status)}
+                            {s.durationMinutes} мин ·{' '}
+                            {derivedSlotLabel(
+                              s.status,
+                              s.startAt,
+                              paidSet.has(s.id),
+                            )}
                           </li>
                         ))}
                       </ul>
@@ -592,17 +621,16 @@ function RescheduleLessonModal({
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
         setError(
-          RESCHEDULE_REASON_COPY[body?.error] ??
-            `Не удалось перенести (HTTP ${res.status}).`,
+          RESCHEDULE_REASON_COPY[body?.error]
+            ?? localizeLearnerError(body?.error)
+            ?? 'Не удалось перенести. Попробуйте ещё раз.',
         )
         setBusy(false)
         return
       }
       await onSuccess()
-    } catch (e) {
-      setError(
-        `Сеть недоступна: ${e instanceof Error ? e.message : String(e)}`,
-      )
+    } catch {
+      setError('Не удалось соединиться с сервером. Проверьте интернет.')
       setBusy(false)
     }
   }

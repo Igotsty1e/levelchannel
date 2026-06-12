@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 
 import { Button, Pill } from '@/components/ui/primitives'
+import { localizeTeacherError } from '@/lib/i18n/teacher-errors'
 import type { ClaimRow, ClaimStatus } from '@/lib/payments/sbp-claims'
 import type { RefundRow } from '@/lib/payments/sbp-refunds'
 import { useFocusTrap } from '@/lib/util/focus-trap'
@@ -97,7 +98,10 @@ export function ClaimsFeed({
       })
       if (!r.ok) {
         const data = await r.json().catch(() => ({}))
-        setErr(data?.error || `HTTP ${r.status}`)
+        setErr(
+          localizeTeacherError(data?.error)
+            ?? 'Не удалось подтвердить оплату. Попробуйте ещё раз.',
+        )
         return
       }
       setClaims((prev) =>
@@ -127,7 +131,10 @@ export function ClaimsFeed({
       })
       if (!r.ok) {
         const data = await r.json().catch(() => ({}))
-        setErr(data?.error || `HTTP ${r.status}`)
+        setErr(
+          localizeTeacherError(data?.error)
+            ?? 'Не удалось отклонить заявку. Попробуйте ещё раз.',
+        )
         return
       }
       setClaims((prev) =>
@@ -172,11 +179,10 @@ export function ClaimsFeed({
       })
       if (!r.ok) {
         const data = await r.json().catch(() => ({}))
-        const map: Record<string, string> = {
-          refund_exceeds_claim: 'Сумма возврата больше, чем была оплачена.',
-          claim_not_confirmed: 'Можно возвращать только подтверждённые оплаты.',
-        }
-        setErr(map[data?.error] || data?.error || `HTTP ${r.status}`)
+        setErr(
+          localizeTeacherError(data?.error)
+            ?? 'Не удалось оформить возврат. Попробуйте ещё раз.',
+        )
         return
       }
       const body = await r.json()

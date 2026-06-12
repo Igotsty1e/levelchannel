@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { Button, Banner } from '@/components/ui/primitives'
+import { localizePayError } from '@/lib/i18n/payment-errors'
 import { useFocusTrap } from '@/lib/util/focus-trap'
 
 export type PayLessonModalProps = {
@@ -60,7 +61,7 @@ export function PayLessonModal({
         if (!r.ok) {
           const data = await r.json().catch(() => ({}))
           if (!cancelled) {
-            setLoadErr(data?.error || `HTTP ${r.status}`)
+            setLoadErr(localizePayError(data?.error) || `Ошибка ${r.status}`)
           }
           return
         }
@@ -68,7 +69,11 @@ export function PayLessonModal({
         if (!cancelled) setCtx(body)
       } catch (e) {
         if (!cancelled) {
-          setLoadErr(e instanceof Error ? e.message : 'unknown')
+          setLoadErr(
+            e instanceof Error
+              ? 'Не удалось соединиться с сервером. Проверьте интернет.'
+              : 'Неизвестная ошибка.',
+          )
         }
       }
     }
@@ -114,17 +119,16 @@ export function PayLessonModal({
       })
       if (!r.ok) {
         const data = await r.json().catch(() => ({}))
-        const map: Record<string, string> = {
-          slot_has_active_claim: 'По этому занятию уже есть незакрытая заявка.',
-          method_archived: 'Реквизиты учителя сменились — обновите страницу.',
-          email_not_verified: 'Подтвердите e-mail, чтобы создать заявку.',
-        }
-        setSubmitErr(map[data?.error] || `Ошибка: ${data?.error || r.status}`)
+        setSubmitErr(localizePayError(data?.error) || `Ошибка ${r.status}.`)
         return
       }
       onSuccess()
     } catch (e) {
-      setSubmitErr(e instanceof Error ? e.message : 'unknown')
+      setSubmitErr(
+        e instanceof Error
+          ? 'Не удалось соединиться с сервером. Проверьте интернет.'
+          : 'Неизвестная ошибка.',
+      )
     } finally {
       setBusy(false)
     }
@@ -177,9 +181,7 @@ export function PayLessonModal({
           </p>
         ) : null}
 
-        {loadErr ? (
-          <Banner tone="warning">Не удалось загрузить реквизиты: {loadErr}</Banner>
-        ) : null}
+        {loadErr ? <Banner tone="warning">{loadErr}</Banner> : null}
 
         {!ctx && !loadErr ? (
           <p style={{ color: 'var(--secondary)', fontSize: 13 }}>Загружаем реквизиты…</p>

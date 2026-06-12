@@ -209,6 +209,29 @@ export async function derivePackageRemaining(
 // Read the consumption row for a given slot — useful for audit /
 // debugging / cabinet UI. Returns the row whether or not it's been
 // restored (caller checks the restored_at field).
+/**
+ * Set IDs slot'ов, покрытых активной (не-restored) консумпцией пакета
+ * этого ученика. 2026-06-12 payments-copy-and-states: используется в
+ * /cabinet чтобы не показывать «Оплатить» если занятие уже идёт из
+ * пакета (раньше paidSet/sbpClaimSlotIds покрывал только SBP-канал,
+ * package coverage пролетал мимо → ученик жал «Оплатить» и видел сырое
+ * already_paid).
+ */
+export async function listPackageConsumedSlotIds(
+  learnerAccountId: string,
+): Promise<Set<string>> {
+  const pool = getDbPool()
+  const result = await pool.query<{ slot_id: string }>(
+    `select distinct pc.slot_id
+       from package_consumptions pc
+       join package_purchases pp on pp.id = pc.package_purchase_id
+      where pp.account_id = $1
+        and pc.restored_at is null`,
+    [learnerAccountId],
+  )
+  return new Set(result.rows.map((r) => String(r.slot_id)))
+}
+
 export async function getConsumptionForSlot(
   slotId: string,
 ): Promise<{
