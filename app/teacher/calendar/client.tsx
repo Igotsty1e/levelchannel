@@ -151,8 +151,12 @@ export default function TeacherCalendarClient({
           {toast}
         </div>
       ) : null}
+      {/* 2026-06-12 mobile fix: «+ Назначить ученику» теперь видна и на
+          мобилке — это единственный точка входа в direct-assign flow
+          для маленьких экранов (FAB снизу обслуживает только open-slot
+          контур). «+ Добавить слоты» остаётся desktop-only — на мобилке
+          её роль играет FAB. */}
       <div
-        className="calendar-bulk-add-desktop"
         style={{
           display: 'flex',
           justifyContent: 'flex-end',
@@ -178,16 +182,12 @@ export default function TeacherCalendarClient({
         >
           + Назначить ученику
         </button>
-        {/* epic-b Sub-PR B.3 polish (2026-06-11): убрали дубль-CTA
-            «+ Серия занятий». Режим «Одно / Серия» теперь чипом
-            ВНУТРИ модалки — единая точка входа на главном UI. */}
         {/* teacher-no-slots-mode (Задача 2.1): открытые слоты убираем
-            из UI, если учитель выбрал режим direct_assign. Сам ход
-            «добавить открытый слот» больше не нужен — только direct
-            assign. */}
+            из UI, если учитель выбрал режим direct_assign. */}
         {slotMode === 'open_slots' ? (
           <button
             type="button"
+            className="calendar-bulk-add-desktop"
             onClick={() => setCreateMode('bulk')}
             style={{
               padding: '8px 14px',

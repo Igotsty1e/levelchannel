@@ -939,8 +939,11 @@ html, body {
   }
 }
 
-/* Inverse: top «+ Добавить слоты» button is desktop-only. On mobile the
-   FAB owns the create flow (with a «несколько слотов» toggle inside).
+/* «+ Добавить слоты» button is desktop-only. On mobile the FAB owns the
+   open-slot create flow (with a «несколько» toggle inside). The other
+   top button «+ Назначить ученику» remains visible on mobile — это
+   единственный путь к direct-assign модалке на маленьких экранах
+   (2026-06-12 mobile fix).
    Plan: docs/plans/mobile-calendar-ui-cleanup-2026-06-09.md */
 @media (max-width: 599px) {
   .calendar-bulk-add-desktop {
