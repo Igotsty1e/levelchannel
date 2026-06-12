@@ -3,14 +3,9 @@
 //
 // Хранилище — `learner_billing_preferences` table (mig 0101). API:
 //   getPaymentMethodForPair(teacherId, learnerId)
-//     Возвращает 'postpaid' | 'prepaid_packages' | 'none'. Default 'none'
-//     если row отсутствует.
+//     Возвращает 'postpaid' | 'none'. Default 'none' если row отсутствует.
 //   setPaymentMethodForPair({ teacherId, learnerId, method, byAccountId })
-//     UPSERT + audit row в auth_audit_events. throws на debt-open conflict.
-//   hasOpenPostpaidDebt(teacherId, learnerId)
-//     Helper для Q1 — blocks switching from postpaid to packages когда
-//     остался незакрытый долг. Debt = lesson_settlements row со status
-//     'pending' (или иной indicator — см. реальный shape в reality).
+//     UPSERT + audit row в auth_audit_events.
 
 import type { PoolClient } from 'pg'
 
@@ -66,69 +61,14 @@ export async function getPaymentMethodForPairTx(
 }
 
 /**
- * Q1 invariant: blocks switching from 'postpaid' to 'prepaid_packages' if
- * there's an unsettled postpaid debt slot for this pair.
- *
- * Debt = lesson_completions row marked postpaid + lesson_settlements not yet
- * resolved (the existing settlement flow). Concrete predicate:
- *
- *   exists (
- *     select 1 from lesson_completions lc
- *      where lc.teacher_account_id = $1
- *        and lc.learner_account_id = $2
- *        and lc.billing_kind = 'postpaid'
- *        and not exists (
- *          select 1 from lesson_settlements s
- *           where s.completion_id = lc.id and s.settled_at is not null
- *        )
- *   )
- *
- * Если schema чуть другая — это safe fallback (false → не блокирует
- * случайно). Реальный shape: lesson_completions.billing_kind + lesson_
- * settlements.settled_at; на момент написания не critical to perfect.
- */
-export async function hasOpenPostpaidDebt(
-  teacherId: string,
-  learnerId: string,
-): Promise<boolean> {
-  const pool = getDbPool()
-  try {
-    const r = await pool.query<{ exists: boolean }>(
-      `select exists (
-         select 1 from lesson_completions lc
-          where lc.teacher_account_id = $1::uuid
-            and lc.learner_account_id = $2::uuid
-            and lc.billing_kind = 'postpaid'
-            and not exists (
-              select 1 from lesson_settlements s
-               where s.completion_id = lc.id and s.settled_at is not null
-            )
-       ) as exists`,
-      [teacherId, learnerId],
-    )
-    return Boolean(r.rows[0]?.exists)
-  } catch {
-    // Schema mismatch — assume no debt. Tests cover the happy path.
-    return false
-  }
-}
-
-export type SetMethodResult =
-  | { ok: true; previousMethod: PaymentMethod; method: PaymentMethod }
-  | { ok: false; reason: 'debt_open' }
-
-/**
  * UPSERT (teacher, learner, method) and emit audit row.
- *
- * Returns { ok: false, reason: 'debt_open' } if switching FROM postpaid
- * INTO prepaid_packages while debt is unsettled (Q1 invariant).
  */
 export async function setPaymentMethodForPair(input: {
   teacherId: string
   learnerId: string
   method: PaymentMethod
   byAccountId: string
-}): Promise<SetMethodResult> {
+}): Promise<{ previousMethod: PaymentMethod; method: PaymentMethod }> {
   const pool = getDbPool()
   const client = await pool.connect()
   try {
@@ -143,14 +83,6 @@ export async function setPaymentMethodForPair(input: {
     const previousMethod: PaymentMethod = prior.rows[0]
       ? assertMethod(String(prior.rows[0].payment_method))
       : 'none'
-
-    // epic-b Sub-PR B.1 (2026-06-11): Q1 invariant retired — было block
-    // switch postpaid → prepaid_packages with open debt. После drop
-    // 'prepaid_packages' switch может быть только postpaid ↔ none. Drop
-    // 'postpaid' → 'none' с open debt тоже не критично (учитель ставит
-    // 'none' для остановки booking — долг остаётся pending для settle).
-    void previousMethod
-    void hasOpenPostpaidDebt
 
     await client.query(
       `insert into learner_billing_preferences
@@ -175,7 +107,7 @@ export async function setPaymentMethodForPair(input: {
     )
 
     await client.query('commit')
-    return { ok: true, previousMethod, method: input.method }
+    return { previousMethod, method: input.method }
   } catch (err) {
     await client.query('rollback').catch(() => {})
     throw err

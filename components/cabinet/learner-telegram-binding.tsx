@@ -14,13 +14,11 @@ import {
 
 type Props = {
   initialBound: boolean
-  initialChatId: string | null
   masterSwitchOn: boolean
 }
 
 export function LearnerTelegramBinding({
   initialBound,
-  initialChatId: _initialChatId,
   masterSwitchOn,
 }: Props) {
   const [bound, setBound] = useState(initialBound)

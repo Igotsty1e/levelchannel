@@ -1,6 +1,6 @@
 'use client'
 
-import { CSSProperties, FormEvent, useEffect, useMemo, useState } from 'react'
+import { CSSProperties, FormEvent, useEffect, useState } from 'react'
 
 import { ChipGroup, DatePicker } from '@/components/ui/primitives'
 
@@ -81,15 +81,10 @@ export function BulkAddSlotsModal({
   const [creating, setCreating] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
-  const selectedTariff = useMemo(
-    () => tariffs.find((t) => t.id === tariffId) ?? null,
-    [tariffs, tariffId],
-  )
   // Single duration shared across all rows in this batch — matches the
   // tariff invariant in `assertTariffDurationMatches`. Editing the
   // «До» chip in any TimeRangeRow updates this state.
   const [durationMinutes, setDurationMinutes] = useState(60)
-  void selectedTariff
 
   useEffect(() => {
     if (!open) {

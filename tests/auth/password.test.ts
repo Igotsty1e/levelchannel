@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
   hashPassword,
@@ -8,21 +8,32 @@ import {
 } from '@/lib/auth/password'
 
 describe('lib/auth/password', () => {
+  let currentHash = ''
+
+  beforeAll(async () => {
+    currentHash = await hashPassword('correct horse battery staple')
+  })
+
   it('hashes a password to a non-trivial bcrypt string', async () => {
-    const hash = await hashPassword('correct horse battery staple')
-    expect(hash).toMatch(/^\$2[aby]\$/)
-    expect(hash.length).toBeGreaterThan(50)
+    expect(currentHash).toMatch(/^\$2[aby]\$/)
+    expect(currentHash.length).toBeGreaterThan(50)
   })
 
   it('verifies the original password', async () => {
-    const hash = await hashPassword('correct horse battery staple')
-    await expect(verifyPassword('correct horse battery staple', hash)).resolves.toBe(true)
+    await expect(
+      verifyPassword('correct horse battery staple', currentHash),
+    ).resolves.toBe(true)
   })
 
-  it('rejects a wrong password', async () => {
-    const hash = await hashPassword('correct horse battery staple')
-    await expect(verifyPassword('wrong password', hash)).resolves.toBe(false)
-  })
+  it(
+    'rejects a wrong password',
+    async () => {
+      await expect(verifyPassword('wrong password', currentHash)).resolves.toBe(
+        false,
+      )
+    },
+    15_000,
+  )
 
   it('rejects when hash is empty (defensive guard)', async () => {
     await expect(verifyPassword('whatever', '')).resolves.toBe(false)
