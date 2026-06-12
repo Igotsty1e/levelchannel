@@ -377,6 +377,15 @@ export function AssignDirectModal({
     [billingState, durationMinutes],
   )
 
+  // posthoc-audit 2026-06-12: backend hard-blocks assign when per-pair
+  // payment_method='none' AND no package matches duration. Block submit
+  // here too so the teacher sees an actionable banner instead of a 422.
+  const paymentBlocked
+    = learnerId != null
+      && billingState != null
+      && billingState.paymentMethod === 'none'
+      && matchingPackages.length === 0
+
   // Auto-select the first matching package when learner+tariff change.
   // Defaults billingChoice to 'package' if any are available — teacher's
   // most common path. Otherwise 'postpaid'.
@@ -892,6 +901,30 @@ export function AssignDirectModal({
               >
                 Загрузка…
               </p>
+            ) : billingState
+                && billingState.paymentMethod === 'none'
+                && matchingPackages.length === 0 ? (
+              // posthoc-audit 2026-06-12: method='none' + no matching
+              // package = backend hard-blocks (mutations-assign-direct
+              // Step 8.5). Hide radio choices entirely, show blocking
+              // banner — submit будет disabled через paymentBlocked
+              // checking ниже.
+              <div
+                role="alert"
+                style={{
+                  padding: 12,
+                  borderRadius: 8,
+                  border: '1px solid var(--warning, #f5c26b)',
+                  background: 'rgba(245, 194, 107, 0.10)',
+                  color: 'var(--text)',
+                  fontSize: 13,
+                  lineHeight: 1.45,
+                }}
+              >
+                У ученика не выбран способ оплаты, и нет подходящего
+                пакета на {durationMinutes}&nbsp;мин. Откройте карточку
+                ученика и выберите способ оплаты, либо выдайте пакет.
+              </div>
             ) : (
               <div
                 role="radiogroup"
@@ -970,7 +1003,10 @@ export function AssignDirectModal({
                     gap: 8,
                     padding: 10,
                     borderRadius: 8,
-                    cursor: submitting ? 'not-allowed' : 'pointer',
+                    cursor:
+                      submitting || billingState?.paymentMethod === 'none'
+                        ? 'not-allowed'
+                        : 'pointer',
                     background:
                       billingChoice === 'postpaid'
                         ? 'var(--accent-bg)'
@@ -979,6 +1015,7 @@ export function AssignDirectModal({
                       billingChoice === 'postpaid'
                         ? '1px solid var(--accent)'
                         : '1px solid var(--border)',
+                    opacity: billingState?.paymentMethod === 'none' ? 0.5 : 1,
                   }}
                 >
                   <input
@@ -986,7 +1023,7 @@ export function AssignDirectModal({
                     name="billing-choice"
                     checked={billingChoice === 'postpaid'}
                     onChange={() => setBillingChoice('postpaid')}
-                    disabled={submitting}
+                    disabled={submitting || billingState?.paymentMethod === 'none'}
                     style={{ marginTop: 3 }}
                   />
                   <span
@@ -1000,24 +1037,12 @@ export function AssignDirectModal({
                         lineHeight: 1.4,
                       }}
                     >
-                      Долг копится, вы периодически выставляете счёт за пределами платформы.
+                      {billingState?.paymentMethod === 'none'
+                        ? 'Недоступно — в карточке ученика не выбран способ оплаты.'
+                        : 'Долг копится, вы периодически выставляете счёт за пределами платформы.'}
                     </span>
                   </span>
                 </label>
-                {billingState && billingState.paymentMethod === 'none' ? (
-                  <p
-                    role="alert"
-                    style={{
-                      margin: 0,
-                      fontSize: '12px',
-                      color: 'var(--secondary)',
-                      lineHeight: 1.4,
-                    }}
-                  >
-                    У ученика не выбран способ оплаты — занятие будет назначено,
-                    но «счёт после» не сработает до выбора метода в карточке ученика.
-                  </p>
-                ) : null}
               </div>
             )}
           </div>
@@ -1149,6 +1174,7 @@ export function AssignDirectModal({
                 submitting
                 || !learnerId
                 || !tariffId
+                || paymentBlocked
                 || (mode === 'series'
                   && (!preview || preview.willCreate.length === 0))
               }
@@ -1161,10 +1187,13 @@ export function AssignDirectModal({
                 fontSize: '14px',
                 fontWeight: 600,
                 cursor:
-                  submitting || !learnerId || !tariffId
+                  submitting || !learnerId || !tariffId || paymentBlocked
                     ? 'not-allowed'
                     : 'pointer',
-                opacity: submitting || !learnerId || !tariffId ? 0.6 : 1,
+                opacity:
+                  submitting || !learnerId || !tariffId || paymentBlocked
+                    ? 0.6
+                    : 1,
               }}
             >
               {submitting

@@ -29,6 +29,20 @@ const TEACHER_ERROR_MAP: Record<string, string> = {
   forbidden: 'Доступ запрещён.',
   unauthorized: 'Сессия истекла — войдите в кабинет заново.',
   rate_limited: 'Слишком много действий подряд. Подождите минуту.',
+
+  // learner rename (route /api/teacher/learners/[id]/rename, 13 codes)
+  not_found: 'Ученик не найден.',
+  wrong_archetype: 'Этот аккаунт не является учеником.',
+  noop: 'Изменений нет.',
+  email_in_use: 'Этот email уже использует другой ученик.',
+  email_invalid: 'Неверный формат email.',
+  displayName_empty: 'Отображаемое имя не может быть пустым.',
+  displayName_invalid: 'Неверный формат отображаемого имени.',
+  displayName_too_long: 'Отображаемое имя слишком длинное.',
+  firstName_invalid: 'Неверный формат имени.',
+  firstName_too_long: 'Имя слишком длинное.',
+  lastName_invalid: 'Неверный формат фамилии.',
+  lastName_too_long: 'Фамилия слишком длинная.',
 }
 
 export function localizeTeacherError(code: unknown): string | null {

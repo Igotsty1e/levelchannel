@@ -6,7 +6,7 @@
 
 Owns:
 - **CloudPayments wire protocol** — HMAC verification, replay-dedup, signed-body parsing. `cloudpayments-webhook.ts` is the single source of truth.
-- **Payment-orders CRUD** — `store-postgres.ts` is the only writer of `payment_orders`. Transitions `pending → paid → refunded` happen here, always inside an audit-emit-in-same-TX wrapper.
+- **Payment-orders CRUD** - `store-postgres.ts` owns the shared read/write helpers and is the only writer of `payment_orders.status` transitions. New-order inserts also exist in route-level writers for distinct product flows (`/api/payments`, `/api/checkout/package/[slug]`, `/api/payments/sbp/create-qr`, `/api/teacher/subscribe`, grant routes), so any new order shape change must be reviewed across that wider writer surface.
 - **`payment_method` discriminator** — top-level column on `payment_orders` (migration 0063). Three values: `'card'` (widget + saved-token flow), `'sbp'` (SBP QR via the CloudPayments server API, `app/api/payments/sbp/create-qr/route.ts`), `'admin_grant'` (non-money operator-driven package grant). Single source of truth — `metadata.payment_method` is NOT used anywhere. Webhook handler reads/writes the column via `detectPaymentMethod()` (positive-signal whitelist) + the `markOrderPaid({detectedPaymentMethod})` opt.
 - **CloudPayments API** — outgoing calls to `payments/cards/charge` + `payments/refund` + `payments/qr/sbp/create` (`cloudpayments-api.ts`). Basic-Auth via Public ID + API Secret. Retry semantics, decline classification, JSON-shape guards.
 - **Allocations** — `payment_allocations` writes from the Pay webhook. `allocations.ts` is the bookkeeping pair to `lib/billing/package-grant.ts`.

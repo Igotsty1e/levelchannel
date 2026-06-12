@@ -69,9 +69,16 @@ export function RenameLearnerForm({
         | { ok?: boolean; error?: string; message?: string }
         | null
       if (!res.ok || !data?.ok) {
+        // Posthoc-audit 2026-06-12: fall back to the server-supplied
+        // `data.message` before showing the generic save error — the
+        // route emits short Russian strings for some validation paths
+        // (e.g. legacy display_name). localizeTeacherError covers the
+        // typed code surface; data.message is the last resort.
         setErr(
           localizeTeacherError(data?.error)
-            ?? 'Не удалось сохранить. Попробуйте позже.',
+            ?? (typeof data?.message === 'string' && data.message.length > 0
+              ? data.message
+              : 'Не удалось сохранить. Попробуйте позже.'),
         )
       } else {
         setSavedAt(new Date().toLocaleTimeString('ru-RU'))
