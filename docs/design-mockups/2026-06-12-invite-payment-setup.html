@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mockup: «Настроить тип оплаты» — invite form (Задача 2)</title>
+  <style>
+    /* Копия токенов из app/globals.css .saas-chrome scope */
+    :root {
+      --bg: #0B0B0D;
+      --card: #1C1C1F;
+      --surface-1: #141416;
+      --surface-2: rgba(255,255,255,0.04);
+      --border: rgba(255,255,255,0.08);
+      --text: #F5F5F7;
+      --text-secondary: #A1A1AA;
+      --secondary: #A1A1AA;
+      --accent: #D88A82;
+      --accent-bg: rgba(216,138,130,0.10);
+      --accent-bg-strong: rgba(216,138,130,0.18);
+      --text-on-accent: #FFFFFF;
+      --warning: #F5C26B;
+      --warning-bg: rgba(245,194,107,0.10);
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .page-title {
+      max-width: 960px;
+      margin: 32px auto 16px;
+      padding: 0 16px;
+      font-size: 18px;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .viewports {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 16px;
+      display: flex;
+      gap: 32px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .viewport-frame {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--bg);
+      overflow: hidden;
+    }
+
+    .viewport-frame > .frame-label {
+      padding: 8px 16px;
+      background: rgba(255,255,255,0.02);
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .viewport-desktop {
+      width: 880px;
+    }
+
+    .viewport-mobile {
+      width: 375px;
+    }
+
+    .viewport-inner {
+      padding: 24px;
+    }
+
+    /* CollapsibleCard outer */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .card-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 20px;
+      cursor: pointer;
+    }
+
+    .card-summary-title-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.3;
+    }
+
+    .card-desc {
+      font-size: 13px;
+      color: var(--secondary);
+      line-height: 1.4;
+    }
+
+    .card-meta {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      flex: 0 0 auto;
+    }
+
+    .pill {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--accent-bg);
+      color: var(--accent);
+    }
+
+    .chevron {
+      width: 14px;
+      height: 14px;
+      color: var(--secondary);
+      transform: rotate(180deg);
+    }
+
+    .card-body {
+      padding: 4px 20px 20px;
+    }
+
+    /* Checkbox primitive — preview replica */
+    .checkbox-row {
+      display: inline-flex;
+      align-items: flex-start;
+      gap: 10px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .checkbox-box {
+      flex-shrink: 0;
+      width: 20px;
+      height: 20px;
+      border-radius: 6px;
+      border: 1.5px solid var(--border);
+      background: var(--surface-2);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 2px;
+    }
+    .checkbox-box.is-on {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    .checkbox-label-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .checkbox-label {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+      line-height: 1.35;
+    }
+    .checkbox-hint {
+      font-size: 13px;
+      color: var(--secondary);
+      line-height: 1.45;
+    }
+
+    /* Nested collapsible — "Настроить тип оплаты" */
+    .nested-card {
+      background: var(--surface-1);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-top: 16px;
+      overflow: hidden;
+    }
+    .nested-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+    }
+    .nested-summary-title-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .nested-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .nested-desc {
+      font-size: 12px;
+      color: var(--secondary);
+    }
+    .nested-body {
+      padding: 0 16px 16px;
+    }
+
+    .group-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 16px;
+      margin-bottom: 6px;
+    }
+    .group-header .group-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .group-hint {
+      font-size: 12px;
+      color: var(--secondary);
+      margin: 0 0 8px;
+      line-height: 1.45;
+    }
+
+    .multi-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 6px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+    }
+
+    .multi-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .multi-item.is-active {
+      background: var(--accent-bg);
+    }
+    .multi-item-meta {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .multi-item-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .multi-item-sub {
+      font-size: 12px;
+      color: var(--secondary);
+    }
+
+    .create-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      padding: 10px 12px;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 500;
+      background: transparent;
+    }
+    .create-row:hover {
+      background: var(--accent-bg);
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 18px;
+      min-height: 44px;
+      background: var(--accent);
+      color: var(--text-on-accent);
+      border: 1px solid var(--accent);
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .invite-desc-toplevel {
+      color: var(--secondary);
+      font-size: 14px;
+      line-height: 1.5;
+      margin: 0 0 16px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1 class="page-title">Mockup: invite form «Настроить тип оплаты» — Задача 2 (2026-06-12)</h1>
+
+  <div class="viewports">
+
+    <!-- ============================== DESKTOP 880px ============================== -->
+    <div class="viewport-frame viewport-desktop">
+      <div class="frame-label">Desktop · 880px</div>
+      <div class="viewport-inner">
+
+        <details class="card" open>
+          <summary class="card-summary" style="list-style:none">
+            <span class="card-summary-title-wrap">
+              <span class="card-title">Пригласить ученика</span>
+              <span class="card-desc">Создать ссылку для нового ученика и сразу открыть доступ к тарифам и пакетам</span>
+            </span>
+            <span class="card-meta">
+              <span class="pill">5/5</span>
+              <svg class="chevron" viewBox="0 0 14 14" fill="none">
+                <path d="M3 5l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+          </summary>
+          <div class="card-body">
+            <p class="invite-desc-toplevel">
+              Создайте ссылку и отправьте ученику. Действует 7 дней, для одного человека.
+            </p>
+
+            <!-- Checkbox: «Активный ученик» (Задача 1, уже в PR B) -->
+            <label class="checkbox-row" style="margin-bottom:8px;">
+              <span class="checkbox-box is-on">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M3 7l3 3 5-6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </span>
+              <span class="checkbox-label-wrap">
+                <span class="checkbox-label">Активный ученик</span>
+                <span class="checkbox-hint">Может бронировать слоты и тратить пакеты</span>
+              </span>
+            </label>
+
+            <!-- ===== Задача 2: Nested collapsible «Настроить тип оплаты» ===== -->
+            <details class="nested-card" open>
+              <summary class="nested-summary" style="list-style:none; cursor:pointer">
+                <span class="nested-summary-title-wrap">
+                  <span class="nested-title">Настроить тип оплаты</span>
+                  <span class="nested-desc">Выберите один или несколько вариантов</span>
+                </span>
+                <svg class="chevron" viewBox="0 0 14 14" fill="none">
+                  <path d="M3 5l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </summary>
+              <div class="nested-body">
+
+                <div class="group-header">
+                  <span class="group-title">Установить тариф</span>
+                </div>
+                <p class="group-hint">Ученик сможет бронировать слоты с выбранными тарифами.</p>
+                <div class="multi-list">
+                  <label class="multi-item is-active">
+                    <span class="checkbox-box is-on">
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M3 7l3 3 5-6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </span>
+                    <span class="multi-item-meta">
+                      <span class="multi-item-title">Урок 30 минут</span>
+                      <span class="multi-item-sub">30 мин · 500 ₽</span>
+                    </span>
+                  </label>
+                  <label class="multi-item">
+                    <span class="checkbox-box"></span>
+                    <span class="multi-item-meta">
+                      <span class="multi-item-title">Урок 45 минут</span>
+                      <span class="multi-item-sub">45 мин · 750 ₽</span>
+                    </span>
+                  </label>
+                  <label class="multi-item">
+                    <span class="checkbox-box"></span>
+                    <span class="multi-item-meta">
+                      <span class="multi-item-title">Урок 60 минут</span>
+                      <span class="multi-item-sub">60 мин · 1 000 ₽</span>
+                    </span>
+                  </label>
+                </div>
+                <button type="button" class="create-row">+ Создать тариф</button>
+
+                <div class="group-header">
+                  <span class="group-title">Выдать пакет занятий</span>
+                </div>
+                <p class="group-hint">Ученик сможет использовать предоплаченные занятия.</p>
+                <div class="multi-list">
+                  <label class="multi-item is-active">
+                    <span class="checkbox-box is-on">
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M3 7l3 3 5-6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </span>
+                    <span class="multi-item-meta">
+                      <span class="multi-item-title">Пакет 8 уроков</span>
+                      <span class="multi-item-sub">8 занятий · 60 мин · 11 500 ₽</span>
+                    </span>
+                  </label>
+                  <label class="multi-item">
+                    <span class="checkbox-box"></span>
+                    <span class="multi-item-meta">
+                      <span class="multi-item-title">Пакет 4 урока</span>
+                      <span class="multi-item-sub">4 занятия · 60 мин · 6 000 ₽</span>
+                    </span>
+                  </label>
+                </div>
+                <button type="button" class="create-row">+ Создать пакет</button>
+
+              </div>
+            </details>
+
+            <div style="margin-top:20px">
+              <button type="button" class="btn-primary">Создать ссылку-приглашение</button>
+            </div>
+
+          </div>
+        </details>
+
+      </div>
+    </div>
+
+    <!-- ============================== MOBILE 375px ============================== -->
+    <div class="viewport-frame viewport-mobile">
+      <div class="frame-label">Mobile · 375px</div>
+      <div class="viewport-inner" style="padding:16px">
+
+        <details class="card" open>
+          <summary class="card-summary" style="list-style:none">
+            <span class="card-summary-title-wrap">
+              <span class="card-title">Пригласить ученика</span>
+              <span class="card-desc">Создать ссылку для нового ученика и сразу открыть доступ к тарифам и пакетам</span>
+            </span>
+            <span class="card-meta">
+              <span class="pill">5/5</span>
+              <svg class="chevron" viewBox="0 0 14 14" fill="none">
+                <path d="M3 5l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+          </summary>
+          <div class="card-body">
+            <p class="invite-desc-toplevel">
+              Создайте ссылку и отправьте ученику. Действует 7 дней, для одного человека.
+            </p>
+
+            <label class="checkbox-row" style="margin-bottom:8px;">
+              <span class="checkbox-box is-on">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M3 7l3 3 5-6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </span>
+              <span class="checkbox-label-wrap">
+                <span class="checkbox-label">Активный ученик</span>
+                <span class="checkbox-hint">Может бронировать слоты и тратить пакеты</span>
+              </span>
+            </label>
+
+            <details class="nested-card" open>
+              <summary class="nested-summary" style="list-style:none">
+                <span class="nested-summary-title-wrap">
+                  <span class="nested-title">Настроить тип оплаты</span>
+                  <span class="nested-desc">Выберите один или несколько вариантов</span>
+                </span>
+                <svg class="chevron" viewBox="0 0 14 14" fill="none">
+                  <path d="M3 5l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </summary>
+              <div class="nested-body">
+
+                <div class="group-header">
+                  <span class="group-title">Установить тариф</span>
+                </div>
+                <p class="group-hint">Ученик сможет бронировать слоты с выбранными тарифами.</p>
+                <div class="multi-list">
+                  <label class="multi-item is-active">
+                    <span class="checkbox-box is-on">
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M3 7l3 3 5-6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </span>
+                    <span class="multi-item-meta">
+                      <span class="multi-item-title">Урок 30 минут</span>
+                      <span class="multi-item-sub">30 мин · 500 ₽</span>
+                    </span>
+                  </label>
+                  <label class="multi-item">
+                    <span class="checkbox-box"></span>
+                    <span class="multi-item-meta">
+                      <span class="multi-item-title">Урок 45 минут</span>
+                      <span class="multi-item-sub">45 мин · 750 ₽</span>
+                    </span>
+                  </label>
+                </div>
+                <button type="button" class="create-row">+ Создать тариф</button>
+
+                <div class="group-header">
+                  <span class="group-title">Выдать пакет занятий</span>
+                </div>
+                <p class="group-hint">Ученик сможет использовать предоплаченные занятия.</p>
+                <div class="multi-list">
+                  <label class="multi-item is-active">
+                    <span class="checkbox-box is-on">
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M3 7l3 3 5-6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </span>
+                    <span class="multi-item-meta">
+                      <span class="multi-item-title">Пакет 8 уроков</span>
+                      <span class="multi-item-sub">8 занятий · 60 мин · 11 500 ₽</span>
+                    </span>
+                  </label>
+                </div>
+                <button type="button" class="create-row">+ Создать пакет</button>
+
+              </div>
+            </details>
+
+            <div style="margin-top:20px">
+              <button type="button" class="btn-primary" style="width:100%">Создать ссылку-приглашение</button>
+            </div>
+
+          </div>
+        </details>
+
+      </div>
+    </div>
+
+  </div>
+
+</body>
+</html>
