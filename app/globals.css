@@ -2375,3 +2375,24 @@ html, body {
   outline: 2px solid var(--accent, #D88A82);
   outline-offset: 2px;
 }
+
+/* Section-rhythm token + helper class — 2026-06-12.
+   Единое вертикальное расстояние между крупными карточками одного
+   экрана (главная учителя, кабинет, /teacher/learners и т.п.).
+   Раньше марджины «гуляли» от 16 до 28 — фиксируем 32px desktop,
+   24px mobile. Десктоп-значение совпадает с --space-6;
+   mobile-collapse следует логике --space-7..9. */
+:root {
+  --space-section: 32px;
+}
+@media (max-width: 600px) {
+  :root {
+    --space-section: 24px;
+  }
+}
+.lc-section {
+  margin-bottom: var(--space-section);
+}
+.lc-section:last-child {
+  margin-bottom: 0;
+}

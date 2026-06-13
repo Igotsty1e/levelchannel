@@ -156,7 +156,7 @@ export default async function TeacherHomePage() {
 
   return (
     <main style={{ maxWidth: 880, margin: '0 auto' }}>
-      <header style={{ marginBottom: 28 }}>
+      <header className="lc-section">
         <h1
           style={{
             fontSize: 28,
@@ -174,24 +174,21 @@ export default async function TeacherHomePage() {
       {/* Onboarding Sub-PR B1 — teacher setup checklist hint.
           SSR-rendered when not all 4 setup items are done AND user
           hasn't dismissed. */}
-      <TeacherSetupChecklist state={setupChecklist} />
-
-      {/* Финансы — Hero-вариант (2026-06-12). Одна крупная цифра
-          заработка + 3 побочных строки. Скрывается полностью, пока у
-          учителя нет ни одного слота (onboarding-checklist выше уже
-          ведёт к первому слоту, лишний skeleton-блок только шумит). */}
-      <TeacherFinanceSummary snapshot={financeSnapshot} />
+      <div className="lc-section">
+        <TeacherSetupChecklist state={setupChecklist} />
+      </div>
 
       {/* Дайджест на сегодня — Sub-PR D из teacher-cabinet-polish.
-          Превью today_local списка занятий, тот же предикат, что и у
-          08:00 cron-дайджеста. 2026-06-07: переехал НАД «Ближайшие
-          занятия» — сегодняшний день важнее ближайшего будущего. */}
-      <DigestPreviewTile preview={digestPreview} />
+          2026-06-12 (Задача 4): переехал НАВЕРХ под checklist. Что
+          важно прямо сейчас — главное; финансы — справа внизу. */}
+      <div className="lc-section">
+        <DigestPreviewTile preview={digestPreview} />
+      </div>
 
       {/* Блок: Ближайшие занятия */}
       <section
-        className="card"
-        style={{ padding: 24, marginBottom: 24 }}
+        className="card lc-section"
+        style={{ padding: 24 }}
         aria-labelledby="upcoming-heading"
       >
         <h2
@@ -263,6 +260,14 @@ export default async function TeacherHomePage() {
           Открыть календарь
         </Link>
       </section>
+
+      {/* Финансы — Hero-вариант. 2026-06-12 (Задача 4): переехал
+          ВНИЗ под расписание. Полезная справка, но не первое что
+          нужно учителю при открытии кабинета (это не банк). Скрывается
+          полностью при отсутствии слотов. */}
+      <div className="lc-section">
+        <TeacherFinanceSummary snapshot={financeSnapshot} />
+      </div>
     </main>
   )
 }

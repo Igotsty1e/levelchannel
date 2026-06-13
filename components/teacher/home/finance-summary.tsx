@@ -102,8 +102,6 @@ function SecondaryRow({
 }
 
 const sectionStyle: CSSProperties = {
-  marginTop: 16,
-  marginBottom: 24,
   padding: '24px 24px 20px',
   background: 'var(--card)',
   border: '1px solid var(--border)',
