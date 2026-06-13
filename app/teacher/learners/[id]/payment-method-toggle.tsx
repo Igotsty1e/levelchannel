@@ -1,33 +1,20 @@
 'use client'
 
-// mig 0101 — UI selector для учительской выбора payment_method per pair.
-// Plan: docs/plans/per-learner-payment-method.md.
+// 2026-06-12: переименован в «Активный ученик» (новый design-system
+// Checkbox). Под капотом тот же 2-state контракт:
+//   • Активный = `payment_method: 'postpaid'` — ученик может бронировать,
+//     оплата мисуется с пакета или копится постоплатой.
+//   • Неактивный = `payment_method: 'none'` — backend блокирует
+//     бронирование, ученик видит банер «Способ оплаты не выбран».
 //
-// POSTs к PATCH /api/teacher/learners/[id]/billing.
-//
-// Cabinet polish 2026-06-07 (B4): tokens + <Button>.
+// PATCH /api/teacher/learners/[id]/billing — body { method }.
 
 import { useState, useTransition } from 'react'
 
-import { Button } from '@/components/ui/primitives'
+import { Button, Checkbox } from '@/components/ui/primitives'
 import { localizeTeacherError } from '@/lib/i18n/teacher-errors'
 
-// epic-b Sub-PR B.1/B.2 (2026-06-11): dropped 'prepaid_packages'.
-// Booking always mixes — package consume first, postpaid fallback.
-// The toggle now exposes two states: 'postpaid' (booking open + mix
-// billing) and 'none' (booking blocked until teacher picks).
 type Method = 'postpaid' | 'none'
-
-const METHOD_LABEL: Record<Method, string> = {
-  postpaid: 'Принимаю оплату (пакеты + счёт)',
-  none: 'Не выбран (бронирование заблокировано)',
-}
-
-const HELP_TEXT: Record<Method, string> = {
-  postpaid:
-    'Ученик записывается, занятие сначала списывается с активного пакета. Если пакета нет — копится долг, вы периодически выставляете счёт за пределами платформы.',
-  none: 'Ученик не может записаться к вам. Выберите способ оплаты, чтобы открыть бронирование.',
-}
 
 export function PaymentMethodToggle({
   learnerId,
@@ -36,22 +23,18 @@ export function PaymentMethodToggle({
   learnerId: string
   initialMethod: Method
 }) {
-  const [method, setMethod] = useState<Method>(initialMethod)
-  const [pendingMethod, setPendingMethod] = useState<Method | null>(null)
+  const [savedActive, setSavedActive] = useState(initialMethod === 'postpaid')
+  const [active, setActive] = useState(initialMethod === 'postpaid')
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  const onChange = (next: Method) => {
-    if (next === method) return
-    setPendingMethod(next)
-    setError(null)
-    setInfo(null)
-  }
+  const dirty = active !== savedActive
 
   const onSave = () => {
-    if (!pendingMethod) return
-    const next = pendingMethod
+    const next: Method = active ? 'postpaid' : 'none'
+    setError(null)
+    setInfo(null)
     startTransition(async () => {
       try {
         const res = await fetch(
@@ -70,17 +53,13 @@ export function PaymentMethodToggle({
           )
           return
         }
-        setMethod(next)
-        setPendingMethod(null)
+        setSavedActive(active)
         setInfo('Сохранено.')
       } catch {
         setError('Не удалось соединиться с сервером. Проверьте интернет.')
       }
     })
   }
-
-  const current = pendingMethod ?? method
-  const dirty = pendingMethod !== null && pendingMethod !== method
 
   return (
     <section
@@ -92,55 +71,33 @@ export function PaymentMethodToggle({
         marginBottom: 24,
       }}
     >
-      <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 8 }}>
-        Способ оплаты
+      <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 12 }}>
+        Доступ к бронированию
       </h2>
-      <p style={{ color: 'var(--secondary)', fontSize: 13, marginBottom: 12 }}>
-        Платформа не принимает деньги учеников. Выберите, как этот ученик
-        платит вам.
-      </p>
-
-      <div
-        role="radiogroup"
-        aria-label="Способ оплаты"
-        style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
-      >
-        {(['postpaid', 'none'] as Method[]).map((m) => (
-          <label
-            key={m}
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: 8,
-              padding: 10,
-              borderRadius: 8,
-              cursor: isPending ? 'wait' : 'pointer',
-              background:
-                current === m ? 'var(--accent-bg)' : 'transparent',
-              border:
-                current === m
-                  ? '1px solid var(--accent)'
-                  : '1px solid var(--border)',
-            }}
-          >
-            <input
-              type="radio"
-              name="payment-method"
-              value={m}
-              checked={current === m}
-              onChange={() => onChange(m)}
-              disabled={isPending}
-              style={{ marginTop: 3 }}
-            />
-            <span style={{ display: 'flex', flexDirection: 'column' }}>
-              <strong style={{ fontSize: 14 }}>{METHOD_LABEL[m]}</strong>
-              <span style={{ fontSize: 12, color: 'var(--secondary)', lineHeight: 1.5 }}>
-                {HELP_TEXT[m]}
-              </span>
-            </span>
-          </label>
-        ))}
-      </div>
+      <Checkbox
+        checked={active}
+        onChange={(next) => {
+          setActive(next)
+          setError(null)
+          setInfo(null)
+        }}
+        disabled={isPending}
+        label="Активный ученик"
+        hint="Может бронировать слоты и тратить пакеты"
+      />
+      {!active ? (
+        <p
+          style={{
+            color: 'var(--secondary)',
+            fontSize: 12,
+            lineHeight: 1.5,
+            marginTop: 10,
+          }}
+        >
+          Когда выключено — ученик не может записаться к вам. Включите, как
+          только готовы принять его на занятия.
+        </p>
+      ) : null}
 
       {error ? (
         <p
