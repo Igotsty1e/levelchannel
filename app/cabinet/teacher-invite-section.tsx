@@ -1,8 +1,11 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
+import { PackageCreateSheet } from '@/components/teacher/pricing/package-create-sheet'
+import { TariffCreateSheet } from '@/components/teacher/pricing/tariff-create-sheet'
 import { Checkbox, CollapsibleCard } from '@/components/ui/primitives'
 import { postAuthJson } from '@/lib/auth/client'
 import type { TeacherPlanLearnerLimit } from '@/lib/onboarding/teacher-plan-limit'
@@ -334,16 +337,6 @@ export function TeacherInviteSection({
             : 'Не удалось скопировать автоматически — выделите ссылку ниже и скопируйте вручную.'}
         </div>
       ) : null}
-      <p
-        style={{
-          color: 'var(--secondary)',
-          fontSize: 14,
-          lineHeight: 1.5,
-          marginBottom: 16,
-        }}
-      >
-        Создайте ссылку и отправьте ученику. Действует 7 дней, для одного человека.
-      </p>
       <div style={{ marginBottom: 16 }}>
         <Checkbox
           checked={active}
@@ -366,48 +359,63 @@ export function TeacherInviteSection({
           </p>
         ) : null}
       </div>
-      {availableTariffs.length > 0 ? (
-        <InviteMultiSelect
-          legend="Открыть тарифы"
-          hint="Ученик сразу увидит выбранные тарифы в своём кабинете и сможет бронировать."
-          options={availableTariffs.map((t) => ({
-            id: t.id,
-            label: t.titleRu,
-            sub: `${t.durationMinutes} мин · ${formatRub(t.amountKopecks)}`,
-          }))}
-          selected={selectedTariffIds}
-          onToggle={toggleTariff}
-          disabled={busy}
-        />
-      ) : null}
-      {availablePackages.length > 0 ? (
-        <InviteMultiSelect
-          legend="Открыть пакеты"
-          hint="Ученик сможет купить выбранные пакеты со скидкой за объём."
-          options={availablePackages.map((p) => ({
-            id: p.id,
-            label: p.titleRu,
-            sub: `${p.count} занятий · ${p.durationMinutes} мин · ${formatRub(p.amountKopecks)}`,
-          }))}
-          selected={selectedPackageIds}
-          onToggle={togglePackage}
-          disabled={busy}
-        />
-      ) : null}
-      <button
-        type="button"
-        onClick={onGenerate}
-        disabled={busy || isHardLimit}
-        className="btn-primary"
-        title={
-          isHardLimit
-            ? `Достигнут лимит ${limited!.activeCount}/${limited!.limit} учеников. Обновите тариф.`
+
+      {/* Задача 2 (2026-06-12): «Настроить тип оплаты» — вложенный
+          раскрывающийся блок. Обязателен при active=true (нужен хотя бы
+          один тариф или пакет, иначе ученик не сможет бронировать).
+          Если active=false — блок не обязателен, и подсказка явно
+          говорит об этом. Открыт по умолчанию когда active=true. */}
+      <PaymentSetupSection
+        active={active}
+        availableTariffs={availableTariffs}
+        availablePackages={availablePackages}
+        selectedTariffIds={selectedTariffIds}
+        selectedPackageIds={selectedPackageIds}
+        onToggleTariff={toggleTariff}
+        onTogglePackage={togglePackage}
+        disabled={busy}
+      />
+      {(() => {
+        // Задача 2 (2026-06-12): обязательное поле «Настроить тип оплаты»
+        // если ученик активный — иначе ученик не сможет бронировать.
+        // disable submit + видимый hint снизу.
+        const needsPayment
+          = active
+            && selectedTariffIds.size === 0
+            && selectedPackageIds.size === 0
+        const submitTitle = isHardLimit
+          ? `Достигнут лимит ${limited!.activeCount}/${limited!.limit} учеников. Обновите тариф.`
+          : needsPayment
+            ? 'Выберите тариф или пакет — без этого активный ученик не сможет бронировать.'
             : undefined
-        }
-        style={{ marginBottom: err ? 12 : 16, minWidth: 240 }}
-      >
-        {busy ? 'Создаём…' : 'Создать ссылку-приглашение'}
-      </button>
+        return (
+          <>
+            <button
+              type="button"
+              onClick={onGenerate}
+              disabled={busy || isHardLimit || needsPayment}
+              className="btn-primary"
+              title={submitTitle}
+              style={{ marginBottom: err || needsPayment ? 8 : 16, minWidth: 240 }}
+            >
+              {busy ? 'Создаём…' : 'Создать ссылку-приглашение'}
+            </button>
+            {needsPayment ? (
+              <p
+                style={{
+                  color: 'var(--secondary)',
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  marginBottom: 16,
+                }}
+              >
+                Выберите хотя бы один тариф или пакет в блоке «Настроить тип
+                оплаты» — без этого активный ученик не сможет бронировать.
+              </p>
+            ) : null}
+          </>
+        )
+      })()}
       {err ? (
         <p style={{ color: '#ff6b6b', fontSize: 13, marginBottom: 12 }}>{err}</p>
       ) : null}
@@ -528,105 +536,276 @@ function formatRub(kopecks: number): string {
   return `${Math.round(kopecks / 100).toLocaleString('ru-RU')} ₽`
 }
 
-function InviteMultiSelect({
-  legend,
+// Задача 2 (2026-06-12): «Настроить тип оплаты» — вложенный
+// раскрывающийся блок внутри инвайта.
+function PaymentSetupSection({
+  active,
+  availableTariffs,
+  availablePackages,
+  selectedTariffIds,
+  selectedPackageIds,
+  onToggleTariff,
+  onTogglePackage,
+  disabled,
+}: {
+  active: boolean
+  availableTariffs: ReadonlyArray<InviteTariffOption>
+  availablePackages: ReadonlyArray<InvitePackageOption>
+  selectedTariffIds: Set<string>
+  selectedPackageIds: Set<string>
+  onToggleTariff: (id: string) => void
+  onTogglePackage: (id: string) => void
+  disabled: boolean
+}) {
+  const router = useRouter()
+  const [openCreateTariff, setOpenCreateTariff] = useState(false)
+  const [openCreatePackage, setOpenCreatePackage] = useState(false)
+
+  async function apiCreateTariff(input: {
+    titleRu: string
+    amountKopecks: number
+    durationMinutes: number
+  }): Promise<{ ok: true } | { ok: false; message: string }> {
+    try {
+      const res = await fetch('/api/teacher/tariffs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...input, isActive: true, displayOrder: 0 }),
+      })
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as
+          | { error?: string; message?: string }
+          | null
+        return {
+          ok: false,
+          message: data?.message || data?.error || `HTTP ${res.status}`,
+        }
+      }
+      setOpenCreateTariff(false)
+      // SSR подхватит новый тариф через свежую загрузку списка
+      // (page.tsx — server component).
+      router.refresh()
+      return { ok: true }
+    } catch (err) {
+      return {
+        ok: false,
+        message: err instanceof Error ? err.message : 'network',
+      }
+    }
+  }
+
+  async function apiCreatePackage(input: {
+    titleRu: string
+    descriptionRu: string | null
+    durationMinutes: number
+    count: number
+    amountKopecks: number
+  }): Promise<{ ok: true } | { ok: false; message: string }> {
+    try {
+      const res = await fetch('/api/teacher/packages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...input, isActive: true, displayOrder: 0 }),
+      })
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as
+          | { error?: string; message?: string }
+          | null
+        return {
+          ok: false,
+          message: data?.message || data?.error || `HTTP ${res.status}`,
+        }
+      }
+      setOpenCreatePackage(false)
+      router.refresh()
+      return { ok: true }
+    } catch (err) {
+      return {
+        ok: false,
+        message: err instanceof Error ? err.message : 'network',
+      }
+    }
+  }
+
+  return (
+    <>
+      <CollapsibleCard
+        title="Настроить тип оплаты"
+        description="Выберите один или несколько вариантов"
+        defaultOpen={active}
+      >
+        <InviteMultiGroup
+          title="Установить тариф"
+          hint="Ученик сможет бронировать слоты с выбранными тарифами."
+          options={availableTariffs.map((t) => ({
+            id: t.id,
+            label: t.titleRu,
+            sub: `${t.durationMinutes} мин · ${formatRub(t.amountKopecks)}`,
+          }))}
+          selected={selectedTariffIds}
+          onToggle={onToggleTariff}
+          disabled={disabled}
+          createLabel="+ Создать тариф"
+          onCreate={() => setOpenCreateTariff(true)}
+        />
+        <div style={{ height: 16 }} />
+        <InviteMultiGroup
+          title="Выдать пакет занятий"
+          hint="Ученик сможет использовать предоплаченные занятия."
+          options={availablePackages.map((p) => ({
+            id: p.id,
+            label: p.titleRu,
+            sub: `${p.count} занятий · ${p.durationMinutes} мин · ${formatRub(p.amountKopecks)}`,
+          }))}
+          selected={selectedPackageIds}
+          onToggle={onTogglePackage}
+          disabled={disabled}
+          createLabel="+ Создать пакет"
+          onCreate={() => setOpenCreatePackage(true)}
+        />
+      </CollapsibleCard>
+
+      {openCreateTariff ? (
+        <TariffCreateSheet
+          onClose={() => setOpenCreateTariff(false)}
+          onCreate={apiCreateTariff}
+        />
+      ) : null}
+      {openCreatePackage ? (
+        <PackageCreateSheet
+          onClose={() => setOpenCreatePackage(false)}
+          onCreate={apiCreatePackage}
+        />
+      ) : null}
+    </>
+  )
+}
+
+function InviteMultiGroup({
+  title,
   hint,
   options,
   selected,
   onToggle,
   disabled,
+  createLabel,
+  onCreate,
 }: {
-  legend: string
+  title: string
   hint: string
   options: ReadonlyArray<{ id: string; label: string; sub: string }>
   selected: Set<string>
   onToggle: (id: string) => void
   disabled: boolean
+  createLabel: string
+  onCreate: () => void
 }) {
   return (
-    <fieldset
-      style={{
-        border: 'none',
-        padding: 0,
-        margin: '0 0 16px',
-      }}
-    >
-      <legend
-        style={{
-          fontSize: 13,
-          fontWeight: 600,
-          marginBottom: 6,
-          color: 'var(--text)',
-        }}
-      >
-        {legend} <span style={{ color: 'var(--secondary)', fontWeight: 400 }}>(необязательно)</span>
-      </legend>
+    <div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginTop: 4 }}>
+        {title}
+      </div>
       <p
         style={{
           color: 'var(--secondary)',
           fontSize: 12,
-          margin: '0 0 8px',
-          lineHeight: 1.4,
+          margin: '4px 0 8px',
+          lineHeight: 1.45,
         }}
       >
         {hint}
       </p>
-      <div
+      {options.length > 0 ? (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+            maxHeight: 220,
+            overflowY: 'auto',
+            padding: 6,
+            borderRadius: 8,
+            border: '1px solid var(--border)',
+            background: 'rgba(255,255,255,0.02)',
+          }}
+        >
+          {options.map((opt) => {
+            const isOn = selected.has(opt.id)
+            return (
+              <label
+                key={opt.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '10px',
+                  borderRadius: 6,
+                  background: isOn ? 'var(--accent-bg)' : 'transparent',
+                  cursor: disabled ? 'not-allowed' : 'pointer',
+                  transition: 'background 120ms ease-out',
+                }}
+              >
+                <Checkbox
+                  checked={isOn}
+                  onChange={() => onToggle(opt.id)}
+                  disabled={disabled}
+                  label={
+                    <span style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span
+                        style={{
+                          color: 'var(--text)',
+                          fontWeight: 500,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {opt.label}
+                      </span>
+                      <span style={{ color: 'var(--secondary)', fontSize: 12, fontWeight: 400 }}>
+                        {opt.sub}
+                      </span>
+                    </span>
+                  }
+                />
+              </label>
+            )
+          })}
+        </div>
+      ) : (
+        <p
+          style={{
+            color: 'var(--secondary)',
+            fontSize: 12,
+            margin: '0 0 8px',
+            lineHeight: 1.45,
+            fontStyle: 'italic',
+          }}
+        >
+          Пока ничего не создано.
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={onCreate}
+        disabled={disabled}
         style={{
-          display: 'flex',
-          flexDirection: 'column',
+          display: 'inline-flex',
+          alignItems: 'center',
           gap: 6,
-          maxHeight: 220,
-          overflowY: 'auto',
-          padding: 6,
+          marginTop: 10,
+          padding: '10px 14px',
+          border: '1px dashed var(--border)',
           borderRadius: 8,
-          border: '1px solid rgba(255,255,255,0.08)',
-          background: 'rgba(255,255,255,0.02)',
+          background: 'transparent',
+          color: 'var(--accent, #D88A82)',
+          fontSize: 13,
+          fontWeight: 500,
+          cursor: disabled ? 'not-allowed' : 'pointer',
         }}
       >
-        {options.map((opt) => {
-          const active = selected.has(opt.id)
-          return (
-            <label
-              key={opt.id}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '8px 10px',
-                borderRadius: 6,
-                background: active
-                  ? 'rgba(110, 168, 254, 0.12)'
-                  : 'transparent',
-                cursor: disabled ? 'not-allowed' : 'pointer',
-                fontSize: 13,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={active}
-                onChange={() => onToggle(opt.id)}
-                disabled={disabled}
-                style={{ margin: 0 }}
-              />
-              <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                <span
-                  style={{
-                    color: 'var(--text)',
-                    fontWeight: 500,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {opt.label}
-                </span>
-                <span style={{ color: 'var(--secondary)', fontSize: 12 }}>{opt.sub}</span>
-              </span>
-            </label>
-          )
-        })}
-      </div>
-    </fieldset>
+        {createLabel}
+      </button>
+    </div>
   )
 }
