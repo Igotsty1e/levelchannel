@@ -4,6 +4,10 @@ Plans below have all merged to main. Detail in each file's body; this index is t
 
 Active plan-doc work (not yet shipped) lives in `docs/plans/*.md` without an entry here.
 
+## 2026-06-14 teacher-calendar-mouse-fix (4 PRs)
+
+- **`teacher-calendar-mouse-fix-2026-06-14.md`** — full audit + fix of mouse-driven interaction bugs on `/teacher/calendar` desktop. Status: SHIPPED 2026-06-14. Owner reported «набираю мышкой, выбираю слот → баг интерфейс. Закрываешь — предлагает занятия назначить». Root causes: (1) every click on an empty cell committed a 1-cell paint span and opened a broken PaintConfirmModal; (2) three independent useState modal flags had no mutual exclusion → 2-3 modals could mount simultaneously; (3) two modals lacked ESC; (4) BulkAddSlotsModal close paths fired mid-POST. Sub-PRs: #639 (5px click-vs-drag threshold) → #640 (single `CalendarModalState` discriminated union + ESC handlers + `creating || previewing` close guards + defensive drag-reset signal) → #641 (top-row button primary vs secondary visual polish) → #642 (wave self-review BLOCKER fix: dragResetSignal effect stability — guard against parent re-renders churning `dispatch` identity via inline `interactions` object). Codex-Paranoia: self-review fallback (codex binary unavailable + raw exec blocked by hook). +14 new tests covering threshold, single-modal invariant, ESC, busy guards, and re-render race. No schema, no API contract changes.
+
 ## 2026-05 saas-pivot wave (10 PRs merged 2026-05-22)
 
 - **`saas-pivot-master.md`** — 8-epic SaaS pivot master plan (32 paranoia rounds, 1245 lines). Status: SHIPPED. Sub-epics: Day 1 schema + bootstrap → Day 2 self-reg + n:m readers → Day 3 tariffs → Day 4 packages + teacher_grant → Day 5A lesson_completions SoT → Day 5B settle UI → Day 6 admin overhaul + plan-4 + payment_orders NOT NULL → Day 7 cabinet polish → Day 8 teacher landing. Migrations 0073-0094.

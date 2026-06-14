@@ -1,8 +1,14 @@
 # Teacher Calendar — Mouse-Interaction Audit + Fix (2026-06-14)
 
-Status: IN_PROGRESS
+Status: SHIPPED 2026-06-14
 Owner: claude (Иван Ханаев, founder)
 Scope: `/teacher/calendar`, desktop, mouse-driven flows only. Mobile/touch + learner calendar (`/cabinet/calendar`) are explicit non-goals.
+
+Sub-PRs:
+- PR #639 (14e8a3c) — Sub-PR 1: click-vs-drag 5px threshold
+- PR #640 (67e8f80) — Sub-PR 2: consolidated modal state + ESC + close guards
+- PR #641 (d8af951) — Sub-PR 3: top-row button visual polish
+- PR #642 (4ea84a6) — wave self-review BLOCKER fix-PR: dragResetSignal effect stability + SIGN-OFF
 
 ---
 
