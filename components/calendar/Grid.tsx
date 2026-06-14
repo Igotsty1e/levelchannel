@@ -40,7 +40,15 @@ import { SlotBlock } from './SlotBlock'
 
 export type GridDragHandlers = {
   // Fired when an empty cell is mouse-downed (paint start).
-  onCellMouseDown?: (ymd: string, halfHour: number) => void
+  // clientX/clientY are forwarded so the wiring layer can implement
+  // a pixel-distance click-vs-drag threshold without re-deriving DOM
+  // coords. See SlotCalendar.tsx MOUSE_DRAG_THRESHOLD_PX.
+  onCellMouseDown?: (
+    ymd: string,
+    halfHour: number,
+    clientX: number,
+    clientY: number,
+  ) => void
   // Fired when the mouse drifts during a drag. Parent decides
   // whether to extend a paint or move based on its state.
   onCellMouseEnter?: (ymd: string, halfHour: number) => void
@@ -217,7 +225,11 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
         if (drag?.onCellKeyboardCommit) {
           drag.onCellKeyboardCommit(ymd, focusedCell.halfHour)
         } else if (drag?.onCellMouseDown) {
-          drag.onCellMouseDown(ymd, focusedCell.halfHour)
+          // Keyboard fallback path: no real mouse coords. Pass zeros;
+          // wiring-layer threshold won't matter because no mouseup
+          // follows for keyboard-only commit (keyboard goes through
+          // onCellKeyboardCommit when available).
+          drag.onCellMouseDown(ymd, focusedCell.halfHour, 0, 0)
         }
       }
     }
@@ -237,7 +249,7 @@ export function Grid({ fromYmd, slots, onSlotClick, drag }: GridProps) {
     // here means the user pressed on an empty cell, not a slot block.
     const rect = e.currentTarget.getBoundingClientRect()
     const halfHour = halfHourFromOffset(e.clientY - rect.top)
-    drag.onCellMouseDown(ymd, halfHour)
+    drag.onCellMouseDown(ymd, halfHour, e.clientX, e.clientY)
   }
 
   function handleColumnMouseMove(
