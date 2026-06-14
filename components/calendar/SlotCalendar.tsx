@@ -325,8 +325,20 @@ export function SlotCalendar({
   // 2026-06-14 defensive — clear any pending drag/paint anchor when
   // the parent signals a modal opened. Skip on first mount (signal=0
   // ≡ initial value, no transition).
+  //
+  // 2026-06-14 wave self-review BLOCKER closure — guard against
+  // re-firing on parent re-renders. The parent in `client.tsx` passes
+  // `interactions` as an inline object, so `dispatch`'s identity
+  // (deps on `interactions`) churns on every render. Without the
+  // `lastResetSignalRef` compare, a toast tick or `reloadCounter`
+  // bump mid-drag would wipe `pendingPaintRef` and cancel the
+  // active paint. Track the last consumed signal in a ref and bail
+  // out when the signal hasn't moved.
+  const lastResetSignalRef = useRef(0)
   useEffect(() => {
-    if (dragResetSignal === undefined || dragResetSignal === 0) return
+    if (dragResetSignal === undefined) return
+    if (dragResetSignal === lastResetSignalRef.current) return
+    lastResetSignalRef.current = dragResetSignal
     pendingPaintRef.current = null
     suppressClickRef.current = false
     if (dragStateRef.current.kind !== 'idle') {
