@@ -72,6 +72,15 @@ export type SlotCalendarProps = {
   // / teacher was working two weeks ahead and any mutation jumped
   // them back to the current week.
   refreshTrigger?: number
+  // 2026-06-14 teacher-calendar-mouse-fix (Sub-PR 2) — parent bumps
+  // this on every modal-open transition so we can defensively clear
+  // a stale `painting` reducer state + `pendingPaintRef` +
+  // `suppressClickRef`. Race scenario: drag starts, async modal
+  // opens before mouseup → reducer stuck in `painting` → next mouseup
+  // would commit a stray paint span after modal close. The signal
+  // makes the invariant explicit instead of relying on z-index
+  // discipline.
+  dragResetSignal?: number
 }
 
 export function SlotCalendar({
@@ -80,6 +89,7 @@ export function SlotCalendar({
   onSlotClick,
   interactions,
   refreshTrigger,
+  dragResetSignal,
 }: SlotCalendarProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const isNarrow = useNarrowContainer(containerRef)
@@ -311,6 +321,18 @@ export function SlotCalendar({
   const handleNext = () => setFromYmd(addDaysYmd(fromYmd, 7))
   const handleToday = () => setFromYmd(initialFromYmd)
   const handleRefresh = () => setReloadCounter((n) => n + 1)
+
+  // 2026-06-14 defensive — clear any pending drag/paint anchor when
+  // the parent signals a modal opened. Skip on first mount (signal=0
+  // ≡ initial value, no transition).
+  useEffect(() => {
+    if (dragResetSignal === undefined || dragResetSignal === 0) return
+    pendingPaintRef.current = null
+    suppressClickRef.current = false
+    if (dragStateRef.current.kind !== 'idle') {
+      dispatch({ type: 'reset' })
+    }
+  }, [dragResetSignal, dispatch])
 
   // SlotBlock click-suppression wrapper (Codex HIGH 2 fix).
   // Replaces the previous "drop onSlotClick when dragHandlers active"

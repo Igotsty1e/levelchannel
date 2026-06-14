@@ -93,13 +93,19 @@ export function BulkAddSlotsModal({
     }
   }, [open])
 
+  // 2026-06-14 BUG-4 — block ESC + backdrop close while a POST or
+  // preview is in-flight. The async setState would land after the
+  // modal unmounts and surface as an inconsistent UI (modal closes
+  // while slots get created in the background). Matches the
+  // `busy`-guarded pattern in PaintConfirmModal + AssignDirectModal.
+  const closeBlocked = creating || previewing
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape' && open) onClose()
+      if (e.key === 'Escape' && open && !closeBlocked) onClose()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  }, [open, closeBlocked, onClose])
 
   if (!open) return null
 
@@ -205,7 +211,7 @@ export function BulkAddSlotsModal({
       aria-modal="true"
       aria-label="Добавить слоты массово"
       style={overlayStyle}
-      onClick={onClose}
+      onClick={closeBlocked ? undefined : onClose}
     >
       <div
         className="bulk-add-sheet"
@@ -218,6 +224,7 @@ export function BulkAddSlotsModal({
             type="button"
             onClick={onClose}
             aria-label="Закрыть"
+            disabled={closeBlocked}
             style={closeBtnStyle}
           >
             ×

@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import {
   ALLOWED_PAINT_DURATIONS_MIN,
@@ -50,6 +50,18 @@ export function PaintConfirmModal({
   const [tariffId, setTariffId] = useState<string>('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // 2026-06-14 BUG-3b — ESC closes the modal (when no in-flight POST).
+  // Backdrop click was already guarded by `busy` at the root onClick;
+  // this brings keyboard close into parity with the rest of the
+  // calendar modals.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !busy) onCancel()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [busy, onCancel])
 
   const synth = useMemo(
     () =>
