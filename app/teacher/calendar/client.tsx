@@ -37,13 +37,23 @@ export type TariffOption = {
 
 // 2026-06-12 teacher-calendar-unify: убрана настройка slot_mode и
 // sticky bottom FAB. Обе кнопки «Назначить ученику» + «Добавить слоты»
-// живут в одном top-row, имеют одинаковый стиль, видны на всех viewport.
-function topActionBtnStyle(disabled: boolean): CSSProperties {
+// живут в одном top-row.
+//
+// 2026-06-14 teacher-calendar-mouse-fix BUG-5 — визуальная разница
+// primary vs secondary. «Назначить ученику» — частая операция, поэтому
+// она выделена `--surface-3` фоном и `--accent` рамкой. «Добавить слоты»
+// — реже, оставлена secondary на `--surface-2`. Без визуальной разводки
+// одинаковые 13px кнопки на 8px gap были легко misclick'able.
+function topActionBtnStyle(
+  variant: 'primary' | 'secondary',
+  disabled: boolean,
+): CSSProperties {
+  const isPrimary = variant === 'primary'
   return {
     padding: '8px 14px',
-    border: '1px solid var(--border)',
+    border: `1px solid ${isPrimary ? 'var(--accent)' : 'var(--border)'}`,
     borderRadius: 8,
-    background: 'var(--surface-2)',
+    background: isPrimary ? 'var(--surface-3)' : 'var(--surface-2)',
     color: 'var(--text)',
     cursor: disabled ? 'not-allowed' : 'pointer',
     fontSize: 13,
@@ -199,7 +209,7 @@ export default function TeacherCalendarClient({
         style={{
           display: 'flex',
           justifyContent: 'flex-end',
-          gap: 8,
+          gap: 12,
           marginBottom: 8,
           flexWrap: 'wrap',
         }}
@@ -208,7 +218,7 @@ export default function TeacherCalendarClient({
           type="button"
           onClick={() => openModal({ kind: 'assign-direct' })}
           disabled={isModalOpen}
-          style={topActionBtnStyle(isModalOpen)}
+          style={topActionBtnStyle('primary', isModalOpen)}
         >
           + Назначить ученику
         </button>
@@ -216,7 +226,7 @@ export default function TeacherCalendarClient({
           type="button"
           onClick={() => openModal({ kind: 'bulk-create' })}
           disabled={isModalOpen}
-          style={topActionBtnStyle(isModalOpen)}
+          style={topActionBtnStyle('secondary', isModalOpen)}
         >
           + Добавить слоты
         </button>
