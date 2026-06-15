@@ -39,6 +39,18 @@ import { Toolbar } from './Toolbar'
 //   MEDIUM 2 — backdrop-click during in-flight POST (handled at the
 //     PaintConfirmModal layer).
 
+// 2026-06-14 teacher-calendar-mouse-fix — pixel-distance threshold
+// separating a pure click on an empty cell from a drag-paint. Before
+// this, every `mousedown` on a cell put the reducer into `painting`
+// state and every `mouseup` (even with no movement) committed a 1-cell
+// paint span, opening PaintConfirmModal with a broken «range shorter
+// than chosen duration» banner. Convention across FullCalendar / Cal.com
+// / Cocoa / Windows DnD is 4-10px. Grid half-hour rows are ~24px tall,
+// so 5px = ~20% of a cell — above pointer jitter, below «drift into
+// next cell». Slot move does NOT use this gate (its own drift detection
+// at cell-granularity already protects against same-cell mouseups).
+export const MOUSE_DRAG_THRESHOLD_PX = 5
+
 export type CalendarInteractions = {
   onPaintSpan?: (span: PaintSpan) => void
   onMoveTarget?: (target: MoveTarget) => void
@@ -60,6 +72,15 @@ export type SlotCalendarProps = {
   // / teacher was working two weeks ahead and any mutation jumped
   // them back to the current week.
   refreshTrigger?: number
+  // 2026-06-14 teacher-calendar-mouse-fix (Sub-PR 2) — parent bumps
+  // this on every modal-open transition so we can defensively clear
+  // a stale `painting` reducer state + `pendingPaintRef` +
+  // `suppressClickRef`. Race scenario: drag starts, async modal
+  // opens before mouseup → reducer stuck in `painting` → next mouseup
+  // would commit a stray paint span after modal close. The signal
+  // makes the invariant explicit instead of relying on z-index
+  // discipline.
+  dragResetSignal?: number
 }
 
 export function SlotCalendar({
@@ -68,6 +89,7 @@ export function SlotCalendar({
   onSlotClick,
   interactions,
   refreshTrigger,
+  dragResetSignal,
 }: SlotCalendarProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const isNarrow = useNarrowContainer(containerRef)
@@ -166,6 +188,21 @@ export function SlotCalendar({
   // stays false → click fires normally → modal opens.
   const suppressClickRef = useRef(false)
 
+  // 2026-06-14 teacher-calendar-mouse-fix — captures the anchor for a
+  // potential paint while we wait to see if it's a click or a drag.
+  // Only the wiring layer knows DOM pixel coords; the reducer stays
+  // pure in calendar-cell units. When the document-level `mousemove`
+  // sees |dx|+|dy| above threshold (Chebyshev), we promote this to a
+  // real `cellMouseDown` dispatch + clear the ref. `mouseup` with the
+  // ref still set means the user clicked without dragging → no commit,
+  // no modal.
+  const pendingPaintRef = useRef<{
+    clientX: number
+    clientY: number
+    ymd: string
+    halfHour: number
+  } | null>(null)
+
   // Wraps the reducer + fires effects via interactions callbacks.
   const dispatch = useCallback(
     (action: Action): DragState => {
@@ -190,6 +227,27 @@ export function SlotCalendar({
   // bound to document.
   useEffect(() => {
     function onMouseMove(e: MouseEvent) {
+      // 2026-06-14 click-vs-drag threshold gate. We deferred the
+      // `cellMouseDown` dispatch in dragHandlers; promote it now if
+      // the cursor has moved enough to be a real drag.
+      const pending = pendingPaintRef.current
+      if (pending) {
+        const dx = Math.abs(e.clientX - pending.clientX)
+        const dy = Math.abs(e.clientY - pending.clientY)
+        if (Math.max(dx, dy) >= MOUSE_DRAG_THRESHOLD_PX) {
+          pendingPaintRef.current = null
+          dispatch({
+            type: 'cellMouseDown',
+            coords: { ymd: pending.ymd, halfHour: pending.halfHour },
+          })
+          // fall through to the hit-test + cellMouseEnter dispatch
+          // below so the anchor cell is also visited (and any drift
+          // into a neighbouring cell extends the span on this same
+          // mousemove tick).
+        } else {
+          return
+        }
+      }
       if (dragStateRef.current.kind === 'idle') return
       const cell = findCellAt(e.clientX, e.clientY)
       if (!cell) return
@@ -207,6 +265,15 @@ export function SlotCalendar({
     }
 
     function onMouseUp() {
+      // 2026-06-14 click-vs-drag threshold gate. If the ref is still
+      // set on mouseup, the cursor never crossed the threshold —
+      // treat it as a pure click on an empty cell. No `cellMouseDown`
+      // ever dispatched, so the reducer is still idle. No paint span
+      // commits. No modal opens. This is the BUG-1 fix.
+      if (pendingPaintRef.current) {
+        pendingPaintRef.current = null
+        return
+      }
       if (dragStateRef.current.kind === 'idle') return
       dispatch({ type: 'mouseUp' })
     }
@@ -224,6 +291,10 @@ export function SlotCalendar({
     // document.visibilitychange catch both. pointercancel covers
     // touch/pen scenarios when the OS revokes the gesture.
     function onCancelGesture() {
+      // 2026-06-14: also clear any deferred paint anchor on gesture
+      // cancel — otherwise a tab-switch mid-mousedown would leak the
+      // ref and the next mousemove could promote a stale anchor.
+      pendingPaintRef.current = null
       if (dragStateRef.current.kind === 'idle') return
       dispatch({ type: 'reset' })
       suppressClickRef.current = false
@@ -251,6 +322,30 @@ export function SlotCalendar({
   const handleToday = () => setFromYmd(initialFromYmd)
   const handleRefresh = () => setReloadCounter((n) => n + 1)
 
+  // 2026-06-14 defensive — clear any pending drag/paint anchor when
+  // the parent signals a modal opened. Skip on first mount (signal=0
+  // ≡ initial value, no transition).
+  //
+  // 2026-06-14 wave self-review BLOCKER closure — guard against
+  // re-firing on parent re-renders. The parent in `client.tsx` passes
+  // `interactions` as an inline object, so `dispatch`'s identity
+  // (deps on `interactions`) churns on every render. Without the
+  // `lastResetSignalRef` compare, a toast tick or `reloadCounter`
+  // bump mid-drag would wipe `pendingPaintRef` and cancel the
+  // active paint. Track the last consumed signal in a ref and bail
+  // out when the signal hasn't moved.
+  const lastResetSignalRef = useRef(0)
+  useEffect(() => {
+    if (dragResetSignal === undefined) return
+    if (dragResetSignal === lastResetSignalRef.current) return
+    lastResetSignalRef.current = dragResetSignal
+    pendingPaintRef.current = null
+    suppressClickRef.current = false
+    if (dragStateRef.current.kind !== 'idle') {
+      dispatch({ type: 'reset' })
+    }
+  }, [dragResetSignal, dispatch])
+
   // SlotBlock click-suppression wrapper (Codex HIGH 2 fix).
   // Replaces the previous "drop onSlotClick when dragHandlers active"
   // hack which broke clicks on non-open kinds.
@@ -270,12 +365,19 @@ export function SlotCalendar({
   const dragHandlers = interactions
     ? {
         onCellMouseDown: interactions.onPaintSpan
-          ? (ymd: string, halfHour: number) => {
+          ? (
+              ymd: string,
+              halfHour: number,
+              clientX: number,
+              clientY: number,
+            ) => {
+              // 2026-06-14 click-vs-drag threshold. We DON'T dispatch
+              // `cellMouseDown` yet — defer until the document-level
+              // mousemove confirms the cursor moved at least
+              // MOUSE_DRAG_THRESHOLD_PX away from the anchor. mouseup
+              // without movement = pure click, no commit, no modal.
               suppressClickRef.current = false
-              dispatch({
-                type: 'cellMouseDown',
-                coords: { ymd, halfHour },
-              })
+              pendingPaintRef.current = { clientX, clientY, ymd, halfHour }
             }
           : undefined,
         onSlotMouseDown: interactions.onMoveTarget

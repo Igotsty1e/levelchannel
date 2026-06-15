@@ -113,7 +113,9 @@ describe('Grid keyboard nav — roving tabindex + activation', () => {
     await user.tab()
     await user.keyboard('{Enter}')
     expect(onCellMouseDown).toHaveBeenCalledTimes(1)
-    expect(onCellMouseDown).toHaveBeenCalledWith(DAYS[0], 6)
+    // 2026-06-14 teacher-calendar-mouse-fix — signature gained
+    // clientX/clientY; keyboard fallback passes zeros.
+    expect(onCellMouseDown).toHaveBeenCalledWith(DAYS[0], 6, 0, 0)
   })
 
   it('Space on an empty cell also invokes onCellMouseDown', async () => {
@@ -129,7 +131,7 @@ describe('Grid keyboard nav — roving tabindex + activation', () => {
     await user.tab()
     await user.keyboard(' ')
     expect(onCellMouseDown).toHaveBeenCalledTimes(1)
-    expect(onCellMouseDown).toHaveBeenCalledWith(DAYS[0], 6)
+    expect(onCellMouseDown).toHaveBeenCalledWith(DAYS[0], 6, 0, 0)
   })
 
   it('Enter on a cell that overlaps a SlotBlock invokes onSlotClick (not onCellMouseDown)', async () => {
@@ -278,7 +280,7 @@ describe('Grid keyboard nav — roving tabindex + activation', () => {
       await user.tab()
       await user.keyboard('{Enter}')
       expect(onCellMouseDown).toHaveBeenCalledTimes(1)
-      expect(onCellMouseDown).toHaveBeenCalledWith(DAYS[0], 6)
+      expect(onCellMouseDown).toHaveBeenCalledWith(DAYS[0], 6, 0, 0)
     })
 
     it('Enter on a SlotBlock <button> fires the button onClick AND the grid-level handler bails out (no preventDefault, no paint)', async () => {

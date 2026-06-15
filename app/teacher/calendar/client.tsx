@@ -1,11 +1,11 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { CSSProperties, useState } from 'react'
+import { CSSProperties, useEffect, useState } from 'react'
 
 import { AssignDirectModal } from '@/components/calendar/AssignDirectModal'
 import { BulkAddSlotsModal } from '@/components/calendar/BulkAddSlotsModal'
-import { MobileCreateFab, type CreateMode } from '@/components/calendar/MobileCreateFab'
+import { MobileCreateFab } from '@/components/calendar/MobileCreateFab'
 import { PaintConfirmModal } from '@/components/calendar/PaintConfirmModal'
 import { SlotCalendar } from '@/components/calendar/SlotCalendar'
 import type { PaintSpan, MoveTarget } from '@/lib/calendar/drag-state'
@@ -37,17 +37,45 @@ export type TariffOption = {
 
 // 2026-06-12 teacher-calendar-unify: убрана настройка slot_mode и
 // sticky bottom FAB. Обе кнопки «Назначить ученику» + «Добавить слоты»
-// живут в одном top-row, имеют одинаковый стиль, видны на всех viewport.
-const topActionBtnStyle: CSSProperties = {
-  padding: '8px 14px',
-  border: '1px solid var(--border)',
-  borderRadius: 8,
-  background: 'var(--surface-2)',
-  color: 'var(--text)',
-  cursor: 'pointer',
-  fontSize: 13,
-  fontWeight: 600,
+// живут в одном top-row.
+//
+// 2026-06-14 teacher-calendar-mouse-fix BUG-5 — визуальная разница
+// primary vs secondary. «Назначить ученику» — частая операция, поэтому
+// она выделена `--surface-3` фоном и `--accent` рамкой. «Добавить слоты»
+// — реже, оставлена secondary на `--surface-2`. Без визуальной разводки
+// одинаковые 13px кнопки на 8px gap были легко misclick'able.
+function topActionBtnStyle(
+  variant: 'primary' | 'secondary',
+  disabled: boolean,
+): CSSProperties {
+  const isPrimary = variant === 'primary'
+  return {
+    padding: '8px 14px',
+    border: `1px solid ${isPrimary ? 'var(--accent)' : 'var(--border)'}`,
+    borderRadius: 8,
+    background: isPrimary ? 'var(--surface-3)' : 'var(--surface-2)',
+    color: 'var(--text)',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    fontSize: 13,
+    fontWeight: 600,
+    opacity: disabled ? 0.5 : 1,
+  }
 }
+
+// 2026-06-14 teacher-calendar-mouse-fix BUG-2 — single state machine
+// for every modal/sheet surface on /teacher/calendar. Replaces three
+// independent useState flags (`activeRow`, `pendingPaint`, `createMode`)
+// that had no mutual exclusion and could render 2-3 modals at the same
+// time, exactly matching owner's «закрываешь — предлагает занятия
+// назначить» report. Each modal mounts under its own `kind ===` gate;
+// by construction, at most one is in the DOM at any moment.
+type CalendarModalState =
+  | { kind: 'closed' }
+  | { kind: 'slot-detail'; row: CalendarRow }
+  | { kind: 'paint-confirm'; span: PaintSpan }
+  | { kind: 'single-create' }
+  | { kind: 'bulk-create' }
+  | { kind: 'assign-direct' }
 
 export default function TeacherCalendarClient({
   teacherId,
@@ -59,11 +87,27 @@ export default function TeacherCalendarClient({
   tariffs: ReadonlyArray<TariffOption>
 }) {
   const router = useRouter()
-  const [activeRow, setActiveRow] = useState<CalendarRow | null>(null)
-  const [pendingPaint, setPendingPaint] = useState<PaintSpan | null>(null)
+  const [modal, setModal] = useState<CalendarModalState>({ kind: 'closed' })
   const [reloadCounter, setReloadCounter] = useState(0)
   const [toast, setToast] = useState<string | null>(null)
-  const [createMode, setCreateMode] = useState<CreateMode>('closed')
+  // 2026-06-14 defensive — every modal-open transition bumps this so
+  // the SlotCalendar wiring layer can clear a stale `painting` reducer
+  // state + `pendingPaintRef` + `suppressClickRef`. Without this, a
+  // race between drag-start and modal-open could leak a paint commit
+  // after the modal closes. See plan-doc self-review WARN-1.
+  const [dragResetSignal, setDragResetSignal] = useState(0)
+
+  function openModal(next: CalendarModalState) {
+    if (next.kind !== 'closed') {
+      setDragResetSignal((n) => n + 1)
+    }
+    setModal(next)
+  }
+  function closeModal() {
+    setModal({ kind: 'closed' })
+  }
+
+  const isModalOpen = modal.kind !== 'closed'
 
   function showToast(msg: string) {
     setToast(msg)
@@ -136,7 +180,7 @@ export default function TeacherCalendarClient({
       succeeded = true
     } finally {
       bumpReload()
-      if (succeeded) setPendingPaint(null)
+      if (succeeded) closeModal()
     }
   }
 
@@ -165,22 +209,24 @@ export default function TeacherCalendarClient({
         style={{
           display: 'flex',
           justifyContent: 'flex-end',
-          gap: 8,
+          gap: 12,
           marginBottom: 8,
           flexWrap: 'wrap',
         }}
       >
         <button
           type="button"
-          onClick={() => setCreateMode('assign')}
-          style={topActionBtnStyle}
+          onClick={() => openModal({ kind: 'assign-direct' })}
+          disabled={isModalOpen}
+          style={topActionBtnStyle('primary', isModalOpen)}
         >
           + Назначить ученику
         </button>
         <button
           type="button"
-          onClick={() => setCreateMode('bulk')}
-          style={topActionBtnStyle}
+          onClick={() => openModal({ kind: 'bulk-create' })}
+          disabled={isModalOpen}
+          style={topActionBtnStyle('secondary', isModalOpen)}
         >
           + Добавить слоты
         </button>
@@ -188,20 +234,32 @@ export default function TeacherCalendarClient({
       <SlotCalendar
         teacherId={teacherId}
         initialFromYmd={initialFromYmd}
-        onSlotClick={(row) => setActiveRow(row)}
+        // 2026-06-14 BUG-2 — drop slot click + paint commit while
+        // any modal is open. The grid is visually behind the modal,
+        // but rapid drag/click sequences could still race past the
+        // backdrop. The state-machine gate makes the invariant
+        // explicit instead of relying on z-index discipline.
+        onSlotClick={(row) => {
+          if (isModalOpen) return
+          openModal({ kind: 'slot-detail', row })
+        }}
         interactions={{
-          onPaintSpan: (span) => setPendingPaint(span),
+          onPaintSpan: (span) => {
+            if (isModalOpen) return
+            openModal({ kind: 'paint-confirm', span })
+          },
           onMoveTarget: handleMoveTarget,
         }}
         refreshTrigger={reloadCounter}
+        dragResetSignal={dragResetSignal}
       />
 
-      {activeRow ? (
+      {modal.kind === 'slot-detail' ? (
         <TeacherSlotDetailModal
-          row={activeRow}
-          onClose={() => setActiveRow(null)}
+          row={modal.row}
+          onClose={closeModal}
           onSuccess={(message) => {
-            setActiveRow(null)
+            closeModal()
             showToast(message)
             bumpReload()
             // BCS-F.3 fix: also refresh the server component above the
@@ -213,60 +271,73 @@ export default function TeacherCalendarClient({
         />
       ) : null}
 
-      {pendingPaint ? (
+      {modal.kind === 'paint-confirm' ? (
         <PaintConfirmModal
-          span={pendingPaint}
+          span={modal.span}
           tariffs={tariffs}
           onConfirm={handlePaintConfirm}
-          onCancel={() => setPendingPaint(null)}
+          onCancel={closeModal}
         />
       ) : null}
 
-      <MobileCreateFab
-        tariffs={tariffs}
-        mode={createMode}
-        onModeChange={setCreateMode}
-        onCreated={() => {
-          showToast('Занятие создано.')
-          bumpReload()
-          router.refresh()
-        }}
-      />
-      <BulkAddSlotsModal
-        open={createMode === 'bulk'}
-        onClose={() => setCreateMode('closed')}
-        onSwitchToSingle={() => setCreateMode('single')}
-        onCreated={() => {
-          showToast('Слоты созданы.')
-          bumpReload()
-          router.refresh()
-        }}
-        tariffs={tariffs}
-      />
-      <AssignDirectModal
-        open={createMode === 'assign'}
-        onClose={() => setCreateMode('closed')}
-        onCreated={(info) => {
-          showToast(
-            info.emailSkipped
-              ? 'Занятие назначено. Письмо не отправлено (anti-spam).'
-              : 'Занятие назначено, ученик получит письмо.',
-          )
-          bumpReload()
-          router.refresh()
-        }}
-        onCreatedSeries={(info) => {
-          const word = pluralLessons(info.createdCount)
-          showToast(
-            info.emailSkipped
-              ? `Назначено ${info.createdCount} ${word}. Часть писем перенесена в дайджест (anti-spam).`
-              : `Назначено ${info.createdCount} ${word}, ученик получит письма.`,
-          )
-          bumpReload()
-          router.refresh()
-        }}
-        tariffs={tariffs}
-      />
+      {modal.kind === 'single-create' ? (
+        <MobileCreateFab
+          tariffs={tariffs}
+          mode="single"
+          onModeChange={(next) => {
+            if (next === 'closed') closeModal()
+            else if (next === 'bulk') openModal({ kind: 'bulk-create' })
+            else if (next === 'assign') openModal({ kind: 'assign-direct' })
+            // 'single' is no-op — we're already there
+          }}
+          onCreated={() => {
+            showToast('Занятие создано.')
+            bumpReload()
+            router.refresh()
+          }}
+        />
+      ) : null}
+
+      {modal.kind === 'bulk-create' ? (
+        <BulkAddSlotsModal
+          open
+          onClose={closeModal}
+          onSwitchToSingle={() => openModal({ kind: 'single-create' })}
+          onCreated={() => {
+            showToast('Слоты созданы.')
+            bumpReload()
+            router.refresh()
+          }}
+          tariffs={tariffs}
+        />
+      ) : null}
+
+      {modal.kind === 'assign-direct' ? (
+        <AssignDirectModal
+          open
+          onClose={closeModal}
+          onCreated={(info) => {
+            showToast(
+              info.emailSkipped
+                ? 'Занятие назначено. Письмо не отправлено (anti-spam).'
+                : 'Занятие назначено, ученик получит письмо.',
+            )
+            bumpReload()
+            router.refresh()
+          }}
+          onCreatedSeries={(info) => {
+            const word = pluralLessons(info.createdCount)
+            showToast(
+              info.emailSkipped
+                ? `Назначено ${info.createdCount} ${word}. Часть писем перенесена в дайджест (anti-spam).`
+                : `Назначено ${info.createdCount} ${word}, ученик получит письма.`,
+            )
+            bumpReload()
+            router.refresh()
+          }}
+          tariffs={tariffs}
+        />
+      ) : null}
     </div>
   )
 }
@@ -288,6 +359,17 @@ function TeacherSlotDetailModal({
   const [busy, setBusy] = useState(false)
   const [reason, setReason] = useState('')
   const [localError, setLocalError] = useState<string | null>(null)
+
+  // 2026-06-14 BUG-3a — ESC closes the modal (when no in-flight POST).
+  // Mirrors the pattern in AssignDirectModal + MobileCreateFab so every
+  // modal on /teacher/calendar has a consistent keyboard close path.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !busy) onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [busy, onClose])
 
   const slot = row.slot
   // Teacher can cancel both `open` (no reason needed) and
