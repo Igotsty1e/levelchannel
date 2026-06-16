@@ -181,9 +181,18 @@ export function ResearchArticle({ post }: { post: ResearchPost }) {
 
         <ByTheNumbersStrip cards={structured.hero.cards} />
 
-        <div className="rs-body">
-          <aside className="rs-toc" aria-label="Содержание">
-            <div className="rs-toc-label">Содержание</div>
+        <details className="rs-toc-inline" aria-label="Содержание">
+          <summary>
+            <span className="rs-toc-label-left">
+              <span className="rs-toc-sign">+</span>
+              <span>Содержание</span>
+            </span>
+            <span className="rs-toc-count">
+              {structured.sections.length} разд
+              {structured.sections.length === 1 ? 'ел' : 'елов'}
+            </span>
+          </summary>
+          <div className="rs-toc-body">
             <ol>
               {structured.sections.map((s) => (
                 <li key={s.id}>
@@ -191,29 +200,30 @@ export function ResearchArticle({ post }: { post: ResearchPost }) {
                 </li>
               ))}
             </ol>
-          </aside>
+          </div>
+        </details>
 
-          <main>
-            {tldr.length > 0 ? (
-              <aside className="rs-tldr" aria-label="Кратко">
-                <div className="rs-tldr-label">Кратко</div>
-                <ul>
-                  {tldr.map((t, i) => (
-                    <li key={i}>{t}</li>
-                  ))}
-                </ul>
-              </aside>
-            ) : null}
+        <main className="rs-body">
+          {tldr.length > 0 ? (
+            <aside className="rs-tldr" aria-label="Кратко">
+              <div className="rs-tldr-label">Кратко</div>
+              <ul>
+                {tldr.map((t, i) => (
+                  <li key={i}>{t}</li>
+                ))}
+              </ul>
+            </aside>
+          ) : null}
 
-            {structured.sections.map((s, i) => (
-              <ResearchSection
-                key={s.id}
-                section={s}
-                index={i + 1}
-                accent={sectionAccents[s.id] ?? 'rose'}
-                figures={figsBySection[s.id] ?? []}
-              />
-            ))}
+          {structured.sections.map((s, i) => (
+            <ResearchSection
+              key={s.id}
+              section={s}
+              index={i + 1}
+              accent={sectionAccents[s.id] ?? 'rose'}
+              figures={figsBySection[s.id] ?? []}
+            />
+          ))}
 
             <footer className="rs-article-footer">
               <div className="rs-author">
@@ -273,6 +283,20 @@ export function ResearchArticle({ post }: { post: ResearchPost }) {
                 >
                   VK
                 </a>
+                <a
+                  href={`https://www.threads.net/intent/post?text=${enc(shareText + ' ' + shareUrl)}`}
+                  rel="noopener"
+                  target="_blank"
+                >
+                  Threads
+                </a>
+                <a
+                  href={`https://www.facebook.com/sharer/sharer.php?u=${enc(shareUrl)}`}
+                  rel="noopener"
+                  target="_blank"
+                >
+                  Facebook
+                </a>
               </div>
 
               {sources.length > 0 ? (
@@ -302,8 +326,7 @@ export function ResearchArticle({ post }: { post: ResearchPost }) {
                 иллюстрации, без коммерческих интеграций.
               </div>
             </footer>
-          </main>
-        </div>
+        </main>
       </div>
     </article>
   )

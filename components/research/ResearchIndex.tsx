@@ -21,11 +21,12 @@ export function ResearchIndex({ posts }: { posts: ResearchPostSummary[] }) {
       <div className="rs-index-frame">
         <header className="rs-index-hero">
           <span className="rs-index-eyebrow">Level Channel · Research</span>
-          <h1 className="rs-index-title">Публичные цифры о EdTech и ИИ в обучении</h1>
+          <h1 className="rs-index-title">Независимые обзоры рынков по открытым данным</h1>
           <p className="rs-index-lede">
-            Раз в месяц мы собираем рынок частного и онлайн-обучения по открытым источникам:
-            рейтинги, отчёты компаний, опросы, регуляторные публикации. Каждая цифра проверена
-            независимо — без маркетинговых пресс-релизов и анонимных аналитиков.
+            Level Channel Research — небольшое исследовательское агентство. Берём индустрию,
+            собираем по ней публичные данные за период, проверяем каждую цифру независимо и
+            выпускаем сводный обзор. Без маркетинговых пресс-релизов, заказных интеграций и
+            анонимных аналитиков.
           </p>
         </header>
 
