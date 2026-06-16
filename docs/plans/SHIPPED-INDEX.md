@@ -4,6 +4,22 @@ Plans below have all merged to main. Detail in each file's body; this index is t
 
 Active plan-doc work (not yet shipped) lives in `docs/plans/*.md` without an entry here.
 
+## 2026-06-16 finance-card-compact Wave-3 (1 PR)
+
+- **`teacher-home-finance-card-compact-2026-06-15.md`** — Wave 3 / эпик C из master flow. Single-file CSS tweak: финансовая карточка на `/teacher` home сжата на ~25-30% (с ~280px до ~200px высоты) чтобы освободить место для «Недавние прошедшие» из Wave-2. Section padding 24/24/20 → 16/20/14, hero number `clamp(36,5vw,44)` → `clamp(28,4vw,34)`, row padding 12 → 8, row label/value 14/16 → 13/15. iOS touch target (`min-height: 44px`) сохранён. PR #660 (squash). Status: SHIPPED 2026-06-16. Codex-Paranoia: SKIPPED — trivial.
+
+## 2026-06-16 lesson-history Wave-2 эпик (1 PR, 3 sub-commits)
+
+- **`teacher-lesson-history-2026-06-15.md`** — Wave 2 / эпик B из master flow. Owner: «нет вкладки с общей историей занятий + формы недавних прошедших с действиями». PR #659 (squash 698d2b5). Sub-PRs (commit-level): backend (5 endpoints: mark-completed/mark-no-show/recent-past/history/export.csv + helpers `markSlotByTeacher` + `listRecentPastUnmarkedSlots` + `listLessonHistory` + 2 новых Wave-A события `LessonMarkedComplete/NoShowByTeacher`) → RecentPastCard на `/teacher` home (optimistic update, 2 quick-actions «Провёл» / «Не пришёл») → `/teacher/lessons` page (SSR + client island с фильтрами: period chip group / status / learner dropdown / unmarked-only checkbox + CSV-экспорт). Status: SHIPPED 2026-06-16. Codex-Paranoia: self-review fallback (Codex CLI hung @ 16min idle) — 3 BLOCKER + 3 HIGH + 3 WARN закрыты round 1. Pre-ownership check в endpoint, privacy invariant `WHERE teacher_account_id = $1`, idempotency через UNIQUE(slot_id) на lesson_completions.
+
+## 2026-06-16 postpaid-debt-fallback Wave-D (1 PR)
+
+- **`postpaid-debt-fallback-wave-d-2026-06-16.md`** — Wave 6 / эпик F из master flow. Когда у ученика есть прошедшее booked-занятие без оплаты И учитель не подключил СБП (`sbpPayEnabled=false`) → банер «Свяжитесь с учителем напрямую». Когда СБП есть → CTA «Оплатить» теперь и на past-row (раньше был только в upcoming). PR #658 (squash 7d479a5). Status: SHIPPED 2026-06-16. Single-file UI tweak в `app/cabinet/lessons-section.tsx`.
+
+## 2026-06-16 notification-tg-partials Wave-C (1 PR)
+
+- **`notification-tg-partials-wave-c-2026-06-16.md`** — Wave 5 / эпик E из master flow. Дополнение Wave-A для partial paths где email уже шлётся отдельным sender'ом, а TG-канала не было: SBP claim notify (учителю при submit от ученика) + direct-assign learner notice (ученику при назначении учителем). Используется `channels: ['telegram']` опция dispatch'а чтобы не дублировать email. Два новых event-kinds: `SbpClaimSubmittedByLearner`, `LessonDirectlyAssignedByTeacher`. PR #657 (squash 1c1f441). Status: SHIPPED 2026-06-16. Codex-Paranoia: self-review fallback SUB-WAVE.
+
 ## 2026-06-16 teacher-reschedule-ui Wave-B (2 PRs)
 
 - **`teacher-reschedule-ui-wave-b-2026-06-16.md`** — Wave 4 / эпик D из master flow. Закрывает UX-BLOCKER B-06 (учитель не мог перенести занятие с учеником, только отменить) + BLOCKER B-04 (notification после teacher reschedule) из аудита #644. Sub-PRs: #654 (backend — `rescheduleSlotByTeacher` mutation + POST endpoint + `LessonRescheduledByTeacher` событие в Wave-A dispatch + email/TG templates) → #655 (frontend — кнопка «Перенести» в TeacherSlotDetailModal только для booked-full + новая `RescheduleByTeacherModal` с DatePicker/TimePicker/reason). Status: SHIPPED 2026-06-16. Codex-Paranoia: self-review fallback SIGN-OFF round 1/3. Race-safe через per-learner advisory lock `pkg_consume:<learnerId>` (тот же что bookSlot/assignSlotDirect/learner-reschedule). Reason обязателен (min 5 chars) — ученик ждёт пояснения. Atomic cancel original + insert new booked slot.
