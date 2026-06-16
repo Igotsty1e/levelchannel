@@ -4,6 +4,7 @@ import { headers } from 'next/headers'
 import './globals.css'
 
 import { TrackingProvider } from '@/components/analytics/TrackingProvider'
+import { YandexMetrika } from '@/components/analytics/YandexMetrika'
 
 import { ServiceWorkerRegistration } from './service-worker-registration'
 
@@ -115,6 +116,7 @@ export default async function RootLayout({
         {children}
         <ServiceWorkerRegistration />
         <TrackingProvider />
+        <YandexMetrika />
       </body>
     </html>
   )

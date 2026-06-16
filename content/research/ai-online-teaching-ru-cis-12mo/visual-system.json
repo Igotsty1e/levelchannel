@@ -1,0 +1,50 @@
+{
+  "hero": {
+    "composition": {
+      "headline": "Российский EdTech замедлился (+12% vs +19% годом ранее), но ИИ-сегмент внутри него ускорился: «нейросети» +15% YoY, машинное обучение +60% к кварталу. 80% преподавателей считают ИИ помощью; пользуется треть.",
+      "metrics": [
+        {
+          "label": "Топ-100 EdTech РФ, 2025",
+          "trend": "+12% YoY",
+          "value": "154 млрд ₽"
+        },
+        {
+          "label": "Машинное обучение в Q3 2025",
+          "value": "+60% QoQ"
+        },
+        {
+          "label": "Восприятие ИИ / Применение",
+          "value": "80 / 33"
+        },
+        {
+          "label": "Репетиторы РФ онлайн",
+          "value": "97%"
+        },
+        {
+          "label": "Казахстан 2024 (на год впереди РФ)",
+          "value": "+20% YoY"
+        }
+      ]
+    },
+    "kind": "infographic"
+  },
+  "rhythm": {
+    "stat_strips_between_sections": []
+  },
+  "section_accents": {
+    "ai-engine": "warm-amber",
+    "kz": "info",
+    "limits": "warning",
+    "market": "rose",
+    "methodology": "info",
+    "outlook": "rose",
+    "platforms": "peach",
+    "teachers": "coral",
+    "top10": "coral",
+    "tutors": "peach"
+  },
+  "typography": {
+    "key_number_size": "huge",
+    "section_separator": "gradient-rule"
+  }
+}
