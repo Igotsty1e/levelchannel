@@ -117,6 +117,29 @@ export function renderLessonEventEmail(
           `Календарь: ${p.cabinetUrl}/calendar\n\n— LevelChannel`,
       }
     }
+    case 'LessonRescheduledByTeacher': {
+      const wasWhen = formatRu(p.oldSlotStartAtIso)
+      const newWhen = formatRu(p.slotStartAtIso)
+      const reasonHtml = p.reasonText
+        ? `<p>Что сказал учитель: <em>${escapeHtml(p.reasonText)}</em></p>`
+        : ''
+      const reasonText = p.reasonText ? `\nЧто сказал учитель: ${p.reasonText}` : ''
+      return {
+        subject: `Учитель перенёс занятие на ${newWhen}`,
+        html:
+          `<p>Здравствуйте, ${escapeHtml(p.recipientDisplayName)}.</p>` +
+          `<p>${escapeHtml(p.actorDisplayName)} перенёс ваше занятие.</p>` +
+          `<p>Было: ${wasWhen} → Стало: <strong>${newWhen}</strong></p>` +
+          reasonHtml +
+          `<p>Кабинет: <a href="${escapeHtml(p.cabinetUrl)}">${escapeHtml(p.cabinetUrl)}</a></p>` +
+          `<p>— LevelChannel</p>`,
+        text:
+          `Здравствуйте, ${p.recipientDisplayName}.\n\n` +
+          `${p.actorDisplayName} перенёс ваше занятие.\n` +
+          `Было: ${wasWhen} → Стало: ${newWhen}${reasonText}\n\n` +
+          `Кабинет: ${p.cabinetUrl}\n\n— LevelChannel`,
+      }
+    }
     case 'LessonMarkedPaidByTeacher': {
       const amount = formatRub(p.amountKopecks)
       return {
@@ -206,6 +229,14 @@ export function renderLessonEventTelegram(kind: LessonEventKind, p: RenderInput)
         `❌ Ученик ${actor} отменил занятие на ${when}\\.\n` +
         (reason ? `Причина: _${reason}_\n` : '') +
         `Календарь: ${cabinetUrl}/calendar`
+      )
+    case 'LessonRescheduledByTeacher':
+      return (
+        `🔁 Учитель перенёс ваше занятие\\.\n` +
+        `Было: ${oldWhen}\n` +
+        `Стало: *${when}*\n` +
+        (reason ? `Что сказал: _${reason}_\n` : '') +
+        `Кабинет: ${cabinetUrl}`
       )
     case 'LessonRescheduledByLearner':
       return (
