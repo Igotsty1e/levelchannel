@@ -21,12 +21,13 @@ import {
 } from './recipient-resolver'
 import { sendTelegramMessage } from './telegram/send'
 
-// Все 7 событий Wave-A. Discriminated union ниже расширит type-safe
-// каждый payload.
+// Wave-A: 7 событий dispatch. Wave-B (2026-06-16) добавляет
+// LessonRescheduledByTeacher.
 export type LessonEventKind =
   | 'LessonCancelledByTeacher'
   | 'LessonCancelledByLearner'
   | 'LessonRescheduledByLearner'
+  | 'LessonRescheduledByTeacher'
   | 'LessonMarkedPaidByTeacher'
   | 'PaymentClaimConfirmed'
   | 'PaymentClaimDeclined'

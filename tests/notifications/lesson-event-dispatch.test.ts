@@ -221,11 +221,12 @@ describe('dispatchLessonEvent — Wave-A Sub-PR 1', () => {
   })
 })
 
-describe('renderLessonEventEmail — все 7 kinds', () => {
+describe('renderLessonEventEmail — все 8 kinds', () => {
   const KINDS: LessonEventKind[] = [
     'LessonCancelledByTeacher',
     'LessonCancelledByLearner',
     'LessonRescheduledByLearner',
+    'LessonRescheduledByTeacher',
     'LessonMarkedPaidByTeacher',
     'PaymentClaimConfirmed',
     'PaymentClaimDeclined',
