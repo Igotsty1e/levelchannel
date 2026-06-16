@@ -199,7 +199,14 @@ export function LessonsSection({
   const tz = safeTz(learnerTimezone)
   const [mine, setMine] = useState<LessonSlot[]>(initialMine)
   const [available, setAvailable] = useState<LessonSlot[]>(initialAvailable)
-  const paidSet = new Set(initialPaidSlotIds)
+  // 2026-06-17 fix (audit BUG B): paidSet был построен из SSR-prop
+  // и не обновлялся после успешной оплаты — кнопка «Оплатить» висела
+  // на экране до полной перезагрузки страницы. Переводим в state +
+  // оптимистично добавляем slotId после успеха claim'а.
+  const [paidSlotIds, setPaidSlotIds] = useState<Set<string>>(
+    () => new Set(initialPaidSlotIds),
+  )
+  const paidSet = paidSlotIds
   const refundedSet = new Set(initialRefundedSlotIds ?? [])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -594,6 +601,16 @@ export function LessonsSection({
           slotId={payTarget.id}
           onClose={() => setPayTarget(null)}
           onSuccess={async () => {
+            // 2026-06-17 fix (audit BUG B): оптимистично помечаем slot
+            // как «оплачен» сразу — иначе кнопка «Оплатить» остаётся
+            // на экране до полной перезагрузки. Server-side refresh
+            // ниже подтвердит/откатит при следующем GET /api/slots/mine.
+            const paidSlotId = payTarget.id
+            setPaidSlotIds((prev) => {
+              const next = new Set(prev)
+              next.add(paidSlotId)
+              return next
+            })
             setPayTarget(null)
             setInfo('Заявка отправлена — ждём подтверждение учителя.')
             await refresh()

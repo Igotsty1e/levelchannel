@@ -49,6 +49,12 @@ export function PayLessonModal({
   const [otherNote, setOtherNote] = useState('')
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const trapRef = useRef<HTMLDivElement | null>(null)
+  // 2026-06-17 fix (audit BUG A): синхронный guard от двойного клика
+  // на «Я оплатил». State `busy` обновляется асинхронно — между двумя
+  // кликами в одном tick'е оба видят `busy === false` и оба уходят
+  // в POST → 2-я заявка получает 409 «slot_has_active_claim».
+  // Ref проверяется синхронно ДО первого await.
+  const submittingRef = useRef(false)
   useFocusTrap(trapRef, () => (busy ? undefined : onClose()))
 
   useEffect(() => {
@@ -94,7 +100,9 @@ export function PayLessonModal({
   }
 
   async function submit(channel: 'sbp' | 'other') {
-    if (busy || !ctx) return
+    // Sync guard (BUG A): возвращаемся ДО setBusy если уже летим.
+    if (submittingRef.current || busy || !ctx) return
+    submittingRef.current = true
     setBusy(true)
     setSubmitErr(null)
     try {
@@ -131,6 +139,7 @@ export function PayLessonModal({
       )
     } finally {
       setBusy(false)
+      submittingRef.current = false
     }
   }
 
