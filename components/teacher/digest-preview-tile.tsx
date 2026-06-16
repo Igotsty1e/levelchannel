@@ -8,11 +8,18 @@
 // Plan: docs/plans/teacher-cabinet-polish.md §3 Sub-PR D.
 
 import Link from 'next/link'
+import type { ReactNode } from 'react'
 
 import type { TeacherDigestPreview } from '@/lib/notifications/teacher-digest-preview'
 
 type Props = {
   preview: TeacherDigestPreview
+  /**
+   * Wave-2 polish (2026-06-16): подсекция «Не отмечены» — past booked
+   * слоты без completion-row, рендерится отдельным компонентом
+   * (`RecentPastCard embedded`). Если undefined / null — секция скрыта.
+   */
+  pastUnmarkedSection?: ReactNode
 }
 
 // Format YYYY-MM-DD as «7 июня» (current year) or «7 июня 2025» (other year).
@@ -45,7 +52,7 @@ function formatStartHHmm(startAtIso: string, tz: string): string {
   }
 }
 
-export function DigestPreviewTile({ preview }: Props) {
+export function DigestPreviewTile({ preview, pastUnmarkedSection }: Props) {
   const { slots, todayLocalYmd, teacherTz } = preview
 
   return (
@@ -194,6 +201,44 @@ export function DigestPreviewTile({ preview }: Props) {
           })}
         </ul>
       )}
+
+      {pastUnmarkedSection ? (
+        <>
+          <hr
+            style={{
+              border: 0,
+              borderTop: '1px solid var(--border)',
+              margin: '12px 0',
+            }}
+            aria-hidden="true"
+          />
+          <div>
+            <p
+              style={{
+                margin: '0 0 8px',
+                fontSize: 12,
+                fontWeight: 600,
+                color: 'var(--secondary)',
+                textTransform: 'uppercase',
+                letterSpacing: 0.4,
+              }}
+            >
+              Не отмечены
+            </p>
+            {pastUnmarkedSection}
+            <Link
+              href="/teacher/lessons"
+              style={{
+                fontSize: 13,
+                color: 'var(--text)',
+                textDecoration: 'none',
+              }}
+            >
+              Все прошедшие занятия →
+            </Link>
+          </div>
+        </>
+      ) : null}
     </section>
   )
 }
