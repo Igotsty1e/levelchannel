@@ -18,6 +18,8 @@ const LEARNER_ERROR_MAP: Record<string, string> = {
 
   // pay-lesson-modal submit (/api/learner/payment-claims)
   slot_has_active_claim: 'По этому занятию уже есть незакрытая заявка.',
+  // 2026-06-17 audit BUG C: окно ретро-оплаты (30 дней).
+  slot_too_old: 'Это занятие старше 30 дней — оплату оформляет учитель вручную, напишите ему.',
   method_archived: 'Реквизиты учителя сменились — обновите страницу.',
   method_not_found: 'Способ оплаты больше недоступен.',
   email_not_verified: 'Подтвердите e-mail, чтобы продолжить.',

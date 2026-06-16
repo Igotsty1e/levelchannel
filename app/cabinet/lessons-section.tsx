@@ -166,6 +166,14 @@ function derivedSlotLabel(
 // when fallback ≠ server policy.
 const FALLBACK_CANCEL_WINDOW_HOURS = 24
 
+// 2026-06-17 audit BUG C: окно «оплаты задним числом» — 30 дней.
+// Должно совпадать с PAYMENT_RETRO_WINDOW_DAYS в lib/payments/sbp-claims.ts.
+// UI-сторона: скрываем CTA «Оплатить» если занятие старше окна.
+const PAYMENT_RETRO_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
+function isWithinRetroWindow(startAtIso: string): boolean {
+  return new Date(startAtIso).getTime() >= Date.now() - PAYMENT_RETRO_WINDOW_MS
+}
+
 export function LessonsSection({
   initialMine,
   initialAvailable,
@@ -550,7 +558,9 @@ export function LessonsSection({
                                   refundedSet.has(s.id),
                                 )}
                               </span>
-                              {sbpPayEnabled && unpaid ? (
+                              {sbpPayEnabled
+                              && unpaid
+                              && isWithinRetroWindow(s.startAt) ? (
                                 <Button
                                   variant="secondary"
                                   size="sm"
