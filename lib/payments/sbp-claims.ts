@@ -125,6 +125,13 @@ export async function createTeacherMarkPaid(
           await client.query('rollback')
           return { ok: false, reason: 'slot_not_belongs_to_pair' }
         }
+        // 2026-06-17 audit BUG C: retro-window. Не даём оплачивать
+        // занятия старше PAYMENT_RETRO_WINDOW_DAYS (30 дней). Защищает
+        // учителя от заявок «задним числом».
+        if (isSlotPastRetroWindow(snap.startAt)) {
+          await client.query('rollback')
+          return { ok: false, reason: 'slot_too_old' }
+        }
         // Codex round-1 BL-1: reject if slot already paid by ANY channel
         // (SBP claim, package consumption, legacy CloudPayments).
         const ex = await client.query<{ src: string }>(
@@ -617,6 +624,7 @@ async function loadSlotSnapshot(
       learnerAccountId: string
       label: string
       expected: number
+      startAt: string
     }
   | null
 > {
@@ -646,7 +654,20 @@ async function loadSlotSnapshot(
     learnerAccountId: row.learner_account_id,
     label,
     expected: row.snapshot_amount_kopecks ?? 0,
+    startAt: row.start_at,
   }
+}
+
+// 2026-06-17 audit: окно «оплаты задним числом» — ученик не может
+// создать заявку на занятие старше 30 дней. Защищает учителя от
+// неожиданных late-claim'ов.
+const PAYMENT_RETRO_WINDOW_DAYS = 30
+const PAYMENT_RETRO_WINDOW_MS = PAYMENT_RETRO_WINDOW_DAYS * 24 * 60 * 60 * 1000
+
+function isSlotPastRetroWindow(startAtIso: string): boolean {
+  const startAtMs = new Date(startAtIso).getTime()
+  if (!Number.isFinite(startAtMs)) return false
+  return startAtMs < Date.now() - PAYMENT_RETRO_WINDOW_MS
 }
 
 export async function createLearnerClaim(
@@ -731,6 +752,13 @@ export async function createLearnerClaim(
         ) {
           await client.query('rollback')
           return { ok: false, reason: 'slot_not_belongs_to_pair' }
+        }
+        // 2026-06-17 audit BUG C: retro-window. Не даём оплачивать
+        // занятия старше PAYMENT_RETRO_WINDOW_DAYS (30 дней). Защищает
+        // учителя от заявок «задним числом».
+        if (isSlotPastRetroWindow(snap.startAt)) {
+          await client.query('rollback')
+          return { ok: false, reason: 'slot_too_old' }
         }
         // Codex round-1 BL-1: reject if slot already paid by ANY channel
         // (SBP claim, package consumption, legacy CloudPayments).
