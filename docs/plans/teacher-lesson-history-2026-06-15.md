@@ -1,8 +1,29 @@
 # Эпик B: Lesson-history page + quick actions для прошедших занятий
 
-Status: PROPOSED 2026-06-15 · Owner: claude
+Status: IN-PROGRESS 2026-06-16 · Owner: claude
 Parent: `docs/plans/teacher-master-flow-2026-06-15.md`
-Depends on: Wave-A notifications (эпик A) для dispatch после mark-no-show / mark-completed
+Depends on: Wave-A notifications (эпик A) — SHIPPED 2026-06-16 (PR #646/#647/#648)
+Branch: `feat/lesson-history-wave-2-2026-06-16`
+Paranoia: self-review fallback round 1 (Codex CLI hung @ 16min idle, per CLAUDE.md §7 fallback)
+
+## Round-1 self-review notes (2026-06-16)
+
+**BLOCKERs (fixed below):**
+- B-1: Ownership pre-check в route → 403 если `lesson_slots.teacher_account_id ≠ session.id` (не полагаемся только на helper anti-spoof)
+- B-2: Idempotency — UNIQUE(slot_id) на lesson_completions. Catch + 200 с current-state на повторный POST
+- B-3: `missing_snapshot` reason из helper → 422 с явным message в UI
+
+**HIGH (fixed below):**
+- H-1: Wave-A dispatch ТОЛЬКО после COMMIT (best-effort post-commit pattern из Wave-A)
+- H-2: /history запросы — `WHERE teacher_account_id = session.id` ВСЕГДА, filters только ON TOP
+- H-3: `accounts.teacher_charge_on_no_show` — DEFER в Wave-2 эпик «должен оплатить» feature. Просто фикс status='no_show_learner' через helper, существующий UnpaidLearners surface уже подхватывает
+
+**WARN:**
+- W-1: Мiграция = 0131 (не 0117 — 0130 уже занят notification_log)
+- W-2: CSV cap = 5000 строк, streaming chunks
+- W-3: Mobile bottom-nav = 60px высота, padding-bottom: 80px OK
+
+**Architectural simplification:** не нужен новый DB helper — `markSlotLifecycle` (`lib/scheduling/slots/lifecycle.ts:31`) уже маршрутизирует billable kinds через `markLessonCompleted` с anti-spoof. Teacher endpoint = тонкая обёртка: session-bound `teacherAccountId` + pre-ownership-check + delegate + Wave-A dispatch post-commit.
 
 ---
 

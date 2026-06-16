@@ -72,6 +72,18 @@ export {
   markSlotLifecycle,
 } from './lifecycle'
 
+export { markSlotByTeacher } from './teacher-lifecycle'
+export type { MarkSlotByTeacherResult } from './teacher-lifecycle'
+
+export {
+  listRecentPastUnmarkedSlots,
+  listLessonHistory,
+} from './teacher-lesson-history'
+export type {
+  LessonHistoryFilter,
+  LessonHistoryRow,
+} from './teacher-lesson-history'
+
 export {
   SlotTariffDurationMismatchError,
   SlotTeacherRoleError,
