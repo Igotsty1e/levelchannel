@@ -12,6 +12,8 @@
 // stranded the lesson_completions row. See plan §2.6 + §5 Day 5A.
 
 import { getDbPool } from '@/lib/db/pool'
+import { dispatchLessonEvent } from '@/lib/notifications/lesson-event-dispatch'
+import { getActorDisplayName } from '@/lib/notifications/recipient-resolver'
 import { getLearnerCancelWindowHours } from '@/lib/scheduling/policy'
 
 import {
@@ -187,7 +189,34 @@ export async function cancelLearnerSlot(
     client.release()
   }
   if (cancelledRow) {
-    return { ok: true, slot: rowToSlot(cancelledRow) }
+    const slot = rowToSlot(cancelledRow)
+    // Wave-A: notify teacher about learner cancel. Best-effort; mutation
+    // already committed. We catch ANY error here so a dispatch failure
+    // can never roll back the user-visible cancel.
+    if (slot.teacherAccountId) {
+      try {
+        const actorName = await getActorDisplayName(learnerAccountId)
+        const eventsArr = Array.isArray(cancelledRow.events)
+          ? cancelledRow.events
+          : []
+        await dispatchLessonEvent('LessonCancelledByLearner', {
+          slotId: slot.id,
+          recipientAccountId: slot.teacherAccountId,
+          recipientRole: 'teacher',
+          iterSeq: eventsArr.length,
+          payload: {
+            actorDisplayName: actorName,
+            recipientDisplayName: 'Учитель',
+            slotStartAtIso: slot.startAt,
+            durationMinutes: slot.durationMinutes,
+            reasonText: reason ?? undefined,
+          },
+        })
+      } catch (e) {
+        console.error('[cancelLearnerSlot] dispatch failed', e)
+      }
+    }
+    return { ok: true, slot }
   }
 
   // The atomic UPDATE matched nothing — classify why for UX. Any
@@ -303,7 +332,32 @@ export async function cancelSlotByTeacher(
     client.release()
   }
   if (cancelledRow) {
-    return { ok: true, slot: rowToSlot(cancelledRow) }
+    const slot = rowToSlot(cancelledRow)
+    // Wave-A: notify learner about teacher cancel. Best-effort.
+    if (slot.learnerAccountId) {
+      try {
+        const actorName = await getActorDisplayName(teacherAccountId)
+        const eventsArr = Array.isArray(cancelledRow.events)
+          ? cancelledRow.events
+          : []
+        await dispatchLessonEvent('LessonCancelledByTeacher', {
+          slotId: slot.id,
+          recipientAccountId: slot.learnerAccountId,
+          recipientRole: 'learner',
+          iterSeq: eventsArr.length,
+          payload: {
+            actorDisplayName: actorName,
+            recipientDisplayName: 'Ученик',
+            slotStartAtIso: slot.startAt,
+            durationMinutes: slot.durationMinutes,
+            reasonText: reason ?? undefined,
+          },
+        })
+      } catch (e) {
+        console.error('[cancelSlotByTeacher] dispatch failed', e)
+      }
+    }
+    return { ok: true, slot }
   }
   // Sniff to classify the no-op.
   const sniff = await pool.query(

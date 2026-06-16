@@ -14,6 +14,8 @@
 
 import { ACTIVE_INTEGRATION_GATE_SQL } from '@/lib/calendar/freshness-sql'
 import { getDbPool } from '@/lib/db/pool'
+import { dispatchLessonEvent } from '@/lib/notifications/lesson-event-dispatch'
+import { getActorDisplayName } from '@/lib/notifications/recipient-resolver'
 
 import {
   SLOT_COLUMNS,
@@ -206,6 +208,31 @@ export async function rescheduleSlotByLearner(
     }
 
     await client.query('commit')
+
+    // Wave-A: notify teacher about learner reschedule. Best-effort
+    // post-commit dispatch; never throw to caller.
+    try {
+      const actorName = await getActorDisplayName(learnerAccountId)
+      const eventsArr = Array.isArray((insertRes.rows[0] as { events?: unknown }).events)
+        ? ((insertRes.rows[0] as { events: unknown[] }).events)
+        : []
+      await dispatchLessonEvent('LessonRescheduledByLearner', {
+        slotId: newSlot.id,
+        recipientAccountId: teacherId,
+        recipientRole: 'teacher',
+        iterSeq: eventsArr.length,
+        payload: {
+          actorDisplayName: actorName,
+          recipientDisplayName: 'Учитель',
+          oldSlotStartAtIso: oldSlot.startAt,
+          slotStartAtIso: newSlot.startAt,
+          durationMinutes: durationMinutes,
+        },
+      })
+    } catch (e) {
+      console.error('[rescheduleSlotByLearner] dispatch failed', e)
+    }
+
     return { ok: true, oldSlot, newSlot }
   } catch (e) {
     await client.query('rollback').catch(() => {})
