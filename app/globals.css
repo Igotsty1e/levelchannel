@@ -76,7 +76,12 @@
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
                'Liberation Mono', monospace;
 
-  /* Type scale */
+  /* Type scale.
+     2026-06-17 audit: фактически в коде используются 10 значений
+     (12, 13, 14, 15, 16, 18, 20, 24, 26, 28), хотя задумана была
+     эта 7-значная шкала. Постепенно мигрируем через классы
+     .text-h1/.text-h2/.text-body/.text-caption (см. ниже §Typography
+     classes). Раунд правок: subscription h1 24 → 28, settle h1 24 → 28. */
   --text-12: 12px;
   --text-13: 13px;
   --text-15: 15px;
@@ -229,6 +234,40 @@ body {
 .btn-secondary:hover {
   border-color: rgba(200, 120, 120, 0.6);
   background: rgba(200, 120, 120, 0.08);
+}
+
+/* Typography classes — 2026-06-17 audit polish.
+   Используйте эти классы в новом коде вместо inline fontSize.
+   Заголовки H1/H2/H3 и body/caption — единый язык. */
+.text-h1 {
+  font-size: var(--text-28);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+.text-h2 {
+  font-size: 18px; /* промежуточная (между 17 и 22) — используется как card heading */
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1.25;
+}
+.text-h3 {
+  font-size: var(--text-17);
+  font-weight: 600;
+  line-height: 1.3;
+}
+.text-body {
+  font-size: var(--text-15);
+  line-height: 1.5;
+}
+.text-body-sm {
+  font-size: var(--text-13);
+  line-height: 1.5;
+}
+.text-caption {
+  font-size: var(--text-12);
+  color: var(--secondary);
+  line-height: 1.4;
 }
 
 /* Card */
