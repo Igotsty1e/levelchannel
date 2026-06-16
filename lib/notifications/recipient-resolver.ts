@@ -49,6 +49,30 @@ export class RoleMismatchError extends Error {
   }
 }
 
+/**
+ * Quick-fetch для display name любого account-а (учитель/ученик/админ).
+ * Без role-check; используется как `actorDisplayName` в payload — кто
+ * совершил действие. Имя видит counterpart — privacy-safe (имя уже
+ * показывается в кабинете counterpart-а).
+ */
+export async function getActorDisplayName(accountId: string): Promise<string> {
+  const pool = getDbPool()
+  const result = await pool.query<{
+    email: string
+    first_name: string | null
+    last_name: string | null
+  }>(
+    `select email, first_name, last_name from accounts where id = $1 limit 1`,
+    [accountId],
+  )
+  const row = result.rows[0]
+  if (!row) return 'LevelChannel'
+  return (
+    [row.first_name, row.last_name].filter(Boolean).join(' ').trim() ||
+    row.email.split('@')[0]
+  )
+}
+
 export async function resolveRecipient(
   accountId: string,
   expectedRole: RecipientRole,
