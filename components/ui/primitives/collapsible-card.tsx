@@ -34,7 +34,7 @@ export function CollapsibleCard({
       style={{
         background: 'var(--card, var(--surface-2))',
         border: '1px solid var(--border)',
-        borderRadius: 12,
+        borderRadius: 16,
         padding: 0,
         marginBottom: 24,
       }}
@@ -49,7 +49,7 @@ export function CollapsibleCard({
           cursor: 'pointer',
           listStyle: 'none',
           userSelect: 'none',
-          borderRadius: 12,
+          borderRadius: 16,
         }}
       >
         <span

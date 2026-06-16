@@ -42,7 +42,8 @@ export function Banner({ tone = 'info', icon, action, children }: BannerProps) {
         padding: '12px 16px',
         background: s.bg,
         border: `1px solid ${s.border}`,
-        borderRadius: 10,
+        // 2026-06-17 audit: было 10 — приведено к --radius-3 (12px).
+        borderRadius: 12,
         color: 'var(--text)',
         fontSize: 14,
         lineHeight: 1.5,
