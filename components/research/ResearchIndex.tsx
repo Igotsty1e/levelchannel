@@ -18,8 +18,8 @@ function formatDateRu(iso?: string): string {
 export function ResearchIndex({ posts }: { posts: ResearchPostSummary[] }) {
   return (
     <main className="research-article">
-      <div className="rs-container">
-        <section className="rs-index-hero">
+      <div className="rs-index-frame">
+        <header className="rs-index-hero">
           <span className="rs-index-eyebrow">Level Channel · Research</span>
           <h1 className="rs-index-title">Публичные цифры о EdTech и ИИ в обучении</h1>
           <p className="rs-index-lede">
@@ -27,33 +27,40 @@ export function ResearchIndex({ posts }: { posts: ResearchPostSummary[] }) {
             рейтинги, отчёты компаний, опросы, регуляторные публикации. Каждая цифра проверена
             независимо — без маркетинговых пресс-релизов и анонимных аналитиков.
           </p>
-        </section>
+        </header>
 
         {posts.length === 0 ? (
-          <div className="rs-index-empty">
-            <p>Скоро здесь появится первая публикация.</p>
-          </div>
+          <div className="rs-index-empty">Скоро здесь появится первая публикация.</div>
         ) : (
-          <div className="rs-index-grid">
-            {posts.map((p) => (
-              <Link key={p.slug} href={`/research/${p.slug}`} className="rs-index-card">
-                {p.about && p.about.length > 0 ? (
-                  <div className="rs-index-card-tags">
-                    {p.about.slice(0, 3).map((tag) => (
-                      <span key={tag} className="rs-index-card-tag">
-                        {tag}
-                      </span>
-                    ))}
+          <div className="rs-index-list">
+            {posts.map((p, i) => {
+              const num = String(i + 1).padStart(2, '0')
+              return (
+                <Link key={p.slug} href={`/research/${p.slug}`} className="rs-index-card">
+                  <div className="rs-index-card-num">№ {num}</div>
+                  <div className="rs-index-card-body">
+                    {p.about && p.about.length > 0 ? (
+                      <div className="rs-index-card-tags">
+                        {p.about.slice(0, 3).map((tag) => (
+                          <span key={tag}>{tag}</span>
+                        ))}
+                      </div>
+                    ) : null}
+                    <h2 className="rs-index-card-title">{p.title}</h2>
+                    <p className="rs-index-card-lede">{p.description}</p>
                   </div>
-                ) : null}
-                <h2 className="rs-index-card-title">{p.title}</h2>
-                <p className="rs-index-card-lede">{p.description}</p>
-                <div className="rs-index-card-meta">
-                  {formatDateRu(p.publishedAt)}
-                  {p.readingTimeMinutes ? ` · ${p.readingTimeMinutes} мин чтения` : ''}
-                </div>
-              </Link>
-            ))}
+                  <div className="rs-index-card-meta">
+                    {formatDateRu(p.publishedAt)}
+                    {p.readingTimeMinutes ? (
+                      <>
+                        <br />
+                        {p.readingTimeMinutes} мин чтения
+                      </>
+                    ) : null}
+                  </div>
+                </Link>
+              )
+            })}
           </div>
         )}
       </div>

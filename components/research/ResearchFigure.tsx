@@ -435,18 +435,14 @@ function ComparePies({
 
 function PullQuote({
   data,
-  accent,
 }: {
   data: FigurePullQuoteData
   accent: AccentName
 }) {
-  const col = ACCENT_COLOURS[accent].solid
+  // Pull-quotes get their own framing — no inner figure-frame.
   return (
-    <figure
-      className="rs-pullquote"
-      style={{ borderLeftColor: col, marginInline: 0 }}
-    >
-      <blockquote>«{data.text}»</blockquote>
+    <figure className="rs-pullquote">
+      <blockquote>{data.text}</blockquote>
       {data.attribution ? (
         <figcaption>— {data.attribution}</figcaption>
       ) : null}
@@ -454,11 +450,24 @@ function PullQuote({
   )
 }
 
-export function ResearchFigure({ figure, figureId }: { figure: Figure; figureId: string }) {
-  const accent: AccentName = (figure.accent as AccentName) ?? 'rose'
+export function ResearchFigure({
+  figure,
+  figureId,
+  accent: sectionAccent,
+}: {
+  figure: Figure
+  figureId: string
+  accent?: string
+}) {
+  // Section's accent wins; figure-specific accent only as override.
+  const accent: AccentName =
+    (figure.accent as AccentName) ||
+    (sectionAccent as AccentName) ||
+    'rose'
   const data = figure.data as never
   const title = figure.title
   let body: React.ReactNode = null
+  let isPullQuote = false
   switch (figure.kind) {
     case 'hbar':
       body = <HBarChart data={data} accent={accent} unit={figure.unit} />
@@ -485,13 +494,20 @@ export function ResearchFigure({ figure, figureId }: { figure: Figure; figureId:
       break
     case 'pull-quote':
       body = <PullQuote data={data} accent={accent} />
+      isPullQuote = true
       break
   }
   if (!body) return null
+  // Pull-quotes don't need title/frame chrome.
+  if (isPullQuote) {
+    return <>{body}</>
+  }
   return (
     <figure className="rs-figure" data-fid={figureId}>
-      {title ? <div className="rs-figure-title">{title}</div> : null}
-      {body}
+      <div className="rs-figure-frame">
+        {title ? <div className="rs-figure-title">{title}</div> : null}
+        {body}
+      </div>
     </figure>
   )
 }
