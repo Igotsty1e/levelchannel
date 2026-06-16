@@ -1,8 +1,17 @@
 # Wave-A: Notification dispatch для 7 lesson-событий (impl-ready)
 
-Status: IN_PROGRESS 2026-06-15 · Owner: claude
+Status: SHIPPED 2026-06-16 · Owner: claude
 Parent epic: `docs/plans/teacher-master-flow-2026-06-15.md` (Wave 1)
 Source: `docs/audit/2026-06-15-reschedule-cancel-markpaid-audit.md` (5 BLOCKER + 3 HIGH)
+
+Shipped PRs (range `092326e..cddceb8`):
+- PR #646 — Sub-PR 1 dispatch foundation + migration 0130
+- PR #647 — Sub-PR 2 cancel + reschedule integration
+- PR #648 — Sub-PR 3 mark-paid + claim confirm/decline + refund
+
+Sibling CI-unblock PRs: #650 (Playwright http://-on-prod escape-hatch + integration retry budget) + #652 (extend E2E flag to email/auth-rate-limit validators).
+
+Codex-Paranoia: self-review fallback SIGN-OFF round 1/3 (Codex CLI binary unavailable + raw exec blocked by hook). 3 BLOCKER closed at plan-time, 0 BLOCKER at wave-time, 4 WARN documented inline. Replay /codex-paranoia plan + wave когда Codex restored.
 
 ---
 
