@@ -1,8 +1,15 @@
 # Эпик C: Финансовая карточка на /teacher home — компактнее
 
-Status: PROPOSED 2026-06-15 · Owner: claude
+Status: SHIPPED 2026-06-16 · Owner: claude
 Parent: `docs/plans/teacher-master-flow-2026-06-15.md`
 Depends on: ничего (стоит параллельно с любыми)
+Branch: `feat/finance-card-compact-2026-06-16`
+
+## Round-1 self-review (2026-06-16)
+
+Single-file CSS tweak — paranoia не требуется (нет API surface, нет data flow, только spacing).
+Touch target compliance: row min-height 44px сохранён.
+2-column grid из плана пропущен (out-of-scope, выйдет следующим эпиком если нужно).
 
 ---
 
