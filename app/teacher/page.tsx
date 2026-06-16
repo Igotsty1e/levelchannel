@@ -18,11 +18,13 @@ import { redirect } from 'next/navigation'
 import { TeacherSetupChecklist } from '@/components/onboarding/teacher-setup-checklist'
 import { DigestPreviewTile } from '@/components/teacher/digest-preview-tile'
 import { TeacherFinanceSummary } from '@/components/teacher/home/finance-summary'
+import { RecentPastCard } from '@/components/teacher/home/recent-past-card'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getTeacherFinanceSnapshot } from '@/lib/billing/teacher-finance'
 import { getDbPool } from '@/lib/db/pool'
 import { getTeacherDigestPreview } from '@/lib/notifications/teacher-digest-preview'
 import { computeTeacherSetupChecklist } from '@/lib/onboarding/teacher-setup-checklist'
+import { listRecentPastUnmarkedSlots } from '@/lib/scheduling/slots'
 import { greetingForHour } from '@/lib/util/greeting'
 
 export const dynamic = 'force-dynamic'
@@ -107,6 +109,43 @@ function formatSlotDateTime(iso: string): string {
   }
 }
 
+// Wave-2 lesson-history (2026-06-16) — для карточки «Недавние прошедшие»
+// нам нужны не только slot-ы (через listRecentPastUnmarkedSlots), но и
+// learner display labels per slotId. Один SQL вместо N+1.
+async function loadRecentPastLearnerLabels(
+  slotIds: string[],
+): Promise<Record<string, string>> {
+  if (slotIds.length === 0) return {}
+  const r = await getDbPool().query<{
+    id: string
+    learner_email: string | null
+    display_name: string | null
+    first_name: string | null
+    last_name: string | null
+  }>(
+    `select s.id,
+            la.email as learner_email,
+            ap.display_name,
+            ap.first_name,
+            ap.last_name
+       from lesson_slots s
+       left join accounts la on la.id = s.learner_account_id
+       left join account_profiles ap on ap.account_id = la.id
+      where s.id = any($1::uuid[])`,
+    [slotIds],
+  )
+  const map: Record<string, string> = {}
+  for (const row of r.rows) {
+    const composed =
+      row.first_name || row.last_name
+        ? [row.first_name, row.last_name].filter(Boolean).join(' ').trim()
+        : ''
+    map[row.id] =
+      composed || row.display_name || row.learner_email || 'Ученик'
+  }
+  return map
+}
+
 async function loadTeacherFirstName(teacherAccountId: string): Promise<string | null> {
   const r = await getDbPool().query<{
     first_name: string | null
@@ -138,17 +177,22 @@ export default async function TeacherHomePage() {
   const todayYmd = new Date().toISOString().slice(0, 10)
   const [
     upcomingSlots,
+    recentPastSlots,
     digestPreview,
     setupChecklist,
     teacherFirstName,
     financeSnapshot,
   ] = await Promise.all([
     listUpcomingSlotsForTeacher(teacherAccountId, 3),
+    listRecentPastUnmarkedSlots(teacherAccountId, 5),
     getTeacherDigestPreview(teacherAccountId),
     computeTeacherSetupChecklist(teacherAccountId),
     loadTeacherFirstName(teacherAccountId),
     getTeacherFinanceSnapshot(teacherAccountId, todayYmd),
   ])
+  const recentPastLearnerLabels = await loadRecentPastLearnerLabels(
+    recentPastSlots.map((s) => s.id),
+  )
 
   const teacherTz = digestPreview.teacherTz || 'Europe/Moscow'
   const now = new Date()
@@ -260,6 +304,16 @@ export default async function TeacherHomePage() {
           Открыть календарь
         </Link>
       </section>
+
+      {/* Wave-2 lesson-history (2026-06-16) — карточка «Недавние
+          прошедшие» с quick-actions «Провёл» / «Не пришёл». Скрывается
+          (рендерит null) когда нет past booked без completion-row. */}
+      <div className="lc-section">
+        <RecentPastCard
+          initialSlots={recentPastSlots}
+          learnerLabels={recentPastLearnerLabels}
+        />
+      </div>
 
       {/* Финансы — Hero-вариант. 2026-06-12 (Задача 4): переехал
           ВНИЗ под расписание. Полезная справка, но не первое что

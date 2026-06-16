@@ -25,12 +25,16 @@ import { sendTelegramMessage } from './telegram/send'
 // LessonRescheduledByTeacher. Wave-C (2026-06-16) — partial paths где
 // email уже работает (sendSbpClaimNotificationToTeacher,
 // sendLearnerDirectAssignNoticeEmail), но TG не было.
+// Wave-2 lesson-history (2026-06-16) — teacher mark-completed /
+// mark-no-show уведомляют ученика.
 export type LessonEventKind =
   | 'LessonCancelledByTeacher'
   | 'LessonCancelledByLearner'
   | 'LessonRescheduledByLearner'
   | 'LessonRescheduledByTeacher'
   | 'LessonMarkedPaidByTeacher'
+  | 'LessonMarkedCompleteByTeacher'
+  | 'LessonMarkedNoShowByTeacher'
   | 'PaymentClaimConfirmed'
   | 'PaymentClaimDeclined'
   | 'PaymentRefundIssued'
