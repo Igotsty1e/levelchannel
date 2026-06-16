@@ -861,6 +861,8 @@ export async function createLearnerClaim(
     // ломать создание claim (TX уже committed).
     void notifyTeacherAboutNewClaim({
       teacherAccountId: input.teacherAccountId,
+      learnerAccountId: input.learnerAccountId,
+      claimId,
       learnerName,
       teacherName,
       amountKopecks: input.amountKopecks,
@@ -879,12 +881,15 @@ export async function createLearnerClaim(
 
 async function notifyTeacherAboutNewClaim(args: {
   teacherAccountId: string
+  learnerAccountId: string
+  claimId: string
   learnerName: string
   teacherName: string
   amountKopecks: number
   paymentChannel: PaymentChannel
   itemsSummary: string
 }): Promise<void> {
+  // Email через существующий sender (не трогаем — proven path).
   try {
     const { sendSbpClaimNotificationToTeacher } = await import(
       '@/lib/email/dispatch'
@@ -895,22 +900,47 @@ async function notifyTeacherAboutNewClaim(args: {
       [args.teacherAccountId],
     )
     const to = r.rows[0]?.email
-    if (!to) return
-    const amountRub = new Intl.NumberFormat('ru-RU', {
-      style: 'currency',
-      currency: 'RUB',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(args.amountKopecks / 100)
-    await sendSbpClaimNotificationToTeacher(to, {
-      teacherName: args.teacherName,
-      learnerName: args.learnerName,
-      amountRub,
-      itemsSummary: args.itemsSummary,
-      paymentChannel: args.paymentChannel,
-    })
+    if (to) {
+      const amountRub = new Intl.NumberFormat('ru-RU', {
+        style: 'currency',
+        currency: 'RUB',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      }).format(args.amountKopecks / 100)
+      await sendSbpClaimNotificationToTeacher(to, {
+        teacherName: args.teacherName,
+        learnerName: args.learnerName,
+        amountRub,
+        itemsSummary: args.itemsSummary,
+        paymentChannel: args.paymentChannel,
+      })
+    }
   } catch {
     // swallow — email errors must not propagate
+  }
+  // Wave-C (2026-06-16) — добавляем TG-канал через Wave-A dispatch
+  // helper. channels=['telegram'] чтобы не дублировать email.
+  try {
+    const { dispatchLessonEvent } = await import(
+      '@/lib/notifications/lesson-event-dispatch'
+    )
+    await dispatchLessonEvent(
+      'SbpClaimSubmittedByLearner',
+      {
+        claimId: args.claimId,
+        recipientAccountId: args.teacherAccountId,
+        recipientRole: 'teacher',
+        iterSeq: 1,
+        payload: {
+          actorDisplayName: args.learnerName,
+          recipientDisplayName: args.teacherName,
+          amountKopecks: args.amountKopecks,
+        },
+      },
+      { channels: ['telegram'] },
+    )
+  } catch {
+    // swallow — TG errors must not propagate either
   }
 }
 

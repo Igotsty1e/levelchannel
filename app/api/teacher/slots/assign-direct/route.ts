@@ -186,6 +186,33 @@ export async function POST(request: Request) {
     }
   }
 
+  // Wave-C (2026-06-16) — TG-канал в дополнение к существующему email.
+  // channels=['telegram'] чтобы не дублировать email (он уже шёл выше).
+  // Best-effort; не блокирует ответ маршрута.
+  try {
+    const { dispatchLessonEvent } = await import(
+      '@/lib/notifications/lesson-event-dispatch'
+    )
+    await dispatchLessonEvent(
+      'LessonDirectlyAssignedByTeacher',
+      {
+        slotId: result.slot.id,
+        recipientAccountId: result.slot.learnerAccountId ?? '',
+        recipientRole: 'learner',
+        iterSeq: 1,
+        payload: {
+          actorDisplayName: 'Учитель',
+          recipientDisplayName: 'Ученик',
+          slotStartAtIso: result.slot.startAt,
+          durationMinutes: result.slot.durationMinutes,
+        },
+      },
+      { channels: ['telegram'] },
+    )
+  } catch (_err) {
+    // swallow — TG must not break direct-assign response
+  }
+
   return NextResponse.json(
     {
       slot: result.slot,
