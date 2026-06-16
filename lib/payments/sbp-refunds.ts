@@ -47,10 +47,15 @@ export async function createRefund(
     await client.query('begin')
     const claim = await client.query<{
       teacher_account_id: string | null
+      learner_account_id: string
       amount_kopecks: number
       status: string
+      teacher_display_name_snapshot: string | null
+      learner_display_name_snapshot: string | null
     }>(
-      `select teacher_account_id, amount_kopecks, status
+      `select teacher_account_id, learner_account_id, amount_kopecks,
+              status, teacher_display_name_snapshot,
+              learner_display_name_snapshot
          from payment_claims
         where id = $1
         for update`,
@@ -86,6 +91,29 @@ export async function createRefund(
       [claimId, amountKopecks, reason, note],
     )
     await client.query('commit')
+
+    // Wave-A: notify learner about refund issued by teacher.
+    try {
+      const { dispatchLessonEvent } = await import(
+        '@/lib/notifications/lesson-event-dispatch'
+      )
+      await dispatchLessonEvent('PaymentRefundIssued', {
+        claimId,
+        refundId: inserted.rows[0].id,
+        recipientAccountId: c.learner_account_id,
+        recipientRole: 'learner',
+        iterSeq: existing > 0 ? Math.floor(existing / 100) + 1 : 1,
+        payload: {
+          actorDisplayName: c.teacher_display_name_snapshot ?? 'Учитель',
+          recipientDisplayName: c.learner_display_name_snapshot ?? 'Ученик',
+          amountKopecks: amountKopecks,
+          reasonText: note ?? undefined,
+        },
+      })
+    } catch (e) {
+      console.error('[createRefund] dispatch failed', e)
+    }
+
     return { ok: true, refundId: inserted.rows[0].id }
   } catch (e) {
     await client.query('rollback').catch(() => {})
