@@ -55,7 +55,7 @@ export default function PersonalDataConsentPage() {
             borderRadius: 100,
             fontSize: 13,
             fontWeight: 600,
-            color: '#E89A90',
+            color: '#E8A890',
             marginBottom: 16,
           }}
         >
@@ -92,7 +92,7 @@ export default function PersonalDataConsentPage() {
             обработку моих персональных данных на условиях, указанных в настоящем
             документе. Обращения по вопросам персональных данных и отзыв согласия
             принимаются по адресу{' '}
-            <a href={`mailto:${PUBLIC_CONTACT_EMAIL}`} style={{ color: '#E89A90' }}>
+            <a href={`mailto:${PUBLIC_CONTACT_EMAIL}`} style={{ color: '#E8A890' }}>
               {PUBLIC_CONTACT_EMAIL}
             </a>
             , и/или письменно по адресу регистрации Оператора: {LEGAL_OPERATOR_CLAIMS_ADDRESS}.
@@ -167,7 +167,7 @@ export default function PersonalDataConsentPage() {
           <Section title="7. Отзыв согласия">
             Я уведомлён(а), что могу отозвать согласие путём направления обращения
             Оператору на{' '}
-            <a href={`mailto:${PUBLIC_CONTACT_EMAIL}`} style={{ color: '#E89A90' }}>
+            <a href={`mailto:${PUBLIC_CONTACT_EMAIL}`} style={{ color: '#E8A890' }}>
               {PUBLIC_CONTACT_EMAIL}
             </a>
             . Отзыв согласия не влияет на законность обработки, которая
@@ -181,7 +181,7 @@ export default function PersonalDataConsentPage() {
 
           <Section title="8. Подтверждение формы согласия" last>
             Я подтверждаю, что ознакомился(лась) с{' '}
-            <Link href="/privacy" style={{ color: '#E89A90' }}>
+            <Link href="/privacy" style={{ color: '#E8A890' }}>
               политикой в отношении обработки персональных данных
             </Link>{' '}
             и понимаю, что отметка чекбокса на странице оплаты фиксируется

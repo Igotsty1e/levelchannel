@@ -420,14 +420,14 @@ function UseCases() {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: '#E89A90',
+                  color: '#E8A890',
                   marginBottom: 20,
                 }}
               >
                 {c.icon}
               </div>
               <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>{c.title}</h3>
-              <div style={{ fontSize: 13, color: '#E89A90', fontWeight: 500, marginBottom: 12 }}>{c.subtitle}</div>
+              <div style={{ fontSize: 13, color: '#E8A890', fontWeight: 500, marginBottom: 12 }}>{c.subtitle}</div>
               <p style={{ color: '#A1A1AA', fontSize: 15, lineHeight: 1.65, marginBottom: 20 }}>{c.desc}</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {c.tags.map((t) => (
@@ -726,7 +726,7 @@ function Teacher() {
             >
               Анастасия
             </h2>
-            <p className="fade-in delay-100" style={{ fontSize: 17, color: '#E89A90', fontWeight: 500, marginBottom: 20 }}>
+            <p className="fade-in delay-100" style={{ fontSize: 17, color: '#E8A890', fontWeight: 500, marginBottom: 20 }}>
               Преподаватель английского языка
             </p>
 
