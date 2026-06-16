@@ -22,7 +22,9 @@ import {
 import { sendTelegramMessage } from './telegram/send'
 
 // Wave-A: 7 событий dispatch. Wave-B (2026-06-16) добавляет
-// LessonRescheduledByTeacher.
+// LessonRescheduledByTeacher. Wave-C (2026-06-16) — partial paths где
+// email уже работает (sendSbpClaimNotificationToTeacher,
+// sendLearnerDirectAssignNoticeEmail), но TG не было.
 export type LessonEventKind =
   | 'LessonCancelledByTeacher'
   | 'LessonCancelledByLearner'
@@ -32,6 +34,8 @@ export type LessonEventKind =
   | 'PaymentClaimConfirmed'
   | 'PaymentClaimDeclined'
   | 'PaymentRefundIssued'
+  | 'SbpClaimSubmittedByLearner'
+  | 'LessonDirectlyAssignedByTeacher'
 
 export type LessonEventPayloadBase = {
   /** Display-имя того, КТО совершил действие (для wording в template). */
@@ -104,6 +108,18 @@ function dedupKey(kind: LessonEventKind, ctx: LessonEventCtx, channel: 'email' |
   return `${kind}:${relatedId(ctx)}:${channel}:${ctx.iterSeq}`
 }
 
+export type DispatchOptions = {
+  /**
+   * Wave-C (2026-06-16) — позволяет отправлять ТОЛЬКО на нужный
+   * канал. Используется когда email уже шлётся через отдельный
+   * sender (sbp claim notify, direct-assign learner email) — мы
+   * хотим только дополнить TG без double-email.
+   *
+   * Default = ['email','telegram'] (Wave-A standard behavior).
+   */
+  channels?: ReadonlyArray<'email' | 'telegram'>
+}
+
 /**
  * Single entry point for Wave-A lesson notifications.
  *
@@ -115,7 +131,9 @@ function dedupKey(kind: LessonEventKind, ctx: LessonEventCtx, channel: 'email' |
 export async function dispatchLessonEvent(
   kind: LessonEventKind,
   ctx: LessonEventCtx,
+  options: DispatchOptions = {},
 ): Promise<DispatchResult> {
+  const allowedChannels = new Set(options.channels ?? ['email', 'telegram'])
   const result: DispatchResult = { email: 'skipped', telegram: 'skipped' }
   let recipient
   try {
@@ -151,7 +169,7 @@ export async function dispatchLessonEvent(
   }
 
   // ─── email ─────────────────────────────────────────────
-  {
+  if (allowedChannels.has('email')) {
     const key = dedupKey(kind, ctx, 'email')
     const alreadySent = await isAlreadySent(key)
     if (alreadySent) {
@@ -188,7 +206,7 @@ export async function dispatchLessonEvent(
   }
 
   // ─── telegram ──────────────────────────────────────────
-  {
+  if (allowedChannels.has('telegram')) {
     const key = dedupKey(kind, ctx, 'telegram')
     const alreadySent = await isAlreadySent(key)
     if (alreadySent) {

@@ -205,6 +205,38 @@ export function renderLessonEventEmail(
           `История: ${p.cabinetUrl}/payments\n\n— LevelChannel`,
       }
     }
+    // Wave-C (2026-06-16) — events для partial paths (email уже шлётся
+    // отдельным sender'ом, эти templates только для TG). Email шаблоны
+    // оставлены минимальными — если фолбэк на email когда-нибудь будет
+    // нужен, тут уже есть baseline.
+    case 'SbpClaimSubmittedByLearner': {
+      const amount = formatRub(p.amountKopecks)
+      return {
+        subject: `Новая заявка на оплату от ${p.actorDisplayName}`,
+        html:
+          `<p>Здравствуйте, ${escapeHtml(p.recipientDisplayName)}.</p>` +
+          `<p>${escapeHtml(p.actorDisplayName)} отправил заявку «Я оплатил» на <strong>${amount}</strong>.</p>` +
+          `<p>Подтвердить или отклонить: <a href="${escapeHtml(p.cabinetUrl)}/payments">${escapeHtml(p.cabinetUrl)}/payments</a></p>` +
+          `<p>— LevelChannel</p>`,
+        text:
+          `${p.actorDisplayName} отправил заявку «Я оплатил» на ${amount}.\n\n` +
+          `Кабинет: ${p.cabinetUrl}/payments\n\n— LevelChannel`,
+      }
+    }
+    case 'LessonDirectlyAssignedByTeacher': {
+      const when = formatRu(p.slotStartAtIso)
+      return {
+        subject: `Учитель назначил вам занятие на ${when}`,
+        html:
+          `<p>Здравствуйте, ${escapeHtml(p.recipientDisplayName)}.</p>` +
+          `<p>${escapeHtml(p.actorDisplayName)} назначил вам занятие на ${when}.</p>` +
+          `<p>Кабинет: <a href="${escapeHtml(p.cabinetUrl)}">${escapeHtml(p.cabinetUrl)}</a></p>` +
+          `<p>— LevelChannel</p>`,
+        text:
+          `${p.actorDisplayName} назначил вам занятие на ${when}.\n\n` +
+          `Кабинет: ${p.cabinetUrl}\n\n— LevelChannel`,
+      }
+    }
   }
 }
 
@@ -266,6 +298,16 @@ export function renderLessonEventTelegram(kind: LessonEventKind, p: RenderInput)
         `💸 Учитель оформил возврат *${amount}*\\.\n` +
         (reason ? `Причина: _${reason}_\n` : '') +
         `История: ${cabinetUrl}/payments`
+      )
+    case 'SbpClaimSubmittedByLearner':
+      return (
+        `💰 Ученик ${actor} отправил заявку «Я оплатил» на *${amount}*\\.\n` +
+        `Подтвердить: ${cabinetUrl}/payments`
+      )
+    case 'LessonDirectlyAssignedByTeacher':
+      return (
+        `📅 Учитель назначил вам занятие на *${when}*\\.\n` +
+        `Кабинет: ${cabinetUrl}`
       )
   }
 }
