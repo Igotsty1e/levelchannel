@@ -7,9 +7,12 @@
 // На выпадение row из списка после клика: optimistic update + refresh
 // после успешного ответа.
 //
-// «Оплачено наличкой» quick-action ИЗ Sub-PR 2 НЕ входит — это поле
-// делается на Sub-PR 3 через существующий createTeacherMarkPaid (модал
-// уже есть в /teacher/payments).
+// 2026-06-16 polish:
+//   - `embedded` prop: при true компонент рендерит ТОЛЬКО список
+//     (без `<section className="card">` + без h2 + без footer-link),
+//     чтобы DigestPreviewTile мог хостить его как подсекцию.
+//   - «Провёл» переведён с `primary` на `secondary` (outline без
+//     заливки) — менее акцентно по owner-feedback.
 
 import Link from 'next/link'
 import { useState } from 'react'
@@ -36,9 +39,15 @@ type Props = {
   initialSlots: LessonSlot[]
   /** Map slotId → learner display label (отображается в строке). */
   learnerLabels: Record<string, string>
+  /** Когда true — рендерится без card-обёртки/заголовка для встраивания. */
+  embedded?: boolean
 }
 
-export function RecentPastCard({ initialSlots, learnerLabels }: Props) {
+export function RecentPastCard({
+  initialSlots,
+  learnerLabels,
+  embedded = false,
+}: Props) {
   const [slots, setSlots] = useState<LessonSlot[]>(initialSlots)
   const [busy, setBusy] = useState<Set<string>>(new Set())
   const [err, setErr] = useState<string | null>(null)
@@ -70,24 +79,14 @@ export function RecentPastCard({ initialSlots, learnerLabels }: Props) {
 
   if (slots.length === 0) return null
 
-  return (
-    <section
-      className="card lc-section"
-      style={{ padding: 24 }}
-      aria-labelledby="recent-past-heading"
-    >
-      <h2
-        id="recent-past-heading"
-        style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}
-      >
-        Недавние прошедшие
-      </h2>
+  const listAndError = (
+    <>
       {err ? (
         <p style={{ color: 'var(--danger)', fontSize: 13, marginBottom: 8 }}>
           {err}
         </p>
       ) : null}
-      <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 16px' }}>
+      <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 12px' }}>
         {slots.map((s) => {
           const isBusy = busy.has(s.id)
           const learner = learnerLabels[s.id] ?? '—'
@@ -131,7 +130,7 @@ export function RecentPastCard({ initialSlots, learnerLabels }: Props) {
               </span>
               <span style={{ display: 'inline-flex', gap: 8, flexWrap: 'wrap' }}>
                 <Button
-                  variant="primary"
+                  variant="secondary"
                   size="sm"
                   onClick={() => mark(s.id, 'completed')}
                   disabled={isBusy}
@@ -151,6 +150,27 @@ export function RecentPastCard({ initialSlots, learnerLabels }: Props) {
           )
         })}
       </ul>
+    </>
+  )
+
+  if (embedded) {
+    // DigestPreviewTile сам рендерит divider + sub-heading + footer-link.
+    return listAndError
+  }
+
+  return (
+    <section
+      className="card lc-section"
+      style={{ padding: 24 }}
+      aria-labelledby="recent-past-heading"
+    >
+      <h2
+        id="recent-past-heading"
+        style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}
+      >
+        Недавние прошедшие
+      </h2>
+      {listAndError}
       <Link
         href="/teacher/lessons"
         className="btn-ghost"

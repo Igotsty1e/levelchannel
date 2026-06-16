@@ -45,8 +45,14 @@ type UpcomingSlot = {
 
 async function listUpcomingSlotsForTeacher(
   teacherAccountId: string,
+  teacherTz: string,
   limit = 3,
 ): Promise<UpcomingSlot[]> {
+  // 2026-06-16 polish: исключаем сегодняшние занятия — они уже видны
+  // внутри DigestPreviewTile. Фильтр по началу СЛЕДУЮЩИХ суток в
+  // часовом поясе учителя (`teacherTz`). Fallback на Europe/Moscow
+  // если tz пустой.
+  const tz = teacherTz && teacherTz.length > 0 ? teacherTz : 'Europe/Moscow'
   const r = await getDbPool().query<{
     id: string
     start_at: string
@@ -70,10 +76,10 @@ async function listUpcomingSlotsForTeacher(
        left join account_profiles ap on ap.account_id = la.id
       where s.teacher_account_id = $1
         and s.status in ('booked')
-        and s.start_at > now()
+        and s.start_at >= ((date_trunc('day', now() at time zone $3) + interval '1 day') at time zone $3)
       order by s.start_at asc
       limit $2`,
-    [teacherAccountId, limit],
+    [teacherAccountId, limit, tz],
   )
   return r.rows.map((row) => {
     const composed =
@@ -175,17 +181,20 @@ export default async function TeacherHomePage() {
   const teacherAccountId = current.account.id
 
   const todayYmd = new Date().toISOString().slice(0, 10)
+  // Сначала digest (для teacherTz), затем остальное параллельно.
+  // listUpcomingSlotsForTeacher теперь принимает tz чтобы фильтровать
+  // СЕГОДНЯШНИЕ занятия — они уже в дайджесте.
+  const digestPreview = await getTeacherDigestPreview(teacherAccountId)
+  const teacherTz = digestPreview.teacherTz || 'Europe/Moscow'
   const [
     upcomingSlots,
     recentPastSlots,
-    digestPreview,
     setupChecklist,
     teacherFirstName,
     financeSnapshot,
   ] = await Promise.all([
-    listUpcomingSlotsForTeacher(teacherAccountId, 3),
+    listUpcomingSlotsForTeacher(teacherAccountId, teacherTz, 3),
     listRecentPastUnmarkedSlots(teacherAccountId, 5),
-    getTeacherDigestPreview(teacherAccountId),
     computeTeacherSetupChecklist(teacherAccountId),
     loadTeacherFirstName(teacherAccountId),
     getTeacherFinanceSnapshot(teacherAccountId, todayYmd),
@@ -193,8 +202,6 @@ export default async function TeacherHomePage() {
   const recentPastLearnerLabels = await loadRecentPastLearnerLabels(
     recentPastSlots.map((s) => s.id),
   )
-
-  const teacherTz = digestPreview.teacherTz || 'Europe/Moscow'
   const now = new Date()
   const greeting = greetingForHour(now, teacherTz)
 
@@ -224,9 +231,22 @@ export default async function TeacherHomePage() {
 
       {/* Дайджест на сегодня — Sub-PR D из teacher-cabinet-polish.
           2026-06-12 (Задача 4): переехал НАВЕРХ под checklist. Что
-          важно прямо сейчас — главное; финансы — справа внизу. */}
+          важно прямо сейчас — главное; финансы — справа внизу.
+          2026-06-16 polish: «Недавние прошедшие» теперь подсекция
+          дайджеста, а не отдельная карточка. */}
       <div className="lc-section">
-        <DigestPreviewTile preview={digestPreview} />
+        <DigestPreviewTile
+          preview={digestPreview}
+          pastUnmarkedSection={
+            recentPastSlots.length > 0 ? (
+              <RecentPastCard
+                initialSlots={recentPastSlots}
+                learnerLabels={recentPastLearnerLabels}
+                embedded
+              />
+            ) : null
+          }
+        />
       </div>
 
       {/* Блок: Ближайшие занятия */}
@@ -304,16 +324,6 @@ export default async function TeacherHomePage() {
           Открыть календарь
         </Link>
       </section>
-
-      {/* Wave-2 lesson-history (2026-06-16) — карточка «Недавние
-          прошедшие» с quick-actions «Провёл» / «Не пришёл». Скрывается
-          (рендерит null) когда нет past booked без completion-row. */}
-      <div className="lc-section">
-        <RecentPastCard
-          initialSlots={recentPastSlots}
-          learnerLabels={recentPastLearnerLabels}
-        />
-      </div>
 
       {/* Финансы — Hero-вариант. 2026-06-12 (Задача 4): переехал
           ВНИЗ под расписание. Полезная справка, но не первое что

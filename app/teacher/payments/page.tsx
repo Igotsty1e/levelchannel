@@ -246,7 +246,13 @@ export default async function TeacherPaymentsPage() {
         </div>
       ) : null}
 
-      <ClaimsFeed initialClaims={claims} initialRefunds={refunds} />
+      {/* 2026-06-16 polish: ClaimsFeed возвращает фрагмент без внешнего
+          marginBottom, поэтому empty-state карточка налезала на
+          PolicyEditor (и на мобиле, и на десктопе). Делаем явный
+          spacing-обёртку. */}
+      <div style={{ marginBottom: 24 }}>
+        <ClaimsFeed initialClaims={claims} initialRefunds={refunds} />
+      </div>
 
       <PolicyEditor initial={policy} />
 
