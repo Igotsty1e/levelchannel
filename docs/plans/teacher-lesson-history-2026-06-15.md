@@ -1,6 +1,6 @@
 # Эпик B: Lesson-history page + quick actions для прошедших занятий
 
-Status: IN-PROGRESS 2026-06-16 · Owner: claude
+Status: SHIPPED 2026-06-16 · Owner: claude
 Parent: `docs/plans/teacher-master-flow-2026-06-15.md`
 Depends on: Wave-A notifications (эпик A) — SHIPPED 2026-06-16 (PR #646/#647/#648)
 Branch: `feat/lesson-history-wave-2-2026-06-16`
