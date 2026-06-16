@@ -493,27 +493,76 @@ export function LessonsSection({
                       >
                         Прошедшие
                       </p>
+                      {(() => {
+                        // Wave-D (2026-06-16): когда у ученика есть прошедшие
+                        // booked-без-оплаты И учитель не подключил СБП —
+                        // показываем банер. Покрывает кейс «занятие провели,
+                        // а заплатить можно только наличкой».
+                        const unpaidPast = past.filter(
+                          (s) =>
+                            s.status === 'booked'
+                            && !paidSet.has(s.id)
+                            && !refundedSet.has(s.id),
+                        )
+                        if (unpaidPast.length === 0) return null
+                        if (sbpPayEnabled) return null
+                        return (
+                          <div style={{ marginBottom: 8 }}>
+                            <Banner tone="warning">
+                              У вас {unpaidPast.length === 1 ? 'есть' : `${unpaidPast.length}`}{' '}
+                              {unpaidPast.length === 1
+                                ? 'прошедшее занятие без оплаты'
+                                : 'прошедших занятий без оплаты'}
+                              . Учитель пока не подключил приём оплаты онлайн —
+                              свяжитесь с ним напрямую, он зафиксирует факт оплаты.
+                            </Banner>
+                          </div>
+                        )
+                      })()}
                       <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                        {past.map((s) => (
-                          <li
-                            key={s.id}
-                            style={{
-                              padding: '10px 0',
-                              borderTop: '1px solid var(--border)',
-                              fontSize: 14,
-                              color: 'var(--secondary)',
-                            }}
-                          >
-                            {fmt(s.startAt, tz)} ·{' '}
-                            {s.durationMinutes} мин ·{' '}
-                            {derivedSlotLabel(
-                              s.status,
-                              s.startAt,
-                              paidSet.has(s.id),
-                              refundedSet.has(s.id),
-                            )}
-                          </li>
-                        ))}
+                        {past.map((s) => {
+                          const unpaid =
+                            s.status === 'booked'
+                            && !paidSet.has(s.id)
+                            && !refundedSet.has(s.id)
+                          return (
+                            <li
+                              key={s.id}
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                gap: 12,
+                                flexWrap: 'wrap',
+                                padding: '10px 0',
+                                borderTop: '1px solid var(--border)',
+                                fontSize: 14,
+                                color: 'var(--secondary)',
+                              }}
+                            >
+                              <span style={{ minWidth: 0, flex: '1 1 200px' }}>
+                                {fmt(s.startAt, tz)} ·{' '}
+                                {s.durationMinutes} мин ·{' '}
+                                {derivedSlotLabel(
+                                  s.status,
+                                  s.startAt,
+                                  paidSet.has(s.id),
+                                  refundedSet.has(s.id),
+                                )}
+                              </span>
+                              {sbpPayEnabled && unpaid ? (
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => setPayTarget(s)}
+                                  disabled={busy}
+                                >
+                                  Оплатить
+                                </Button>
+                              ) : null}
+                            </li>
+                          )
+                        })}
                       </ul>
                     </>
                   ) : null}
