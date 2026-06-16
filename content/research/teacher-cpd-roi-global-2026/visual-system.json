@@ -1,0 +1,17 @@
+{
+  "hero": {
+    "kind": "stat-grid"
+  },
+  "section_accents": {
+    "where-money-goes": "rose",
+    "ai-adoption": "rose",
+    "ai-training-gap": "warm-amber",
+    "ai-time-savings": "coral",
+    "coaching": "peach",
+    "degrees-microcred": "info",
+    "platform-boom": "rose",
+    "regional": "warm-amber",
+    "limits": "warning",
+    "outlook-method": "info"
+  }
+}

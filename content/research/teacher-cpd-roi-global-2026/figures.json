@@ -1,0 +1,137 @@
+{
+  "figures": {
+    "fig_adoption_trend": {
+      "section_id": "ai-adoption",
+      "kind": "columns",
+      "accent": "rose",
+      "unit": "%",
+      "title": "Доля учителей США с ИИ в работе",
+      "data": [
+        {"label": "2023-24 (RAND)", "value": 25},
+        {"label": "2024-25 ELA/Math/Sci", "value": 53, "highlight": true},
+        {"label": "2024-25 any-use", "value": 60, "highlight": true}
+      ]
+    },
+    "fig_training_progression": {
+      "section_id": "ai-training-gap",
+      "kind": "columns",
+      "accent": "warm-amber",
+      "unit": "%",
+      "title": "Учителя США с AI-training: четыре волны EdWeek",
+      "data": [
+        {"label": "2023", "value": 13},
+        {"label": "Jan-Mar 2024", "value": 29},
+        {"label": "Spring 2024", "value": 30},
+        {"label": "Oct 2024", "value": 42},
+        {"label": "Fall 2025", "value": 50, "highlight": true}
+      ]
+    },
+    "fig_use_split": {
+      "section_id": "ai-time-savings",
+      "kind": "compare-pies",
+      "accent": "coral",
+      "title": "Как часто учителя США применяют ИИ (Walton/Gallup, 2025)",
+      "data": [
+        {"label": "Еженедельно", "percent": 32},
+        {"label": "Реже", "percent": 28},
+        {"label": "Не используют", "percent": 40}
+      ]
+    },
+    "fig_walton_savings": {
+      "section_id": "ai-time-savings",
+      "kind": "metric-strip",
+      "accent": "warm-amber",
+      "title": "AI Dividend в цифрах (Walton/Gallup, 2025)",
+      "data": [
+        {"value": "5,9 ч/нед", "label": "среднее у weekly users"},
+        {"value": "≈6 нед", "label": "за учебный год"},
+        {"value": ">80%", "label": "savings на worksheets"},
+        {"value": "≤16%", "label": "говорят quality упала"}
+      ]
+    },
+    "fig_coaching_effect": {
+      "section_id": "coaching",
+      "kind": "hbar",
+      "accent": "rose",
+      "unit": "SD",
+      "title": "Coaching effect-sizes (Kraft et al., meta of 60 RCT)",
+      "data": [
+        {"label": "На качество преподавания", "value": 0.49, "highlight": true},
+        {"label": "На достижения учеников", "value": 0.18}
+      ]
+    },
+    "fig_masters_premium": {
+      "section_id": "degrees-microcred",
+      "kind": "hbar",
+      "accent": "peach",
+      "unit": "USD",
+      "title": "Master's premium для US учителя (NEA 2024)",
+      "data": [
+        {"label": "Первый год", "value": 3652},
+        {"label": "Ветеран (peak)", "value": 10457, "highlight": true}
+      ]
+    },
+    "fig_vendor_growth": {
+      "section_id": "platform-boom",
+      "kind": "hbar",
+      "accent": "info",
+      "unit": "users (millions)",
+      "title": "Adoption AI-инструментов для учителей (vendor-self-reported)",
+      "data": [
+        {"label": "Coursera (всего learners, 2024)", "value": 168.2, "highlight": true},
+        {"label": "MagicSchool (educators, Oct 2025)", "value": 6.0},
+        {"label": "Khanmigo (users, mid-2025)", "value": 2.0},
+        {"label": "Khanmigo (2023-24, кейс)", "value": 0.068}
+      ]
+    },
+    "fig_uk_regional": {
+      "section_id": "regional",
+      "kind": "compare-pies",
+      "accent": "warning",
+      "title": "Британский CPD: deck quality vs adoption",
+      "data": [
+        {"label": "Соотв. гос-стандарту", "percent": 11},
+        {"label": "Не соотв.", "percent": 89}
+      ]
+    },
+    "fig_uk_vs_oecd_hours": {
+      "section_id": "regional",
+      "kind": "hbar",
+      "accent": "warm-amber",
+      "unit": "часов/год",
+      "title": "CPD-часы в год: UK vs OECD среднее",
+      "data": [
+        {"label": "UK secondary (EPI 2024)", "value": 43},
+        {"label": "OECD среднее", "value": 62, "highlight": true},
+        {"label": "Австралия (~5 act × 10 ч)", "value": 50}
+      ]
+    },
+    "fig_quote_adopting": {
+      "section_id": "ai-training-gap",
+      "kind": "pull-quote",
+      "accent": "rose",
+      "data": {
+        "text": "В 2023-м учителей, использующих ИИ, было больше, чем учителей, прошедших тренинг. Adopting раньше, чем учится.",
+        "attribution": "Анализ EdWeek 2023-25"
+      }
+    },
+    "fig_quote_vendor_gap": {
+      "section_id": "platform-boom",
+      "kind": "pull-quote",
+      "accent": "info",
+      "data": {
+        "text": "Vendor self-test показывает +6 пп. Independent peer-review не находит statistically significant difference. Доказательной базы «работает лучше альтернатив» пока нет.",
+        "attribution": "Khan Academy vs Journal of Teaching and Learning, 2025"
+      }
+    },
+    "fig_quote_uk_waste": {
+      "section_id": "regional",
+      "kind": "pull-quote",
+      "accent": "warning",
+      "data": {
+        "text": "Великобритания не недо-инвестирует в CPD — она нерационально его тратит. 89% бюджета идёт в форматы, которые не проходят гос-стандарт качества.",
+        "attribution": "EPI 2024 — анализ"
+      }
+    }
+  }
+}
