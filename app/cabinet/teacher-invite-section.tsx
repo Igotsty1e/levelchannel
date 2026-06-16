@@ -632,7 +632,7 @@ function PaymentSetupSection({
       <CollapsibleCard
         title="Настроить тип оплаты"
         description="Выберите один или несколько вариантов"
-        defaultOpen={active}
+        defaultOpen={false}
       >
         <InviteMultiGroup
           title="Установить тариф"
