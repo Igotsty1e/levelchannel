@@ -474,7 +474,9 @@ const leadStyle: React.CSSProperties = {
 }
 
 const errorStyle: React.CSSProperties = {
-  color: '#E89A90',
+  // 2026-06-17 audit: было `#E89A90` (опечатка/раунд-апа акцента).
+  // Errors на этой странице должны использовать --danger токен.
+  color: 'var(--danger)',
   fontSize: 13,
   marginBottom: 16,
 }

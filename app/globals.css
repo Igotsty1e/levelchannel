@@ -441,7 +441,8 @@ body {
   border-radius: 100px;
   font-size: 13px;
   font-weight: 500;
-  color: #E89A90;
+  /* 2026-06-17 audit: было #E89A90 (опечатка) — канонический акцент #E8A890. */
+  color: #E8A890;
   margin-bottom: 16px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
