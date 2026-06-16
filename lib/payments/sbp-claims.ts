@@ -254,6 +254,35 @@ export async function createTeacherMarkPaid(
     }
 
     await client.query('commit')
+
+    // Wave-A: notify learner about teacher mark-paid. Best-effort
+    // post-commit dispatch. Bulk mark-paid → 1 dispatch per claim,
+    // not per item (single confirmed claim covers multiple slots).
+    try {
+      const { dispatchLessonEvent } = await import(
+        '@/lib/notifications/lesson-event-dispatch'
+      )
+      await dispatchLessonEvent('LessonMarkedPaidByTeacher', {
+        slotId: itemRecords[0]?.slotId ?? undefined,
+        claimId,
+        recipientAccountId: input.learnerAccountId,
+        recipientRole: 'learner',
+        // No slot.events array here — claim is new; iter_seq=1 (single
+        // mark-paid event for this claim). If teacher edits later, the
+        // edit goes through confirm/decline routes which carry their
+        // own iter_seq.
+        iterSeq: 1,
+        payload: {
+          actorDisplayName: teacherName,
+          recipientDisplayName: learnerName,
+          amountKopecks: input.amountKopecks,
+          reasonText: input.note ?? undefined,
+        },
+      })
+    } catch (e) {
+      console.error('[createTeacherMarkPaid] dispatch failed', e)
+    }
+
     return { ok: true, claimId }
   } catch (e) {
     await client.query('rollback').catch(() => {})
@@ -1078,16 +1107,47 @@ export async function confirmClaim(
   claimId: string,
 ): Promise<ResolveResult> {
   const pool = getDbPool()
-  const r = await pool.query<{ status: string }>(
+  const r = await pool.query<{
+    status: string
+    learner_account_id: string
+    teacher_display_name_snapshot: string | null
+    learner_display_name_snapshot: string | null
+    amount_kopecks: number
+  }>(
     `update payment_claims
         set status = 'confirmed', resolved_at = now()
       where id = $1
         and teacher_account_id = $2
         and status = 'claimed'
-      returning status`,
+      returning status, learner_account_id,
+                teacher_display_name_snapshot,
+                learner_display_name_snapshot,
+                amount_kopecks`,
     [claimId, teacherAccountId],
   )
-  if (r.rows[0]) return { ok: true, status: 'confirmed' }
+  if (r.rows[0]) {
+    // Wave-A: notify learner that teacher confirmed their claim.
+    const row = r.rows[0]
+    try {
+      const { dispatchLessonEvent } = await import(
+        '@/lib/notifications/lesson-event-dispatch'
+      )
+      await dispatchLessonEvent('PaymentClaimConfirmed', {
+        claimId,
+        recipientAccountId: row.learner_account_id,
+        recipientRole: 'learner',
+        iterSeq: 1,
+        payload: {
+          actorDisplayName: row.teacher_display_name_snapshot ?? 'Учитель',
+          recipientDisplayName: row.learner_display_name_snapshot ?? 'Ученик',
+          amountKopecks: Number(row.amount_kopecks),
+        },
+      })
+    } catch (e) {
+      console.error('[confirmClaim] dispatch failed', e)
+    }
+    return { ok: true, status: 'confirmed' }
+  }
   const cur = await pool.query<{ status: string }>(
     `select status from payment_claims
       where id = $1 and teacher_account_id = $2`,
@@ -1107,16 +1167,49 @@ export async function declineClaim(
   note: string | null,
 ): Promise<ResolveResult> {
   const pool = getDbPool()
-  const r = await pool.query<{ status: string }>(
+  const r = await pool.query<{
+    status: string
+    learner_account_id: string
+    teacher_display_name_snapshot: string | null
+    learner_display_name_snapshot: string | null
+    amount_kopecks: number
+  }>(
     `update payment_claims
         set status = 'declined', resolved_at = now(), note_teacher = $3
       where id = $1
         and teacher_account_id = $2
         and status = 'claimed'
-      returning status`,
+      returning status, learner_account_id,
+                teacher_display_name_snapshot,
+                learner_display_name_snapshot,
+                amount_kopecks`,
     [claimId, teacherAccountId, note],
   )
-  if (r.rows[0]) return { ok: true, status: 'declined' }
+  if (r.rows[0]) {
+    // Wave-A: notify learner that teacher declined their claim.
+    // Учеnik должен видеть почему — иначе невозможно исправить.
+    const row = r.rows[0]
+    try {
+      const { dispatchLessonEvent } = await import(
+        '@/lib/notifications/lesson-event-dispatch'
+      )
+      await dispatchLessonEvent('PaymentClaimDeclined', {
+        claimId,
+        recipientAccountId: row.learner_account_id,
+        recipientRole: 'learner',
+        iterSeq: 1,
+        payload: {
+          actorDisplayName: row.teacher_display_name_snapshot ?? 'Учитель',
+          recipientDisplayName: row.learner_display_name_snapshot ?? 'Ученик',
+          amountKopecks: Number(row.amount_kopecks),
+          reasonText: note ?? undefined,
+        },
+      })
+    } catch (e) {
+      console.error('[declineClaim] dispatch failed', e)
+    }
+    return { ok: true, status: 'declined' }
+  }
   const cur = await pool.query<{ status: string }>(
     `select status from payment_claims
       where id = $1 and teacher_account_id = $2`,
