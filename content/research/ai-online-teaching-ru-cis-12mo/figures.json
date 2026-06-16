@@ -1,0 +1,251 @@
+{
+  "figures": {
+    "fig_adoption_pies": {
+      "accent": "coral",
+      "data": [
+        {
+          "label": "Педагоги: видят пользу",
+          "percent": 80
+        },
+        {
+          "label": "Педагоги: используют",
+          "percent": 33
+        },
+        {
+          "label": "Студенты: за ИИ",
+          "percent": 71
+        }
+      ],
+      "kind": "compare-pies",
+      "section_id": "teachers",
+      "title": "Восприятие vs использование ИИ — три ракурса"
+    },
+    "fig_growth_compare": {
+      "accent": "warm-amber",
+      "data": [
+        {
+          "label": "Рынок (топ-100)",
+          "value": 12
+        },
+        {
+          "highlight": true,
+          "label": "Нейросети, YoY",
+          "value": 15
+        },
+        {
+          "highlight": true,
+          "label": "ML, QoQ",
+          "value": 60
+        },
+        {
+          "highlight": true,
+          "label": "«Синергия», YoY",
+          "value": 43
+        }
+      ],
+      "kind": "columns",
+      "section_id": "ai-engine",
+      "title": "Темпы роста сегментов, Q3 2025",
+      "unit": "%"
+    },
+    "fig_quote_market": {
+      "accent": "rose",
+      "data": {
+        "attribution": "Что говорит замедление на 7 пп",
+        "text": "Не катастрофа — смена режима. Расширение уступило место эффективности."
+      },
+      "kind": "pull-quote",
+      "section_id": "market"
+    },
+    "fig_quote_teachers": {
+      "accent": "coral",
+      "data": {
+        "attribution": "Разрыв «80% видят пользу — 33% применяют»",
+        "text": "Технология воспринята полезной задолго до того, как ею начинают пользоваться ежедневно."
+      },
+      "kind": "pull-quote",
+      "section_id": "teachers"
+    },
+    "fig_quote_tutors": {
+      "accent": "peach",
+      "data": {
+        "attribution": "Почему репетиторы — главный канал ИИ-проникновения",
+        "text": "Когда 97% уже работают онлайн, попробовать GigaChat стоит ровно столько, сколько время на регистрацию."
+      },
+      "kind": "pull-quote",
+      "section_id": "tutors"
+    },
+    "fig_ru_vs_kz": {
+      "accent": "info",
+      "data": [
+        {
+          "label": "РФ 2024",
+          "value": 19
+        },
+        {
+          "label": "РФ 2025",
+          "value": 12
+        },
+        {
+          "highlight": true,
+          "label": "Казахстан 2024",
+          "value": 20
+        }
+      ],
+      "kind": "columns",
+      "section_id": "kz",
+      "title": "Темп роста онлайн-образования: РФ vs Казахстан",
+      "unit": "%"
+    },
+    "fig_timeline_2025": {
+      "accent": "rose",
+      "data": [
+        {
+          "date": "нач. 2025",
+          "event": "Релиз GigaChat 2.0 (RU-first)",
+          "kind": "fact"
+        },
+        {
+          "date": "Q3 2025",
+          "event": "ИИ-сегмент +15% YoY",
+          "kind": "fact"
+        },
+        {
+          "date": "конец 2025",
+          "event": "80% видят пользу ИИ",
+          "kind": "fact"
+        },
+        {
+          "date": "2026",
+          "event": "Гипотеза: ≥30% компаний с ИИ-тьюторами",
+          "kind": "hypothesis"
+        },
+        {
+          "date": "2026",
+          "event": "Гипотеза: разрыв 80/33 → 65/50",
+          "kind": "hypothesis"
+        }
+      ],
+      "kind": "timeline",
+      "section_id": "outlook",
+      "title": "Где мы и куда смотрим (2025 → 2026)"
+    },
+    "fig_top10_revenue": {
+      "accent": "rose",
+      "data": [
+        {
+          "highlight": true,
+          "label": "Корпорация «Синергия»",
+          "sub": "+26,3% YoY",
+          "value": 16.1
+        },
+        {
+          "label": "Skillbox",
+          "sub": "+5,3%",
+          "value": 12.8
+        },
+        {
+          "label": "Skyeng",
+          "sub": "+5,2%",
+          "value": 12.7
+        },
+        {
+          "label": "«Яндекс Практикум»",
+          "sub": "+6,7%",
+          "value": 8.8
+        },
+        {
+          "highlight": true,
+          "label": "«Учи.ру»",
+          "sub": "+18%",
+          "value": 7.2
+        },
+        {
+          "label": "GetCourse",
+          "sub": "−1,8%",
+          "value": 6.6
+        },
+        {
+          "label": "«Фоксфорд»",
+          "sub": "+12,2%",
+          "value": 5.8
+        },
+        {
+          "highlight": true,
+          "label": "«Умскул»",
+          "sub": "+34%",
+          "value": 5.3
+        },
+        {
+          "label": "«Актион Университет»",
+          "sub": "+15,7%",
+          "value": 5.2
+        },
+        {
+          "highlight": true,
+          "label": "«100балльный репетитор»",
+          "sub": "+118,4%",
+          "value": 4.4
+        }
+      ],
+      "kind": "hbar",
+      "section_id": "top10",
+      "subtitle": "млрд рублей, +YoY",
+      "title": "Топ-10 EdTech-компаний России по выручке за 2025 г.",
+      "unit": "млрд ₽"
+    },
+    "fig_tutors_metric_strip": {
+      "accent": "peach",
+      "data": [
+        {
+          "label": "работают онлайн (68% — только онлайн)",
+          "value": "97%"
+        },
+        {
+          "label": "зарабатывают >80 тыс. ₽/мес",
+          "value": "33%"
+        },
+        {
+          "label": "женщины",
+          "value": "95%"
+        },
+        {
+          "label": "респондентов опроса",
+          "value": "1717"
+        }
+      ],
+      "kind": "metric-strip",
+      "section_id": "tutors",
+      "title": "Профиль рынка репетиторов"
+    },
+    "fig_tutors_subjects": {
+      "accent": "peach",
+      "data": [
+        {
+          "highlight": true,
+          "label": "Иностранные языки",
+          "value": 31
+        },
+        {
+          "highlight": true,
+          "label": "Математика",
+          "value": 23
+        },
+        {
+          "highlight": true,
+          "label": "Программирование",
+          "value": 16
+        },
+        {
+          "highlight": true,
+          "label": "Русский язык",
+          "value": 15
+        }
+      ],
+      "kind": "hbar",
+      "section_id": "tutors",
+      "title": "Спрос на репетиторов по предметам, 2025",
+      "unit": "%"
+    }
+  }
+}

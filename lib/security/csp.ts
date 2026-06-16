@@ -48,7 +48,7 @@ export function assembleCsp({ nonce }: CspOptions): string {
     // GA / GTM allowlist entries kept per Open Question #1 (decision
     // deferred 2026-05-08); will be dropped once GA wiring intent is
     // resolved.
-    `script-src 'self' 'nonce-${nonce}' https://widget.cloudpayments.ru https://www.googletagmanager.com https://www.google-analytics.com`,
+    `script-src 'self' 'nonce-${nonce}' https://widget.cloudpayments.ru https://www.googletagmanager.com https://www.google-analytics.com https://mc.yandex.ru`,
     // PR 4 — split: `style-src` originally dropped `'unsafe-inline'`
     // because empirically there were 0 inline `<style>` blocks. PR
     // 2026-06-09 (landing-v3 promote) added 6 `<style>{...}</style>`
@@ -61,9 +61,9 @@ export function assembleCsp({ nonce }: CspOptions): string {
     `style-src 'self' 'unsafe-inline'`,
     `style-src-attr 'unsafe-inline'`,
     `font-src 'self'`,
-    `img-src 'self' data: https://*.cloudpayments.ru`,
-    `connect-src 'self' https://api.cloudpayments.ru https://widget.cloudpayments.ru https://*.cloudpayments.ru https://www.google-analytics.com https://region1.google-analytics.com https://*.ingest.de.sentry.io https://*.ingest.sentry.io`,
-    `frame-src 'self' https://widget.cloudpayments.ru https://*.cloudpayments.ru`,
+    `img-src 'self' data: https://*.cloudpayments.ru https://mc.yandex.ru`,
+    `connect-src 'self' https://api.cloudpayments.ru https://widget.cloudpayments.ru https://*.cloudpayments.ru https://www.google-analytics.com https://region1.google-analytics.com https://*.ingest.de.sentry.io https://*.ingest.sentry.io https://mc.yandex.ru`,
+    `frame-src 'self' https://widget.cloudpayments.ru https://*.cloudpayments.ru https://mc.yandex.ru`,
     `worker-src 'self' blob:`,
   ]
 
