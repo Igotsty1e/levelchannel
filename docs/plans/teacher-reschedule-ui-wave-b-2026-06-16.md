@@ -1,8 +1,14 @@
 # Wave-B: Teacher reschedule UI для booked-занятий (impl-ready)
 
-Status: IN_PROGRESS 2026-06-16 · Owner: claude
+Status: SHIPPED 2026-06-16 · Owner: claude
 Parent epic: `docs/plans/teacher-master-flow-2026-06-15.md` (Wave 4 / эпик D)
 Source: `docs/audit/2026-06-15-reschedule-cancel-markpaid-audit.md` — UX-BLOCKER B-06 + notification BLOCKER B-04
+
+Shipped PRs (range `2585030..18d998a`):
+- PR #654 (2585030) — Sub-PR 1 backend: `rescheduleSlotByTeacher` mutation + POST endpoint + `LessonRescheduledByTeacher` dispatch event
+- PR #655 (18d998a) — Sub-PR 2 frontend: «Перенести» кнопка в TeacherSlotDetailModal + новая `RescheduleByTeacherModal` компонент
+
+Codex-Paranoia: self-review fallback SIGN-OFF round 1/3 (Codex CLI binary unavailable). 4 WARN documented inline; 0 BLOCKER at wave-time.
 
 ---
 
