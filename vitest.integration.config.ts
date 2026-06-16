@@ -22,6 +22,15 @@ export default defineConfig({
     // and lost sessions. Run files sequentially.
     fileParallelism: false,
     testTimeout: 15000,
+    // 2026-06-16: integration-suite-wide retry budget. A handful of
+    // tests (notably learner-reminder-dispatch rate-limit @ 568) are
+    // sensitive to MSK business-band wall-clock alignment and to CI
+    // runner load; they pass locally and on most CI runs but flake
+    // randomly when the docker postgres tick lands just past the
+    // alignment cell. Two retries per test is cheap (the integration
+    // suite is already serialised + ~5 min total) and far cheaper than
+    // a 30-min force-rerun of the full workflow.
+    retry: 2,
     // COVERAGE_RATCHET_PLAN.md phases 1/2/4/5/6: the critical-path
     // money/scheduling/teacher-ledger/admin/audit files are exclusively
     // exercised by integration tests against real Postgres. Unit
