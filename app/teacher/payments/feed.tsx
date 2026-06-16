@@ -6,7 +6,7 @@
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 
-import { Button, Pill } from '@/components/ui/primitives'
+import { Button, EmptyState, Pill } from '@/components/ui/primitives'
 import { localizeTeacherError } from '@/lib/i18n/teacher-errors'
 import type { ClaimRow, ClaimStatus } from '@/lib/payments/sbp-claims'
 import type { RefundRow } from '@/lib/payments/sbp-refunds'
@@ -243,19 +243,14 @@ export function ClaimsFeed({
       ) : null}
 
       {renderList.length === 0 ? (
-        <div
-          className="card"
-          style={{
-            padding: 24,
-            color: 'var(--secondary)',
-            fontSize: 14,
-            lineHeight: 1.6,
-          }}
-        >
-          {tab === 'pending'
-            ? 'Сейчас нет заявок, ожидающих вашего подтверждения.'
-            : 'История пуста.'}
-        </div>
+        <EmptyState
+          title={tab === 'pending' ? 'Сейчас нет заявок' : 'История пуста'}
+          body={
+            tab === 'pending'
+              ? 'Когда ученики отправят заявки «Я оплатил», они появятся здесь.'
+              : 'Подтверждённые и отклонённые заявки будут показываться в этой вкладке.'
+          }
+        />
       ) : (
         <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 12 }}>
           {renderList.map((c) => {
