@@ -4,7 +4,6 @@ import type { Figure, ResearchPost, SourceRow } from '@/lib/research/types'
 
 import './research-tokens.css'
 
-import { ResearchFigure } from './ResearchFigure'
 import { ResearchSection } from './ResearchSection'
 
 const RU_MONTHS = [
@@ -32,12 +31,6 @@ function humanSourceKind(tier?: SourceRow['quality_tier']): string {
     default:
       return ''
   }
-}
-
-function authorInitials(name?: string): string {
-  if (!name) return 'LC'
-  const words = name.split(/\s+/).filter(Boolean).slice(0, 2)
-  return words.map((w) => w[0]?.toUpperCase() ?? '').join('') || 'LC'
 }
 
 function buildJsonLd(post: ResearchPost): object[] {
@@ -101,76 +94,34 @@ function buildJsonLd(post: ResearchPost): object[] {
   return out
 }
 
-function HeroStatGrid({
+function ByTheNumbersStrip({
   cards,
 }: {
   cards: ResearchPost['structured']['hero']['cards']
 }) {
   if (!cards.length) return null
   return (
-    <section className="rs-hero-stats" aria-label="Главные цифры">
-      {cards.map((c, i) => (
-        <div className="rs-stat-card" key={`${c.label}-${i}`} data-accent={c.accent ?? 'rose'}>
-          <div className="rs-stat-label">{c.label}</div>
-          <div className="rs-stat-value">{c.value}</div>
-          {c.trend ? <div className="rs-stat-trend">{c.trend}</div> : null}
-          {c.footnote ? <div className="rs-stat-foot">{c.footnote}</div> : null}
+    <section className="rs-bynumbers" aria-label="Главные цифры">
+      {cards.slice(0, 4).map((c, i) => (
+        <div key={`${c.label}-${i}`} className="col">
+          <div className="label">{c.label}</div>
+          <div className="value">{c.value}</div>
+          {c.trend ? <div className="trend">{c.trend}</div> : null}
+          {c.footnote ? <div className="foot">{c.footnote}</div> : null}
         </div>
       ))}
     </section>
   )
 }
 
-function HeroInfographic({ composition }: { composition: NonNullable<ResearchPost['visualSystem']['hero']>['composition'] }) {
-  if (!composition) return null
-  return (
-    <section
-      className="rs-hero-stats"
-      aria-label="Главные цифры"
-      style={{ display: 'block', padding: '28px 28px 24px', border: '1px solid var(--v4-rule)', borderRadius: 16, background: 'var(--rs-surface-1)' }}
-    >
-      {composition.headline ? (
-        <div
-          style={{
-            fontSize: 13,
-            letterSpacing: '0.08em',
-            color: 'var(--v4-text-muted)',
-            marginBottom: 18,
-            textTransform: 'uppercase',
-          }}
-        >
-          {composition.headline}
-        </div>
-      ) : null}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-          gap: 16,
-        }}
-      >
-        {(composition.metrics ?? []).map((m, i) => (
-          <div key={`${m.label}-${i}`}>
-            <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--v4-text-primary)', fontFeatureSettings: '"tnum" on' }}>
-              {m.value}
-            </div>
-            <div style={{ fontSize: 12.5, color: 'var(--v4-text-muted)', marginTop: 4 }}>{m.label}</div>
-            {m.trend ? (
-              <div style={{ fontSize: 12.5, color: 'var(--v4-accent-end)', marginTop: 4 }}>{m.trend}</div>
-            ) : null}
-          </div>
-        ))}
-      </div>
-    </section>
-  )
-}
-
 export function ResearchArticle({ post }: { post: ResearchPost }) {
   const { seo, structured, figures, visualSystem, sources } = post
-  const sectionAccents = visualSystem.section_accents ?? {}
-  const heroKind = visualSystem.hero?.kind ?? 'stat-grid'
+  const jsonLdBlocks = buildJsonLd(post)
+  const shareUrl = seo.canonical_url || ''
+  const shareText = seo.title || ''
+  const enc = encodeURIComponent
 
-  // Group figures by section_id
+  // Group figures by section_id for inline placement.
   const figsBySection: Record<string, Array<[string, Figure]>> = {}
   for (const [fid, fig] of Object.entries(figures)) {
     const sid = fig.section_id
@@ -178,12 +129,8 @@ export function ResearchArticle({ post }: { post: ResearchPost }) {
     if (!figsBySection[sid]) figsBySection[sid] = []
     figsBySection[sid].push([fid, fig])
   }
-
+  const sectionAccents = visualSystem.section_accents ?? {}
   const tldr = seo.tldr ?? []
-  const jsonLdBlocks = buildJsonLd(post)
-  const shareUrl = seo.canonical_url || ''
-  const shareText = seo.title || ''
-  const enc = encodeURIComponent
 
   return (
     <article className="research-article">
@@ -194,149 +141,169 @@ export function ResearchArticle({ post }: { post: ResearchPost }) {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(block) }}
         />
       ))}
-      <div className="rs-container">
-        <nav aria-label="Хлебные крошки" style={{ fontSize: 12.5, color: 'var(--v4-text-muted)', marginBottom: 12 }}>
-          <Link href="/" style={{ color: 'inherit', textDecoration: 'none' }}>Главная</Link>
-          <span style={{ margin: '0 8px' }}>›</span>
-          <Link href="/research" style={{ color: 'inherit', textDecoration: 'none' }}>Research</Link>
+      <div className="rs-frame">
+        <nav className="rs-crumbs" aria-label="Хлебные крошки">
+          <Link href="/">Главная</Link>
+          <span className="sep">/</span>
+          <Link href="/research">Research</Link>
         </nav>
 
         <header className="rs-masthead">
-          <div className="rs-badge">Level Channel · Research</div>
+          <div className="rs-kicker">Level Channel · Research</div>
           <h1 className="rs-h1">{structured.hero.title}</h1>
           <p className="rs-lede">{structured.hero.lede}</p>
-          <div className="rs-meta">{structured.hero.meta}</div>
+          <div className="rs-byline">
+            {seo.author?.name ? (
+              <span>
+                <strong>{seo.author.name}</strong>
+              </span>
+            ) : null}
+            {seo.published_at ? (
+              <>
+                <span className="dot">·</span>
+                <span>{formatDateRu(seo.published_at)}</span>
+              </>
+            ) : null}
+            {seo.reading_time_minutes ? (
+              <>
+                <span className="dot">·</span>
+                <span>{seo.reading_time_minutes} мин чтения</span>
+              </>
+            ) : null}
+            {structured.hero.meta ? (
+              <>
+                <span className="dot">·</span>
+                <span>{structured.hero.meta}</span>
+              </>
+            ) : null}
+          </div>
         </header>
 
-        {tldr.length > 0 ? (
-          <aside className="rs-tldr" aria-label="Кратко">
-            <div className="rs-tldr-label">Кратко</div>
-            <ul>
-              {tldr.map((t, i) => (
-                <li key={i}>{t}</li>
+        <ByTheNumbersStrip cards={structured.hero.cards} />
+
+        <div className="rs-body">
+          <aside className="rs-toc" aria-label="Содержание">
+            <div className="rs-toc-label">Содержание</div>
+            <ol>
+              {structured.sections.map((s) => (
+                <li key={s.id}>
+                  <a href={`#${s.id}`}>{s.title}</a>
+                </li>
               ))}
-            </ul>
+            </ol>
           </aside>
-        ) : null}
 
-        <nav className="rs-toc" aria-label="Содержание">
-          <span className="rs-toc-label">Содержание</span>
-          <ol>
-            {structured.sections.map((s) => (
-              <li key={s.id}>
-                <a href={`#${s.id}`}>{s.title}</a>
-              </li>
-            ))}
-          </ol>
-        </nav>
-
-        {heroKind === 'infographic' && visualSystem.hero?.composition ? (
-          <HeroInfographic composition={visualSystem.hero.composition} />
-        ) : (
-          <HeroStatGrid cards={structured.hero.cards} />
-        )}
-
-        {structured.sections.map((s) => (
-          <ResearchSection
-            key={s.id}
-            section={s}
-            accent={sectionAccents[s.id] ?? 'rose'}
-            figures={figsBySection[s.id] ?? []}
-          />
-        ))}
-
-        <footer className="rs-article-footer">
-          <div className="rs-author-block">
-            <div className="rs-author-avatar" aria-hidden>
-              {authorInitials(seo.author?.name)}
-            </div>
-            <div>
-              <div className="rs-author-name">{seo.author?.name ?? 'Редакция Level Channel'}</div>
-              {seo.author?.bio ? (
-                <div className="rs-author-bio">{seo.author.bio}</div>
-              ) : null}
-              <div className="rs-author-dates">
-                {seo.published_at ? `опубликовано ${formatDateRu(seo.published_at)}` : ''}
-                {seo.modified_at && seo.modified_at !== seo.published_at
-                  ? ` · обновлено ${formatDateRu(seo.modified_at)}`
-                  : ''}
-                {seo.reading_time_minutes ? ` · ${seo.reading_time_minutes} мин чтения` : ''}
-              </div>
-            </div>
-          </div>
-
-          <div className="rs-cta-strip">
-            <div className="rs-cta-h">Получать новые исследования первыми</div>
-            <div className="rs-cta-sub">
-              Один раз в месяц — обзор рынка EdTech и применения ИИ в обучении. Без спама, отписка в один клик.
-            </div>
-            <div className="rs-cta-row">
-              <Link href="/research#subscribe" className="rs-cta-btn">
-                Подписаться на дайджест
-              </Link>
-              <Link href="/" className="rs-cta-btn ghost">
-                О Level Channel
-              </Link>
-            </div>
-          </div>
-
-          <div className="rs-share-strip">
-            <span className="rs-share-label">Поделиться:</span>
-            <a
-              href={`https://t.me/share/url?url=${enc(shareUrl)}&text=${enc(shareText)}`}
-              rel="noopener"
-              target="_blank"
-            >
-              Telegram
-            </a>
-            <a
-              href={`https://twitter.com/intent/tweet?url=${enc(shareUrl)}&text=${enc(shareText)}`}
-              rel="noopener"
-              target="_blank"
-            >
-              X
-            </a>
-            <a
-              href={`https://www.linkedin.com/sharing/share-offsite/?url=${enc(shareUrl)}`}
-              rel="noopener"
-              target="_blank"
-            >
-              LinkedIn
-            </a>
-            <a
-              href={`https://vk.com/share.php?url=${enc(shareUrl)}`}
-              rel="noopener"
-              target="_blank"
-            >
-              VK
-            </a>
-          </div>
-
-          {sources.length > 0 ? (
-            <section className="rs-sources-block" aria-label="Источники">
-              <h3>Источники</h3>
-              <ul>
-                {sources
-                  .filter((s) => s.url && s.title)
-                  .map((s) => (
-                    <li key={s.id}>
-                      <a href={s.url} rel="noopener" target="_blank">
-                        {s.title}
-                      </a>
-                      {humanSourceKind(s.quality_tier) ? ` — ${humanSourceKind(s.quality_tier)}` : ''}
-                    </li>
+          <main>
+            {tldr.length > 0 ? (
+              <aside className="rs-tldr" aria-label="Кратко">
+                <div className="rs-tldr-label">Кратко</div>
+                <ul>
+                  {tldr.map((t, i) => (
+                    <li key={i}>{t}</li>
                   ))}
-              </ul>
-            </section>
-          ) : null}
+                </ul>
+              </aside>
+            ) : null}
 
-          <div className="rs-disclaimer">
-            Все цифры — открытые источники: отраслевые рейтинги, отчёты компаний, опросы пользователей.
-            Каждое утверждение проверено независимо; методика опубликована и доступна по запросу. Это
-            редакционный материал, не реклама. Бренды упоминаются для иллюстрации, без коммерческих
-            интеграций.
-          </div>
-        </footer>
+            {structured.sections.map((s, i) => (
+              <ResearchSection
+                key={s.id}
+                section={s}
+                index={i + 1}
+                accent={sectionAccents[s.id] ?? 'rose'}
+                figures={figsBySection[s.id] ?? []}
+              />
+            ))}
+
+            <footer className="rs-article-footer">
+              <div className="rs-author">
+                <div className="rs-author-mark">Автор</div>
+                <div className="rs-author-body">
+                  <div className="rs-author-name">
+                    {seo.author?.name ?? 'Редакция Level Channel'}
+                  </div>
+                  {seo.author?.bio ? (
+                    <div className="rs-author-bio">{seo.author.bio}</div>
+                  ) : null}
+                  <div className="rs-author-dates">
+                    {seo.published_at ? `Опубликовано ${formatDateRu(seo.published_at)}` : ''}
+                    {seo.modified_at && seo.modified_at !== seo.published_at
+                      ? ` · обновлено ${formatDateRu(seo.modified_at)}`
+                      : ''}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rs-cta">
+                <div className="rs-cta-text">
+                  <strong>Ежемесячный research-дайджест.</strong> Без спама, отписка в один клик.
+                </div>
+                <Link href="/research#subscribe" className="rs-cta-link">
+                  Подписаться →
+                </Link>
+              </div>
+
+              <div className="rs-share">
+                <span className="rs-share-label">Поделиться</span>
+                <a
+                  href={`https://t.me/share/url?url=${enc(shareUrl)}&text=${enc(shareText)}`}
+                  rel="noopener"
+                  target="_blank"
+                >
+                  Telegram
+                </a>
+                <a
+                  href={`https://twitter.com/intent/tweet?url=${enc(shareUrl)}&text=${enc(shareText)}`}
+                  rel="noopener"
+                  target="_blank"
+                >
+                  X
+                </a>
+                <a
+                  href={`https://www.linkedin.com/sharing/share-offsite/?url=${enc(shareUrl)}`}
+                  rel="noopener"
+                  target="_blank"
+                >
+                  LinkedIn
+                </a>
+                <a
+                  href={`https://vk.com/share.php?url=${enc(shareUrl)}`}
+                  rel="noopener"
+                  target="_blank"
+                >
+                  VK
+                </a>
+              </div>
+
+              {sources.length > 0 ? (
+                <section className="rs-sources" aria-label="Источники">
+                  <h3 className="rs-sources-h">Источники</h3>
+                  <ol>
+                    {sources
+                      .filter((s) => s.url && s.title)
+                      .map((s) => (
+                        <li key={s.id}>
+                          <a href={s.url} rel="noopener" target="_blank">
+                            {s.title}
+                          </a>
+                          {humanSourceKind(s.quality_tier) ? (
+                            <span className="kind">— {humanSourceKind(s.quality_tier)}</span>
+                          ) : null}
+                        </li>
+                      ))}
+                  </ol>
+                </section>
+              ) : null}
+
+              <div className="rs-disclaimer">
+                Все цифры — открытые источники: отраслевые рейтинги, отчёты компаний, опросы
+                пользователей. Каждое утверждение проверено независимо; методика опубликована и
+                доступна по запросу. Это редакционный материал, не реклама. Бренды упоминаются для
+                иллюстрации, без коммерческих интеграций.
+              </div>
+            </footer>
+          </main>
+        </div>
       </div>
     </article>
   )
