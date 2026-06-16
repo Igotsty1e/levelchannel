@@ -42,6 +42,16 @@ const isProd = process.env.NODE_ENV === 'production' && !isBuildPhase
 // `https://localhost` or `http://your-domain` siteUrl would taint
 // auth/email regardless of PAYMENTS_PROVIDER value.
 // Plan: docs/plans/calendar-onboarding-followup-2026-06-06.md
+//
+// CI escape-hatch (2026-06-16): the Playwright product-flow workflow
+// runs `next start` with NODE_ENV=production on 127.0.0.1:3100 with an
+// `http://` site URL. Flipping the workflow to https would require
+// real certs the runner doesn't carry; instead the workflow exports
+// `LEVELCHANNEL_E2E_ALLOW_HTTP_SITE_URL=1` which scopes this relaxation
+// to that single CI surface. Prod env never sets the flag, so the
+// fail-fast still bites prod misconfig.
+const e2eAllowHttp =
+  process.env.LEVELCHANNEL_E2E_ALLOW_HTTP_SITE_URL === '1'
 if (isProd) {
   let parsedSite: URL
   try {
@@ -51,12 +61,12 @@ if (isProd) {
       'NEXT_PUBLIC_SITE_URL must be a valid URL in production.',
     )
   }
-  if (parsedSite.protocol !== 'https:') {
+  if (parsedSite.protocol !== 'https:' && !e2eAllowHttp) {
     throw new Error(
       'NEXT_PUBLIC_SITE_URL must use https:// (not http://) in production.',
     )
   }
-  if (isLoopbackOriginUrl(parsedSite)) {
+  if (isLoopbackOriginUrl(parsedSite) && !e2eAllowHttp) {
     throw new Error(
       'NEXT_PUBLIC_SITE_URL must be a non-loopback hostname (not localhost / 127.0.0.1 / *.localhost / ::1 / 0.0.0.0) in production.',
     )

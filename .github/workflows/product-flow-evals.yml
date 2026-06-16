@@ -152,6 +152,12 @@ jobs:
           NEXT_PUBLIC_LEGAL_BANK_BIK: "000000000"
           NEXT_PUBLIC_LEGAL_BANK_CORR_ACCOUNT: "00000000000000000000"
           NEXT_PUBLIC_LEGAL_BANK_CITY: ci-placeholder
+          # 2026-06-16: scoped escape-hatch for the http:// + 127.0.0.1
+          # site URL on `next start` under NODE_ENV=production. Without
+          # this `lib/payments/config.ts` strict validation throws and
+          # the spawned server crashes before serving any route. The
+          # flag is only honoured by config.ts; prod env never sets it.
+          LEVELCHANNEL_E2E_ALLOW_HTTP_SITE_URL: "1"
           # Database for the spawned `next start` server. The seeded
           # accounts above + the cookies in tests/e2e/.fixtures.json
           # depend on the same DATABASE_URL being visible to the app.
