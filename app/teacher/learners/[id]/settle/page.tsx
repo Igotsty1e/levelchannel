@@ -192,7 +192,7 @@ export default async function TeacherSettlePage({ params }: PageProps) {
           ← Назад к ученику
         </Link>
       </div>
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>
+      <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.01em', marginBottom: 8 }}>
         Отметить оплату
       </h1>
       <p style={{ color: 'var(--secondary)', marginBottom: 24 }}>

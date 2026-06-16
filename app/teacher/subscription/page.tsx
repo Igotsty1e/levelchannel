@@ -91,7 +91,7 @@ export default async function TeacherSubscriptionPage() {
           ← Назад в настройки
         </a>
       </div>
-      <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>
+      <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.01em', marginBottom: 16 }}>
         Подписка на платформу
       </h1>
       <TeacherSubscriptionClient active={active} tariffs={tariffs} />
