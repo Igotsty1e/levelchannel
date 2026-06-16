@@ -101,8 +101,12 @@ function SecondaryRow({
   )
 }
 
+// Wave-3 compact (2026-06-16): ~25-30% редукция высоты карточки чтобы
+// освободить место для «Недавние прошедшие» (Wave-2). Все значения
+// сжаты на 1-8px без потери информации. row min-height 44px сохранено
+// для iOS touch target compliance — экономим на padding между rows.
 const sectionStyle: CSSProperties = {
-  padding: '24px 24px 20px',
+  padding: '16px 20px 14px',
   background: 'var(--card)',
   border: '1px solid var(--border)',
   borderRadius: 14,
@@ -111,12 +115,12 @@ const sectionStyle: CSSProperties = {
 const heroStyle: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
-  gap: 8,
-  marginBottom: 20,
+  gap: 6,
+  marginBottom: 12,
 }
 
 const heroLabelStyle: CSSProperties = {
-  fontSize: 12,
+  fontSize: 11,
   fontWeight: 600,
   color: 'var(--secondary)',
   textTransform: 'uppercase' as const,
@@ -125,7 +129,7 @@ const heroLabelStyle: CSSProperties = {
 }
 
 const heroNumberStyle: CSSProperties = {
-  fontSize: 'clamp(36px, 5vw, 44px)',
+  fontSize: 'clamp(28px, 4vw, 34px)',
   fontWeight: 700,
   color: 'var(--text)',
   lineHeight: 1.05,
@@ -136,7 +140,7 @@ const heroNumberStyle: CSSProperties = {
 const dividerStyle: CSSProperties = {
   border: 0,
   borderTop: '1px solid var(--border)',
-  margin: '0 0 12px',
+  margin: '0 0 8px',
 }
 
 const listStyle: CSSProperties = {
@@ -145,7 +149,7 @@ const listStyle: CSSProperties = {
   margin: 0,
   display: 'flex',
   flexDirection: 'column',
-  gap: 2,
+  gap: 0,
 }
 
 const listItemStyle: CSSProperties = {
@@ -158,20 +162,20 @@ const rowLinkStyle: CSSProperties = {
   justifyContent: 'space-between',
   gap: 16,
   minHeight: 44,
-  padding: '12px 0',
+  padding: '8px 0',
   textDecoration: 'none',
   color: 'inherit',
   borderBottom: '0',
 }
 
 const rowLabelStyle: CSSProperties = {
-  fontSize: 14,
+  fontSize: 13,
   color: 'var(--secondary)',
   lineHeight: 1.3,
 }
 
 const rowValueStyle: CSSProperties = {
-  fontSize: 16,
+  fontSize: 15,
   fontWeight: 600,
   color: 'var(--text)',
   fontVariantNumeric: 'tabular-nums',
