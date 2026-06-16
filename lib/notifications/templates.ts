@@ -237,6 +237,36 @@ export function renderLessonEventEmail(
           `Кабинет: ${p.cabinetUrl}\n\n— LevelChannel`,
       }
     }
+    case 'LessonMarkedCompleteByTeacher': {
+      const when = formatRu(p.slotStartAtIso)
+      return {
+        subject: `Учитель отметил, что занятие ${when} прошло`,
+        html:
+          `<p>Здравствуйте, ${escapeHtml(p.recipientDisplayName)}.</p>` +
+          `<p>${escapeHtml(p.actorDisplayName)} отметил, что занятие ${when} прошло.</p>` +
+          `<p>История: <a href="${escapeHtml(p.cabinetUrl)}">${escapeHtml(p.cabinetUrl)}</a></p>` +
+          `<p>— LevelChannel</p>`,
+        text:
+          `${p.actorDisplayName} отметил, что занятие ${when} прошло.\n\n` +
+          `Кабинет: ${p.cabinetUrl}\n\n— LevelChannel`,
+      }
+    }
+    case 'LessonMarkedNoShowByTeacher': {
+      const when = formatRu(p.slotStartAtIso)
+      return {
+        subject: `Учитель отметил, что вы не пришли на занятие ${when}`,
+        html:
+          `<p>Здравствуйте, ${escapeHtml(p.recipientDisplayName)}.</p>` +
+          `<p>${escapeHtml(p.actorDisplayName)} отметил, что вы не пришли на занятие ${when}.</p>` +
+          `<p>Если это ошибка — свяжитесь с учителем напрямую.</p>` +
+          `<p>Кабинет: <a href="${escapeHtml(p.cabinetUrl)}">${escapeHtml(p.cabinetUrl)}</a></p>` +
+          `<p>— LevelChannel</p>`,
+        text:
+          `${p.actorDisplayName} отметил, что вы не пришли на занятие ${when}.\n` +
+          `Если это ошибка — свяжитесь с учителем напрямую.\n\n` +
+          `Кабинет: ${p.cabinetUrl}\n\n— LevelChannel`,
+      }
+    }
   }
 }
 
@@ -307,6 +337,17 @@ export function renderLessonEventTelegram(kind: LessonEventKind, p: RenderInput)
     case 'LessonDirectlyAssignedByTeacher':
       return (
         `📅 Учитель назначил вам занятие на *${when}*\\.\n` +
+        `Кабинет: ${cabinetUrl}`
+      )
+    case 'LessonMarkedCompleteByTeacher':
+      return (
+        `✅ Учитель отметил, что занятие ${when} прошло\\.\n` +
+        `Кабинет: ${cabinetUrl}`
+      )
+    case 'LessonMarkedNoShowByTeacher':
+      return (
+        `⚠️ Учитель отметил, что вы не пришли на занятие ${when}\\.\n` +
+        `Если это ошибка — свяжитесь с учителем напрямую\\.\n` +
         `Кабинет: ${cabinetUrl}`
       )
   }
