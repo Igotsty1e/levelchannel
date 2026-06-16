@@ -4,14 +4,14 @@ import { ResearchIndex } from '@/components/research/ResearchIndex'
 import { listResearchPosts } from '@/lib/research/load-post'
 
 export const metadata: Metadata = {
-  title: 'Research — публичные цифры о EdTech и ИИ в обучении | LevelChannel',
+  title: 'Research — независимые обзоры рынков по открытым данным | LevelChannel',
   description:
-    'Ежемесячный обзор рынка частного и онлайн-обучения. Только открытые источники, каждая цифра проверена независимо.',
+    'Level Channel Research — небольшое исследовательское агентство. Обзоры рынков по открытым данным: рейтинги, отчёты, опросы, регуляторика. Каждая цифра проверена независимо.',
   alternates: { canonical: '/research' },
   openGraph: {
     title: 'Level Channel Research',
     description:
-      'Независимые обзоры рынка EdTech и применения ИИ в обучении — только публичные данные.',
+      'Независимое исследовательское агентство. Обзоры рынков по открытым данным — без маркетинговых пресс-релизов и заказных интеграций.',
     type: 'website',
     locale: 'ru_RU',
   },
@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'Level Channel Research',
     description:
-      'Независимые обзоры рынка EdTech и применения ИИ в обучении — только публичные данные.',
+      'Независимое исследовательское агентство. Обзоры рынков по открытым данным — без маркетинговых пресс-релизов и заказных интеграций.',
   },
 }
 
