@@ -7,6 +7,7 @@ import { AssignDirectModal } from '@/components/calendar/AssignDirectModal'
 import { BulkAddSlotsModal } from '@/components/calendar/BulkAddSlotsModal'
 import { MobileCreateFab } from '@/components/calendar/MobileCreateFab'
 import { PaintConfirmModal } from '@/components/calendar/PaintConfirmModal'
+import { RescheduleByTeacherModal } from '@/components/calendar/RescheduleByTeacherModal'
 import { SlotCalendar } from '@/components/calendar/SlotCalendar'
 import type { PaintSpan, MoveTarget } from '@/lib/calendar/drag-state'
 import type { CalendarRow } from '@/lib/calendar/view-model'
@@ -72,6 +73,7 @@ function topActionBtnStyle(
 type CalendarModalState =
   | { kind: 'closed' }
   | { kind: 'slot-detail'; row: CalendarRow }
+  | { kind: 'teacher-reschedule'; row: CalendarRow } // Wave-B (2026-06-16)
   | { kind: 'paint-confirm'; span: PaintSpan }
   | { kind: 'single-create' }
   | { kind: 'bulk-create' }
@@ -268,6 +270,22 @@ export default function TeacherCalendarClient({
             router.refresh()
           }}
           onError={(msg) => showToast(`Ошибка: ${msg}`)}
+          onRequestReschedule={(row) =>
+            openModal({ kind: 'teacher-reschedule', row })
+          }
+        />
+      ) : null}
+
+      {modal.kind === 'teacher-reschedule' ? (
+        <RescheduleByTeacherModal
+          row={modal.row}
+          onClose={closeModal}
+          onSuccess={(message) => {
+            closeModal()
+            showToast(message)
+            bumpReload()
+            router.refresh()
+          }}
         />
       ) : null}
 
@@ -347,6 +365,7 @@ function TeacherSlotDetailModal({
   onClose,
   onSuccess,
   onError,
+  onRequestReschedule,
 }: {
   row: CalendarRow
   onClose: () => void
@@ -355,6 +374,10 @@ function TeacherSlotDetailModal({
   // dismiss/delete-external action that left the slot booked.
   onSuccess: (message: string) => void
   onError: (msg: string) => void
+  // Wave-B (2026-06-16) — клик «Перенести» в модалке booked-full
+  // переключает CalendarModalState в `teacher-reschedule`. Parent
+  // монтирует RescheduleByTeacherModal с тем же row.
+  onRequestReschedule?: (row: CalendarRow) => void
 }) {
   const [busy, setBusy] = useState(false)
   const [reason, setReason] = useState('')
@@ -671,6 +694,20 @@ function TeacherSlotDetailModal({
                 {busy ? '…' : 'Удалить в Google'}
               </button>
             </>
+          ) : null}
+          {/* Wave-B (2026-06-16) — «Перенести» появляется только для
+              booked-full (учитель решает что делать с занятием ученика).
+              Для open slot переноса нет, потому что drag-to-move уже
+              работает в календаре напрямую. */}
+          {slot.kind === 'booked-full' && onRequestReschedule ? (
+            <button
+              type="button"
+              onClick={() => onRequestReschedule(row)}
+              disabled={busy}
+              style={btnSecondary}
+            >
+              Перенести
+            </button>
           ) : null}
           {canCancel ? (
             <button
