@@ -952,6 +952,15 @@ async function notifyTeacherAboutNewClaim(args: {
     const { dispatchLessonEvent } = await import(
       '@/lib/notifications/lesson-event-dispatch'
     )
+    // 2026-06-17 — обогащаем payload учителя email'ом ученика +
+    // суммарным описанием items (тариф/пакет). Owner-feedback:
+    // «нужно писать ФИО + email + тариф или пакет».
+    const { getActorNotificationContext } = await import(
+      '@/lib/notifications/recipient-resolver'
+    )
+    const actorCtx = await getActorNotificationContext({
+      accountId: args.learnerAccountId,
+    })
     await dispatchLessonEvent(
       'SbpClaimSubmittedByLearner',
       {
@@ -963,6 +972,8 @@ async function notifyTeacherAboutNewClaim(args: {
           actorDisplayName: args.learnerName,
           recipientDisplayName: args.teacherName,
           amountKopecks: args.amountKopecks,
+          actorEmail: actorCtx.email ?? undefined,
+          tariffOrPackageTitle: args.itemsSummary || undefined,
         },
       },
       { channels: ['telegram'] },

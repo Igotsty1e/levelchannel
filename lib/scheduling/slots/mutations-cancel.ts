@@ -13,7 +13,10 @@
 
 import { getDbPool } from '@/lib/db/pool'
 import { dispatchLessonEvent } from '@/lib/notifications/lesson-event-dispatch'
-import { getActorDisplayName } from '@/lib/notifications/recipient-resolver'
+import {
+  getActorDisplayName,
+  getActorNotificationContext,
+} from '@/lib/notifications/recipient-resolver'
 import { getLearnerCancelWindowHours } from '@/lib/scheduling/policy'
 
 import {
@@ -195,7 +198,10 @@ export async function cancelLearnerSlot(
     // can never roll back the user-visible cancel.
     if (slot.teacherAccountId) {
       try {
-        const actorName = await getActorDisplayName(learnerAccountId)
+        const actorCtx = await getActorNotificationContext({
+          accountId: learnerAccountId,
+          slotId: slot.id,
+        })
         const eventsArr = Array.isArray(cancelledRow.events)
           ? cancelledRow.events
           : []
@@ -205,11 +211,13 @@ export async function cancelLearnerSlot(
           recipientRole: 'teacher',
           iterSeq: eventsArr.length,
           payload: {
-            actorDisplayName: actorName,
+            actorDisplayName: actorCtx.displayName,
             recipientDisplayName: 'Учитель',
             slotStartAtIso: slot.startAt,
             durationMinutes: slot.durationMinutes,
             reasonText: reason ?? undefined,
+            actorEmail: actorCtx.email ?? undefined,
+            tariffOrPackageTitle: actorCtx.tariffOrPackageTitle ?? undefined,
           },
         })
       } catch (e) {
