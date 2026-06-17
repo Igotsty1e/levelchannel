@@ -1,6 +1,6 @@
 import Link from 'next/link'
 
-import { BrandMarkAnimated } from '@/components/brand/brand-mark-animated'
+import { BrandMark } from '@/components/brand/brand-mark'
 import type { Figure, ResearchPost, SourceRow } from '@/lib/research/types'
 
 import './research-tokens.css'
@@ -151,7 +151,7 @@ export function ResearchArticle({ post }: { post: ResearchPost }) {
 
         <header className="rs-masthead">
           <Link href="/" className="rs-brand" aria-label="Level Channel — на главную">
-            <BrandMarkAnimated width={148} />
+            <BrandMark variant="full" width={148} />
           </Link>
           <div className="rs-kicker">Research</div>
           <h1 className="rs-h1">{structured.hero.title}</h1>
