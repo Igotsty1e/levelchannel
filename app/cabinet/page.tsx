@@ -420,6 +420,7 @@ export default async function CabinetPage({
               paymentMethodNotSet={paymentMethodNotSet}
               canBuyPackages={canBuyPackages}
               sbpPayEnabled={sbpPayEnabled}
+              compact
             />
           )}
 
