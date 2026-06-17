@@ -104,6 +104,10 @@ type Props = {
   // button рендерим только если у учителя есть активный SBP-метод.
   // Set из `lib/payments/sbp-methods.resolveMethodForLearner` на SSR.
   sbpPayEnabled?: boolean
+  // 2026-06-17 owner-feedback (image): главная превратилась в кашу из
+  // 7+ занятий. compact=true показывает максимум 3 предстоящих, скрывает
+  // прошедшие, и показывает link «Все занятия →» на /cabinet/lessons.
+  compact?: boolean
 }
 
 function fmt(slotIso: string, tz: string): string {
@@ -190,6 +194,7 @@ export function LessonsSection({
   paymentMethodNotSet,
   canBuyPackages,
   sbpPayEnabled = false,
+  compact = false,
 }: Props) {
   const effectiveCancelWindowHours =
     Number.isFinite(cancelWindowHours)
@@ -327,12 +332,16 @@ export function LessonsSection({
         ) : (
           <>
             {(() => {
-              const upcoming = mine.filter(
+              const allUpcoming = mine.filter(
                 (s) => new Date(s.startAt).getTime() > Date.now(),
               )
-              const past = mine.filter(
-                (s) => new Date(s.startAt).getTime() <= Date.now(),
-              )
+              // 2026-06-17 compact mode: показываем максимум 3 предстоящих,
+              // прячем прошедшие, и показываем link на /cabinet/lessons.
+              const upcoming = compact ? allUpcoming.slice(0, 3) : allUpcoming
+              const past = compact
+                ? []
+                : mine.filter((s) => new Date(s.startAt).getTime() <= Date.now())
+              const upcomingHidden = compact ? allUpcoming.length - upcoming.length : 0
               return (
                 <>
                   {upcoming.length > 0 ? (
@@ -493,6 +502,16 @@ export function LessonsSection({
                           )
                         })}
                       </ul>
+                      {compact && upcomingHidden > 0 ? (
+                        <p style={{ marginTop: 8, fontSize: 13 }}>
+                          <Link
+                            href="/cabinet/lessons"
+                            style={{ color: 'var(--secondary)' }}
+                          >
+                            Все занятия ({allUpcoming.length}) →
+                          </Link>
+                        </p>
+                      ) : null}
                     </>
                   ) : null}
                   {past.length > 0 ? (
