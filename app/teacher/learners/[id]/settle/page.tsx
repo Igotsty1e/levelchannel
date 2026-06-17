@@ -223,12 +223,11 @@ export default async function TeacherSettlePage({ params }: PageProps) {
           action={`/api/teacher/learners/${learnerId}/settle`}
           style={{ display: 'flex', flexDirection: 'column', gap: 16 }}
         >
-          {/* Поле остаётся в копейках (того ждёт серверный route),
-              лейбл — на «ты», без жаргонной приписки «100 копеек = 1 ₽».
-              Полная конверсия в ₽ потребует client-island — пока не делаем. */}
+          {/* 2026-06-17 UX fix: ввод в рублях (с дробной частью), не в
+              копейках. Серверный route принимает поле amountRub. */}
           <div>
             <label
-              htmlFor="amountKopecks"
+              htmlFor="amountRub"
               style={{
                 display: 'block',
                 fontWeight: 600,
@@ -236,15 +235,16 @@ export default async function TeacherSettlePage({ params }: PageProps) {
                 fontSize: 14,
               }}
             >
-              Сумма оплаты, копейки
+              Сумма оплаты, ₽
             </label>
             <input
-              id="amountKopecks"
-              name="amountKopecks"
+              id="amountRub"
+              name="amountRub"
               type="number"
-              min="1"
-              step="1"
-              defaultValue={totalRemaining}
+              min="0.01"
+              step="0.01"
+              inputMode="decimal"
+              defaultValue={totalRemainingRub}
               required
               style={{
                 padding: '10px 12px',
@@ -264,8 +264,8 @@ export default async function TeacherSettlePage({ params }: PageProps) {
                 marginTop: 4,
               }}
             >
-              По умолчанию — полный долг ({totalRemainingRub} ₽). Можно
-              указать частичную сумму в копейках (100 = 1 ₽).
+              По умолчанию — полный долг {totalRemainingRub} ₽. Можно
+              указать частичную сумму с копейками (например 2150,50).
             </p>
           </div>
 
