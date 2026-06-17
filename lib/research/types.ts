@@ -24,11 +24,25 @@ export type Section = {
   layer_3_html: string
 }
 
+export type SeriesPart = {
+  slug: string
+  part: string
+  title: string
+}
+
+export type Series = {
+  name: string
+  part: string
+  total_parts: string
+  other_parts?: SeriesPart[]
+}
+
 export type Hero = {
   title: string
   lede: string
   meta: string
   cards: StatCard[]
+  series?: Series
 }
 
 export type Structured = {

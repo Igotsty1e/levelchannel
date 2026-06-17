@@ -1,0 +1,25 @@
+{
+  "hero": {
+    "kind": "stat-grid",
+    "composition": {
+      "headline": "Платёжный и scheduling-стек профи в 2026: глобальный обзор"
+    }
+  },
+  "section_accents": {
+    "scheduling": "rose",
+    "stripe": "rose",
+    "paypal-block": "coral",
+    "sbp": "warm-amber",
+    "china": "info",
+    "wise": "peach",
+    "outlook": "warm-amber",
+    "methodology": "info"
+  },
+  "rhythm": {
+    "stat_strips_between_sections": []
+  },
+  "typography": {
+    "key_number_size": "huge",
+    "section_separator": "gradient-rule"
+  }
+}

@@ -95,6 +95,51 @@ function buildJsonLd(post: ResearchPost): object[] {
   return out
 }
 
+const ROMAN_ORDER: Record<string, number> = {
+  I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6,
+}
+
+function SeriesNav({ hero }: { hero: ResearchPost['structured']['hero'] }) {
+  const series = hero.series
+  if (!series?.other_parts?.length) return null
+  const currentTitle = hero.title.includes(':')
+    ? hero.title.split(':')[0].trim()
+    : 'Текущая часть'
+  const allParts = [
+    { part: series.part, title: currentTitle, slug: null as string | null },
+    ...series.other_parts,
+  ].sort((a, b) => (ROMAN_ORDER[a.part] ?? 99) - (ROMAN_ORDER[b.part] ?? 99))
+  return (
+    <nav className="rs-series-nav" aria-label="Навигация по серии">
+      <div className="rs-series-eyebrow">Серия · {series.name}</div>
+      <div className="rs-series-list">
+        {allParts.map((p) => {
+          const isCurrent = p.part === series.part
+          const className = `rs-series-item${isCurrent ? ' active' : ''}`
+          const inner = (
+            <>
+              <span className="rs-series-num">{p.part}</span>
+              <span className="rs-series-title">{p.title}</span>
+            </>
+          )
+          if (isCurrent || !p.slug) {
+            return (
+              <span key={p.part} className={className} aria-current="page">
+                {inner}
+              </span>
+            )
+          }
+          return (
+            <Link key={p.part} className={className} href={`/research/${p.slug}`}>
+              {inner}
+            </Link>
+          )
+        })}
+      </div>
+    </nav>
+  )
+}
+
 function ByTheNumbersStrip({
   cards,
 }: {
@@ -182,6 +227,10 @@ export function ResearchArticle({ post }: { post: ResearchPost }) {
             ) : null}
           </div>
         </header>
+
+        {structured.hero.series?.other_parts?.length ? (
+          <SeriesNav hero={structured.hero} />
+        ) : null}
 
         <ByTheNumbersStrip cards={structured.hero.cards} />
 

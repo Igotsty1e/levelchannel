@@ -1,0 +1,143 @@
+{
+  "fig_arr_compare": {
+    "section_id": "notion",
+    "kind": "columns",
+    "title": "Notion · ARR ×9 за 4 года",
+    "unit": "млн долларов",
+    "accent": "warm-amber",
+    "data": [
+      {
+        "label": "2022",
+        "value": 67,
+        "highlight": false
+      },
+      {
+        "label": "2023",
+        "value": 250,
+        "highlight": false
+      },
+      {
+        "label": "2024",
+        "value": 300,
+        "highlight": false
+      },
+      {
+        "label": "2025",
+        "value": 600,
+        "highlight": true
+      }
+    ]
+  },
+  "fig_canva_strip": {
+    "section_id": "canva",
+    "kind": "metric-strip",
+    "title": "Canva · 2025-26",
+    "accent": "rose",
+    "data": [
+      {
+        "label": "MAU",
+        "value": "265 млн"
+      },
+      {
+        "label": "Платящих",
+        "value": "27 млн"
+      },
+      {
+        "label": "Revenue",
+        "value": "3,5 млрд долларов"
+      },
+      {
+        "label": "B2B ARR",
+        "value": "500 млн долларов"
+      }
+    ]
+  },
+  "fig_canvas_share": {
+    "section_id": "canvas",
+    "kind": "hbar",
+    "title": "NA higher ed LMS · доля рынка",
+    "unit": "%",
+    "accent": "info",
+    "data": [
+      {
+        "label": "Canvas",
+        "value": 39,
+        "highlight": true
+      },
+      {
+        "label": "Blackboard",
+        "value": 19,
+        "highlight": false
+      },
+      {
+        "label": "Moodle",
+        "value": 16,
+        "highlight": false
+      },
+      {
+        "label": "Brightspace",
+        "value": 16,
+        "highlight": false
+      }
+    ]
+  },
+  "fig_gc_strip": {
+    "section_id": "classroom",
+    "kind": "metric-strip",
+    "title": "Google Classroom · масштаб",
+    "accent": "coral",
+    "data": [
+      {
+        "label": "Registered",
+        "value": "150 млн"
+      },
+      {
+        "label": "Workspace Edu",
+        "value": "170 млн"
+      },
+      {
+        "label": "K-12 школ США",
+        "value": "60 тыс."
+      },
+      {
+        "label": "Стран",
+        "value": "230"
+      }
+    ]
+  },
+  "fig_ru_split": {
+    "section_id": "russia",
+    "kind": "compare-pies",
+    "title": "Россия · структура выручки онлайн-школ",
+    "accent": "warm-amber",
+    "data": [
+      {
+        "label": "Дорогие курсы 2024",
+        "percent": 75
+      },
+      {
+        "label": "Дорогие курсы 2025",
+        "percent": 50
+      }
+    ]
+  },
+  "fig_lms_enterprise": {
+    "section_id": "canvas",
+    "kind": "donut",
+    "title": "% крупных enterprise используют LMS",
+    "accent": "info",
+    "data": {
+      "percent": 98,
+      "label": "enterprise"
+    }
+  },
+  "fig_notion_quote": {
+    "section_id": "notion",
+    "kind": "pull-quote",
+    "accent": "warm-amber",
+    "data": {
+      "text": "Notion прошёл путь от приложения для заметок до полноценной рабочей среды. Это уже не contender Evernote, а контр-Microsoft 365 для следующего поколения.",
+      "attribution": "Наблюдение по результатам обзора"
+    }
+  }
+}

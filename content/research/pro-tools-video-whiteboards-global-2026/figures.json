@@ -1,0 +1,280 @@
+{
+  "fig_big4_share": {
+    "section_id": "big-picture",
+    "kind": "hbar",
+    "title": "Доли мирового рынка видео-связи, 2025",
+    "unit": "%",
+    "accent": "rose",
+    "data": [
+      {
+        "label": "Zoom",
+        "value": 28,
+        "highlight": true
+      },
+      {
+        "label": "Microsoft Teams",
+        "value": 23,
+        "highlight": true
+      },
+      {
+        "label": "Google Meet",
+        "value": 17,
+        "highlight": true
+      },
+      {
+        "label": "Cisco Webex",
+        "value": 5,
+        "highlight": true
+      },
+      {
+        "label": "Прочее",
+        "value": 27,
+        "highlight": false
+      }
+    ]
+  },
+  "fig_teams_growth": {
+    "section_id": "big-picture",
+    "kind": "columns",
+    "title": "Microsoft Teams DAU, миллионов",
+    "unit": "млн",
+    "accent": "coral",
+    "data": [
+      {
+        "label": "Апр 2020",
+        "value": 75,
+        "highlight": false
+      },
+      {
+        "label": "2021",
+        "value": 145,
+        "highlight": false
+      },
+      {
+        "label": "2022",
+        "value": 270,
+        "highlight": false
+      },
+      {
+        "label": "2023",
+        "value": 280,
+        "highlight": false
+      },
+      {
+        "label": "2025",
+        "value": 320,
+        "highlight": true
+      }
+    ]
+  },
+  "fig_zoom_revenue_strip": {
+    "section_id": "big-picture",
+    "kind": "metric-strip",
+    "title": "Zoom · FY2025 в цифрах",
+    "accent": "rose",
+    "data": [
+      {
+        "label": "Выручка",
+        "value": "$4,67 млрд",
+        "trend": "+3,1% YoY"
+      },
+      {
+        "label": "Enterprise сегмент",
+        "value": "$2,75 млрд",
+        "trend": "+5,2%"
+      },
+      {
+        "label": "Enterprise клиентов",
+        "value": "192 600"
+      },
+      {
+        "label": "Минут встреч/год",
+        "value": "3,5 трлн"
+      }
+    ]
+  },
+  "fig_china_users": {
+    "section_id": "regional",
+    "kind": "metric-strip",
+    "title": "Китайский enterprise-стек",
+    "accent": "warm-amber",
+    "data": [
+      {
+        "label": "DingTalk пользователей",
+        "value": "700 млн",
+        "trend": "Alibaba"
+      },
+      {
+        "label": "DingTalk компаний",
+        "value": "26 млн"
+      },
+      {
+        "label": "DingTalk платящих DAU",
+        "value": "28 млн",
+        "trend": "Q1 2024"
+      },
+      {
+        "label": "Lark/Feishu ARR",
+        "value": "$100M+",
+        "trend": "сокращён 2024"
+      }
+    ]
+  },
+  "fig_whiteboards_compare": {
+    "section_id": "whiteboards",
+    "kind": "compare-pies",
+    "title": "Проникновение в Fortune 100",
+    "accent": "peach",
+    "data": [
+      {
+        "label": "Miro",
+        "percent": 99
+      },
+      {
+        "label": "Mural",
+        "percent": 75
+      },
+      {
+        "label": "BBB в LMS",
+        "percent": 75
+      }
+    ]
+  },
+  "fig_figma_arr": {
+    "section_id": "whiteboards",
+    "kind": "columns",
+    "title": "Figma · ARR / выручка, $ млн",
+    "unit": "$ млн",
+    "accent": "coral",
+    "data": [
+      {
+        "label": "2023 рев",
+        "value": 505,
+        "highlight": false
+      },
+      {
+        "label": "2024 рев",
+        "value": 749,
+        "highlight": false
+      },
+      {
+        "label": "Q1 2025 ARR",
+        "value": 912,
+        "highlight": true
+      }
+    ]
+  },
+  "fig_ai_pricing": {
+    "section_id": "ai-features",
+    "kind": "hbar",
+    "title": "AI-копилоты в видео-связи · цена за пользователя в месяц",
+    "unit": "$",
+    "accent": "warm-amber",
+    "data": [
+      {
+        "label": "Zoom AI Companion (база)",
+        "value": 0,
+        "highlight": true
+      },
+      {
+        "label": "Google Gemini в Meet (база)",
+        "value": 0,
+        "highlight": true
+      },
+      {
+        "label": "Zoom Custom AI Companion",
+        "value": 12,
+        "highlight": false
+      },
+      {
+        "label": "Microsoft Copilot для M365",
+        "value": 30,
+        "highlight": false
+      }
+    ]
+  },
+  "fig_pricing_strip": {
+    "section_id": "pricing",
+    "kind": "metric-strip",
+    "title": "Что входит в Free и где апгрейд",
+    "accent": "rose",
+    "data": [
+      {
+        "label": "Zoom Free",
+        "value": "40 мин",
+        "trend": "1:1 без лимита"
+      },
+      {
+        "label": "Zoom Pro",
+        "value": "$13,33",
+        "trend": "годовая оплата"
+      },
+      {
+        "label": "Google Meet Free",
+        "value": "60 мин",
+        "trend": "до 100 чел"
+      },
+      {
+        "label": "Teams Free",
+        "value": "60 мин",
+        "trend": "до 100 чел"
+      }
+    ]
+  },
+  "fig_coaching_gap": {
+    "section_id": "coaches",
+    "kind": "compare-pies",
+    "title": "Коучи: разрыв технологии и реального использования",
+    "accent": "coral",
+    "data": [
+      {
+        "label": "Видят технологии приоритетом",
+        "percent": 54
+      },
+      {
+        "label": "Реально используют AI",
+        "percent": 6
+      }
+    ]
+  },
+  "fig_us_video_usage": {
+    "section_id": "us-adoption",
+    "kind": "donut",
+    "title": "США: пользование видео-связью среди teleworkable работников",
+    "accent": "rose",
+    "data": {
+      "percent": 79,
+      "label": "часто или иногда"
+    }
+  },
+  "fig_outlook_quote": {
+    "section_id": "ai-features",
+    "kind": "pull-quote",
+    "accent": "rose",
+    "data": {
+      "text": "В 2026 AI-фичи перестали быть отдельным SKU и стали частью базы. Конкуренция переходит на качество модели и приватность данных.",
+      "attribution": "Наблюдение по результатам обзора"
+    }
+  },
+  "fig_loom_strip": {
+    "section_id": "consultants",
+    "kind": "metric-strip",
+    "title": "Loom · async-видео после Atlassian-сделки",
+    "accent": "peach",
+    "data": [
+      {
+        "label": "Цена сделки",
+        "value": "$975 млн",
+        "trend": "октябрь 2023"
+      },
+      {
+        "label": "Пользователей на момент",
+        "value": "25 млн"
+      },
+      {
+        "label": "Видео в месяц",
+        "value": "5 млн"
+      }
+    ]
+  }
+}
