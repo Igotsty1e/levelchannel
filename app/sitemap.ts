@@ -1,5 +1,6 @@
 import type { MetadataRoute } from 'next'
 
+import { listBlogPosts } from '@/lib/blog/load-post'
 import { listResearchPosts } from '@/lib/research/load-post'
 
 const BASE = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') || 'https://levelchannel.ru'
@@ -27,6 +28,7 @@ const PAGES: ReadonlyArray<{
   { path: '/anastasiia', priority: 0.5, changeFreq: 'monthly', lastModified: '2026-06-07' },
   { path: '/integrations/google-calendar', priority: 0.7, changeFreq: 'monthly', lastModified: '2026-06-09' },
   { path: '/research', priority: 0.9, changeFreq: 'weekly', lastModified: '2026-06-16' },
+  { path: '/blog', priority: 0.85, changeFreq: 'weekly', lastModified: '2026-06-17' },
   { path: '/saas/learn/cabinet', priority: 0.85, changeFreq: 'monthly', lastModified: '2026-05-22' },
   { path: '/saas/learn/crm-for-tutors', priority: 0.85, changeFreq: 'monthly', lastModified: '2026-05-22' },
   { path: '/saas/learn/schedule', priority: 0.85, changeFreq: 'monthly', lastModified: '2026-05-22' },
@@ -57,5 +59,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'monthly',
     priority: 0.85,
   }))
-  return [...staticEntries, ...researchEntries]
+  const blogPosts = await listBlogPosts()
+  const blogEntries: MetadataRoute.Sitemap = blogPosts.map((p) => ({
+    url: `${BASE}/blog/${p.slug}`,
+    lastModified: p.modifiedAt
+      ? new Date(p.modifiedAt)
+      : p.publishedAt
+        ? new Date(p.publishedAt)
+        : new Date(),
+    changeFrequency: 'monthly',
+    priority: 0.7,
+  }))
+  return [...staticEntries, ...researchEntries, ...blogEntries]
 }
