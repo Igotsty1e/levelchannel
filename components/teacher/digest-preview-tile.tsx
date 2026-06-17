@@ -124,6 +124,12 @@ export function DigestPreviewTile({ preview, pastUnmarkedSection }: Props) {
               slot.learnerEmail?.trim() ||
               'Ученик'
             const time = formatStartHHmm(slot.startAt, teacherTz)
+            const isPastBooked =
+              slot.status === 'booked'
+              && new Date(slot.startAt).getTime() < Date.now()
+            const isFutureBooked =
+              slot.status === 'booked'
+              && new Date(slot.startAt).getTime() >= Date.now()
             return (
               <li
                 key={slot.id}
@@ -152,6 +158,28 @@ export function DigestPreviewTile({ preview, pastUnmarkedSection }: Props) {
                   >
                     Открыть Zoom
                   </a>
+                ) : null}
+                {/* Owner 2026-06-17: quick-actions inline в дайджесте.
+                    Будущие занятия — «Перенести / Отменить» (через
+                    календарь). Прошедшие booked — «Оплачено» (через
+                    settle). Все ведут на existing surface, без модала
+                    inline — улучшение для будущего PR. */}
+                {isFutureBooked ? (
+                  <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8 }}>
+                    <QuickLink href={`/teacher/calendar?focusSlot=${slot.id}`}>
+                      Перенести
+                    </QuickLink>
+                    <QuickLink href={`/teacher/calendar?focusSlot=${slot.id}`}>
+                      Отменить
+                    </QuickLink>
+                  </span>
+                ) : null}
+                {isPastBooked && slot.learnerAccountId ? (
+                  <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8 }}>
+                    <QuickLink href={`/teacher/learners/${slot.learnerAccountId}/settle`}>
+                      Оплачено
+                    </QuickLink>
+                  </span>
                 ) : null}
                 {slot.status === 'cancelled' ? (
                   <span
@@ -202,6 +230,7 @@ export function DigestPreviewTile({ preview, pastUnmarkedSection }: Props) {
         </ul>
       )}
 
+      {/* QuickLink стиль определён локально, чтобы не плодить class'ы. */}
       {pastUnmarkedSection ? (
         <>
           <hr
@@ -240,5 +269,34 @@ export function DigestPreviewTile({ preview, pastUnmarkedSection }: Props) {
         </>
       ) : null}
     </section>
+  )
+}
+
+function QuickLink({
+  href,
+  children,
+}: {
+  href: string
+  children: React.ReactNode
+}) {
+  return (
+    <Link
+      href={href}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '4px 10px',
+        borderRadius: 6,
+        border: '1px solid var(--border)',
+        background: 'transparent',
+        color: 'var(--text)',
+        textDecoration: 'none',
+        fontSize: 12,
+        fontWeight: 500,
+        lineHeight: 1.2,
+      }}
+    >
+      {children}
+    </Link>
   )
 }
