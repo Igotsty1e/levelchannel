@@ -154,6 +154,14 @@ export default async function TeacherSettingsHubPage() {
           />
         </li>
         <li>
+          {/* 2026-06-17 — per-teacher cancel-window. */}
+          <SettingsTile
+            href="/teacher/settings/cancel-policy"
+            icon={<NotificationsBellIcon />}
+            title="Политика отмены"
+          />
+        </li>
+        <li>
           <SettingsTile
             href="/teacher/security"
             icon={<SecurityShieldIcon />}

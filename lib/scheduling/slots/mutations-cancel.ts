@@ -145,10 +145,13 @@ export async function cancelLearnerSlot(
   let cancelledRow: Record<string, unknown> | null = null
   try {
     await client.query('begin')
-    // POLICY-KNOBS (2026-05-17) — the 24-hour gate is env-tunable
-    // via LEARNER_CANCEL_WINDOW_HOURS. Read on every invocation;
-    // no module-scope memoization.
-    const cancelWindowHours = getLearnerCancelWindowHours()
+    // POLICY-KNOBS (2026-05-17) + 2026-06-17 per-teacher: cancel-window
+    // теперь читается из accounts.teacher_cancel_window_minutes (мигра
+    // 0132, default 1440 = 24h, диапазон 0..2880). Env-var
+    // LEARNER_CANCEL_WINDOW_HOURS остаётся как fallback для accounts,
+    // у которых поле NULL (теоретически не должно случаться — default
+    // в DDL — но защищаемся).
+    const envFallbackMinutes = getLearnerCancelWindowHours() * 60
     const result = await client.query(
       `update lesson_slots
           set status = 'cancelled',
@@ -160,7 +163,12 @@ export async function cancelLearnerSlot(
         where id = $1
           and learner_account_id = $2
           and status = 'booked'
-          and start_at - now() >= make_interval(hours => $5::int)
+          and start_at - now() >= make_interval(mins => coalesce(
+                (select teacher_cancel_window_minutes
+                   from accounts
+                  where id = lesson_slots.teacher_account_id),
+                $5
+              )::int)
         returning ${SLOT_COLUMNS}`,
       [
         slotId,
@@ -170,7 +178,7 @@ export async function cancelLearnerSlot(
           cancelledByAccountId: learnerAccountId,
           reason,
         }),
-        cancelWindowHours,
+        envFallbackMinutes,
       ],
     )
     if (result.rows[0]) {
