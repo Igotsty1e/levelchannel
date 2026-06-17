@@ -36,6 +36,7 @@ export type PreviewSlot = {
   durationMinutes: number
   learnerEmail: string | null
   learnerName: string | null
+  learnerAccountId: string | null
   zoomUrl: string | null
   status: string
 }
@@ -90,6 +91,7 @@ export async function getTeacherDigestPreview(
     start_at: Date | string
     duration_minutes: number
     status: string
+    learner_account_id: string | null
     learner_email: string | null
     learner_display_name: string | null
     zoom_url: string | null
@@ -104,6 +106,7 @@ export async function getTeacherDigestPreview(
             s.start_at,
             s.duration_minutes,
             s.status,
+            s.learner_account_id,
             la.email          as learner_email,
             lp.display_name   as learner_display_name,
             s.zoom_url,
@@ -134,6 +137,7 @@ export async function getTeacherDigestPreview(
     id: String(row.id),
     startAt: new Date(String(row.start_at)).toISOString(),
     durationMinutes: Number(row.duration_minutes),
+    learnerAccountId: row.learner_account_id ? String(row.learner_account_id) : null,
     learnerEmail: row.learner_email ? String(row.learner_email) : null,
     learnerName: row.learner_display_name
       ? String(row.learner_display_name)
