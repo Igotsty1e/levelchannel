@@ -31,9 +31,15 @@ type NavItem = {
 const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { href: '/cabinet', label: 'Главная', icon: '⌂' },
   {
+    href: '/cabinet/book',
+    label: 'Календарь',
+    icon: '▦',
+    prefixMatch: true,
+  },
+  {
     href: '/cabinet/lessons',
     label: 'Занятия',
-    icon: '▦',
+    icon: '≡',
     prefixMatch: true,
   },
   {
