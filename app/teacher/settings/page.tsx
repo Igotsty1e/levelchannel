@@ -145,12 +145,13 @@ export default async function TeacherSettingsHubPage() {
           />
         </li>
         <li>
-          {/* Интеграции: text-pill → icon-indicator (owner 2026-06-10). */}
+          {/* 2026-06-17: «Интеграции» теперь хаб — Google Calendar + Telegram.
+              Indicator зелёный если хотя бы одна интеграция подключена. */}
           <SettingsTile
-            href="/teacher/settings/calendar"
+            href="/teacher/settings/integrations"
             icon={<IntegrationsGearIcon />}
             title="Интеграции"
-            indicator={calendarConnected ? 'connected' : 'not-connected'}
+            indicator={calendarConnected || teacherTgBound ? 'connected' : 'not-connected'}
           />
         </li>
         <li>
