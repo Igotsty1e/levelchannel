@@ -54,12 +54,22 @@ export async function consumePackageUnit(
   // Find the earliest-expiring package with capacity. Lock the row
   // with FOR UPDATE so a concurrent restore on the same purchase
   // (which would change count_remaining) waits.
+  //
+  // 2026-06-17 prod fix: teacher_id IS NULL allowed — legacy rows
+  // (granted до PKG-TEACHER-SCOPE mig 0083) могут иметь NULL и тогда
+  // строгое `teacher_id = $3` исключало пакет, который у ученика
+  // фактически есть. Owner-report: «ученик не может забронировать
+  // по пакету (он у него есть)». Безопасно: при равных кандидатах
+  // выбирается по `expires_at asc` — у ученика с пакетами от учителей
+  // A и B рискнуть консьюмом A против слота B нельзя, потому что у
+  // A teacher_id уже заполнен. Только NULL-строки (без явного teacher)
+  // получают fallback.
   const eligible = await client.query(
     `select pp.id
        from package_purchases pp
       where pp.account_id = $1
         and pp.duration_minutes = $2
-        and pp.teacher_id = $3
+        and (pp.teacher_id = $3 OR pp.teacher_id IS NULL)
         and pp.expires_at > now()
         -- Refund Phase 7 follow-up. A voided purchase (refunded) MUST
         -- NOT be re-consumed. Migration 0038 adds the column; nullable

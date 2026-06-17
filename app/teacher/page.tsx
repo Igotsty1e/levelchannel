@@ -199,8 +199,16 @@ export default async function TeacherHomePage() {
     loadTeacherFirstName(teacherAccountId),
     getTeacherFinanceSnapshot(teacherAccountId, todayYmd),
   ])
+  // 2026-06-17 fix (owner image): дубль занятия — слот сегодня в 10:00,
+  // которое уже прошло (сейчас 13:00), оказывается одновременно в
+  // дайджесте «Сегодня» и в «Не отмечены». Отфильтровываем из
+  // recentPast те id'ы, которые уже видны в digest сегодня.
+  const todaySlotIds = new Set(digestPreview.slots.map((s) => s.id))
+  const recentPastSlotsDeduped = recentPastSlots.filter(
+    (s) => !todaySlotIds.has(s.id),
+  )
   const recentPastLearnerLabels = await loadRecentPastLearnerLabels(
-    recentPastSlots.map((s) => s.id),
+    recentPastSlotsDeduped.map((s) => s.id),
   )
   const now = new Date()
   const greeting = greetingForHour(now, teacherTz)
@@ -238,9 +246,9 @@ export default async function TeacherHomePage() {
         <DigestPreviewTile
           preview={digestPreview}
           pastUnmarkedSection={
-            recentPastSlots.length > 0 ? (
+            recentPastSlotsDeduped.length > 0 ? (
               <RecentPastCard
-                initialSlots={recentPastSlots}
+                initialSlots={recentPastSlotsDeduped}
                 learnerLabels={recentPastLearnerLabels}
                 embedded
               />

@@ -6,6 +6,7 @@ import { Button, EmptyState, Pill } from '@/components/ui/primitives'
 import { formatProfileNameForRender } from '@/lib/auth/profile-name'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getDbPool } from '@/lib/db/pool'
+import { formatDateInTz, formatTimeInTz } from '@/lib/util/format-date'
 
 // SAAS-PIVOT Epic 5B Day 5B — teacher settle page.
 //
@@ -161,19 +162,10 @@ export default async function TeacherSettlePage({ params }: PageProps) {
     })} ₽`
 
   // Cabinet polish 2026-06-07 (B5) — unified date format «7 июня, 19:00».
-  const CURRENT_YEAR = new Date().getFullYear()
+  // 2026-06-17 fix: явный timeZone MSK через formatDateInTz/formatTimeInTz —
+  // раньше на сервере вне MSK время плыло.
   const fmtLessonDate = (iso: string): string => {
-    const d = new Date(iso)
-    const dateOpts: Intl.DateTimeFormatOptions =
-      d.getFullYear() === CURRENT_YEAR
-        ? { day: 'numeric', month: 'long' }
-        : { day: 'numeric', month: 'long', year: 'numeric' }
-    const datePart = d.toLocaleDateString('ru-RU', dateOpts)
-    const timePart = d.toLocaleTimeString('ru-RU', {
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-    return `${datePart}, ${timePart}`
+    return `${formatDateInTz(iso, 'Europe/Moscow')}, ${formatTimeInTz(iso, 'Europe/Moscow')}`
   }
 
   const totalRemainingRub = (totalRemaining / 100).toFixed(2)
@@ -223,12 +215,11 @@ export default async function TeacherSettlePage({ params }: PageProps) {
           action={`/api/teacher/learners/${learnerId}/settle`}
           style={{ display: 'flex', flexDirection: 'column', gap: 16 }}
         >
-          {/* Поле остаётся в копейках (того ждёт серверный route),
-              лейбл — на «ты», без жаргонной приписки «100 копеек = 1 ₽».
-              Полная конверсия в ₽ потребует client-island — пока не делаем. */}
+          {/* 2026-06-17 UX fix: ввод в рублях (с дробной частью), не в
+              копейках. Серверный route принимает поле amountRub. */}
           <div>
             <label
-              htmlFor="amountKopecks"
+              htmlFor="amountRub"
               style={{
                 display: 'block',
                 fontWeight: 600,
@@ -236,15 +227,16 @@ export default async function TeacherSettlePage({ params }: PageProps) {
                 fontSize: 14,
               }}
             >
-              Сумма оплаты, копейки
+              Сумма оплаты, ₽
             </label>
             <input
-              id="amountKopecks"
-              name="amountKopecks"
+              id="amountRub"
+              name="amountRub"
               type="number"
-              min="1"
-              step="1"
-              defaultValue={totalRemaining}
+              min="0.01"
+              step="0.01"
+              inputMode="decimal"
+              defaultValue={totalRemainingRub}
               required
               style={{
                 padding: '10px 12px',
@@ -264,8 +256,8 @@ export default async function TeacherSettlePage({ params }: PageProps) {
                 marginTop: 4,
               }}
             >
-              По умолчанию — полный долг ({totalRemainingRub} ₽). Можно
-              указать частичную сумму в копейках (100 = 1 ₽).
+              По умолчанию — полный долг {totalRemainingRub} ₽. Можно
+              указать частичную сумму с копейками (например 2150,50).
             </p>
           </div>
 
