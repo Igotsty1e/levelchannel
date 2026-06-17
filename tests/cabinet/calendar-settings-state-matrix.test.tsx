@@ -1,12 +1,11 @@
 // @vitest-environment jsdom
 
-// Plan: docs/plans/cabinet-stale-future-labels.md §D.
-// Renders /cabinet/settings/calendar across the (pullStatus × pushStatus)
-// matrix and the operator master switch to pin exact copy per state and
-// prevent silent drift between spec and rendered text.
+// 2026-06-17 cabinet-settings-calendar-copy: страница свернула
+// pull/push-копи в одну консолидированную строку статуса. Старый
+// matrix (10 случаев × pull + 4 × push + 3 cross-axis) заменён на
+// семантическую матрицу по 6 состояниям + footer + anti-teaser.
 //
-// Location under tests/cabinet/ matches the .tsx-friendly default vitest
-// pool (integration runner only includes *.test.ts).
+// Прежний plan: docs/plans/cabinet-stale-future-labels.md §D.
 
 import { render, screen } from '@testing-library/react'
 import {
@@ -81,7 +80,6 @@ vi.mock('@/lib/admin/operator-settings', () => ({
   resolveOperatorSettingsForProbe: () => operatorMock(),
 }))
 
-// Light AuthShell stub — render children directly so we can find DOM.
 vi.mock('@/components/auth-shell', () => ({
   AuthShell: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }))
@@ -138,122 +136,95 @@ async function renderPage() {
   render(jsx)
 }
 
-const PULL_COPY = {
+const STATUS_COPY = {
+  healthy:
+    'Google Calendar учителя подключён. Занятое в нём время автоматически скрывается из расписания, а ваши брони сразу попадают учителю в календарь.',
   no_integration:
-    'Учитель пока не подключал Google Calendar. Время в расписании показывается как есть, без проверки занятости в чужом календаре.',
+    'Расписание ведётся внутри LevelChannel. Внешний календарь учителю подключать не обязательно — бронирование занятий работает напрямую через сайт.',
   disconnected:
-    'Учитель отключил Google Calendar. Время в расписании показывается как есть.',
-  active_fresh:
-    'Когда учитель занят в Google Calendar другим делом, эти занятия автоматически исчезают из расписания — вы не сможете записаться на занятое время. ✓ Работает сейчас.',
-  active_stale:
-    'Учитель подключил Google Calendar, но синхронизация сейчас отстаёт. Пока синхронизация не восстановится, занятое в Google время может не скрываться автоматически.',
+    'Google Calendar учителя сейчас отключён. На бронирование занятий это не влияет — расписание ведётся в LevelChannel.',
   degraded:
-    'Учитель подключил Google Calendar, но Google сейчас отвечает с ошибками. Пока ошибки не пройдут, занятое в Google время может не скрываться автоматически.',
+    'Google Calendar учителя подключён, но синхронизация сейчас отстаёт. Это временно — бронирование занятий продолжает работать.',
+  read_only:
+    'Google Calendar учителя подключён только на чтение. Занятое в нём время скрывается, но брони пока не попадают в его календарь автоматически.',
+  mixed:
+    'Google Calendar учителя в смешанном состоянии. Бронирование занятий продолжает работать через LevelChannel.',
 }
 
-const PUSH_COPY = {
-  works:
-    'Когда вы записываетесь, бронь сразу появляется у учителя в Google Calendar.',
-  no_write_calendar:
-    'Бронь у учителя в Google Calendar не появится: учитель пока не выбрал, в какой календарь писать.',
-  disconnected:
-    'Бронь у учителя в Google Calendar не появится: учитель отключил интеграцию.',
-  no_integration:
-    'Бронь у учителя в Google Calendar не появится: учитель пока не подключал Google Calendar.',
-}
-
-describe('/cabinet/settings/calendar — pull-axis copy (exact-match)', () => {
-  it('no_integration', async () => {
-    integrationMock.mockResolvedValue(null)
-    await renderPage()
-    expect(screen.getByTestId('calendar-pull-copy').textContent).toBe(
-      PULL_COPY.no_integration,
-    )
-  })
-
-  it('disconnected', async () => {
-    integrationMock.mockResolvedValue(record({ syncState: 'disconnected' }))
-    await renderPage()
-    expect(screen.getByTestId('calendar-pull-copy').textContent).toBe(
-      PULL_COPY.disconnected,
-    )
-  })
-
-  it('active_fresh', async () => {
+describe('/cabinet/settings/calendar — combined status copy', () => {
+  it('healthy: active_fresh + works → green dot + healthy copy', async () => {
     integrationMock.mockResolvedValue(
       record({
         syncState: 'active',
+        writeCalendarId: 'primary',
         lastPulledAt: new Date(now.getTime() - 60 * 1000).toISOString(),
       }),
     )
     await renderPage()
-    expect(screen.getByTestId('calendar-pull-copy').textContent).toBe(
-      PULL_COPY.active_fresh,
+    expect(screen.getByTestId('calendar-status-copy').textContent).toBe(
+      STATUS_COPY.healthy,
     )
   })
 
-  it('active_stale', async () => {
-    integrationMock.mockResolvedValue(
-      record({
-        syncState: 'active',
-        lastPulledAt: new Date(now.getTime() - 15 * 60 * 1000).toISOString(),
-      }),
-    )
+  it('no_integration → idle copy without Google Calendar mention as dependency', async () => {
+    integrationMock.mockResolvedValue(null)
     await renderPage()
-    expect(screen.getByTestId('calendar-pull-copy').textContent).toBe(
-      PULL_COPY.active_stale,
+    expect(screen.getByTestId('calendar-status-copy').textContent).toBe(
+      STATUS_COPY.no_integration,
     )
   })
 
-  it('degraded', async () => {
-    integrationMock.mockResolvedValue(record({ syncState: 'degraded' }))
-    await renderPage()
-    expect(screen.getByTestId('calendar-pull-copy').textContent).toBe(
-      PULL_COPY.degraded,
-    )
-  })
-})
-
-describe('/cabinet/settings/calendar — push-axis copy (exact-match)', () => {
-  it('works', async () => {
-    integrationMock.mockResolvedValue(record({ writeCalendarId: 'primary' }))
-    await renderPage()
-    expect(screen.getByTestId('calendar-push-copy').textContent).toBe(
-      PUSH_COPY.works,
-    )
-  })
-
-  it('no_write_calendar', async () => {
-    integrationMock.mockResolvedValue(
-      record({ syncState: 'active', writeCalendarId: null }),
-    )
-    await renderPage()
-    expect(screen.getByTestId('calendar-push-copy').textContent).toBe(
-      PUSH_COPY.no_write_calendar,
-    )
-  })
-
-  it('disconnected', async () => {
+  it('disconnected (both axes) → idle copy', async () => {
     integrationMock.mockResolvedValue(
       record({ syncState: 'disconnected', writeCalendarId: 'primary' }),
     )
     await renderPage()
-    expect(screen.getByTestId('calendar-push-copy').textContent).toBe(
-      PUSH_COPY.disconnected,
+    expect(screen.getByTestId('calendar-status-copy').textContent).toBe(
+      STATUS_COPY.disconnected,
     )
   })
 
-  it('no_integration', async () => {
-    integrationMock.mockResolvedValue(null)
+  it('active_stale → warn copy', async () => {
+    integrationMock.mockResolvedValue(
+      record({
+        syncState: 'active',
+        writeCalendarId: 'primary',
+        lastPulledAt: new Date(now.getTime() - 15 * 60 * 1000).toISOString(),
+      }),
+    )
     await renderPage()
-    expect(screen.getByTestId('calendar-push-copy').textContent).toBe(
-      PUSH_COPY.no_integration,
+    expect(screen.getByTestId('calendar-status-copy').textContent).toBe(
+      STATUS_COPY.degraded,
+    )
+  })
+
+  it('degraded → warn copy', async () => {
+    integrationMock.mockResolvedValue(
+      record({ syncState: 'degraded', writeCalendarId: 'primary' }),
+    )
+    await renderPage()
+    expect(screen.getByTestId('calendar-status-copy').textContent).toBe(
+      STATUS_COPY.degraded,
+    )
+  })
+
+  it('active_fresh + no_write_calendar → read-only copy', async () => {
+    integrationMock.mockResolvedValue(
+      record({
+        syncState: 'active',
+        writeCalendarId: null,
+        lastPulledAt: new Date(now.getTime() - 60 * 1000).toISOString(),
+      }),
+    )
+    await renderPage()
+    expect(screen.getByTestId('calendar-status-copy').textContent).toBe(
+      STATUS_COPY.read_only,
     )
   })
 })
 
-describe('/cabinet/settings/calendar — footer', () => {
-  it('operator switch ON → "✓ Email-напоминания приходят перед занятиями."', async () => {
+describe('/cabinet/settings/calendar — footer (operator master switch)', () => {
+  it('switch ON → "✓ Email-напоминания приходят перед занятиями."', async () => {
     operatorMock.mockResolvedValue({
       LEARNER_REMINDERS_EMAIL_ENABLED: { value: 1 },
     })
@@ -263,7 +234,7 @@ describe('/cabinet/settings/calendar — footer', () => {
     )
   })
 
-  it('operator switch OFF → "Email-напоминания временно выключены оператором."', async () => {
+  it('switch OFF → "Email-напоминания временно выключены оператором."', async () => {
     operatorMock.mockResolvedValue({
       LEARNER_REMINDERS_EMAIL_ENABLED: { value: 0 },
     })
@@ -272,70 +243,31 @@ describe('/cabinet/settings/calendar — footer', () => {
       'Email-напоминания временно выключены оператором.',
     )
   })
+})
 
-  it('anti-teaser regression — footer never says "Добавим следующими версиями"', async () => {
+describe('/cabinet/settings/calendar — anti-teaser regression', () => {
+  it('page never says "Добавим следующими версиями" or "слот"', async () => {
     operatorMock.mockResolvedValue({
       LEARNER_REMINDERS_EMAIL_ENABLED: { value: 1 },
     })
-    await renderPage()
-    const footerText =
-      screen.getByTestId('calendar-reminder-footer').textContent ?? ''
-    expect(footerText).not.toMatch(/Добавим следующими версиями/)
-    expect(footerText).not.toMatch(/в работе/)
-    expect(footerText).not.toMatch(/следующих обновлений/)
-  })
-
-  it('anti-teaser regression — page never says "слот" (case-insensitive)', async () => {
     integrationMock.mockResolvedValue(record({ syncState: 'active' }))
     await renderPage()
     const body = document.body.textContent ?? ''
+    expect(body).not.toMatch(/Добавим следующими версиями/)
+    expect(body).not.toMatch(/в работе/)
+    expect(body).not.toMatch(/следующих обновлений/)
     expect(body.toLowerCase()).not.toMatch(/слот/)
   })
-})
 
-describe('/cabinet/settings/calendar — cross-axis permutations', () => {
-  it('active_fresh + works → golden state, exact copy both axes', async () => {
-    integrationMock.mockResolvedValue(
-      record({
-        syncState: 'active',
-        writeCalendarId: 'primary',
-        lastPulledAt: new Date(now.getTime() - 60 * 1000).toISOString(),
-      }),
-    )
-    await renderPage()
-    expect(screen.getByTestId('calendar-pull-copy').textContent).toBe(
-      PULL_COPY.active_fresh,
-    )
-    expect(screen.getByTestId('calendar-push-copy').textContent).toBe(
-      PUSH_COPY.works,
-    )
-  })
-
-  it('active_fresh + no_write_calendar → pull healthy, push broken (independent axes)', async () => {
-    integrationMock.mockResolvedValue(
-      record({
-        syncState: 'active',
-        writeCalendarId: null,
-        lastPulledAt: new Date(now.getTime() - 60 * 1000).toISOString(),
-      }),
-    )
-    await renderPage()
-    expect(screen.getByTestId('calendar-pull-copy').textContent).toBe(
-      PULL_COPY.active_fresh,
-    )
-    expect(screen.getByTestId('calendar-push-copy').textContent).toBe(
-      PUSH_COPY.no_write_calendar,
-    )
-  })
-
-  it('no_integration → both axes consistent (exact strings)', async () => {
+  it('no_integration: copy is friendly, no «не подключал» phrasing', async () => {
+    // Owner-feedback 2026-06-17: «странные текста про гугл календарь и
+    // не включенная интеграция» — старый pull-copy буквально начинался
+    // с «Учитель пока не подключал Google Calendar», что подсвечивало
+    // отсутствие функции вместо того, чтобы успокоить пользователя.
+    // Новый copy не должен начинаться с обвинения «учитель не…».
     integrationMock.mockResolvedValue(null)
     await renderPage()
-    expect(screen.getByTestId('calendar-pull-copy').textContent).toBe(
-      PULL_COPY.no_integration,
-    )
-    expect(screen.getByTestId('calendar-push-copy').textContent).toBe(
-      PUSH_COPY.no_integration,
-    )
+    const text = screen.getByTestId('calendar-status-copy').textContent ?? ''
+    expect(text).not.toMatch(/пока не подключал/)
   })
 })
