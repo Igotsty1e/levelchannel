@@ -937,15 +937,18 @@ html, body {
 }
 
 /* Teacher cabinet padding — учитывает sticky bottom nav на mobile. */
-.teacher-cabinet-main {
+.teacher-cabinet-main,
+.learner-cabinet-main {
   padding: 32px 40px 96px;
 }
-.teacher-cabinet-inner {
+.teacher-cabinet-inner,
+.learner-cabinet-inner {
   max-width: 1200px;
   margin: 0 auto;
 }
 @media (max-width: 767px) {
-  .teacher-cabinet-main {
+  .teacher-cabinet-main,
+  .learner-cabinet-main {
     padding: 16px 16px calc(96px + env(safe-area-inset-bottom));
   }
 }
