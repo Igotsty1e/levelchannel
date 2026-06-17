@@ -104,7 +104,18 @@ export function RecentPastCard({
                 fontSize: 14,
               }}
             >
-              <span style={{ minWidth: 0, flex: '1 1 200px' }}>
+              {/* 2026-06-17 fix (owner image): имя+дата на одной строке через
+                  inline flex с whitespace nowrap и общим выравниванием. */}
+              <span
+                style={{
+                  minWidth: 0,
+                  flex: '1 1 240px',
+                  display: 'inline-flex',
+                  alignItems: 'baseline',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                }}
+              >
                 <span
                   title={learner}
                   style={{
@@ -112,8 +123,6 @@ export function RecentPastCard({
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
-                    display: 'inline-block',
-                    maxWidth: '100%',
                   }}
                 >
                   {learner}
@@ -122,7 +131,7 @@ export function RecentPastCard({
                   style={{
                     color: 'var(--secondary)',
                     fontSize: 13,
-                    marginLeft: 8,
+                    whiteSpace: 'nowrap',
                   }}
                 >
                   {formatDate(s.startAt)} · {s.durationMinutes} мин
@@ -145,6 +154,26 @@ export function RecentPastCard({
                 >
                   Не пришёл
                 </Button>
+                {/* 2026-06-17 fix (owner image): кнопка «Перенести» — link на
+                    календарь с фокусом на слоте (slot-detail-modal там
+                    доступен). */}
+                <Link
+                  href={`/teacher/calendar?focusSlot=${s.id}`}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    padding: '0 12px',
+                    height: 32,
+                    borderRadius: 8,
+                    border: '1px solid transparent',
+                    color: 'var(--secondary)',
+                    textDecoration: 'none',
+                    fontSize: 13,
+                    fontWeight: 500,
+                  }}
+                >
+                  Перенести
+                </Link>
               </span>
             </li>
           )
