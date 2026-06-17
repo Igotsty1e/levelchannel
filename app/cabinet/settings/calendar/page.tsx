@@ -15,10 +15,13 @@ import {
 } from '@/lib/calendar/derive-status'
 import { getGoogleIntegrationMeta } from '@/lib/calendar/integrations'
 
-// Plan: docs/plans/cabinet-stale-future-labels.md §A.
-// Learner-side state-aware view of teacher's Google Calendar
-// integration. Renders different copy per (pullStatus × pushStatus)
-// to avoid lying about what actually works.
+// 2026-06-17 cabinet-settings-calendar-copy: owner-feedback — две
+// отдельные строки про pull/push «странно читались», особенно когда у
+// учителя нет интеграции вовсе. Сворачиваем в одну консолидированную
+// строку статуса + цветной маркер. Никакой технической детали про
+// «занятость в чужом календаре» — учнику этого знать не нужно.
+//
+// Прежний contract — docs/plans/cabinet-stale-future-labels.md §A.
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -27,32 +30,63 @@ export const metadata = {
   title: 'Календарь — настройки — LevelChannel',
 }
 
-function pullCopy(status: PullStatus): string {
-  switch (status) {
-    case 'no_integration':
-      return 'Учитель пока не подключал Google Calendar. Время в расписании показывается как есть, без проверки занятости в чужом календаре.'
-    case 'disconnected':
-      return 'Учитель отключил Google Calendar. Время в расписании показывается как есть.'
-    case 'active_fresh':
-      return 'Когда учитель занят в Google Calendar другим делом, эти занятия автоматически исчезают из расписания — вы не сможете записаться на занятое время. ✓ Работает сейчас.'
-    case 'active_stale':
-      return 'Учитель подключил Google Calendar, но синхронизация сейчас отстаёт. Пока синхронизация не восстановится, занятое в Google время может не скрываться автоматически.'
-    case 'degraded':
-      return 'Учитель подключил Google Calendar, но Google сейчас отвечает с ошибками. Пока ошибки не пройдут, занятое в Google время может не скрываться автоматически.'
+type CalendarStatusIntent = 'idle' | 'ok' | 'warn'
+
+function combinedCalendarCopy(
+  pull: PullStatus,
+  push: PushStatus,
+): { intent: CalendarStatusIntent; text: string } {
+  // Полностью здоровая интеграция — pull свежий, push настроен.
+  if (pull === 'active_fresh' && push === 'works') {
+    return {
+      intent: 'ok',
+      text: 'Google Calendar учителя подключён. Занятое в нём время автоматически скрывается из расписания, а ваши брони сразу попадают учителю в календарь.',
+    }
+  }
+
+  // Учитель ничего не подключал.
+  if (pull === 'no_integration' && push === 'no_integration') {
+    return {
+      intent: 'idle',
+      text: 'Расписание ведётся внутри LevelChannel. Внешний календарь учителю подключать не обязательно — бронирование занятий работает напрямую через сайт.',
+    }
+  }
+
+  // Учитель отключил.
+  if (pull === 'disconnected' && push === 'disconnected') {
+    return {
+      intent: 'idle',
+      text: 'Google Calendar учителя сейчас отключён. На бронирование занятий это не влияет — расписание ведётся в LevelChannel.',
+    }
+  }
+
+  // Подключён, но синхронизация отстаёт / Google отвечает с ошибками.
+  if (pull === 'active_stale' || pull === 'degraded') {
+    return {
+      intent: 'warn',
+      text: 'Google Calendar учителя подключён, но синхронизация сейчас отстаёт. Это временно — бронирование занятий продолжает работать.',
+    }
+  }
+
+  // Подключён на чтение, но писать ваши брони туда некуда.
+  if (pull === 'active_fresh' && push === 'no_write_calendar') {
+    return {
+      intent: 'warn',
+      text: 'Google Calendar учителя подключён только на чтение. Занятое в нём время скрывается, но брони пока не попадают в его календарь автоматически.',
+    }
+  }
+
+  // Нестандартные комбинации — короткий честный fallback.
+  return {
+    intent: 'warn',
+    text: 'Google Calendar учителя в смешанном состоянии. Бронирование занятий продолжает работать через LevelChannel.',
   }
 }
 
-function pushCopy(status: PushStatus): string {
-  switch (status) {
-    case 'works':
-      return 'Когда вы записываетесь, бронь сразу появляется у учителя в Google Calendar.'
-    case 'no_write_calendar':
-      return 'Бронь у учителя в Google Calendar не появится: учитель пока не выбрал, в какой календарь писать.'
-    case 'disconnected':
-      return 'Бронь у учителя в Google Calendar не появится: учитель отключил интеграцию.'
-    case 'no_integration':
-      return 'Бронь у учителя в Google Calendar не появится: учитель пока не подключал Google Calendar.'
-  }
+const DOT_COLOR: Record<CalendarStatusIntent, string> = {
+  ok: 'rgb(46, 160, 67)',
+  warn: 'rgb(212, 153, 0)',
+  idle: 'var(--secondary)',
 }
 
 export default async function LearnerCalendarSettingsPage() {
@@ -125,30 +159,45 @@ export default async function LearnerCalendarSettingsPage() {
             вас, здесь появится информация о его расписании.
           </p>
         ) : (
-          <>
-            <h2
-              style={{
-                fontSize: 16,
-                fontWeight: 600,
-                margin: '8px 0',
-              }}
-              data-testid="calendar-section-heading"
-            >
-              Как сейчас работает синхронизация
-            </h2>
-            <ul
-              style={{
-                color: 'var(--secondary)',
-                fontSize: 14,
-                lineHeight: 1.7,
-                paddingLeft: 20,
-                margin: 0,
-              }}
-            >
-              <li data-testid="calendar-pull-copy">{pullCopy(pullStatus)}</li>
-              <li data-testid="calendar-push-copy">{pushCopy(pushStatus)}</li>
-            </ul>
-          </>
+          (() => {
+            const status = combinedCalendarCopy(pullStatus, pushStatus)
+            return (
+              <div
+                data-testid="calendar-status-block"
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 10,
+                  padding: '12px 14px',
+                  border: '1px solid var(--border)',
+                  borderRadius: 10,
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: DOT_COLOR[status.intent],
+                    marginTop: 7,
+                    flexShrink: 0,
+                  }}
+                />
+                <p
+                  data-testid="calendar-status-copy"
+                  style={{
+                    margin: 0,
+                    color: 'var(--text)',
+                    fontSize: 14,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {status.text}
+                </p>
+              </div>
+            )
+          })()
         )}
 
         <p
