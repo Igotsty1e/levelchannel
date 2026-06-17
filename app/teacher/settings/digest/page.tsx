@@ -1,10 +1,11 @@
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
+import Link from 'next/link'
+
 import {
   EmailDigestCard,
   PushDigestCard,
-  TelegramDigestCard,
 } from '@/components/teacher/digest-settings'
 import { resolveOperatorSettingsForProbe } from '@/lib/admin/operator-settings'
 import { getAuthPool } from '@/lib/auth/pool'
@@ -54,33 +55,29 @@ export default async function TeacherDigestSettingsPage() {
   const teacherTgBound = bindRow.rows[0]?.teacher_telegram_enabled === true
   const accountEmail = bindRow.rows[0]?.email ?? null
 
-  const settings = await resolveOperatorSettingsForProbe('teacher-daily-digest')
-  const teacherTgMasterSwitch =
-    settings.TEACHER_DIGEST_TELEGRAM_ENABLED?.value === 1
-
   return (
     <div className="digest-page">
       <div className="digest-page-back">
-        <a href="/teacher/settings" className="digest-back-link">
+        <Link href="/teacher/settings" className="digest-back-link">
           ← Назад в&nbsp;настройки
-        </a>
+        </Link>
       </div>
       <header className="digest-page-header">
         <h1 className="digest-page-title">Уведомления</h1>
         <p className="digest-page-sub">
           Каждое утро в&nbsp;08:00 по&nbsp;вашему часовому поясу
           присылаем дайджест на&nbsp;день: время начала, имя ученика
-          и&nbsp;ссылку для подключения. Ниже — каналы, по&nbsp;которым
-          приходит дайджест.
+          и&nbsp;ссылку для подключения. Каналы — e-mail и push в браузере.
+          {' '}Telegram-бот для дайджеста и&nbsp;уведомлений настраивается{' '}
+          <Link href="/teacher/settings/integrations" style={{ color: 'inherit', textDecoration: 'underline' }}>
+            в разделе «Интеграции»
+          </Link>
+          {teacherTgBound ? ' (сейчас подключён)' : ''}.
         </p>
       </header>
 
       <div className="digest-channel-stack">
         <EmailDigestCard email={accountEmail} />
-        <TelegramDigestCard
-          initialBound={teacherTgBound}
-          masterSwitchOn={teacherTgMasterSwitch}
-        />
         <PushDigestCard />
       </div>
     </div>

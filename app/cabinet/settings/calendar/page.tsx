@@ -213,7 +213,69 @@ export default async function LearnerCalendarSettingsPage() {
             ? '✓ Email-напоминания приходят перед занятиями.'
             : 'Email-напоминания временно выключены оператором.'}
         </p>
+
+        <LearnerIcsSubscriptionBlock accountId={session.account.id} />
       </div>
     </AuthShell>
+  )
+}
+
+function LearnerIcsSubscriptionBlock({ accountId }: { accountId: string }) {
+  // 2026-06-17 — .ics subscription. Token зашит в URL — изолированный
+  // секрет, без cookie. Если ученик скомпрометирует URL — учитель
+  // ротирует LEARNER_ICS_TOKEN_SECRET.
+  let icsUrl: string | null = null
+  try {
+    // dynamic import чтобы при отсутствии secret страница не падала
+    // (мы показываем понятный fallback вместо 500).
+    // Это import без сетевых запросов — стоимость минимальная.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { signLearnerIcsToken } = require('@/lib/calendar/learner-ics') as typeof import('@/lib/calendar/learner-ics')
+    const token = signLearnerIcsToken(accountId)
+    const base = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, '') || ''
+    icsUrl = `${base}/api/learner/calendar.ics?account=${accountId}&token=${token}`
+  } catch {
+    icsUrl = null
+  }
+
+  return (
+    <div
+      style={{
+        marginTop: 24,
+        padding: 16,
+        border: '1px solid var(--border)',
+        borderRadius: 12,
+        background: 'var(--surface)',
+      }}
+    >
+      <h2 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 8px' }}>
+        Подписка на занятия в Google Calendar / Apple Calendar
+      </h2>
+      <p style={{ color: 'var(--secondary)', fontSize: 13, marginBottom: 12, lineHeight: 1.5 }}>
+        Скопируйте ссылку и добавьте её в календарь как «по подписке» (subscribed calendar).
+        Календарь будет автоматически обновляться при изменениях.
+      </p>
+      {icsUrl ? (
+        <code
+          style={{
+            display: 'block',
+            padding: '8px 10px',
+            background: 'var(--bg)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            fontSize: 12,
+            wordBreak: 'break-all',
+            color: 'var(--secondary)',
+          }}
+        >
+          {icsUrl}
+        </code>
+      ) : (
+        <p style={{ color: 'var(--danger)', fontSize: 13 }}>
+          Подписка временно недоступна — оператор не настроил секрет
+          LEARNER_ICS_TOKEN_SECRET. Напишите учителю.
+        </p>
+      )}
+    </div>
   )
 }

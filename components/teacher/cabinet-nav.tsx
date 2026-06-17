@@ -38,6 +38,7 @@ const NAV_ITEMS: ReadonlyArray<NavItem> = [
     prefixMatch: true,
     showCalendarDot: true,
   },
+  { href: '/teacher/lessons', label: 'Занятия', icon: '≡', prefixMatch: true },
   { href: '/teacher/learners', label: 'Ученики', icon: '☰', prefixMatch: true },
   { href: '/teacher/settings', label: 'Настройки', icon: '⚙', prefixMatch: true },
 ]

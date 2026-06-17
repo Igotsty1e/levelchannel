@@ -78,6 +78,13 @@ describe('POLICY-KNOBS — learner cancel window is env-tunable', () => {
       verifyEmail: true,
       role: 'teacher',
     })
+    // 2026-06-17: per-teacher cancel-window now lives in DB
+    // (accounts.teacher_cancel_window_minutes, default 1440). Env-var
+    // is fallback only. Test must explicitly set teacher's value.
+    await getDbPool().query(
+      `update accounts set teacher_cancel_window_minutes = 0 where id = $1`,
+      [teacher.accountId],
+    )
     const admin = await registerAndCookie('pk-admin-0h@example.com', {
       verifyEmail: true,
       role: 'admin',
@@ -136,6 +143,10 @@ describe('POLICY-KNOBS — learner cancel window is env-tunable', () => {
       verifyEmail: true,
       role: 'teacher',
     })
+    await getDbPool().query(
+      `update accounts set teacher_cancel_window_minutes = 0 where id = $1`,
+      [teacher.accountId],
+    )
     const admin = await registerAndCookie('pk-admin-0h-far@example.com', {
       verifyEmail: true,
       role: 'admin',
