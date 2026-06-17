@@ -23,6 +23,7 @@ import { TeacherCabinetNav } from '@/components/teacher/cabinet-nav'
 const EXPECTED_LINKS: Array<{ href: string; label: string }> = [
   { href: '/teacher', label: 'Главная' },
   { href: '/teacher/calendar', label: 'Календарь' },
+  { href: '/teacher/lessons', label: 'Занятия' },
   { href: '/teacher/learners', label: 'Ученики' },
   { href: '/teacher/settings', label: 'Настройки' },
 ]
@@ -48,7 +49,7 @@ describe('TeacherCabinetNav — mobile-first restructure', () => {
     cleanup()
   })
 
-  it('renders 4 sections in BOTH desktop and mobile nav', () => {
+  it('renders 5 sections in BOTH desktop and mobile nav', () => {
     render(<TeacherCabinetNav calendarConnected={false} />)
     const desktopNav = screen.getByTestId('teacher-cabinet-nav')
     const mobileNav = screen.getByTestId('teacher-cabinet-nav-mobile')
@@ -60,7 +61,7 @@ describe('TeacherCabinetNav — mobile-first restructure', () => {
     )
   })
 
-  it('renders all 4 canonical hrefs in desktop nav', () => {
+  it('renders all 5 canonical hrefs in desktop nav', () => {
     render(<TeacherCabinetNav calendarConnected={false} />)
     for (const { href, label } of EXPECTED_LINKS) {
       const link = findDesktopLinkByLabel(label)
