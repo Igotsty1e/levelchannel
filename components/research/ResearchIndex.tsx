@@ -1,6 +1,6 @@
 import Link from 'next/link'
 
-import { BrandMark } from '@/components/brand/brand-mark'
+import { BrandMarkAnimated } from '@/components/brand/brand-mark-animated'
 import type { ResearchPostSummary } from '@/lib/research/types'
 
 import './research-tokens.css'
@@ -22,7 +22,7 @@ export function ResearchIndex({ posts }: { posts: ResearchPostSummary[] }) {
       <div className="rs-index-frame">
         <header className="rs-index-hero">
           <Link href="/" className="rs-brand" aria-label="Level Channel — на главную">
-            <BrandMark variant="full" width={180} />
+            <BrandMarkAnimated width={180} />
           </Link>
           <span className="rs-index-eyebrow">Research</span>
           <h1 className="rs-index-title">Независимые обзоры рынков по открытым данным</h1>
