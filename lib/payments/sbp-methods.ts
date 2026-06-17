@@ -22,6 +22,10 @@ export type PaymentMethod = {
 }
 
 export type PaymentMethodForLearnerView = {
+  // 2026-06-17 prod-fix: id нужен модалке оплаты, чтобы передать его в
+  // POST /api/learner/payment-claims (сервер требует paymentMethodId
+  // для SBP-канала; без него — 400 method_required_for_sbp).
+  id: string
   phoneE164: string
   phoneDisplay: string
   bankLabel: string
@@ -425,11 +429,12 @@ export async function resolveMethodForLearner(
   const pool = getDbPool()
   // Assignment override (только если referenced метод не archived).
   const a = await pool.query<{
+    id: string
     phone_e164: string
     phone_display: string
     bank_label: string
   }>(
-    `select m.phone_e164, m.phone_display, m.bank_label
+    `select m.id, m.phone_e164, m.phone_display, m.bank_label
        from teacher_payment_method_assignments a
        join teacher_payment_methods m on m.id = a.payment_method_id
       where a.teacher_account_id = $1
@@ -440,17 +445,19 @@ export async function resolveMethodForLearner(
   )
   if (a.rows[0]) {
     return {
+      id: a.rows[0].id,
       phoneE164: a.rows[0].phone_e164,
       phoneDisplay: a.rows[0].phone_display,
       bankLabel: a.rows[0].bank_label,
     }
   }
   const d = await pool.query<{
+    id: string
     phone_e164: string
     phone_display: string
     bank_label: string
   }>(
-    `select phone_e164, phone_display, bank_label
+    `select id, phone_e164, phone_display, bank_label
        from teacher_payment_methods
       where teacher_account_id = $1
         and is_default = true
@@ -460,6 +467,7 @@ export async function resolveMethodForLearner(
   )
   if (d.rows[0]) {
     return {
+      id: d.rows[0].id,
       phoneE164: d.rows[0].phone_e164,
       phoneDisplay: d.rows[0].phone_display,
       bankLabel: d.rows[0].bank_label,

@@ -24,7 +24,11 @@ type PayContext = {
   teacherName: string
   slotLabel: string
   expectedAmountKopecks: number
-  paymentMethod: { phoneDisplay: string; bankLabel: string } | null
+  // 2026-06-17 prod-fix: paymentMethod включает id, иначе SBP-claim
+  // получит 400 method_required_for_sbp.
+  paymentMethod:
+    | { id: string; phoneDisplay: string; bankLabel: string }
+    | null
 }
 
 function formatRub(kopecks: number): string {
@@ -117,6 +121,11 @@ export function PayLessonModal({
           },
         ],
       }
+      // 2026-06-17 prod-fix: для SBP сервер требует paymentMethodId.
+      // Раньше клиент его не слал → 400 method_required_for_sbp.
+      if (channel === 'sbp' && ctx.paymentMethod) {
+        body.paymentMethodId = ctx.paymentMethod.id
+      }
       if (channel === 'other' && otherNote.trim()) {
         body.note = otherNote.trim()
       }
@@ -127,7 +136,13 @@ export function PayLessonModal({
       })
       if (!r.ok) {
         const data = await r.json().catch(() => ({}))
-        setSubmitErr(localizePayError(data?.error) || `Ошибка ${r.status}.`)
+        // 2026-06-17 prod-fix: «Ошибка 400.» ничего не говорит ученику.
+        // localizePayError должен покрывать все известные 400-reasons.
+        // Fallback на случай regression — дружелюбный generic, а не code.
+        setSubmitErr(
+          localizePayError(data?.error)
+            || 'Не удалось оформить заявку. Обновите страницу и попробуйте снова.',
+        )
         return
       }
       onSuccess()
