@@ -65,26 +65,43 @@ async function parseBody(
     contentType.includes('multipart/form-data')
   ) {
     const form = await request.formData()
-    const amountRaw = form.get('amountKopecks')
-    if (typeof amountRaw !== 'string') {
-      return {
-        ok: false,
-        response: NextResponse.json(
-          { error: 'amountKopecks/required' },
-          { status: 400, headers: NO_STORE },
-        ),
+    // 2026-06-17 UX fix: форма теперь шлёт `amountRub` (десятичная
+    // строка вида «2123.45»). Legacy fallback на `amountKopecks` (целые
+    // копейки) — если кто-то ещё открыт со старой страницей в браузере.
+    const amountRubRaw = form.get('amountRub')
+    const amountKopecksRaw = form.get('amountKopecks')
+    let amountKopecks: number
+    if (typeof amountRubRaw === 'string' && amountRubRaw.length > 0) {
+      // «1234,56» или «1234.56» → 123456
+      const normalized = amountRubRaw.replace(',', '.').trim()
+      const rub = Number(normalized)
+      if (!Number.isFinite(rub) || rub <= 0) {
+        return {
+          ok: false,
+          response: NextResponse.json(
+            { error: 'amountRub/invalid' },
+            { status: 400, headers: NO_STORE },
+          ),
+        }
       }
-    }
-    const amountKopecks = Number(amountRaw)
-    if (
-      !Number.isFinite(amountKopecks) ||
-      !Number.isInteger(amountKopecks) ||
-      amountKopecks <= 0
-    ) {
+      amountKopecks = Math.round(rub * 100)
+    } else if (typeof amountKopecksRaw === 'string') {
+      const n = Number(amountKopecksRaw)
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
+        return {
+          ok: false,
+          response: NextResponse.json(
+            { error: 'amountKopecks/invalid' },
+            { status: 400, headers: NO_STORE },
+          ),
+        }
+      }
+      amountKopecks = n
+    } else {
       return {
         ok: false,
         response: NextResponse.json(
-          { error: 'amountKopecks/invalid' },
+          { error: 'amountRub/required' },
           { status: 400, headers: NO_STORE },
         ),
       }

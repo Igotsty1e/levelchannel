@@ -84,6 +84,12 @@ export type {
   LessonHistoryRow,
 } from './teacher-lesson-history'
 
+export { listLearnerLessonHistory } from './learner-lesson-history'
+export type {
+  LearnerLessonHistoryFilter,
+  LearnerLessonHistoryRow,
+} from './learner-lesson-history'
+
 export {
   SlotTariffDurationMismatchError,
   SlotTeacherRoleError,

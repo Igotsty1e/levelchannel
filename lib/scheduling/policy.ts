@@ -49,3 +49,54 @@ export function getLearnerCancelThresholdMs(
 ): number {
   return getLearnerCancelWindowHours(env) * 60 * 60 * 1000
 }
+
+// 2026-06-17 — per-teacher cancel-window в минутах.
+// Migration 0132 добавила колонку accounts.teacher_cancel_window_minutes
+// (default 1440 = 24h, диапазон 0..2880 = 0..48h).
+// Owner-feedback: per-teacher настройка вместо глобального env.
+
+import { getDbPool } from '@/lib/db/pool'
+
+const DEFAULT_TEACHER_CANCEL_WINDOW_MINUTES = 1440 // 24h
+const MAX_TEACHER_CANCEL_WINDOW_MINUTES = 2880 // 48h
+
+export async function getTeacherCancelWindowMinutes(
+  teacherAccountId: string,
+): Promise<number> {
+  try {
+    const pool = getDbPool()
+    const r = await pool.query<{ minutes: number | null }>(
+      `select teacher_cancel_window_minutes as minutes
+         from accounts where id = $1`,
+      [teacherAccountId],
+    )
+    const m = r.rows[0]?.minutes
+    if (m === null || m === undefined) return DEFAULT_TEACHER_CANCEL_WINDOW_MINUTES
+    const n = Number(m)
+    if (
+      !Number.isFinite(n)
+      || !Number.isInteger(n)
+      || n < 0
+      || n > MAX_TEACHER_CANCEL_WINDOW_MINUTES
+    ) {
+      return DEFAULT_TEACHER_CANCEL_WINDOW_MINUTES
+    }
+    return n
+  } catch {
+    return DEFAULT_TEACHER_CANCEL_WINDOW_MINUTES
+  }
+}
+
+export async function setTeacherCancelWindowMinutes(
+  teacherAccountId: string,
+  minutes: number,
+): Promise<void> {
+  const clamped = Math.max(0, Math.min(MAX_TEACHER_CANCEL_WINDOW_MINUTES, Math.round(minutes)))
+  const pool = getDbPool()
+  await pool.query(
+    `update accounts
+        set teacher_cancel_window_minutes = $2
+      where id = $1`,
+    [teacherAccountId, clamped],
+  )
+}

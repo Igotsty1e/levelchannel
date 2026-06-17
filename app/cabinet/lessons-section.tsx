@@ -603,6 +603,21 @@ export function LessonsSection({
                       </ul>
                     </>
                   ) : null}
+                  {past.length >= 3 ? (
+                    <p
+                      style={{
+                        marginTop: 12,
+                        fontSize: 13,
+                      }}
+                    >
+                      <Link
+                        href="/cabinet/lessons"
+                        style={{ color: 'var(--secondary)' }}
+                      >
+                        Все занятия с фильтрами →
+                      </Link>
+                    </p>
+                  ) : null}
                 </>
               )
             })()}

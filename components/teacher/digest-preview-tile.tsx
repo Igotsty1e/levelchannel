@@ -124,6 +124,12 @@ export function DigestPreviewTile({ preview, pastUnmarkedSection }: Props) {
               slot.learnerEmail?.trim() ||
               'Ученик'
             const time = formatStartHHmm(slot.startAt, teacherTz)
+            const isPastBooked =
+              slot.status === 'booked'
+              && new Date(slot.startAt).getTime() < Date.now()
+            const isFutureBooked =
+              slot.status === 'booked'
+              && new Date(slot.startAt).getTime() >= Date.now()
             return (
               <li
                 key={slot.id}
@@ -153,6 +159,9 @@ export function DigestPreviewTile({ preview, pastUnmarkedSection }: Props) {
                     Открыть Zoom
                   </a>
                 ) : null}
+                {/* 2026-06-17: status pills (читаются как status) +
+                    quick-actions (читаются как action). Owner-feedback:
+                    «Оплачено» как label кнопки путается со статусом. */}
                 {slot.status === 'cancelled' ? (
                   <span
                     style={{
@@ -178,12 +187,50 @@ export function DigestPreviewTile({ preview, pastUnmarkedSection }: Props) {
                   >
                     Проведён
                   </span>
-                ) : slot.status === 'booked'
+                ) : null}
+                {isPastBooked ? (
+                  // 2026-06-17 owner-feedback: показываем реальный
+                  // status pill «Не оплачено» (как на /teacher/lessons)
+                  // вместо одиночной ✓-галочки.
+                  <span
+                    style={{
+                      fontSize: 12,
+                      padding: '2px 6px',
+                      borderRadius: 4,
+                      background: 'rgba(255, 200, 130, 0.15)',
+                      color: '#ffc882',
+                      fontWeight: 500,
+                    }}
+                  >
+                    Не оплачено
+                  </span>
+                ) : null}
+                {/* Quick-actions: future → Перенести/Отменить;
+                    past booked → «Отметить оплату» (был «Оплачено»). */}
+                {isFutureBooked ? (
+                  <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8 }}>
+                    <QuickLink href={`/teacher/calendar?focusSlot=${slot.id}`}>
+                      Перенести
+                    </QuickLink>
+                    <QuickLink href={`/teacher/calendar?focusSlot=${slot.id}`}>
+                      Отменить
+                    </QuickLink>
+                  </span>
+                ) : null}
+                {isPastBooked && slot.learnerAccountId ? (
+                  <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8 }}>
+                    <QuickLink href={`/teacher/learners/${slot.learnerAccountId}/settle`}>
+                      Отметить оплату
+                    </QuickLink>
+                  </span>
+                ) : null}
+                {false && slot.status === 'booked'
                 && new Date(slot.startAt).getTime() < Date.now() ? (
                   /* 2026-06-12 payments-copy-and-states: auto-complete
                      cron отключён, поэтому past booked-слот висит как
-                     «забронирован». Учителю показываем мелкую галочку
-                     «прошло» — без действий, информация только. */
+                     «забронирован». 2026-06-17 — заменили мелкую ✓
+                     на полноценный «Не оплачено» pill выше. Блок
+                     оставлен закомментированным как историческая ссылка. */
                   <span
                     aria-label="Занятие уже прошло"
                     title="Занятие уже прошло"
@@ -202,6 +249,7 @@ export function DigestPreviewTile({ preview, pastUnmarkedSection }: Props) {
         </ul>
       )}
 
+      {/* QuickLink стиль определён локально, чтобы не плодить class'ы. */}
       {pastUnmarkedSection ? (
         <>
           <hr
@@ -240,5 +288,34 @@ export function DigestPreviewTile({ preview, pastUnmarkedSection }: Props) {
         </>
       ) : null}
     </section>
+  )
+}
+
+function QuickLink({
+  href,
+  children,
+}: {
+  href: string
+  children: React.ReactNode
+}) {
+  return (
+    <Link
+      href={href}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '4px 10px',
+        borderRadius: 6,
+        border: '1px solid var(--border)',
+        background: 'transparent',
+        color: 'var(--text)',
+        textDecoration: 'none',
+        fontSize: 12,
+        fontWeight: 500,
+        lineHeight: 1.2,
+      }}
+    >
+      {children}
+    </Link>
   )
 }

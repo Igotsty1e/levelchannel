@@ -60,6 +60,15 @@ export function LandingFooter({ legalProfile }: { legalProfile: LandingLegalProf
         </div>
         <div>
           <h4 style={{ fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--v4-text-muted)', margin: '0 0 14px' }}>
+            Журнал
+          </h4>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 8 }}>
+            <li><Link href="/blog" className="v4-link" style={{ fontSize: 14 }}>Все заметки</Link></li>
+            <li><Link href="/blog/why-tutor-is-not-school" className="v4-link" style={{ fontSize: 14 }}>Почему репетитор — не малая школа</Link></li>
+          </ul>
+        </div>
+        <div>
+          <h4 style={{ fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--v4-text-muted)', margin: '0 0 14px' }}>
             Документы
           </h4>
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 8 }}>

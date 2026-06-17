@@ -11,6 +11,7 @@ import { listAccountActivePackages } from '@/lib/billing/packages'
 import { listPackageConsumedSlotIds } from '@/lib/cabinet/package-coverage'
 import { listSlotPaymentState } from '@/lib/payments/allocations'
 import { listClaimedOrConfirmedSlotIds } from '@/lib/payments/sbp-claims'
+import { listSettledPaidSlotIds } from '@/lib/payments/settle-paid-slots'
 import {
   listOpenFutureSlots,
   listSlotsAsTeacher,
@@ -219,6 +220,13 @@ export default async function CabinetPage({
   const packageConsumedSlotIds = isLearner
     ? await listPackageConsumedSlotIds(account.id)
     : new Set<string>()
+  // 2026-06-17 owner-feedback: «оплаты учеников не обновляются после
+  // того как учитель их отметил оплаченными». Учитель использует
+  // /teacher/learners/[id]/settle (lesson_settlement_completions),
+  // но раньше ученик это НЕ видел — кнопка «Оплатить» оставалась.
+  const settledPaidSlotIds = isLearner
+    ? await listSettledPaidSlotIds(mySlots.map((s) => s.id))
+    : new Set<string>()
   const paidSlotIds: string[] = []
   const refundedSlotIds: string[] = []
   for (const [slotId, state] of paymentStateMap) {
@@ -229,6 +237,9 @@ export default async function CabinetPage({
     if (!paidSlotIds.includes(slotId)) paidSlotIds.push(slotId)
   }
   for (const slotId of packageConsumedSlotIds) {
+    if (!paidSlotIds.includes(slotId)) paidSlotIds.push(slotId)
+  }
+  for (const slotId of settledPaidSlotIds) {
     if (!paidSlotIds.includes(slotId)) paidSlotIds.push(slotId)
   }
   // Bug #1 (2026-06-02). For single-link learners only — this is the
