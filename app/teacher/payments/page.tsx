@@ -74,8 +74,15 @@ export default async function TeacherPaymentsPage() {
 
   const pendingClaims = claims.filter((c) => c.status === 'claimed')
   const confirmedThisMonth = (() => {
+    // 2026-06-17 audit fix: используем UTC-границы месяца, иначе на
+    // сервере с tz-offset «Заработано» расходится с /teacher home
+    // (lib/billing/teacher-finance.ts использует UTC). Owner-audit:
+    // «данные у нас бьются с данными по оплатам которые указываются
+    // в разных местах продукта».
     const now = new Date()
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const monthStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+    )
     return claims.filter(
       (c) =>
         c.status === 'confirmed'
