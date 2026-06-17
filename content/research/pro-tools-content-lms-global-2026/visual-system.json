@@ -1,0 +1,24 @@
+{
+  "hero": {
+    "kind": "stat-grid",
+    "composition": {
+      "headline": "Контент-инструменты и LMS 2026"
+    }
+  },
+  "section_accents": {
+    "canva": "rose",
+    "notion": "warm-amber",
+    "classroom": "coral",
+    "canvas": "info",
+    "russia": "warm-amber",
+    "outlook": "peach",
+    "methodology": "info"
+  },
+  "rhythm": {
+    "stat_strips_between_sections": []
+  },
+  "typography": {
+    "key_number_size": "huge",
+    "section_separator": "gradient-rule"
+  }
+}

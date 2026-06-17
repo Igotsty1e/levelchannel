@@ -1,0 +1,160 @@
+{
+  "fig_payments_tpv": {
+    "section_id": "stripe",
+    "kind": "hbar",
+    "title": "Платёжный TPV 2025 (трлн долларов)",
+    "unit": "трлн",
+    "accent": "rose",
+    "data": [
+      {
+        "label": "Alipay",
+        "value": 20.1,
+        "highlight": true
+      },
+      {
+        "label": "Stripe",
+        "value": 1.9,
+        "highlight": true
+      },
+      {
+        "label": "PayPal",
+        "value": 1.79,
+        "highlight": false
+      },
+      {
+        "label": "Wise (cross-border)",
+        "value": 0.185,
+        "highlight": false
+      }
+    ]
+  },
+  "fig_sbp_strip": {
+    "section_id": "sbp",
+    "kind": "metric-strip",
+    "title": "СБП · ключевые цифры 2025",
+    "accent": "warm-amber",
+    "data": [
+      {
+        "label": "Операций",
+        "value": "18,3 млрд",
+        "trend": "×1,4 к 2024"
+      },
+      {
+        "label": "Объём",
+        "value": "103 трлн руб",
+        "trend": "×1,5"
+      },
+      {
+        "label": "P2P переводов",
+        "value": "12,7 млрд",
+        "trend": "+33%"
+      },
+      {
+        "label": "Жителей пользуются",
+        "value": "7 из 10"
+      }
+    ]
+  },
+  "fig_china_share": {
+    "section_id": "china",
+    "kind": "compare-pies",
+    "title": "Китайский mobile-payment рынок",
+    "accent": "info",
+    "data": [
+      {
+        "label": "Alipay",
+        "percent": 53
+      },
+      {
+        "label": "WeChat Pay",
+        "percent": 42
+      },
+      {
+        "label": "Остальные",
+        "percent": 5
+      }
+    ]
+  },
+  "fig_stripe_strip": {
+    "section_id": "stripe",
+    "kind": "metric-strip",
+    "title": "Stripe · в цифрах 2025",
+    "accent": "rose",
+    "data": [
+      {
+        "label": "TPV",
+        "value": "1,9 трлн долларов"
+      },
+      {
+        "label": "Net revenue",
+        "value": "6,9 млрд долларов"
+      },
+      {
+        "label": "Бизнесов",
+        "value": "5+ млн"
+      },
+      {
+        "label": "Оценка фев 2026",
+        "value": "159 млрд долларов"
+      }
+    ]
+  },
+  "fig_paypal_strip": {
+    "section_id": "paypal-block",
+    "kind": "metric-strip",
+    "title": "PayPal · стабильный масштаб",
+    "accent": "coral",
+    "data": [
+      {
+        "label": "Активных",
+        "value": "434 млн"
+      },
+      {
+        "label": "Revenue 2025",
+        "value": "33,2 млрд долларов",
+        "trend": "+4,32% YoY"
+      },
+      {
+        "label": "TPV",
+        "value": "1,79 трлн долларов"
+      },
+      {
+        "label": "Online share",
+        "value": "44,1%"
+      }
+    ]
+  },
+  "fig_wise_growth": {
+    "section_id": "wise",
+    "kind": "columns",
+    "title": "Wise · cross-border volume",
+    "unit": "млрд долларов",
+    "accent": "info",
+    "data": [
+      {
+        "label": "FY23",
+        "value": 105,
+        "highlight": false
+      },
+      {
+        "label": "FY24",
+        "value": 151,
+        "highlight": false
+      },
+      {
+        "label": "FY25",
+        "value": 185,
+        "highlight": true
+      }
+    ]
+  },
+  "fig_calendly_quote": {
+    "section_id": "scheduling",
+    "kind": "pull-quote",
+    "accent": "rose",
+    "data": {
+      "text": "Если профи принимает оплату через Calendly, Notion-страничку или личный сайт — почти наверняка деньги проходят через Stripe.",
+      "attribution": "Наблюдение по результатам обзора"
+    }
+  }
+}

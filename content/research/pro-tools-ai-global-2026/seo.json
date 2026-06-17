@@ -1,0 +1,96 @@
+{
+  "title": "ИИ-инструменты в работе профи 2026: где реальная распространение",
+  "description": "OpenAI и Anthropic держат 55 млрд долларов годовая повторяющаяся выручка. Cursor вырос быстрее GitHub. Khanmigo дошёл до миллиона учеников. Серия «Инструменты профессионалов 2026», часть II из IV.",
+  "canonical_url": "https://levelchannel.ru/research/pro-tools-ai-global-2026",
+  "published_at": "2026-06-17T20:00:00Z",
+  "modified_at": "2026-06-17T20:00:00Z",
+  "reading_time_minutes": 18,
+  "author": {
+    "name": "Редакция Level Channel Research",
+    "url": "https://levelchannel.ru/research",
+    "bio": "Независимое research-агентство Level Channel. Все цифры — публичные источники."
+  },
+  "publisher": {
+    "name": "Level Channel",
+    "url": "https://levelchannel.ru",
+    "logo_url": "https://levelchannel.ru/brand-mark.png"
+  },
+  "og_image_url": "https://levelchannel.ru/research/pro-tools-ai-global-2026/opengraph-image",
+  "tldr": [
+    "OpenAI и Anthropic на двоих — 55 млрд долларов годовая повторяющаяся выручка; Anthropic быстрее в корпоративный (80% выручки), OpenAI — в частный сегмент.",
+    "Cursor 2 млрд долларов годовая повторяющаяся выручка за 4 месяца — самый быстрый рост в истории developer-инструментов.",
+    "Khanmigo вырос с 40 тыс. до 700 тыс. учеников школа с 1 по 11 класс, MagicSchool — 6 млн преподавателей в США.",
+    "Harvey ИИ: 11 млрд долларов оценка, 1500 клиентов; Spellbook занимает SMB.",
+    "Китай: Doubao 157 млн ежемесячная аудитория, Qwen 73,5 млн; параллельная экосистема.",
+    "Mistral — €11,7 млрд, единственный европейский чемпион; в России — GigaChat и YandexGPT.",
+    "Главный риск — галлюцинации: 712 судебных дел с фабрикованным ИИ-контентом с 2023, 90% в 2025."
+  ],
+  "faq": [
+    {
+      "q": "Какие ИИ-инструменты доминируют у профи в 2026?",
+      "a": "Глобально — OpenAI (ChatGPT 25 млрд долларов годовая повторяющаяся выручка) и Anthropic (Claude 30 млрд долларов). Для разработки — Cursor (2 млрд долларов годовая повторяющаяся выручка, 1 млн ежедневная аудитория) и GitHub Copilot. Для юристов — Harvey (BigLaw) и Spellbook (SMB). Для учителей — Khanmigo и MagicSchool. Для текста — Grammarly (30 млн ежедневная аудитория)."
+    },
+    {
+      "q": "Какие региональные ИИ-альтернативы выросли в 2025-26?",
+      "a": "В Китае — Doubao (ByteDance, 157 млн ежемесячная аудитория), Qwen (Alibaba, 73,5 млн ежемесячная аудитория). В Европе — Mistral (€11,7 млрд оценка, 400 долларов+ млн годовая повторяющаяся выручка). В России — GigaChat MAX (Сбер, с on-premise для банков) и YandexGPT 5.1 Pro; плюс нишевые MTS ИИ и T-Bank."
+    },
+    {
+      "q": "Какие сценарии применения подтверждены данными?",
+      "a": "Code-assistance (Cursor, GitHub Copilot — 60% выручка корпоративный). Юридический drafting (Harvey, Spellbook). ИИ в Notion и Coda для productivity (кейсы: Osaka Gas -35% времени, Remote.com -20 часов в неделю). Writing-assistance (Grammarly 96% пятисот крупнейших компаний США). ИИ-коучинг (BetterUp, 95% satisfaction)."
+    },
+    {
+      "q": "Стоимость ИИ-инструментов в 2026?",
+      "a": "ChatGPT Plus 20 долларов, Team 25 долларов, Pro 200 долларов/user. Claude Pro 20 долларов. GitHub Copilot Pro 10 долларов, Pro+ 39 долларов, Enterprise 60 долларов. Cursor Pro 20 долларов, Ultra 200 долларов. Notion ИИ встроен в пакет в Business 20 долларов. Grammarly Business — 25 долларов/user. Harvey — корпоративный цена. Spellbook 100 долларов-300/место."
+    },
+    {
+      "q": "Как изменилась распространение ИИ у профи за 30 месяцев?",
+      "a": "OpenAI годовая повторяющаяся выручка вырос с практически нуля до 25 млрд долларов. Anthropic вырос в 80 раз с января 2025. Khanmigo вырос ×17 за один учебный год. MagicSchool достиг 6 млн преподавателей. Cursor с 1 млрд до 2 млрд годовая повторяющаяся выручка за 4 месяца. Адопция — самая быстрая в истории софтверной индустрии."
+    },
+    {
+      "q": "Главные риски ИИ в 2026?",
+      "a": "Галлюцинации — 712 судебных дел с фабрикованным ИИ-контентом, 90% в 2025. Stanford-анализ: 1 из 3 запросов содержит галлюцинации; reasoning-модели — до 48% на benchmarks. Юристы под санкциями за нерасследованные ИИ-галлюцинации (включая чужие). Приватность и соответствие нормам — особенно с reasoning-моделями. Vendor lock-in для корпоративный."
+    },
+    {
+      "q": "Куда идёт рынок к концу 2026?",
+      "a": "Гипотеза: ИИ станет стандартный-функцией всех профессиональных инструментов (CRM, productivity, юридический, coding), а отдельный ИИ add-on как монетизация уйдёт. Конкуренция перейдёт на качество модели, безопасность данных и domain-tuning. Microsoft Copilot и Harvey пока сохраняют двойную модель (база + премиум-уровень ИИ), что объясняет различия в конверсии."
+    }
+  ],
+  "about": [
+    "AI",
+    "искусственный интеллект",
+    "инструменты профессионалов",
+    "ChatGPT",
+    "Claude",
+    "Cursor"
+  ],
+  "mentions": [
+    "OpenAI",
+    "Anthropic",
+    "ChatGPT",
+    "Claude",
+    "Cursor",
+    "GitHub Copilot",
+    "Windsurf",
+    "Codeium",
+    "Khanmigo",
+    "MagicSchool",
+    "Khan Academy",
+    "Harvey",
+    "Spellbook",
+    "Doubao",
+    "Qwen",
+    "Wenxin",
+    "Yuanbao",
+    "Mistral",
+    "Le Chat",
+    "GigaChat",
+    "YandexGPT",
+    "Notion",
+    "Coda",
+    "Grammarly",
+    "Superhuman",
+    "Otter",
+    "Fireflies",
+    "BetterUp"
+  ]
+}
