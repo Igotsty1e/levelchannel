@@ -15,7 +15,10 @@
 import { ACTIVE_INTEGRATION_GATE_SQL } from '@/lib/calendar/freshness-sql'
 import { getDbPool } from '@/lib/db/pool'
 import { dispatchLessonEvent } from '@/lib/notifications/lesson-event-dispatch'
-import { getActorDisplayName } from '@/lib/notifications/recipient-resolver'
+import {
+  getActorDisplayName,
+  getActorNotificationContext,
+} from '@/lib/notifications/recipient-resolver'
 
 import {
   SLOT_COLUMNS,
@@ -212,7 +215,10 @@ export async function rescheduleSlotByLearner(
     // Wave-A: notify teacher about learner reschedule. Best-effort
     // post-commit dispatch; never throw to caller.
     try {
-      const actorName = await getActorDisplayName(learnerAccountId)
+      const actorCtx = await getActorNotificationContext({
+        accountId: learnerAccountId,
+        slotId: newSlot.id,
+      })
       const eventsArr = Array.isArray((insertRes.rows[0] as { events?: unknown }).events)
         ? ((insertRes.rows[0] as { events: unknown[] }).events)
         : []
@@ -222,11 +228,13 @@ export async function rescheduleSlotByLearner(
         recipientRole: 'teacher',
         iterSeq: eventsArr.length,
         payload: {
-          actorDisplayName: actorName,
+          actorDisplayName: actorCtx.displayName,
           recipientDisplayName: 'Учитель',
           oldSlotStartAtIso: oldSlot.startAt,
           slotStartAtIso: newSlot.startAt,
           durationMinutes: durationMinutes,
+          actorEmail: actorCtx.email ?? undefined,
+          tariffOrPackageTitle: actorCtx.tariffOrPackageTitle ?? undefined,
         },
       })
     } catch (e) {

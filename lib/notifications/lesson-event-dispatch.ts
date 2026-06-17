@@ -60,6 +60,10 @@ export type LessonEventPayloadBase = {
   /** Дополнительный URL для CTA в кабинете. Если не задан — расчёт от
    * recipient.role (teacher → /teacher/calendar, learner → /cabinet). */
   cabinetUrl?: string
+  /** 2026-06-17 — email actor'а (для writers где видно полезно). */
+  actorEmail?: string
+  /** 2026-06-17 — название тарифа или пакета (для финансового контекста). */
+  tariffOrPackageTitle?: string
 }
 
 export type LessonEventCtx = {

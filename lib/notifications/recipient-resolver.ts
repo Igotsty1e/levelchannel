@@ -73,6 +73,49 @@ export async function getActorDisplayName(accountId: string): Promise<string> {
   )
 }
 
+/**
+ * 2026-06-17 — extended actor context для уведомлений.
+ * Возвращает displayName + email + (опц.) тариф/пакет связанный с
+ * slotId. Используется когда учителю шлётся событие — там полезно
+ * видеть «кто это и за какой тариф».
+ */
+export async function getActorNotificationContext(opts: {
+  accountId: string
+  slotId?: string | null
+}): Promise<{ displayName: string; email: string | null; tariffOrPackageTitle: string | null }> {
+  const pool = getDbPool()
+  const r = await pool.query<{
+    email: string
+    first_name: string | null
+    last_name: string | null
+    tariff_title_ru: string | null
+  }>(
+    `select a.email,
+            a.first_name,
+            a.last_name,
+            ${opts.slotId ? `(select t.title_ru
+                                from lesson_slots s
+                                left join pricing_tariffs t on t.id = s.tariff_id
+                               where s.id = $2)` : `null`} as tariff_title_ru
+       from accounts a
+      where a.id = $1
+      limit 1`,
+    opts.slotId ? [opts.accountId, opts.slotId] : [opts.accountId],
+  )
+  const row = r.rows[0]
+  if (!row) {
+    return { displayName: 'LevelChannel', email: null, tariffOrPackageTitle: null }
+  }
+  const displayName =
+    [row.first_name, row.last_name].filter(Boolean).join(' ').trim()
+    || row.email.split('@')[0]
+  return {
+    displayName,
+    email: row.email,
+    tariffOrPackageTitle: row.tariff_title_ru,
+  }
+}
+
 export async function resolveRecipient(
   accountId: string,
   expectedRole: RecipientRole,
