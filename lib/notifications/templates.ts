@@ -20,6 +20,36 @@ type RenderInput = {
   amountKopecks?: number
   cabinetUrl: string
   recipientRole: 'teacher' | 'learner'
+  /** 2026-06-17 — owner-feedback: всегда показывать email actor'а
+   *  и название тарифа/пакета в уведомлениях. */
+  actorEmail?: string
+  tariffOrPackageTitle?: string
+}
+
+/** Стандартный «контекст-блок» под actor'ом: email + тариф. Используется
+ *  в email HTML и в plain text. Empty string если ничего полезного. */
+function actorContextHtml(p: RenderInput): string {
+  const parts: string[] = []
+  if (p.actorEmail) parts.push(`E-mail: <code>${escapeHtml(p.actorEmail)}</code>`)
+  if (p.tariffOrPackageTitle) parts.push(`Тариф/пакет: <em>${escapeHtml(p.tariffOrPackageTitle)}</em>`)
+  if (parts.length === 0) return ''
+  return `<p style="color:#888;font-size:13px;margin:4px 0 12px">${parts.join(' · ')}</p>`
+}
+
+function actorContextText(p: RenderInput): string {
+  const parts: string[] = []
+  if (p.actorEmail) parts.push(`E-mail: ${p.actorEmail}`)
+  if (p.tariffOrPackageTitle) parts.push(`Тариф/пакет: ${p.tariffOrPackageTitle}`)
+  if (parts.length === 0) return ''
+  return `${parts.join(' · ')}\n`
+}
+
+function actorContextTg(p: RenderInput): string {
+  const parts: string[] = []
+  if (p.actorEmail) parts.push(`📧 ${escapeTgMarkdown(p.actorEmail)}`)
+  if (p.tariffOrPackageTitle) parts.push(`📦 ${escapeTgMarkdown(p.tariffOrPackageTitle)}`)
+  if (parts.length === 0) return ''
+  return parts.join(' · ') + '\n'
 }
 
 function escapeHtml(s: string): string {
@@ -91,12 +121,15 @@ export function renderLessonEventEmail(
         subject: `${p.actorDisplayName} отменил занятие ${when}`,
         html:
           `<p>Здравствуйте.</p>` +
-          `<p>Ваш ученик ${escapeHtml(p.actorDisplayName)} отменил занятие на ${when}.</p>` +
+          `<p>Ваш ученик <strong>${escapeHtml(p.actorDisplayName)}</strong> отменил занятие на ${when}.</p>` +
+          actorContextHtml(p) +
           reasonHtml +
           `<p>Календарь: <a href="${escapeHtml(p.cabinetUrl)}/calendar">${escapeHtml(p.cabinetUrl)}/calendar</a></p>` +
           `<p>— LevelChannel</p>`,
         text:
-          `Ваш ученик ${p.actorDisplayName} отменил занятие на ${when}.${reasonText}\n\n` +
+          `Ваш ученик ${p.actorDisplayName} отменил занятие на ${when}.\n` +
+          actorContextText(p) +
+          `${reasonText}\n\n` +
           `Календарь: ${p.cabinetUrl}/calendar\n\n— LevelChannel`,
       }
     }
@@ -107,12 +140,14 @@ export function renderLessonEventEmail(
         subject: `${p.actorDisplayName} перенёс занятие на ${newWhen}`,
         html:
           `<p>Здравствуйте.</p>` +
-          `<p>Ваш ученик ${escapeHtml(p.actorDisplayName)} перенёс занятие.</p>` +
+          `<p>Ваш ученик <strong>${escapeHtml(p.actorDisplayName)}</strong> перенёс занятие.</p>` +
+          actorContextHtml(p) +
           `<p>Было: ${wasWhen} → Стало: <strong>${newWhen}</strong></p>` +
           `<p>Календарь: <a href="${escapeHtml(p.cabinetUrl)}/calendar">${escapeHtml(p.cabinetUrl)}/calendar</a></p>` +
           `<p>— LevelChannel</p>`,
         text:
           `Ваш ученик ${p.actorDisplayName} перенёс занятие.\n` +
+          actorContextText(p) +
           `Было: ${wasWhen} → Стало: ${newWhen}\n\n` +
           `Календарь: ${p.cabinetUrl}/calendar\n\n— LevelChannel`,
       }
@@ -215,12 +250,14 @@ export function renderLessonEventEmail(
         subject: `Новая заявка на оплату от ${p.actorDisplayName}`,
         html:
           `<p>Здравствуйте, ${escapeHtml(p.recipientDisplayName)}.</p>` +
-          `<p>${escapeHtml(p.actorDisplayName)} отправил заявку «Я оплатил» на <strong>${amount}</strong>.</p>` +
+          `<p><strong>${escapeHtml(p.actorDisplayName)}</strong> отправил заявку «Я оплатил» на <strong>${amount}</strong>.</p>` +
+          actorContextHtml(p) +
           `<p>Подтвердить или отклонить: <a href="${escapeHtml(p.cabinetUrl)}/payments">${escapeHtml(p.cabinetUrl)}/payments</a></p>` +
           `<p>— LevelChannel</p>`,
         text:
-          `${p.actorDisplayName} отправил заявку «Я оплатил» на ${amount}.\n\n` +
-          `Кабинет: ${p.cabinetUrl}/payments\n\n— LevelChannel`,
+          `${p.actorDisplayName} отправил заявку «Я оплатил» на ${amount}.\n` +
+          actorContextText(p) +
+          `\nКабинет: ${p.cabinetUrl}/payments\n\n— LevelChannel`,
       }
     }
     case 'LessonDirectlyAssignedByTeacher': {
@@ -289,6 +326,7 @@ export function renderLessonEventTelegram(kind: LessonEventKind, p: RenderInput)
     case 'LessonCancelledByLearner':
       return (
         `❌ Ученик ${actor} отменил занятие на ${when}\\.\n` +
+        actorContextTg(p) +
         (reason ? `Причина: _${reason}_\n` : '') +
         `Календарь: ${cabinetUrl}/calendar`
       )
@@ -303,6 +341,7 @@ export function renderLessonEventTelegram(kind: LessonEventKind, p: RenderInput)
     case 'LessonRescheduledByLearner':
       return (
         `🔁 Ученик ${actor} перенёс занятие\\.\n` +
+        actorContextTg(p) +
         `Было: ${oldWhen}\n` +
         `Стало: *${when}*\n` +
         `Календарь: ${cabinetUrl}/calendar`
@@ -332,6 +371,7 @@ export function renderLessonEventTelegram(kind: LessonEventKind, p: RenderInput)
     case 'SbpClaimSubmittedByLearner':
       return (
         `💰 Ученик ${actor} отправил заявку «Я оплатил» на *${amount}*\\.\n` +
+        actorContextTg(p) +
         `Подтвердить: ${cabinetUrl}/payments`
       )
     case 'LessonDirectlyAssignedByTeacher':
