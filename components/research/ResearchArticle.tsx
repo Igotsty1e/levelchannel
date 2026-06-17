@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+import { BrandMark } from '@/components/brand/brand-mark'
 import type { Figure, ResearchPost, SourceRow } from '@/lib/research/types'
 
 import './research-tokens.css'
@@ -149,7 +150,10 @@ export function ResearchArticle({ post }: { post: ResearchPost }) {
         </nav>
 
         <header className="rs-masthead">
-          <div className="rs-kicker">Level Channel · Research</div>
+          <Link href="/" className="rs-brand" aria-label="Level Channel — на главную">
+            <BrandMark variant="full" width={148} />
+          </Link>
+          <div className="rs-kicker">Research</div>
           <h1 className="rs-h1">{structured.hero.title}</h1>
           <p className="rs-lede">{structured.hero.lede}</p>
           <div className="rs-byline">

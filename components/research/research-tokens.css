@@ -72,6 +72,21 @@
   opacity: 0.6;
 }
 
+/* Brand mark — both in masthead and index hero */
+.research-article .rs-brand {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 32px;
+  color: var(--rs-ink);
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+.research-article .rs-brand:hover { opacity: 0.78; }
+.research-article .rs-brand svg { display: block; height: auto; }
+@media (max-width: 720px) {
+  .research-article .rs-brand svg { width: 132px !important; }
+}
+
 /* === Masthead — pure typography, no cards === */
 .research-article .rs-masthead {
   max-width: 880px;
