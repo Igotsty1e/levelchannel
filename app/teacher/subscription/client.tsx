@@ -43,6 +43,8 @@ type ActiveSubscription = {
 type Props = {
   active: ActiveSubscription | null
   tariffs: ReadonlyArray<Tariff>
+  /** A.2 (2026-06-18): pre-select toggle от landing-ссылки ?cycle=annual. */
+  initialBillingCycle?: 'monthly' | 'annual'
 }
 
 type SubscribeResponse = {
@@ -81,10 +83,25 @@ function formatPeriodEnd(iso: string | null): string {
   })
 }
 
-export function TeacherSubscriptionClient({ active, tariffs }: Props) {
+// A.2 annual tariff (2026-06-18): toggle Месяц / Год — global для всех
+// карточек платных тарифов. Annual price хардкодится в UI как 4 000 ₽
+// (server-side источник в lib/billing/teacher-subscription.ts);
+// маркетинговый baseline 4 788 ₽ = 12×399 — также для перечёркивания.
+const ANNUAL_PRICE_RUB = 4000
+const ANNUAL_BASELINE_RUB = 4788
+type BillingCycle = 'monthly' | 'annual'
+
+export function TeacherSubscriptionClient({
+  active,
+  tariffs,
+  initialBillingCycle = 'monthly',
+}: Props) {
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [scriptReady, setScriptReady] = useState(false)
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>(
+    initialBillingCycle,
+  )
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -135,13 +152,14 @@ export function TeacherSubscriptionClient({ active, tariffs }: Props) {
       setError(null)
       const tierKey = tier === 'mid' ? 'basic' : 'pro'
       track('subscription_plan_clicked', { tier: tierKey })
-      setLoading(tier)
+      const loadingKey = `${tier}:${billingCycle}`
+      setLoading(loadingKey)
       try {
         track('payment_widget_opened', { surface: 'teacher_subscription', tier: tierKey })
         const res = await fetch('/api/teacher/subscribe', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ tier }),
+          body: JSON.stringify({ tier, billingCycle }),
         })
         const data = (await res.json()) as SubscribeResponse | { error: string; message?: string }
         if (!res.ok) {
@@ -167,7 +185,7 @@ export function TeacherSubscriptionClient({ active, tariffs }: Props) {
         setLoading(null)
       }
     },
-    [openWidget],
+    [openWidget, billingCycle],
   )
 
   const handleCancel = useCallback(async () => {
@@ -270,15 +288,48 @@ export function TeacherSubscriptionClient({ active, tariffs }: Props) {
     )
   }
 
+  const isAnnual = billingCycle === 'annual'
+
   return (
     <section data-testid="teacher-subscription-tiers" style={pickContainerStyle}>
       <p style={leadStyle}>
         «Стартовый» — бесплатно, навсегда, до 3 активных учеников.
         «Оптимальный» — без ограничения по числу учеников, когда практика
-        растёт. Платёж разовый, без автосписания: 30 дней доступа за одно
-        списание. Отменить можно в любой момент — доступ сохранится
-        до конца оплаченного периода.
+        растёт. Платишь месяц или сразу год — на годовой выгоднее на 15%.
+        Отменить можно в любой момент — доступ сохранится до конца
+        оплаченного периода.
       </p>
+
+      {/* A.2 toggle Месяц / Год — единое управление billingCycle */}
+      <div
+        role="radiogroup"
+        aria-label="Период оплаты"
+        data-testid="teacher-subscription-cycle-toggle"
+        style={cycleToggleStyle}
+      >
+        <button
+          type="button"
+          role="radio"
+          aria-checked={!isAnnual}
+          onClick={() => setBillingCycle('monthly')}
+          data-testid="teacher-subscription-cycle-monthly"
+          style={isAnnual ? cycleButtonStyle : cycleButtonActiveStyle}
+        >
+          Месяц
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={isAnnual}
+          onClick={() => setBillingCycle('annual')}
+          data-testid="teacher-subscription-cycle-annual"
+          style={isAnnual ? cycleButtonActiveStyle : cycleButtonStyle}
+        >
+          Год
+          <span style={cycleSaveBadgeStyle}>−15%</span>
+        </button>
+      </div>
+
       {error ? <p style={errorStyle}>{error}</p> : null}
       <div style={gridStyle}>
         {tariffs.map((t) => {
@@ -286,6 +337,9 @@ export function TeacherSubscriptionClient({ active, tariffs }: Props) {
           // публичном платном тарифе (Оптимальный = mid). Pro depublish.
           const isHighlighted = t.tier === 'mid'
           const isFree = t.tier === 'free'
+          // A.2 (2026-06-18): annual price 4 000 ₽ / 365 дней доступна
+          // только для mid. Free карточка annual игнорирует.
+          const showAnnualForCard = isAnnual && t.tier === 'mid'
           return (
             <article
               key={t.tier}
@@ -305,10 +359,17 @@ export function TeacherSubscriptionClient({ active, tariffs }: Props) {
                   Популярный
                 </div>
               ) : null}
-              <h3 style={cardTitleStyle}>{t.titleRu}</h3>
+              <h3 style={cardTitleStyle}>
+                {showAnnualForCard ? 'Оптимальный на год' : t.titleRu}
+              </h3>
               <div style={cardPriceRowStyle}>
                 {isFree ? (
                   <span style={cardPriceStyle}>Бесплатно</span>
+                ) : showAnnualForCard ? (
+                  <>
+                    <span style={cardPriceStyle}>{ANNUAL_PRICE_RUB} ₽</span>
+                    <span style={cardPeriodStyle}>/ год</span>
+                  </>
                 ) : (
                   <>
                     <span style={cardPriceStyle}>{formatPrice(t.amountKopecks)}</span>
@@ -316,6 +377,17 @@ export function TeacherSubscriptionClient({ active, tariffs }: Props) {
                   </>
                 )}
               </div>
+              {showAnnualForCard ? (
+                <div
+                  data-testid={`teacher-subscription-tier-${t.tier}-annual-save`}
+                  style={annualSaveBadgeStyle}
+                >
+                  <span style={annualSaveStrikeStyle}>
+                    {ANNUAL_BASELINE_RUB} ₽
+                  </span>
+                  <span style={annualSaveLabelStyle}>экономия 15%</span>
+                </div>
+              ) : null}
               <div style={cardLimitStyle}>
                 {t.learnerLimit === 0
                   ? 'Без ограничения по числу учеников'
@@ -363,7 +435,11 @@ export function TeacherSubscriptionClient({ active, tariffs }: Props) {
                     border: isHighlighted ? 'none' : '1px solid var(--border)',
                   }}
                 >
-                  {loading === t.tier ? 'Готовим оплату…' : 'Подписаться'}
+                  {loading?.startsWith(t.tier)
+                    ? 'Готовим оплату…'
+                    : showAnnualForCard
+                    ? 'Оплатить год'
+                    : 'Подписаться'}
                 </button>
               )}
             </article>
@@ -475,8 +551,78 @@ const leadStyle: React.CSSProperties = {
   color: 'var(--secondary)',
   fontSize: 13,
   lineHeight: 1.7,
-  marginBottom: 24,
+  marginBottom: 16,
   marginTop: 0,
+}
+
+// A.2 annual toggle Месяц / Год — компактный pill-row над cards grid.
+const cycleToggleStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  gap: 0,
+  background: 'var(--surface, #141416)',
+  border: '1px solid var(--border)',
+  borderRadius: 10,
+  padding: 4,
+  marginBottom: 20,
+}
+
+const cycleButtonStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: 0,
+  color: 'var(--secondary)',
+  padding: '8px 18px',
+  borderRadius: 8,
+  fontSize: 13,
+  fontWeight: 500,
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+}
+
+const cycleButtonActiveStyle: React.CSSProperties = {
+  ...cycleButtonStyle,
+  background: 'var(--accent)',
+  color: '#1a1a1a',
+}
+
+const cycleSaveBadgeStyle: React.CSSProperties = {
+  fontSize: 10,
+  fontWeight: 600,
+  letterSpacing: '0.04em',
+  textTransform: 'uppercase',
+  background: 'rgba(74, 222, 128, 0.18)',
+  color: '#86efac',
+  padding: '2px 6px',
+  borderRadius: 4,
+}
+
+// Save badge внутри annual карточки — зелёная плашка с перечёркнутой
+// baseline (12×399=4 788) и labelом «экономия 15%».
+const annualSaveBadgeStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '4px 9px',
+  background: 'rgba(74, 222, 128, 0.14)',
+  color: '#86efac',
+  borderRadius: 6,
+  fontSize: 12,
+  fontWeight: 600,
+  marginTop: 6,
+  marginBottom: 4,
+  alignSelf: 'flex-start',
+}
+
+const annualSaveStrikeStyle: React.CSSProperties = {
+  color: 'var(--secondary)',
+  textDecoration: 'line-through',
+  fontWeight: 500,
+}
+
+const annualSaveLabelStyle: React.CSSProperties = {
+  color: '#86efac',
+  fontWeight: 600,
 }
 
 const errorStyle: React.CSSProperties = {

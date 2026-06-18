@@ -10,10 +10,15 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  ANNUAL_OPTIMAL_MONTHLY_BASELINE_KOPECKS,
+  ANNUAL_OPTIMAL_PERIOD_DAYS,
+  ANNUAL_OPTIMAL_PRICE_KOPECKS,
+  ANNUAL_OPTIMAL_SAVINGS_KOPECKS,
   SAAS_SUBSCRIPTION_TARIFFS,
   createOrRenewTeacherSubscription,
   getPaidSubscriptionTariff,
   getSubscriptionTariff,
+  resolveBillingCycleAmount,
 } from '@/lib/billing/teacher-subscription'
 
 describe('SAAS_SUBSCRIPTION_TARIFFS', () => {
@@ -156,5 +161,60 @@ describe('createOrRenewTeacherSubscription input validation', () => {
     await expect(
       createOrRenewTeacherSubscription({ ...baseInput, periodDays: -1 }),
     ).rejects.toThrow(/periodDays/)
+  })
+})
+
+// A.2 annual tariff (2026-06-18) — Оптимальный на год: 4 000 ₽ за 365 дней.
+describe('annual tariff constants (Оптимальный на год)', () => {
+  it('exposes ANNUAL_OPTIMAL_PRICE_KOPECKS = 400000 (4 000 ₽)', () => {
+    expect(ANNUAL_OPTIMAL_PRICE_KOPECKS).toBe(400_000)
+  })
+
+  it('exposes ANNUAL_OPTIMAL_PERIOD_DAYS = 365', () => {
+    expect(ANNUAL_OPTIMAL_PERIOD_DAYS).toBe(365)
+  })
+
+  it('exposes baseline = 12 × Оптимальный месячный (4 788 ₽)', () => {
+    expect(ANNUAL_OPTIMAL_MONTHLY_BASELINE_KOPECKS).toBe(478_800)
+    expect(ANNUAL_OPTIMAL_MONTHLY_BASELINE_KOPECKS).toBe(
+      SAAS_SUBSCRIPTION_TARIFFS.mid.amountKopecks * 12,
+    )
+  })
+
+  it('exposes savings = baseline − annual (78 800 копеек ≈ 788 ₽)', () => {
+    expect(ANNUAL_OPTIMAL_SAVINGS_KOPECKS).toBe(78_800)
+    expect(
+      ANNUAL_OPTIMAL_MONTHLY_BASELINE_KOPECKS - ANNUAL_OPTIMAL_PRICE_KOPECKS,
+    ).toBe(ANNUAL_OPTIMAL_SAVINGS_KOPECKS)
+  })
+
+  it('savings margin > 15% от baseline (marketing claim ≥ 15%)', () => {
+    const margin =
+      ANNUAL_OPTIMAL_SAVINGS_KOPECKS / ANNUAL_OPTIMAL_MONTHLY_BASELINE_KOPECKS
+    expect(margin).toBeGreaterThanOrEqual(0.15)
+  })
+})
+
+describe('resolveBillingCycleAmount', () => {
+  it('monthly on mid → 39 900 / 30 days', () => {
+    const r = resolveBillingCycleAmount('mid', 'monthly')
+    expect(r).toEqual({ amountKopecks: 39_900, periodDays: 30 })
+  })
+
+  it('annual on mid → 400 000 / 365 days', () => {
+    const r = resolveBillingCycleAmount('mid', 'annual')
+    expect(r).toEqual({ amountKopecks: 400_000, periodDays: 365 })
+  })
+
+  it('monthly on pro → tariff.amountKopecks / 30 days (legacy)', () => {
+    const r = resolveBillingCycleAmount('pro', 'monthly')
+    expect(r).toEqual({
+      amountKopecks: SAAS_SUBSCRIPTION_TARIFFS.pro.amountKopecks,
+      periodDays: 30,
+    })
+  })
+
+  it('annual on pro → null (annual только для Оптимальный)', () => {
+    expect(resolveBillingCycleAmount('pro', 'annual')).toBeNull()
   })
 })

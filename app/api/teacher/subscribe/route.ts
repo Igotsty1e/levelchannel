@@ -24,6 +24,8 @@ import { mintToken } from '@/lib/auth/tokens'
 import {
   createOrRenewTeacherSubscription,
   getSubscriptionTariff,
+  resolveBillingCycleAmount,
+  type SubscribeBillingCycle,
   type TeacherSubscriptionTier,
 } from '@/lib/billing/teacher-subscription'
 import { buildCloudPaymentsWidgetIntent } from '@/lib/payments/cloudpayments'
@@ -52,9 +54,11 @@ export async function POST(request: Request) {
   const account = guard.account
   const rawBody = await request.text()
 
-  let parsedBody: { tier?: unknown }
+  let parsedBody: { tier?: unknown; billingCycle?: unknown }
   try {
-    parsedBody = rawBody ? (JSON.parse(rawBody) as { tier?: unknown }) : {}
+    parsedBody = rawBody
+      ? (JSON.parse(rawBody) as { tier?: unknown; billingCycle?: unknown })
+      : {}
   } catch {
     return NextResponse.json(
       { error: 'invalid_body' },
@@ -74,6 +78,20 @@ export async function POST(request: Request) {
   }
   const tier: TeacherSubscriptionTier = tierRaw
 
+  // A.2 (2026-06-18): billingCycle 'monthly' | 'annual'. Default monthly
+  // для backward-compat. Annual support только для 'mid' (Оптимальный на год).
+  const billingCycleRaw = parsedBody.billingCycle ?? 'monthly'
+  if (billingCycleRaw !== 'monthly' && billingCycleRaw !== 'annual') {
+    return NextResponse.json(
+      {
+        error: 'invalid_billing_cycle',
+        message: 'Поле billingCycle должно быть "monthly" или "annual".',
+      },
+      { status: 400, headers: NO_STORE },
+    )
+  }
+  const billingCycle: SubscribeBillingCycle = billingCycleRaw
+
   const tariff = getSubscriptionTariff(tier)
   if (!tariff) {
     return NextResponse.json(
@@ -81,11 +99,22 @@ export async function POST(request: Request) {
       { status: 400, headers: NO_STORE },
     )
   }
+  const cycleAmount = resolveBillingCycleAmount(tier, billingCycle)
+  if (!cycleAmount) {
+    return NextResponse.json(
+      {
+        error: 'unsupported_billing_cycle_for_tier',
+        message:
+          'Годовая оплата доступна только для тарифа «Оптимальный» (mid).',
+      },
+      { status: 400, headers: NO_STORE },
+    )
+  }
 
-  const idempotencyScope = `teacher:subscribe:${account.id}:${tier}`
+  const idempotencyScope = `teacher:subscribe:${account.id}:${tier}:${billingCycle}`
 
   return withIdempotency(request, idempotencyScope, rawBody, async () => {
-    const amountRub = normalizePaymentAmount(tariff.amountKopecks / 100)
+    const amountRub = normalizePaymentAmount(cycleAmount.amountKopecks / 100)
     const provider =
       process.env.PAYMENTS_PROVIDER === 'cloudpayments' ? 'cloudpayments' : 'mock'
     const isMockAutoConfirm =
@@ -94,13 +123,24 @@ export async function POST(request: Request) {
 
     const invoiceId = `lc_sub_${randomUUID().replace(/-/g, '').slice(0, 16)}`
     const customerEmail = account.email
-    const description = tariff.description
+    // Annual описание добавляет «(оплата за год)» к базовому tariff.description
+    // — это попадает и в CloudKassir-чек, и в receipt.
+    const description =
+      billingCycle === 'annual'
+        ? `${tariff.description} (оплата за 365 дней)`
+        : tariff.description
+    // productKind различает monthly/annual для webhook'а; webhook
+    // парсит ${tier} + ${billingCycle} из payment_orders.metadata
+    // (а не из productKind, чтобы оставить string-format совместимым с
+    // legacy «saas_subscription_mid»).
     const productKind = `saas_subscription_${tier}`
     const metadata = {
       accountId: account.id,
       productKind,
       saasSubscriptionTier: tier,
-      saasAmountKopecks: tariff.amountKopecks,
+      saasAmountKopecks: cycleAmount.amountKopecks,
+      saasBillingCycle: billingCycle,
+      saasPeriodDays: cycleAmount.periodDays,
     }
 
     const receiptTokenPair = mintToken()
@@ -199,8 +239,9 @@ export async function POST(request: Request) {
       await createOrRenewTeacherSubscription({
         accountId: account.id,
         tier,
-        amountKopecks: tariff.amountKopecks,
+        amountKopecks: cycleAmount.amountKopecks,
         paymentOrderId: invoiceId,
+        periodDays: cycleAmount.periodDays,
       })
     }
 
@@ -212,6 +253,8 @@ export async function POST(request: Request) {
         status: initialStatus,
         amountRub,
         tier,
+        billingCycle,
+        periodDays: cycleAmount.periodDays,
         receiptToken: receiptTokenPair.plain,
         checkoutIntent,
       },
