@@ -116,12 +116,14 @@ async function main() {
     // pricing_tariff + learner_tariff_access — без них слот не может
     // быть забронирован (booking.ts:310 → tariff_required, 402).
     // duration_minutes — required (mig 0046, no default).
+    // teacher_id — required (mig 0088 NOT NULL after multi-tenant epic).
     const tariffInsert = await pool.query(
       `insert into pricing_tariffs
-         (slug, title_ru, amount_kopecks, duration_minutes, is_active)
-       values ('e2e-fixture-individual', 'Индивидуальное (e2e fixture)', 150000, 60, true)
+         (slug, title_ru, amount_kopecks, duration_minutes, is_active, teacher_id)
+       values ('e2e-fixture-individual', 'Индивидуальное (e2e fixture)', 150000, 60, true, $1)
        on conflict (slug) do update set is_active = excluded.is_active
        returning id`,
+      [out.teacher.accountId],
     )
     const tariffId = String(tariffInsert.rows[0].id)
     out.tariffId = tariffId
