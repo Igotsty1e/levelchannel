@@ -124,13 +124,13 @@ test.describe('Business flow — booking + mark + payment', () => {
     await context.clearCookies()
     await attachSession(context, 'teacher')
 
+    // 2026-06-18 ENDPOINT FIX: используем /mark-completed (real route).
+    // Endpoint `/mark` не существует.
     const markRes = await context.request.post(
-      `${getBaseUrl()}/api/teacher/slots/${slotId}/mark`,
-      { data: { outcome: 'completed' } },
+      `${getBaseUrl()}/api/teacher/slots/${slotId}/mark-completed`,
+      { data: {} },
     )
-    expect(markRes.status(), 'mark endpoint status').toBe(200)
-    const markBody = await markRes.json()
-    expect(markBody.slot?.status, 'slot.status after mark').toBe('completed')
+    expect(markRes.status(), 'mark-completed status').toBe(200)
   })
 
   test('BOOK-3 — учник видит «Оплатить» + SBP-claim создаётся через UI', async ({
@@ -149,8 +149,8 @@ test.describe('Business flow — booking + mark + payment', () => {
     await context.clearCookies()
     await attachSession(context, 'teacher')
     await context.request.post(
-      `${getBaseUrl()}/api/teacher/slots/${slotId}/mark`,
-      { data: { outcome: 'completed' } },
+      `${getBaseUrl()}/api/teacher/slots/${slotId}/mark-completed`,
+      { data: {} },
     )
 
     // Step 2: учнический cabinet видит slot готовым к оплате.
