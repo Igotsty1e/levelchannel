@@ -7,9 +7,11 @@ import {
   EmailDigestCard,
   PushDigestCard,
 } from '@/components/teacher/digest-settings'
+import { NotificationPreferencesMatrix } from '@/components/teacher/notification-preferences-matrix'
 import { resolveOperatorSettingsForProbe } from '@/lib/admin/operator-settings'
 import { getAuthPool } from '@/lib/auth/pool'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
+import { listNotificationPreferences } from '@/lib/notifications/preferences'
 
 // BCS-DEF-5-TG (2026-05-21) — teacher digest settings surface.
 //
@@ -53,6 +55,7 @@ export default async function TeacherDigestSettingsPage() {
     [accountId],
   )
   const teacherTgBound = bindRow.rows[0]?.teacher_telegram_enabled === true
+  const initialPreferences = await listNotificationPreferences(accountId)
   const accountEmail = bindRow.rows[0]?.email ?? null
 
   return (
@@ -80,6 +83,13 @@ export default async function TeacherDigestSettingsPage() {
         <EmailDigestCard email={accountEmail} />
         <PushDigestCard />
       </div>
+
+      {/* Epic D (2026-06-18) — гранулярные настройки уведомлений
+          per-event × per-channel. Default ON; учитель может выключить
+          конкретные события в конкретных каналах. */}
+      <NotificationPreferencesMatrix
+        initialPreferences={initialPreferences}
+      />
     </div>
   )
 }
