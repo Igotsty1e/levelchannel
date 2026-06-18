@@ -200,13 +200,13 @@ export function RecentPastCard({
         Недавние прошедшие
       </h2>
       {listAndError}
-      <Link
-        href="/teacher/lessons"
-        className="btn-ghost"
-        style={{ display: 'inline-flex', minHeight: 44 }}
-      >
+      {/* 2026-06-18 codex-audit §4.2 fix: .btn-ghost не существует в
+          globals.css (только .btn-primary / .btn-secondary). Заменили
+          на <Button variant="ghost"> где variant реально определён;
+          Button с href рендерит через next/link сам. */}
+      <Button variant="ghost" href="/teacher/lessons">
         Все прошедшие занятия →
-      </Link>
+      </Button>
     </section>
   )
 }
