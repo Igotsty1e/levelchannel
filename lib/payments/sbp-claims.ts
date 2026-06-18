@@ -1368,7 +1368,12 @@ export async function getPayContextForSlot(
       teacherName: string
       slotLabel: string
       expectedAmountKopecks: number
-      paymentMethod: { phoneDisplay: string; bankLabel: string } | null
+      // 2026-06-17 prod-fix: paymentMethod включает id, чтобы модалка
+      // могла передать его в POST /api/learner/payment-claims. Без id
+      // server отвечает 400 method_required_for_sbp.
+      paymentMethod:
+        | { id: string; phoneDisplay: string; bankLabel: string }
+        | null
     }
   | { ok: false; reason: string }
 > {
@@ -1413,7 +1418,11 @@ export async function getPayContextForSlot(
     slotLabel: snap.label,
     expectedAmountKopecks: snap.expected,
     paymentMethod: method
-      ? { phoneDisplay: method.phoneDisplay, bankLabel: method.bankLabel }
+      ? {
+          id: method.id,
+          phoneDisplay: method.phoneDisplay,
+          bankLabel: method.bankLabel,
+        }
       : null,
   }
 }
