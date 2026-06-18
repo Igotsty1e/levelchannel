@@ -135,6 +135,88 @@ through this code, so the bar is high.
 - **Always-on signals before merge:** `npm run test:run` (green), `npm run build` (green), and a manual click-through of the affected payment flow against `PAYMENTS_PROVIDER=mock`. Never test against the real CloudPayments terminal from a feature branch.
 - **Coverage is not the goal: boundary correctness is.** A 100%-covered HMAC verifier that signs the wrong bytes is worse than a 60%-covered one with a precise regression test for the exact CP wire format.
 
+### Local CI parity — e2e Playwright suite (added 2026-06-18)
+
+**Lesson from 2026-06-18 session: 5 push-CI-wait cycles на `feat/e2e-business-flows` (#701 → #704) = ~85 минут впустую**, потому что Playwright suite не запускался локально перед push. Каждый round'у нужны 17 минут CI чтобы узнать что seed.mjs упал на `null` constraint которую видно за 30 секунд локально.
+
+Перед push, при работе над файлами в `tests/e2e/`:
+
+```bash
+# 1. Поднять Docker Postgres (~10s, идемпотентно)
+docker compose -f docker-compose.test.yml up -d --wait
+
+# 2. Применить миграции (~3s)
+DATABASE_URL=postgres://postgres:postgres@127.0.0.1:54329/levelchannel_test?sslmode=disable npm run migrate:up
+
+# 3. Seed fixtures (~1s)
+DATABASE_URL=postgres://postgres:postgres@127.0.0.1:54329/levelchannel_test?sslmode=disable npm run test:e2e:seed
+
+# 4. Запустить нужный spec (~10s per test)
+DATABASE_URL=postgres://postgres:postgres@127.0.0.1:54329/levelchannel_test?sslmode=disable npx playwright test tests/e2e/business-flow-booking.spec.ts
+
+# 5. Подчищать когда закончил
+docker compose -f docker-compose.test.yml down -v
+```
+
+**Re-seed между запусками** (seed.mjs идемпотентен — wipe-by-email-prefix перед insert), но миграции применять заново не нужно.
+
+**Когда обязательно:** любое изменение в `tests/e2e/` ИЛИ `tests/e2e/seed.mjs` ИЛИ `playwright.config.ts` ИЛИ DB-schema migrations, на которые ссылаются e2e фикстуры. Дешевле потратить 2 минуты локально чем 17 минут CI на каждый round.
+
+### Git hooks parity (одноразовый setup)
+
+После `npm install` postinstall *должен* настроить `core.hooksPath=.githooks` автоматически. Если этого не произошло (например, чистый clone без `npm install`, или предыдущий `npm install` упал) — настройте вручную:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Проверка: `git config --get core.hooksPath` → должно вернуть `.githooks`. Иначе локальный `Skill-Used:` trailer не проверяется, и iterative-debug commits проходят локально но валят CI gate `Verify Skill-Used trailer`.
+
+### Iterative-debug commits anti-pattern
+
+**Не делайте fixup-коммиты вроде «fix CI round 3» без `Skill-Used:` trailer.** Они проходят push, но валят skill-pipeline CI gate, который проверяет КАЖДЫЙ коммит в diff vs main. Force-push для исправления в этом репо заблокирован hook'ами разрешений Claude Code.
+
+**Правильный паттерн** в iterative-debug сценарии (CI-ругается-фиксим-снова):
+
+```bash
+# После первого failed CI
+# 1. Сделай изменения
+# 2. amend в текущий commit (не новый!)
+git add -A
+git commit --amend --no-edit
+
+# 3. push --force-with-lease на feature-ветку (allowed)
+git push --force-with-lease
+```
+
+Это сохраняет ОДИН commit с `Skill-Used:` trailer уже на месте. Альтернатива (если force-push заблокирован) — close-and-reopen PR с squashed commit (см. 2026-06-18 #701 → #704).
+
+### Hygiene при parallel/orchestrator-sessions
+
+Когда parallel-агент или сосед-сессия делает `git stash` + checkout на чужую ветку, потом возвращается — stash'и накапливаются, worktrees остаются locked, branches привязаны к мёртвым worktrees.
+
+**За одну неделю в этом репо** скопилось 22 stash'а + 50 stale agent-worktrees + 200 локальных веток (большинство — от orchestrator runs). 2026-06-18 cleanup удалил 50 worktrees + 14 stash'ей + 50 веток >30 дней.
+
+Чтобы не накапливалось снова:
+
+1. **После возврата к ветке** — `git stash list`; если есть stash от этой ветки — `git stash pop` (если нужен) или `git stash drop` (если уже в commit).
+2. **После закрытия orchestrator-сессии** — `git worktree list` + `git worktree remove --force <path>` для всех `.claude/worktrees/agent-*` чьи pids уже мертвы. Их состояние: `lock reason: claude agent agent-XXX (pid N)` — если `ps -p N` пустой, worktree можно убрать.
+3. **Раз в N недель** sweep:
+   ```bash
+   # Worktrees с мёртвыми lock-pids
+   git worktree list --porcelain | grep -B 2 "locked" | grep "^worktree" | awk '{print $2}'
+
+   # Локальные branches >30 дней без worktree
+   git for-each-ref refs/heads --format='%(committerdate:short) %(refname:short)' \
+     | awk -v d="$(date -j -v-30d '+%Y-%m-%d' 2>/dev/null)" '$1 < d && $2 != "main"'
+
+   # Stash'и старше 14 дней
+   git stash list --format='%gd %ci %s' \
+     | awk -v c="$(date -j -v-14d '+%s' 2>/dev/null)" 'BEGIN{} {print}'
+   ```
+
+**Default policy для этого репо:** worktrees + stash'и в `.claude/worktrees/agent-*` от прошлых orchestrator-сессий **safe to remove** через `--force` если pid мёртв; branches/stashes старше 30/14 дней — drop по умолчанию.
+
 ## 4. Project anchors
 
 This is **LevelChannel**: a production payment site for the
