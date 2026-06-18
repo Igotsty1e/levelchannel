@@ -88,11 +88,14 @@ afterEach(async () => {
   //
   // bug-4 Sub-PR A (2026-06-02): Russian public titles flipped per mig
   // 0103 (Free→Стартовый, Mid→Базовый, Pro→Расширенный); slugs unchanged.
+  // A.1 tariff reprice (2026-06-18): mig 0134 applies free=3 учеников,
+  // mid=Оптимальный 399 ₽ без лимита. Pro строка остаётся (legacy
+  // operator-managed). Test seed зеркалит mig 0134-после baseline.
   await pool.query(`
     insert into teacher_subscription_plans (slug, title_ru, price_kopecks_monthly, learner_limit, features)
     values
-      ('free', 'Стартовый', 0, 1, '{}'::jsonb),
-      ('mid', 'Базовый', 30000, 5, '{}'::jsonb),
+      ('free', 'Стартовый', 0, 3, '{}'::jsonb),
+      ('mid', 'Оптимальный', 39900, null, '{}'::jsonb),
       ('pro', 'Расширенный', 80000, 30, '{}'::jsonb),
       ('operator-managed', 'Operator-managed', 0, null, '{"money_flow_through_platform": true}'::jsonb)
     on conflict (slug) do nothing

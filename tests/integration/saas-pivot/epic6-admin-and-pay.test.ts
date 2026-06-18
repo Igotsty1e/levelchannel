@@ -179,8 +179,10 @@ describe('SAAS-PIVOT Epic 6 — admin plan-toggle', () => {
       planSlug: 'pro',
       publicSlug: null,
     })
-    // Pro = 30 learners. Add 2 learners and try to drop to 'free' (1).
-    for (let i = 0; i < 2; i++) {
+    // A.1 tariff reprice (2026-06-18): free.learner_limit 1 → 3.
+    // Pro = 30 learners. Add 4 learners and try to drop to 'free' (limit=3)
+    // → cap_exceeded.
+    for (let i = 0; i < 4; i++) {
       const learner = await freshAccount(`epic6-learner-${i}`)
       await getDbPool().query(
         `insert into learner_teacher_links (learner_account_id, teacher_account_id)

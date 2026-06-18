@@ -88,42 +88,42 @@ async function linkLearner(
 }
 
 describe('getTeacherPlanLearnerLimit', () => {
-  it('teacher without active subscription → defaults to free tier with learner_limit=1', async () => {
+  it('teacher without active subscription → defaults to free tier with learner_limit=3', async () => {
     const teacher = await regTeacher('tpl-no-sub@example.com')
     const result = await getTeacherPlanLearnerLimit(teacher.accountId)
     expect(result.kind).toBe('limited')
     if (result.kind === 'limited') {
-      // Default fallback uses 'free' slug; learner_limit comes from
-      // teacher_subscription_plans seed (free.learner_limit = 1 per
-      // mig 0073 + bug-4 Sub-PR A rename).
+      // A.1 tariff reprice (2026-06-18): free.learner_limit 1 → 3 per mig 0134.
       expect(result.planSlug).toBe('free')
-      expect(result.limit).toBe(1)
+      expect(result.limit).toBe(3)
       expect(result.activeCount).toBe(0)
     }
   })
 
-  it('teacher on free with 0 active learners → activeCount=0, limit=1', async () => {
+  it('teacher on free with 0 active learners → activeCount=0, limit=3', async () => {
     const teacher = await regTeacher('tpl-free-zero@example.com')
     await setSubscription(teacher.accountId, 'free')
     const result = await getTeacherPlanLearnerLimit(teacher.accountId)
     expect(result).toMatchObject({
       kind: 'limited',
       planSlug: 'free',
-      limit: 1,
+      limit: 3,
       activeCount: 0,
     })
   })
 
-  it('teacher on free with 1 active learner → activeCount=1 (hard limit boundary)', async () => {
-    const teacher = await regTeacher('tpl-free-one@example.com')
+  it('teacher on free with 3 active learners → activeCount=3 (hard limit boundary)', async () => {
+    const teacher = await regTeacher('tpl-free-three@example.com')
     await setSubscription(teacher.accountId, 'free')
-    await linkLearner(teacher.accountId, 'free-one')
+    await linkLearner(teacher.accountId, 'free-three-1')
+    await linkLearner(teacher.accountId, 'free-three-2')
+    await linkLearner(teacher.accountId, 'free-three-3')
     const result = await getTeacherPlanLearnerLimit(teacher.accountId)
     expect(result).toMatchObject({
       kind: 'limited',
       planSlug: 'free',
-      limit: 1,
-      activeCount: 1,
+      limit: 3,
+      activeCount: 3,
     })
   })
 

@@ -1,17 +1,17 @@
 // @vitest-environment jsdom
 
-// bug-4 Sub-PR B (2026-06-02) — pick-a-tier surface visual contract.
-// free-tier-saas-card-and-subscription-row plan §0a-7 (2026-06-05) —
-// Стартовый (free) card now also rendered in pick-tier mode with a
-// «Доступен по умолчанию» chip in place of «Подписаться» button.
+// A.1 tariff reprice (2026-06-18) — pick-a-tier surface visual contract.
 //
-// Pins:
-//   - Empty state (active === null) renders exactly THREE tier cards:
-//     «Стартовый» (free), «Базовый» (mid), «Расширенный» (pro).
-//   - free card has a chip (NOT a button); mid/pro have «Подписаться» buttons.
-//   - The «Расширенный» card carries a "Популярный" badge; the other two don't.
-//   - Each card renders the feature-bullets from the catalogue.
-//   - Prices come from `tariffs[*].amountKopecks`; free renders «Бесплатно».
+// Pins after reprice:
+//   - Empty state (active === null) renders exactly TWO tier cards:
+//     «Стартовый» (free) и «Оптимальный» (mid). Pro depublish.
+//   - free card has a chip (NOT a button); mid has «Подписаться» button.
+//   - The «Оптимальный» card carries a "Популярный" badge (теперь это
+//     единственный платный публичный тариф, badge переехал с Pro на Mid).
+//   - Каждая карточка рендерит feature-bullets из каталога.
+//   - Цены: free «Бесплатно», mid «399 ₽ / 30 дней».
+//   - Free показывает «До 3 активных учеников»; mid — «Без ограничения
+//     по числу учеников» (learnerLimit=0 в client.tsx означает unlimited).
 
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -23,42 +23,32 @@ const TARIFFS = [
     tier: 'free' as const,
     titleRu: 'Стартовый',
     amountKopecks: 0,
-    learnerLimit: 1,
+    learnerLimit: 3,
     description: 'desc-free',
-    features: ['До 1 активного ученика', 'Расписание и слоты', '1 пакет и 1 тариф'],
+    features: ['До 3 активных учеников', 'Все функции платформы', 'Расписание, слоты, дела'],
   },
   {
     tier: 'mid' as const,
-    titleRu: 'Базовый',
-    amountKopecks: 30000,
-    learnerLimit: 5,
+    titleRu: 'Оптимальный',
+    amountKopecks: 39900,
+    learnerLimit: 0, // page.tsx маппит null → 0 для unlimited
     description: 'desc-mid',
-    features: ['Расписание и слоты', 'До 5 активных учеников', 'Пакеты'],
-  },
-  {
-    tier: 'pro' as const,
-    titleRu: 'Расширенный',
-    amountKopecks: 80000,
-    learnerLimit: 30,
-    description: 'desc-pro',
-    features: ['Всё из «Базового»', 'До 30 активных учеников', 'Расширенные отчёты'],
+    features: ['Всё из «Стартового»', 'Без лимита учеников', 'Расширенная аналитика'],
   },
 ]
 
-describe('TeacherSubscriptionClient — pick-a-tier (bug-4 Sub-PR B)', () => {
+describe('TeacherSubscriptionClient — pick-a-tier (A.1 reprice 2026-06-18)', () => {
   afterEach(() => {
     cleanup()
   })
 
-  it('renders exactly THREE tier cards in the empty state (Стартовый + Базовый + Расширенный)', () => {
+  it('renders exactly TWO tier cards in the empty state (Стартовый + Оптимальный)', () => {
     render(<TeacherSubscriptionClient active={null} tariffs={TARIFFS} />)
     expect(screen.getByTestId('teacher-subscription-tier-free')).toBeTruthy()
     expect(screen.getByTestId('teacher-subscription-tier-mid')).toBeTruthy()
-    expect(screen.getByTestId('teacher-subscription-tier-pro')).toBeTruthy()
-    // All three required titles render exactly once.
+    expect(screen.queryByTestId('teacher-subscription-tier-pro')).toBeNull()
     expect(screen.getAllByText('Стартовый').length).toBe(1)
-    expect(screen.getAllByText('Базовый').length).toBe(1)
-    expect(screen.getAllByText('Расширенный').length).toBe(1)
+    expect(screen.getAllByText('Оптимальный').length).toBe(1)
   })
 
   it('the Стартовый card has «Доступен по умолчанию» chip (NOT a Подписаться button)', () => {
@@ -75,48 +65,47 @@ describe('TeacherSubscriptionClient — pick-a-tier (bug-4 Sub-PR B)', () => {
     expect(freeCard.textContent).not.toContain('30 дней')
   })
 
-  it('the Расширенный card carries a "Популярный" badge; Базовый does not', () => {
+  it('the Оптимальный card carries a "Популярный" badge', () => {
     render(<TeacherSubscriptionClient active={null} tariffs={TARIFFS} />)
-    const proBadge = screen.queryByTestId('teacher-subscription-tier-pro-badge')
-    expect(proBadge).not.toBeNull()
-    expect(proBadge?.textContent).toContain('Популярный')
     const midBadge = screen.queryByTestId('teacher-subscription-tier-mid-badge')
-    expect(midBadge).toBeNull()
+    expect(midBadge).not.toBeNull()
+    expect(midBadge?.textContent).toContain('Популярный')
   })
 
   it('each card renders the feature-bullets from the catalogue', () => {
     render(<TeacherSubscriptionClient active={null} tariffs={TARIFFS} />)
     const midFeatures = screen.getByTestId('teacher-subscription-tier-mid-features')
-    expect(midFeatures.textContent).toContain('Расписание и слоты')
-    expect(midFeatures.textContent).toContain('До 5 активных учеников')
-    const proFeatures = screen.getByTestId('teacher-subscription-tier-pro-features')
-    expect(proFeatures.textContent).toContain('Всё из «Базового»')
-    expect(proFeatures.textContent).toContain('До 30 активных учеников')
+    expect(midFeatures.textContent).toContain('Без лимита учеников')
+    const freeFeatures = screen.getByTestId('teacher-subscription-tier-free-features')
+    expect(freeFeatures.textContent).toContain('Все функции платформы')
   })
 
-  it('each card has a Подписаться button (initially disabled until CP widget loads)', () => {
+  it('mid card has a Подписаться button (initially disabled until CP widget loads)', () => {
     render(<TeacherSubscriptionClient active={null} tariffs={TARIFFS} />)
     const midBtn = screen.getByTestId(
       'teacher-subscription-subscribe-mid',
     ) as HTMLButtonElement
-    const proBtn = screen.getByTestId(
-      'teacher-subscription-subscribe-pro',
-    ) as HTMLButtonElement
     expect(midBtn.textContent).toContain('Подписаться')
-    expect(proBtn.textContent).toContain('Подписаться')
-    // CloudPayments widget script hasn't loaded in jsdom — both should
-    // be disabled by the `!scriptReady` guard.
     expect(midBtn.disabled).toBe(true)
-    expect(proBtn.disabled).toBe(true)
   })
 
-  it('formats prices as roubles with 30-day period label', () => {
+  it('formats price as 399 ₽ with 30-day period label', () => {
     render(<TeacherSubscriptionClient active={null} tariffs={TARIFFS} />)
     const midCard = screen.getByTestId('teacher-subscription-tier-mid')
-    expect(midCard.textContent).toContain('300 ₽')
+    expect(midCard.textContent).toContain('399 ₽')
     expect(midCard.textContent).toContain('30 дней')
-    const proCard = screen.getByTestId('teacher-subscription-tier-pro')
-    expect(proCard.textContent).toContain('800 ₽')
-    expect(proCard.textContent).toContain('30 дней')
+  })
+
+  it('free card shows "До 3 активных учеников"', () => {
+    render(<TeacherSubscriptionClient active={null} tariffs={TARIFFS} />)
+    const freeCard = screen.getByTestId('teacher-subscription-tier-free')
+    expect(freeCard.textContent).toContain('До 3 активных учеников')
+  })
+
+  it('mid card with learnerLimit=0 shows "Без ограничения по числу учеников"', () => {
+    render(<TeacherSubscriptionClient active={null} tariffs={TARIFFS} />)
+    const midCard = screen.getByTestId('teacher-subscription-tier-mid')
+    expect(midCard.textContent).toContain('Без ограничения по числу учеников')
+    expect(midCard.textContent).not.toContain('До 0 активных')
   })
 })

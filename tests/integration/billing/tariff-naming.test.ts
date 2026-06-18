@@ -4,33 +4,50 @@ import { getDbPool } from '@/lib/db/pool'
 
 import '../setup'
 
-// bug-4 Sub-PR A (2026-06-02) — pin the post-mig-0103 Russian title_ru
-// on teacher_subscription_plans.
+// A.1 tariff reprice (2026-06-18) — pin the post-mig-0134 Russian title_ru
+// + price + learner_limit on teacher_subscription_plans.
 //
-// Slugs stay canonical (free / mid / pro / operator-managed); only the
-// public Russian title_ru changed:
-//   free  → 'Стартовый'   (was 'Free')
-//   mid   → 'Базовый'     (was 'Mid')
-//   pro   → 'Расширенный' (was 'Pro')
-//   operator-managed     — UNCHANGED ('Operator-managed')
-//
-// The integration setup re-seeds these rows on every test (TRUNCATE
-// CASCADE + INSERT … ON CONFLICT DO NOTHING with the new title_ru).
-// Mig 0103 is the production path; this test pins the contract so a
-// future hand-edit of the seed (or the mig) can't silently drift.
+// History:
+//   - bug-4 Sub-PR A (2026-06-02, mig 0103): English → Русский titles.
+//   - A.1 reprice (mig 0134, 2026-06-18): free учеников 1→3,
+//     mid 'Базовый'/300/5 → 'Оптимальный'/399/null, pro оставлен как
+//     legacy operator-managed.
 
-describe('bug-4 Sub-PR A — teacher_subscription_plans Russian titles (mig 0103)', () => {
-  it('exposes the renamed public titles for free / mid / pro', async () => {
-    const result = await getDbPool().query<{ slug: string; title_ru: string }>(
-      `select slug, title_ru
+describe('A.1 reprice — teacher_subscription_plans post-mig-0134', () => {
+  it('exposes Стартовый (3 ученика) + Оптимальный (399 ₽ без лимита) + Pro legacy', async () => {
+    const result = await getDbPool().query<{
+      slug: string
+      title_ru: string
+      price_kopecks_monthly: number
+      learner_limit: number | null
+    }>(
+      `select slug, title_ru, price_kopecks_monthly, learner_limit
          from teacher_subscription_plans
         where slug in ('free', 'mid', 'pro')
         order by slug`,
     )
-    const map = new Map(result.rows.map((r) => [r.slug, r.title_ru]))
-    expect(map.get('free')).toBe('Стартовый')
-    expect(map.get('mid')).toBe('Базовый')
-    expect(map.get('pro')).toBe('Расширенный')
+    const map = new Map(
+      result.rows.map((r) => [
+        r.slug,
+        {
+          title: r.title_ru,
+          price: r.price_kopecks_monthly,
+          limit: r.learner_limit,
+        },
+      ]),
+    )
+    expect(map.get('free')).toEqual({ title: 'Стартовый', price: 0, limit: 3 })
+    expect(map.get('mid')).toEqual({
+      title: 'Оптимальный',
+      price: 39900,
+      limit: null,
+    })
+    // Pro DB row unchanged — legacy operator-managed flow.
+    expect(map.get('pro')).toEqual({
+      title: 'Расширенный',
+      price: 80000,
+      limit: 30,
+    })
   })
 
   it('leaves the operator-managed admin-only label unchanged', async () => {
@@ -50,49 +67,56 @@ describe('bug-4 Sub-PR A — teacher_subscription_plans Russian titles (mig 0103
         where slug in ('free', 'mid', 'pro')`,
     )
     const titles = result.rows.map((r) => r.title_ru)
-    // Defensive: if a partial rename slipped past in the future, this
-    // catches the regression on a deterministic state.
     expect(titles).not.toContain('Free')
     expect(titles).not.toContain('Mid')
     expect(titles).not.toContain('Pro')
   })
 
-  it('mig 0103 is idempotent — re-running the rename leaves the same state', async () => {
-    // Inline-run the same SQL the migration uses. If it ever flips a
-    // row twice or trips on the IS DISTINCT FROM guard, this test
-    // catches it. We don't truncate first: this is purely an
-    // idempotency test against current state.
+  it('mig 0134 is idempotent — re-running the UPDATE leaves the same state', async () => {
     const pool = getDbPool()
+    // Inline-run mig 0134 logic (conditional UPDATE).
     await pool.query(
       `update teacher_subscription_plans
-          set title_ru = 'Стартовый',
-              updated_at = now()
+          set learner_limit = 3
         where slug = 'free'
-          and title_ru is distinct from 'Стартовый'`,
+          and learner_limit = 1`,
     )
     await pool.query(
       `update teacher_subscription_plans
-          set title_ru = 'Базовый',
-              updated_at = now()
+          set title_ru = 'Оптимальный',
+              price_kopecks_monthly = 39900,
+              learner_limit = null
         where slug = 'mid'
-          and title_ru is distinct from 'Базовый'`,
+          and title_ru = 'Mid'
+          and price_kopecks_monthly = 30000
+          and learner_limit = 5`,
     )
-    await pool.query(
-      `update teacher_subscription_plans
-          set title_ru = 'Расширенный',
-              updated_at = now()
-        where slug = 'pro'
-          and title_ru is distinct from 'Расширенный'`,
-    )
-    const result = await pool.query<{ slug: string; title_ru: string }>(
-      `select slug, title_ru
+    const result = await pool.query<{
+      slug: string
+      title_ru: string
+      price_kopecks_monthly: number
+      learner_limit: number | null
+    }>(
+      `select slug, title_ru, price_kopecks_monthly, learner_limit
          from teacher_subscription_plans
-        where slug in ('free', 'mid', 'pro')
+        where slug in ('free', 'mid')
         order by slug`,
     )
-    const map = new Map(result.rows.map((r) => [r.slug, r.title_ru]))
-    expect(map.get('free')).toBe('Стартовый')
-    expect(map.get('mid')).toBe('Базовый')
-    expect(map.get('pro')).toBe('Расширенный')
+    const map = new Map(
+      result.rows.map((r) => [
+        r.slug,
+        {
+          title: r.title_ru,
+          price: r.price_kopecks_monthly,
+          limit: r.learner_limit,
+        },
+      ]),
+    )
+    expect(map.get('free')).toEqual({ title: 'Стартовый', price: 0, limit: 3 })
+    expect(map.get('mid')).toEqual({
+      title: 'Оптимальный',
+      price: 39900,
+      limit: null,
+    })
   })
 })

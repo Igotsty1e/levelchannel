@@ -64,7 +64,8 @@ export async function getTeacherPlanLearnerLimit(
     plan = {
       plan_slug: 'free',
       plan_title: free?.title_ru ?? 'Стартовый',
-      learner_limit: free?.learner_limit ?? 1,
+      // A.1 tariff reprice (2026-06-18): free fallback limit поднят 1→3.
+      learner_limit: free?.learner_limit ?? 3,
     }
   }
   const planSlug = plan.plan_slug

@@ -21,48 +21,36 @@ type Tier = {
   badge?: string
 }
 
+// A.1 tariff reprice (2026-06-18): Стартовый теперь 3 ученика, Базовый
+// → «Оптимальный» 399 ₽ без лимита, Pro depublish из landing. Годовой
+// тариф добавляется в A.2 отдельным PR.
 const TIERS: Tier[] = [
   {
     id: 'free',
     name: 'Стартовый',
     price: '0 ₽',
     period: 'навсегда',
-    limit: 'до 1 активного ученика',
+    limit: 'до 3 активных учеников',
     bullets: [
-      'Расписание и слоты',
-      '1 пакет и 1 тариф (для знакомства)',
+      'Все функции платформы',
+      'Расписание, слоты, дела',
+      'Пакеты и тарифы',
       'Балансы и долги',
-      'История уроков',
     ],
     ctaLabel: 'Начать бесплатно',
     ctaHref: '/register?role=teacher&utm_source=landing-v3&utm_content=pricing_free',
   },
   {
     id: 'basic',
-    name: 'Базовый',
-    price: '300 ₽',
+    name: 'Оптимальный',
+    price: '399 ₽',
     period: 'в месяц',
-    limit: 'до 5 активных учеников',
+    limit: 'без ограничения по ученикам',
     bullets: [
       'Всё из «Стартового»',
-      'Пакеты и абонементы без лимита',
-      'Тарифы без лимита',
-      'Балансы и долги',
-    ],
-    ctaLabel: 'Подключить',
-    ctaHref: '/teacher/subscription',
-  },
-  {
-    id: 'pro',
-    name: 'Расширенный',
-    price: '800 ₽',
-    period: 'в месяц',
-    limit: 'до 30 активных учеников',
-    bullets: [
-      'Всё из «Базового»',
-      'Расширенные отчёты',
-      'Приоритетная поддержка',
-      'Прямые ответы оператора',
+      'Без лимита учеников',
+      'Расширенная аналитика',
+      'Приоритет в поддержке',
     ],
     ctaLabel: 'Подключить',
     ctaHref: '/teacher/subscription',
@@ -79,14 +67,14 @@ export function ScreenPricing() {
           Тарифы
         </motion.div>
         <motion.h2 {...fadeUp} transition={{ duration: 0.7, delay: 0.1 }} className="landing-v3-h2 landing-v3-h2--serif" style={{ marginTop: 16 }}>
-          Платишь только <em>за активных учеников.</em>
+          Попробуй бесплатно. <em>Растёт практика — переходи на Оптимальный.</em>
         </motion.h2>
         <motion.p {...fadeUp} transition={{ duration: 0.7, delay: 0.2 }} className="landing-v3-lede" style={{ margin: '16px auto 0' }}>
-          Стартовый — навсегда. Базовый и Расширенный включаются сами, когда у тебя становится больше одного ученика.
+          Стартовый — навсегда, до 3 учеников. Оптимальный — без ограничения по числу учеников, 399 ₽ в месяц.
         </motion.p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 20, maxWidth: 1080, margin: '0 auto' }} className="landing-v3-tiers-grid">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 20, maxWidth: 760, margin: '0 auto' }} className="landing-v3-tiers-grid">
         {TIERS.map((tier, idx) => (
           <motion.div
             key={tier.id}
@@ -124,7 +112,7 @@ export function ScreenPricing() {
             <Link
               href={tier.ctaHref}
               className="landing-v3-cta"
-              onClick={() => track('pricing_tier_clicked', { tier: tier.id, tier_name: tier.name as 'Стартовый' | 'Базовый' | 'Расширенный' })}
+              onClick={() => track('pricing_tier_clicked', { tier: tier.id, tier_name: tier.name as 'Стартовый' | 'Оптимальный' })}
               style={{
                 width: '100%',
                 justifyContent: 'center',

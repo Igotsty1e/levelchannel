@@ -29,19 +29,22 @@ import {
 
 // bug-4 Sub-PR A (2026-06-02): Russian public titles per mig 0103.
 // Slugs unchanged; only the rendered titleRu flipped.
+// A.1 tariff reprice (2026-06-18): free=3 учеников, mid=Оптимальный 399₽/null,
+// pro остаётся как legacy (показывается в admin profile-card т.к. это
+// historical state for grandfathered/operator-managed teachers).
 const PLANS: TariffComparisonPlan[] = [
   {
     slug: 'free',
     titleRu: 'Стартовый',
     priceKopecksMonthly: 0,
-    learnerLimit: 1,
+    learnerLimit: 3,
     features: {},
   },
   {
     slug: 'mid',
-    titleRu: 'Базовый',
-    priceKopecksMonthly: 30000,
-    learnerLimit: 5,
+    titleRu: 'Оптимальный',
+    priceKopecksMonthly: 39900,
+    learnerLimit: null,
     features: {},
   },
   {
@@ -142,7 +145,7 @@ describe('TariffComparisonCard — TASK-2 profile tariff card', () => {
     const free = screen.getByTestId('tariff-card-free')
     expect(free.textContent).toContain('Бесплатно')
     const mid = screen.getByTestId('tariff-card-mid')
-    expect(mid.textContent).toContain('300₽/мес')
+    expect(mid.textContent).toContain('399₽/мес')
     const pro = screen.getByTestId('tariff-card-pro')
     expect(pro.textContent).toContain('800₽/мес')
     const op = screen.getByTestId('tariff-card-operator-managed')
@@ -152,10 +155,11 @@ describe('TariffComparisonCard — TASK-2 profile tariff card', () => {
   it('formats learner_limit: NULL → "Без ограничений"; N → "До N ученик{а|ов}"', () => {
     render(<TariffComparisonCard plans={PLANS} currentPlanSlug="free" />)
     expect(screen.getByTestId('tariff-card-free').textContent).toContain(
-      'До 1 ученика',
+      'До 3 ученика',
     )
+    // A.1 reprice: mid learner_limit=null → «Без ограничений».
     expect(screen.getByTestId('tariff-card-mid').textContent).toContain(
-      'До 5 учеников',
+      'Без ограничений',
     )
     expect(screen.getByTestId('tariff-card-pro').textContent).toContain(
       'До 30 учеников',
@@ -202,6 +206,6 @@ describe('TariffComparisonCard — TASK-2 profile tariff card', () => {
     render(<TariffComparisonCard plans={PLANS} currentPlanSlug="mid" />)
     const root = screen.getByTestId('tariff-comparison-card')
     expect(root.textContent).toContain('Сейчас вы на тарифе')
-    expect(root.textContent).toContain('Базовый')
+    expect(root.textContent).toContain('Оптимальный')
   })
 })
