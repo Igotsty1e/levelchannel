@@ -87,8 +87,10 @@ export default defineConfig({
           // 2026-06-18 business-flow e2e: tests/e2e/business-flow-*.spec.ts
           // создают SBP claims через payment-claims endpoint. Mock-режим
           // нужен чтобы payment-gate не звал реальный CloudPayments.
+          // ВАЖНО: PAYMENTS_ALLOW_MOCK_CONFIRM=true reject'ится в проде
+          // (NODE_ENV=production у next start), поэтому НЕ ставим — нашим
+          // тестам confirm не нужен (booking + claim creation работают без).
           PAYMENTS_PROVIDER: 'mock',
-          PAYMENTS_ALLOW_MOCK_CONFIRM: 'true',
         },
       },
 })
