@@ -1,57 +1,60 @@
 'use client'
 
 /**
- * Learner cabinet nav — Mobile-first restructure (2026-06-17).
+ * Learner cabinet nav — Mobile-first restructure (2026-06-17),
+ * design-system refit (2026-06-18).
  *
- * 4 main sections (mirror of TeacherCabinetNav):
- *   1. Главная   — /cabinet (компактный обзор)
- *   2. Занятия   — /cabinet/lessons (полная история — Wave B)
- *   3. Пакеты    — /cabinet/packages
- *   4. Настройки — /cabinet/settings (hub для профиля/интеграций/уведомлений)
+ * 5 main sections (mirror of TeacherCabinetNav):
+ *   1. Главная   — /cabinet
+ *   2. Календарь — /cabinet/book
+ *   3. Занятия   — /cabinet/lessons
+ *   4. Пакеты    — /cabinet/packages
+ *   5. Настройки — /cabinet/settings
  *
- * Mobile (<768px): sticky bottom nav, 4 кнопки с иконкой+подписью.
- * Desktop (≥768px): горизонтальный nav сверху.
+ * Mobile (<768px): sticky bottom nav, 5 кнопок с SVG-иконкой+подписью.
+ * Desktop (≥768px): горизонтальный nav сверху (text-only).
  *
- * Owner-feedback 2026-06-17: «Может уже пора сделать тоже нижнее
- * таб меню — "Главная" "Занятия" "Настройки" и разносить потихоньку
- * туда все. Потому что скоро еще другие фичи добавим, на одном
- * экране уже не будет все нормально помещаться».
+ * 2026-06-18: заменили Unicode-emoji (⌂ ▦ ≡ ◫ ⚙) на SVG-glyph'ы из
+ * `components/ui/icons/`; убрали inline fontSize/lineHeight (стили
+ * живут в `app/globals.css` под `.cabinet-nav-mobile-icon/label`).
  */
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
+import { NavIcon, type NavIconName } from '@/components/ui/icons'
+
 type NavItem = {
   href: string
   label: string
-  icon: string
+  icon: NavIconName
   prefixMatch?: boolean
 }
 
 const NAV_ITEMS: ReadonlyArray<NavItem> = [
-  { href: '/cabinet', label: 'Главная', icon: '⌂' },
+  { href: '/cabinet', label: 'Главная', icon: 'home' },
   {
     href: '/cabinet/book',
     label: 'Календарь',
-    icon: '▦',
+    icon: 'calendar',
     prefixMatch: true,
   },
   {
     href: '/cabinet/lessons',
     label: 'Занятия',
-    icon: '≡',
+    icon: 'lessons',
     prefixMatch: true,
   },
   {
     href: '/cabinet/packages',
     label: 'Пакеты',
-    icon: '◫',
+    icon: 'packages',
     prefixMatch: true,
   },
   {
     href: '/cabinet/settings',
     label: 'Настройки',
-    icon: '⚙',
+    icon: 'gear',
     prefixMatch: true,
   },
 ]
@@ -113,14 +116,13 @@ export function LearnerCabinetNav() {
                 color: active ? 'var(--text)' : 'var(--secondary)',
               }}
             >
-              <span
-                className="cabinet-nav-mobile-icon"
-                aria-hidden="true"
-                style={{ fontSize: 22, lineHeight: 1 }}
-              >
-                {item.icon}
+              <span className="cabinet-nav-mobile-icon" aria-hidden="true">
+                <NavIcon name={item.icon} size={24} />
               </span>
-              <span className="cabinet-nav-mobile-label" style={{ fontSize: 11 }}>
+              <span
+                className="cabinet-nav-mobile-label"
+                style={{ fontWeight: active ? 600 : 500 }}
+              >
                 {item.label}
               </span>
             </Link>
