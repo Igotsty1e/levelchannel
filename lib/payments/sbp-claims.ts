@@ -6,6 +6,7 @@
 // Plan: docs/plans/teacher-payments-sbp-self-service.md §3.4, §3.5
 
 import { getDbPool } from '@/lib/db/pool'
+import { isSlotPastRetroWindow } from '@/lib/payments/policy'
 import { resolveMethodForLearner } from '@/lib/payments/sbp-methods'
 
 // Защита от typo: верхняя граница 1 млн ₽ на claim, item, refund.
@@ -658,17 +659,9 @@ async function loadSlotSnapshot(
   }
 }
 
-// 2026-06-17 audit: окно «оплаты задним числом» — ученик не может
-// создать заявку на занятие старше 30 дней. Защищает учителя от
-// неожиданных late-claim'ов.
-const PAYMENT_RETRO_WINDOW_DAYS = 30
-const PAYMENT_RETRO_WINDOW_MS = PAYMENT_RETRO_WINDOW_DAYS * 24 * 60 * 60 * 1000
-
-function isSlotPastRetroWindow(startAtIso: string): boolean {
-  const startAtMs = new Date(startAtIso).getTime()
-  if (!Number.isFinite(startAtMs)) return false
-  return startAtMs < Date.now() - PAYMENT_RETRO_WINDOW_MS
-}
+// 2026-06-18 codex-audit §5.2 dedup: было local const PAYMENT_RETRO_*,
+// дублирующее ту же констант в app/cabinet/lessons-section.tsx.
+// Перенесли в lib/payments/policy.ts — общий source of truth.
 
 export async function createLearnerClaim(
   input: CreateLearnerClaimInput,

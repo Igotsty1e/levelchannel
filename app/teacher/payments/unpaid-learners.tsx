@@ -6,7 +6,7 @@
 // быстрая кнопка «Отметить оплачено» (mark-paid).
 
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/primitives'
 import { localizeTeacherError } from '@/lib/i18n/teacher-errors'
@@ -96,12 +96,23 @@ export function UnpaidLearners({
     })
   }
 
+  // 2026-06-18 codex-audit §3.1 fix: учнический pay-modal уже имеет
+  // synchronous ref guard, но teacher-side markPaid полагался только на
+  // async setBusy(true) — между двумя кликами в одном тике оба видели
+  // busy=false и оба уходили в POST. Advisory lock в server-side спасал
+  // от дубля в БД, но UI всё равно мог показать success + 409.
+  const submittingRef = useRef(false)
+
   async function markPaid(learnerId: string) {
     const selected = selectedSlots[learnerId]
     if (!selected || selected.size === 0) {
       setErr('Выберите хотя бы один слот.')
       return
     }
+    // Sync guard ДО первого await.
+    if (submittingRef.current || busy) return
+    submittingRef.current = true
+
     const learnerSlots = slots[learnerId] ?? []
     const items = learnerSlots
       .filter((s) => selected.has(s.id))
@@ -139,6 +150,7 @@ export function UnpaidLearners({
       router.refresh()
     } finally {
       setBusy(false)
+      submittingRef.current = false
     }
   }
 

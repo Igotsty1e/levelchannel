@@ -15,6 +15,8 @@ import {
   TimePicker,
 } from '@/components/ui/primitives'
 import { localizeLearnerError } from '@/lib/i18n/payment-errors'
+// 2026-06-18 codex-audit §5.2 dedup: общий retro-window для UI + server.
+import { isWithinPaymentRetroWindow as isWithinRetroWindow } from '@/lib/payments/policy'
 import type { LessonSlot } from '@/lib/scheduling/slots'
 import { safeTz } from '@/lib/util/tz'
 
@@ -171,13 +173,10 @@ function derivedSlotLabel(
 // when fallback ≠ server policy.
 const FALLBACK_CANCEL_WINDOW_HOURS = 24
 
-// 2026-06-17 audit BUG C: окно «оплаты задним числом» — 30 дней.
-// Должно совпадать с PAYMENT_RETRO_WINDOW_DAYS в lib/payments/sbp-claims.ts.
-// UI-сторона: скрываем CTA «Оплатить» если занятие старше окна.
-const PAYMENT_RETRO_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
-function isWithinRetroWindow(startAtIso: string): boolean {
-  return new Date(startAtIso).getTime() >= Date.now() - PAYMENT_RETRO_WINDOW_MS
-}
+// 2026-06-18 codex-audit §5.2 dedup: вынесли в lib/payments/policy.ts —
+// раньше эту же логику дублировал lib/payments/sbp-claims.ts с комментом
+// «должно совпадать». Теперь оба места импортят isWithinPaymentRetroWindow
+// (см. import сверху файла).
 
 export function LessonsSection({
   initialMine,
