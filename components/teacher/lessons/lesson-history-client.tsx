@@ -12,6 +12,11 @@ import { useEffect, useState } from 'react'
 
 import { Button, EmptyState, Pill } from '@/components/ui/primitives'
 
+// Epic E (2026-06-18): kind-chip-row «Уроки / Дела / Оплаты» поверх существующих
+// фильтров. «Уроки» — текущий рендер истории; «Дела» — placeholder до Epic B;
+// «Оплаты» — компактный journal с CTA в /teacher/payments.
+type LessonsKind = 'lessons' | 'deals' | 'payments'
+
 type Row = {
   id: string
   startAt: string
@@ -90,6 +95,8 @@ export function LessonHistoryClient({
   const [learnerFilter, setLearnerFilter] = useState<string>('')
   const [unmarkedOnly, setUnmarkedOnly] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  // Epic E (2026-06-18): kind-chip-row state.
+  const [kind, setKind] = useState<LessonsKind>('lessons')
 
   function buildQs(): URLSearchParams {
     const qs = new URLSearchParams()
@@ -163,6 +170,27 @@ export function LessonHistoryClient({
         className="card lc-section"
         style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}
       >
+        {/* Epic E (2026-06-18): kind-chip-row — переключение Уроки/Дела/Оплаты. */}
+        <div
+          data-testid="lesson-history-kind-row"
+          style={{
+            display: 'flex',
+            gap: 8,
+            flexWrap: 'wrap',
+            paddingBottom: 12,
+            borderBottom: '1px solid var(--border)',
+          }}
+        >
+          <ChipBtn active={kind === 'lessons'} onClick={() => setKind('lessons')}>
+            Уроки
+          </ChipBtn>
+          <ChipBtn active={kind === 'deals'} onClick={() => setKind('deals')}>
+            Дела
+          </ChipBtn>
+          <ChipBtn active={kind === 'payments'} onClick={() => setKind('payments')}>
+            Оплаты
+          </ChipBtn>
+        </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <ChipBtn active={periodChip === 'week'} onClick={() => setPeriodChip('week')}>
             За 7 дней
@@ -174,55 +202,59 @@ export function LessonHistoryClient({
             Все
           </ChipBtn>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            style={selectStyle}
-            disabled={busy}
-          >
-            <option value="">Все статусы</option>
-            <option value="completed">Проведено</option>
-            <option value="no_show_learner">Ученик не пришёл</option>
-            <option value="no_show_teacher">Учитель не пришёл</option>
-            <option value="cancelled">Отменено</option>
-            <option value="booked">Не оплачено</option>
-          </select>
-          <select
-            value={learnerFilter}
-            onChange={(e) => setLearnerFilter(e.target.value)}
-            style={selectStyle}
-            disabled={busy || learnerOptions.length === 0}
-          >
-            <option value="">Все ученики</option>
-            {learnerOptions.map((opt) => (
-              <option key={opt.id} value={opt.id}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          <label
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 14,
-              color: 'var(--secondary)',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={unmarkedOnly}
-              onChange={(e) => setUnmarkedOnly(e.target.checked)}
+        {/* Status / learner / unmarked filters — только для kind=lessons.
+           Для оплат и дел они не имеют смысла. */}
+        {kind === 'lessons' ? (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              style={selectStyle}
               disabled={busy}
-            />
-            Только без отметки
-          </label>
-          <span style={{ flex: 1 }} />
-          <Button variant="ghost" size="sm" href={csvHref}>
-            Экспорт CSV
-          </Button>
-        </div>
+            >
+              <option value="">Все статусы</option>
+              <option value="completed">Проведено</option>
+              <option value="no_show_learner">Ученик не пришёл</option>
+              <option value="no_show_teacher">Учитель не пришёл</option>
+              <option value="cancelled">Отменено</option>
+              <option value="booked">Не оплачено</option>
+            </select>
+            <select
+              value={learnerFilter}
+              onChange={(e) => setLearnerFilter(e.target.value)}
+              style={selectStyle}
+              disabled={busy || learnerOptions.length === 0}
+            >
+              <option value="">Все ученики</option>
+              {learnerOptions.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <label
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 14,
+                color: 'var(--secondary)',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={unmarkedOnly}
+                onChange={(e) => setUnmarkedOnly(e.target.checked)}
+                disabled={busy}
+              />
+              Только без отметки
+            </label>
+            <span style={{ flex: 1 }} />
+            <Button variant="ghost" size="sm" href={csvHref}>
+              Экспорт CSV
+            </Button>
+          </div>
+        ) : null}
       </section>
 
       {err ? (
@@ -231,6 +263,33 @@ export function LessonHistoryClient({
         </p>
       ) : null}
 
+      {/* Epic E (2026-06-18): «Оплаты» — встроенный journal-стаб с CTA
+         в полную страницу. Epic B (Дела) — placeholder; UI и история
+         придут в B.2 PR. Default — «Уроки» с текущей логикой. */}
+      {kind === 'payments' ? (
+        <section
+          className="lc-section"
+          data-testid="lesson-history-payments-stub"
+          style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+        >
+          <EmptyState
+            title="Раздел «Оплаты»"
+            body="Здесь будут отображаться оплаты, заявки и возвраты по всем ученикам. Полный журнал с фильтрами уже доступен на отдельной странице."
+          />
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <Button variant="primary" size="md" href="/teacher/payments">
+              Открыть полные оплаты →
+            </Button>
+          </div>
+        </section>
+      ) : kind === 'deals' ? (
+        <section className="lc-section" data-testid="lesson-history-deals-stub">
+          <EmptyState
+            title="Раздел «Дела»"
+            body="Скоро. Здесь будет история закрытых и выполненных дел учителя — как только мы доставим конструктор «Дела» в календаре."
+          />
+        </section>
+      ) : (
       <section className="lc-section">
         {rows.length === 0 ? (
           <EmptyState
@@ -301,6 +360,7 @@ export function LessonHistoryClient({
           </ul>
         )}
       </section>
+      )}
 
       <p style={{ fontSize: 12, color: 'var(--secondary)', marginTop: 16 }}>
         <Link href="/teacher" style={{ color: 'inherit' }}>
