@@ -138,33 +138,53 @@ async function main() {
     )
     console.log(`  granted learner tariff access`)
 
-    // Создаём 3 будущих слота — выровнены по минуте (seconds=0), в
-    // MSK business hours (06:00-22:00). Каждый со ссылкой на fixture
-    // tariff, чтобы booking прошёл без tariff_required ошибки.
+    // Создаём 3 слота. Все в MSK business hours (07:00-15:00 UTC =
+    // 10:00-18:00 MSK), seconds=0 (mig 0125).
+    // slot[0] — БУДУЩИЙ open (для BOOK-1: книгует через API).
+    // slot[1] — ПРОШЛЫЙ booked учнем (для BOOK-2: mark-completed).
+    // slot[2] — ПРОШЛЫЙ booked учнем (для BOOK-3: payment-context + claim).
     const slotIds = []
-    for (let i = 0; i < 3; i++) {
-      // 2 дня в будущем + i*30 мин offset. Округление до полной минуты
-      // (CHECK seconds=0 в MSK timezone, mig 0125).
-      const baseMs = Date.now() + 2 * 24 * 60 * 60 * 1000 + i * 30 * 60 * 1000
-      const aligned = Math.floor(baseMs / 60000) * 60000
-      let startAt = new Date(aligned)
-      // Принудим в MSK business band 10:00-18:00 MSK = 07:00-15:00 UTC.
-      // Берём ближайший след день в окне 07:00 UTC + i*45 мин.
-      const day = new Date(startAt)
-      day.setUTCHours(7, i * 45, 0, 0)
-      startAt = day
+    const specs = [
+      {
+        daysFromNow: 2,
+        hourUtc: 7,
+        status: 'open',
+        learnerAccountId: null,
+      },
+      {
+        daysFromNow: -3,
+        hourUtc: 8,
+        status: 'booked',
+        learnerAccountId: out.learner.accountId,
+      },
+      {
+        daysFromNow: -2,
+        hourUtc: 9,
+        status: 'booked',
+        learnerAccountId: out.learner.accountId,
+      },
+    ]
+    for (const spec of specs) {
+      const day = new Date(Date.now() + spec.daysFromNow * 24 * 60 * 60 * 1000)
+      day.setUTCHours(spec.hourUtc, 0, 0, 0)
       const slotInsert = await pool.query(
         `insert into lesson_slots
            (teacher_account_id, start_at, duration_minutes, status,
-            snapshot_amount_kopecks, tariff_id)
-         values ($1, $2, 60, 'open', 150000, $3)
+            snapshot_amount_kopecks, tariff_id, learner_account_id)
+         values ($1, $2, 60, $3, 150000, $4, $5)
          returning id`,
-        [out.teacher.accountId, startAt.toISOString(), tariffId],
+        [
+          out.teacher.accountId,
+          day.toISOString(),
+          spec.status,
+          tariffId,
+          spec.learnerAccountId,
+        ],
       )
       slotIds.push(String(slotInsert.rows[0].id))
     }
     out.slots = slotIds
-    console.log(`  created 3 future slots: ${slotIds.length}`)
+    console.log(`  created 3 slots (1 future-open + 2 past-booked)`)
 
     mkdirSync(dirname(FIXTURE_FILE), { recursive: true })
     writeFileSync(

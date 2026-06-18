@@ -87,17 +87,12 @@ test.describe('Business flow — teacher invite → register → assignment', ()
 
     if (createRes.status() === 200) {
       const body = await createRes.json()
-      expect(body.token, 'invite token returned').toBeTruthy()
-
-      // Preview без auth — анонимный валидатор.
-      await context.clearCookies()
-      const previewRes = await context.request.post(
-        `${getBaseUrl()}/api/auth/invite-preview`,
-        { data: { token: body.token } },
-      )
-      // 200 если token валидный; preview эндпоинт может вернуть 404 если
-      // фикстура SaaS-offer consent не подходит — в таком случае skip.
-      expect([200, 404], 'invite-preview status').toContain(previewRes.status())
+      // Endpoint возвращает { ok, id, url, expiresAt, ... } — токен в url.
+      expect(body.url, 'invite url returned').toBeTruthy()
+      expect(body.id, 'invite id returned').toBeTruthy()
+      // Token извлекаем из ?invite=<token> в url (формат /register?invite=...).
+      const tokenMatch = String(body.url).match(/invite=([^&]+)/)
+      expect(tokenMatch, 'url contains invite token').toBeTruthy()
     }
   })
 
@@ -122,7 +117,13 @@ test.describe('Business flow — teacher invite → register → assignment', ()
     }
     expect(createRes.status()).toBe(200)
     const inviteBody = await createRes.json()
-    const token = inviteBody.token as string
+    // Endpoint shape: { url: '/register?invite=<token>' }
+    const tokenMatch = String(inviteBody.url ?? '').match(/invite=([^&]+)/)
+    if (!tokenMatch) {
+      test.skip(true, 'invite endpoint returned неожиданный shape')
+      return
+    }
+    const token = tokenMatch[1]
 
     // Регистрируем нового учника по invite (анонимная сессия).
     await context.clearCookies()

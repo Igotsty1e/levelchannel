@@ -106,26 +106,14 @@ test.describe('Business flow — booking + mark + payment', () => {
     )
   })
 
-  test('BOOK-2 — учитель отмечает booked-slot как проведённый', async ({
+  test('BOOK-2 — учитель отмечает прошлый booked-slot как проведённый', async ({
     context,
   }) => {
     if (!fixtures?.slots?.[1]) throw new Error('fixtures.slots missing')
-    await attachSession(context, 'learner')
+    // Slot[1] уже pre-booked учнем в прошлом через seed (start_at < now).
     const slotId = fixtures.slots[1]
 
-    // Сначала учник бронирует.
-    const bookRes = await context.request.post(
-      `${getBaseUrl()}/api/slots/${slotId}/book`,
-      { data: {} },
-    )
-    expect(bookRes.status(), 'pre-book').toBe(200)
-
-    // Переключаемся на teacher session.
-    await context.clearCookies()
     await attachSession(context, 'teacher')
-
-    // 2026-06-18 ENDPOINT FIX: используем /mark-completed (real route).
-    // Endpoint `/mark` не существует.
     const markRes = await context.request.post(
       `${getBaseUrl()}/api/teacher/slots/${slotId}/mark-completed`,
       { data: {} },
@@ -140,13 +128,8 @@ test.describe('Business flow — booking + mark + payment', () => {
     if (!fixtures?.slots?.[2]) throw new Error('fixtures.slots missing')
     const slotId = fixtures.slots[2]
 
-    // Step 1: book + mark через API (быстрее чем через UI).
-    await attachSession(context, 'learner')
-    await context.request.post(`${getBaseUrl()}/api/slots/${slotId}/book`, {
-      data: {},
-    })
-
-    await context.clearCookies()
+    // Step 1: slot[2] уже past + booked через seed. Учитель отмечает
+    // completed чтобы открылся payment-context (учнику станет видна CTA).
     await attachSession(context, 'teacher')
     await context.request.post(
       `${getBaseUrl()}/api/teacher/slots/${slotId}/mark-completed`,
