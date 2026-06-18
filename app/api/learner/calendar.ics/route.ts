@@ -1,8 +1,15 @@
-// GET /api/learner/calendar.ics?account=<uuid>&token=<hmac>
+// GET /api/learner/calendar.ics?account=<uuid>&token=<expiresAtMs.hmacHex>
 //
 // 2026-06-17 — public ICS feed для подписки в Google Calendar /
-// Apple Calendar. Token: signLearnerIcsToken(accountId) — UUID нельзя
-// угадать + HMAC-проверка через timingSafeEqual.
+// Apple Calendar. Token: signLearnerIcsToken(accountId, version, expires)
+// → HMAC-проверка через timingSafeEqual.
+//
+// 2026-06-18 codex-audit BLOCKER §5.1 fix:
+// - Token включает expiresAtMs + per-account version (accounts.ics_token_version)
+// - Bump version → старые токены invalid (revoke без ротации секрета)
+// - TTL 90 дней default; calendar apps re-sync прозрачно
+// - Из ICS body убран teacher email (PII не утекает даже при валидном
+//   токене)
 
 import { NextResponse } from 'next/server'
 
@@ -42,7 +49,22 @@ export async function GET(request: Request) {
       { status: 400, headers: NO_STORE },
     )
   }
-  if (!verifyLearnerIcsToken(accountId, token)) {
+
+  // Читаем текущую версию токена из БД. Если accountId не существует
+  // — single 403 (no enumeration).
+  const pool = getDbPool()
+  const versionRow = await pool.query<{ ics_token_version: number }>(
+    `select ics_token_version from accounts where id = $1`,
+    [accountId],
+  )
+  const version = versionRow.rows[0]?.ics_token_version
+  if (typeof version !== 'number') {
+    return NextResponse.json(
+      { error: 'bad_token' },
+      { status: 403, headers: NO_STORE },
+    )
+  }
+  if (!verifyLearnerIcsToken(accountId, version, token)) {
     return NextResponse.json(
       { error: 'bad_token' },
       { status: 403, headers: NO_STORE },
@@ -51,25 +73,22 @@ export async function GET(request: Request) {
 
   // Тянем 90 дней назад + ВСЁ будущее. ICS feed обычно держит
   // последние ~3 месяца + предстоящие; этого достаточно для G/A Calendar.
-  // Inline query — PR-5 standalone, не зависит от PR-3 helper.
-  const pool = getDbPool()
+  // 2026-06-18 — убрали JOIN на accounts (teacher_email) — PII удалён
+  // из feed body.
   const fromIso = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
   const r = await pool.query<{
     id: string
     start_at: string
     duration_minutes: number
     status: string
-    teacher_email: string | null
     tariff_title_ru: string | null
   }>(
     `select s.id,
             s.start_at::text as start_at,
             s.duration_minutes,
             s.status,
-            ta.email as teacher_email,
             t.title_ru as tariff_title_ru
        from lesson_slots s
-       join accounts ta on ta.id = s.teacher_account_id
        left join pricing_tariffs t on t.id = s.tariff_id
       where s.learner_account_id = $1
         and s.start_at >= $2
@@ -84,7 +103,6 @@ export async function GET(request: Request) {
       startAtIso: row.start_at,
       durationMinutes: row.duration_minutes,
       status: String(row.status),
-      teacherEmail: row.teacher_email ?? null,
       tariffTitleRu: row.tariff_title_ru ?? null,
     })),
     siteUrl,

@@ -123,6 +123,22 @@ export default async function LearnerCalendarSettingsPage() {
   const operatorMasterSwitchOn =
     operatorSettings.LEARNER_REMINDERS_EMAIL_ENABLED?.value === 1
 
+  // 2026-06-18 codex-audit BLOCKER §5.1: читаем ics_token_version из
+  // БД здесь, в parent server-component, чтобы child остался sync (иначе
+  // vitest/RTL ломаются на async компоненте).
+  const tokenVersion = await (async () => {
+    try {
+      const { getDbPool } = await import('@/lib/db/pool')
+      const r = await getDbPool().query<{ ics_token_version: number }>(
+        `select ics_token_version from accounts where id = $1`,
+        [session.account.id],
+      )
+      return r.rows[0]?.ics_token_version ?? 1
+    } catch {
+      return 1
+    }
+  })()
+
   return (
     <AuthShell>
       <div style={{ width: '100%', maxWidth: 520, padding: '24px 16px' }}>
@@ -214,24 +230,36 @@ export default async function LearnerCalendarSettingsPage() {
             : 'Email-напоминания временно выключены оператором.'}
         </p>
 
-        <LearnerIcsSubscriptionBlock accountId={session.account.id} />
+        <LearnerIcsSubscriptionBlock
+          accountId={session.account.id}
+          tokenVersion={tokenVersion}
+        />
       </div>
     </AuthShell>
   )
 }
 
-function LearnerIcsSubscriptionBlock({ accountId }: { accountId: string }) {
+function LearnerIcsSubscriptionBlock({
+  accountId,
+  tokenVersion,
+}: {
+  accountId: string
+  tokenVersion: number
+}) {
   // 2026-06-17 — .ics subscription. Token зашит в URL — изолированный
-  // секрет, без cookie. Если ученик скомпрометирует URL — учитель
-  // ротирует LEARNER_ICS_TOKEN_SECRET.
+  // секрет, без cookie.
+  //
+  // 2026-06-18 codex-audit BLOCKER §5.1 fix:
+  // Token подписан HMAC over (accountId | version | expiresAt). Version
+  // приходит prop'ом из parent server-component (там idempotent DB
+  // read), компонент остаётся sync чтобы vitest/RTL могли рендерить.
+  // TTL 90 дней; страница каждый раз генерит свежий токен — calendar
+  // apps подхватывают через очередной poll.
   let icsUrl: string | null = null
   try {
-    // dynamic import чтобы при отсутствии secret страница не падала
-    // (мы показываем понятный fallback вместо 500).
-    // Это import без сетевых запросов — стоимость минимальная.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { signLearnerIcsToken } = require('@/lib/calendar/learner-ics') as typeof import('@/lib/calendar/learner-ics')
-    const token = signLearnerIcsToken(accountId)
+    const token = signLearnerIcsToken(accountId, tokenVersion)
     const base = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, '') || ''
     icsUrl = `${base}/api/learner/calendar.ics?account=${accountId}&token=${token}`
   } catch {
