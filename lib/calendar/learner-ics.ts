@@ -4,10 +4,19 @@
 // Calendar apps (Google Calendar, Apple Calendar) подписываются на
 // URL и периодически тянут — авторизация cookie не работает, поэтому
 // signed token в query.
+//
+// 2026-06-18 codex-audit BLOCKER §5.1 fix — token-versioning:
+// - HMAC over (accountId | version | expiresAt), не только accountId
+// - version читается из accounts.ics_token_version (mig 0133)
+// - bump version → старые токены invalid → effective revoke
+// - expiresAt = +90 дней → calendar apps re-sync прозрачно через
+//   /cabinet/settings/calendar (на странице токен подписывается заново)
 
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
 const TOKEN_SECRET_ENV = 'LEARNER_ICS_TOKEN_SECRET'
+const TOKEN_TTL_DAYS = 90
+const TOKEN_TTL_MS = TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000
 
 function readSecret(): string {
   const v = process.env[TOKEN_SECRET_ENV]
@@ -19,17 +28,44 @@ function readSecret(): string {
   return v
 }
 
-export function signLearnerIcsToken(accountId: string): string {
-  return createHmac('sha256', readSecret())
-    .update(`learner-ics:v1:${accountId}`)
+/**
+ * Token format: `<expiresAtMs>.<hmacHex>`
+ * Where hmac = HMAC-SHA256(secret, "learner-ics:v2:${accountId}:${version}:${expiresAtMs}")
+ *
+ * `version` приходит из БД (`accounts.ics_token_version`). Bump версии
+ * → старые токены сразу invalid (per-account revoke без ротации
+ * глобального секрета).
+ */
+export function signLearnerIcsToken(
+  accountId: string,
+  version: number,
+  expiresAtMs: number = Date.now() + TOKEN_TTL_MS,
+): string {
+  const hmac = createHmac('sha256', readSecret())
+    .update(`learner-ics:v2:${accountId}:${version}:${expiresAtMs}`)
     .digest('hex')
+  return `${expiresAtMs}.${hmac}`
 }
 
-export function verifyLearnerIcsToken(accountId: string, token: string): boolean {
+export function verifyLearnerIcsToken(
+  accountId: string,
+  version: number,
+  token: string,
+): boolean {
   try {
-    const expected = signLearnerIcsToken(accountId)
-    if (expected.length !== token.length) return false
-    return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(token, 'hex'))
+    const dotIdx = token.indexOf('.')
+    if (dotIdx <= 0) return false
+    const expiresAtStr = token.slice(0, dotIdx)
+    const hmacHex = token.slice(dotIdx + 1)
+    const expiresAtMs = Number(expiresAtStr)
+    if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+      return false
+    }
+    const expected = createHmac('sha256', readSecret())
+      .update(`learner-ics:v2:${accountId}:${version}:${expiresAtMs}`)
+      .digest('hex')
+    if (expected.length !== hmacHex.length) return false
+    return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(hmacHex, 'hex'))
   } catch {
     return false
   }
@@ -40,7 +76,6 @@ type IcsSlot = {
   startAtIso: string
   durationMinutes: number
   status: string
-  teacherEmail: string | null
   tariffTitleRu: string | null
 }
 
@@ -78,10 +113,11 @@ export function buildLearnerIcs(slots: IcsSlot[], siteUrl: string): string {
     ).toISOString()
     const dtend = formatIcsDate(end)
     const summary = `Занятие${slot.tariffTitleRu ? ' — ' + slot.tariffTitleRu : ''}`
+    // 2026-06-18 codex-audit BLOCKER §5.1 fix: убрали teacher email из
+    // ICS body — PII не должен утекать через subscription URL даже
+    // когда token валидный.
     const description =
-      `Учитель: ${slot.teacherEmail ?? 'не указан'}\\n` +
-      `Статус: ${slot.status}\\n` +
-      `Открыть в кабинете: ${siteUrl}/cabinet`
+      `Статус: ${slot.status}\\n` + `Открыть в кабинете: ${siteUrl}/cabinet`
     lines.push('BEGIN:VEVENT')
     lines.push(`UID:slot-${slot.id}@levelchannel.ru`)
     lines.push(`DTSTAMP:${now}`)

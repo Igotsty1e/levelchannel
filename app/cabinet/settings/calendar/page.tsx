@@ -220,18 +220,33 @@ export default async function LearnerCalendarSettingsPage() {
   )
 }
 
-function LearnerIcsSubscriptionBlock({ accountId }: { accountId: string }) {
+async function LearnerIcsSubscriptionBlock({
+  accountId,
+}: {
+  accountId: string
+}) {
   // 2026-06-17 — .ics subscription. Token зашит в URL — изолированный
-  // секрет, без cookie. Если ученик скомпрометирует URL — учитель
-  // ротирует LEARNER_ICS_TOKEN_SECRET.
+  // секрет, без cookie.
+  //
+  // 2026-06-18 codex-audit BLOCKER §5.1 fix:
+  // Token теперь подписан HMAC over (accountId | version | expiresAt).
+  // Version читается из accounts.ics_token_version — bump → revoke.
+  // TTL 90 дней; страница каждый раз рендерит свежий токен — calendar
+  // apps подхватывают через очередной poll.
   let icsUrl: string | null = null
   try {
     // dynamic import чтобы при отсутствии secret страница не падала
     // (мы показываем понятный fallback вместо 500).
-    // Это import без сетевых запросов — стоимость минимальная.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { signLearnerIcsToken } = require('@/lib/calendar/learner-ics') as typeof import('@/lib/calendar/learner-ics')
-    const token = signLearnerIcsToken(accountId)
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getDbPool } = require('@/lib/db/pool') as typeof import('@/lib/db/pool')
+    const r = await getDbPool().query<{ ics_token_version: number }>(
+      `select ics_token_version from accounts where id = $1`,
+      [accountId],
+    )
+    const version = r.rows[0]?.ics_token_version ?? 1
+    const token = signLearnerIcsToken(accountId, version)
     const base = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, '') || ''
     icsUrl = `${base}/api/learner/calendar.ics?account=${accountId}&token=${token}`
   } catch {
