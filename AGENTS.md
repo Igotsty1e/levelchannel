@@ -191,6 +191,32 @@ git push --force-with-lease
 
 Это сохраняет ОДИН commit с `Skill-Used:` trailer уже на месте. Альтернатива (если force-push заблокирован) — close-and-reopen PR с squashed commit (см. 2026-06-18 #701 → #704).
 
+### Hygiene при parallel/orchestrator-sessions
+
+Когда parallel-агент или сосед-сессия делает `git stash` + checkout на чужую ветку, потом возвращается — stash'и накапливаются, worktrees остаются locked, branches привязаны к мёртвым worktrees.
+
+**За одну неделю в этом репо** скопилось 22 stash'а + 50 stale agent-worktrees + 200 локальных веток (большинство — от orchestrator runs). 2026-06-18 cleanup удалил 50 worktrees + 14 stash'ей + 50 веток >30 дней.
+
+Чтобы не накапливалось снова:
+
+1. **После возврата к ветке** — `git stash list`; если есть stash от этой ветки — `git stash pop` (если нужен) или `git stash drop` (если уже в commit).
+2. **После закрытия orchestrator-сессии** — `git worktree list` + `git worktree remove --force <path>` для всех `.claude/worktrees/agent-*` чьи pids уже мертвы. Их состояние: `lock reason: claude agent agent-XXX (pid N)` — если `ps -p N` пустой, worktree можно убрать.
+3. **Раз в N недель** sweep:
+   ```bash
+   # Worktrees с мёртвыми lock-pids
+   git worktree list --porcelain | grep -B 2 "locked" | grep "^worktree" | awk '{print $2}'
+
+   # Локальные branches >30 дней без worktree
+   git for-each-ref refs/heads --format='%(committerdate:short) %(refname:short)' \
+     | awk -v d="$(date -j -v-30d '+%Y-%m-%d' 2>/dev/null)" '$1 < d && $2 != "main"'
+
+   # Stash'и старше 14 дней
+   git stash list --format='%gd %ci %s' \
+     | awk -v c="$(date -j -v-14d '+%s' 2>/dev/null)" 'BEGIN{} {print}'
+   ```
+
+**Default policy для этого репо:** worktrees + stash'и в `.claude/worktrees/agent-*` от прошлых orchestrator-сессий **safe to remove** через `--force` если pid мёртв; branches/stashes старше 30/14 дней — drop по умолчанию.
+
 ## 4. Project anchors
 
 This is **LevelChannel**: a production payment site for the
