@@ -27,7 +27,11 @@ export const metadata = {
   robots: { index: false, follow: false },
 }
 
-export default async function TeacherSubscriptionPage() {
+export default async function TeacherSubscriptionPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ cycle?: string }>
+}) {
   const cookieStore = await cookies()
   const cookieValue = cookieStore.get(SESSION_COOKIE_NAME)?.value ?? null
   if (!cookieValue) {
@@ -38,6 +42,12 @@ export default async function TeacherSubscriptionPage() {
     redirect('/login')
   }
   const { account } = current
+
+  // A.2 (2026-06-18): query `?cycle=annual` от landing'а pre-selects
+  // годовой toggle в client'е.
+  const resolvedSearch = (await searchParams) ?? {}
+  const initialBillingCycle =
+    resolvedSearch.cycle === 'annual' ? 'annual' : 'monthly'
 
   const row = await getActiveTeacherSubscription(account.id)
 
@@ -93,7 +103,11 @@ export default async function TeacherSubscriptionPage() {
       <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.01em', marginBottom: 16 }}>
         Подписка на платформу
       </h1>
-      <TeacherSubscriptionClient active={active} tariffs={tariffs} />
+      <TeacherSubscriptionClient
+        active={active}
+        tariffs={tariffs}
+        initialBillingCycle={initialBillingCycle}
+      />
       <PromoCodeInput />
     </>
   )

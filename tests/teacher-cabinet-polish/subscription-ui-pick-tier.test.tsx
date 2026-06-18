@@ -108,4 +108,60 @@ describe('TeacherSubscriptionClient — pick-a-tier (A.1 reprice 2026-06-18)', (
     expect(midCard.textContent).toContain('Без ограничения по числу учеников')
     expect(midCard.textContent).not.toContain('До 0 активных')
   })
+
+  // A.2 annual tariff (2026-06-18) — toggle Месяц / Год + annual carCard rendering.
+  it('renders Месяц / Год toggle (default Месяц)', () => {
+    render(<TeacherSubscriptionClient active={null} tariffs={TARIFFS} />)
+    const toggle = screen.getByTestId('teacher-subscription-cycle-toggle')
+    expect(toggle).toBeTruthy()
+    const monthly = screen.getByTestId('teacher-subscription-cycle-monthly')
+    const annual = screen.getByTestId('teacher-subscription-cycle-annual')
+    expect(monthly.getAttribute('aria-checked')).toBe('true')
+    expect(annual.getAttribute('aria-checked')).toBe('false')
+    expect(annual.textContent).toContain('−15%')
+  })
+
+  it('default monthly: mid card shows 399 ₽ / 30 дней, no annual save badge', () => {
+    render(<TeacherSubscriptionClient active={null} tariffs={TARIFFS} />)
+    const midCard = screen.getByTestId('teacher-subscription-tier-mid')
+    expect(midCard.textContent).toContain('399 ₽')
+    expect(midCard.textContent).toContain('30 дней')
+    expect(
+      screen.queryByTestId('teacher-subscription-tier-mid-annual-save'),
+    ).toBeNull()
+  })
+
+  it('initialBillingCycle="annual": mid card swaps to «Оптимальный на год» 4000 ₽', () => {
+    render(
+      <TeacherSubscriptionClient
+        active={null}
+        tariffs={TARIFFS}
+        initialBillingCycle="annual"
+      />,
+    )
+    const midCard = screen.getByTestId('teacher-subscription-tier-mid')
+    expect(midCard.textContent).toContain('Оптимальный на год')
+    expect(midCard.textContent).toContain('4000 ₽')
+    expect(midCard.textContent).toContain('/ год')
+    const save = screen.getByTestId('teacher-subscription-tier-mid-annual-save')
+    // textContent в jsdom может схлопывать пробелы — допускаем оба варианта.
+    expect(save.textContent?.replace(/\s/g, '')).toContain('4788₽')
+    expect(save.textContent).toContain('экономия 15%')
+    const btn = screen.getByTestId('teacher-subscription-subscribe-mid')
+    expect(btn.textContent).toContain('Оплатить год')
+  })
+
+  it('annual toggle does NOT change Free card (free никогда не annual)', () => {
+    render(
+      <TeacherSubscriptionClient
+        active={null}
+        tariffs={TARIFFS}
+        initialBillingCycle="annual"
+      />,
+    )
+    const freeCard = screen.getByTestId('teacher-subscription-tier-free')
+    expect(freeCard.textContent).toContain('Стартовый')
+    expect(freeCard.textContent).toContain('Бесплатно')
+    expect(freeCard.textContent).not.toContain('Оптимальный на год')
+  })
 })

@@ -225,11 +225,34 @@ export async function POST(request: Request) {
           } else {
             const existing = await findSubscriptionByPaymentOrderId(order.invoiceId)
             if (!existing) {
+              // A.2 annual support (2026-06-18): metadata.saasBillingCycle
+              // и saasPeriodDays положены роутом /api/teacher/subscribe.
+              // Annual = разовый платёж 4 000 ₽ на 365 дней. Fallback на
+              // monthly (30 дней + tariff.amountKopecks) сохраняет
+              // backward-compat с legacy orders, у которых этих полей нет.
+              const meta = fullOrderForSub?.metadata as
+                | { saasBillingCycle?: unknown; saasPeriodDays?: unknown; saasAmountKopecks?: unknown }
+                | undefined
+              const isAnnual = meta?.saasBillingCycle === 'annual'
+              const periodDays =
+                typeof meta?.saasPeriodDays === 'number' &&
+                Number.isInteger(meta.saasPeriodDays) &&
+                meta.saasPeriodDays > 0 &&
+                meta.saasPeriodDays <= 366
+                  ? meta.saasPeriodDays
+                  : 30
+              const effectiveAmountKopecks =
+                typeof meta?.saasAmountKopecks === 'number' &&
+                Number.isInteger(meta.saasAmountKopecks) &&
+                meta.saasAmountKopecks > 0
+                  ? meta.saasAmountKopecks
+                  : tariff.amountKopecks
               await createOrRenewTeacherSubscription({
                 accountId: teacherAccountId,
                 tier: tariff.tier,
-                amountKopecks: tariff.amountKopecks,
+                amountKopecks: effectiveAmountKopecks,
                 paymentOrderId: order.invoiceId,
+                periodDays,
                 cpToken:
                   typeof payload.Token === 'string' && payload.Token.length > 0
                     ? payload.Token
@@ -239,10 +262,15 @@ export async function POST(request: Request) {
                 eventType: 'webhook.pay.processed',
                 invoiceId: order.invoiceId,
                 customerEmail: order.customerEmail,
-                amountKopecks: tariff.amountKopecks,
+                amountKopecks: effectiveAmountKopecks,
                 toStatus: order.status,
                 actor: 'webhook:cloudpayments:pay',
-                payload: { tier: tariff.tier, productKind },
+                payload: {
+                  tier: tariff.tier,
+                  productKind,
+                  billingCycle: isAnnual ? 'annual' : 'monthly',
+                  periodDays,
+                },
               })
             }
           }

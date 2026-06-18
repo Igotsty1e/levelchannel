@@ -370,6 +370,47 @@ export function getSubscriptionTariff(
   return null
 }
 
+// A.2 annual tariff (2026-06-18) — годовой план «Оптимальный на год».
+// Разовый платёж 4 000 ₽ за 365 дней (без авто-продления). Применим
+// ТОЛЬКО к 'mid' (Оптимальный); pro архивный и self-serve не доступен.
+//
+// Скидка vs месячной модели: 12 × 399 = 4 788 ₽; 4 000 = ~16.5% off,
+// округлено вниз до маркетингового «15%».
+export const ANNUAL_OPTIMAL_PRICE_KOPECKS = 400_000
+export const ANNUAL_OPTIMAL_PERIOD_DAYS = 365
+export const ANNUAL_OPTIMAL_MONTHLY_BASELINE_KOPECKS =
+  SAAS_SUBSCRIPTION_TARIFFS.mid.amountKopecks * 12 // 478_800
+export const ANNUAL_OPTIMAL_SAVINGS_KOPECKS =
+  ANNUAL_OPTIMAL_MONTHLY_BASELINE_KOPECKS - ANNUAL_OPTIMAL_PRICE_KOPECKS // 78_800
+
+export type SubscribeBillingCycle = 'monthly' | 'annual'
+
+/**
+ * Resolve effective amount + period for a billing cycle on a paid tier.
+ *
+ * - 'monthly' → tariff.amountKopecks + 30 days.
+ * - 'annual' → ANNUAL_OPTIMAL_PRICE_KOPECKS + 365 days. Annual is
+ *   ONLY supported for 'mid' (Оптимальный). 'pro' is archived
+ *   self-serve, so annual on pro returns null.
+ */
+export function resolveBillingCycleAmount(
+  tier: TeacherSubscriptionTier,
+  cycle: SubscribeBillingCycle,
+): { amountKopecks: number; periodDays: number } | null {
+  const tariff = SAAS_SUBSCRIPTION_TARIFFS[tier]
+  if (cycle === 'monthly') {
+    return { amountKopecks: tariff.amountKopecks, periodDays: 30 }
+  }
+  if (cycle === 'annual') {
+    if (tier !== 'mid') return null
+    return {
+      amountKopecks: ANNUAL_OPTIMAL_PRICE_KOPECKS,
+      periodDays: ANNUAL_OPTIMAL_PERIOD_DAYS,
+    }
+  }
+  return null
+}
+
 // Paid-only lookup — returns ONLY mid/pro entries; NEVER free. Used by
 // `app/api/payments/webhooks/cloudpayments/pay/route.ts` so an untrusted
 // `productKind` slug cannot accidentally feed a 0₽ "paid" row into
