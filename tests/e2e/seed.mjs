@@ -92,16 +92,17 @@ async function main() {
     }
 
     // 2026-06-18 business-flow extension:
-    // Привязываем учника к учителю + создаём default payment method
-    // учителю, чтобы booking + payment e2e тесты могли работать без
-    // ручного setup'а через UI.
+    // Привязываем учника к учителю через learner_teacher_links
+    // (legacy accounts.assigned_teacher_id больше не используется
+    // booking flow'ом — см. lib/auth/teacher-scope.ts).
     await pool.query(
-      `update accounts
-          set assigned_teacher_id = $2
-        where id = $1`,
+      `insert into learner_teacher_links
+         (learner_account_id, teacher_account_id, linked_at)
+       values ($1, $2, now())
+       on conflict do nothing`,
       [out.learner.accountId, out.teacher.accountId],
     )
-    console.log(`  linked learner → teacher (assigned_teacher_id)`)
+    console.log(`  linked learner → teacher (learner_teacher_links)`)
 
     await pool.query(
       `insert into teacher_payment_methods
@@ -112,23 +113,50 @@ async function main() {
     )
     console.log(`  created teacher payment method (SBP default)`)
 
-    // Создаём 3 будущих слота, выровненных по 30-минутной MSK-сетке
-    // (CHECK constraint из migration 0031). Тесты бронируют первый,
-    // оставляя 2 в запасе для дополнительных проверок.
+    // pricing_tariff + learner_tariff_access — без них слот не может
+    // быть забронирован (booking.ts:310 → tariff_required, 402).
+    const tariffInsert = await pool.query(
+      `insert into pricing_tariffs
+         (slug, title_ru, amount_kopecks, is_active)
+       values ('e2e-fixture-individual', 'Индивидуальное (e2e fixture)', 150000, true)
+       on conflict (slug) do update set is_active = excluded.is_active
+       returning id`,
+    )
+    const tariffId = String(tariffInsert.rows[0].id)
+    out.tariffId = tariffId
+    console.log(`  upserted fixture tariff ${tariffId}`)
+
+    await pool.query(
+      `insert into learner_tariff_access
+         (teacher_id, learner_account_id, tariff_id, granted_at)
+       values ($1, $2, $3, now())
+       on conflict do nothing`,
+      [out.teacher.accountId, out.learner.accountId, tariffId],
+    )
+    console.log(`  granted learner tariff access`)
+
+    // Создаём 3 будущих слота — выровнены по минуте (seconds=0), в
+    // MSK business hours (06:00-22:00). Каждый со ссылкой на fixture
+    // tariff, чтобы booking прошёл без tariff_required ошибки.
     const slotIds = []
     for (let i = 0; i < 3; i++) {
-      // 2 дня в будущем + offset 30 мин на каждый слот, выровнено по
-      // получасу UTC (что и есть MSK-grid с offset).
+      // 2 дня в будущем + i*30 мин offset. Округление до полной минуты
+      // (CHECK seconds=0 в MSK timezone, mig 0125).
       const baseMs = Date.now() + 2 * 24 * 60 * 60 * 1000 + i * 30 * 60 * 1000
-      const aligned = Math.floor(baseMs / (30 * 60 * 1000)) * (30 * 60 * 1000)
-      const startAt = new Date(aligned).toISOString()
+      const aligned = Math.floor(baseMs / 60000) * 60000
+      let startAt = new Date(aligned)
+      // Принудим в MSK business band 10:00-18:00 MSK = 07:00-15:00 UTC.
+      // Берём ближайший след день в окне 07:00 UTC + i*45 мин.
+      const day = new Date(startAt)
+      day.setUTCHours(7, i * 45, 0, 0)
+      startAt = day
       const slotInsert = await pool.query(
         `insert into lesson_slots
            (teacher_account_id, start_at, duration_minutes, status,
-            snapshot_amount_kopecks)
-         values ($1, $2, 60, 'open', 150000)
+            snapshot_amount_kopecks, tariff_id)
+         values ($1, $2, 60, 'open', 150000, $3)
          returning id`,
-        [out.teacher.accountId, startAt],
+        [out.teacher.accountId, startAt.toISOString(), tariffId],
       )
       slotIds.push(String(slotInsert.rows[0].id))
     }
