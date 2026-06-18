@@ -167,11 +167,15 @@ async function main() {
     for (const spec of specs) {
       const day = new Date(Date.now() + spec.daysFromNow * 24 * 60 * 60 * 1000)
       day.setUTCHours(spec.hourUtc, 0, 0, 0)
+      // booked_at обязателен для status='booked'
+      // (CHECK lesson_slots_booked_invariants).
+      const bookedAt = spec.status === 'booked' ? new Date() : null
       const slotInsert = await pool.query(
         `insert into lesson_slots
            (teacher_account_id, start_at, duration_minutes, status,
-            snapshot_amount_kopecks, tariff_id, learner_account_id)
-         values ($1, $2, 60, $3, 150000, $4, $5)
+            snapshot_amount_kopecks, tariff_id, learner_account_id,
+            booked_at)
+         values ($1, $2, 60, $3, 150000, $4, $5, $6)
          returning id`,
         [
           out.teacher.accountId,
@@ -179,6 +183,7 @@ async function main() {
           spec.status,
           tariffId,
           spec.learnerAccountId,
+          bookedAt ? bookedAt.toISOString() : null,
         ],
       )
       slotIds.push(String(slotInsert.rows[0].id))
