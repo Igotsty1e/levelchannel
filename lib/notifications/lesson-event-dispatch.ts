@@ -14,6 +14,7 @@
 
 import { getDbPool } from '@/lib/db/pool'
 
+import { isNotificationAllowed } from './preferences'
 import {
   RoleMismatchError,
   resolveRecipient,
@@ -177,7 +178,14 @@ export async function dispatchLessonEvent(
   }
 
   // ─── email ─────────────────────────────────────────────
-  if (allowedChannels.has('email')) {
+  // Epic D (2026-06-18): per-account preference gate. Default ON
+  // (backward-compat). False ТОЛЬКО если recipient явно выключил.
+  const emailAllowedByPref = await isNotificationAllowed(
+    ctx.recipientAccountId,
+    kind,
+    'email',
+  )
+  if (allowedChannels.has('email') && emailAllowedByPref) {
     const key = dedupKey(kind, ctx, 'email')
     const alreadySent = await isAlreadySent(key)
     if (alreadySent) {
@@ -211,10 +219,18 @@ export async function dispatchLessonEvent(
         await persistLog(kind, ctx, 'email', 'failed', msg, payloadForLog)
       }
     }
+  } else if (allowedChannels.has('email') && !emailAllowedByPref) {
+    result.email = 'skipped'
+    await persistLog(kind, ctx, 'email', 'skipped', 'user_pref_off', payloadForLog)
   }
 
   // ─── telegram ──────────────────────────────────────────
-  if (allowedChannels.has('telegram')) {
+  const telegramAllowedByPref = await isNotificationAllowed(
+    ctx.recipientAccountId,
+    kind,
+    'telegram',
+  )
+  if (allowedChannels.has('telegram') && telegramAllowedByPref) {
     const key = dedupKey(kind, ctx, 'telegram')
     const alreadySent = await isAlreadySent(key)
     if (alreadySent) {
@@ -252,6 +268,9 @@ export async function dispatchLessonEvent(
         await persistLog(kind, ctx, 'telegram', 'failed', msg, payloadForLog)
       }
     }
+  } else if (allowedChannels.has('telegram') && !telegramAllowedByPref) {
+    result.telegram = 'skipped'
+    await persistLog(kind, ctx, 'telegram', 'skipped', 'user_pref_off', payloadForLog)
   }
 
   return result
