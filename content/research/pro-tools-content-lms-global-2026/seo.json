@@ -1,0 +1,80 @@
+{
+  "title": "Контент и система онлайн-обучения 2026: Canva, Notion, Google Classroom, GetCourse",
+  "description": "Canva 265 млн пользователей. Notion 600 млн долларов годовая повторяющаяся выручка. Google Classroom 150 млн в 230 странах. 70% онлайн-школ России — на GetCourse. Финал серии «Инструменты профессионалов 2026».",
+  "canonical_url": "https://levelchannel.ru/research/pro-tools-content-lms-global-2026",
+  "published_at": "2026-06-17T21:00:00Z",
+  "modified_at": "2026-06-17T21:00:00Z",
+  "reading_time_minutes": 15,
+  "author": {
+    "name": "Редакция Level Channel Research",
+    "url": "https://levelchannel.ru/research",
+    "bio": "Независимое research-агентство Level Channel. Все цифры — публичные источники."
+  },
+  "publisher": {
+    "name": "Level Channel",
+    "url": "https://levelchannel.ru",
+    "logo_url": "https://levelchannel.ru/brand-mark.png"
+  },
+  "og_image_url": "https://levelchannel.ru/research/pro-tools-content-lms-global-2026/opengraph-image",
+  "tldr": [
+    "Canva — 265 млн ежемесячная аудитория, 3,5 млрд долларов выручка 2025, оценка 42 млрд долларов.",
+    "Notion — 600 млн долларов годовая повторяющаяся выручка (×9 за 4 года), 100 млн пользователей, 50%+ пятисот крупнейших компаний США.",
+    "Google Classroom — 150 млн registered, 60 тыс. школа с 1 по 11 класс школ США, 230 стран.",
+    "Canvas система онлайн-обучения — 39% North America higher ed, лидер; Moodle 25% в Европе.",
+    "98% крупных корпоративный используют система онлайн-обучения; 45% планируют увеличить инвестиции в learning-технологии.",
+    "В России — 70% онлайн-школ на GetCourse; доля дорогих курсов упала с 75% до 50% за год.",
+    "Прогноз: к концу 2026 граница между контент-инструментом и система онлайн-обучения размоется через ИИ."
+  ],
+  "faq": [
+    {
+      "q": "Какие контент-инструменты доминируют у профи в 2026?",
+      "a": "Canva — категориальный лидер визуального контента (265 млн ежемесячная аудитория, 3,5 млрд долларов выручка, оценка 42 млрд долларов). Notion — глобальный рабочая среда-стандарт (600 млн долларов годовая повторяющаяся выручка, 100 млн пользователей, 50%+ пятисот крупнейших компаний США). Coda — SMB-альтернатива Notion с дешёвым ИИ. Adobe Express — для профессионального дизайна."
+    },
+    {
+      "q": "Какие система онлайн-обучения используют школы и университеты?",
+      "a": "В США школа с 1 по 11 класс: Google Classroom (60 тыс. школ, 150 млн registered) и Microsoft Teams for Education. В US higher ed — Canvas (39% NA), Blackboard (19%), Moodle (16%), Brightspace (16%). В Европе — Moodle (25% доли региона), популярен в DACH. В России — GetCourse для онлайн-школ (70%), Сферум для государственных школ."
+    },
+    {
+      "q": "Сколько стоят популярные инструменты?",
+      "a": "Canva: Free, Pro 14,99 долларов/мес, Teams и Enterprise custom. Notion: Free, Plus 10 долларов с пользователя в месяц, Business 20 долларов (включает ИИ), Enterprise custom. Coda Pro 12 долларов (с ИИ). Google Classroom бесплатно для школ (с Workspace for Education). Canvas система онлайн-обучения — лицензионная для университетов (от 10 долларов/student/год)."
+    },
+    {
+      "q": "Чем российский EdTech-рынок отличается?",
+      "a": "GetCourse — главный all-in-one система онлайн-обучения для онлайн-школ (система онлайн-обучения + CRM + payments + analytics в одном). 70% всех онлайн-школ работают на нём. Структура выручки в 2025 сменилась: доля дорогих курсов (>100k руб) упала с 75% до 50%; рост массового и подписочного сегмента."
+    },
+    {
+      "q": "Куда идёт рынок к концу 2026?",
+      "a": "Гипотеза: граница между контент-инструментом (Canva, Notion) и система онлайн-обучения (Canvas, Moodle, GetCourse) размоется. Canva добавит курсы, Notion станет система онлайн-обучения-like, система онлайн-обучения встроят ИИ-content-generation. Region-specific платформы (GetCourse в РФ, китайские система онлайн-обучения) останутся."
+    },
+    {
+      "q": "Что не вошло в обзор?",
+      "a": "Microsoft Teams for Education — конкурент Google Classroom. Coursera, Udemy, edX — MOOC-агрегаторы, отдельная категория. WordPress для контент-сайтов — отдельный анализ. Khan Academy и Duolingo — adjacent learning-платформа."
+    }
+  ],
+  "about": [
+    "контент",
+    "LMS",
+    "Canva",
+    "Notion",
+    "Google Classroom",
+    "GetCourse",
+    "Canvas",
+    "Moodle"
+  ],
+  "mentions": [
+    "Canva",
+    "Notion",
+    "Coda",
+    "Google Classroom",
+    "Google Workspace",
+    "Canvas",
+    "Blackboard",
+    "Moodle",
+    "Brightspace",
+    "Schoology",
+    "GetCourse",
+    "Skillbox",
+    "Microsoft Teams",
+    "Сферум"
+  ]
+}

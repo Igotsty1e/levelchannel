@@ -1,0 +1,82 @@
+{
+  "title": "Планирование и оплаты у профи 2026: Calendly, Stripe, СБП и кто им конкурирует",
+  "description": "Stripe — 1,9 трлн долларов TPV. СБП — 103 трлн руб. Alipay — 20 трлн долларов. Region-specific платёжные наборы инструментов. Серия «Инструменты профессионалов 2026», часть III из IV.",
+  "canonical_url": "https://levelchannel.ru/research/pro-tools-scheduling-payments-global-2026",
+  "published_at": "2026-06-17T20:30:00Z",
+  "modified_at": "2026-06-17T20:30:00Z",
+  "reading_time_minutes": 16,
+  "author": {
+    "name": "Редакция Level Channel Research",
+    "url": "https://levelchannel.ru/research",
+    "bio": "Независимое research-агентство Level Channel. Все цифры — публичные источники."
+  },
+  "publisher": {
+    "name": "Level Channel",
+    "url": "https://levelchannel.ru",
+    "logo_url": "https://levelchannel.ru/brand-mark.png"
+  },
+  "og_image_url": "https://levelchannel.ru/research/pro-tools-scheduling-payments-global-2026/opengraph-image",
+  "tldr": [
+    "Stripe обработал 1,9 трлн долларов в 2025 (+34% год к году) — 1,6% мирового ВВП; оценка 159 млрд долларов в фев 2026.",
+    "PayPal остаётся самым массовым кошельком — 434 млн пользователей, 33,2 млрд долларов выручка, но темп всего +4,32%.",
+    "СБП за 2025: 18,3 млрд операций на 103 трлн руб; 7 из 10 жителей пользуются переводами.",
+    "Alipay и WeChat Pay контролируют 90%+ китайского mobile-payment — Alipay 20,1 трлн долларов транзакций.",
+    "Wise — лидер cross-border для SMB: 15,5 млн клиентов, 185 млрд долларов volume FY25.",
+    "Calendly — категориальный лидер scheduling, Cal.com — открытое ПО альтернатива с HIPAA.",
+    "ИИ-scheduling: Reclaim (50 тыс. профи, 22 долларов корпоративный) и Motion (all-in-one)."
+  ],
+  "faq": [
+    {
+      "q": "Какой платёжный набор инструментов у профи в 2026?",
+      "a": "Глобально — Stripe (1,9 трлн долларов TPV) и PayPal (434 млн активных). В Китае — Alipay+WeChat Pay (90%+ рынка). В России — СБП (103 трлн руб) и эквайринг через ЮKassa/Robokassa/Tinkoff Кассу. Cross-border для SMB — Wise (15,5 млн клиентов)."
+    },
+    {
+      "q": "Какие платформы планирования доминируют?",
+      "a": "Calendly — категориальный лидер (270 млн долларов годовая повторяющаяся выручка на конец 2023). Cal.com — открытое ПО альтернатива с 40 тыс. пользователей, поддерживает HIPAA. ИИ-scheduling — Reclaim (50 тыс. профи, 22 долларов с пользователя в месяц Enterprise) и Motion (29 долларов-39/мес индивидуальный)."
+    },
+    {
+      "q": "Сколько стоят популярные инструменты?",
+      "a": "Calendly: Free, Standard 12 долларов, Teams 20 долларов, Enterprise от 15 долларов 000/год. Cal.com: открытое ПО + Enterprise custom. Stripe: 2,9% + 0,30 долларов за US-транзакцию. Wise: 0,3-0,7% за currency conversion. Reclaim: Free, Enterprise 22 долларов/user. Motion: 29 долларов-39/мес."
+    },
+    {
+      "q": "Чем региональные платёжные системы отличаются?",
+      "a": "СБП — государственная инфраструктура Банка России, низкие комиссии (0,4-0,7% vs 1,5-2,5% у банковского эквайринга). Alipay и WeChat Pay — частные экосистемы Ant Group и Tencent, вертикально интегрированы с e-commerce. На западе — фрагментация: банковские карты + Apple Pay/Google Pay + PayPal/Stripe."
+    },
+    {
+      "q": "Куда идёт рынок к концу 2026?",
+      "a": "Гипотеза: региональная фрагментация сохранится. Глобальной унификации платёжного набора инструментов не будет. Возможные изменения: stablecoin-rails для cross-border, A2A платежи (СБП-like) в развивающихся странах, embedded финансы внутри облачное ПО-приложений снижает потребность в отдельных fintech-приложениях."
+    },
+    {
+      "q": "Что не вошло в обзор?",
+      "a": "Apple Pay, Google Pay, Samsung Pay — обёртки над банковскими картами. UPI (Индия) и Pix (Бразилия) — государственные A2A системы, заслуживают отдельного обзора. USDT/USDC — stablecoin рынок, отдельный анализ. Region-specific BNPL — Klarna, Afterpay — не вошли."
+    }
+  ],
+  "about": [
+    "платежи",
+    "planning",
+    "Calendly",
+    "Stripe",
+    "СБП",
+    "scheduling",
+    "payments"
+  ],
+  "mentions": [
+    "Calendly",
+    "Cal.com",
+    "Stripe",
+    "PayPal",
+    "Block",
+    "Cash App",
+    "Square",
+    "Wise",
+    "Alipay",
+    "WeChat Pay",
+    "СБП",
+    "ЮKassa",
+    "Robokassa",
+    "Tinkoff Касса",
+    "Reclaim AI",
+    "Motion",
+    "Apple Pay"
+  ]
+}

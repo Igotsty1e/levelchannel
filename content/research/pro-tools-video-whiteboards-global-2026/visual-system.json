@@ -1,0 +1,27 @@
+{
+  "hero": {
+    "kind": "stat-grid",
+    "composition": {
+      "headline": "Большая четвёрка контролирует 60%+ мирового рынка видео-связи в 2025; региональные стеки — DingTalk в Китае, Контур.Толк в России — растут параллельно. AI-фичи стали стандартом."
+    }
+  },
+  "section_accents": {
+    "big-picture": "rose",
+    "regional": "warm-amber",
+    "whiteboards": "peach",
+    "ai-features": "coral",
+    "pricing": "rose",
+    "teachers": "warm-amber",
+    "coaches": "coral",
+    "consultants": "peach",
+    "us-adoption": "rose",
+    "methodology": "info"
+  },
+  "rhythm": {
+    "stat_strips_between_sections": []
+  },
+  "typography": {
+    "key_number_size": "huge",
+    "section_separator": "gradient-rule"
+  }
+}

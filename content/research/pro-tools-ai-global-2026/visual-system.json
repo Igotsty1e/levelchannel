@@ -1,0 +1,27 @@
+{
+  "hero": {
+    "kind": "stat-grid",
+    "composition": {
+      "headline": "AI-инструменты в работе профи 2026"
+    }
+  },
+  "section_accents": {
+    "giants": "rose",
+    "code": "coral",
+    "education": "peach",
+    "legal": "warm-amber",
+    "china": "info",
+    "europe-russia": "warm-amber",
+    "productivity": "coral",
+    "coaching": "success",
+    "risks": "danger",
+    "methodology": "info"
+  },
+  "rhythm": {
+    "stat_strips_between_sections": []
+  },
+  "typography": {
+    "key_number_size": "huge",
+    "section_separator": "gradient-rule"
+  }
+}

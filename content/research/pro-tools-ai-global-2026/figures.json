@@ -1,0 +1,239 @@
+{
+  "fig_arr_compare": {
+    "section_id": "giants",
+    "kind": "hbar",
+    "title": "AI-вендоры: ARR run-rate, млрд долларов",
+    "unit": "млрд",
+    "accent": "rose",
+    "data": [
+      {
+        "label": "Anthropic",
+        "value": 30,
+        "highlight": true
+      },
+      {
+        "label": "OpenAI",
+        "value": 25,
+        "highlight": true
+      },
+      {
+        "label": "Mistral",
+        "value": 0.4,
+        "highlight": false
+      },
+      {
+        "label": "Harvey",
+        "value": 0.19,
+        "highlight": false
+      }
+    ]
+  },
+  "fig_openai_strip": {
+    "section_id": "giants",
+    "kind": "metric-strip",
+    "title": "OpenAI · ключевые цифры 2026",
+    "accent": "rose",
+    "data": [
+      {
+        "label": "Платящих подписчиков",
+        "value": "50 млн"
+      },
+      {
+        "label": "ChatGPT выручка 2025",
+        "value": "8 млрд долларов"
+      },
+      {
+        "label": "ChatGPT Plus",
+        "value": "15-17 млн"
+      },
+      {
+        "label": "Enterprise users",
+        "value": "9+ млн"
+      }
+    ]
+  },
+  "fig_cursor_growth": {
+    "section_id": "code",
+    "kind": "columns",
+    "title": "Cursor · ARR run-rate",
+    "unit": "млрд долларов",
+    "accent": "coral",
+    "data": [
+      {
+        "label": "Ноя 2025",
+        "value": 1.0,
+        "highlight": false
+      },
+      {
+        "label": "Мар 2026",
+        "value": 2.0,
+        "highlight": true
+      }
+    ]
+  },
+  "fig_khanmigo_growth": {
+    "section_id": "education",
+    "kind": "columns",
+    "title": "Khanmigo · ученики K-12",
+    "unit": "тыс.",
+    "accent": "peach",
+    "data": [
+      {
+        "label": "2023-24",
+        "value": 40,
+        "highlight": false
+      },
+      {
+        "label": "2024-25",
+        "value": 700,
+        "highlight": true
+      },
+      {
+        "label": "2025-26 цель",
+        "value": 1000,
+        "highlight": true
+      }
+    ]
+  },
+  "fig_china_mau": {
+    "section_id": "china",
+    "kind": "hbar",
+    "title": "Китайские LLM-приложения · MAU",
+    "unit": "млн",
+    "accent": "warm-amber",
+    "data": [
+      {
+        "label": "Doubao",
+        "value": 157,
+        "highlight": true
+      },
+      {
+        "label": "Qwen",
+        "value": 73.5,
+        "highlight": true
+      },
+      {
+        "label": "Yuanbao",
+        "value": 40.5,
+        "highlight": false
+      },
+      {
+        "label": "Wenxin",
+        "value": 13,
+        "highlight": false
+      }
+    ]
+  },
+  "fig_halluc_quote": {
+    "section_id": "risks",
+    "kind": "pull-quote",
+    "accent": "danger",
+    "data": {
+      "text": "21 из 23 цитат в апелляционной жалобе оказались сфабрикованы AI. Из 712 судебных решений со сфабрикованным AI-контентом 90 процентов произошли в 2025-м.",
+      "attribution": "LawSites / Cronkite News"
+    }
+  },
+  "fig_grammarly_strip": {
+    "section_id": "productivity",
+    "kind": "metric-strip",
+    "title": "Grammarly · в цифрах 2026",
+    "accent": "coral",
+    "data": [
+      {
+        "label": "DAU",
+        "value": "30 млн"
+      },
+      {
+        "label": "ARR",
+        "value": "610 млн долларов"
+      },
+      {
+        "label": "Оценка",
+        "value": "13 млрд долларов"
+      },
+      {
+        "label": "Организаций",
+        "value": "50 тыс."
+      }
+    ]
+  },
+  "fig_legal_compare": {
+    "section_id": "legal",
+    "kind": "compare-pies",
+    "title": "Юридический AI · фокус сегмента",
+    "accent": "warm-amber",
+    "data": [
+      {
+        "label": "Harvey · BigLaw",
+        "percent": 80
+      },
+      {
+        "label": "Spellbook · SMB",
+        "percent": 40
+      }
+    ]
+  },
+  "fig_mistral_growth": {
+    "section_id": "europe-russia",
+    "kind": "columns",
+    "title": "Mistral · ARR run-rate",
+    "unit": "млн долларов",
+    "accent": "info",
+    "data": [
+      {
+        "label": "2023",
+        "value": 10,
+        "highlight": false
+      },
+      {
+        "label": "2024",
+        "value": 80,
+        "highlight": false
+      },
+      {
+        "label": "2025",
+        "value": 280,
+        "highlight": false
+      },
+      {
+        "label": "2026",
+        "value": 400,
+        "highlight": true
+      }
+    ]
+  },
+  "fig_betterup_donut": {
+    "section_id": "coaching",
+    "kind": "donut",
+    "title": "BetterUp AI Coach · user satisfaction",
+    "accent": "success",
+    "data": {
+      "percent": 95,
+      "label": "satisfaction"
+    }
+  },
+  "fig_anthropic_enterprise_strip": {
+    "section_id": "giants",
+    "kind": "metric-strip",
+    "title": "Anthropic · enterprise-фокус",
+    "accent": "warm-amber",
+    "data": [
+      {
+        "label": "% выручки enterprise",
+        "value": "80%"
+      },
+      {
+        "label": "Бизнес-клиентов",
+        "value": "300+ тыс."
+      },
+      {
+        "label": "Клиентов >$1M/год",
+        "value": "1000+"
+      },
+      {
+        "label": "Claude Code ARR",
+        "value": "2,5 млрд долларов"
+      }
+    ]
+  }
+}
