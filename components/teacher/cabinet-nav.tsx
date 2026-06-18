@@ -1,46 +1,64 @@
 'use client'
 
 /**
- * Teacher cabinet nav — Mobile-first restructure (2026-05-31).
+ * Teacher cabinet nav — Mobile-first restructure (2026-05-31),
+ * design-system refit (2026-06-18).
  *
- * 4 main sections instead of 6 cluttered ones:
- *   1. Главная   — /teacher (новый home: ближайшие занятия, invite, ученики)
- *   2. Календарь — /teacher/calendar (бывший /teacher)
- *   3. Ученики   — /teacher/learners
- *   4. Настройки — /teacher/settings (hub для Профиль/Цены занятий/Пакеты уроков/Подписка/Календарь/Уведомления)
+ * 5 main sections:
+ *   1. Главная   — /teacher
+ *   2. Календарь — /teacher/calendar (с calendar-dot для GCal-статуса)
+ *   3. Занятия   — /teacher/lessons
+ *   4. Ученики   — /teacher/learners
+ *   5. Настройки — /teacher/settings
  *
- * Mobile (<768px): sticky bottom nav, 4 кнопки с иконкой+подписью.
- * Desktop (≥768px): горизонтальный nav сверху.
+ * Mobile (<768px): sticky bottom nav, 5 кнопок с SVG-иконкой+подписью.
+ * Desktop (≥768px): горизонтальный nav сверху (text-only).
  *
- * Calendar connection dot (●/○) — теперь на «Календарь» пункте.
+ * 2026-06-18: заменили Unicode-emoji (⌂ ▦ ≡ ☰ ⚙) на SVG-glyph'ы из
+ * `components/ui/icons/`; calendar-dot цвета — design-system tokens
+ * (`--success` / `--danger`) вместо хардкода `#9bdf9b` / `#ff8a8a`.
  */
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
+import { NavIcon, type NavIconName } from '@/components/ui/icons'
+
 type NavItem = {
   href: string
   label: string
-  /** SVG-glyph icon shown on mobile bottom nav. */
-  icon: string
-  /** Highlight as active when pathname starts with `href/`. */
+  icon: NavIconName
   prefixMatch?: boolean
-  /** Pass calendar-connected state from SSR. */
   showCalendarDot?: boolean
 }
 
 const NAV_ITEMS: ReadonlyArray<NavItem> = [
-  { href: '/teacher', label: 'Главная', icon: '⌂' },
+  { href: '/teacher', label: 'Главная', icon: 'home' },
   {
     href: '/teacher/calendar',
     label: 'Календарь',
-    icon: '▦',
+    icon: 'calendar',
     prefixMatch: true,
     showCalendarDot: true,
   },
-  { href: '/teacher/lessons', label: 'Занятия', icon: '≡', prefixMatch: true },
-  { href: '/teacher/learners', label: 'Ученики', icon: '☰', prefixMatch: true },
-  { href: '/teacher/settings', label: 'Настройки', icon: '⚙', prefixMatch: true },
+  {
+    href: '/teacher/lessons',
+    label: 'Занятия',
+    icon: 'lessons',
+    prefixMatch: true,
+  },
+  {
+    href: '/teacher/learners',
+    label: 'Ученики',
+    icon: 'learners',
+    prefixMatch: true,
+  },
+  {
+    href: '/teacher/settings',
+    label: 'Настройки',
+    icon: 'gear',
+    prefixMatch: true,
+  },
 ]
 
 type Props = {
@@ -57,6 +75,7 @@ function isActive(pathname: string | null, item: NavItem): boolean {
 
 export function TeacherCabinetNav({ calendarConnected }: Props) {
   const pathname = usePathname()
+  const dotColor = calendarConnected ? 'var(--success)' : 'var(--danger)'
 
   return (
     <>
@@ -91,7 +110,7 @@ export function TeacherCabinetNav({ calendarConnected }: Props) {
                   data-testid="cabinet-nav-calendar-dot"
                   data-connected={calendarConnected ? 'true' : 'false'}
                   style={{
-                    color: calendarConnected ? '#9bdf9b' : '#ff8a8a',
+                    color: dotColor,
                     fontSize: 12,
                     lineHeight: 1,
                     marginRight: 4,
@@ -106,7 +125,7 @@ export function TeacherCabinetNav({ calendarConnected }: Props) {
         })}
       </nav>
 
-      {/* Mobile — sticky bottom nav (<768px). 4 иконки + подписи. */}
+      {/* Mobile — sticky bottom nav (<768px). */}
       <nav
         aria-label="Кабинет (мобильное меню)"
         data-testid="teacher-cabinet-nav-mobile"
@@ -124,18 +143,16 @@ export function TeacherCabinetNav({ calendarConnected }: Props) {
               style={{ color: active ? 'var(--text)' : 'var(--secondary)' }}
             >
               <span
+                className="cabinet-nav-mobile-icon"
                 aria-hidden="true"
-                style={{
-                  fontSize: 22,
-                  lineHeight: 1,
-                  marginBottom: 4,
-                  position: 'relative',
-                }}
+                style={{ position: 'relative' }}
               >
-                {item.icon}
+                <NavIcon name={item.icon} size={24} />
                 {item.showCalendarDot ? (
                   <span
                     aria-hidden="true"
+                    data-testid="cabinet-nav-calendar-dot-mobile"
+                    data-connected={calendarConnected ? 'true' : 'false'}
                     style={{
                       position: 'absolute',
                       top: -2,
@@ -143,12 +160,15 @@ export function TeacherCabinetNav({ calendarConnected }: Props) {
                       width: 8,
                       height: 8,
                       borderRadius: '50%',
-                      background: calendarConnected ? '#9bdf9b' : '#ff8a8a',
+                      background: dotColor,
                     }}
                   />
                 ) : null}
               </span>
-              <span style={{ fontSize: 11, fontWeight: active ? 600 : 500 }}>
+              <span
+                className="cabinet-nav-mobile-label"
+                style={{ fontWeight: active ? 600 : 500 }}
+              >
                 {item.label}
               </span>
             </Link>

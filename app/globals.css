@@ -736,12 +736,26 @@ html, body {
     align-items: center;
     justify-content: center;
     padding: 6px 4px;
+    gap: 4px;
     text-decoration: none;
     transition: color 0.12s ease;
     min-height: 56px;
   }
   .cabinet-nav-mobile-link[data-active='true'] {
     color: var(--text);
+  }
+  /* 2026-06-18 design-system refit: consolidate icon + label styles
+     here, чтобы nav-компоненты не дублировали inline-styles
+     (fontSize 22 + lineHeight 1 + marginBottom 4 раньше жили в JSX). */
+  .cabinet-nav-mobile-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+  .cabinet-nav-mobile-label {
+    font-size: var(--text-12);
+    line-height: 1.2;
   }
   /* 2026-06-12 design-audit fix: селектор был body[data-cabinet=...]
      но атрибут стоит на самом <main> (см. app/teacher/layout.tsx).
