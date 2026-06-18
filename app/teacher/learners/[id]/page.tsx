@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 
 import { AssignDirectButton } from '@/components/teacher/learners/AssignDirectButton'
+import { LearnerNoteCard } from '@/components/teacher/learners/learner-note-card'
 import { LearnerPackagesCard } from '@/components/teacher/learners/learner-packages-card'
 import { LearnerTariffAccessCard } from '@/components/teacher/learners/learner-tariff-access-card'
 import { Button, EmptyState, Pill } from '@/components/ui/primitives'
@@ -16,6 +17,7 @@ import {
   listPackagesByTeacher,
 } from '@/lib/billing/packages'
 import { getDbPool } from '@/lib/db/pool'
+import { getLearnerTeacherNote } from '@/lib/learners/teacher-note'
 import { listTariffsForTeacher } from '@/lib/pricing/tariffs'
 
 import { PaymentMethodToggle } from './payment-method-toggle'
@@ -193,12 +195,19 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
     teacherTariffs,
     learnerPackages,
     learnerTariffAccess,
+    teacherNoteResult,
   ] = await Promise.all([
     listPackagesByTeacher(teacherId),
     listTariffsForTeacher(teacherId),
     listLearnerPackagesByTeacher(teacherId, learnerId),
     listLearnerTariffAccessByTeacher(teacherId, learnerId),
+    getLearnerTeacherNote(teacherId, learnerId),
   ])
+  // Epic C — учительская заметка SSR'ом из learner_teacher_links.
+  // not_linked сюда не дойдёт — выше выполняется guard на ссылку;
+  // фолбэк null безопасен.
+  const initialTeacherNote =
+    teacherNoteResult.ok ? teacherNoteResult.note : null
   const availablePackages = teacherPackages
     .filter((p) => p.isActive)
     .map((p) => ({
@@ -295,6 +304,9 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
         initialLastName={learner.last_name ?? ''}
         initialEmail={learner.email}
       />
+
+      {/* Epic C — приватная учительская заметка (per-teacher). */}
+      <LearnerNoteCard learnerId={learnerId} initialNote={initialTeacherNote} />
 
 <PaymentMethodToggle
         learnerId={learnerId}
