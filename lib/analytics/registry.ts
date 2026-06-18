@@ -16,7 +16,10 @@ import { z } from 'zod'
 // ─── Property primitives ────────────────────────────────────────────
 
 const ZTier = z.enum(['free', 'basic', 'pro'])
-const ZTierName = z.enum(['Стартовый', 'Базовый', 'Расширенный'])
+// A.1 tariff reprice (2026-06-18): «Базовый» переименован в «Оптимальный».
+// «Базовый» и «Расширенный» оставлены в enum как backward-compat для legacy
+// событий, отправленных до миграции — они не валятся при ингесте.
+const ZTierName = z.enum(['Стартовый', 'Базовый', 'Расширенный', 'Оптимальный'])
 const ZRole = z.enum(['teacher', 'learner', 'guest'])
 
 // ─── Event registry — все события + их schemas ──────────────────────

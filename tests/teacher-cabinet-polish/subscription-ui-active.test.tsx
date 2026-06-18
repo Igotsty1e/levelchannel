@@ -16,10 +16,15 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { TeacherSubscriptionClient } from '@/app/teacher/subscription/client'
 
-const PRO_FEATURES = ['Всё из «Базового»', 'До 30 активных учеников', 'Расширенные отчёты']
+// A.1 tariff reprice (2026-06-18): mid → «Оптимальный» 399 ₽ без лимита.
+// Pro остаётся как legacy operator-managed (archived) — тест проверяет
+// рендер active-state для обоих tier-значений.
+const PRO_FEATURES = ['Все функции платформы', 'До 30 активных учеников', 'Индивидуальные условия']
 
 const ACTIVE_PRO_LIVE = {
   tier: 'pro' as const,
+  // titleRu без суффикса «(архивный)» — legacy pro-подписчик видит «Расширенный»;
+  // архивный статус живёт в description (не показывается active surface).
   titleRu: 'Расширенный',
   periodEnd: '2026-07-02T12:00:00Z',
   amountKopecks: 80000,
@@ -34,11 +39,11 @@ const ACTIVE_PRO_CANCELLED = {
 
 const ACTIVE_MID_LIVE = {
   tier: 'mid' as const,
-  titleRu: 'Базовый',
+  titleRu: 'Оптимальный',
   periodEnd: '2026-07-02T12:00:00Z',
-  amountKopecks: 30000,
+  amountKopecks: 39900,
   cancelledAt: null,
-  features: ['Расписание', 'До 5 учеников'],
+  features: ['Все функции платформы', 'Без ограничения по ученикам'],
 }
 
 const TARIFFS: ReadonlyArray<{
@@ -76,9 +81,8 @@ describe('TeacherSubscriptionClient — active subscription (bug-4 Sub-PR B)', (
     expect(root.textContent).toContain('Расширенный')
     expect(root.textContent).toContain('Что входит в тариф')
     const features = screen.getByTestId('teacher-subscription-active-features')
-    expect(features.textContent).toContain('Всё из «Базового»')
     expect(features.textContent).toContain('До 30 активных учеников')
-    expect(features.textContent).toContain('Расширенные отчёты')
+    expect(features.textContent).toContain('Индивидуальные условия')
   })
 
   it('shows the "Отменить подписку" button when cancelled_at is null', () => {
@@ -109,12 +113,12 @@ describe('TeacherSubscriptionClient — active subscription (bug-4 Sub-PR B)', (
     )
   })
 
-  it('renders the Базовый (mid) active tier when planSlug=mid', () => {
+  it('renders the Оптимальный (mid) active tier when planSlug=mid', () => {
     render(
       <TeacherSubscriptionClient active={ACTIVE_MID_LIVE} tariffs={TARIFFS} />,
     )
     const root = screen.getByTestId('teacher-subscription-active')
-    expect(root.textContent).toContain('Базовый')
+    expect(root.textContent).toContain('Оптимальный')
     // Negative pin: «Расширенный» must NOT bleed in.
     expect(root.textContent).not.toContain('Расширенный')
   })

@@ -17,46 +17,48 @@ import {
 } from '@/lib/billing/teacher-subscription'
 
 describe('SAAS_SUBSCRIPTION_TARIFFS', () => {
-  it('exposes mid + pro tiers with the prices set in v2 SaaS-оферта', () => {
-    expect(SAAS_SUBSCRIPTION_TARIFFS.mid.amountKopecks).toBe(30000)
+  // A.1 tariff reprice (2026-06-18): mid renamed Базовый→Оптимальный,
+  // price 30000→39900, learner_limit 5→null (без ограничения).
+  // Pro depublish из публичных UI, но строка остаётся в SoT для legacy
+  // operator-managed flow.
+  it('exposes mid tariff with 2026-06-18 reprice (Оптимальный 399 ₽ без лимита)', () => {
+    expect(SAAS_SUBSCRIPTION_TARIFFS.mid.amountKopecks).toBe(39900)
+    expect(SAAS_SUBSCRIPTION_TARIFFS.mid.titleRu).toBe('Оптимальный')
+    expect(SAAS_SUBSCRIPTION_TARIFFS.mid.learnerLimit).toBeNull()
+  })
+
+  it('keeps pro tariff as legacy operator-managed entry (depublished)', () => {
+    // Pro строка остаётся в SoT для legacy webhook + операторской раздачи.
     expect(SAAS_SUBSCRIPTION_TARIFFS.pro.amountKopecks).toBe(80000)
-  })
-
-  it('learner limits match the catalogue (mig 0073)', () => {
-    expect(SAAS_SUBSCRIPTION_TARIFFS.mid.learnerLimit).toBe(5)
     expect(SAAS_SUBSCRIPTION_TARIFFS.pro.learnerLimit).toBe(30)
-  })
-
-  it('titles match the public SaaS landing copy (Russian names per bug-4 Sub-PR A)', () => {
-    expect(SAAS_SUBSCRIPTION_TARIFFS.mid.titleRu).toBe('Базовый')
     expect(SAAS_SUBSCRIPTION_TARIFFS.pro.titleRu).toBe('Расширенный')
+    // Description явно помечает архивный статус для оператора /
+    // legacy active подписчиков; UI-фильтры скрывают pro из публичных
+    // pick-tier surfaces (см. app/teacher/subscription/page.tsx).
+    expect(SAAS_SUBSCRIPTION_TARIFFS.pro.description).toContain('архивный')
   })
 
-  it('descriptions include the tier name and 30-day period', () => {
-    expect(SAAS_SUBSCRIPTION_TARIFFS.mid.description).toContain('Базовый')
+  it('descriptions include the tier name and 30-day period (mid)', () => {
+    expect(SAAS_SUBSCRIPTION_TARIFFS.mid.description).toContain('Оптимальный')
     expect(SAAS_SUBSCRIPTION_TARIFFS.mid.description).toContain('30 дней')
-    expect(SAAS_SUBSCRIPTION_TARIFFS.pro.description).toContain('Расширенный')
-    expect(SAAS_SUBSCRIPTION_TARIFFS.pro.description).toContain('30 дней')
   })
 
-  it('exposes UI feature-bullets for the subscription page (bug-4 Sub-PR A)', () => {
+  it('exposes UI feature-bullets for the subscription page', () => {
     expect(SAAS_SUBSCRIPTION_TARIFFS.mid.features.length).toBeGreaterThanOrEqual(3)
     expect(SAAS_SUBSCRIPTION_TARIFFS.pro.features.length).toBeGreaterThanOrEqual(3)
-    // Pro card should reference the smaller tier in its first bullet
-    // («Базового», genitive of «Базовый»).
+    // Оптимальный card references «Стартового» as the smaller tier.
     expect(
-      SAAS_SUBSCRIPTION_TARIFFS.pro.features.some((b) =>
-        /Базов(ый|ого)/.test(b),
+      SAAS_SUBSCRIPTION_TARIFFS.mid.features.some((b) =>
+        /Стартов(ый|ого)/.test(b),
       ),
     ).toBe(true)
   })
 
-  // free-tier-saas-card-and-subscription-row plan §0a-7 closure (2026-06-05):
-  // 'free' (Стартовый) is now a catalog entry alongside mid+pro.
-  it('exposes free tier (Стартовый) — amountKopecks=0, learnerLimit=1', () => {
+  // A.1 tariff reprice (2026-06-18): free learner_limit 1 → 3.
+  it('exposes free tier (Стартовый) — amountKopecks=0, learnerLimit=3', () => {
     expect(SAAS_SUBSCRIPTION_TARIFFS.free.titleRu).toBe('Стартовый')
     expect(SAAS_SUBSCRIPTION_TARIFFS.free.amountKopecks).toBe(0)
-    expect(SAAS_SUBSCRIPTION_TARIFFS.free.learnerLimit).toBe(1)
+    expect(SAAS_SUBSCRIPTION_TARIFFS.free.learnerLimit).toBe(3)
     expect(SAAS_SUBSCRIPTION_TARIFFS.free.features.length).toBeGreaterThanOrEqual(3)
   })
 })
@@ -66,25 +68,24 @@ describe('getSubscriptionTariff', () => {
     const t = getSubscriptionTariff('mid')
     expect(t).not.toBeNull()
     expect(t?.tier).toBe('mid')
-    expect(t?.amountKopecks).toBe(30000)
+    expect(t?.amountKopecks).toBe(39900)
   })
 
-  it('returns the pro tariff for tier="pro"', () => {
+  it('returns the pro tariff for tier="pro" (legacy operator-managed)', () => {
     const t = getSubscriptionTariff('pro')
     expect(t).not.toBeNull()
     expect(t?.tier).toBe('pro')
     expect(t?.amountKopecks).toBe(80000)
   })
 
-  // free-tier-saas-card-and-subscription-row plan §0a-7 closure (2026-06-05):
-  // 'free' is now a valid catalog entry. Returns the Стартовый tariff.
+  // A.1 tariff reprice (2026-06-18): free learnerLimit 1 → 3.
   it('returns the free tariff for tier="free"', () => {
     const t = getSubscriptionTariff('free')
     expect(t).not.toBeNull()
     expect(t?.tier).toBe('free')
     expect(t?.amountKopecks).toBe(0)
     expect(t?.titleRu).toBe('Стартовый')
-    expect(t?.learnerLimit).toBe(1)
+    expect(t?.learnerLimit).toBe(3)
   })
 
   it('returns null for unknown / disallowed tiers (operator-managed is NOT a catalog tier)', () => {
@@ -126,7 +127,7 @@ describe('createOrRenewTeacherSubscription input validation', () => {
   const baseInput = {
     accountId: '00000000-0000-0000-0000-000000000001',
     tier: 'mid' as const,
-    amountKopecks: 30000,
+    amountKopecks: 39900,
     paymentOrderId: 'lc_sub_test',
   }
 

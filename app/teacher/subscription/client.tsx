@@ -273,29 +273,31 @@ export function TeacherSubscriptionClient({ active, tariffs }: Props) {
   return (
     <section data-testid="teacher-subscription-tiers" style={pickContainerStyle}>
       <p style={leadStyle}>
-        «Стартовый» — бесплатно, навсегда, для одного ученика.
-        «Базовый» и «Расширенный» — когда учеников становится больше.
-        Платёж разовый, без автосписания: 30 дней доступа за одно
+        «Стартовый» — бесплатно, навсегда, до 3 активных учеников.
+        «Оптимальный» — без ограничения по числу учеников, когда практика
+        растёт. Платёж разовый, без автосписания: 30 дней доступа за одно
         списание. Отменить можно в любой момент — доступ сохранится
         до конца оплаченного периода.
       </p>
       {error ? <p style={errorStyle}>{error}</p> : null}
       <div style={gridStyle}>
         {tariffs.map((t) => {
-          const isPro = t.tier === 'pro'
+          // A.1 tariff reprice (2026-06-18): highlight теперь на единственном
+          // публичном платном тарифе (Оптимальный = mid). Pro depublish.
+          const isHighlighted = t.tier === 'mid'
           const isFree = t.tier === 'free'
           return (
             <article
               key={t.tier}
               data-testid={`teacher-subscription-tier-${t.tier}`}
-              data-highlight={isPro ? 'true' : 'false'}
+              data-highlight={isHighlighted ? 'true' : 'false'}
               style={{
                 ...cardStyle,
-                borderColor: isPro ? 'var(--accent)' : 'var(--border)',
-                boxShadow: isPro ? '0 0 0 1px var(--accent)' : 'none',
+                borderColor: isHighlighted ? 'var(--accent)' : 'var(--border)',
+                boxShadow: isHighlighted ? '0 0 0 1px var(--accent)' : 'none',
               }}
             >
-              {isPro ? (
+              {isHighlighted ? (
                 <div
                   data-testid={`teacher-subscription-tier-${t.tier}-badge`}
                   style={popularBadgeStyle}
@@ -314,7 +316,11 @@ export function TeacherSubscriptionClient({ active, tariffs }: Props) {
                   </>
                 )}
               </div>
-              <div style={cardLimitStyle}>До {t.learnerLimit} активных учеников</div>
+              <div style={cardLimitStyle}>
+                {t.learnerLimit === 0
+                  ? 'Без ограничения по числу учеников'
+                  : `До ${t.learnerLimit} активных учеников`}
+              </div>
 
               <ul
                 data-testid={`teacher-subscription-tier-${t.tier}-features`}
@@ -352,9 +358,9 @@ export function TeacherSubscriptionClient({ active, tariffs }: Props) {
                   data-testid={`teacher-subscription-subscribe-${t.tier}`}
                   style={{
                     ...subscribeButtonStyle,
-                    background: isPro ? 'var(--accent)' : 'transparent',
-                    color: isPro ? '#fff' : 'var(--text)',
-                    border: isPro ? 'none' : '1px solid var(--border)',
+                    background: isHighlighted ? 'var(--accent)' : 'transparent',
+                    color: isHighlighted ? '#fff' : 'var(--text)',
+                    border: isHighlighted ? 'none' : '1px solid var(--border)',
                   }}
                 >
                   {loading === t.tier ? 'Готовим оплату…' : 'Подписаться'}
