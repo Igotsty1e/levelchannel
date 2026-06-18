@@ -84,6 +84,11 @@ export default defineConfig({
           ...(process.env.TELEMETRY_HASH_SECRET
             ? { TELEMETRY_HASH_SECRET: process.env.TELEMETRY_HASH_SECRET }
             : {}),
+          // 2026-06-18 business-flow e2e: tests/e2e/business-flow-*.spec.ts
+          // создают SBP claims через payment-claims endpoint. Mock-режим
+          // нужен чтобы payment-gate не звал реальный CloudPayments.
+          PAYMENTS_PROVIDER: 'mock',
+          PAYMENTS_ALLOW_MOCK_CONFIRM: 'true',
         },
       },
 })

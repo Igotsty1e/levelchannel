@@ -91,6 +91,50 @@ async function main() {
       console.log(`  seeded ${spec.role}  accountId=${accountId}`)
     }
 
+    // 2026-06-18 business-flow extension:
+    // Привязываем учника к учителю + создаём default payment method
+    // учителю, чтобы booking + payment e2e тесты могли работать без
+    // ручного setup'а через UI.
+    await pool.query(
+      `update accounts
+          set assigned_teacher_id = $2
+        where id = $1`,
+      [out.learner.accountId, out.teacher.accountId],
+    )
+    console.log(`  linked learner → teacher (assigned_teacher_id)`)
+
+    await pool.query(
+      `insert into teacher_payment_methods
+         (teacher_account_id, phone_e164, phone_display, bank_label, is_default)
+       values ($1, '+79001234567', '+7 (900) 123-45-67', 'Сбербанк (e2e fixture)', true)
+       on conflict do nothing`,
+      [out.teacher.accountId],
+    )
+    console.log(`  created teacher payment method (SBP default)`)
+
+    // Создаём 3 будущих слота, выровненных по 30-минутной MSK-сетке
+    // (CHECK constraint из migration 0031). Тесты бронируют первый,
+    // оставляя 2 в запасе для дополнительных проверок.
+    const slotIds = []
+    for (let i = 0; i < 3; i++) {
+      // 2 дня в будущем + offset 30 мин на каждый слот, выровнено по
+      // получасу UTC (что и есть MSK-grid с offset).
+      const baseMs = Date.now() + 2 * 24 * 60 * 60 * 1000 + i * 30 * 60 * 1000
+      const aligned = Math.floor(baseMs / (30 * 60 * 1000)) * (30 * 60 * 1000)
+      const startAt = new Date(aligned).toISOString()
+      const slotInsert = await pool.query(
+        `insert into lesson_slots
+           (teacher_account_id, start_at, duration_minutes, status,
+            snapshot_amount_kopecks)
+         values ($1, $2, 60, 'open', 150000)
+         returning id`,
+        [out.teacher.accountId, startAt],
+      )
+      slotIds.push(String(slotInsert.rows[0].id))
+    }
+    out.slots = slotIds
+    console.log(`  created 3 future slots: ${slotIds.length}`)
+
     mkdirSync(dirname(FIXTURE_FILE), { recursive: true })
     writeFileSync(
       FIXTURE_FILE,
