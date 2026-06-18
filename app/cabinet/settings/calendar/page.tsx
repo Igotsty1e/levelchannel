@@ -123,6 +123,22 @@ export default async function LearnerCalendarSettingsPage() {
   const operatorMasterSwitchOn =
     operatorSettings.LEARNER_REMINDERS_EMAIL_ENABLED?.value === 1
 
+  // 2026-06-18 codex-audit BLOCKER §5.1: читаем ics_token_version из
+  // БД здесь, в parent server-component, чтобы child остался sync (иначе
+  // vitest/RTL ломаются на async компоненте).
+  const tokenVersion = await (async () => {
+    try {
+      const { getDbPool } = await import('@/lib/db/pool')
+      const r = await getDbPool().query<{ ics_token_version: number }>(
+        `select ics_token_version from accounts where id = $1`,
+        [session.account.id],
+      )
+      return r.rows[0]?.ics_token_version ?? 1
+    } catch {
+      return 1
+    }
+  })()
+
   return (
     <AuthShell>
       <div style={{ width: '100%', maxWidth: 520, padding: '24px 16px' }}>
@@ -214,39 +230,36 @@ export default async function LearnerCalendarSettingsPage() {
             : 'Email-напоминания временно выключены оператором.'}
         </p>
 
-        <LearnerIcsSubscriptionBlock accountId={session.account.id} />
+        <LearnerIcsSubscriptionBlock
+          accountId={session.account.id}
+          tokenVersion={tokenVersion}
+        />
       </div>
     </AuthShell>
   )
 }
 
-async function LearnerIcsSubscriptionBlock({
+function LearnerIcsSubscriptionBlock({
   accountId,
+  tokenVersion,
 }: {
   accountId: string
+  tokenVersion: number
 }) {
   // 2026-06-17 — .ics subscription. Token зашит в URL — изолированный
   // секрет, без cookie.
   //
   // 2026-06-18 codex-audit BLOCKER §5.1 fix:
-  // Token теперь подписан HMAC over (accountId | version | expiresAt).
-  // Version читается из accounts.ics_token_version — bump → revoke.
-  // TTL 90 дней; страница каждый раз рендерит свежий токен — calendar
+  // Token подписан HMAC over (accountId | version | expiresAt). Version
+  // приходит prop'ом из parent server-component (там idempotent DB
+  // read), компонент остаётся sync чтобы vitest/RTL могли рендерить.
+  // TTL 90 дней; страница каждый раз генерит свежий токен — calendar
   // apps подхватывают через очередной poll.
   let icsUrl: string | null = null
   try {
-    // dynamic import чтобы при отсутствии secret страница не падала
-    // (мы показываем понятный fallback вместо 500).
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { signLearnerIcsToken } = require('@/lib/calendar/learner-ics') as typeof import('@/lib/calendar/learner-ics')
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { getDbPool } = require('@/lib/db/pool') as typeof import('@/lib/db/pool')
-    const r = await getDbPool().query<{ ics_token_version: number }>(
-      `select ics_token_version from accounts where id = $1`,
-      [accountId],
-    )
-    const version = r.rows[0]?.ics_token_version ?? 1
-    const token = signLearnerIcsToken(accountId, version)
+    const token = signLearnerIcsToken(accountId, tokenVersion)
     const base = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, '') || ''
     icsUrl = `${base}/api/learner/calendar.ics?account=${accountId}&token=${token}`
   } catch {
