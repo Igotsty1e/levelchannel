@@ -91,6 +91,106 @@ async function main() {
       console.log(`  seeded ${spec.role}  accountId=${accountId}`)
     }
 
+    // 2026-06-18 business-flow extension:
+    // Привязываем учника к учителю через learner_teacher_links
+    // (legacy accounts.assigned_teacher_id больше не используется
+    // booking flow'ом — см. lib/auth/teacher-scope.ts).
+    await pool.query(
+      `insert into learner_teacher_links
+         (learner_account_id, teacher_account_id, linked_at)
+       values ($1, $2, now())
+       on conflict do nothing`,
+      [out.learner.accountId, out.teacher.accountId],
+    )
+    console.log(`  linked learner → teacher (learner_teacher_links)`)
+
+    await pool.query(
+      `insert into teacher_payment_methods
+         (teacher_account_id, phone_e164, phone_display, bank_label, is_default)
+       values ($1, '+79001234567', '+7 (900) 123-45-67', 'Сбербанк (e2e fixture)', true)
+       on conflict do nothing`,
+      [out.teacher.accountId],
+    )
+    console.log(`  created teacher payment method (SBP default)`)
+
+    // pricing_tariff + learner_tariff_access — без них слот не может
+    // быть забронирован (booking.ts:310 → tariff_required, 402).
+    // duration_minutes — required (mig 0046, no default).
+    // teacher_id — required (mig 0088 NOT NULL after multi-tenant epic).
+    const tariffInsert = await pool.query(
+      `insert into pricing_tariffs
+         (slug, title_ru, amount_kopecks, duration_minutes, is_active, teacher_id)
+       values ('e2e-fixture-individual', 'Индивидуальное (e2e fixture)', 150000, 60, true, $1)
+       on conflict (slug) do update set is_active = excluded.is_active
+       returning id`,
+      [out.teacher.accountId],
+    )
+    const tariffId = String(tariffInsert.rows[0].id)
+    out.tariffId = tariffId
+    console.log(`  upserted fixture tariff ${tariffId}`)
+
+    await pool.query(
+      `insert into learner_tariff_access
+         (teacher_id, learner_account_id, tariff_id, granted_at)
+       values ($1, $2, $3, now())
+       on conflict do nothing`,
+      [out.teacher.accountId, out.learner.accountId, tariffId],
+    )
+    console.log(`  granted learner tariff access`)
+
+    // Создаём 3 слота. Все в MSK business hours (07:00-15:00 UTC =
+    // 10:00-18:00 MSK), seconds=0 (mig 0125).
+    // slot[0] — БУДУЩИЙ open (для BOOK-1: книгует через API).
+    // slot[1] — ПРОШЛЫЙ booked учнем (для BOOK-2: mark-completed).
+    // slot[2] — ПРОШЛЫЙ booked учнем (для BOOK-3: payment-context + claim).
+    const slotIds = []
+    const specs = [
+      {
+        daysFromNow: 2,
+        hourUtc: 7,
+        status: 'open',
+        learnerAccountId: null,
+      },
+      {
+        daysFromNow: -3,
+        hourUtc: 8,
+        status: 'booked',
+        learnerAccountId: out.learner.accountId,
+      },
+      {
+        daysFromNow: -2,
+        hourUtc: 9,
+        status: 'booked',
+        learnerAccountId: out.learner.accountId,
+      },
+    ]
+    for (const spec of specs) {
+      const day = new Date(Date.now() + spec.daysFromNow * 24 * 60 * 60 * 1000)
+      day.setUTCHours(spec.hourUtc, 0, 0, 0)
+      // booked_at обязателен для status='booked'
+      // (CHECK lesson_slots_booked_invariants).
+      const bookedAt = spec.status === 'booked' ? new Date() : null
+      const slotInsert = await pool.query(
+        `insert into lesson_slots
+           (teacher_account_id, start_at, duration_minutes, status,
+            snapshot_amount_kopecks, tariff_id, learner_account_id,
+            booked_at)
+         values ($1, $2, 60, $3, 150000, $4, $5, $6)
+         returning id`,
+        [
+          out.teacher.accountId,
+          day.toISOString(),
+          spec.status,
+          tariffId,
+          spec.learnerAccountId,
+          bookedAt ? bookedAt.toISOString() : null,
+        ],
+      )
+      slotIds.push(String(slotInsert.rows[0].id))
+    }
+    out.slots = slotIds
+    console.log(`  created 3 slots (1 future-open + 2 past-booked)`)
+
     mkdirSync(dirname(FIXTURE_FILE), { recursive: true })
     writeFileSync(
       FIXTURE_FILE,

@@ -84,6 +84,21 @@ export default defineConfig({
           ...(process.env.TELEMETRY_HASH_SECRET
             ? { TELEMETRY_HASH_SECRET: process.env.TELEMETRY_HASH_SECRET }
             : {}),
+          // 2026-06-18 business-flow e2e: tests/e2e/business-flow-*.spec.ts
+          // создают SBP claims через payment-claims endpoint. Mock-режим
+          // нужен чтобы payment-gate не звал реальный CloudPayments.
+          // ВАЖНО: PAYMENTS_ALLOW_MOCK_CONFIRM=true reject'ится в проде
+          // (NODE_ENV=production у next start), поэтому НЕ ставим — нашим
+          // тестам confirm не нужен (booking + claim creation работают без).
+          PAYMENTS_PROVIDER: 'mock',
+          // TEACHER_INVITE_SECRET — required в проде (next start) для
+          // /api/teacher/invites. 32+ chars фиксированный fixture.
+          TEACHER_INVITE_SECRET:
+            'e2e-fixture-invite-secret-must-be-32-chars-minimum',
+          // LEARNER_ICS_TOKEN_SECRET тоже required в проде (для cabinet
+          // settings/calendar SSR). Fixture-32+chars.
+          LEARNER_ICS_TOKEN_SECRET:
+            'e2e-fixture-ics-secret-must-be-32-chars-minimum',
         },
       },
 })
