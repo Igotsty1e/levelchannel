@@ -20,7 +20,9 @@ import { getDbPool } from '@/lib/db/pool'
 import { getLearnerTeacherNote } from '@/lib/learners/teacher-note'
 import { listTariffsForTeacher } from '@/lib/pricing/tariffs'
 
-import { PaymentMethodToggle } from './payment-method-toggle'
+// PaymentMethodToggle убран (post-deploy bug bash 2026-06-19) — owner
+// решил спрятать «постоплата» рудимент с teacher UI. Domain (enum, debt,
+// booking) остался для backward-compat learner flows; см. plan.
 import { RenameLearnerForm } from './rename-form'
 import UncompleteButton from './uncomplete-button'
 
@@ -167,23 +169,9 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
     [teacherId, learnerId],
   )
 
-  // mig 0101 — read current payment_method для (teacher, learner) пары.
-  // Default 'none' if no row.
-  const billingPrefsResult = await pool.query<{ payment_method: string }>(
-    `select payment_method from learner_billing_preferences
-       where teacher_account_id = $1::uuid
-         and learner_account_id = $2::uuid
-       limit 1`,
-    [teacherId, learnerId],
-  )
-  // epic-b Sub-PR B.1/B.2 (2026-06-11): dropped 'prepaid_packages'.
-  // Mig 0126 already normalised legacy DB rows to 'postpaid'; any
-  // unexpected value collapses to 'none' via the cast guard.
-  const currentPaymentMethodRaw = String(
-    billingPrefsResult.rows[0]?.payment_method ?? 'none',
-  )
-  const currentPaymentMethod: 'postpaid' | 'none'
-    = currentPaymentMethodRaw === 'postpaid' ? 'postpaid' : 'none'
+  // payment_method чтение убрано (post-deploy bug bash 2026-06-19) —
+  // UI «постоплата» спрятан, toggle удалён. Domain (learner_billing_preferences)
+  // остаётся для booking flow в lib/scheduling/slots/booking.ts.
 
   // Plan v3 §3.3 — learner-card sections need:
   //   * the teacher's full active catalog (for the «Выдать пакет» and
@@ -307,11 +295,6 @@ export default async function TeacherLearnerDetailPage({ params }: PageProps) {
 
       {/* Epic C — приватная учительская заметка (per-teacher). */}
       <LearnerNoteCard learnerId={learnerId} initialNote={initialTeacherNote} />
-
-<PaymentMethodToggle
-        learnerId={learnerId}
-        initialMethod={currentPaymentMethod}
-      />
 
       {/* Plan v3 §3.3 — package + tariff-access management for this
           learner. Both sections are mounted unconditionally; they

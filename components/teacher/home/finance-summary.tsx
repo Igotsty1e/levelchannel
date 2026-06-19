@@ -63,7 +63,7 @@ export function TeacherFinanceSummary({
       <hr style={dividerStyle} aria-hidden="true" />
       <ul style={listStyle}>
         <SecondaryRow
-          href="/teacher/payments"
+          href="/teacher/lessons?kind=payments"
           label="Должны прямо сейчас"
           value={fmtRub(snapshot.unpaid.totalKopecks)}
         />

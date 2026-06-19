@@ -84,3 +84,82 @@ export async function slotIsPaidByAllocations(
   }
 }
 
+// post-deploy bug bash 2026-06-19 (Bug 5): batch версия для teacher
+// lesson history pill «Оплачено».
+//
+// Возвращает per-slot payment source:
+//   • 'paid_package' — есть active package_consumption (restored_at IS NULL)
+//   • 'paid_direct'  — direct allocation покрывает expected_amount_kopecks
+//                       и не fully refunded
+//   • 'unpaid'       — slot booked, но без покрытия
+//   • null           — для не-booked statuses (cancelled / completed / etc)
+//
+// Precedence: package > direct > unpaid. SQL mirrors `slotIsPaidByAllocations`
+// для direct branch (paid order + reversals < amount) и `package_consumptions`
+// active filter для package branch.
+
+export type SlotPaymentSource = 'paid_package' | 'paid_direct' | 'unpaid' | null
+
+export async function getSlotPaymentSources(
+  slotIds: string[],
+): Promise<Map<string, SlotPaymentSource>> {
+  const result = new Map<string, SlotPaymentSource>()
+  if (slotIds.length === 0) return result
+
+  const pool = getDbPool()
+  // wave-paranoia 2026-06-19: $1 cast'ится только в uuid[] (один тип на
+  // prepared statement); сравнение с payment_allocations.target_id —
+  // через cast `target_id::uuid = any($1)`. Раньше был mixed
+  // uuid[]/text[] cast одного и того же param — Postgres мог отвергнуть
+  // prepared plan из-за conflicting inferred types.
+  const rows = await pool.query<{
+    slot_id: string
+    status: string
+    has_package: boolean
+    has_direct: boolean
+  }>(
+    `with active_packages as (
+       select pc.slot_id
+         from package_consumptions pc
+        where pc.slot_id = any($1::uuid[])
+          and pc.restored_at is null
+     ),
+     direct_paid as (
+       select a.target_id::uuid as slot_id
+         from payment_allocations a
+         join payment_orders o
+              on o.invoice_id = a.payment_order_id and o.status = 'paid'
+         left join lateral (
+           select coalesce(sum(refunded_kopecks), 0)::bigint as refunded_sum
+             from payment_allocation_reversals r
+            where r.payment_order_id = a.payment_order_id
+              and r.kind = a.kind
+              and r.target_id = a.target_id
+         ) rev on true
+        where a.kind = 'lesson_slot'
+          and a.target_id::uuid = any($1::uuid[])
+          and coalesce(rev.refunded_sum, 0) < a.amount_kopecks
+     )
+     select s.id::text as slot_id,
+            s.status,
+            exists(select 1 from active_packages ap where ap.slot_id = s.id) as has_package,
+            exists(select 1 from direct_paid dp where dp.slot_id = s.id) as has_direct
+       from lesson_slots s
+      where s.id = any($1::uuid[])`,
+    [slotIds],
+  )
+
+  for (const row of rows.rows) {
+    let source: SlotPaymentSource = null
+    if (row.has_package) {
+      source = 'paid_package'
+    } else if (row.has_direct) {
+      source = 'paid_direct'
+    } else if (row.status === 'booked') {
+      source = 'unpaid'
+    }
+    result.set(row.slot_id, source)
+  }
+  return result
+}
+
