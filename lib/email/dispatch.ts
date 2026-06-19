@@ -152,7 +152,7 @@ export async function sendSbpClaimNotificationToTeacher(
 ) {
   const tpl = renderSbpClaimEmail({
     ...params,
-    cabinetUrl: params.cabinetUrl ?? `${paymentConfig.siteUrl}/teacher/payments`,
+    cabinetUrl: params.cabinetUrl ?? `${paymentConfig.siteUrl}/teacher/lessons?kind=payments`,
   })
   return sendEmail({ to, subject: tpl.subject, html: tpl.html, text: tpl.text })
 }

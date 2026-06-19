@@ -4,18 +4,16 @@
 // для /teacher/lessons. Содержит filters bar (period + status + learner)
 // + responsive list (table desktop, card-list mobile) + pagination.
 //
-// State: filters локальные, `applyFilters` → fetch /api/teacher/lessons/history
-// → setRows. CSV-кнопка строит query string и редиректит в новой вкладке.
+// 2026-06-19 post-deploy bug bash — kind state удалён, теперь URL
+// (searchParams.kind) — single source of truth, page.tsx ветвится
+// по kind, LessonHistoryClient рендерится только для kind=lessons.
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Button, EmptyState, Pill } from '@/components/ui/primitives'
 
-// Epic E (2026-06-18): kind-chip-row «Уроки / Дела / Оплаты» поверх существующих
-// фильтров. «Уроки» — текущий рендер истории; «Дела» — placeholder до Epic B;
-// «Оплаты» — компактный journal с CTA в /teacher/payments.
-type LessonsKind = 'lessons' | 'deals' | 'payments'
+type PaymentStatus = 'paid_package' | 'paid_direct' | 'unpaid' | null
 
 type Row = {
   id: string
@@ -26,6 +24,7 @@ type Row = {
   tariffSlug?: string | null
   tariffAmountKopecks?: number | null
   isMarked: boolean
+  paymentStatus?: PaymentStatus
 }
 
 type Learner = { id: string; label: string }
@@ -53,9 +52,18 @@ function formatDate(iso: string): string {
   }
 }
 
-function statusLabel(status: string): { label: string; tone: 'success' | 'warning' | 'danger' | 'default' } {
+function statusLabel(
+  status: string,
+  paymentStatus?: PaymentStatus,
+): { label: string; tone: 'success' | 'warning' | 'danger' | 'default' } {
   switch (status) {
     case 'completed':
+      if (paymentStatus === 'paid_package') {
+        return { label: 'Проведено · оплачено (пакет)', tone: 'success' }
+      }
+      if (paymentStatus === 'paid_direct') {
+        return { label: 'Проведено · оплачено', tone: 'success' }
+      }
       return { label: 'Проведено', tone: 'success' }
     case 'no_show_learner':
       return { label: 'Не пришёл', tone: 'warning' }
@@ -64,6 +72,12 @@ function statusLabel(status: string): { label: string; tone: 'success' | 'warnin
     case 'cancelled':
       return { label: 'Отменено', tone: 'default' }
     case 'booked':
+      if (paymentStatus === 'paid_package') {
+        return { label: 'Оплачено (пакет)', tone: 'success' }
+      }
+      if (paymentStatus === 'paid_direct') {
+        return { label: 'Оплачено', tone: 'success' }
+      }
       return { label: 'Не оплачено', tone: 'warning' }
     default:
       return { label: status, tone: 'default' }
@@ -95,8 +109,9 @@ export function LessonHistoryClient({
   const [learnerFilter, setLearnerFilter] = useState<string>('')
   const [unmarkedOnly, setUnmarkedOnly] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  // Epic E (2026-06-18): kind-chip-row state.
-  const [kind, setKind] = useState<LessonsKind>('lessons')
+  // wave-paranoia 2026-06-19: AbortController защищает от race — старый
+  // ответ не перезатирает rows если пользователь быстро поменял фильтры.
+  const inflightRef = useRef<AbortController | null>(null)
 
   function buildQs(): URLSearchParams {
     const qs = new URLSearchParams()
@@ -110,11 +125,15 @@ export function LessonHistoryClient({
   }
 
   async function refresh() {
+    inflightRef.current?.abort()
+    const controller = new AbortController()
+    inflightRef.current = controller
     setBusy(true)
     setErr(null)
     try {
       const res = await fetch(`/api/teacher/lessons/history?${buildQs().toString()}`, {
         cache: 'no-store',
+        signal: controller.signal,
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -122,8 +141,14 @@ export function LessonHistoryClient({
         return
       }
       setRows((data?.rows as Row[]) ?? [])
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return
+      setErr(e instanceof Error ? e.message : 'Не удалось загрузить занятия.')
     } finally {
-      setBusy(false)
+      if (inflightRef.current === controller) {
+        setBusy(false)
+        inflightRef.current = null
+      }
     }
   }
 
@@ -150,47 +175,10 @@ export function LessonHistoryClient({
 
   return (
     <main style={{ maxWidth: 980, margin: '0 auto', paddingBottom: 80 }}>
-      <header className="lc-section">
-        <h1
-          style={{
-            fontSize: 24,
-            fontWeight: 700,
-            margin: 0,
-            letterSpacing: '-0.01em',
-          }}
-        >
-          Все занятия
-        </h1>
-        <p style={{ color: 'var(--secondary)', fontSize: 14, marginTop: 4 }}>
-          История прошедших занятий с фильтрами и экспортом.
-        </p>
-      </header>
-
       <section
         className="card lc-section"
         style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}
       >
-        {/* Epic E (2026-06-18): kind-chip-row — переключение Уроки/Дела/Оплаты. */}
-        <div
-          data-testid="lesson-history-kind-row"
-          style={{
-            display: 'flex',
-            gap: 8,
-            flexWrap: 'wrap',
-            paddingBottom: 12,
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <ChipBtn active={kind === 'lessons'} onClick={() => setKind('lessons')}>
-            Уроки
-          </ChipBtn>
-          <ChipBtn active={kind === 'deals'} onClick={() => setKind('deals')}>
-            Дела
-          </ChipBtn>
-          <ChipBtn active={kind === 'payments'} onClick={() => setKind('payments')}>
-            Оплаты
-          </ChipBtn>
-        </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <ChipBtn active={periodChip === 'week'} onClick={() => setPeriodChip('week')}>
             За 7 дней
@@ -202,59 +190,55 @@ export function LessonHistoryClient({
             Все
           </ChipBtn>
         </div>
-        {/* Status / learner / unmarked filters — только для kind=lessons.
-           Для оплат и дел они не имеют смысла. */}
-        {kind === 'lessons' ? (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              style={selectStyle}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            style={selectStyle}
+            disabled={busy}
+          >
+            <option value="">Все статусы</option>
+            <option value="completed">Проведено</option>
+            <option value="no_show_learner">Ученик не пришёл</option>
+            <option value="no_show_teacher">Учитель не пришёл</option>
+            <option value="cancelled">Отменено</option>
+            <option value="booked">Не оплачено</option>
+          </select>
+          <select
+            value={learnerFilter}
+            onChange={(e) => setLearnerFilter(e.target.value)}
+            style={selectStyle}
+            disabled={busy || learnerOptions.length === 0}
+          >
+            <option value="">Все ученики</option>
+            {learnerOptions.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <label
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 14,
+              color: 'var(--secondary)',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={unmarkedOnly}
+              onChange={(e) => setUnmarkedOnly(e.target.checked)}
               disabled={busy}
-            >
-              <option value="">Все статусы</option>
-              <option value="completed">Проведено</option>
-              <option value="no_show_learner">Ученик не пришёл</option>
-              <option value="no_show_teacher">Учитель не пришёл</option>
-              <option value="cancelled">Отменено</option>
-              <option value="booked">Не оплачено</option>
-            </select>
-            <select
-              value={learnerFilter}
-              onChange={(e) => setLearnerFilter(e.target.value)}
-              style={selectStyle}
-              disabled={busy || learnerOptions.length === 0}
-            >
-              <option value="">Все ученики</option>
-              {learnerOptions.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-            <label
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                fontSize: 14,
-                color: 'var(--secondary)',
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={unmarkedOnly}
-                onChange={(e) => setUnmarkedOnly(e.target.checked)}
-                disabled={busy}
-              />
-              Только без отметки
-            </label>
-            <span style={{ flex: 1 }} />
-            <Button variant="ghost" size="sm" href={csvHref}>
-              Экспорт CSV
-            </Button>
-          </div>
-        ) : null}
+            />
+            Только без отметки
+          </label>
+          <span style={{ flex: 1 }} />
+          <Button variant="ghost" size="sm" href={csvHref}>
+            Экспорт CSV
+          </Button>
+        </div>
       </section>
 
       {err ? (
@@ -263,28 +247,6 @@ export function LessonHistoryClient({
         </p>
       ) : null}
 
-      {/* Epic E (2026-06-18): «Оплаты» — встроенный journal-стаб с CTA
-         в полную страницу. Epic B (Дела) — placeholder; UI и история
-         придут в B.2 PR. Default — «Уроки» с текущей логикой. */}
-      {kind === 'payments' ? (
-        <section
-          className="lc-section"
-          data-testid="lesson-history-payments-stub"
-          style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
-        >
-          <EmptyState
-            title="Раздел «Оплаты»"
-            body="Здесь будут отображаться оплаты, заявки и возвраты по всем ученикам. Полный журнал с фильтрами уже доступен на отдельной странице."
-          />
-          <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <Button variant="primary" size="md" href="/teacher/payments">
-              Открыть полные оплаты →
-            </Button>
-          </div>
-        </section>
-      ) : kind === 'deals' ? (
-        <PersonalEventsList />
-      ) : (
       <section className="lc-section">
         {rows.length === 0 ? (
           <EmptyState
@@ -297,7 +259,7 @@ export function LessonHistoryClient({
               const learner = row.learnerAccountId
                 ? learnerLabels[row.learnerAccountId] ?? '—'
                 : '—'
-              const st = statusLabel(row.status)
+              const st = statusLabel(row.status, row.paymentStatus)
               const canMark = row.status === 'booked' && !row.isMarked
               return (
                 <li
@@ -355,7 +317,6 @@ export function LessonHistoryClient({
           </ul>
         )}
       </section>
-      )}
 
       <p style={{ fontSize: 12, color: 'var(--secondary)', marginTop: 16 }}>
         <Link href="/teacher" style={{ color: 'inherit' }}>
@@ -373,139 +334,6 @@ const selectStyle: React.CSSProperties = {
   border: '1px solid var(--border)',
   background: 'var(--surface)',
   fontSize: 14,
-}
-
-// Epic B (2026-06-19) — список дел учителя для таба «Дела» в /teacher/lessons.
-type PersonalEventRow = {
-  id: string
-  startAt: string
-  durationMinutes: number
-  status: 'personal_event' | 'completed' | 'cancelled'
-  title: string
-  body: string | null
-}
-
-function PersonalEventsList() {
-  const [rows, setRows] = useState<PersonalEventRow[]>([])
-  const [busy, setBusy] = useState(true)
-  const [err, setErr] = useState<string | null>(null)
-
-  useEffect(() => {
-    let live = true
-    setBusy(true)
-    fetch('/api/teacher/personal-events/history', { cache: 'no-store' })
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}))
-        if (!live) return
-        if (!res.ok) {
-          setErr(data?.message ?? 'Не удалось загрузить дела.')
-          setRows([])
-          return
-        }
-        setRows((data?.rows as PersonalEventRow[]) ?? [])
-      })
-      .catch((e) => {
-        if (!live) return
-        setErr(e instanceof Error ? e.message : 'Не удалось загрузить дела.')
-      })
-      .finally(() => {
-        if (live) setBusy(false)
-      })
-    return () => {
-      live = false
-    }
-  }, [])
-
-  if (busy) {
-    return (
-      <section className="lc-section" data-testid="lesson-history-deals-loading">
-        <p style={{ color: 'var(--secondary)', fontSize: 13 }}>Загружаем…</p>
-      </section>
-    )
-  }
-
-  if (err) {
-    return (
-      <section className="lc-section">
-        <p style={{ color: 'var(--danger)', fontSize: 13 }}>{err}</p>
-      </section>
-    )
-  }
-
-  if (rows.length === 0) {
-    return (
-      <section className="lc-section" data-testid="lesson-history-deals-empty">
-        <EmptyState
-          title="Дел пока нет"
-          body="Добавьте дело из календаря — оно появится здесь, когда выполните или отмените."
-        />
-      </section>
-    )
-  }
-
-  return (
-    <section className="lc-section" data-testid="lesson-history-deals-list">
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-        {rows.map((row) => {
-          const tone =
-            row.status === 'completed'
-              ? 'success'
-              : row.status === 'cancelled'
-                ? 'danger'
-                : 'warning'
-          const label =
-            row.status === 'completed'
-              ? '✓ Выполнено'
-              : row.status === 'cancelled'
-                ? 'Отменено'
-                : '● Активно'
-          return (
-            <li
-              key={row.id}
-              className="card"
-              data-testid={`personal-event-row-${row.id}`}
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 12,
-                padding: 16,
-                marginBottom: 8,
-                fontSize: 14,
-                alignItems: 'center',
-              }}
-            >
-              <span style={{ minWidth: 0, flex: '1 1 200px' }}>
-                <span style={{ fontWeight: 500 }}>{row.title}</span>
-                <span
-                  style={{
-                    color: 'var(--secondary)',
-                    fontSize: 13,
-                    marginLeft: 8,
-                  }}
-                >
-                  {formatDate(row.startAt)} · {row.durationMinutes} мин
-                </span>
-                {row.body ? (
-                  <div
-                    style={{
-                      color: 'var(--secondary)',
-                      fontSize: 13,
-                      marginTop: 4,
-                    }}
-                  >
-                    {row.body}
-                  </div>
-                ) : null}
-              </span>
-              <Pill tone={tone} size="sm">
-                {label}
-              </Pill>
-            </li>
-          )
-        })}
-      </ul>
-    </section>
-  )
 }
 
 function ChipBtn({
