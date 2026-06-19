@@ -19,6 +19,9 @@ export type SlotKind =
   | 'booked-full'
   | 'past-full'
   | 'past-redacted'
+  // Epic B (2026-06-19) — учительское «дело». Графитовый dashed-блок
+  // визуально отличает дело от уроков ученика.
+  | 'personal-event'
 
 export type SlotPalette = {
   background: string
@@ -50,6 +53,14 @@ const PAST_PALETTE: SlotPalette = {
   text: '#9ca3af',
 }
 
+// Epic B (2026-06-19) — дело учителя. Графитовый фон + warning-color
+// (#F5C26B) на левом border'е, чтобы визуально отличить от open/booked.
+const PERSONAL_EVENT_PALETTE: SlotPalette = {
+  background: 'rgba(245, 194, 107, 0.10)',
+  border: 'rgba(245, 194, 107, 0.55)',
+  text: '#fde68a',
+}
+
 export const CONFLICT_PALETTE: SlotPalette = {
   background: 'rgba(239, 68, 68, 0.18)',
   border: 'rgba(239, 68, 68, 0.85)',
@@ -73,6 +84,8 @@ export function paletteForKind(kind: SlotKind): SlotPalette {
     case 'past-full':
     case 'past-redacted':
       return PAST_PALETTE
+    case 'personal-event':
+      return PERSONAL_EVENT_PALETTE
   }
 }
 

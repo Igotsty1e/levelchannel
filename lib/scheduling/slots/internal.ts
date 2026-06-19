@@ -36,6 +36,8 @@ export const SLOT_COLUMNS = `
   conflict_source_calendar_id,
   conflict_source_event_id,
   source,
+  personal_event_title,
+  personal_event_body,
   events,
   created_at,
   updated_at
@@ -104,8 +106,19 @@ export function rowToSlot(
     // don't include it; row.zoom_url is undefined → null projection.
     zoomUrl: row.zoom_url ? String(row.zoom_url) : null,
     // 0122 — direct-assign discriminator. NULL → legacy open_slot.
-    source: row.source === 'open_slot' || row.source === 'direct_assign'
-      ? row.source
+    // Epic B (2026-06-19) — 'personal_event' добавлен в enum.
+    source:
+      row.source === 'open_slot' ||
+      row.source === 'direct_assign' ||
+      row.source === 'personal_event'
+        ? row.source
+        : null,
+    // Epic B — дело учителя: title + body.
+    personalEventTitle: row.personal_event_title
+      ? String(row.personal_event_title)
+      : null,
+    personalEventBody: row.personal_event_body
+      ? String(row.personal_event_body)
       : null,
     events: Array.isArray(row.events)
       ? (row.events as SlotEvent[])

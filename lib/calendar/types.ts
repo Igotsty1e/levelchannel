@@ -62,6 +62,18 @@ export type CalendarSlot =
       durationMinutes: number
       status: 'completed' | 'no_show_learner' | 'no_show_teacher' | 'cancelled'
     }
+  | {
+      // Epic B (2026-06-19) — учительское «дело», блокирует слот.
+      // Только в teacher / admin view; для ученика дело редактируется в
+      // 'booked-other' (тихая блокировка).
+      kind: 'personal-event'
+      id: string
+      startAt: string
+      durationMinutes: number
+      title: string
+      body: string | null
+      status: 'personal_event' | 'completed' | 'cancelled'
+    }
 
 export type CalendarResponse = {
   slots: CalendarSlot[]

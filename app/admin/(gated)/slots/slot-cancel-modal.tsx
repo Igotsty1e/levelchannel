@@ -314,5 +314,6 @@ function statusLabel(kind: CalendarRow['slot']['kind']): string {
     case 'booked-full': return 'Забронирован'
     case 'past-full':
     case 'past-redacted': return 'Прошедший'
+    case 'personal-event': return 'Дело'
   }
 }
