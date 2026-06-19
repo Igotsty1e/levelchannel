@@ -342,6 +342,8 @@ function statusLabel(kind: CalendarRow['slot']['kind']): string {
     case 'past-full':
     case 'past-redacted':
       return 'Прошедший'
+    case 'personal-event':
+      return 'Дело'
   }
 }
 

@@ -22,6 +22,11 @@ export type SlotStatus =
   | 'completed'
   | 'no_show_learner'
   | 'no_show_teacher'
+  // Epic B (2026-06-19) — личные дела учителя. Активное дело имеет
+  // status='personal_event'; терминальные «выполнено» / «отменено»
+  // мапятся на существующие 'completed' / 'cancelled' (различает
+  // история по source='personal_event').
+  | 'personal_event'
 
 // Statuses that the operator can stamp on a booked slot whose start
 // has already passed. Phase 5 lifecycle.
@@ -130,6 +135,10 @@ export type LessonSlot = {
   // open_slot). 'open_slot' on rows created via createSlot/bulkCreate;
   // 'direct_assign' on rows created via assignSlotDirect.
   source: SlotSource | null
+  // Epic B (2026-06-19) — поля дела учителя. NOT NULL когда
+  // source='personal_event', иначе NULL.
+  personalEventTitle: string | null
+  personalEventBody: string | null
   events: SlotEvent[]
   createdAt: string
   updatedAt: string
@@ -216,7 +225,11 @@ export type CreateSlotInput = {
 }
 
 // 0122 — discriminate teacher direct-assign vs learner open-slot pickup.
-export type SlotSource = 'open_slot' | 'direct_assign'
+export type SlotSource = 'open_slot' | 'direct_assign' | 'personal_event'
+
+// Epic B (2026-06-19) — поля дела учителя.
+export const MAX_PERSONAL_EVENT_TITLE_LEN = 80
+export const MAX_PERSONAL_EVENT_BODY_LEN = 2000
 
 // teacher-direct-assign (Задача 2.2): teacher creates an already-booked
 // slot for a specific learner with a tariff (or, since epic-b Sub-PR

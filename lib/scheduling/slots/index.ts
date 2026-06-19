@@ -132,3 +132,22 @@ export {
   validateBookingRange,
 } from './booking-queries'
 export type { BookingRangeError } from './booking-queries'
+
+// Epic B (2026-06-19) — учительские «дела» (personal events).
+export {
+  cancelPersonalEventByTeacher,
+  completePersonalEvent,
+  createPersonalEvent,
+  listPersonalEventsForTeacher,
+} from './personal-events'
+export type {
+  CreatePersonalEventInput,
+  CreatePersonalEventResult,
+  PersonalEventTerminalResult,
+} from './personal-events'
+
+// MAX_*_LEN constants для UI ограничений.
+export {
+  MAX_PERSONAL_EVENT_BODY_LEN,
+  MAX_PERSONAL_EVENT_TITLE_LEN,
+} from './types'

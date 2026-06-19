@@ -156,6 +156,44 @@ function projectSlot(
   const startAt = new Date(s.startAt).toISOString()
   const status = s.status
 
+  // Epic B (2026-06-19) — учительское «дело». Активный personal_event
+  // только для admin/teacher view; ученик дело видит как 'booked-other'
+  // (тихая блокировка слота). Терминальные personal_event_completed /
+  // _cancelled через ниже past-full в admin/teacher view.
+  if (s.source === 'personal_event' && (role === 'admin' || role === 'teacher')) {
+    if (status === 'personal_event') {
+      return {
+        kind: 'personal-event',
+        id: s.id,
+        startAt,
+        durationMinutes: s.durationMinutes,
+        title: s.personalEventTitle ?? '',
+        body: s.personalEventBody ?? null,
+        status: 'personal_event',
+      }
+    }
+    if (status === 'completed' || status === 'cancelled') {
+      return {
+        kind: 'personal-event',
+        id: s.id,
+        startAt,
+        durationMinutes: s.durationMinutes,
+        title: s.personalEventTitle ?? '',
+        body: s.personalEventBody ?? null,
+        status,
+      }
+    }
+  }
+  if (s.source === 'personal_event' && role !== 'admin' && role !== 'teacher') {
+    // Для ученика «дело» — silent block: учительский слот недоступен,
+    // показываем как booked-other (без идентичности).
+    return {
+      kind: 'booked-other',
+      startAt,
+      durationMinutes: s.durationMinutes,
+    }
+  }
+
   // PAST states: completed / no_show_* / cancelled
   if (
     status === 'completed' ||

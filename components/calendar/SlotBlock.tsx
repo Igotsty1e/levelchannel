@@ -121,6 +121,12 @@ function secondaryFor(row: CalendarRow): string | null {
   if (slot.kind === 'open') return null
   if (slot.kind === 'booked-other') return 'Занято'
   if (slot.kind === 'past-full' || slot.kind === 'past-redacted') return 'Прошло'
+  // Epic B (2026-06-19) — учительское дело: title как secondary line.
+  if (slot.kind === 'personal-event') {
+    if (slot.status === 'cancelled') return `${slot.title} · отменено`
+    if (slot.status === 'completed') return `${slot.title} · выполнено`
+    return slot.title
+  }
   // booked-self / booked-full — try to surface a human name when present.
   if ('learnerDisplayName' in slot && slot.learnerDisplayName) {
     return String(slot.learnerDisplayName)
@@ -133,7 +139,13 @@ function secondaryFor(row: CalendarRow): string | null {
 
 function tariffBadge(row: CalendarRow): string | null {
   const slot = row.slot
-  if (slot.kind === 'booked-other' || slot.kind === 'past-redacted') return null
+  if (
+    slot.kind === 'booked-other' ||
+    slot.kind === 'past-redacted' ||
+    slot.kind === 'personal-event'
+  ) {
+    return null
+  }
   if (
     'tariffAmountKopecks' in slot &&
     slot.tariffAmountKopecks !== null &&

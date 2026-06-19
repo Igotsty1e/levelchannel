@@ -7,6 +7,8 @@ import { AssignDirectModal } from '@/components/calendar/AssignDirectModal'
 import { BulkAddSlotsModal } from '@/components/calendar/BulkAddSlotsModal'
 import { MobileCreateFab } from '@/components/calendar/MobileCreateFab'
 import { PaintConfirmModal } from '@/components/calendar/PaintConfirmModal'
+import { PersonalEventCreateModal } from '@/components/calendar/PersonalEventCreateModal'
+import { PersonalEventDetailModal } from '@/components/calendar/PersonalEventDetailModal'
 import { RescheduleByTeacherModal } from '@/components/calendar/RescheduleByTeacherModal'
 import { SlotCalendar } from '@/components/calendar/SlotCalendar'
 import type { PaintSpan, MoveTarget } from '@/lib/calendar/drag-state'
@@ -78,6 +80,8 @@ type CalendarModalState =
   | { kind: 'single-create' }
   | { kind: 'bulk-create' }
   | { kind: 'assign-direct' }
+  | { kind: 'personal-event-create' } // Epic B (2026-06-19)
+  | { kind: 'personal-event-detail'; row: CalendarRow } // Epic B
 
 export default function TeacherCalendarClient({
   teacherId,
@@ -232,6 +236,15 @@ export default function TeacherCalendarClient({
         >
           + Добавить слоты
         </button>
+        <button
+          type="button"
+          onClick={() => openModal({ kind: 'personal-event-create' })}
+          disabled={isModalOpen}
+          style={topActionBtnStyle('secondary', isModalOpen)}
+          data-testid="calendar-add-personal-event-btn"
+        >
+          + Добавить дело
+        </button>
       </div>
       <SlotCalendar
         teacherId={teacherId}
@@ -243,6 +256,12 @@ export default function TeacherCalendarClient({
         // explicit instead of relying on z-index discipline.
         onSlotClick={(row) => {
           if (isModalOpen) return
+          // Epic B (2026-06-19) — клик по делу → отдельная детальная
+          // модалка с действиями «Выполнено / Отменить».
+          if (row.slot.kind === 'personal-event') {
+            openModal({ kind: 'personal-event-detail', row })
+            return
+          }
           openModal({ kind: 'slot-detail', row })
         }}
         interactions={{
@@ -354,6 +373,32 @@ export default function TeacherCalendarClient({
             router.refresh()
           }}
           tariffs={tariffs}
+        />
+      ) : null}
+
+      {/* Epic B (2026-06-19) — модалки «Дел» учителя. */}
+      {modal.kind === 'personal-event-create' ? (
+        <PersonalEventCreateModal
+          onClose={closeModal}
+          onCreated={() => {
+            closeModal()
+            showToast('Дело создано.')
+            bumpReload()
+            router.refresh()
+          }}
+        />
+      ) : null}
+
+      {modal.kind === 'personal-event-detail' ? (
+        <PersonalEventDetailModal
+          row={modal.row}
+          onClose={closeModal}
+          onAction={(msg) => {
+            closeModal()
+            showToast(msg)
+            bumpReload()
+            router.refresh()
+          }}
         />
       ) : null}
     </div>
@@ -768,6 +813,9 @@ function statusLabel(kind: CalendarRow['slot']['kind']): string {
     case 'past-full':
     case 'past-redacted':
       return 'Прошло'
+    case 'personal-event':
+      // Epic B (2026-06-19) — учительское дело.
+      return 'Дело'
   }
 }
 
