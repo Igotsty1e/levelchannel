@@ -307,6 +307,10 @@ export async function createInviteForTeacher(
     defaultPaymentMethod?: InviteDefaultPaymentMethod
     defaultTariffIds?: ReadonlyArray<string>
     defaultPackageIds?: ReadonlyArray<string>
+    // Epic C follow-up (2026-06-19) — учитель сразу пишет приватный
+    // комментарий о ученике. При redeem пробрасывается в
+    // learner_teacher_links.teacher_note (mig 0140).
+    teacherNoteSeed?: string | null
   },
 ): Promise<CreatedInvite> {
   const env = options?.env ?? process.env
@@ -330,6 +334,14 @@ export async function createInviteForTeacher(
     options?.defaultPackageIds ?? [],
     'default-package-ids',
   )
+  // Epic C follow-up — trim + length guard. DB CHECK 2000 — defense in depth.
+  const rawSeed = typeof options?.teacherNoteSeed === 'string'
+    ? options.teacherNoteSeed.trim()
+    : null
+  const teacherNoteSeed = rawSeed && rawSeed.length > 0 ? rawSeed : null
+  if (teacherNoteSeed !== null && teacherNoteSeed.length > 2000) {
+    throw new Error('teacher-invites/teacher-note-seed-too-long')
+  }
   await Promise.all([
     assertTariffsOwnedByTeacher(teacherAccountId, defaultTariffIds),
     assertPackagesOwnedByTeacher(teacherAccountId, defaultPackageIds),
@@ -339,9 +351,9 @@ export async function createInviteForTeacher(
   const inserted = await pool.query<{ id: string; expires_at: Date }>(
     `insert into teacher_invites (
        teacher_account_id, expires_at, default_payment_method,
-       default_tariff_ids, default_package_ids
+       default_tariff_ids, default_package_ids, teacher_note_seed
      )
-       values ($1, $2, $3, $4::uuid[], $5::uuid[])
+       values ($1, $2, $3, $4::uuid[], $5::uuid[], $6)
        returning id, expires_at`,
     [
       teacherAccountId,
@@ -349,6 +361,7 @@ export async function createInviteForTeacher(
       defaultPaymentMethod,
       defaultTariffIds,
       defaultPackageIds,
+      teacherNoteSeed,
     ],
   )
   const row = inserted.rows[0]
@@ -603,11 +616,12 @@ export async function redeemInviteAndBindLearnerAtomic(
             )
          returning teacher_account_id, id as invite_id, default_payment_method,
                   coalesce(default_tariff_ids, '{}'::uuid[]) as default_tariff_ids,
-                  coalesce(default_package_ids, '{}'::uuid[]) as default_package_ids
+                  coalesce(default_package_ids, '{}'::uuid[]) as default_package_ids,
+                  teacher_note_seed
        ),
        linked as (
-         insert into learner_teacher_links (learner_account_id, teacher_account_id, linked_at, unlinked_at, via_invite_id)
-         select $2, vi.teacher_account_id, now(), null, vi.invite_id
+         insert into learner_teacher_links (learner_account_id, teacher_account_id, linked_at, unlinked_at, via_invite_id, teacher_note)
+         select $2, vi.teacher_account_id, now(), null, vi.invite_id, vi.teacher_note_seed
            from verified_invite vi
          on conflict (learner_account_id, teacher_account_id) do update
            set unlinked_at = null,
@@ -615,7 +629,11 @@ export async function redeemInviteAndBindLearnerAtomic(
                  when learner_teacher_links.unlinked_at is not null then excluded.linked_at
                  else learner_teacher_links.linked_at
                end,
-               via_invite_id = coalesce(learner_teacher_links.via_invite_id, excluded.via_invite_id)
+               via_invite_id = coalesce(learner_teacher_links.via_invite_id, excluded.via_invite_id),
+               -- Epic C follow-up (2026-06-19): seed → teacher_note ТОЛЬКО
+               -- если в link нет существующей заметки. Защита от
+               -- случайного затирания при re-invite.
+               teacher_note = coalesce(learner_teacher_links.teacher_note, excluded.teacher_note)
          returning teacher_account_id
        ),
        dual_write as (

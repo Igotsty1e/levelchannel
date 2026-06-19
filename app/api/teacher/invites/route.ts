@@ -70,6 +70,8 @@ export async function POST(request: Request) {
   let defaultPaymentMethod: InviteDefaultPaymentMethod = 'none'
   let defaultTariffIds: string[] = []
   let defaultPackageIds: string[] = []
+  // Epic C follow-up (2026-06-19) — comment to seed teacher_note.
+  let teacherNoteSeed: string | null = null
   const rawText = await request.text()
   if (rawText.trim().length > 0) {
     let body: unknown
@@ -123,6 +125,32 @@ export async function POST(request: Request) {
       }
       defaultPackageIds = packageParsed.ids
     }
+
+    // Epic C follow-up (2026-06-19) — учитель сразу пишет приватный
+    // комментарий о ученике. trim + null fallback; 2000 char cap
+    // дублируется в createInviteForTeacher (throw маппится в 400).
+    const rawSeed = (body as { teacherNoteSeed?: unknown }).teacherNoteSeed
+    if (typeof rawSeed === 'string') {
+      const trimmed = rawSeed.trim()
+      if (trimmed.length > 2000) {
+        return NextResponse.json(
+          {
+            error: 'teacher_note_seed_too_long',
+            message: 'Длина комментария — до 2000 символов.',
+          },
+          { status: 400, headers: NO_STORE },
+        )
+      }
+      teacherNoteSeed = trimmed.length > 0 ? trimmed : null
+    } else if (rawSeed !== undefined && rawSeed !== null) {
+      return NextResponse.json(
+        {
+          error: 'invalid_teacher_note_seed',
+          message: 'Поле teacherNoteSeed должно быть строкой или null.',
+        },
+        { status: 400, headers: NO_STORE },
+      )
+    }
   }
 
   let invite: Awaited<ReturnType<typeof createInviteForTeacher>>
@@ -131,6 +159,7 @@ export async function POST(request: Request) {
       defaultPaymentMethod,
       defaultTariffIds,
       defaultPackageIds,
+      teacherNoteSeed,
     })
   } catch (err) {
     if (err instanceof TeacherInviteOwnershipError) {
