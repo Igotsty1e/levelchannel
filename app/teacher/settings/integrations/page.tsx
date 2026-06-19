@@ -2,7 +2,7 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
-import { PushDigestCard, TelegramDigestCard } from '@/components/teacher/digest-settings'
+import { TelegramDigestCard } from '@/components/teacher/digest-settings'
 import { resolveOperatorSettingsForProbe } from '@/lib/admin/operator-settings'
 import { getAuthPool } from '@/lib/auth/pool'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
@@ -61,8 +61,8 @@ export default async function TeacherIntegrationsPage() {
       <header className="digest-page-header">
         <h1 className="digest-page-title">Интеграции</h1>
         <p className="digest-page-sub">
-          Подключения сторонних сервисов: Telegram-бот для уведомлений,
-          Push в браузере и Google Calendar для синхронизации расписания.
+          Подключения сторонних сервисов: Telegram-бот для уведомлений и
+          Google Calendar для синхронизации расписания.
         </p>
       </header>
 
@@ -72,10 +72,6 @@ export default async function TeacherIntegrationsPage() {
           initialBound={teacherTgBound}
           masterSwitchOn={teacherTgMasterSwitch}
         />
-
-        {/* post-deploy bug bash 2026-06-19: Push перенесён сюда из /digest.
-            Owner: «перенести в "Интеграции" настройку ТГ и веб пушей». */}
-        <PushDigestCard />
 
         {/* Google Calendar: краткий статус + ссылка на детальную страницу. */}
         <section

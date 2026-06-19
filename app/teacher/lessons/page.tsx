@@ -1,18 +1,13 @@
-// /teacher/lessons — единая точка входа в журналы учителя.
-// post-deploy bug bash 2026-06-19: 3-card routing (Уроки/Дела/Оплаты),
-// server-side branching по searchParams.kind, /teacher/payments consolidated.
+// /teacher/lessons — Wave-2 lesson-history Sub-PR 3 (2026-06-16).
+//
+// Полная страница истории прошедших занятий учителя. SSR-шелл с
+// initial-фетчем (за последние 30 дней) + client-island для фильтров /
+// quick-actions / refresh.
 
-import Link from 'next/link'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
-import { DealsSection } from '@/components/teacher/lessons/deals-section'
-import {
-  KindRoutingCards,
-  parseKind,
-} from '@/components/teacher/lessons/kind-routing-cards'
 import { LessonHistoryClient } from '@/components/teacher/lessons/lesson-history-client'
-import { PaymentsSection } from '@/components/teacher/lessons/payments-section'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getDbPool } from '@/lib/db/pool'
 import { listLessonHistory } from '@/lib/scheduling/slots'
@@ -21,7 +16,7 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export const metadata = {
-  title: 'Занятия — LevelChannel',
+  title: 'Все занятия — LevelChannel',
   robots: { index: false, follow: false },
 }
 
@@ -65,15 +60,7 @@ async function loadLearnerLabels(
   return { labels, options }
 }
 
-type SearchParams = {
-  kind?: string | string[]
-}
-
-export default async function TeacherLessonsPage({
-  searchParams,
-}: {
-  searchParams: Promise<SearchParams>
-}) {
+export default async function TeacherLessonsPage() {
   const cookieStore = await cookies()
   const cookieValue = cookieStore.get(SESSION_COOKIE_NAME)?.value ?? null
   if (!cookieValue) redirect('/login')
@@ -81,69 +68,30 @@ export default async function TeacherLessonsPage({
   if (!session) redirect('/login')
 
   const teacherAccountId = session.account.id
-  const sp = await searchParams
-  const rawKind = Array.isArray(sp.kind) ? sp.kind[0] : sp.kind
-  const kind = parseKind(rawKind ?? null)
+  const fromIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+  const [initialRows, learners] = await Promise.all([
+    listLessonHistory(teacherAccountId, { fromIso, limit: 100 }),
+    loadLearnerLabels(teacherAccountId),
+  ])
 
-  // Server-branching по kind: грузим только нужные данные.
-  let panel: React.ReactNode = null
-  if (kind === 'payments') {
-    panel = <PaymentsSection teacherAccountId={teacherAccountId} />
-  } else if (kind === 'deals') {
-    panel = <DealsSection />
-  } else {
-    const fromIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-    const [initialRows, learners] = await Promise.all([
-      listLessonHistory(teacherAccountId, { fromIso, limit: 100 }),
-      loadLearnerLabels(teacherAccountId),
-    ])
-    const rowsForClient = initialRows.map((r) => ({
-      id: r.id,
-      startAt: r.startAt,
-      durationMinutes: r.durationMinutes,
-      status: r.status,
-      learnerAccountId: r.learnerAccountId,
-      tariffSlug: r.tariffSlug ?? null,
-      tariffAmountKopecks: r.tariffAmountKopecks ?? null,
-      isMarked: r.isMarked,
-      paymentStatus: r.paymentStatus,
-    }))
-    panel = (
-      <LessonHistoryClient
-        initialRows={rowsForClient}
-        learnerLabels={learners.labels}
-        learnerOptions={learners.options}
-      />
-    )
-  }
+  // Сериализуем для client island. Снимаем noisy поля slot которые
+  // клиенту не нужны (events array etc).
+  const rowsForClient = initialRows.map((r) => ({
+    id: r.id,
+    startAt: r.startAt,
+    durationMinutes: r.durationMinutes,
+    status: r.status,
+    learnerAccountId: r.learnerAccountId,
+    tariffSlug: r.tariffSlug ?? null,
+    tariffAmountKopecks: r.tariffAmountKopecks ?? null,
+    isMarked: r.isMarked,
+  }))
 
   return (
-    <main style={{ maxWidth: 980, margin: '0 auto', paddingBottom: 80 }}>
-      <header className="lc-section" style={{ marginBottom: 16 }}>
-        <h1
-          style={{
-            fontSize: 24,
-            fontWeight: 700,
-            margin: 0,
-            letterSpacing: '-0.01em',
-          }}
-        >
-          Занятия
-        </h1>
-        <p style={{ color: 'var(--secondary)', fontSize: 14, marginTop: 4 }}>
-          История, личные дела и оплаты — в одном месте.
-        </p>
-      </header>
-
-      <KindRoutingCards activeKind={kind} />
-
-      {panel}
-
-      <p style={{ fontSize: 12, color: 'var(--secondary)', marginTop: 16 }}>
-        <Link href="/teacher" style={{ color: 'inherit' }}>
-          ← на главную
-        </Link>
-      </p>
-    </main>
+    <LessonHistoryClient
+      initialRows={rowsForClient}
+      learnerLabels={learners.labels}
+      learnerOptions={learners.options}
+    />
   )
 }

@@ -7,7 +7,6 @@
 //
 // Read-only — без транзакций, без advisory locks.
 
-import { getSlotPaymentSources, type SlotPaymentSource } from '@/lib/billing/paid-state'
 import { getDbPool } from '@/lib/db/pool'
 
 import { SLOT_COLUMNS, rowToSlot } from './internal'
@@ -32,10 +31,6 @@ export type LessonHistoryFilter = {
 export type LessonHistoryRow = LessonSlot & {
   /** true if `lesson_completions` row already exists for this slot. */
   isMarked: boolean
-  /** post-deploy bug bash 2026-06-19 (Bug 5): payment source для status pill.
-   * 'paid_package' / 'paid_direct' → «Оплачено»; 'unpaid' → «Не оплачено»;
-   * null для cancelled / no_show_* (pill не показывается). */
-  paymentStatus: SlotPaymentSource
 }
 
 // Используем в карточке «Недавние прошедшие» на /teacher home:
@@ -106,14 +101,8 @@ export async function listLessonHistory(
     order by s.start_at desc
     limit $2 offset $3`
   const r = await pool.query(sql, params)
-  const slots = r.rows.map((row) => ({
+  return r.rows.map((row) => ({
     ...rowToSlot(row),
     isMarked: Boolean(row.is_marked),
-  }))
-  // Batch paymentStatus lookup — single SQL, не N+1.
-  const paymentSources = await getSlotPaymentSources(slots.map((s) => s.id))
-  return slots.map((slot) => ({
-    ...slot,
-    paymentStatus: paymentSources.get(slot.id) ?? null,
   }))
 }

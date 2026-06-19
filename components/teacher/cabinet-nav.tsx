@@ -56,7 +56,7 @@ const NAV_ITEMS: ReadonlyArray<NavItem> = [
   {
     href: '/teacher/settings',
     label: 'Настройки',
-    icon: 'settings-cog',
+    icon: 'gear',
     prefixMatch: true,
   },
 ]

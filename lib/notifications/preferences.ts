@@ -148,17 +148,17 @@ export const NOTIFICATION_EVENT_CATALOG: ReadonlyArray<{
       {
         kind: 'PaymentClaimConfirmed',
         label: 'Подтверждение оплаты',
-        desc: 'Учитель подтвердил оплату по заявке ученика.',
+        desc: 'Оператор подтвердил оплату по заявке ученика.',
       },
       {
         kind: 'PaymentClaimDeclined',
         label: 'Отклонение оплаты',
-        desc: 'Учитель отклонил заявку на оплату.',
+        desc: 'Оператор отклонил заявку на оплату.',
       },
       {
         kind: 'PaymentRefundIssued',
         label: 'Возврат средств',
-        desc: 'Учитель оформил возврат по уроку.',
+        desc: 'Оператор оформил возврат по уроку.',
       },
     ],
   },

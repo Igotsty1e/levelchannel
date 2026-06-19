@@ -92,36 +92,6 @@ export function GearIcon({ size = 24, ...rest }: IconProps) {
   )
 }
 
-// post-deploy bug bash 2026-06-19 (Bug 5A): SettingsCog — крупная,
-// заметная иконка для отдельной точки входа в настройки. stroke-width=2.5
-// для большей видимости; 8 зубцов вместо overflow-y лучше читается на
-// маленьких экранах. Touch-target обеспечивается обёрткой в nav (min 44×44).
-export function SettingsCogIcon({ size = 28, ...rest }: IconProps) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      {...rest}
-    >
-      <circle cx="12" cy="12" r="3.5" />
-      <path d="M12 1.5v3.5" />
-      <path d="M12 19v3.5" />
-      <path d="M1.5 12h3.5" />
-      <path d="M19 12h3.5" />
-      <path d="M4.6 4.6l2.5 2.5" />
-      <path d="M16.9 16.9l2.5 2.5" />
-      <path d="M4.6 19.4l2.5-2.5" />
-      <path d="M16.9 7.1l2.5-2.5" />
-    </svg>
-  )
-}
-
 // String-enum → component lookup, чтобы NAV_ITEMS могли хранить
 // строковое имя и не таскать React-узлы по конфигам.
 export type NavIconName =
@@ -131,7 +101,6 @@ export type NavIconName =
   | 'learners'
   | 'packages'
   | 'gear'
-  | 'settings-cog'
 
 export function NavIcon({
   name,
@@ -151,7 +120,5 @@ export function NavIcon({
       return <PackagesIcon size={size} {...rest} />
     case 'gear':
       return <GearIcon size={size} {...rest} />
-    case 'settings-cog':
-      return <SettingsCogIcon size={size} {...rest} />
   }
 }
