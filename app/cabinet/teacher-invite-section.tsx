@@ -122,6 +122,9 @@ export function TeacherInviteSection({
   const [selectedPackageIds, setSelectedPackageIds] = useState<Set<string>>(
     new Set(),
   )
+  // Epic C follow-up (2026-06-19) — приватный комментарий о ученике,
+  // который попадёт в learner_teacher_links.teacher_note при redeem.
+  const [teacherNoteSeed, setTeacherNoteSeed] = useState<string>('')
   function toggleTariff(id: string) {
     setSelectedTariffIds((prev) => {
       const next = new Set(prev)
@@ -169,10 +172,12 @@ export function TeacherInviteSection({
     if (busy) return
     setBusy(true)
     setErr(null)
+    const trimmedNote = teacherNoteSeed.trim()
     const result = await postAuthJson('/api/teacher/invites', {
       defaultPaymentMethod: active ? 'postpaid' : 'none',
       defaultTariffIds: Array.from(selectedTariffIds),
       defaultPackageIds: Array.from(selectedPackageIds),
+      teacherNoteSeed: trimmedNote.length > 0 ? trimmedNote : null,
     })
     setBusy(false)
     if (!result.ok) {
@@ -187,6 +192,7 @@ export function TeacherInviteSection({
     })
     setSelectedTariffIds(new Set())
     setSelectedPackageIds(new Set())
+    setTeacherNoteSeed('')
     await refresh()
   }
 
@@ -390,6 +396,57 @@ export function TeacherInviteSection({
             : undefined
         return (
           <>
+            {/* Epic C follow-up (2026-06-19) — приватный комментарий о
+                ученике. Под свёрнутой CollapsibleCard чтобы не отвлекать
+                и не разрастать форму. Default-closed; учитель сам
+                открывает если нужно. */}
+            <CollapsibleCard
+              title="Добавить комментарий о ученике"
+              description="Приватная заметка только для вас. Появится в профиле ученика после регистрации."
+              defaultOpen={false}
+            >
+              <div style={{ padding: '0 20px 20px' }}>
+                <textarea
+                  value={teacherNoteSeed}
+                  onChange={(e) =>
+                    setTeacherNoteSeed(e.target.value.slice(0, 2000))
+                  }
+                  maxLength={2000}
+                  rows={4}
+                  placeholder="Например: занимаемся ЕГЭ. Слабая алгебра. Звонит мама после 19:00."
+                  data-testid="invite-teacher-note-seed-input"
+                  style={{
+                    width: '100%',
+                    background: 'var(--surface-2, rgba(255,255,255,0.04))',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text)',
+                    padding: 12,
+                    borderRadius: 10,
+                    fontFamily: 'inherit',
+                    fontSize: 14,
+                    lineHeight: 1.5,
+                    resize: 'vertical',
+                    minHeight: 100,
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: 12,
+                    color: 'var(--secondary)',
+                    marginTop: 6,
+                  }}
+                >
+                  <span>Ученик заметку не видит</span>
+                  <span data-testid="invite-teacher-note-seed-counter">
+                    {teacherNoteSeed.length} / 2000
+                  </span>
+                </div>
+              </div>
+            </CollapsibleCard>
             <button
               type="button"
               onClick={onGenerate}
