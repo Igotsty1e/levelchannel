@@ -111,7 +111,19 @@ export async function listLessonHistory(
     isMarked: Boolean(row.is_marked),
   }))
   // Batch paymentStatus lookup — single SQL, не N+1.
-  const paymentSources = await getSlotPaymentSources(slots.map((s) => s.id))
+  // post-deploy-followup 2026-06-20: graceful degradation — если SQL
+  // в getSlotPaymentSources валит (несовместимый schema, broken
+  // allocations row), страница НЕ падает. Pill «Оплачено» — bonus,
+  // не critical-path; список занятий важнее.
+  let paymentSources: Map<string, SlotPaymentSource> = new Map()
+  try {
+    paymentSources = await getSlotPaymentSources(slots.map((s) => s.id))
+  } catch (err) {
+    console.error(
+      '[listLessonHistory] getSlotPaymentSources failed, falling back:',
+      err instanceof Error ? err.message : err,
+    )
+  }
   return slots.map((slot) => ({
     ...slot,
     paymentStatus: paymentSources.get(slot.id) ?? null,
