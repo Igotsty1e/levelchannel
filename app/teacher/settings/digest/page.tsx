@@ -3,12 +3,8 @@ import { redirect } from 'next/navigation'
 
 import Link from 'next/link'
 
-import {
-  EmailDigestCard,
-  PushDigestCard,
-} from '@/components/teacher/digest-settings'
+import { EmailDigestCard } from '@/components/teacher/digest-settings'
 import { NotificationPreferencesMatrix } from '@/components/teacher/notification-preferences-matrix'
-import { resolveOperatorSettingsForProbe } from '@/lib/admin/operator-settings'
 import { getAuthPool } from '@/lib/auth/pool'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { listNotificationPreferences } from '@/lib/notifications/preferences'
@@ -68,20 +64,19 @@ export default async function TeacherDigestSettingsPage() {
       <header className="digest-page-header">
         <h1 className="digest-page-title">Уведомления</h1>
         <p className="digest-page-sub">
-          Каждое утро в&nbsp;08:00 по&nbsp;вашему часовому поясу
-          присылаем дайджест на&nbsp;день: время начала, имя ученика
-          и&nbsp;ссылку для подключения. Каналы — e-mail и push в браузере.
-          {' '}Telegram-бот для дайджеста и&nbsp;уведомлений настраивается{' '}
+          Дайджест — короткое сообщение с занятиями на день, приходит
+          каждое утро в&nbsp;08:00 по&nbsp;вашему часовому поясу.{' '}
+          Каналы доставки (Email, Telegram, Push) настраиваются{' '}
           <Link href="/teacher/settings/integrations" style={{ color: 'inherit', textDecoration: 'underline' }}>
             в разделе «Интеграции»
           </Link>
-          {teacherTgBound ? ' (сейчас подключён)' : ''}.
+          {teacherTgBound ? ' (Telegram сейчас подключён)' : ''}.{' '}
+          Ниже — матрица: какие события и в какой канал отправлять.
         </p>
       </header>
 
       <div className="digest-channel-stack">
         <EmailDigestCard email={accountEmail} />
-        <PushDigestCard />
       </div>
 
       {/* Epic D (2026-06-18) — гранулярные настройки уведомлений
