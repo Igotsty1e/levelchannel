@@ -32,10 +32,9 @@ type LearnerRow = {
   paymentMethod: 'postpaid' | 'none'
 }
 
-const PAYMENT_METHOD_LABEL: Record<LearnerRow['paymentMethod'], string> = {
-  postpaid: 'постоплата',
-  none: 'не выбран',
-}
+// PAYMENT_METHOD_LABEL убран (post-deploy bug bash 2026-06-19) — owner
+// решил спрятать «постоплата» рудимент. domain field paymentMethod
+// остаётся в DTO для backward-compat с legacy кодом.
 
 type Filter = 'active' | 'archive' | 'all'
 
@@ -214,18 +213,10 @@ export function LearnersListClient({ learners }: { learners: LearnerRow[] }) {
                           <strong>{l.noShowCount}</strong>не пришёл
                         </span>
                       ) : null}
-                      <span
-                        className="learner-card-stat"
-                        style={{
-                          color:
-                            l.paymentMethod === 'none'
-                              ? 'var(--warning)'
-                              : undefined,
-                        }}
-                        title="Способ оплаты — выбирается на странице ученика"
-                      >
-                        оплата: {PAYMENT_METHOD_LABEL[l.paymentMethod]}
-                      </span>
+                      {/* «оплата: постоплата/не выбран» убрано
+                          (post-deploy bug bash 2026-06-19) — owner-фидбэк
+                          о рудиментe. Состояние биллинга показывается
+                          через предупреждения в AssignDirectModal. */}
                     </div>
                   </Link>
                 </li>

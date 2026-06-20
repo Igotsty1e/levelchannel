@@ -904,11 +904,10 @@ export function AssignDirectModal({
             ) : billingState
                 && billingState.paymentMethod === 'none'
                 && matchingPackages.length === 0 ? (
-              // posthoc-audit 2026-06-12: method='none' + no matching
-              // package = backend hard-blocks (mutations-assign-direct
-              // Step 8.5). Hide radio choices entirely, show blocking
-              // banner — submit будет disabled через paymentBlocked
-              // checking ниже.
+              // post-deploy bug bash 2026-06-19: surface список активных пакетов
+              // (другой длительности), чтобы owner понимал почему пакет «есть»,
+              // но кнопка заблокирована. Раньше banner только говорил «нет
+              // подходящего пакета», без объяснения какая длительность нужна.
               <div
                 role="alert"
                 style={{
@@ -921,9 +920,25 @@ export function AssignDirectModal({
                   lineHeight: 1.45,
                 }}
               >
-                У ученика не выбран способ оплаты, и нет подходящего
-                пакета на {durationMinutes}&nbsp;мин. Откройте карточку
-                ученика и выберите способ оплаты, либо выдайте пакет.
+                {billingState.activePackages.length > 0 ? (
+                  <>
+                    У ученика есть активные пакеты, но ни один не подходит
+                    к длительности этого занятия ({durationMinutes}&nbsp;мин).
+                    {' '}Доступные пакеты:
+                    {' '}
+                    {billingState.activePackages
+                      .map((p) => `${p.titleRu} (${p.durationMinutes} мин, осталось ${p.countRemaining})`)
+                      .join(', ')}.
+                    {' '}Измените тариф под длительность одного из этих пакетов,
+                    либо выдайте новый пакет.
+                  </>
+                ) : (
+                  <>
+                    У ученика нет активного пакета занятий на{' '}
+                    {durationMinutes}&nbsp;мин. Откройте карточку ученика
+                    и выдайте пакет, либо измените длительность занятия.
+                  </>
+                )}
               </div>
             ) : (
               <div
