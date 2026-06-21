@@ -86,33 +86,54 @@ export default async function TeacherLessonsPage({
   const kind = parseKind(rawKind ?? null)
 
   // Server-branching по kind: грузим только нужные данные.
+  // post-deploy-bugbash-2026-06-21: graceful degradation на page-level —
+  // если что угодно throws в server data fetch (listLessonHistory,
+  // loadLearnerLabels, PaymentsSection internals), отдаём пустой
+  // initial state и client refresh подберёт данные. Иначе global-error
+  // боксit весь route (Sentry digest 2262629772).
   let panel: React.ReactNode = null
-  if (kind === 'payments') {
-    panel = <PaymentsSection teacherAccountId={teacherAccountId} />
-  } else if (kind === 'deals') {
-    panel = <DealsSection />
-  } else {
-    const fromIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-    const [initialRows, learners] = await Promise.all([
-      listLessonHistory(teacherAccountId, { fromIso, limit: 100 }),
-      loadLearnerLabels(teacherAccountId),
-    ])
-    const rowsForClient = initialRows.map((r) => ({
-      id: r.id,
-      startAt: r.startAt,
-      durationMinutes: r.durationMinutes,
-      status: r.status,
-      learnerAccountId: r.learnerAccountId,
-      tariffSlug: r.tariffSlug ?? null,
-      tariffAmountKopecks: r.tariffAmountKopecks ?? null,
-      isMarked: r.isMarked,
-      paymentStatus: r.paymentStatus,
-    }))
+  try {
+    if (kind === 'payments') {
+      panel = <PaymentsSection teacherAccountId={teacherAccountId} />
+    } else if (kind === 'deals') {
+      panel = <DealsSection />
+    } else {
+      const fromIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+      const [initialRows, learners] = await Promise.all([
+        listLessonHistory(teacherAccountId, { fromIso, limit: 100 }),
+        loadLearnerLabels(teacherAccountId),
+      ])
+      const rowsForClient = initialRows.map((r) => ({
+        id: r.id,
+        startAt: r.startAt,
+        durationMinutes: r.durationMinutes,
+        status: r.status,
+        learnerAccountId: r.learnerAccountId,
+        tariffSlug: r.tariffSlug ?? null,
+        tariffAmountKopecks: r.tariffAmountKopecks ?? null,
+        isMarked: r.isMarked,
+        paymentStatus: r.paymentStatus,
+      }))
+      panel = (
+        <LessonHistoryClient
+          initialRows={rowsForClient}
+          learnerLabels={learners.labels}
+          learnerOptions={learners.options}
+        />
+      )
+    }
+  } catch (err) {
+    console.error(
+      '[teacher/lessons] server-side panel load failed, falling back to empty:',
+      err instanceof Error ? err.stack ?? err.message : err,
+    )
+    // Безопасный fallback — пустой client island; он подтянет данные
+    // через /api/teacher/lessons/history и /api/teacher/personal-events.
     panel = (
       <LessonHistoryClient
-        initialRows={rowsForClient}
-        learnerLabels={learners.labels}
-        learnerOptions={learners.options}
+        initialRows={[]}
+        learnerLabels={{}}
+        learnerOptions={[]}
       />
     )
   }
