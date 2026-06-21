@@ -126,6 +126,24 @@ export function getClientIp(request: Request) {
   )
 }
 
+/**
+ * Rate-limit bucket key normalization. Truncates IPv6 to the /64
+ * prefix (per RFC 6177 — single end-customer allocation) so attackers
+ * cannot rotate addresses within their own /64 to bypass per-IP RL.
+ *
+ * Security audit 2026-06-09 finding M3.
+ *
+ * IPv4 untouched. IPv6 takes first 4 hextets (64 bits) and appends
+ * `::` sentinel to make the bucket label visually distinct in logs.
+ */
+function rateLimitIpBucket(ip: string): string {
+  if (ip === 'unknown') return ip
+  if (!ip.includes(':')) return ip
+  const hextets = ip.split(':')
+  if (hextets.length < 4) return ip
+  return `${hextets[0]}:${hextets[1]}:${hextets[2]}:${hextets[3]}::/64`
+}
+
 // Test-only: reset the warn throttle so each test starts from a
 // deterministic state. Not exported for prod callers — the throttle
 // is intentionally process-lifetime in production.
@@ -139,7 +157,7 @@ export async function enforceRateLimit(
   limit: number,
   windowMs: number,
 ) {
-  const ip = getClientIp(request)
+  const ip = rateLimitIpBucket(getClientIp(request))
   const result = await takeRateLimit(`${scope}:${ip}`, limit, windowMs)
 
   if (result.allowed) {
