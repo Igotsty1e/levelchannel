@@ -7,15 +7,13 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 import { DealsSection } from '@/components/teacher/lessons/deals-section'
-import {
-  KindRoutingCards,
-  parseKind,
-} from '@/components/teacher/lessons/kind-routing-cards'
+import { KindRoutingCards } from '@/components/teacher/lessons/kind-routing-cards'
 import { LessonHistoryClient } from '@/components/teacher/lessons/lesson-history-client'
 import { PaymentsSection } from '@/components/teacher/lessons/payments-section'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { getDbPool } from '@/lib/db/pool'
 import { listLessonHistory } from '@/lib/scheduling/slots'
+import { parseKind } from '@/lib/teacher/lessons-kind'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'

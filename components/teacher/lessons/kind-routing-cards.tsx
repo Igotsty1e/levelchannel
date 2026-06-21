@@ -1,17 +1,19 @@
 'use client'
 
 // 3-card routing layout для /teacher/lessons: Уроки / Дела / Оплаты.
-// URL — single source of truth: useSearchParams читает kind, router.replace пишет.
-// Server page.tsx ветвится по kind и рендерит соответствующий ReactNode.
+// URL — single source of truth: server page ветвится по kind и рендерит
+// соответствующий ReactNode, router.replace из этого client island
+// меняет URL.
+//
+// 2026-06-21 — parseKind() и LessonsKind вынесены в lib/teacher/lessons-kind.ts
+// потому что Next 16 запрещает импорт client-функций в server component
+// (page.tsx). Этот файл теперь чистый client (UI cards + handler).
 
 import { useRouter } from 'next/navigation'
 
-export type LessonsKind = 'lessons' | 'deals' | 'payments'
+import type { LessonsKind } from '@/lib/teacher/lessons-kind'
 
-export function parseKind(raw: string | null | undefined): LessonsKind {
-  if (raw === 'deals' || raw === 'payments') return raw
-  return 'lessons'
-}
+export type { LessonsKind } from '@/lib/teacher/lessons-kind'
 
 type Props = {
   activeKind: LessonsKind
