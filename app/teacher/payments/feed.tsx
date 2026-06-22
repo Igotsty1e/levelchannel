@@ -4,9 +4,9 @@
 // Feed pending + history claims с actions «Подтвердить» / «Не пришло».
 
 import { useRouter } from 'next/navigation'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 
-import { Button, EmptyState, Pill } from '@/components/ui/primitives'
+import { Button, ChipGroup, EmptyState, Pill } from '@/components/ui/primitives'
 import { localizeTeacherError } from '@/lib/i18n/teacher-errors'
 import type { ClaimRow, ClaimStatus } from '@/lib/payments/sbp-claims'
 import type { RefundRow } from '@/lib/payments/sbp-refunds'
@@ -212,6 +212,8 @@ export function ClaimsFeed({
   return (
     <>
       <div
+        role="tablist"
+        aria-label="Заявки на оплату"
         style={{
           display: 'flex',
           gap: 8,
@@ -222,6 +224,8 @@ export function ClaimsFeed({
       >
         <button
           type="button"
+          role="tab"
+          aria-selected={tab === 'pending'}
           onClick={() => setTab('pending')}
           style={tabBtnStyle(tab === 'pending')}
         >
@@ -229,6 +233,8 @@ export function ClaimsFeed({
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={tab === 'history'}
           onClick={() => setTab('history')}
           style={tabBtnStyle(tab === 'history')}
         >
@@ -237,9 +243,13 @@ export function ClaimsFeed({
       </div>
 
       {err ? (
-        <p style={{ color: 'var(--danger)', fontSize: 13, marginBottom: 12 }}>
+        <div
+          role="alert"
+          aria-live="polite"
+          style={{ color: 'var(--danger)', fontSize: 13, marginBottom: 12 }}
+        >
           {err}
-        </p>
+        </div>
       ) : null}
 
       {renderList.length === 0 ? (
@@ -433,140 +443,31 @@ export function ClaimsFeed({
       )}
 
       {declineTarget ? (
-        <div role="dialog" aria-modal="true" aria-labelledby="decline-claim-title" style={modalOverlay} onClick={() => setDeclineTarget(null)}>
-          <div ref={declineDialogRef} className="card" style={modalCard} onClick={(e) => e.stopPropagation()}>
-            <h2 id="decline-claim-title" style={{ fontSize: 18, fontWeight: 600, margin: 0, marginBottom: 8 }}>
-              Не пришло
-            </h2>
-            <p style={{ color: 'var(--secondary)', fontSize: 13, margin: 0, marginBottom: 16 }}>
-              Заявка {declineTarget.learnerName} · {formatRub(declineTarget.amountKopecks)}
-            </p>
-            <label
-              style={{
-                display: 'block',
-                fontSize: 12,
-                fontWeight: 600,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-                color: 'var(--secondary)',
-                marginBottom: 6,
-              }}
-            >
-              Комментарий ученику (опционально)
-            </label>
-            <textarea
-              value={declineNote}
-              onChange={(e) => setDeclineNote(e.target.value)}
-              rows={3}
-              maxLength={300}
-              placeholder="Например: проверьте назначение перевода"
-              disabled={busyId === declineTarget.id}
-              style={textareaStyle}
-            />
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-              <Button variant="ghost" onClick={() => setDeclineTarget(null)} disabled={busyId === declineTarget.id}>
-                Отмена
-              </Button>
-              <Button variant="danger" onClick={submitDecline} disabled={busyId === declineTarget.id}>
-                Отклонить заявку
-              </Button>
-            </div>
-          </div>
-        </div>
+        <DeclineModal
+          target={declineTarget}
+          note={declineNote}
+          setNote={setDeclineNote}
+          onCancel={() => setDeclineTarget(null)}
+          onSubmit={submitDecline}
+          busy={busyId === declineTarget.id}
+          dialogRef={declineDialogRef}
+        />
       ) : null}
 
       {refundTarget ? (
-        <div role="dialog" aria-modal="true" aria-labelledby="refund-claim-title" style={modalOverlay} onClick={() => setRefundTarget(null)}>
-          <div ref={refundDialogRef} className="card" style={modalCard} onClick={(e) => e.stopPropagation()}>
-            <h2 id="refund-claim-title" style={{ fontSize: 18, fontWeight: 600, margin: 0, marginBottom: 8 }}>
-              Оформить возврат
-            </h2>
-            <p style={{ color: 'var(--secondary)', fontSize: 13, margin: 0, marginBottom: 16 }}>
-              Платформа только фиксирует факт — деньги вы возвращаете
-              из своего банка вручную. Эта запись отразится у ученика
-              в его истории.
-            </p>
-            <label
-              style={{
-                display: 'block',
-                fontSize: 12,
-                fontWeight: 600,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-                color: 'var(--secondary)',
-                marginBottom: 6,
-              }}
-            >
-              Сумма (₽)
-            </label>
-            <input
-              type="number"
-              min="1"
-              value={refundAmountRub}
-              onChange={(e) => setRefundAmountRub(e.target.value)}
-              disabled={busyId === refundTarget.id}
-              style={inputStyle}
-            />
-            <label
-              style={{
-                display: 'block',
-                fontSize: 12,
-                fontWeight: 600,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-                color: 'var(--secondary)',
-                marginTop: 12,
-                marginBottom: 6,
-              }}
-            >
-              Причина
-            </label>
-            <select
-              value={refundReason}
-              onChange={(e) =>
-                setRefundReason(e.target.value as typeof refundReason)
-              }
-              disabled={busyId === refundTarget.id}
-              style={inputStyle}
-            >
-              <option value="slot_cancelled">Занятие отменилось</option>
-              <option value="overpaid">Переплата</option>
-              <option value="goodwill">Возврат по доброй воле</option>
-              <option value="duplicate">Дублирующий перевод</option>
-              <option value="other">Другое</option>
-            </select>
-            <label
-              style={{
-                display: 'block',
-                fontSize: 12,
-                fontWeight: 600,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-                color: 'var(--secondary)',
-                marginTop: 12,
-                marginBottom: 6,
-              }}
-            >
-              Комментарий (опционально)
-            </label>
-            <textarea
-              value={refundNote}
-              onChange={(e) => setRefundNote(e.target.value)}
-              rows={2}
-              maxLength={300}
-              disabled={busyId === refundTarget.id}
-              style={textareaStyle}
-            />
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-              <Button variant="ghost" onClick={() => setRefundTarget(null)} disabled={busyId === refundTarget.id}>
-                Отмена
-              </Button>
-              <Button onClick={submitRefund} disabled={busyId === refundTarget.id}>
-                Зафиксировать возврат
-              </Button>
-            </div>
-          </div>
-        </div>
+        <RefundModal
+          target={refundTarget}
+          amountRub={refundAmountRub}
+          setAmountRub={setRefundAmountRub}
+          reason={refundReason}
+          setReason={setRefundReason}
+          note={refundNote}
+          setNote={setRefundNote}
+          onCancel={() => setRefundTarget(null)}
+          onSubmit={submitRefund}
+          busy={busyId === refundTarget.id}
+          dialogRef={refundDialogRef}
+        />
       ) : null}
     </>
   )
@@ -626,4 +527,181 @@ function tabBtnStyle(active: boolean): React.CSSProperties {
     padding: '4px 8px',
     borderBottom: active ? '2px solid var(--accent)' : '2px solid transparent',
   }
+}
+
+const labelInModalStyle: React.CSSProperties = {
+  display: 'block',
+  fontSize: 12,
+  fontWeight: 600,
+  letterSpacing: '0.04em',
+  textTransform: 'uppercase',
+  color: 'var(--secondary)',
+  marginBottom: 6,
+}
+
+function DeclineModal({
+  target,
+  note,
+  setNote,
+  onCancel,
+  onSubmit,
+  busy,
+  dialogRef,
+}: {
+  target: ClaimRow
+  note: string
+  setNote: (v: string) => void
+  onCancel: () => void
+  onSubmit: () => void
+  busy: boolean
+  dialogRef: React.RefObject<HTMLDivElement>
+}) {
+  const titleId = useId()
+  const descId = useId()
+  const noteId = useId()
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descId}
+      style={modalOverlay}
+      onClick={onCancel}
+    >
+      <div ref={dialogRef} className="card" style={modalCard} onClick={(e) => e.stopPropagation()}>
+        <h2 id={titleId} style={{ fontSize: 18, fontWeight: 600, margin: 0, marginBottom: 8 }}>
+          Не пришло
+        </h2>
+        <p id={descId} style={{ color: 'var(--secondary)', fontSize: 13, margin: 0, marginBottom: 16 }}>
+          Заявка {target.learnerName} · {formatRub(target.amountKopecks)}.
+          Комментарий увидит ученик.
+        </p>
+        <label htmlFor={noteId} style={labelInModalStyle}>
+          Комментарий ученику (опционально)
+        </label>
+        <textarea
+          id={noteId}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={3}
+          maxLength={300}
+          placeholder="Например: проверьте назначение перевода"
+          disabled={busy}
+          style={textareaStyle}
+        />
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+          <Button variant="ghost" onClick={onCancel} disabled={busy}>
+            Отмена
+          </Button>
+          <Button variant="danger" onClick={onSubmit} disabled={busy}>
+            Отклонить заявку
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+type RefundReasonValue = 'slot_cancelled' | 'overpaid' | 'goodwill' | 'duplicate' | 'other'
+
+function RefundModal({
+  target,
+  amountRub,
+  setAmountRub,
+  reason,
+  setReason,
+  note,
+  setNote,
+  onCancel,
+  onSubmit,
+  busy,
+  dialogRef,
+}: {
+  target: ClaimRow
+  amountRub: string
+  setAmountRub: (v: string) => void
+  reason: RefundReasonValue
+  setReason: (v: RefundReasonValue) => void
+  note: string
+  setNote: (v: string) => void
+  onCancel: () => void
+  onSubmit: () => void
+  busy: boolean
+  dialogRef: React.RefObject<HTMLDivElement>
+}) {
+  const titleId = useId()
+  const descId = useId()
+  const amountId = useId()
+  const reasonId = useId()
+  const noteId = useId()
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descId}
+      style={modalOverlay}
+      onClick={onCancel}
+    >
+      <div ref={dialogRef} className="card" style={modalCard} onClick={(e) => e.stopPropagation()}>
+        <h2 id={titleId} style={{ fontSize: 18, fontWeight: 600, margin: 0, marginBottom: 8 }}>
+          Оформить возврат
+        </h2>
+        <p id={descId} style={{ color: 'var(--secondary)', fontSize: 13, margin: 0, marginBottom: 16 }}>
+          Платформа только фиксирует факт — деньги вы возвращаете
+          из своего банка вручную. Эта запись отразится у ученика
+          в его истории.
+        </p>
+        <label htmlFor={amountId} style={labelInModalStyle}>
+          Сумма (₽)
+        </label>
+        <input
+          id={amountId}
+          type="number"
+          inputMode="decimal"
+          min="1"
+          value={amountRub}
+          onChange={(e) => setAmountRub(e.target.value)}
+          disabled={busy}
+          style={inputStyle}
+        />
+        <label htmlFor={reasonId} style={{ ...labelInModalStyle, marginTop: 12 }}>
+          Причина
+        </label>
+        <select
+          id={reasonId}
+          value={reason}
+          onChange={(e) => setReason(e.target.value as RefundReasonValue)}
+          disabled={busy}
+          style={inputStyle}
+        >
+          <option value="slot_cancelled">Занятие отменилось</option>
+          <option value="overpaid">Переплата</option>
+          <option value="goodwill">Возврат по доброй воле</option>
+          <option value="duplicate">Дублирующий перевод</option>
+          <option value="other">Другое</option>
+        </select>
+        <label htmlFor={noteId} style={{ ...labelInModalStyle, marginTop: 12 }}>
+          Комментарий (опционально)
+        </label>
+        <textarea
+          id={noteId}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={2}
+          maxLength={300}
+          disabled={busy}
+          style={textareaStyle}
+        />
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+          <Button variant="ghost" onClick={onCancel} disabled={busy}>
+            Отмена
+          </Button>
+          <Button onClick={onSubmit} disabled={busy}>
+            Зафиксировать возврат
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
 }

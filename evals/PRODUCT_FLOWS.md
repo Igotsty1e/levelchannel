@@ -206,6 +206,20 @@ Each flow row carries:
 - **Risk:** High
 - **Automation status:** **e2e** (`tests/e2e/product-flows-authenticated.spec.ts`)
 
+### FLOW-TEACHER-PAYMENTS-001
+
+- **Area:** teacher / payment
+- **Starting URL:** `/teacher/lessons?kind=payments`
+- **Expected final URL:** `/teacher/lessons?kind=payments`
+- **Allowed redirects:** none for verified teacher
+- **Forbidden redirects:** `/login`, `/cabinet`, `/teacher` без kind, `?kind=` со значением вне `lessons|deals|payments`
+- **Required UI anchors:** `Оплаты`, `Должны оплатить`, `Ждут (` (substring до счётчика), `История (`, `Скачать CSV`
+- **Forbidden UI anchors:** `booked`, `completed`, `no_show_learner`, `cancelled` (DB-slug leak — content-style §4 violation); `Скоро будет`, `TODO`
+- **Role required:** teacher (+ verified + current SaaS-offer consent)
+- **Risk:** **High** (payment surface; учительский журнал оплат)
+- **Automation status:** **e2e** (`tests/e2e/teacher-payments.spec.ts`)
+- **Notes:** Counts в tab anchors (`Ждут (N)`, `История (N)`) state-conditional — assert только substring `Ждут (` / `История (`, не точное число. qa-fixture seed: 1 unpaid learner (Дима Лебедев), 0 pending claims, 0 expiring packages.
+
 ### FLOW-TEACHER-UNVERIFIED-CABINET-001
 
 - **Area:** teacher / verify-email

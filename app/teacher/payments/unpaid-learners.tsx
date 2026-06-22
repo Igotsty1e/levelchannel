@@ -8,7 +8,7 @@
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 
-import { Button } from '@/components/ui/primitives'
+import { Button, ChipGroup, Pill } from '@/components/ui/primitives'
 import { localizeTeacherError } from '@/lib/i18n/teacher-errors'
 import { pluralLessons } from '@/lib/util/plural-ru'
 
@@ -29,6 +29,7 @@ type MethodView = {
 type UnpaidSlot = {
   id: string
   label: string
+  statusLabel: string
   expectedKopecks: number
   startAt: string
   status: string
@@ -170,9 +171,13 @@ export function UnpaidLearners({
         </p>
       ) : null}
       {err ? (
-        <p style={{ color: 'var(--danger)', fontSize: 13, marginBottom: 12 }}>
+        <div
+          role="alert"
+          aria-live="polite"
+          style={{ color: 'var(--danger)', fontSize: 13, marginBottom: 12 }}
+        >
           {err}
-        </p>
+        </div>
       ) : null}
 
       <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 8 }}>
@@ -249,8 +254,13 @@ export function UnpaidLearners({
                                 onChange={() => toggleSlot(l.learnerId, s.id)}
                                 disabled={busy}
                               />
-                              <span style={{ flex: 1 }}>{s.label}</span>
-                              <span style={{ color: 'var(--secondary)' }}>
+                              <span style={{ flex: 1 }}>
+                                {s.label}{' '}
+                                <Pill tone="default" size="sm">
+                                  {s.statusLabel}
+                                </Pill>
+                              </span>
+                              <span style={{ color: 'var(--secondary)', fontVariantNumeric: 'tabular-nums' }}>
                                 {formatRub(s.expectedKopecks)}
                               </span>
                             </label>
@@ -267,20 +277,23 @@ export function UnpaidLearners({
                           alignItems: 'center',
                         }}
                       >
-                        <label style={{ fontSize: 13 }}>
-                          Способ:{' '}
-                          <select
+                        <div style={{ fontSize: 13 }}>
+                          <div style={{ color: 'var(--secondary)', marginBottom: 4 }}>
+                            Способ:
+                          </div>
+                          <ChipGroup
+                            name="payment-channel"
+                            ariaLabel="Способ оплаты"
                             value={channel}
-                            onChange={(e) =>
-                              setChannel(e.target.value as 'sbp' | 'other')
-                            }
+                            options={[
+                              { value: 'sbp', label: 'СБП' },
+                              { value: 'other', label: 'Другой' },
+                            ]}
+                            onChange={(v) => setChannel(v as 'sbp' | 'other')}
                             disabled={busy}
-                            style={selectStyle}
-                          >
-                            <option value="sbp">СБП</option>
-                            <option value="other">Другой</option>
-                          </select>
-                        </label>
+                            size="sm"
+                          />
+                        </div>
                         {channel === 'sbp' && methods.length > 0 ? (
                           <label style={{ fontSize: 13 }}>
                             Метод:{' '}
@@ -303,7 +316,14 @@ export function UnpaidLearners({
                           onClick={() => markPaid(l.learnerId)}
                           disabled={busy || selected.size === 0}
                         >
-                          {busy ? 'Сохраняем…' : 'Отметить оплачено'}
+                          {(() => {
+                            if (busy) return 'Сохраняем…'
+                            if (selected.size === 0) return 'Отметить оплачено'
+                            const selectedSum = learnerSlots
+                              .filter((s) => selected.has(s.id))
+                              .reduce((a, s) => a + s.expectedKopecks, 0)
+                            return `Отметить ${pluralLessons(selected.size)} — ${formatRub(selectedSum)}`
+                          })()}
                         </Button>
                       </div>
                     </>
