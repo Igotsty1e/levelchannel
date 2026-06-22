@@ -5,6 +5,7 @@
 
 import Link from 'next/link'
 
+import { Button } from '@/components/ui/primitives'
 import { ClaimsFeed } from '@/app/teacher/payments/feed'
 import { PaymentsExplainer } from '@/app/teacher/payments/explainer'
 import { PolicyEditor } from '@/app/teacher/payments/policy-editor'
@@ -202,20 +203,20 @@ export async function PaymentsSection({ teacherAccountId }: Props) {
       <PolicyEditor initial={policy} />
 
       <div>
-        <a
+        <Button
+          variant="ghost"
+          size="sm"
           href={`/api/teacher/payment-claims/export.csv?from=${encodeURIComponent(
             new Date(new Date().getFullYear(), new Date().getMonth() - 3, 1)
               .toISOString()
               .slice(0, 10),
           )}`}
-          style={{
-            color: 'var(--secondary)',
-            textDecoration: 'underline',
-            fontSize: 13,
-          }}
         >
-          Скачать CSV за последние 3 месяца (для налоговой)
-        </a>
+          Скачать CSV за 3 месяца
+        </Button>
+        <div style={{ color: 'var(--secondary)', fontSize: 12, marginTop: 4 }}>
+          для налоговой
+        </div>
       </div>
     </section>
   )

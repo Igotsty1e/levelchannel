@@ -8,7 +8,6 @@
 // (searchParams.kind) — single source of truth, page.tsx ветвится
 // по kind, LessonHistoryClient рендерится только для kind=lessons.
 
-import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 
 import { Button, EmptyState, Pill } from '@/components/ui/primitives'
@@ -317,12 +316,6 @@ export function LessonHistoryClient({
           </ul>
         )}
       </section>
-
-      <p style={{ fontSize: 12, color: 'var(--secondary)', marginTop: 16 }}>
-        <Link href="/teacher" style={{ color: 'inherit' }}>
-          ← на главную
-        </Link>
-      </p>
     </main>
   )
 }

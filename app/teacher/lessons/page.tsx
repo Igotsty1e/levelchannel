@@ -2,7 +2,6 @@
 // post-deploy bug bash 2026-06-19: 3-card routing (Уроки/Дела/Оплаты),
 // server-side branching по searchParams.kind, /teacher/payments consolidated.
 
-import Link from 'next/link'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
@@ -132,7 +131,7 @@ export default async function TeacherLessonsPage({
       <header>
         <h1
           style={{
-            fontSize: 24,
+            fontSize: 28,
             fontWeight: 700,
             margin: 0,
             letterSpacing: '-0.01em',
@@ -148,12 +147,6 @@ export default async function TeacherLessonsPage({
       <KindRoutingCards activeKind={kind} />
 
       {panel}
-
-      <p style={{ fontSize: 12, color: 'var(--secondary)' }}>
-        <Link href="/teacher" style={{ color: 'inherit' }}>
-          ← на главную
-        </Link>
-      </p>
     </main>
   )
 }
