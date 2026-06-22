@@ -69,7 +69,7 @@ export async function PaymentsSection({ teacherAccountId }: Props) {
   const pendingSum = pendingClaims.reduce((acc, c) => acc + c.amountKopecks, 0)
 
   return (
-    <section style={{ maxWidth: 880, margin: '0 auto' }}>
+    <section className="lc-stack-card" style={{ maxWidth: 880, margin: '0 auto' }}>
       <div
         style={{
           display: 'flex',
@@ -77,7 +77,6 @@ export async function PaymentsSection({ teacherAccountId }: Props) {
           justifyContent: 'space-between',
           gap: 12,
           flexWrap: 'wrap',
-          marginBottom: 24,
         }}
       >
         <h2
@@ -107,9 +106,8 @@ export async function PaymentsSection({ teacherAccountId }: Props) {
       <div
         style={{
           display: 'grid',
-          gap: 16,
+          gap: 'var(--space-intra)',
           gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-          marginBottom: 24,
         }}
       >
         <SummaryCard
@@ -138,8 +136,8 @@ export async function PaymentsSection({ teacherAccountId }: Props) {
       ) : null}
 
       {expiring.length > 0 ? (
-        <div className="card" style={{ padding: 24, marginBottom: 24 }}>
-          <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
+        <div className="card" style={{ padding: 24 }}>
+          <h3 style={{ fontSize: 17, fontWeight: 600, marginBottom: 8 }}>
             Заканчиваются абонементы
           </h3>
           <p
@@ -199,13 +197,11 @@ export async function PaymentsSection({ teacherAccountId }: Props) {
         </div>
       ) : null}
 
-      <div style={{ marginBottom: 24 }}>
-        <ClaimsFeed initialClaims={claims} initialRefunds={refunds} />
-      </div>
+      <ClaimsFeed initialClaims={claims} initialRefunds={refunds} />
 
       <PolicyEditor initial={policy} />
 
-      <div style={{ marginTop: 24 }}>
+      <div>
         <a
           href={`/api/teacher/payment-claims/export.csv?from=${encodeURIComponent(
             new Date(new Date().getFullYear(), new Date().getMonth() - 3, 1)
@@ -255,13 +251,14 @@ function SummaryCard({
       >
         {title}
       </div>
-      <div style={{ fontSize: 24, fontWeight: 700 }}>{value}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
       {subtitle ? (
         <div
           style={{
             fontSize: 13,
             color: 'var(--secondary)',
             marginTop: 4,
+            fontVariantNumeric: 'tabular-nums',
           }}
         >
           {subtitle}
