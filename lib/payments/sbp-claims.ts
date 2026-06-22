@@ -305,11 +305,29 @@ export async function createTeacherMarkPaid(
 // 2026-06-22 B-1 fix: убрали ${row.status} из label (показывался учителю
 // как 'booked'/'completed'/etc — DB slug в UI, нарушение content-style §4).
 // Добавили statusLabel — русский label для рендера через <Pill>.
-const STATUS_LABEL_RU: Record<string, string> = {
+// Exported для regression test в tests/payments/sbp-claims-unpaid-label.test.ts.
+export const UNPAID_SLOT_STATUS_LABEL_RU: Record<string, string> = {
   booked: 'запланировано',
   completed: 'прошло',
   no_show_learner: 'не пришёл',
   cancelled: 'отменено',
+}
+
+// 2026-06-22 wave-paranoia WARN #1: exported pure label builder для
+// regression test. Раньше test re-implementировал тот же template и
+// мог не заметить production drift.
+export function buildUnpaidSlotLabel(
+  startAt: string | Date,
+  durationMinutes: number,
+): string {
+  const dt = typeof startAt === 'string' ? new Date(startAt) : startAt
+  return `${dt.toLocaleString('ru-RU', {
+    timeZone: 'Europe/Moscow',
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })} · ${durationMinutes} мин`
 }
 
 export async function listUnpaidSlotsForPair(
@@ -358,18 +376,10 @@ export async function listUnpaidSlotsForPair(
     [teacherAccountId, learnerAccountId],
   )
   return r.rows.map((row) => {
-    const dt = new Date(row.start_at)
-    const label = `${dt.toLocaleString('ru-RU', {
-      timeZone: 'Europe/Moscow',
-      day: '2-digit',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
-    })} · ${row.duration_minutes} мин`
     return {
       id: row.id,
-      label,
-      statusLabel: STATUS_LABEL_RU[row.status] ?? row.status,
+      label: buildUnpaidSlotLabel(row.start_at, row.duration_minutes),
+      statusLabel: UNPAID_SLOT_STATUS_LABEL_RU[row.status] ?? row.status,
       expectedKopecks: row.snapshot_amount_kopecks ?? 0,
       startAt: row.start_at,
       status: row.status,

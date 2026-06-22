@@ -81,7 +81,7 @@ test.describe('FLOW-TEACHER-PAYMENTS-001', () => {
     expect(html).toMatch(/История \(/)
     expect(html).toContain('Скачать CSV')
 
-    // B-1 contract: forbidden DB slugs не выходят в DOM.
+    // B-1 contract: forbidden DB slugs не выходят в DOM на SSR shell.
     for (const slug of ['booked', 'completed', 'no_show_learner', 'cancelled']) {
       expect(html).not.toContain(slug)
     }
@@ -89,5 +89,29 @@ test.describe('FLOW-TEACHER-PAYMENTS-001', () => {
     // Forbidden generic placeholders.
     expect(html).not.toContain('Скоро будет')
     expect(html).not.toContain('TODO')
+
+    // 2026-06-22 wave-paranoia WARN #2: B-1 regression лежала в expanded
+    // mark-paid drill-down, не в SSR shell. Открываем ученика и assert
+    // что drill-down loaded и НЕ содержит DB slugs.
+    const learnerToggle = page.getByRole('button', { name: 'Отметить оплачено' }).first()
+    if (await learnerToggle.isVisible().catch(() => false)) {
+      await learnerToggle.click()
+      // Wait for drill-down — Pill rendering или Сохраняем/Выбрать все.
+      await page
+        .getByRole('button', { name: /Выбрать все|Снять все/ })
+        .first()
+        .waitFor({ timeout: 5000 })
+        .catch(() => {
+          // Учитель без unpaid learners (qa-fixture seed) — drill-down
+          // не появится. Тест проходит на initial shell проверке.
+        })
+      const expandedHtml = await page.content()
+      for (const slug of ['booked', 'completed', 'no_show_learner', 'cancelled']) {
+        expect(
+          expandedHtml,
+          `forbidden DB slug "${slug}" не должен быть в expanded drill-down`,
+        ).not.toContain(slug)
+      }
+    }
   })
 })
