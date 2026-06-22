@@ -6,7 +6,7 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
-import { Button } from '@/components/ui/primitives'
+import { Button, Checkbox } from '@/components/ui/primitives'
 import { localizeTeacherError } from '@/lib/i18n/teacher-errors'
 
 export function PolicyEditor({
@@ -62,62 +62,34 @@ export function PolicyEditor({
         «Должны оплатить».
       </p>
 
-      <label
-        style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: 8,
-          cursor: 'pointer',
-          marginBottom: 12,
-        }}
-      >
-        <input
-          type="checkbox"
+      <div style={{ marginBottom: 12 }}>
+        <Checkbox
           checked={chargeOnNoShow}
-          onChange={(e) => setChargeOnNoShow(e.target.checked)}
+          onChange={setChargeOnNoShow}
           disabled={busy}
-          style={{ marginTop: 4 }}
+          label={<strong>Брать оплату, если ученик не пришёл</strong>}
+          hint="Если ученик не пришёл без предупреждения — считать занятие долгом. По умолчанию выключено."
         />
-        <span style={{ fontSize: 14, lineHeight: 1.5 }}>
-          <strong>Брать оплату, если ученик не пришёл</strong>
-          <br />
-          <span style={{ color: 'var(--secondary)', fontSize: 13 }}>
-            Если ученик не пришёл без предупреждения — считать занятие
-            долгом. По умолчанию выключено.
-          </span>
-        </span>
-      </label>
+      </div>
 
-      <label
-        style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: 8,
-          cursor: 'pointer',
-          marginBottom: 16,
-        }}
-      >
-        <input
-          type="checkbox"
+      <div style={{ marginBottom: 16 }}>
+        <Checkbox
           checked={chargeOnLateCancel}
-          onChange={(e) => setChargeOnLateCancel(e.target.checked)}
+          onChange={setChargeOnLateCancel}
           disabled={busy}
-          style={{ marginTop: 4 }}
+          label={<strong>Брать оплату при поздней отмене</strong>}
+          hint="Если ученик отменил позже политики (по умолчанию 24 ч) — считать занятие долгом. По умолчанию выключено."
         />
-        <span style={{ fontSize: 14, lineHeight: 1.5 }}>
-          <strong>Брать оплату при поздней отмене</strong>
-          <br />
-          <span style={{ color: 'var(--secondary)', fontSize: 13 }}>
-            Если ученик отменил позже политики (по умолчанию 24 ч) —
-            считать занятие долгом. По умолчанию выключено.
-          </span>
-        </span>
-      </label>
+      </div>
 
       {err ? (
-        <p style={{ color: 'var(--danger)', fontSize: 13, marginBottom: 8 }}>
+        <div
+          role="alert"
+          aria-live="polite"
+          style={{ color: 'var(--danger)', fontSize: 13, marginBottom: 8 }}
+        >
           {err}
-        </p>
+        </div>
       ) : null}
       {info ? (
         <p style={{ color: 'var(--secondary)', fontSize: 13, marginBottom: 8 }}>

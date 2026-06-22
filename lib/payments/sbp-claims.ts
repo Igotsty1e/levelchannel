@@ -302,10 +302,20 @@ export async function createTeacherMarkPaid(
 
 // Helper for teacher mark-paid UI: list unpaid booked/completed slots
 // for a given learner (no active claim attached).
+// 2026-06-22 B-1 fix: убрали ${row.status} из label (показывался учителю
+// как 'booked'/'completed'/etc — DB slug в UI, нарушение content-style §4).
+// Добавили statusLabel — русский label для рендера через <Pill>.
+const STATUS_LABEL_RU: Record<string, string> = {
+  booked: 'запланировано',
+  completed: 'прошло',
+  no_show_learner: 'не пришёл',
+  cancelled: 'отменено',
+}
+
 export async function listUnpaidSlotsForPair(
   teacherAccountId: string,
   learnerAccountId: string,
-): Promise<{ id: string; label: string; expectedKopecks: number; startAt: string; status: string }[]> {
+): Promise<{ id: string; label: string; statusLabel: string; expectedKopecks: number; startAt: string; status: string }[]> {
   // Codex round-1 BL-2 fix: добавили cancelled, чтобы учитель мог
   // вручную закрыть late-cancel долг.
   // Codex round-1 BL-1 fix: исключаем package-paid и legacy CP-paid.
@@ -355,10 +365,11 @@ export async function listUnpaidSlotsForPair(
       month: 'short',
       hour: '2-digit',
       minute: '2-digit',
-    })} · ${row.duration_minutes} мин · ${row.status}`
+    })} · ${row.duration_minutes} мин`
     return {
       id: row.id,
       label,
+      statusLabel: STATUS_LABEL_RU[row.status] ?? row.status,
       expectedKopecks: row.snapshot_amount_kopecks ?? 0,
       startAt: row.start_at,
       status: row.status,

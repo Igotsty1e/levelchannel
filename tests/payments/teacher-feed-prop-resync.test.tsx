@@ -48,7 +48,7 @@ describe('ClaimsFeed — prop resync after router.refresh', () => {
     const { rerender } = render(
       <ClaimsFeed initialClaims={[]} initialRefunds={[]} />,
     )
-    expect(screen.getByRole('button', { name: /История \(0\)/ })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: /История \(0\)/ })).toBeTruthy()
 
     rerender(
       <ClaimsFeed
@@ -57,6 +57,6 @@ describe('ClaimsFeed — prop resync after router.refresh', () => {
       />,
     )
     // The history-tab counter must follow the new claims length.
-    expect(screen.getByRole('button', { name: /История \(1\)/ })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: /История \(1\)/ })).toBeTruthy()
   })
 })
