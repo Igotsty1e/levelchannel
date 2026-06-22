@@ -332,6 +332,18 @@ the diff being correct.
 - **Do not return `::date` from Postgres and then `new Date(...).toISOString().slice(0,10)` in JS.** The pg driver parses `::date` in the Node process timezone, and `.toISOString()` then shifts to UTC, silently subtracting a day for any Node runtime east of UTC. Use `to_char((... )::date, 'YYYY-MM-DD')` in SQL and `String(row.col)` in JS. This bug shipped in `lib/notifications/teacher-digest-preview.ts` (fixed 2026-06-07) and `scripts/teacher-daily-digest.mjs` (fixed 2026-06-07 — was sending the daily teacher email with yesterday's date in subject).
 - **Do not expose internal identifiers (slug, UUID prefix, display_order, tariff_id) in cabinet UI.** They're a server-side handle. Tutor sees title / price / status. The 2026-06-07 `customerComment` PII leak (slot UUID + tariff slug ended up on the CloudPayments receipt the operator sees) is the failure mode this rule prevents.
 
+## 5a. Spacing rule (vertical rhythm)
+
+**Vertical rhythm — mandatory через semantic tokens.** Full spec: `docs/design-system.md §5` (tokens, classes, examples).
+
+**Hard rule:** inline `style={{ marginBottom: N }}` / `marginTop: N` / `gap: N` для **vertical** rhythm между cards/section-level в `app/cabinet/`, `app/teacher/`, `components/cabinet/`, `components/teacher/` — anti-pattern. Use `.lc-stack-*` classes ИЛИ inline `'var(--space-*)'` token.
+
+**Exception:** primitives (`components/ui/primitives/*`) могут использовать numeric tokens (`var(--space-N)`) напрямую — они provide layer, не consume semantic.
+
+**Migration rule (от COMPANY.md «Doc maintenance discipline»):** редактируешь старый файл с magic spacing — мигрируешь на classes/tokens в той же правке, не follow-up.
+
+**Mechanical check:** Stage 2 (`scripts/check-spacing.sh`) — отдельная волна. До тех пор: review-time + `/review` skill catches.
+
 ## 6. Final test (LevelChannel bar)
 
 For payment-domain or security-layer work specifically: **would you bet

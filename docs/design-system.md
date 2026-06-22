@@ -140,6 +140,70 @@ Inline-альтернатива: `style={{ marginBottom: 'var(--space-section)' 
 - внутри grid/flex с собственным gap;
 - между micro-блоками одной семьи (например, две связанные строки одной информации).
 
+### 5.2. Semantic spacing tokens (2026-06-22)
+
+В дополнение к numeric scale (§5 базовый) — **семантический слой** для vertical rhythm между cards. Не «какое число вписать», а «какого уровня этот gap». Числа меняем только в `globals.css`.
+
+| Token | Desktop | Mobile @<600px | Применение |
+|---|---|---|---|
+| `--space-section` | 32px | 24px | Между крупными «семьями» страницы (header / nav / panel). |
+| `--space-card` | 24px | 16px | Между смежными cards внутри одной семьи. |
+| `--space-intra` | 16px | 12px | Внутри card: h2→body, label→input, grid gap. |
+| `--space-tight` | 8px | 6px | Между micro-rows в списке. |
+
+Семантические токены реализованы как алиасы на numeric (`--space-card: var(--space-5)`), но в product-коде используй **только семантические**.
+
+### 5.3. Stack utility classes
+
+Lobotomized-owl pattern — margin между siblings, без margin на первом/последнем child:
+
+```css
+.lc-stack-section > * + * { margin-top: var(--space-section); }
+.lc-stack-card    > * + * { margin-top: var(--space-card); }
+.lc-stack-intra   > * + * { margin-top: var(--space-intra); }
+.lc-stack-tight   > * + * { margin-top: var(--space-tight); }
+```
+
+Применение в JSX:
+
+```tsx
+<main className="lc-stack-section">
+  <header>...</header>
+  <KindRoutingCards />
+  <section className="lc-stack-card">
+    <Banner>...</Banner>
+    <SummaryGrid />
+    <UnpaidLearners />
+  </section>
+</main>
+```
+
+Дети — без inline `marginBottom`.
+
+### 5.4. Decision tree (что использовать когда)
+
+```
+Vertical rhythm между cards/section-level
+  ├─ Сменные cards в семье (header/nav/panel) → .lc-stack-section
+  ├─ Cards внутри секции (explainer/summary/unpaid/...) → .lc-stack-card
+  ├─ Inside card (h2→body, label→input) → .lc-stack-intra или token
+  └─ Micro-rows (list items) → .lc-stack-tight
+
+Inside primitive (внутри Button/Banner/Pill body):
+  → numeric token напрямую (var(--space-N))
+
+Horizontal gap:
+  → grid/flex с собственным `gap: var(--space-intra)` (или другой semantic)
+
+Запрещено:
+  ✗ inline style={{ marginBottom: 16 }} в product code (cabinet/teacher)
+  ✗ raw numbers вне scale 4·6·8·10·12·16·20·24·32·40·56·80
+  ✗ оборачивать в дополнительный <div marginBottom> когда Banner/Pill primitive уже сидит
+    в parent stack
+```
+
+Enforcement: `AGENTS.md §5a`. Mechanical CI gate — Stage 2 (отдельная волна).
+
 ---
 
 ## 6. Radius
