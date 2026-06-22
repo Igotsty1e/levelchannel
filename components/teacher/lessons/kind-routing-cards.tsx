@@ -102,7 +102,6 @@ function Card({ kind, title, subtitle, active, onClick }: CardProps) {
         color: 'var(--text)',
         cursor: active ? 'default' : 'pointer',
         transition: 'border-color 120ms ease, background 120ms ease',
-        minHeight: 64,
       }}
     >
       <div style={{ fontSize: 15, fontWeight: active ? 600 : 500 }}>{title}</div>

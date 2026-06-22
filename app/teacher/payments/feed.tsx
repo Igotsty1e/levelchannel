@@ -33,13 +33,13 @@ function formatDate(iso: string): string {
 function statusPill(status: ClaimStatus): { label: string; tone: 'success' | 'warning' | 'danger' | 'default' } {
   switch (status) {
     case 'claimed':
-      return { label: 'Ждёт подтверждения', tone: 'warning' }
+      return { label: 'Ждёт', tone: 'warning' }
     case 'confirmed':
       return { label: 'Подтверждено', tone: 'success' }
     case 'declined':
       return { label: 'Отклонено', tone: 'danger' }
     case 'cancelled':
-      return { label: 'Отменено учеником', tone: 'default' }
+      return { label: 'Отменено', tone: 'default' }
   }
 }
 
@@ -254,7 +254,7 @@ export function ClaimsFeed({
 
       {renderList.length === 0 ? (
         <EmptyState
-          title={tab === 'pending' ? 'Сейчас нет заявок' : 'История пуста'}
+          title={tab === 'pending' ? 'Заявок пока нет' : 'История пуста'}
           body={
             tab === 'pending'
               ? 'Когда ученики отправят заявки «Я оплатил», они появятся здесь.'
@@ -288,7 +288,7 @@ export function ClaimsFeed({
                         marginTop: 2,
                       }}
                     >
-                      Заявка {formatDate(c.claimedAt)} ·{' '}
+                      {formatDate(c.claimedAt)} ·{' '}
                       {c.paymentChannel === 'sbp' ? 'СБП' : 'Другой способ'}
                       {c.paymentMethodPhone ? ` · ${c.paymentMethodPhone}` : ''}
                     </div>

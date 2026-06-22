@@ -207,7 +207,14 @@ export function UnpaidLearners({
                   <div style={{ fontWeight: 600, fontSize: 15 }}>
                     {l.learnerName}
                   </div>
-                  <div style={{ color: 'var(--secondary)', fontSize: 12, marginTop: 2 }}>
+                  <div
+                    style={{
+                      color: 'var(--secondary)',
+                      fontSize: 12,
+                      marginTop: 2,
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
                     {pluralLessons(l.unpaidCount)} · {formatRub(l.unpaidAmount)}
                   </div>
                 </div>
@@ -236,6 +243,38 @@ export function UnpaidLearners({
                     </p>
                   ) : (
                     <>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'flex-end',
+                          marginBottom: 6,
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSelectedSlots((prev) => {
+                              const allIds = new Set<string>(learnerSlots.map((s) => s.id))
+                              const cur = prev[l.learnerId] ?? new Set<string>()
+                              const next: Set<string> =
+                                cur.size === allIds.size ? new Set<string>() : allIds
+                              return { ...prev, [l.learnerId]: next }
+                            })
+                          }
+                          disabled={busy}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'var(--secondary)',
+                            fontSize: 12,
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                            padding: 0,
+                          }}
+                        >
+                          {selected.size === learnerSlots.length ? 'Снять все' : 'Выбрать все'}
+                        </button>
+                      </div>
                       <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 6 }}>
                         {learnerSlots.map((s) => (
                           <li key={s.id}>
@@ -271,6 +310,8 @@ export function UnpaidLearners({
                       <div
                         style={{
                           marginTop: 12,
+                          paddingTop: 12,
+                          borderTop: '1px solid var(--border)',
                           display: 'flex',
                           gap: 8,
                           flexWrap: 'wrap',
