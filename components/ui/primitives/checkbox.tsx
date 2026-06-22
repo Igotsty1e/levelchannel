@@ -48,10 +48,12 @@ export function Checkbox({
   return (
     <label
       htmlFor={inputId}
+      className="lc-checkbox-label"
       style={rootStyle(disabled)}
     >
       <span
         aria-hidden="true"
+        className="lc-checkbox-box"
         style={boxStyle(checked ?? defaultChecked ?? false, disabled, fillColor, borderActive)}
       >
         {(checked ?? defaultChecked) ? (

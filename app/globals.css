@@ -2441,10 +2441,19 @@ html, body {
    mobile-collapse следует логике --space-7..9. */
 :root {
   --space-section: 32px;
+  /* Semantic spacing layer (2026-06-22) — aliases on numeric scale.
+     Use these for vertical rhythm between cards; pick the level, not
+     the px. Full spec in docs/design-system.md §5. */
+  --space-card: var(--space-5);    /* 24px — between cards inside a section */
+  --space-intra: var(--space-4);   /* 16px — inside a card (h2→body, label→input, grid gap) */
+  --space-tight: var(--space-2);   /* 8px — between micro-rows in a list */
 }
 @media (max-width: 600px) {
   :root {
     --space-section: 24px;
+    --space-card: var(--space-4);   /* 16px */
+    --space-intra: var(--space-3);  /* 12px */
+    --space-tight: 6px;
   }
 }
 .lc-section {
@@ -2452,4 +2461,28 @@ html, body {
 }
 .lc-section:last-child {
   margin-bottom: 0;
+}
+/* Stack utility classes (lobotomized owl) — apply on a parent block
+   container; children get vertical margin between siblings, no margin
+   on first/last edges. Use these instead of inline marginBottom on
+   each child. */
+.lc-stack-section > * + * {
+  margin-top: var(--space-section);
+}
+.lc-stack-card > * + * {
+  margin-top: var(--space-card);
+}
+.lc-stack-intra > * + * {
+  margin-top: var(--space-intra);
+}
+.lc-stack-tight > * + * {
+  margin-top: var(--space-tight);
+}
+/* Checkbox primitive (components/ui/primitives/checkbox.tsx) — focus ring
+   on visual box когда скрытый input получает keyboard focus.
+   Parent :focus-within paints child .lc-checkbox-box. */
+.lc-checkbox-label:focus-within .lc-checkbox-box {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 8px;
 }
