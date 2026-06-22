@@ -27,6 +27,7 @@ Epic 2: teacher-payments-design-polish-2026-06-22  [main page review]
 Epic 3 (DEFERRED): spacing-mechanical-guard         [Stage 2; after 2-week soak]
 Epic 5 (DEFERRED): cabinet-modal-primitive          [unblocks 28 modals refactor]
 Epic 6 (DEFERRED): spacing-banner-cleanup           [Banner marginBottom removal + 21-site sweep]
+Epic 7 (DEFERRED): cabinet-tabs-a11y-keyboard       [roving tabIndex + arrow/Home/End for tablist; identified Codex wave round-1 WARN #3]
 ```
 
 **Owner decisions 2026-06-22 (Q-1, Q-2, Q-4, Q-5, Q-10):**
