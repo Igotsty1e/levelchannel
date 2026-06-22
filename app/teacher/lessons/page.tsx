@@ -67,6 +67,15 @@ type SearchParams = {
   kind?: string | string[]
 }
 
+// 2026-06-22 Epic 2 PR-1b H-1 — state-aware subtitle by kind, не generic.
+import type { LessonsKind } from '@/lib/teacher/lessons-kind'
+
+const KIND_SUBTITLE: Record<LessonsKind, string> = {
+  lessons: 'История проведённых занятий и личные дела.',
+  deals: 'Личные события в календаре — выполненные и отменённые.',
+  payments: 'Заявки от учеников, ваши отметки оплат и сводка долгов.',
+}
+
 export default async function TeacherLessonsPage({
   searchParams,
 }: {
@@ -116,8 +125,11 @@ export default async function TeacherLessonsPage({
   }
 
   return (
-    <main style={{ maxWidth: 980, margin: '0 auto', paddingBottom: 80 }}>
-      <header className="lc-section" style={{ marginBottom: 16 }}>
+    <main
+      className="lc-stack-section"
+      style={{ maxWidth: 980, margin: '0 auto', paddingBottom: 80 }}
+    >
+      <header>
         <h1
           style={{
             fontSize: 24,
@@ -129,7 +141,7 @@ export default async function TeacherLessonsPage({
           Занятия
         </h1>
         <p style={{ color: 'var(--secondary)', fontSize: 14, marginTop: 4 }}>
-          История, личные дела и оплаты — в одном месте.
+          {KIND_SUBTITLE[kind]}
         </p>
       </header>
 
@@ -137,7 +149,7 @@ export default async function TeacherLessonsPage({
 
       {panel}
 
-      <p style={{ fontSize: 12, color: 'var(--secondary)', marginTop: 16 }}>
+      <p style={{ fontSize: 12, color: 'var(--secondary)' }}>
         <Link href="/teacher" style={{ color: 'inherit' }}>
           ← на главную
         </Link>

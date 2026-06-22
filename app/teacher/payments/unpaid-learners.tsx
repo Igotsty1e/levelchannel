@@ -156,10 +156,10 @@ export function UnpaidLearners({
   }
 
   return (
-    <div className="card" style={{ padding: 24, marginBottom: 24 }}>
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
+    <div className="card" style={{ padding: 24 }}>
+      <h3 style={{ fontSize: 17, fontWeight: 600, marginBottom: 12 }}>
         Должны оплатить
-      </h2>
+      </h3>
       <p style={{ color: 'var(--secondary)', fontSize: 13, marginBottom: 16 }}>
         Если ученик уже заплатил (или заплатил наличными / другим способом),
         отметьте занятия как оплаченные — они исчезнут из этого списка.

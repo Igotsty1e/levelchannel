@@ -53,10 +53,10 @@ export function PolicyEditor({
   }
 
   return (
-    <div className="card" style={{ padding: 24, marginBottom: 24 }}>
-      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
+    <div className="card" style={{ padding: 24 }}>
+      <h3 style={{ fontSize: 17, fontWeight: 600, marginBottom: 8 }}>
         Политика по неоплаченным занятиям
-      </h2>
+      </h3>
       <p style={{ color: 'var(--secondary)', fontSize: 13, marginBottom: 16 }}>
         Эти настройки управляют, какие занятия попадают в раздел
         «Должны оплатить».

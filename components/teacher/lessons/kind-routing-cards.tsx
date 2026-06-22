@@ -31,14 +31,14 @@ export function KindRoutingCards({ activeKind }: Props) {
   }
 
   return (
-    <nav
+    <div
+      role="tablist"
       aria-label="Разделы занятий"
       data-testid="lessons-kind-cards"
       style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
         gap: 8,
-        marginBottom: 16,
       }}
     >
       <Card
@@ -62,7 +62,7 @@ export function KindRoutingCards({ activeKind }: Props) {
         active={activeKind === 'payments'}
         onClick={() => switchTo('payments')}
       />
-    </nav>
+    </div>
   )
 }
 
@@ -75,9 +75,19 @@ type CardProps = {
 }
 
 function Card({ kind, title, subtitle, active, onClick }: CardProps) {
+  // 2026-06-22 Epic 2 PR-1b:
+  // B-5: <button role="tab" aria-selected> вместо <button> в <nav>.
+  //      Согласовано с existing pattern в lessons-tabs-client.tsx. БЕЗ
+  //      aria-controls/tabpanel — page server-branches и рендерит ОДИН
+  //      panel per URL (2 другие tab указали бы на non-existent ids).
+  // H-13: var(--surface) (legacy per design-system §3.1) → var(--surface-1).
+  //       Raw rgba fallback на --accent-soft удалён — используем
+  //       --accent-bg + --accent-bg-strong tokens напрямую.
   return (
     <button
       type="button"
+      role="tab"
+      aria-selected={active}
       onClick={onClick}
       data-kind={kind}
       data-active={active ? 'true' : 'false'}
@@ -88,16 +98,14 @@ function Card({ kind, title, subtitle, active, onClick }: CardProps) {
         border: active
           ? '1px solid var(--accent)'
           : '1px solid var(--border)',
-        background: active
-          ? 'var(--accent-soft, rgba(80, 130, 255, 0.06))'
-          : 'var(--surface)',
+        background: active ? 'var(--accent-bg-strong)' : 'var(--surface-1)',
         color: 'var(--text)',
         cursor: active ? 'default' : 'pointer',
         transition: 'border-color 120ms ease, background 120ms ease',
         minHeight: 64,
       }}
     >
-      <div style={{ fontSize: 15, fontWeight: 600 }}>{title}</div>
+      <div style={{ fontSize: 15, fontWeight: active ? 600 : 500 }}>{title}</div>
       <div
         style={{
           fontSize: 12,
