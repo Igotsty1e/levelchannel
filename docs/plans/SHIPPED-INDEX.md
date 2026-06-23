@@ -4,6 +4,14 @@ Plans below have all merged to main. Detail in each file's body; this index is t
 
 Active plan-doc work (not yet shipped) lives in `docs/plans/*.md` without an entry here.
 
+## 2026-06-22/23 teacher-payments design polish epic (Epic 1+4+2 + 2 hotfixes, 6+2 PRs)
+
+- **`teacher-payments-design-MASTER-ROADMAP-2026-06-22.md`** — master roadmap. Epic decomposition: Epic 1 spacing foundation (#719) + Epic 4 ChipGroup primitive evolution (#720) + Epic 2 teacher-payments-design-polish (#721/#722/#723/#724). Status: SHIPPED 2026-06-22/23.
+- **`spacing-system-foundation-2026-06-22.md`** — Epic 1. Semantic spacing tokens (`--space-card/intra/tight`) + 4 `.lc-stack-*` stack utility classes + Checkbox primitive `:focus-within` ring + AGENTS.md §5a enforcement pointer + design-system.md §5.2-5.4. Banner cleanup §3.3 DEFERRED to Epic 6. PR #719 squash 5bc01ab. Status: SHIPPED 2026-06-22. Codex-Paranoia: SIGN-OFF round 8/3 cap-exceeded owner-authorized.
+- **`teacher-lessons-payments-design-review-2026-06-22.md`** — Epic 2 main page review. Scope: `/teacher/lessons?kind=payments`. 1 BLOCKER + 13 HIGH + 7 MED + 4 LOW closed. 3 sub-PRs (#721 correctness+a11y / #722 copy+spacing+tokens / #723 MED+LOW polish) + #724 epic-close wave-paranoia WARN fixes. Owner-resolved Q-1 «Не пришло» pulled, Q-2 banner-explainer text kept, Q-4 русский Pill statusLabel Variant B, Q-5 split на 3 PRs, Q-10 ChipGroup Variant B (Epic 4 first). Status: SHIPPED 2026-06-22. Codex-Paranoia: plan 8/3 SIGN-OFF + wave 1/3 SIGN-OFF.
+- **ChipGroup primitive evolution (PR #720)** — `ariaLabel` + `disabled` props + `whiteSpace: 'normal'` long-label wrap. Backward-compat 8 existing use-sites verified.
+- **`teacher-lessons-kind-lessons-main-fix-2026-06-23.md`** — post-Epic 2 hotfix. 4 root causes: (1) double `<main>` в `LessonHistoryClient`; (2) `--space-card/intra/tight` resolved в empty (var(--space-N) alias на :root, но --space-N только в .saas-chrome scope); (3) inline `margin: '0 auto'` override owl `margin-top`; (4) page.tsx own `<main>` поверх teacher layout main. PR #725 (#1+#2+#3) + PR #726 (#4). Verified prod through DevTools getComputedStyle на 3 kinds (payments / lessons / deals): 1 main per page, gaps 32/32/24 desktop. Status: SHIPPED 2026-06-23. Codex-Paranoia: SKIPPED — trivial structural fixes proven через computed style assertions.
+
 ## 2026-06-16 finance-card-compact Wave-3 (1 PR)
 
 - **`teacher-home-finance-card-compact-2026-06-15.md`** — Wave 3 / эпик C из master flow. Single-file CSS tweak: финансовая карточка на `/teacher` home сжата на ~25-30% (с ~280px до ~200px высоты) чтобы освободить место для «Недавние прошедшие» из Wave-2. Section padding 24/24/20 → 16/20/14, hero number `clamp(36,5vw,44)` → `clamp(28,4vw,34)`, row padding 12 → 8, row label/value 14/16 → 13/15. iOS touch target (`min-height: 44px`) сохранён. PR #660 (squash). Status: SHIPPED 2026-06-16. Codex-Paranoia: SKIPPED — trivial.

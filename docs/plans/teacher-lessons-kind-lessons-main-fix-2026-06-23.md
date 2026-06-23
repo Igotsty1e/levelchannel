@@ -59,7 +59,7 @@ Epic 1 foundation (PR #719) добавил алиасы:
 **Date:** 2026-06-23
 **Type:** hotfix (1 file, ≤10 lines)
 **Owner:** Claude
-**Status:** PLAN → impl
+**Status:** **SHIPPED** 2026-06-23 (PR #725 + #726). Prod verified through DevTools getComputedStyle на 3 kinds.
 
 ## Problem
 

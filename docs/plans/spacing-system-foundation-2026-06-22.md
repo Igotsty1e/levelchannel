@@ -1,6 +1,6 @@
 # Spacing system foundation (Stage 1)
 
-**Status:** PLAN — Codex paranoia **SIGN-OFF round 8/8** (cap exceeded by parent epic, owner-authorized)
+**Status:** **SHIPPED** 2026-06-22 (PR #719 squash 5bc01ab; post-hotfix tokens fixed в #725)
 **Owner:** Claude (session 2026-06-22)
 **Date:** 2026-06-22
 **Scope:** semantic spacing tokens + CSS utility classes + AGENTS rule + Banner primitive cleanup + LEARNINGS promotion. **Cross-surface foundation** — потребляется любой UI surface.

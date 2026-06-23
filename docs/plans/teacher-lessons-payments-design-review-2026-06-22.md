@@ -1,6 +1,6 @@
 # Design review: `/teacher/lessons?kind=payments`
 
-**Status:** PLAN — Codex paranoia **SIGN-OFF round 8/8** (cap-exceeded, owner-authorized)
+**Status:** **SHIPPED** 2026-06-22 — Epic 2 closed (PRs #721/#722/#723/#724 + hotfixes #725/#726)
 **Owner:** Claude (session 2026-06-22)
 **Date:** 2026-06-22
 **Scope:** дизайн/UX/content/a11y ревью. **НЕ payment-domain refactor, НЕ изменение payment business logic.**

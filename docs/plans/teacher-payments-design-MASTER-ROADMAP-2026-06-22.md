@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-22
 **Owner:** Иван (product) + Claude (impl)
-**Status:** All paranoia rounds SIGN-OFF; ready to start impl
+**Status:** **SHIPPED** 2026-06-22/23 — Epic 1+4+2 closed (6 PRs #719-#724) + 2 hotfixes (#725/#726). Deferred: Epic 3 (spacing-mechanical-guard, после 2-week soak), Epic 5 (cabinet-modal-primitive), Epic 6 (spacing-banner-cleanup), Epic 7 (cabinet-tabs-a11y-keyboard).
 **Source plans:**
 - `docs/plans/spacing-system-foundation-2026-06-22.md`
 - `docs/plans/teacher-lessons-payments-design-review-2026-06-22.md`
