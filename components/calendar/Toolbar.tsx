@@ -4,6 +4,14 @@
 // Codex round 1 #21 + round 4: `lastUpdatedAt` shown prominently,
 // refresh forces a refetch, mutation paths trigger forced refetch
 // (wired in PR3).
+//
+// 2026-06-23 — single-row header epic. CTAs from page client
+// (`+ Назначить ученику` / `+ Слоты` / `+ Дело`) теперь приходят
+// через `headerActions` slot и рендерятся справа от tools cluster,
+// одной строкой с range + nav + refresh. Mobile: Альтернатива A —
+// 4 stacked rows (range + refresh / nav / updated / actions grid).
+
+import type { ReactNode } from 'react'
 
 export type ToolbarProps = {
   fromYmd: string
@@ -13,6 +21,8 @@ export type ToolbarProps = {
   onRefresh: () => void
   lastUpdatedAt: Date | null
   loading: boolean
+  /** Page-level CTAs rendered справа от tools cluster (right cluster). */
+  headerActions?: ReactNode
 }
 
 export function Toolbar({
@@ -23,6 +33,7 @@ export function Toolbar({
   onRefresh,
   lastUpdatedAt,
   loading,
+  headerActions,
 }: ToolbarProps) {
   const lastLabel = lastUpdatedAt
     ? `Обновлено ${formatRelative(lastUpdatedAt)}`
@@ -32,19 +43,14 @@ export function Toolbar({
     <div
       role="toolbar"
       aria-label="Управление календарём"
-      className="calendar-toolbar"
+      className="calendar-header"
     >
-      {/* Range as primary title (Apple-Calendar pattern) */}
-      <h2
-        className="calendar-toolbar-range"
-        aria-live="polite"
-      >
-        {formatWeekRangeRu(fromYmd)}
-      </h2>
-
-      {/* Tools cluster — nav + refresh on a single right-aligned row */}
-      <div className="calendar-toolbar-tools">
-        <div className="calendar-toolbar-nav">
+      {/* Left cluster: range + nav + updated + refresh */}
+      <div className="calendar-header-left">
+        <h2 className="calendar-header-range" aria-live="polite">
+          {formatWeekRangeRu(fromYmd)}
+        </h2>
+        <div className="calendar-header-nav">
           <button
             type="button"
             onClick={onPrev}
@@ -67,19 +73,23 @@ export function Toolbar({
             →
           </button>
         </div>
-        <div className="calendar-toolbar-refresh">
-          <span className="calendar-toolbar-updated">{lastLabel}</span>
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={loading}
-            style={btnStyle()}
-            aria-label="Обновить календарь"
-          >
-            {loading ? 'Загружаем…' : '↻'}
-          </button>
-        </div>
+        <span className="calendar-header-updated">{lastLabel}</span>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={loading}
+          style={btnStyle()}
+          aria-label="Обновить календарь"
+          className="calendar-header-refresh-btn"
+        >
+          {loading ? 'Загружаем…' : '↻'}
+        </button>
       </div>
+
+      {/* Right cluster: page-level CTA buttons (optional) */}
+      {headerActions ? (
+        <div className="calendar-header-actions">{headerActions}</div>
+      ) : null}
     </div>
   )
 }

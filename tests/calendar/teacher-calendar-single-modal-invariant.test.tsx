@@ -28,11 +28,18 @@ vi.mock('@/components/calendar/SlotCalendar', () => ({
   SlotCalendar: ({
     onSlotClick,
     interactions,
+    headerActions,
   }: {
     onSlotClick?: (row: unknown) => void
     interactions?: { onPaintSpan?: (span: unknown) => void }
+    headerActions?: React.ReactNode
   }) => (
     <div data-testid="slot-calendar-stub">
+      {/* 2026-06-23 — single-row header CTAs теперь приходят через
+          headerActions slot из page client → SlotCalendar → Toolbar.
+          Mock рендерит их inline чтобы single-modal invariant
+          assertions могли их найти. */}
+      {headerActions ? <div data-testid="header-actions">{headerActions}</div> : null}
       <button
         type="button"
         data-testid="stub-fire-slot-click"
