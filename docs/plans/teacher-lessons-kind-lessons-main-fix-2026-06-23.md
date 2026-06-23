@@ -1,4 +1,60 @@
-# Hotfix: `<main>` semantic violation на `/teacher/lessons` (kind=lessons)
+# Hotfix: spacing bugs на `/teacher/lessons` epic — 3 root causes
+
+> **Scope expanded 2026-06-23 21:53 — owner caught additional bug**:
+> Не только double `<main>` (kind=lessons), но и spacing tokens broken
+> на kind=payments (`--space-card/intra/tight` resolved в empty) +
+> inline `margin: '0 auto'` overrode owl margin-top.
+
+## Three independent bugs found
+
+### Bug 1: double `<main>` на kind=lessons
+(оригинальная находка)
+
+### Bug 2: `--space-card/intra/tight` пустые на `:root` (CRITICAL)
+
+Epic 1 foundation (PR #719) добавил алиасы:
+```css
+:root {
+  --space-card: var(--space-5);    /* 24px */
+  --space-intra: var(--space-4);   /* 16px */
+  --space-tight: var(--space-2);   /* 8px */
+}
+```
+
+Но `--space-0..9` определены **внутри `.saas-chrome` scope**, НЕ на `:root` (globals.css §SaaS-design-tokens, applied via AuthShell на cabinet/teacher/admin layouts).
+
+На `:root` `--space-5` undefined → alias `--space-card: var(--space-5)` resolves в empty string → CSS owl `.lc-stack-card > * + * { margin-top: var(--space-card); }` daje margin: 0.
+
+**Симптом:** все cards внутри `.lc-stack-card` slipnuvšiеся (margin-top: 0px на проде verified through `getComputedStyle`).
+
+**Fix:** заменить aliases на literal numeric values:
+```css
+:root {
+  --space-card: 24px;
+  --space-intra: 16px;
+  --space-tight: 8px;
+}
+@media (max-width: 600px) {
+  :root {
+    --space-card: 16px;
+    --space-intra: 12px;
+    --space-tight: 6px;
+  }
+}
+```
+
+### Bug 3: `margin: '0 auto'` overrode owl margin-top
+
+`components/teacher/lessons/payments-section.tsx:73`:
+```tsx
+<section className="lc-stack-card" style={{ maxWidth: 880, margin: '0 auto' }}>
+```
+
+`margin: '0 auto'` устанавливает margin-top: 0 (inline → overrides CSS owl rule `.lc-stack-section > * + * { margin-top: 32px; }`).
+
+**Симптом:** gap между KindRoutingCards (predыдущий sibling) и section panel = 0px (instead of 32px desktop).
+
+**Fix:** `margin: '0 auto'` → `marginInline: 'auto'` (только horizontal centering, не трогает margin-top).
 
 **Date:** 2026-06-23
 **Type:** hotfix (1 file, ≤10 lines)
