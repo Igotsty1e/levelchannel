@@ -2441,18 +2441,23 @@ html, body {
    mobile-collapse следует логике --space-7..9. */
 :root {
   --space-section: 32px;
-  /* Semantic spacing layer (2026-06-22) — aliases on numeric scale.
+  /* Semantic spacing layer (2026-06-22, fixed 2026-06-23 hotfix).
      Use these for vertical rhythm between cards; pick the level, not
-     the px. Full spec in docs/design-system.md §5. */
-  --space-card: var(--space-5);    /* 24px — between cards inside a section */
-  --space-intra: var(--space-4);   /* 16px — inside a card (h2→body, label→input, grid gap) */
-  --space-tight: var(--space-2);   /* 8px — between micro-rows in a list */
+     the px. Full spec in docs/design-system.md §5.
+
+     2026-06-23 hotfix: ИЗНАЧАЛЬНО были aliases `var(--space-N)`,
+     но `--space-0..9` определены внутри `.saas-chrome` scope, не на
+     `:root` — alias на root resolved в empty string, owl margin: 0.
+     Заменили на literal values чтобы tokens работали на всех scopes. */
+  --space-card: 24px;     /* between cards inside a section */
+  --space-intra: 16px;    /* inside a card (h2→body, label→input, grid gap) */
+  --space-tight: 8px;     /* between micro-rows in a list */
 }
 @media (max-width: 600px) {
   :root {
     --space-section: 24px;
-    --space-card: var(--space-4);   /* 16px */
-    --space-intra: var(--space-3);  /* 12px */
+    --space-card: 16px;
+    --space-intra: 12px;
     --space-tight: 6px;
   }
 }

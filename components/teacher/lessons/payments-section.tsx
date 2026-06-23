@@ -70,7 +70,10 @@ export async function PaymentsSection({ teacherAccountId }: Props) {
   const pendingSum = pendingClaims.reduce((acc, c) => acc + c.amountKopecks, 0)
 
   return (
-    <section className="lc-stack-card" style={{ maxWidth: 880, margin: '0 auto' }}>
+    <section
+      className="lc-stack-card"
+      style={{ maxWidth: 880, marginInline: 'auto' }}
+    >
       <div
         style={{
           display: 'flex',

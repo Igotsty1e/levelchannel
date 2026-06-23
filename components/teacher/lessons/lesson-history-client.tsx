@@ -172,8 +172,13 @@ export function LessonHistoryClient({
 
   const csvHref = `/api/teacher/lessons/export.csv?${buildQs().toString()}`
 
+  // 2026-06-23 hotfix: убрали inner `<main>` — parent
+  // `<main className="lc-stack-section">` в app/teacher/lessons/page.tsx
+  // уже задаёт maxWidth: 980 + paddingBottom: 80 + rhythm. Inner
+  // main был double semantic + ломал .lc-stack-section ritmo
+  // (lobotomized-owl pattern needs direct children).
   return (
-    <main style={{ maxWidth: 980, margin: '0 auto', paddingBottom: 80 }}>
+    <>
       <section
         className="card lc-section"
         style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}
@@ -316,7 +321,7 @@ export function LessonHistoryClient({
           </ul>
         )}
       </section>
-    </main>
+    </>
   )
 }
 
