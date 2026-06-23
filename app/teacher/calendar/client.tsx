@@ -208,47 +208,44 @@ export default function TeacherCalendarClient({
           {toast}
         </div>
       ) : null}
-      {/* 2026-06-12 teacher-calendar-unify: обе кнопки рядом, одинаковый
-          стиль, видны на всех viewport. Mobile FAB снизу убран — top-row
-          единственная точка входа. */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'flex-end',
-          gap: 12,
-          marginBottom: 8,
-          flexWrap: 'wrap',
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => openModal({ kind: 'assign-direct' })}
-          disabled={isModalOpen}
-          style={topActionBtnStyle('primary', isModalOpen)}
-        >
-          + Назначить ученику
-        </button>
-        <button
-          type="button"
-          onClick={() => openModal({ kind: 'bulk-create' })}
-          disabled={isModalOpen}
-          style={topActionBtnStyle('secondary', isModalOpen)}
-        >
-          + Добавить слоты
-        </button>
-        <button
-          type="button"
-          onClick={() => openModal({ kind: 'personal-event-create' })}
-          disabled={isModalOpen}
-          style={topActionBtnStyle('secondary', isModalOpen)}
-          data-testid="calendar-add-personal-event-btn"
-        >
-          + Добавить дело
-        </button>
-      </div>
+      {/* 2026-06-23 — CTAs теперь живут внутри Toolbar справа от
+          range/nav/refresh single-row header. См. Toolbar `headerActions`
+          prop. Раньше CTAs были в отдельной row выше SlotCalendar; owner
+          request «давай сделаем все эти элементы в одну строку, а не
+          в 2 как сейчас». Mobile per «Альтернатива A» — primary
+          full-width, 2 secondary рядом. */}
       <SlotCalendar
         teacherId={teacherId}
         initialFromYmd={initialFromYmd}
+        headerActions={
+          <>
+            <button
+              type="button"
+              onClick={() => openModal({ kind: 'assign-direct' })}
+              disabled={isModalOpen}
+              style={topActionBtnStyle('primary', isModalOpen)}
+            >
+              + Назначить ученику
+            </button>
+            <button
+              type="button"
+              onClick={() => openModal({ kind: 'bulk-create' })}
+              disabled={isModalOpen}
+              style={topActionBtnStyle('secondary', isModalOpen)}
+            >
+              + Добавить слоты
+            </button>
+            <button
+              type="button"
+              onClick={() => openModal({ kind: 'personal-event-create' })}
+              disabled={isModalOpen}
+              style={topActionBtnStyle('secondary', isModalOpen)}
+              data-testid="calendar-add-personal-event-btn"
+            >
+              + Добавить дело
+            </button>
+          </>
+        }
         // 2026-06-14 BUG-2 — drop slot click + paint commit while
         // any modal is open. The grid is visually behind the modal,
         // but rapid drag/click sequences could still race past the

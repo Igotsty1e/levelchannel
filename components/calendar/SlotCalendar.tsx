@@ -81,6 +81,12 @@ export type SlotCalendarProps = {
   // makes the invariant explicit instead of relying on z-index
   // discipline.
   dragResetSignal?: number
+  // 2026-06-23 — single-row header epic. Page-level CTAs
+  // («+ Назначить ученику» / «+ Слоты» / «+ Дело») передаются как
+  // headerActions и рендерятся на right side Toolbar одной строкой
+  // c range + nav + refresh. Раньше CTA жили в отдельной row выше
+  // SlotCalendar; consolidation per owner request.
+  headerActions?: React.ReactNode
 }
 
 export function SlotCalendar({
@@ -90,6 +96,7 @@ export function SlotCalendar({
   interactions,
   refreshTrigger,
   dragResetSignal,
+  headerActions,
 }: SlotCalendarProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const isNarrow = useNarrowContainer(containerRef)
@@ -448,6 +455,7 @@ export function SlotCalendar({
         onRefresh={handleRefresh}
         lastUpdatedAt={response ? new Date(response.generatedAt) : null}
         loading={loading}
+        headerActions={headerActions}
       />
       {error ? (
         <div

@@ -1003,7 +1003,11 @@ html, body {
 /* Calendar toolbar — Apple-Calendar pattern.
    Desktop: range as H2 on the left, tools (nav + refresh) right.
    Mobile: range stacks above a centered tools cluster. */
-.calendar-toolbar {
+/* 2026-06-23 single-row header — left cluster (range + nav + updated +
+   refresh) + right cluster (page-level CTAs). Mobile (≤767px):
+   Альтернатива A — 4 stacked rows (range + refresh / nav / updated /
+   actions grid). */
+.calendar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1011,7 +1015,13 @@ html, body {
   padding: 12px 0;
   flex-wrap: wrap;
 }
-.calendar-toolbar-range {
+.calendar-header-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.calendar-header-range {
   margin: 0;
   font-size: 22px;
   font-weight: 600;
@@ -1020,42 +1030,64 @@ html, body {
   letter-spacing: -0.01em;
   white-space: nowrap;
 }
-.calendar-toolbar-tools {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-.calendar-toolbar-nav {
+.calendar-header-nav {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
-.calendar-toolbar-refresh {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-.calendar-toolbar-updated {
+.calendar-header-updated {
   font-size: 12px;
   color: var(--secondary);
   white-space: nowrap;
 }
+.calendar-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
 @media (max-width: 767px) {
-  .calendar-toolbar {
+  .calendar-header {
     flex-direction: column;
     align-items: stretch;
     gap: 10px;
   }
-  .calendar-toolbar-range {
-    font-size: 18px;
-    text-align: center;
+  .calendar-header-left {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px 12px;
+    align-items: center;
   }
-  .calendar-toolbar-tools {
+  .calendar-header-range {
+    font-size: 18px;
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .calendar-header-refresh-btn {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+  .calendar-header-nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
     justify-content: center;
   }
-  .calendar-toolbar-updated {
+  .calendar-header-updated {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    text-align: center;
     font-size: 11px;
+  }
+  .calendar-header-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  /* Первый child (primary CTA «+ Назначить ученику») — full-width
+     над двумя secondary CTAs. */
+  .calendar-header-actions > *:first-child {
+    grid-column: 1 / -1;
   }
 }
 
