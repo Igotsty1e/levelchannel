@@ -123,8 +123,12 @@ export default async function TeacherLessonsPage({
     )
   }
 
+  // 2026-06-23 hotfix — outer wrapper не должен быть <main> потому что
+  // `app/teacher/layout.tsx:89` уже рендерит <main className="teacher-
+  // cabinet-main saas-chrome">. Nested <main> — semantic violation
+  // (всегда должен быть ровно один <main> per page).
   return (
-    <main
+    <div
       className="lc-stack-section"
       style={{ maxWidth: 980, margin: '0 auto', paddingBottom: 80 }}
     >
@@ -147,6 +151,6 @@ export default async function TeacherLessonsPage({
       <KindRoutingCards activeKind={kind} />
 
       {panel}
-    </main>
+    </div>
   )
 }
