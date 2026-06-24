@@ -14,11 +14,12 @@ Owner: «Сейчас пользователь не может изменить 
 
 Учитель ошибочно нажал «Не пришёл» вместо «Провёл» — нет undo.
 
-## Owner-resolved decisions (2026-06-24)
+## Решения владельца (2026-06-24)
 
-- **Вариант А**: kebab-menu (`⋯`) на каждой row.
-- **Time window**: безлимитно (изменить можно всегда).
-- **Confirm**: «Точно изменить?» dialog.
+- **Вариант А**: kebab-меню (`⋯`) на каждой строке с уже отмеченным статусом.
+- **Окно правки**: безлимитное (можно изменить когда угодно).
+- **Подтверждение**: простой confirm-диалог без поля «причина».
+- **Уведомление ученику**: опциональный чекбокс «Уведомить ученика» внутри confirm-диалога (по умолчанию выключен — пусть учитель сам решает).
 
 ## Existing surface inventory
 
@@ -79,71 +80,79 @@ Backend mutations (`lib/scheduling/slots/`):
 - Click target → opens **confirm dialog**: «Точно изменить статус с «Проведено» на «Не пришёл»? Это может затронуть оплаты.»
 - Confirm → fire API call → optimistic update + router.refresh().
 
-### Confirm dialog
+### Диалог подтверждения
 
 ```
 ┌─────────────────────────────────────────────────┐
 │  Изменить статус занятия?                        │
 │                                                  │
 │  Ivan P · 23 июн., 16:03                         │
-│  Было:  Проведено                                │
+│  Было:    Проведено                              │
 │  Станет:  Не пришёл                              │
 │                                                  │
-│  ⚠ Если занятие уже оплачено через пакет —      │
-│  пакет восстановится. Долг ученика обновится.   │
+│  ⚠ Если занятие было оплачено через пакет —     │
+│  пакет восстановится, долг ученика обновится.   │
+│                                                  │
+│  ☐ Уведомить ученика об изменении               │
 │                                                  │
 │         [Отмена]    [Изменить статус]            │
 └─────────────────────────────────────────────────┘
 ```
 
-## Implementation breakdown
+- Чекбокс «Уведомить ученика» **выключен по умолчанию**. Если включён — отправляется email + TG (если канал привязан) с короткой формулировкой: «Учитель изменил статус занятия 23 июн. 16:03 с «Проведено» на «Не пришёл».»
+- Поля «причина» нет — мы не спрашиваем, мы доверяем учителю.
 
-### Sub-PR 1 — Backend: chain mutations
+## Подход к реализации (декомпозиция, без кода — для ревью)
 
-**New endpoint:** `POST /api/teacher/slots/:slotId/change-status`
+Эпик разбивается на три суб-PR. Конкретный код будет писаться только после твоего одобрения дизайна.
 
-**Body:**
+### Суб-PR 1 — Бэкенд: цепочка мутаций
+
+**Новый endpoint:** `POST /api/teacher/slots/:slotId/change-status`
+
+**Тело запроса:**
 ```json
 {
   "to": "completed" | "no_show_learner" | "no_show_teacher" | "booked",
-  "reason"?: string  // optional explanation
+  "notifyLearner": false
 }
 ```
 
-**Backend logic** (`lib/scheduling/slots/change-status.ts`):
-1. Read current slot status (with advisory lock).
-2. Reject if `cancelled` (immutable from history).
-3. Compute mutation chain:
-   - `completed` → `booked`: uncomplete only.
+**Логика на сервере:**
+1. Прочитать текущий статус слота (под advisory-lock).
+2. Отказать, если статус `cancelled` (отменённые из истории не правим).
+3. Собрать цепочку мутаций:
+   - `completed` → `booked`: только uncomplete.
    - `completed` → `no_show_learner`: uncomplete + mark-no-show.
    - `no_show_*` → `completed`: unmark-no-show + mark-completed.
-   - etc.
-4. Apply atomically (advisory lock + transaction).
-5. Dispatch notification event `LessonStatusChangedByTeacher` (new event).
-6. Insert audit log `audit_lesson_status_change` (new table).
+   - и так далее.
+4. Применить **атомарно** (advisory-lock + транзакция).
+5. Если `notifyLearner: true` — разослать событие `LessonStatusChangedByTeacher` через существующий dispatch (email + TG если канал есть).
+6. Записать в audit-таблицу `audit_lesson_status_change` (новая таблица).
 
-**New migration:** `migrations/0141_lesson_status_change_audit.sql` — track all status changes for compliance.
+**Новая миграция:** `migrations/0141_lesson_status_change_audit.sql` — лог всех изменений статусов для compliance.
 
-**Backend tests:**
-- `tests/payments/lesson-status-change.test.ts` — unit.
-- `tests/integration/lesson-status-change-integration.test.ts` — full chain через Docker Postgres.
+**Тесты бэкенда:**
+- Unit-тест на mutation chain.
+- Integration-тест полного цикла через Docker Postgres.
 
-### Sub-PR 2 — UI: kebab menu + confirm dialog
+### Суб-PR 2 — UI: kebab-меню + диалог подтверждения
 
-**Files:**
-- `components/teacher/lessons/lesson-history-client.tsx` — добавить kebab menu UI на marked rows.
-- `components/teacher/lessons/StatusChangeMenu.tsx` (NEW) — popover/menu component.
-- `components/teacher/lessons/StatusChangeConfirmModal.tsx` (NEW) — confirm dialog.
+**Файлы (план):**
+- `components/teacher/lessons/lesson-history-client.tsx` — добавить kebab-меню на строках с уже отмеченным статусом.
+- `components/teacher/lessons/StatusChangeMenu.tsx` (новый) — popover/меню.
+- `components/teacher/lessons/StatusChangeConfirmModal.tsx` (новый) — диалог подтверждения.
 
-**Existing primitives reuse:**
-- `<Button variant="ghost">` for kebab.
-- `<Banner>` for warning text.
-- Modal pattern from `feed.tsx` (decline / refund modals).
+**Переиспользуем существующие primitives:**
+- `<Button variant="ghost">` для kebab.
+- `<Banner>` для предупреждения о биллинге.
+- `<Checkbox>` для «Уведомить ученика».
+- Modal-паттерн из `feed.tsx` (decline / refund модалки).
 
-### Sub-PR 3 — E2E + evals
+### Суб-PR 3 — E2E + evals
 
-- Add `tests/e2e/teacher-lessons-status-change.spec.ts` — covers kebab → menu → confirm → success.
-- Add `FLOW-TEACHER-LESSONS-STATUS-CHANGE-001` row в `evals/PRODUCT_FLOWS.md` section D.
+- Новый spec `tests/e2e/teacher-lessons-status-change.spec.ts` — kebab → меню → confirm → успешный апдейт.
+- Новая строка `FLOW-TEACHER-LESSONS-STATUS-CHANGE-001` в `evals/PRODUCT_FLOWS.md` секция D.
 
 ## Edge cases
 
@@ -181,13 +190,13 @@ Backend mutations (`lib/scheduling/slots/`):
 - Verify learner получает notification.
 - Verify package count restored (если applicable).
 
-## Open questions
+## Открытые вопросы
 
-- **Q-1**: Email/TG notification to learner — обязательная или optional? Default: optional toggle for teacher («Уведомить ученика?») in confirm dialog.
-- **Q-2**: Show reason text input в confirm dialog? Default: optional textarea (chat-friendly, not enforced).
-- **Q-3**: Admin reverting teacher's change — отдельный flow или same endpoint? Default: same, но audit log shows actor.
-- **Q-4**: Mobile UX — kebab menu vs bottom sheet? Default: same menu, попробуем kebab, если плохо UX — переключим на sheet.
-- **Q-5**: Time-based extra-stale warning (R-4)? Default: no — owner explicitly said unlimited.
+- **Q-1**: ~~Уведомление ученику~~ — **решено**: опциональный чекбокс в диалоге, по умолчанию выключен.
+- **Q-2**: ~~Поле «причина»~~ — **решено**: нет поля, простой confirm.
+- **Q-3**: Админ откатывает изменение учителя — отдельный flow или тот же endpoint? **По умолчанию**: тот же endpoint, audit-лог пишет actor (teacher/admin) и role.
+- **Q-4**: Mobile UX — kebab-меню или bottom-sheet? **По умолчанию**: kebab + popover. Если будет тесно на 375px — переключим на bottom-sheet в импл-фазе.
+- **Q-5**: Предупреждение «занятие очень давнее» (R-4)? **По умолчанию**: нет — владелец сказал «безлимитно».
 
 ## Sign-off
 
