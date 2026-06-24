@@ -7,7 +7,12 @@ import { NO_STORE } from '@/lib/api/http-headers'
 import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import { dispatchLessonEvent } from '@/lib/notifications/lesson-event-dispatch'
 import { getActorDisplayName } from '@/lib/notifications/recipient-resolver'
-import { changeLessonStatus, type LessonTargetStatus } from '@/lib/scheduling/slots'
+import {
+  changeLessonStatus,
+  isStatusChangeNotifyRateLimited,
+  markAuditNotifyDispatched,
+  type LessonTargetStatus,
+} from '@/lib/scheduling/slots'
 import { enforceAccountRateLimit } from '@/lib/security/account-rate-limit'
 import { enforceTrustedBrowserOrigin } from '@/lib/security/request'
 
@@ -82,14 +87,32 @@ export async function POST(request: Request, { params }: RouteParams) {
     return errorResponse(result.reason)
   }
 
-  // Post-commit best-effort dispatch. Failure НЕ откатывает change.
+  // teacher-lessons-edit-status WARN #3 closure: real dispatch wire-up.
+  // Post-commit best-effort. Failure НЕ откатывает change.
   if (notifyIntent) {
     try {
-      await dispatchStatusChangeNotification({
+      // Rate-limit: если за последние 24h уже dispatched на этот slot —
+      // skip. Audit row уже стоит с notify_intent=true, notify_dispatched_at=null.
+      const isRateLimited = await isStatusChangeNotifyRateLimited({
+        teacherAccountId: guard.account.id,
         slotId: id,
-        actorAccountId: guard.account.id,
-        toStatus: body.to as LessonTargetStatus,
       })
+      if (!isRateLimited) {
+        const actorName = await getActorDisplayName(guard.account.id)
+        await dispatchLessonEvent('LessonStatusChangedByTeacher', {
+          slotId: id,
+          recipientAccountId: result.learnerAccountId,
+          recipientRole: 'learner',
+          iterSeq: 1,
+          payload: {
+            actorDisplayName: actorName,
+            recipientDisplayName: '',
+            slotStartAtIso: result.startAtIso,
+          },
+        })
+        // Mark dispatch attempt в audit (best-effort, not transactional).
+        await markAuditNotifyDispatched(result.auditId)
+      }
     } catch (err) {
       console.error('[change-status] dispatch failed', err)
     }
@@ -99,19 +122,6 @@ export async function POST(request: Request, { params }: RouteParams) {
     { ok: true, slotId: id, newUpdatedAt: result.newUpdatedAt },
     { headers: NO_STORE },
   )
-}
-
-async function dispatchStatusChangeNotification(args: {
-  slotId: string
-  actorAccountId: string
-  toStatus: LessonTargetStatus
-}) {
-  // Stub Sub-PR 1 — реальный dispatch с template + rate-limit будет в
-  // Sub-PR 2 UI integration (после wave-end paranoia). На данном этапе
-  // делаем только actor lookup для anti-spoof + продолжаем как stub.
-  // Owner может в Sub-PR 2 включить полный flow.
-  void getActorDisplayName(args.actorAccountId)
-  void dispatchLessonEvent
 }
 
 function errorResponse(reason: string) {

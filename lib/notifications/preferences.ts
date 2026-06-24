@@ -176,6 +176,11 @@ export const NOTIFICATION_EVENT_CATALOG: ReadonlyArray<{
         label: 'Отметка «ученик не пришёл»',
         desc: 'Вы отметили урок как пропущенный учеником.',
       },
+      {
+        kind: 'LessonStatusChangedByTeacher',
+        label: 'Изменение статуса прошедшего занятия',
+        desc: 'Учитель изменил статус занятия постфактум (например, исправил ошибочную отметку).',
+      },
     ],
   },
 ] as const

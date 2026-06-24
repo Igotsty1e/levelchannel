@@ -123,8 +123,12 @@ export function rowToSlot(
     events: Array.isArray(row.events)
       ? (row.events as SlotEvent[])
       : [],
-    createdAt: new Date(String(row.created_at)).toISOString(),
-    updatedAt: new Date(String(row.updated_at)).toISOString(),
+    // 2026-06-24 race-window fix (WARN от wave round 2): убрали String()
+    // cast — он конвертировал pg Date через locale string и терял
+    // миллисекунды. Без String() — pg Date проходит через `new Date()`
+    // identity-конвертацией и .toISOString() даёт full-precision ISO.
+    createdAt: new Date(row.created_at as string | Date).toISOString(),
+    updatedAt: new Date(row.updated_at as string | Date).toISOString(),
   }
 }
 

@@ -85,6 +85,32 @@ test.describe('FLOW-TEACHER-LESSONS-STATUS-CHANGE-001', () => {
     expect(html).not.toContain('Скоро будет')
     expect(html).not.toContain('TODO')
   })
+
+  test('kebab menu opens with transitions on marked rows (seed has past completed)', async ({
+    page,
+    context,
+  }) => {
+    await attachTeacherSession(page, context)
+    await page.goto('/teacher/lessons?kind=lessons')
+
+    // Seed добавляет 1 past completed lesson. Должна быть row с kebab.
+    const kebab = page.getByRole('button', { name: 'Изменить статус' }).first()
+    // Ждём ≤5s — initial fetch может занять время.
+    await kebab.waitFor({ timeout: 5000 }).catch(() => {
+      // Если kebab не найден (например, seed не обновлён) — не падаем,
+      // assertion ниже сделает выяснение.
+    })
+    await expect(kebab).toBeVisible()
+    await kebab.click()
+    // Menu открылся → 3 transitions для completed: «Не пришёл», «Учитель не пришёл», «Не оплачено».
+    const menu = page.getByRole('menu')
+    await expect(menu).toBeVisible()
+    const items = menu.getByRole('menuitem')
+    await expect(items).toHaveCount(3)
+    // ESC закрывает.
+    await page.keyboard.press('Escape')
+    await expect(menu).not.toBeVisible()
+  })
 })
 
 test.describe('FLOW-TEACHER-DEALS-STATUS-CHANGE-001', () => {

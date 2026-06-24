@@ -20,15 +20,12 @@ import { getDbPool } from '@/lib/db/pool'
 
 const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000
 
-// Read-model rowToSlot rounds updated_at to second precision via
-// `new Date(String(row.updated_at)).toISOString()` (legacy quirk).
-// Clients send back that second-precision token, but SELECT FOR UPDATE
-// returns full ms-precision Date. Compare and emit in second-precision
-// to match what the client observes.
-function isoSeconds(value: Date | string): string {
-  const date = value instanceof Date ? value : new Date(value)
-  const sec = Math.floor(date.getTime() / 1000) * 1000
-  return new Date(sec).toISOString()
+// 2026-06-24 race-window WARN closure: rowToSlot теперь сохраняет
+// миллисекунды (см. lib/scheduling/slots/internal.ts:126-130). Compare
+// клиентский token и server `updated_at` в full ISO ms-precision — это
+// убирает race-window collision когда два update попадают в одну секунду.
+function isoMs(value: Date | string): string {
+  return new Date(value as string | Date).toISOString()
 }
 
 export type LessonTargetStatus =
@@ -40,7 +37,13 @@ export type LessonTargetStatus =
 export type DealTargetStatus = 'personal_event' | 'completed' | 'cancelled'
 
 export type ChangeLessonStatusResult =
-  | { ok: true; newUpdatedAt: string }
+  | {
+      ok: true
+      newUpdatedAt: string
+      auditId: string
+      learnerAccountId: string
+      startAtIso: string
+    }
   | {
       ok: false
       reason:
@@ -149,7 +152,7 @@ export async function changeLessonStatus(
       [input.slotId],
     )
     const row = lock.rows[0]
-    if (isoSeconds(row.updated_at) !== isoSeconds(input.expectedUpdatedAt)) {
+    if (isoMs(row.updated_at) !== isoMs(input.expectedUpdatedAt)) {
       await client.query('rollback')
       return { ok: false, reason: 'stale' }
     }
@@ -231,14 +234,18 @@ export async function changeLessonStatus(
       `update lesson_slots set updated_at = now() where id = $1 returning updated_at`,
       [input.slotId],
     )
-    const newUpdatedAt = isoSeconds(bump.rows[0].updated_at)
+    const newUpdatedAt = isoMs(bump.rows[0].updated_at)
 
-    await client.query(
+    // teacher-lessons-edit-status WARN #3 fix (2026-06-24): return audit
+    // row `id` чтобы endpoint мог update `notify_dispatched_at` post-commit
+    // после реального dispatch (best-effort, не транзакционно).
+    const auditInsert = await client.query<{ id: string }>(
       `insert into audit_lesson_status_change
         (slot_id, actor_account_id, actor_role, learner_account_id, source,
          from_status, to_status, notify_intent, notify_dispatched_at)
        values
-        ($1, $2, 'teacher', $3, 'lesson', $4, $5, $6, null)`,
+        ($1, $2, 'teacher', $3, 'lesson', $4, $5, $6, null)
+       returning id`,
       [
         input.slotId,
         input.teacherAccountId,
@@ -248,15 +255,59 @@ export async function changeLessonStatus(
         input.notifyIntent,
       ],
     )
+    const auditId = String(auditInsert.rows[0].id)
 
     await client.query('commit')
-    return { ok: true, newUpdatedAt }
+    return {
+      ok: true,
+      newUpdatedAt,
+      auditId,
+      learnerAccountId: row.learner_account_id!,
+      startAtIso: new Date(row.start_at as string | Date).toISOString(),
+    }
   } catch (err) {
     await client.query('rollback').catch(() => {})
     throw err
   } finally {
     client.release()
   }
+}
+
+/**
+ * Mark audit row `notify_dispatched_at = now()` после реального dispatch.
+ * Используется в endpoint post-commit best-effort, НЕ внутри TX.
+ * Errors silently swallowed — rate-limit ловит false-negative redirect, не data-loss.
+ */
+export async function markAuditNotifyDispatched(auditId: string): Promise<void> {
+  try {
+    await getDbPool().query(
+      `update audit_lesson_status_change set notify_dispatched_at = now() where id = $1`,
+      [auditId],
+    )
+  } catch (err) {
+    console.error('[markAuditNotifyDispatched] failed', err)
+  }
+}
+
+/**
+ * Rate-limit check: возвращает true если за последние 24 часа уже был
+ * успешный dispatch на этот slot от этого учителя. Используется в endpoint
+ * перед dispatch.
+ */
+export async function isStatusChangeNotifyRateLimited(args: {
+  teacherAccountId: string
+  slotId: string
+}): Promise<boolean> {
+  const r = await getDbPool().query(
+    `select 1 from audit_lesson_status_change
+      where actor_account_id = $1
+        and slot_id = $2
+        and notify_dispatched_at is not null
+        and ts > now() - interval '1 day'
+      limit 1`,
+    [args.teacherAccountId, args.slotId],
+  )
+  return r.rows.length > 0
 }
 
 type ApplyChainResult = { ok: true } | { ok: false; reason: 'missing_snapshot' | 'invalid_transition' }
@@ -458,7 +509,7 @@ export async function changeDealStatus(
       await client.query('rollback')
       return { ok: false, reason: 'wrong_kind' }
     }
-    if (isoSeconds(row.updated_at) !== isoSeconds(input.expectedUpdatedAt)) {
+    if (isoMs(row.updated_at) !== isoMs(input.expectedUpdatedAt)) {
       await client.query('rollback')
       return { ok: false, reason: 'stale' }
     }
@@ -484,7 +535,7 @@ export async function changeDealStatus(
       `update lesson_slots set updated_at = now() where id = $1 returning updated_at`,
       [input.slotId],
     )
-    const newUpdatedAt = isoSeconds(bump.rows[0].updated_at)
+    const newUpdatedAt = isoMs(bump.rows[0].updated_at)
 
     await client.query(
       `insert into audit_lesson_status_change

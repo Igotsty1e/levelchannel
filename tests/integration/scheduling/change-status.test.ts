@@ -69,7 +69,7 @@ async function seedBookedSlot(
        returning id, updated_at`,
     [teacherId, learnerId, tariffId, startAtIso],
   )
-  return { id: r.rows[0].id, updatedAt: new Date(String(r.rows[0].updated_at)).toISOString() }
+  return { id: r.rows[0].id, updatedAt: new Date(r.rows[0].updated_at as unknown as Date).toISOString() }
 }
 
 describe('changeDealStatus (deal chain mutations)', () => {
