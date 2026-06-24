@@ -4,6 +4,7 @@ import { useState } from 'react'
 
 import { PaintConfirmModal } from '@/components/calendar/PaintConfirmModal'
 import { SlotCalendar } from '@/components/calendar/SlotCalendar'
+import { useTablistKeyboard } from '@/lib/util/use-tablist-keyboard'
 
 import { SlotCancelModal } from './slot-cancel-modal'
 import { SlotsManager } from './slots-manager'
@@ -136,17 +137,26 @@ export function SlotsViewSwitcher(props: SlotsViewSwitcherProps) {
     }
   }
 
+  // Epic 7 sweep (2026-06-24): keyboard navigation.
+  const tabs: Array<'list' | 'calendar'> = ['list', 'calendar']
+  const { tabProps, onKeyDown } = useTablistKeyboard({
+    activeIndex: tabs.indexOf(tab),
+    count: tabs.length,
+    onActivate: (i) => setTab(tabs[i]),
+  })
+
   return (
     <div>
       <div
         role="tablist"
         aria-label="Вид слотов"
+        onKeyDown={onKeyDown}
         style={{ display: 'flex', gap: 8, marginBottom: 16 }}
       >
-        <TabButton active={tab === 'list'} onClick={() => setTab('list')}>
+        <TabButton onClick={() => setTab('list')} a11y={tabProps(0)}>
           Список
         </TabButton>
-        <TabButton active={tab === 'calendar'} onClick={() => setTab('calendar')}>
+        <TabButton onClick={() => setTab('calendar')} a11y={tabProps(1)}>
           Календарь
         </TabButton>
       </div>
@@ -274,19 +284,20 @@ export function SlotsViewSwitcher(props: SlotsViewSwitcherProps) {
 }
 
 function TabButton({
-  active,
   onClick,
   children,
+  a11y,
 }: {
-  active: boolean
   onClick: () => void
   children: React.ReactNode
+  a11y: ReturnType<ReturnType<typeof useTablistKeyboard>['tabProps']>
 }) {
+  const active = a11y['aria-selected']
   return (
     <button
       type="button"
-      role="tab"
-      aria-selected={active}
+      {...a11y}
+      ref={a11y.ref as React.Ref<HTMLButtonElement>}
       onClick={onClick}
       style={{
         padding: '8px 16px',

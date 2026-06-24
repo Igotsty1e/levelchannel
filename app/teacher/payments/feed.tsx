@@ -11,6 +11,7 @@ import { localizeTeacherError } from '@/lib/i18n/teacher-errors'
 import type { ClaimRow, ClaimStatus } from '@/lib/payments/sbp-claims'
 import type { RefundRow } from '@/lib/payments/sbp-refunds'
 import { useFocusTrap } from '@/lib/util/focus-trap'
+import { useTablistKeyboard } from '@/lib/util/use-tablist-keyboard'
 
 function formatRub(kopecks: number): string {
   return new Intl.NumberFormat('ru-RU', {
@@ -209,11 +210,20 @@ export function ClaimsFeed({
 
   const renderList = tab === 'pending' ? pending : history
 
+  // Epic 7 sweep (2026-06-24): keyboard navigation.
+  const tabs: Array<'pending' | 'history'> = ['pending', 'history']
+  const { tabProps, onKeyDown } = useTablistKeyboard({
+    activeIndex: tabs.indexOf(tab),
+    count: tabs.length,
+    onActivate: (i) => setTab(tabs[i]),
+  })
+
   return (
     <>
       <div
         role="tablist"
         aria-label="Заявки на оплату"
+        onKeyDown={onKeyDown}
         style={{
           display: 'flex',
           gap: 8,
@@ -224,8 +234,8 @@ export function ClaimsFeed({
       >
         <button
           type="button"
-          role="tab"
-          aria-selected={tab === 'pending'}
+          {...tabProps(0)}
+          ref={tabProps(0).ref as React.Ref<HTMLButtonElement>}
           onClick={() => setTab('pending')}
           style={tabBtnStyle(tab === 'pending')}
         >
@@ -233,8 +243,8 @@ export function ClaimsFeed({
         </button>
         <button
           type="button"
-          role="tab"
-          aria-selected={tab === 'history'}
+          {...tabProps(1)}
+          ref={tabProps(1).ref as React.Ref<HTMLButtonElement>}
           onClick={() => setTab('history')}
           style={tabBtnStyle(tab === 'history')}
         >
