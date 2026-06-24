@@ -29,6 +29,8 @@ export type LessonHistoryFilter = {
   offset?: number
 }
 
+export type CanEditEditReason = 'immutable' | 'settled' | 'accrued' | null
+
 export type LessonHistoryRow = LessonSlot & {
   /** true if `lesson_completions` row already exists for this slot. */
   isMarked: boolean
@@ -36,6 +38,12 @@ export type LessonHistoryRow = LessonSlot & {
    * 'paid_package' / 'paid_direct' → «Оплачено»; 'unpaid' → «Не оплачено»;
    * null для cancelled / no_show_* (pill не показывается). */
   paymentStatus: SlotPaymentSource
+  /** teacher-lessons-edit-status epic (2026-06-24) — UUID lesson_completions row.
+   * NULL если урок не отмечен (status='booked' без completion). */
+  completionId: string | null
+  /** teacher-lessons-edit-status epic — может ли учитель изменить статус
+   * через kebab. `edit=false` + reason для disabled item с tooltip. */
+  canEdit: { edit: boolean; reason: CanEditEditReason }
 }
 
 // Используем в карточке «Недавние прошедшие» на /teacher home:
@@ -98,18 +106,40 @@ export async function listLessonHistory(
       `s.status = 'booked' and not exists (select 1 from lesson_completions c where c.slot_id = s.id)`,
     )
   }
+  // teacher-lessons-edit-status epic (2026-06-24): добавили completionId +
+  // canEdit derive в SQL для kebab UI. canEdit.reason учитывает 3 gates:
+  // (a) immutable_at IS NOT NULL OR (now()-created_at) >= 48h (parity с
+  // uncomplete route gates), (b) settlement existence,
+  // (c) earnings accrued. Performance: 3 EXISTS sub-queries на N rows;
+  // существующие индексы на settlement (completion_id) + earnings
+  // (related_completion_id) делают O(N log M) — приемлемо для N≤200.
   const sql = `
     select ${SLOT_COLUMNS},
-      exists (select 1 from lesson_completions c where c.slot_id = s.id) as is_marked
+      exists (select 1 from lesson_completions c where c.slot_id = s.id) as is_marked,
+      (select c.id from lesson_completions c where c.slot_id = s.id) as completion_id,
+      (select
+         case
+           when c.immutable_at is not null then 'immutable'
+           when (now() - c.created_at) >= interval '48 hours' then 'immutable'
+           when exists (select 1 from lesson_settlement_completions ls where ls.completion_id = c.id) then 'settled'
+           when exists (select 1 from teacher_earnings te where te.related_completion_id = c.id) then 'accrued'
+           else null
+         end
+         from lesson_completions c where c.slot_id = s.id) as can_edit_reason
     from lesson_slots s
     where ${where.join(' and ')}
     order by s.start_at desc
     limit $2 offset $3`
   const r = await pool.query(sql, params)
-  const slots = r.rows.map((row) => ({
-    ...rowToSlot(row),
-    isMarked: Boolean(row.is_marked),
-  }))
+  const slots = r.rows.map((row) => {
+    const reason = row.can_edit_reason as CanEditEditReason
+    return {
+      ...rowToSlot(row),
+      isMarked: Boolean(row.is_marked),
+      completionId: row.completion_id ? String(row.completion_id) : null,
+      canEdit: { edit: reason === null, reason },
+    }
+  })
   // Batch paymentStatus lookup — single SQL, не N+1.
   // post-deploy-followup 2026-06-20: graceful degradation — если SQL
   // в getSlotPaymentSources валит (несовместимый schema, broken

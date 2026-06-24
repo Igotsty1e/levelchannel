@@ -4,9 +4,12 @@
 // Извлечён из PersonalEventsList в lesson-history-client.tsx
 // (post-deploy bug bash 2026-06-19 — Sub-PR 2 consolidation).
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { EmptyState, Pill } from '@/components/ui/primitives'
+
+import { StatusChangeConfirmModal } from './status-change-confirm-modal'
+import { StatusChangeMenu, type DealTargetStatus } from './status-change-menu'
 
 type PersonalEventRow = {
   id: string
@@ -15,6 +18,13 @@ type PersonalEventRow = {
   status: 'personal_event' | 'completed' | 'cancelled'
   title: string
   body: string | null
+  updatedAt?: string
+}
+
+const DEAL_STATUS_LABEL: Record<PersonalEventRow['status'], string> = {
+  personal_event: 'Активно',
+  completed: 'Выполнено',
+  cancelled: 'Отменено',
 }
 
 function formatDate(iso: string): string {
@@ -36,32 +46,77 @@ export function DealsSection() {
   const [rows, setRows] = useState<PersonalEventRow[]>([])
   const [busy, setBusy] = useState(true)
   const [err, setErr] = useState<string | null>(null)
+  // teacher-lessons-edit-status epic (2026-06-24) — kebab confirm state.
+  const [pendingChange, setPendingChange] = useState<{
+    row: PersonalEventRow
+    toStatus: DealTargetStatus
+  } | null>(null)
+  const [changeBusy, setChangeBusy] = useState(false)
+  // AbortController защита от race при mutation refetch (R3-#5 fix).
+  const inflightRef = useRef<AbortController | null>(null)
+
+  async function refresh() {
+    inflightRef.current?.abort()
+    const controller = new AbortController()
+    inflightRef.current = controller
+    setBusy(true)
+    setErr(null)
+    try {
+      const res = await fetch('/api/teacher/personal-events/history', {
+        cache: 'no-store',
+        signal: controller.signal,
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setErr(data?.message ?? 'Не удалось загрузить дела.')
+        setRows([])
+        return
+      }
+      setRows((data?.rows as PersonalEventRow[]) ?? [])
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return
+      setErr(e instanceof Error ? e.message : 'Не удалось загрузить дела.')
+    } finally {
+      if (inflightRef.current === controller) {
+        setBusy(false)
+        inflightRef.current = null
+      }
+    }
+  }
 
   useEffect(() => {
-    let live = true
-    setBusy(true)
-    fetch('/api/teacher/personal-events/history', { cache: 'no-store' })
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}))
-        if (!live) return
-        if (!res.ok) {
-          setErr(data?.message ?? 'Не удалось загрузить дела.')
-          setRows([])
-          return
-        }
-        setRows((data?.rows as PersonalEventRow[]) ?? [])
-      })
-      .catch((e) => {
-        if (!live) return
-        setErr(e instanceof Error ? e.message : 'Не удалось загрузить дела.')
-      })
-      .finally(() => {
-        if (live) setBusy(false)
-      })
-    return () => {
-      live = false
-    }
+    void refresh()
   }, [])
+
+  function openConfirm(row: PersonalEventRow, toStatus: DealTargetStatus) {
+    setErr(null)
+    setPendingChange({ row, toStatus })
+  }
+
+  async function submitChange() {
+    if (!pendingChange) return
+    const { row, toStatus } = pendingChange
+    setChangeBusy(true)
+    try {
+      const res = await fetch(`/api/teacher/personal-events/${row.id}/change-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: toStatus, expectedUpdatedAt: row.updatedAt }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setErr(data?.message ?? 'Не удалось изменить статус.')
+        setChangeBusy(false)
+        return
+      }
+      setPendingChange(null)
+      setChangeBusy(false)
+      await refresh()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Не удалось изменить статус.')
+      setChangeBusy(false)
+    }
+  }
 
   if (busy) {
     return (
@@ -147,10 +202,41 @@ export function DealsSection() {
               <Pill tone={tone} size="sm">
                 {label}
               </Pill>
+              {/* teacher-lessons-edit-status epic (2026-06-24) — kebab
+                  для всех row статусов (нет gates для дел). */}
+              {row.updatedAt ? (
+                <StatusChangeMenu
+                  kind="deal"
+                  currentStatus={row.status}
+                  onSelect={(target) => openConfirm(row, target)}
+                />
+              ) : null}
             </li>
           )
         })}
       </ul>
+
+      {err ? (
+        <p style={{ color: 'var(--danger)', fontSize: 13, marginTop: 8 }}>
+          {err}
+        </p>
+      ) : null}
+
+      {pendingChange ? (
+        <StatusChangeConfirmModal
+          kind="deal"
+          subject={pendingChange.row.title}
+          startAtFormatted={`${formatDate(pendingChange.row.startAt)} · ${pendingChange.row.durationMinutes} мин`}
+          fromLabel={DEAL_STATUS_LABEL[pendingChange.row.status]}
+          toLabel={DEAL_STATUS_LABEL[pendingChange.toStatus]}
+          toStatus={pendingChange.toStatus}
+          busy={changeBusy}
+          onConfirm={() => void submitChange()}
+          onCancel={() => {
+            if (!changeBusy) setPendingChange(null)
+          }}
+        />
+      ) : null}
     </section>
   )
 }
