@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-import { Button } from '@/components/ui/primitives'
-import { useFocusTrap } from '@/lib/util/focus-trap'
+import { Button, Modal } from '@/components/ui/primitives'
 
 // Learner-side cancel-confirm modal (2026-06-07).
 //
@@ -42,8 +41,6 @@ export function CancelLessonModal({
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const trapRef = useRef<HTMLDivElement | null>(null)
-  useFocusTrap(trapRef, () => (busy ? undefined : onClose()))
 
   useEffect(() => {
     // Автофокус на поле причины — главное действие в модале.
@@ -64,173 +61,117 @@ export function CancelLessonModal({
       setErr(e instanceof Error ? e.message : 'Не удалось отменить — попробуйте ещё раз.')
       setBusy(false)
     }
-    // На success родитель закроет модал сам через onClose в then-ветке.
   }
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="cancel-lesson-title"
-      onClick={busy ? undefined : onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.55)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-        padding: 16,
-      }}
-    >
-      <div
-        ref={trapRef}
-        onClick={(e) => e.stopPropagation()}
-        className="card"
+    <Modal open={true} onClose={onClose} busy={busy} title="Отменить занятие?">
+      <p
         style={{
-          padding: 24,
-          minWidth: 320,
-          maxWidth: 480,
-          width: '100%',
+          color: 'var(--secondary)',
+          fontSize: 14,
+          lineHeight: 1.6,
+          margin: 0,
+          marginBottom: 16,
         }}
       >
-        <h2
-          id="cancel-lesson-title"
-          style={{
-            fontSize: 18,
-            fontWeight: 600,
-            margin: 0,
-            marginBottom: 8,
-          }}
-        >
-          Отменить занятие?
-        </h2>
-        <p
-          style={{
-            color: 'var(--secondary)',
-            fontSize: 14,
-            lineHeight: 1.6,
-            margin: 0,
-            marginBottom: 16,
-          }}
-        >
-          {slotLabel}
-        </p>
+        {slotLabel}
+      </p>
 
-        <div
-          style={{
-            background: 'var(--accent-bg)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            padding: '10px 14px',
-            fontSize: 13,
-            color: 'var(--text)',
-            lineHeight: 1.5,
-            marginBottom: 16,
-          }}
-        >
-          Отмена позже чем за {cancelWindowHours} ч до начала через систему
-          невозможна — нужно будет договариваться с учителем напрямую.
-          Учитель увидит вашу причину и сможет предложить альтернативное время.
-        </div>
-
-        <label
-          htmlFor="cancel-reason"
-          style={{
-            display: 'block',
-            fontSize: 12,
-            fontWeight: 600,
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
-            color: 'var(--secondary)',
-            marginBottom: 6,
-          }}
-        >
-          Причина отмены
-        </label>
-        <textarea
-          id="cancel-reason"
-          ref={textareaRef}
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          rows={4}
-          maxLength={500}
-          placeholder="Например: заболел, перенесли встречу, нужно перенести…"
-          disabled={busy}
-          style={{
-            width: '100%',
-            background: 'var(--surface-2)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            padding: '10px 12px',
-            color: 'var(--text)',
-            fontSize: 14,
-            fontFamily: 'inherit',
-            lineHeight: 1.5,
-            resize: 'vertical',
-            boxSizing: 'border-box',
-          }}
-        />
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            fontSize: 12,
-            color: 'var(--secondary)',
-            marginTop: 6,
-            marginBottom: 16,
-          }}
-        >
-          <span>
-            {reasonTooShort
-              ? `Минимум ${MIN_REASON_LENGTH} символов — учителю важно понять причину.`
-              : 'Учитель увидит этот текст.'}
-          </span>
-          <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-            {trimmedReason.length}/500
-          </span>
-        </div>
-
-        {err ? (
-          <p
-            style={{
-              color: 'var(--danger)',
-              fontSize: 13,
-              margin: 0,
-              marginBottom: 12,
-            }}
-          >
-            {err}
-          </p>
-        ) : null}
-
-        <div
-          style={{
-            display: 'flex',
-            gap: 12,
-            justifyContent: 'flex-end',
-            flexWrap: 'wrap',
-          }}
-        >
-          <Button
-            variant="ghost"
-            onClick={onClose}
-            disabled={busy}
-            type="button"
-          >
-            Не отменять
-          </Button>
-          <Button
-            variant="danger"
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            type="button"
-          >
-            {busy ? 'Отменяем…' : 'Отменить занятие'}
-          </Button>
-        </div>
+      <div
+        style={{
+          background: 'var(--accent-bg)',
+          border: '1px solid var(--border)',
+          borderRadius: 8,
+          padding: '10px 14px',
+          fontSize: 13,
+          color: 'var(--text)',
+          lineHeight: 1.5,
+          marginBottom: 16,
+        }}
+      >
+        Отмена позже чем за {cancelWindowHours} ч до начала через систему
+        невозможна — нужно будет договариваться с учителем напрямую. Учитель
+        увидит вашу причину и сможет предложить альтернативное время.
       </div>
-    </div>
+
+      <label
+        htmlFor="cancel-reason"
+        style={{
+          display: 'block',
+          fontSize: 12,
+          fontWeight: 600,
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
+          color: 'var(--secondary)',
+          marginBottom: 6,
+        }}
+      >
+        Причина отмены
+      </label>
+      <textarea
+        id="cancel-reason"
+        ref={textareaRef}
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        rows={4}
+        maxLength={500}
+        placeholder="Например: заболел, перенесли встречу, нужно перенести…"
+        disabled={busy}
+        style={{
+          width: '100%',
+          background: 'var(--surface-2)',
+          border: '1px solid var(--border)',
+          borderRadius: 8,
+          padding: '10px 12px',
+          color: 'var(--text)',
+          fontSize: 14,
+          fontFamily: 'inherit',
+          lineHeight: 1.5,
+          resize: 'vertical',
+          boxSizing: 'border-box',
+        }}
+      />
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          fontSize: 12,
+          color: 'var(--secondary)',
+          marginTop: 6,
+          marginBottom: 16,
+        }}
+      >
+        <span>
+          {reasonTooShort
+            ? `Минимум ${MIN_REASON_LENGTH} символов — учителю важно понять причину.`
+            : 'Учитель увидит этот текст.'}
+        </span>
+        <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+          {trimmedReason.length}/500
+        </span>
+      </div>
+
+      {err ? (
+        <p
+          style={{ color: 'var(--danger)', fontSize: 13, margin: 0, marginBottom: 12 }}
+        >
+          {err}
+        </p>
+      ) : null}
+
+      <Modal.Footer>
+        <Button variant="ghost" onClick={onClose} disabled={busy} type="button">
+          Не отменять
+        </Button>
+        <Button
+          variant="danger"
+          onClick={handleSubmit}
+          disabled={!canSubmit}
+          type="button"
+        >
+          {busy ? 'Отменяем…' : 'Отменить занятие'}
+        </Button>
+      </Modal.Footer>
+    </Modal>
   )
 }
