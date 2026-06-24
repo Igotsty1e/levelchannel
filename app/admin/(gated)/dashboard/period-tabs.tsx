@@ -9,6 +9,10 @@ const TABS: ReadonlyArray<{ key: PeriodKey; label: string }> = [
   { key: 'all', label: 'Всё время' },
 ]
 
+// Epic 7 sweep (2026-06-24): server component через <Link> — full arrow nav
+// требует client wrapper. Минимум: добавлен roving tabIndex (Tab фокусирует
+// только active), что улучшает sighted-keyboard UX. Full ArrowLeft/Right
+// поведение возможно через client wrapper в follow-up.
 export function PeriodTabs({ active }: { active: PeriodKey }) {
   return (
     <div
@@ -30,6 +34,7 @@ export function PeriodTabs({ active }: { active: PeriodKey }) {
             href={`/admin/dashboard?period=${t.key}`}
             role="tab"
             aria-selected={isActive}
+            tabIndex={isActive ? 0 : -1}
             style={{
               padding: '6px 12px',
               borderRadius: 8,
