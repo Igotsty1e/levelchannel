@@ -220,6 +220,34 @@ Each flow row carries:
 - **Automation status:** **e2e** (`tests/e2e/teacher-payments.spec.ts`)
 - **Notes:** Counts в tab anchors (`Ждут (N)`, `История (N)`) state-conditional — assert только substring `Ждут (` / `История (`, не точное число. qa-fixture seed: 1 unpaid learner (Дима Лебедев), 0 pending claims, 0 expiring packages.
 
+### FLOW-TEACHER-LESSONS-STATUS-CHANGE-001
+
+- **Area:** teacher / lesson-history
+- **Starting URL:** `/teacher/lessons?kind=lessons`
+- **Expected final URL:** `/teacher/lessons?kind=lessons`
+- **Allowed redirects:** none for verified teacher
+- **Forbidden redirects:** `/login`, `/cabinet`, `/teacher` без kind
+- **Required UI anchors:** `Прошедших занятий` (empty state hint), `За месяц` (period chip), `Все статусы` (filter dropdown)
+- **Forbidden UI anchors:** `booked`, `completed`, `no_show_learner`, `cancelled` (DB-slug leak); `Скоро будет`, `TODO`
+- **Role required:** teacher (+ verified + current SaaS-offer consent)
+- **Risk:** **Medium** (учительский журнал; ошибочное изменение статуса задевает биллинг через 48h gates, но gates на бэкенде защищают invariants)
+- **Automation status:** **e2e** (`tests/e2e/teacher-lessons-status-change.spec.ts`)
+- **Notes:** kebab-меню видно только на marked rows; для immutable/settled/accrued rows item disabled с tooltip. Backend endpoint: `POST /api/teacher/slots/[id]/change-status` (epic 2026-06-24, PR #729).
+
+### FLOW-TEACHER-DEALS-STATUS-CHANGE-001
+
+- **Area:** teacher / deals
+- **Starting URL:** `/teacher/lessons?kind=deals`
+- **Expected final URL:** `/teacher/lessons?kind=deals`
+- **Allowed redirects:** none for verified teacher
+- **Forbidden redirects:** `/login`, `/cabinet`, `/teacher` без kind
+- **Required UI anchors:** либо `Дел пока нет` (empty), либо `Активно` / `Выполнено` / `Отменено` (rendered list)
+- **Forbidden UI anchors:** `personal_event`, `completed`, `cancelled` (DB-slug leak)
+- **Role required:** teacher (+ verified + current SaaS-offer consent)
+- **Risk:** **Low** (нет billing, single-teacher resource; ошибочное изменение легко обратимо)
+- **Automation status:** **e2e** (`tests/e2e/teacher-lessons-status-change.spec.ts`)
+- **Notes:** kebab-меню для всех row статусов (нет gates для дел). Backend endpoint: `POST /api/teacher/personal-events/[id]/change-status` (epic 2026-06-24, PR #729).
+
 ### FLOW-TEACHER-UNVERIFIED-CABINET-001
 
 - **Area:** teacher / verify-email
