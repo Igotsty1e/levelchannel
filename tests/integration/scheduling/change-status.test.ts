@@ -59,11 +59,13 @@ async function seedBookedSlot(
   tariffId: string,
   startAtIso: string,
 ): Promise<{ id: string; updatedAt: string }> {
+  // snapshot_amount_kopecks обычно фиксируется триггером при booking
+  // (mig 0102 §d); в integration test ставим явно для воспроизводимости.
   const r = await getDbPool().query<{ id: string; updated_at: string }>(
     `insert into lesson_slots
        (teacher_account_id, learner_account_id, tariff_id, start_at, duration_minutes,
-        status, source, booked_at)
-       values ($1, $2, $3, $4::timestamptz, 60, 'booked', 'open_slot', now())
+        status, source, booked_at, snapshot_amount_kopecks)
+       values ($1, $2, $3, $4::timestamptz, 60, 'booked', 'open_slot', now(), 150000)
        returning id, updated_at`,
     [teacherId, learnerId, tariffId, startAtIso],
   )
@@ -221,6 +223,149 @@ describe('changeDealStatus (deal chain mutations)', () => {
     expect(audit.rows[0].to_status).toBe('completed')
     expect(audit.rows[0].learner_account_id).toBeNull()
     expect(audit.rows[0].notify_intent).toBe(false)
+  })
+})
+
+describe('changeLessonStatus (lesson chain mutations + past-only gate)', () => {
+  let teacherId: string
+  let learnerId: string
+  let tariffId: string
+  let slot: { id: string; updatedAt: string }
+
+  beforeEach(async () => {
+    teacherId = await ensureAccount(`teacher-${randomUUID()}@test.local`, 'teacher')
+    learnerId = await ensureAccount(`learner-${randomUUID()}@test.local`, 'learner')
+    tariffId = await seedTariff(teacherId)
+    const past = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    past.setSeconds(0, 0)
+    past.setMinutes(0)
+    slot = await seedBookedSlot(teacherId, learnerId, tariffId, past.toISOString())
+  })
+
+  afterEach(async () => {
+    await getDbPool().query(`delete from lesson_completions where slot_id = $1`, [slot.id])
+    await getDbPool().query(`delete from lesson_slots where id = $1`, [slot.id])
+    await getDbPool().query(`delete from pricing_tariffs where id = $1`, [tariffId])
+    await getDbPool().query(`delete from accounts where id in ($1, $2)`, [teacherId, learnerId])
+  })
+
+  it('booked → completed creates lesson_completions с snapshot amount', async () => {
+    const r = await changeLessonStatus({
+      slotId: slot.id,
+      teacherAccountId: teacherId,
+      toStatus: 'completed',
+      expectedUpdatedAt: slot.updatedAt,
+      notifyIntent: false,
+    })
+    expect(r.ok).toBe(true)
+    const completion = await getDbPool().query<{
+      was_no_show: boolean
+      amount_kopecks: number
+    }>(`select was_no_show, amount_kopecks from lesson_completions where slot_id = $1`, [slot.id])
+    expect(completion.rows.length).toBe(1)
+    expect(completion.rows[0].was_no_show).toBe(false)
+    expect(completion.rows[0].amount_kopecks).toBe(150000)
+    const slotRow = await getDbPool().query<{ status: string }>(
+      `select status from lesson_slots where id = $1`,
+      [slot.id],
+    )
+    expect(slotRow.rows[0].status).toBe('completed')
+  })
+
+  it('booked → no_show_learner sets was_no_show=true', async () => {
+    const r = await changeLessonStatus({
+      slotId: slot.id,
+      teacherAccountId: teacherId,
+      toStatus: 'no_show_learner',
+      expectedUpdatedAt: slot.updatedAt,
+      notifyIntent: false,
+    })
+    expect(r.ok).toBe(true)
+    const completion = await getDbPool().query<{ was_no_show: boolean }>(
+      `select was_no_show from lesson_completions where slot_id = $1`,
+      [slot.id],
+    )
+    expect(completion.rows[0].was_no_show).toBe(true)
+  })
+
+  it('completed → no_show_learner toggles was_no_show', async () => {
+    const c = await changeLessonStatus({
+      slotId: slot.id,
+      teacherAccountId: teacherId,
+      toStatus: 'completed',
+      expectedUpdatedAt: slot.updatedAt,
+      notifyIntent: false,
+    })
+    expect(c.ok).toBe(true)
+    const next = c.ok ? c.newUpdatedAt : ''
+    const r = await changeLessonStatus({
+      slotId: slot.id,
+      teacherAccountId: teacherId,
+      toStatus: 'no_show_learner',
+      expectedUpdatedAt: next,
+      notifyIntent: false,
+    })
+    expect(r.ok).toBe(true)
+    const completion = await getDbPool().query<{ was_no_show: boolean }>(
+      `select was_no_show from lesson_completions where slot_id = $1`,
+      [slot.id],
+    )
+    expect(completion.rows[0].was_no_show).toBe(true)
+    const slotRow = await getDbPool().query<{ status: string }>(
+      `select status from lesson_slots where id = $1`,
+      [slot.id],
+    )
+    expect(slotRow.rows[0].status).toBe('no_show_learner')
+  })
+
+  it('no_show_learner → booked удаляет completion (REVERSE trigger)', async () => {
+    const c = await changeLessonStatus({
+      slotId: slot.id,
+      teacherAccountId: teacherId,
+      toStatus: 'no_show_learner',
+      expectedUpdatedAt: slot.updatedAt,
+      notifyIntent: false,
+    })
+    expect(c.ok).toBe(true)
+    const next = c.ok ? c.newUpdatedAt : ''
+    const r = await changeLessonStatus({
+      slotId: slot.id,
+      teacherAccountId: teacherId,
+      toStatus: 'booked',
+      expectedUpdatedAt: next,
+      notifyIntent: false,
+    })
+    expect(r.ok).toBe(true)
+    const completion = await getDbPool().query(
+      `select id from lesson_completions where slot_id = $1`,
+      [slot.id],
+    )
+    expect(completion.rows.length).toBe(0)
+    const slotRow = await getDbPool().query<{ status: string }>(
+      `select status from lesson_slots where id = $1`,
+      [slot.id],
+    )
+    expect(slotRow.rows[0].status).toBe('booked')
+  })
+
+  it('future slot rejects с not_yet_ended', async () => {
+    const future = new Date(Date.now() + 2 * 60 * 60 * 1000)
+    future.setSeconds(0, 0)
+    future.setMinutes(0)
+    const futureSlot = await seedBookedSlot(teacherId, learnerId, tariffId, future.toISOString())
+    try {
+      const r = await changeLessonStatus({
+        slotId: futureSlot.id,
+        teacherAccountId: teacherId,
+        toStatus: 'no_show_teacher',
+        expectedUpdatedAt: futureSlot.updatedAt,
+        notifyIntent: false,
+      })
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.reason).toBe('not_yet_ended')
+    } finally {
+      await getDbPool().query(`delete from lesson_slots where id = $1`, [futureSlot.id])
+    }
   })
 })
 

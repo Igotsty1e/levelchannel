@@ -207,6 +207,15 @@ export function LessonHistoryClient({
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
+        // B-4 fix: на 409 stale закрываем модалку и refetchим — иначе
+        // повторный submit с тем же expectedUpdatedAt → infinite loop.
+        if (res.status === 409) {
+          setErr('Кто-то уже изменил статус. Обновляем…')
+          setPendingChange(null)
+          setChangeBusy(false)
+          await refresh()
+          return
+        }
         setErr(data?.message ?? 'Не удалось изменить статус.')
         setChangeBusy(false)
         return

@@ -105,6 +105,14 @@ export function DealsSection() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
+        // B-4 fix: на 409 stale закрываем модалку и refetchим.
+        if (res.status === 409) {
+          setErr('Кто-то уже изменил статус. Обновляем…')
+          setPendingChange(null)
+          setChangeBusy(false)
+          await refresh()
+          return
+        }
         setErr(data?.message ?? 'Не удалось изменить статус.')
         setChangeBusy(false)
         return
@@ -126,13 +134,9 @@ export function DealsSection() {
     )
   }
 
-  if (err) {
-    return (
-      <section className="lc-section">
-        <p style={{ color: 'var(--danger)', fontSize: 13 }}>{err}</p>
-      </section>
-    )
-  }
+  // B-4 fix: ошибка показывается inline под list (см. ниже в return),
+  // НЕ заменяет весь список через early return — раньше при 409 stale
+  // весь список дел исчезал.
 
   if (rows.length === 0) {
     return (
@@ -141,6 +145,9 @@ export function DealsSection() {
           title="Дел пока нет"
           body="Добавьте дело из календаря — оно появится здесь, когда выполните или отмените."
         />
+        {err ? (
+          <p style={{ color: 'var(--danger)', fontSize: 13, marginTop: 8 }}>{err}</p>
+        ) : null}
       </section>
     )
   }
