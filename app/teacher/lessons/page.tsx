@@ -113,6 +113,9 @@ export default async function TeacherLessonsPage({
       tariffAmountKopecks: r.tariffAmountKopecks ?? null,
       isMarked: r.isMarked,
       paymentStatus: r.paymentStatus,
+      // teacher-lessons-edit-status epic (2026-06-24) — для kebab UI.
+      updatedAt: r.updatedAt,
+      canEdit: r.canEdit,
     }))
     panel = (
       <LessonHistoryClient
