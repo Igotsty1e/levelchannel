@@ -153,6 +153,11 @@ function errorResponse(reason: string) {
         { error: 'accrued', message: 'По уроку уже начислена выплата — статус нельзя изменить.' },
         { status: 409, headers: NO_STORE },
       )
+    case 'not_yet_ended':
+      return NextResponse.json(
+        { error: 'not_yet_ended', message: 'Занятие ещё не закончилось — статус можно менять только постфактум.' },
+        { status: 422, headers: NO_STORE },
+      )
     case 'missing_snapshot':
       return NextResponse.json(
         { error: 'missing_snapshot', message: 'У слота нет тарифного снимка для расчёта оплаты.' },

@@ -54,6 +54,7 @@ export type ChangeLessonStatusResult =
         | 'accrued'
         | 'missing_snapshot'
         | 'invalid_transition'
+        | 'not_yet_ended'
     }
 
 export type ChangeDealStatusResult =
@@ -87,6 +88,8 @@ type SlotRow = {
   updated_at: string
   tariff_id: string | null
   duration_minutes: number
+  start_at: string
+  snapshot_amount_kopecks: number | null
 }
 
 type CompletionRow = {
@@ -106,7 +109,7 @@ export async function changeLessonStatus(
 
     // Step 1: pre-read для learner_account_id (нужен для advisory key).
     const pre = await client.query<SlotRow>(
-      `select id, teacher_account_id, learner_account_id, status, source, updated_at, tariff_id, duration_minutes
+      `select id, teacher_account_id, learner_account_id, status, source, updated_at, tariff_id, duration_minutes, start_at, snapshot_amount_kopecks
          from lesson_slots where id = $1`,
       [input.slotId],
     )
@@ -141,14 +144,25 @@ export async function changeLessonStatus(
 
     // Step 3: SELECT FOR UPDATE + stale check.
     const lock = await client.query<SlotRow>(
-      `select id, teacher_account_id, learner_account_id, status, source, updated_at, tariff_id, duration_minutes
+      `select id, teacher_account_id, learner_account_id, status, source, updated_at, tariff_id, duration_minutes, start_at, snapshot_amount_kopecks
          from lesson_slots where id = $1 for update`,
       [input.slotId],
     )
     const row = lock.rows[0]
-    if (new Date(row.updated_at).toISOString() !== new Date(input.expectedUpdatedAt).toISOString()) {
+    if (isoSeconds(row.updated_at) !== isoSeconds(input.expectedUpdatedAt)) {
       await client.query('rollback')
       return { ok: false, reason: 'stale' }
+    }
+
+    // B-3 fix: past-only gate. Match с existing markLessonCompleted
+    // semantics (lib/teacher-ledger/mark-lesson-completed.ts:120-125).
+    // change-status позиционирован как «изменить статус прошлого занятия»;
+    // future slot не должен принимать any transition (e.g. booked → no_show_teacher).
+    const endMs =
+      new Date(row.start_at).getTime() + Number(row.duration_minutes) * 60_000
+    if (Date.now() < endMs) {
+      await client.query('rollback')
+      return { ok: false, reason: 'not_yet_ended' }
     }
 
     const fromStatus = row.status as LessonTargetStatus
@@ -201,6 +215,8 @@ export async function changeLessonStatus(
       learnerId: row.learner_account_id!,
       tariffId: row.tariff_id,
       durationMinutes: row.duration_minutes,
+      snapshotAmountKopecks: row.snapshot_amount_kopecks,
+      completedAtIso: new Date(endMs).toISOString(),
       fromStatus,
       toStatus: input.toStatus,
       completionRow,
@@ -253,12 +269,23 @@ async function applyLessonChainInTx(
     learnerId: string
     tariffId: string | null
     durationMinutes: number
+    snapshotAmountKopecks: number | null
+    completedAtIso: string
     fromStatus: LessonTargetStatus
     toStatus: LessonTargetStatus
     completionRow: CompletionRow | null
   },
 ): Promise<ApplyChainResult> {
-  const { fromStatus, toStatus, slotId, teacherId, learnerId, tariffId, durationMinutes, completionRow } = args
+  const {
+    fromStatus,
+    toStatus,
+    slotId,
+    teacherId,
+    tariffId,
+    snapshotAmountKopecks,
+    completedAtIso,
+    completionRow,
+  } = args
 
   // Transition matrix (см. plan §What can change для уроков):
 
@@ -314,32 +341,32 @@ async function applyLessonChainInTx(
   }
 
   // booked → completed/no_show_learner: INSERT lesson_completions. Forward
-  // trigger переключит slot.status. Snapshot copy из slot row.
+  // trigger переключит slot.status. Match canonical writer schema
+  // (lib/teacher-ledger/mark-lesson-completed.ts:141-149): columns
+  // (slot_id, teacher_id, was_no_show, amount_kopecks, completed_at,
+  // marked_by_account_id) — NO learner_id/duration_minutes/tariff_id.
+  // amount_kopecks из slot snapshot, completed_at = slot end (start_at + duration).
   if (
     fromStatus === 'booked' &&
     (toStatus === 'completed' || toStatus === 'no_show_learner')
   ) {
-    if (!tariffId) return { ok: false, reason: 'missing_snapshot' }
-    // amount_kopecks читаем из pricing_tariffs (по образцу mark-lesson-completed).
-    const tariff = await client.query<{ amount_kopecks: number | null }>(
-      `select amount_kopecks from pricing_tariffs where id = $1`,
-      [tariffId],
-    )
-    const amount = tariff.rows[0]?.amount_kopecks ?? null
-    if (amount == null) return { ok: false, reason: 'missing_snapshot' }
+    // Match mark-lesson-completed.ts:127-132 contract: tariff_id set
+    // but snapshot missing — corrupt state, surface loudly.
+    if (snapshotAmountKopecks == null && tariffId != null) {
+      return { ok: false, reason: 'missing_snapshot' }
+    }
+    const amount = snapshotAmountKopecks ?? 0
     await client.query(
       `insert into lesson_completions
-        (slot_id, teacher_id, learner_id, was_no_show, amount_kopecks,
-         duration_minutes, tariff_id, marked_by_account_id, completed_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $2, now())`,
+        (slot_id, teacher_id, was_no_show, amount_kopecks,
+         completed_at, marked_by_account_id)
+       values ($1, $2, $3, $4, $5::timestamptz, $2)`,
       [
         slotId,
         teacherId,
-        learnerId,
         toStatus === 'no_show_learner',
         amount,
-        durationMinutes,
-        tariffId,
+        completedAtIso,
       ],
     )
     // Forward trigger ставит slot.status автоматом, но marked_at — нет.
@@ -373,13 +400,10 @@ async function applyLessonChainInTx(
     fromStatus === 'no_show_teacher' &&
     (toStatus === 'completed' || toStatus === 'no_show_learner')
   ) {
-    if (!tariffId) return { ok: false, reason: 'missing_snapshot' }
-    const tariff = await client.query<{ amount_kopecks: number | null }>(
-      `select amount_kopecks from pricing_tariffs where id = $1`,
-      [tariffId],
-    )
-    const amount = tariff.rows[0]?.amount_kopecks ?? null
-    if (amount == null) return { ok: false, reason: 'missing_snapshot' }
+    if (snapshotAmountKopecks == null && tariffId != null) {
+      return { ok: false, reason: 'missing_snapshot' }
+    }
+    const amount = snapshotAmountKopecks ?? 0
     // Сначала status='booked' чтобы forward trigger смог перевести в target.
     await client.query(
       `update lesson_slots set status = 'booked', marked_at = null where id = $1`,
@@ -387,17 +411,15 @@ async function applyLessonChainInTx(
     )
     await client.query(
       `insert into lesson_completions
-        (slot_id, teacher_id, learner_id, was_no_show, amount_kopecks,
-         duration_minutes, tariff_id, marked_by_account_id, completed_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $2, now())`,
+        (slot_id, teacher_id, was_no_show, amount_kopecks,
+         completed_at, marked_by_account_id)
+       values ($1, $2, $3, $4, $5::timestamptz, $2)`,
       [
         slotId,
         teacherId,
-        learnerId,
         toStatus === 'no_show_learner',
         amount,
-        durationMinutes,
-        tariffId,
+        completedAtIso,
       ],
     )
     await client.query(
