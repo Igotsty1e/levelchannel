@@ -1,7 +1,7 @@
 # Edit lesson + deal status in past — undo / re-mark
 
 **Date:** 2026-06-24
-**Status:** PLAN — awaiting `/codex-paranoia plan` SIGN-OFF
+**Status:** SHIPPED 2026-06-24. PR #729 backend + #732 UI + #733 E2E + #734 hotfix (4 BLOCKERs от wave round 1). Codex-paranoia plan ESCALATED round 3/3 (in-plan fixes), wave SIGN-OFF round 2/3.
 **Owner:** Claude
 
 ## Context
