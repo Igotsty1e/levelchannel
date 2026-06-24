@@ -47,7 +47,11 @@ export function Banner({ tone = 'info', icon, action, children }: BannerProps) {
         color: 'var(--text)',
         fontSize: 14,
         lineHeight: 1.5,
-        marginBottom: 16,
+        // Epic 6 (2026-06-24): убрали marginBottom: 16 — анти-паттерн.
+        // Компонент не должен диктовать spacing от parent'а; правильный
+        // spacing задаётся через .lc-stack-* utility или gap parent'а.
+        // 26 call-sites refactored to add explicit margin where stack
+        // utility отсутствует (см. spacing-system-foundation epic).
       }}
     >
       {icon ? (
