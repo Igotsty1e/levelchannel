@@ -4,6 +4,10 @@ Plans below have all merged to main. Detail in each file's body; this index is t
 
 Active plan-doc work (not yet shipped) lives in `docs/plans/*.md` without an entry here.
 
+## 2026-06-24 teacher-lessons-edit-status epic (4 PRs)
+
+- **`teacher-lessons-edit-status-2026-06-24.md`** — owner-ask: дать учителю возможность изменить статус прошедшего урока/дела через kebab меню. 3 sub-PRs + 1 epic-end hotfix. PR #729 backend (mig 0141 + change-status mutations + 2 endpoints + 7 integration tests) → PR #732 UI (StatusChangeMenu + StatusChangeConfirmModal + integration + SQL read-model) → PR #733 E2E + evals → **#734 epic-end hotfix** (4 BLOCKERs от wave round 1: INSERT columns битый, snapshot vs live invariant, past-only gate missing, 409 stale infinite loop). Status: SHIPPED 2026-06-24. Codex-Paranoia: plan ESCALATED round 3/3 (in-plan fixes), wave SIGN-OFF round 2/3. Prod canary verified SHA 408092a + kebab + popover работают. 3 WARN остались как out-of-scope follow-up (race-window seconds-precision, E2E weak, notification stub).
+
 ## 2026-06-22/23 teacher-payments design polish epic (Epic 1+4+2 + 2 hotfixes, 6+2 PRs)
 
 - **`teacher-payments-design-MASTER-ROADMAP-2026-06-22.md`** — master roadmap. Epic decomposition: Epic 1 spacing foundation (#719) + Epic 4 ChipGroup primitive evolution (#720) + Epic 2 teacher-payments-design-polish (#721/#722/#723/#724). Status: SHIPPED 2026-06-22/23.
