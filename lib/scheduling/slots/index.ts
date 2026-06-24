@@ -153,7 +153,12 @@ export {
 } from './types'
 
 // teacher-lessons-edit-status epic (2026-06-24) — chain status mutations.
-export { changeDealStatus, changeLessonStatus } from './change-status'
+export {
+  changeDealStatus,
+  changeLessonStatus,
+  isStatusChangeNotifyRateLimited,
+  markAuditNotifyDispatched,
+} from './change-status'
 export type {
   ChangeDealStatusInput,
   ChangeDealStatusResult,

@@ -191,6 +191,49 @@ async function main() {
     out.slots = slotIds
     console.log(`  created 3 slots (1 future-open + 2 past-booked)`)
 
+    // teacher-lessons-edit-status WARN #2 closure (2026-06-24):
+    // добавляем 1 past completed lesson (с lesson_completions row, NOT
+    // settled, NOT accrued — kebab должен быть enabled) + 1 past
+    // personal_event slot (completed). Это даёт e2e spec материал для
+    // проверки kebab menu visibility.
+    const pastCompletedDay = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000)
+    pastCompletedDay.setUTCHours(10, 0, 0, 0)
+    const completedSlotInsert = await pool.query(
+      `insert into lesson_slots
+         (teacher_account_id, start_at, duration_minutes, status,
+          snapshot_amount_kopecks, tariff_id, learner_account_id, booked_at, marked_at)
+       values ($1, $2, 60, 'completed', 150000, $3, $4, now() - interval '2 days', now() - interval '1 day')
+       returning id`,
+      [out.teacher.accountId, pastCompletedDay.toISOString(), tariffId, out.learner.accountId],
+    )
+    const completedSlotId = String(completedSlotInsert.rows[0].id)
+    // lesson_completions FORWARD trigger ставит slot.status — мы уже
+    // создали slot с status='completed', а трigger ставит status в INSERT-time
+    // на 'completed' если status был 'booked'. Создаём row напрямую.
+    await pool.query(
+      `insert into lesson_completions
+         (slot_id, teacher_id, was_no_show, amount_kopecks, completed_at, marked_by_account_id)
+       values ($1, $2, false, 150000, now() - interval '1 day', $2)`,
+      [completedSlotId, out.teacher.accountId],
+    )
+    slotIds.push(completedSlotId)
+
+    // Personal event (дело) — terminal completed status.
+    const pastDealDay = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
+    pastDealDay.setUTCHours(11, 0, 0, 0)
+    const dealInsert = await pool.query(
+      `insert into lesson_slots
+         (teacher_account_id, start_at, duration_minutes, status, source,
+          personal_event_title, marked_at)
+       values ($1, $2, 60, 'completed', 'personal_event',
+               'QA fixture deal', now() - interval '3 days')
+       returning id`,
+      [out.teacher.accountId, pastDealDay.toISOString()],
+    )
+    slotIds.push(String(dealInsert.rows[0].id))
+    out.slots = slotIds
+    console.log(`  created 2 more slots (1 past-completed-lesson + 1 past-completed-deal)`)
+
     mkdirSync(dirname(FIXTURE_FILE), { recursive: true })
     writeFileSync(
       FIXTURE_FILE,

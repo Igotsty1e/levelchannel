@@ -304,6 +304,22 @@ export function renderLessonEventEmail(
           `Кабинет: ${p.cabinetUrl}\n\n— LevelChannel`,
       }
     }
+    case 'LessonStatusChangedByTeacher': {
+      const when = formatRu(p.slotStartAtIso)
+      return {
+        subject: `Учитель изменил статус занятия ${when}`,
+        html:
+          `<p>Здравствуйте, ${escapeHtml(p.recipientDisplayName)}.</p>` +
+          `<p>${escapeHtml(p.actorDisplayName)} изменил статус занятия ${when}.</p>` +
+          `<p>Если это ошибка — свяжитесь с учителем напрямую.</p>` +
+          `<p>Кабинет: <a href="${escapeHtml(p.cabinetUrl)}">${escapeHtml(p.cabinetUrl)}</a></p>` +
+          `<p>— LevelChannel</p>`,
+        text:
+          `${p.actorDisplayName} изменил статус занятия ${when}.\n` +
+          `Если это ошибка — свяжитесь с учителем напрямую.\n\n` +
+          `Кабинет: ${p.cabinetUrl}\n\n— LevelChannel`,
+      }
+    }
   }
 }
 
@@ -387,6 +403,12 @@ export function renderLessonEventTelegram(kind: LessonEventKind, p: RenderInput)
     case 'LessonMarkedNoShowByTeacher':
       return (
         `⚠️ Учитель отметил, что вы не пришли на занятие ${when}\\.\n` +
+        `Если это ошибка — свяжитесь с учителем напрямую\\.\n` +
+        `Кабинет: ${cabinetUrl}`
+      )
+    case 'LessonStatusChangedByTeacher':
+      return (
+        `📝 Учитель изменил статус занятия ${when}\\.\n` +
         `Если это ошибка — свяжитесь с учителем напрямую\\.\n` +
         `Кабинет: ${cabinetUrl}`
       )

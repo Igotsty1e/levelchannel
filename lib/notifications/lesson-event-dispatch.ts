@@ -36,6 +36,7 @@ export type LessonEventKind =
   | 'LessonMarkedPaidByTeacher'
   | 'LessonMarkedCompleteByTeacher'
   | 'LessonMarkedNoShowByTeacher'
+  | 'LessonStatusChangedByTeacher'
   | 'PaymentClaimConfirmed'
   | 'PaymentClaimDeclined'
   | 'PaymentRefundIssued'
