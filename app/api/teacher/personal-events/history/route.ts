@@ -27,6 +27,9 @@ export async function GET(request: Request) {
         status: s.status,
         title: s.personalEventTitle ?? '',
         body: s.personalEventBody ?? null,
+        // teacher-lessons-edit-status epic (2026-06-24) — для kebab UI.
+        // Деla не billable; canEdit всегда true. updatedAt → 409 stale check.
+        updatedAt: s.updatedAt,
       })),
     },
     { headers: NO_STORE },
