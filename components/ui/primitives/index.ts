@@ -37,3 +37,6 @@ export type { TimePickerProps } from './time-picker'
 export { CollapsibleCard } from './collapsible-card'
 
 export { Checkbox } from './checkbox'
+
+export { Modal } from './modal'
+export type { ModalProps, ModalSize } from './modal'
