@@ -11,8 +11,11 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { Button, EmptyState, Pill } from '@/components/ui/primitives'
+import { StatusChangeConfirmModal } from './status-change-confirm-modal'
+import { StatusChangeMenu, type LessonTargetStatus } from './status-change-menu'
 
 type PaymentStatus = 'paid_package' | 'paid_direct' | 'unpaid' | null
+type CanEditReason = 'immutable' | 'settled' | 'accrued' | null
 
 type Row = {
   id: string
@@ -24,6 +27,9 @@ type Row = {
   tariffAmountKopecks?: number | null
   isMarked: boolean
   paymentStatus?: PaymentStatus
+  // teacher-lessons-edit-status epic (2026-06-24) — для kebab UI.
+  updatedAt?: string
+  canEdit?: { edit: boolean; reason: CanEditReason }
 }
 
 type Learner = { id: string; label: string }
@@ -108,6 +114,14 @@ export function LessonHistoryClient({
   const [learnerFilter, setLearnerFilter] = useState<string>('')
   const [unmarkedOnly, setUnmarkedOnly] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+
+  // teacher-lessons-edit-status epic (2026-06-24) — state для confirm modal.
+  const [pendingChange, setPendingChange] = useState<{
+    row: Row
+    toStatus: LessonTargetStatus
+  } | null>(null)
+  const [notifyLearner, setNotifyLearner] = useState(false)
+  const [changeBusy, setChangeBusy] = useState(false)
   // wave-paranoia 2026-06-19: AbortController защищает от race — старый
   // ответ не перезатирает rows если пользователь быстро поменял фильтры.
   const inflightRef = useRef<AbortController | null>(null)
@@ -168,6 +182,42 @@ export function LessonHistoryClient({
       return
     }
     await refresh()
+  }
+
+  // teacher-lessons-edit-status epic — пользователь выбрал в kebab targets.
+  function openConfirm(row: Row, toStatus: LessonTargetStatus) {
+    setNotifyLearner(false)
+    setErr(null)
+    setPendingChange({ row, toStatus })
+  }
+
+  async function submitChange() {
+    if (!pendingChange) return
+    const { row, toStatus } = pendingChange
+    setChangeBusy(true)
+    try {
+      const res = await fetch(`/api/teacher/slots/${row.id}/change-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: toStatus,
+          expectedUpdatedAt: row.updatedAt,
+          notifyLearner,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setErr(data?.message ?? 'Не удалось изменить статус.')
+        setChangeBusy(false)
+        return
+      }
+      setPendingChange(null)
+      setChangeBusy(false)
+      await refresh()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Не удалось изменить статус.')
+      setChangeBusy(false)
+    }
   }
 
   const csvHref = `/api/teacher/lessons/export.csv?${buildQs().toString()}`
@@ -314,6 +364,17 @@ export function LessonHistoryClient({
                         </Button>
                       </>
                     ) : null}
+                    {/* teacher-lessons-edit-status epic (2026-06-24) — kebab
+                        для marked rows (исключая cancelled). updatedAt
+                        обязателен для 409 stale check. */}
+                    {!canMark && row.status !== 'cancelled' && row.updatedAt ? (
+                      <StatusChangeMenu
+                        kind="lesson"
+                        currentStatus={row.status as LessonTargetStatus | 'cancelled'}
+                        canEdit={row.canEdit ?? { edit: true, reason: null }}
+                        onSelect={(target) => openConfirm(row, target)}
+                      />
+                    ) : null}
                   </span>
                 </li>
               )
@@ -321,6 +382,29 @@ export function LessonHistoryClient({
           </ul>
         )}
       </section>
+
+      {pendingChange ? (
+        <StatusChangeConfirmModal
+          kind="lesson"
+          subject={
+            pendingChange.row.learnerAccountId
+              ? learnerLabels[pendingChange.row.learnerAccountId] ?? 'Ученик'
+              : 'Ученик'
+          }
+          startAtFormatted={`${formatDate(pendingChange.row.startAt)} · ${pendingChange.row.durationMinutes} мин`}
+          fromLabel={statusLabel(pendingChange.row.status, pendingChange.row.paymentStatus).label}
+          toLabel={statusLabel(pendingChange.toStatus, pendingChange.row.paymentStatus).label}
+          toStatus={pendingChange.toStatus}
+          paymentStatus={pendingChange.row.paymentStatus ?? null}
+          busy={changeBusy}
+          notifyLearner={notifyLearner}
+          onNotifyChange={setNotifyLearner}
+          onConfirm={() => void submitChange()}
+          onCancel={() => {
+            if (!changeBusy) setPendingChange(null)
+          }}
+        />
+      ) : null}
     </>
   )
 }
