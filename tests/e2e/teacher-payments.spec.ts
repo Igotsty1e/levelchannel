@@ -114,4 +114,49 @@ test.describe('FLOW-TEACHER-PAYMENTS-001', () => {
       }
     }
   })
+
+  test('width consistency — KindRoutingCards row и PaymentsSection cards равной ширины', async ({
+    page,
+    context,
+  }) => {
+    // 2026-06-24 layout regression test: до фикса в PaymentsSection
+    // был inline `maxWidth: 880`, тогда как outer page wrapper
+    // `<div lc-stack-section>` 980px. Visual mismatch caught owner.
+    // Этот test pins width consistency между sibling row containers.
+    if (!fixtures) throw new Error('fixtures missing (skip bypassed)')
+    const url = new URL(getCookieUrl())
+    await context.addCookies([
+      {
+        name: SESSION_COOKIE_NAME,
+        value: fixtures.teacher.cookieValue,
+        domain: url.hostname,
+        path: '/',
+        httpOnly: true,
+        secure: false,
+        sameSite: 'Lax',
+        expires: Math.floor(new Date(fixtures.teacher.expiresAt).getTime() / 1000),
+      },
+    ])
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const response = await page.goto('/teacher/lessons?kind=payments')
+    expect(response?.status()).toBe(200)
+
+    const widths = await page.evaluate(() => {
+      const tablist = document.querySelector('[aria-label="Разделы занятий"]')
+      const section = document.querySelector('section.lc-stack-card')
+      return {
+        tablist: tablist ? Math.round(tablist.getBoundingClientRect().width) : -1,
+        section: section ? Math.round(section.getBoundingClientRect().width) : -1,
+      }
+    })
+
+    expect(widths.tablist, 'KindRoutingCards tablist rendered').toBeGreaterThan(0)
+    expect(widths.section, 'PaymentsSection card rendered').toBeGreaterThan(0)
+    // Tolerance 4px — scrollbar / border rounding не должны давать
+    // больше расхождения. До фикса diff был ~100px.
+    expect(
+      Math.abs(widths.tablist - widths.section),
+      `width difference: tablist ${widths.tablist}px vs section ${widths.section}px`,
+    ).toBeLessThanOrEqual(4)
+  })
 })

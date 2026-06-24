@@ -69,11 +69,13 @@ export async function PaymentsSection({ teacherAccountId }: Props) {
   const confirmedSum = confirmedThisMonth.reduce((acc, c) => acc + c.amountKopecks, 0)
   const pendingSum = pendingClaims.reduce((acc, c) => acc + c.amountKopecks, 0)
 
+  // 2026-06-24 width fix — убрали `maxWidth: 880` чтобы section
+  // inherited 980 от outer page wrapper (`<div lc-stack-section
+  // maxWidth: 980>`). Раньше PaymentsSection был ~100px уже чем
+  // KindRoutingCards row выше — visible inconsistency caught by
+  // owner.
   return (
-    <section
-      className="lc-stack-card"
-      style={{ maxWidth: 880, marginInline: 'auto' }}
-    >
+    <section className="lc-stack-card">
       <div
         style={{
           display: 'flex',
