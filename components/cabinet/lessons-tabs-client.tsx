@@ -6,6 +6,8 @@
 
 import { useRouter, useSearchParams } from 'next/navigation'
 
+import { useTablistKeyboard } from '@/lib/util/use-tablist-keyboard'
+
 type Props = {
   active: 'history' | 'payments'
   historyCount: number
@@ -30,10 +32,19 @@ export function LessonsTabsClient({
     router.push(qs ? `/cabinet/lessons?${qs}` : '/cabinet/lessons')
   }
 
+  // Epic 7 (2026-06-24) — roving tabIndex + arrow keys.
+  const tabs: Array<'history' | 'payments'> = ['history', 'payments']
+  const { tabProps, onKeyDown } = useTablistKeyboard({
+    activeIndex: tabs.indexOf(active),
+    count: tabs.length,
+    onActivate: (i) => setTab(tabs[i]),
+  })
+
   return (
     <div
       role="tablist"
       aria-label="Содержимое страницы занятий"
+      onKeyDown={onKeyDown}
       style={{
         display: 'inline-flex',
         gap: 4,
@@ -45,40 +56,41 @@ export function LessonsTabsClient({
       }}
     >
       <TabBtn
-        active={active === 'history'}
         onClick={() => setTab('history')}
         label="История"
         count={historyCount}
+        a11y={tabProps(0)}
       />
       <TabBtn
-        active={active === 'payments'}
         onClick={() => setTab('payments')}
         label="Оплаты"
         count={paymentsCount}
         badge={pendingCount > 0 ? pendingCount : null}
+        a11y={tabProps(1)}
       />
     </div>
   )
 }
 
 function TabBtn({
-  active,
   onClick,
   label,
   count,
   badge,
+  a11y,
 }: {
-  active: boolean
   onClick: () => void
   label: string
   count: number
   badge?: number | null
+  a11y: ReturnType<ReturnType<typeof useTablistKeyboard>['tabProps']>
 }) {
+  const active = a11y['aria-selected']
   return (
     <button
       type="button"
-      role="tab"
-      aria-selected={active}
+      {...a11y}
+      ref={a11y.ref as React.Ref<HTMLButtonElement>}
       onClick={onClick}
       style={{
         padding: '8px 16px',

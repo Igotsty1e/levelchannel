@@ -11,6 +11,7 @@
 
 import { useRouter } from 'next/navigation'
 
+import { useTablistKeyboard } from '@/lib/util/use-tablist-keyboard'
 import type { LessonsKind } from '@/lib/teacher/lessons-kind'
 
 export type { LessonsKind } from '@/lib/teacher/lessons-kind'
@@ -19,8 +20,11 @@ type Props = {
   activeKind: LessonsKind
 }
 
+const KINDS: LessonsKind[] = ['lessons', 'deals', 'payments']
+
 export function KindRoutingCards({ activeKind }: Props) {
   const router = useRouter()
+  const activeIndex = KINDS.indexOf(activeKind)
 
   function switchTo(kind: LessonsKind) {
     if (kind === activeKind) return
@@ -30,11 +34,20 @@ export function KindRoutingCards({ activeKind }: Props) {
     router.replace(qs ? `?${qs}` : '/teacher/lessons')
   }
 
+  // Epic 7 (2026-06-24): keyboard nav — стрелки Left/Right/Home/End
+  // перемещают фокус и активируют tab (auto-activate WAI-ARIA pattern).
+  const { tabProps, onKeyDown } = useTablistKeyboard({
+    activeIndex,
+    count: KINDS.length,
+    onActivate: (i) => switchTo(KINDS[i]),
+  })
+
   return (
     <div
       role="tablist"
       aria-label="Разделы занятий"
       data-testid="lessons-kind-cards"
+      onKeyDown={onKeyDown}
       style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
@@ -45,22 +58,22 @@ export function KindRoutingCards({ activeKind }: Props) {
         kind="lessons"
         title="Уроки"
         subtitle="История и фильтры"
-        active={activeKind === 'lessons'}
         onClick={() => switchTo('lessons')}
+        a11y={tabProps(0)}
       />
       <Card
         kind="deals"
         title="Дела"
         subtitle="Личные события в календаре"
-        active={activeKind === 'deals'}
         onClick={() => switchTo('deals')}
+        a11y={tabProps(1)}
       />
       <Card
         kind="payments"
         title="Оплаты"
         subtitle="Заявки, оплаты, возвраты"
-        active={activeKind === 'payments'}
         onClick={() => switchTo('payments')}
+        a11y={tabProps(2)}
       />
     </div>
   )
@@ -70,24 +83,21 @@ type CardProps = {
   kind: LessonsKind
   title: string
   subtitle: string
-  active: boolean
   onClick: () => void
+  a11y: ReturnType<ReturnType<typeof useTablistKeyboard>['tabProps']>
 }
 
-function Card({ kind, title, subtitle, active, onClick }: CardProps) {
-  // 2026-06-22 Epic 2 PR-1b:
-  // B-5: <button role="tab" aria-selected> вместо <button> в <nav>.
-  //      Согласовано с existing pattern в lessons-tabs-client.tsx. БЕЗ
-  //      aria-controls/tabpanel — page server-branches и рендерит ОДИН
-  //      panel per URL (2 другие tab указали бы на non-existent ids).
-  // H-13: var(--surface) (legacy per design-system §3.1) → var(--surface-1).
-  //       Raw rgba fallback на --accent-soft удалён — используем
-  //       --accent-bg + --accent-bg-strong tokens напрямую.
+function Card({ kind, title, subtitle, onClick, a11y }: CardProps) {
+  // 2026-06-22 Epic 2 PR-1b + 2026-06-24 Epic 7 a11y:
+  // role/aria-selected/tabIndex/ref приходят из useTablistKeyboard через a11y prop.
+  // Keyboard navigation (стрелки Left/Right/Home/End) обрабатывается parent
+  // tablist через onKeyDown.
+  const active = a11y['aria-selected']
   return (
     <button
       type="button"
-      role="tab"
-      aria-selected={active}
+      {...a11y}
+      ref={a11y.ref as React.Ref<HTMLButtonElement>}
       onClick={onClick}
       data-kind={kind}
       data-active={active ? 'true' : 'false'}
@@ -95,9 +105,7 @@ function Card({ kind, title, subtitle, active, onClick }: CardProps) {
         textAlign: 'left',
         padding: 14,
         borderRadius: 12,
-        border: active
-          ? '1px solid var(--accent)'
-          : '1px solid var(--border)',
+        border: active ? '1px solid var(--accent)' : '1px solid var(--border)',
         background: active ? 'var(--accent-bg-strong)' : 'var(--surface-1)',
         color: 'var(--text)',
         cursor: active ? 'default' : 'pointer',
