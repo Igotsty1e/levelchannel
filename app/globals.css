@@ -1911,13 +1911,15 @@ html, body {
    inline styles via tokens; this rule exists only because grid /
    container queries can't be done cleanly inline. Scope: card only.
    ────────────────────────────────────────────────────────────────── */
-.tprofile-name-row {
+.tprofile-name-row,
+.lprofile-name-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
 @media (max-width: 639px) {
-  .tprofile-name-row {
+  .tprofile-name-row,
+  .lprofile-name-row {
     grid-template-columns: minmax(0, 1fr);
     gap: 10px;
   }
