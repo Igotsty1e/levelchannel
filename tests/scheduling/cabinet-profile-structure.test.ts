@@ -61,10 +61,15 @@ describe('SAAS-5 cabinet IA refactor — /cabinet/profile sub-page', () => {
     expect(src).toMatch(/robots:\s*{\s*index:\s*false/)
   })
 
-  it('imports ProfileEditor and DangerZone', () => {
+  it('imports LearnerProfileCard and LearnerDangerCard (2026-06-25 redesign)', () => {
+    // Before 2026-06-25: imported from ../profile-editor + ../danger-zone.
+    // After Bug 3 fix: redesigned components live in @/components/cabinet/
+    // (LearnerProfileCard для ChipGroup timezone + name/surname по аналогии
+    // TeacherProfileCard; LearnerDangerCard — collapsible как
+    // TeacherDangerCard).
     const src = read(CABINET_PROFILE_PAGE)
-    expect(src).toMatch(/from\s+['"]\.\.\/profile-editor['"]/)
-    expect(src).toMatch(/from\s+['"]\.\.\/danger-zone['"]/)
+    expect(src).toMatch(/LearnerProfileCard/)
+    expect(src).toMatch(/LearnerDangerCard/)
   })
 
   it('gates session via cookies + lookupSession + admin → /admin redirect', () => {
