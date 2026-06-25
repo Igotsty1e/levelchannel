@@ -11,7 +11,6 @@ import { useEffect, useRef, useState } from 'react'
 
 import { Button, Banner, Modal } from '@/components/ui/primitives'
 import { localizePayError } from '@/lib/i18n/payment-errors'
-import { useFocusTrap } from '@/lib/util/focus-trap'
 
 export type PayLessonModalProps = {
   slotId: string
@@ -52,14 +51,29 @@ export function PayLessonModal({
   const [showOtherChannel, setShowOtherChannel] = useState(false)
   const [otherNote, setOtherNote] = useState('')
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
-  const trapRef = useRef<HTMLDivElement | null>(null)
+  // 2026-06-25 Bug 1 fix: textarea ref + auto-focus когда showOtherChannel
+  // становится true. Раньше клик на «Оплатил другим способом» убирал кнопку
+  // из DOM, focus падал в body, и пользователь должен был кликать textarea
+  // вручную. Иногда фокус смещался на «Скопировать сумма» как первый
+  // focusable элемент в Modal.
+  const otherNoteRef = useRef<HTMLTextAreaElement | null>(null)
   // 2026-06-17 fix (audit BUG A): синхронный guard от двойного клика
   // на «Я оплатил». State `busy` обновляется асинхронно — между двумя
   // кликами в одном tick'е оба видят `busy === false` и оба уходят
   // в POST → 2-я заявка получает 409 «slot_has_active_claim».
   // Ref проверяется синхронно ДО первого await.
   const submittingRef = useRef(false)
-  useFocusTrap(trapRef, () => (busy ? undefined : onClose()))
+
+  // Bug 1 fix: фокус на textarea при появлении.
+  useEffect(() => {
+    if (showOtherChannel) {
+      // requestAnimationFrame — ждём пока textarea появится в DOM
+      // (conditional render выше нас).
+      requestAnimationFrame(() => {
+        otherNoteRef.current?.focus()
+      })
+    }
+  }, [showOtherChannel])
 
   useEffect(() => {
     let cancelled = false
@@ -339,6 +353,7 @@ export function PayLessonModal({
                   Каким способом оплатили
                 </label>
                 <textarea
+                  ref={otherNoteRef}
                   value={otherNote}
                   onChange={(e) => setOtherNote(e.target.value)}
                   rows={2}

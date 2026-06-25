@@ -12,8 +12,8 @@ import { getAuthPool } from '@/lib/auth/pool'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { resolveLearnerPushState } from '@/lib/notifications/learner-push-state'
 
-import { DangerZone } from '../danger-zone'
-import { ProfileEditor } from '../profile-editor'
+import { LearnerDangerCard } from '@/components/cabinet/learner-danger-card'
+import { LearnerProfileCard } from '@/components/cabinet/learner-profile-card'
 import { ResendVerifyButton } from '../resend-verify-button'
 
 // Dedicated profile / danger-zone surface (SAAS-5).
@@ -142,7 +142,7 @@ export default async function CabinetProfilePage() {
             </Banner>
           ) : null}
 
-          <ProfileEditor
+          <LearnerProfileCard
             initialProfile={profile}
             fallbackEmail={account.email}
           />
@@ -158,7 +158,7 @@ export default async function CabinetProfilePage() {
             <LearnerPushSubscription initialState={pushState} />
           ) : null}
 
-          <DangerZone />
+          <LearnerDangerCard />
         </div>
       </div>
     </>

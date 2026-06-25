@@ -7,6 +7,7 @@
 
 import { useState, useTransition } from 'react'
 
+import { Button } from '@/components/ui/primitives'
 import {
   requestLearnerTelegramBindCode,
   unbindLearnerTelegram,
@@ -172,23 +173,19 @@ export function LearnerTelegramBinding({
           <p style={{ color: 'var(--secondary)', fontSize: 14, lineHeight: 1.6, margin: '0 0 12px 0' }}>
             Получите одноразовый код и&nbsp;отправьте его боту LevelChannel в&nbsp;Telegram.
           </p>
-          <button
+          {/* 2026-06-25 Bug 2 fix: raw button с var(--accent)+var(--bg) даёт
+              плохую контрастность шрифта. Используем Button primitive
+              (variant="primary") — те же tokens что в кабинете учителя. */}
+          <Button
             type="button"
+            variant="primary"
+            size="md"
             onClick={onIssue}
             disabled={pending}
-            style={{
-              padding: '8px 16px',
-              borderRadius: 6,
-              border: 'none',
-              background: 'var(--accent)',
-              color: 'var(--bg)',
-              cursor: pending ? 'wait' : 'pointer',
-              fontSize: 14,
-              fontWeight: 600,
-            }}
+            loading={pending}
           >
-            {pending ? 'Получаем код…' : 'Получить код'}
-          </button>
+            Получить код
+          </Button>
         </>
       )}
 
