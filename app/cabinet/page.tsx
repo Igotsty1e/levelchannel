@@ -1,7 +1,6 @@
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
-import { AuthShell } from '@/components/auth-shell'
 import { listAccountRoles } from '@/lib/auth/accounts'
 import { formatProfileNameForRender } from '@/lib/auth/profile-name'
 import { getAccountProfile } from '@/lib/auth/profiles'
@@ -294,8 +293,12 @@ export default async function CabinetPage({
     isLearner && sbpPayEnabled && !sbpIntroDismissed
 
   return (
-    <AuthShell>
-      {/* Cabinet header — 2026-06-07 round 3.
+    <>
+      {/* 2026-06-25 a11y: убран AuthShell — он рендерит свой <main>, что
+          даёт double main в паре с app/cabinet/layout.tsx <main>. Layout
+          уже даёт chrome. AuthShell остаётся для standalone routes
+          (login/register).
+          Cabinet header — 2026-06-07 round 3.
           Дублирующий H1 «Личный кабинет» убран: страница и есть кабинет.
           Шапка теперь только H1 с приветствием — кнопка «Профиль и
           настройки» переехала в самый низ страницы (см. ниже). «Выйти»
@@ -351,12 +354,17 @@ export default async function CabinetPage({
               hintKey="learner_pay_sbp_intro"
               initiallyDismissed={false}
             >
-              <strong>Как платить за занятия.</strong> Кнопка{' '}
-              <em>«Оплатить»</em> у каждого занятия откроет реквизиты СБП
-              учителя — телефон и банк. Переведите сумму из своего банка и
-              нажмите <em>«Я оплатил»</em>: учитель увидит вашу заявку и
-              подтвердит. Платформа деньги не хранит — это прямой перевод
-              между вами и учителем.
+              <strong>Как оплатить занятие</strong>
+              <ol style={{ margin: '8px 0 0 0', paddingLeft: 20, lineHeight: 1.7 }}>
+                <li>
+                  Нажмите <em>«Оплатить»</em> у занятия — увидите СБП-реквизиты
+                  учителя.
+                </li>
+                <li>Сделайте перевод в своём банке.</li>
+                <li>
+                  Нажмите <em>«Я оплатил»</em> — учитель подтвердит получение.
+                </li>
+              </ol>
             </LearnerPaymentsExplainer>
           ) : null}
           {/* SAAS-PIVOT Day 7 — multi-teacher branch. 2+ active links:
@@ -459,6 +467,6 @@ export default async function CabinetPage({
           </div>
         </>
       ) : null}
-    </AuthShell>
+    </>
   )
 }

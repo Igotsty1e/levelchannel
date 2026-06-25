@@ -64,7 +64,8 @@ export default async function CabinetPackagesPage() {
 
   return (
     <>
-      <main
+      {/* 2026-06-25 a11y: <main> убран — app/cabinet/layout.tsx уже даёт <main>. */}
+      <div
         className="saas-chrome"
         style={{ minHeight: '100vh', background: 'var(--bg)' }}
       >
@@ -254,7 +255,7 @@ export default async function CabinetPackagesPage() {
           )}
         </section>
       </div>
-      </main>
+      </div>
     </>
   )
 }

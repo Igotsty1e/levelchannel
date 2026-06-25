@@ -66,7 +66,8 @@ export default async function LearnerLessonsPage({
   const pendingCount = claims.filter((c) => c.status === 'claimed').length
 
   return (
-    <main style={{ maxWidth: 880, margin: '0 auto', paddingBottom: 80 }}>
+    // 2026-06-25 a11y: <main> → <div>. Layout уже даёт <main>.
+    <div style={{ maxWidth: 880, margin: '0 auto', paddingBottom: 80 }}>
       <header className="lc-section">
         <h1
           style={{
@@ -109,6 +110,6 @@ export default async function LearnerLessonsPage({
           ← на главную
         </Link>
       </p>
-    </main>
+    </div>
   )
 }

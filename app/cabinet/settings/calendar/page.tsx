@@ -2,7 +2,6 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
-import { AuthShell } from '@/components/auth-shell'
 import { resolveOperatorSettingsForProbe } from '@/lib/admin/operator-settings'
 import { listAccountRoles } from '@/lib/auth/accounts'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
@@ -140,7 +139,7 @@ export default async function LearnerCalendarSettingsPage() {
   })()
 
   return (
-    <AuthShell>
+    <>
       <div style={{ width: '100%', maxWidth: 520, padding: '24px 16px' }}>
         <Link
           href="/cabinet"
@@ -235,7 +234,7 @@ export default async function LearnerCalendarSettingsPage() {
           tokenVersion={tokenVersion}
         />
       </div>
-    </AuthShell>
+    </>
   )
 }
 

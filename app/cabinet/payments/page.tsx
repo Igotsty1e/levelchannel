@@ -7,7 +7,6 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
-import { AuthShell } from '@/components/auth-shell'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
 import { LearnerPaymentsExplainer } from '@/components/cabinet/payments-explainer'
 import { getOnboardingState } from '@/lib/onboarding/state'
@@ -44,7 +43,7 @@ export default async function LearnerPaymentsHistoryPage() {
     'learner_pay_refund_explained' in onboardingState.dismissedHints
 
   return (
-    <AuthShell>
+    <>
       <div style={{ width: '100%', maxWidth: 640 }}>
         <Link
           href="/cabinet"
@@ -110,6 +109,6 @@ export default async function LearnerPaymentsHistoryPage() {
 
         <LearnerPaymentsList initial={claims} initialRefunds={refunds} />
       </div>
-    </AuthShell>
+    </>
   )
 }
