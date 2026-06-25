@@ -85,6 +85,16 @@ describe('SAAS-5 cabinet IA refactor — /cabinet/profile sub-page', () => {
     expect(src).toMatch(/redirect\(['"]\/admin['"]\)/)
   })
 
+  it('redirects verified teacher-only to /teacher/profile (2026-06-25 paranoia)', () => {
+    // After Bug 3 redesign под учнический copy, teacher-only видел бы
+    // неподходящий текст. Verified teacher-only → /teacher/profile.
+    // Unverified teacher-only остаётся на /cabinet (avoid loop with
+    // app/teacher/layout.tsx:50 redirect назад).
+    const src = read(CABINET_PROFILE_PAGE)
+    expect(src).toMatch(/redirect\(['"]\/teacher\/profile['"]\)/)
+    expect(src).toMatch(/isTeacher\s*&&\s*!isStudent\s*&&\s*isVerified/)
+  })
+
   it('renders a back link to /cabinet', () => {
     const src = read(CABINET_PROFILE_PAGE)
     expect(src).toMatch(/href="\/cabinet"/)
