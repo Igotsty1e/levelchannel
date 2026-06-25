@@ -7,6 +7,7 @@ import {
   Combobox,
   type ComboboxOption,
   DatePicker,
+  Modal,
   TimePicker,
 } from '@/components/ui/primitives'
 
@@ -558,39 +559,15 @@ export function AssignDirectModal({
   if (!open) return null
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Назначить занятие ученику"
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.6)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1100,
-        padding: '16px',
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !submitting) onClose()
-      }}
+    <Modal
+      open={true}
+      onClose={onClose}
+      busy={submitting}
+      title={mode === 'series' ? 'Серия занятий' : 'Назначить занятие'}
+      size="md"
     >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: '420px',
-          background: 'var(--surface-1)',
-          border: '1px solid var(--border)',
-          borderRadius: '16px',
-          padding: '20px',
-          color: 'var(--text)',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
-      >
         <header style={{ marginBottom: '12px' }}>
-          <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 600 }}>
+          <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 600, display: 'none' }}>
             {mode === 'series' ? 'Серия занятий' : 'Назначить занятие'}
           </h2>
           <p
@@ -1219,7 +1196,6 @@ export function AssignDirectModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   )
 }
