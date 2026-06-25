@@ -41,15 +41,21 @@ export function LearnerProfileCard({
   initialProfile: AccountProfile | null
   fallbackEmail: string
 }) {
-  const initialFirstName = initialProfile?.firstName ?? ''
-  const initialLastName = initialProfile?.lastName ?? ''
+  const initialFirstNameRaw = initialProfile?.firstName ?? ''
+  const initialLastNameRaw = initialProfile?.lastName ?? ''
   // Learner surface: null tz defaults to Moscow (legacy behavior).
-  const initialTz = safeTimezone(initialProfile?.timezone)
+  const initialTzRaw = safeTimezone(initialProfile?.timezone)
 
-  const [firstName, setFirstName] = useState(initialFirstName)
-  const [lastName, setLastName] = useState(initialLastName)
-  const [timezone, setTimezone] = useState(initialTz)
-  const [otherMode, setOtherMode] = useState(!QUICK_TZ_IDS.has(initialTz))
+  // 2026-06-25 paranoia WARN #3 fix: baseline tracks last-saved state так
+  // что после успешного PATCH `dirty` снова возвращается в false.
+  const [baselineFirst, setBaselineFirst] = useState(initialFirstNameRaw)
+  const [baselineLast, setBaselineLast] = useState(initialLastNameRaw)
+  const [baselineTz, setBaselineTz] = useState(initialTzRaw)
+
+  const [firstName, setFirstName] = useState(initialFirstNameRaw)
+  const [lastName, setLastName] = useState(initialLastNameRaw)
+  const [timezone, setTimezone] = useState(initialTzRaw)
+  const [otherMode, setOtherMode] = useState(!QUICK_TZ_IDS.has(initialTzRaw))
 
   const [busy, setBusy] = useState(false)
   const [state, setState] = useState<SaveState>({ kind: 'idle' })
@@ -62,11 +68,11 @@ export function LearnerProfileCard({
   })
 
   const dirty = useMemo(() => {
-    if (firstName !== initialFirstName) return true
-    if (lastName !== initialLastName) return true
-    if (timezone !== initialTz) return true
+    if (firstName !== baselineFirst) return true
+    if (lastName !== baselineLast) return true
+    if (timezone !== baselineTz) return true
     return false
-  }, [firstName, lastName, timezone, initialFirstName, initialLastName, initialTz])
+  }, [firstName, lastName, timezone, baselineFirst, baselineLast, baselineTz])
 
   const canSave = dirty && !busy
 
@@ -105,6 +111,10 @@ export function LearnerProfileCard({
           (data && (data.message || data.error)) || `HTTP ${res.status}`
         setState({ kind: 'err', message: String(message) })
       } else {
+        // Update baseline after successful save so dirty resets to false.
+        setBaselineFirst(firstName)
+        setBaselineLast(lastName)
+        setBaselineTz(timezone)
         setState({
           kind: 'ok',
           at: new Date().toLocaleTimeString('ru-RU'),

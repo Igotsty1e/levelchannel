@@ -52,18 +52,23 @@ export default async function CabinetProfilePage() {
   if (roles.includes('admin')) {
     redirect('/admin')
   }
+  // 2026-06-25 paranoia WARN #2 fix: teacher-only accounts направляются на
+  // /teacher/profile где живёт TeacherProfileCard + TeacherDangerCard.
+  // Раньше /cabinet/profile рендерил shared <ProfileEditor> + <DangerZone>
+  // и был совместим с teacher view; после Bug 3 redesign под учнический
+  // copy («ученик», «учитель увидит»...) teacher-сессия видела бы
+  // неподходящий текст.
+  const isStudent = roles.includes('student')
+  const isTeacher = roles.includes('teacher')
+  if (isTeacher && !isStudent) {
+    redirect('/teacher/profile')
+  }
 
   const profile = await getAccountProfile(account.id)
 
   // BCS-DEF-4 (2026-05-19) — learner Telegram opt-in is a learner-only
   // feature; teachers' notifications surface ships separately in
   // BCS-DEF-5 (sibling plan, parallel scheduler).
-  //
-  // BCS-DEF-4-TG (2026-05-20) — replaces the BCS-DEF-4 placeholder
-  // with the active bind workflow. Master switch state + current
-  // binding status are server-side reads here; the client component
-  // owns the Server Action invocations.
-  const isTeacher = roles.includes('teacher')
 
   let learnerTgBound = false
   let learnerTgMasterSwitch = false

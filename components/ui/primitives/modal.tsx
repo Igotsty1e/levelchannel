@@ -61,11 +61,37 @@ export function Modal({
   const titleId = useId()
   const cardRef = useRef<HTMLDivElement>(null)
 
-  // ESC handler — registers only when open.
+  // ESC + Tab/Shift+Tab focus trap (2026-06-25 paranoia BLOCKER #1 fix).
+  // Tab cycles focus внутри modal; Shift+Tab — наоборот. Escape closes.
   useEffect(() => {
     if (!open) return
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape' && !busy) onClose()
+      if (e.key === 'Escape' && !busy) {
+        onClose()
+        return
+      }
+      if (e.key !== 'Tab') return
+      const card = cardRef.current
+      if (!card) return
+      const focusables = Array.from(
+        card.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => !el.hasAttribute('disabled'))
+      if (focusables.length === 0) return
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -81,15 +107,24 @@ export function Modal({
     }
   }, [open])
 
-  // Auto-focus первый focusable element после mount.
+  // Auto-focus первый focusable element после mount + restore focus on close
+  // (2026-06-25 paranoia BLOCKER #1 fix). Previously focused element
+  // запоминается и returns focus when modal закрывается — стандартный a11y
+  // pattern для dialogs (WAI-ARIA Authoring Practices).
   useEffect(() => {
     if (!open) return
+    const previouslyFocused = document.activeElement as HTMLElement | null
     const card = cardRef.current
-    if (!card) return
-    const focusable = card.querySelector<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-    )
-    focusable?.focus()
+    if (card) {
+      const focusable = card.querySelector<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      )
+      focusable?.focus()
+    }
+    return () => {
+      // Restore focus to whatever был focused before modal opened.
+      previouslyFocused?.focus?.()
+    }
   }, [open])
 
   if (!open) return null
