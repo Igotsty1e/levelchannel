@@ -230,35 +230,9 @@ export function ScreenCarousel() {
 
         {/* Dots + pause toggle */}
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 16, marginTop: 24 }}>
-          <div role="tablist" aria-label="Выбрать скрин" style={{ display: 'flex', gap: 10 }}>
-            {SLIDES.map((s, i) => (
-              <button
-                key={i}
-                type="button"
-                role="tab"
-                aria-selected={i === index}
-                aria-label={`Скрин ${i + 1}: ${s.caption}`}
-                tabIndex={i === index ? 0 : -1}
-                onClick={() => setIndex(i)}
-                onKeyDown={(e) => {
-                  if (e.key === 'ArrowRight') { e.preventDefault(); setIndex((i + 1) % SLIDES.length); }
-                  if (e.key === 'ArrowLeft') { e.preventDefault(); setIndex((i - 1 + SLIDES.length) % SLIDES.length); }
-                  if (e.key === 'Home') { e.preventDefault(); setIndex(0); }
-                  if (e.key === 'End') { e.preventDefault(); setIndex(SLIDES.length - 1); }
-                }}
-                style={{
-                  width: i === index ? 28 : 8,
-                  height: 8,
-                  borderRadius: 4,
-                  background: i === index ? 'var(--v3-accent-end)' : 'rgba(255,255,255,0.18)',
-                  border: 'none',
-                  cursor: 'pointer',
-                  transition: 'width 250ms ease, background 250ms ease',
-                  padding: 0,
-                }}
-              />
-            ))}
-          </div>
+          {/* 2026-06-25 paranoia WARN #4 fix: focus moves to new dot button
+              when arrow keys change selection (roving tabIndex pattern). */}
+          <CarouselDots index={index} setIndex={setIndex} />
           <button
             type="button"
             onClick={() => setPaused((p) => !p)}
@@ -284,6 +258,71 @@ export function ScreenCarousel() {
         </div>
       </div>
     </section>
+  )
+}
+
+function CarouselDots({
+  index,
+  setIndex,
+}: {
+  index: number
+  setIndex: (i: number) => void
+}) {
+  const dotRefs = useRef<Array<HTMLButtonElement | null>>([])
+
+  function focusAndSelect(next: number) {
+    setIndex(next)
+    // Defer focus to next tick after re-render так что tabIndex обновится.
+    requestAnimationFrame(() => {
+      dotRefs.current[next]?.focus()
+    })
+  }
+
+  return (
+    <div role="tablist" aria-label="Выбрать скрин" style={{ display: 'flex', gap: 10 }}>
+      {SLIDES.map((s, i) => (
+        <button
+          key={i}
+          ref={(el) => {
+            dotRefs.current[i] = el
+          }}
+          type="button"
+          role="tab"
+          aria-selected={i === index}
+          aria-label={`Скрин ${i + 1}: ${s.caption}`}
+          tabIndex={i === index ? 0 : -1}
+          onClick={() => setIndex(i)}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowRight') {
+              e.preventDefault()
+              focusAndSelect((i + 1) % SLIDES.length)
+            }
+            if (e.key === 'ArrowLeft') {
+              e.preventDefault()
+              focusAndSelect((i - 1 + SLIDES.length) % SLIDES.length)
+            }
+            if (e.key === 'Home') {
+              e.preventDefault()
+              focusAndSelect(0)
+            }
+            if (e.key === 'End') {
+              e.preventDefault()
+              focusAndSelect(SLIDES.length - 1)
+            }
+          }}
+          style={{
+            width: i === index ? 28 : 8,
+            height: 8,
+            borderRadius: 4,
+            background: i === index ? 'var(--v3-accent-end)' : 'rgba(255,255,255,0.18)',
+            border: 'none',
+            cursor: 'pointer',
+            transition: 'width 250ms ease, background 250ms ease',
+            padding: 0,
+          }}
+        />
+      ))}
+    </div>
   )
 }
 
