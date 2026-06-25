@@ -3,7 +3,9 @@
 // Epic B (2026-06-19) — модалка «Новое дело». title + body + старт-время
 // + длительность. POST /api/teacher/personal-events.
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+
+import { Modal } from '@/components/ui/primitives'
 
 const MAX_TITLE = 80
 const MAX_BODY = 2000
@@ -30,13 +32,7 @@ export function PersonalEventCreateModal({
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape' && !busy) onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [busy, onClose])
+  // ESC handled by Modal primitive.
 
   async function submit() {
     const startAt = toIsoStartOrNull(startLocal)
@@ -79,12 +75,10 @@ export function PersonalEventCreateModal({
   }
 
   return (
-    <div role="dialog" aria-modal="true" style={scrimStyle} data-testid="personal-event-create-modal">
-      <div style={cardStyle}>
-        <h3 style={titleStyle}>Новое дело</h3>
-        <p style={subStyle}>
-          Слот будет заблокирован для брони. Ученики дело не видят.
-        </p>
+    <Modal open={true} onClose={onClose} title="Новое дело" size="md">
+      <p style={subStyle}>
+        Слот будет заблокирован для брони. Ученики дело не видят.
+      </p>
 
         <div style={fieldStyle}>
           <label style={labelStyle}>Начало (МСК)</label>
@@ -175,8 +169,7 @@ export function PersonalEventCreateModal({
             {busy ? 'Сохраняем…' : 'Создать дело'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
