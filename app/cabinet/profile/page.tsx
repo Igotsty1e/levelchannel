@@ -2,7 +2,6 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
-import { SiteHeader } from '@/components/site-header'
 import { Banner } from '@/components/ui/primitives'
 import { LearnerPushSubscription } from '@/components/cabinet/learner-push-subscription'
 import { LearnerTelegramBinding } from '@/components/cabinet/learner-telegram-binding'
@@ -98,11 +97,10 @@ export default async function CabinetProfilePage() {
   // headings and Имя/Фамилия grid breathe better at 640.
   return (
     <>
-      <SiteHeader />
-      <main
-        className="auth-shell-main saas-chrome"
+      {/* 2026-06-25 a11y: <SiteHeader> + <main> убраны — layout уже их даёт. */}
+      <div
+        className="saas-chrome"
         style={{
-          minHeight: 'calc(100vh - 56px)',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
@@ -162,7 +160,7 @@ export default async function CabinetProfilePage() {
 
           <DangerZone />
         </div>
-      </main>
+      </div>
     </>
   )
 }

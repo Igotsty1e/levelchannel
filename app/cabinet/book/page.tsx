@@ -2,7 +2,6 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
-import { AuthShell } from '@/components/auth-shell'
 import { LearnerBookTzReminder } from '@/components/onboarding/learner-book-tz-reminder'
 import { getAccountProfile } from '@/lib/auth/profiles'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
@@ -105,7 +104,7 @@ export default async function BookPage() {
   }
 
   return (
-    <AuthShell>
+    <>
       <div style={{ width: '100%', maxWidth: 520, padding: '24px 16px' }}>
         <Link
           href="/cabinet"
@@ -213,6 +212,6 @@ export default async function BookPage() {
           </>
         )}
       </div>
-    </AuthShell>
+    </>
   )
 }
