@@ -354,12 +354,17 @@ export default async function CabinetPage({
               hintKey="learner_pay_sbp_intro"
               initiallyDismissed={false}
             >
-              <strong>Как платить за занятия.</strong> Кнопка{' '}
-              <em>«Оплатить»</em> у каждого занятия откроет реквизиты СБП
-              учителя — телефон и банк. Переведите сумму из своего банка и
-              нажмите <em>«Я оплатил»</em>: учитель увидит вашу заявку и
-              подтвердит. Платформа деньги не хранит — это прямой перевод
-              между вами и учителем.
+              <strong>Как оплатить занятие</strong>
+              <ol style={{ margin: '8px 0 0 0', paddingLeft: 20, lineHeight: 1.7 }}>
+                <li>
+                  Нажмите <em>«Оплатить»</em> у занятия — увидите СБП-реквизиты
+                  учителя.
+                </li>
+                <li>Сделайте перевод в своём банке.</li>
+                <li>
+                  Нажмите <em>«Я оплатил»</em> — учитель подтвердит получение.
+                </li>
+              </ol>
             </LearnerPaymentsExplainer>
           ) : null}
           {/* SAAS-PIVOT Day 7 — multi-teacher branch. 2+ active links:
