@@ -9,7 +9,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-import { Button, Banner } from '@/components/ui/primitives'
+import { Button, Banner, Modal } from '@/components/ui/primitives'
 import { localizePayError } from '@/lib/i18n/payment-errors'
 import { useFocusTrap } from '@/lib/util/focus-trap'
 
@@ -159,39 +159,7 @@ export function PayLessonModal({
   }
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="pay-modal-title"
-      onClick={busy ? undefined : onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.55)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-        padding: 16,
-      }}
-    >
-      <div
-        ref={trapRef}
-        onClick={(e) => e.stopPropagation()}
-        className="card"
-        style={{ padding: 24, minWidth: 320, maxWidth: 480, width: '100%' }}
-      >
-        <h2
-          id="pay-modal-title"
-          style={{
-            fontSize: 18,
-            fontWeight: 600,
-            margin: 0,
-            marginBottom: 4,
-          }}
-        >
-          Оплата занятия
-        </h2>
+    <Modal open={true} onClose={onClose} busy={busy} title="Оплата занятия" size="md">
         {ctx ? (
           <p
             style={{
@@ -447,7 +415,6 @@ export function PayLessonModal({
             </div>
           </>
         ) : null}
-      </div>
-    </div>
+    </Modal>
   )
 }
