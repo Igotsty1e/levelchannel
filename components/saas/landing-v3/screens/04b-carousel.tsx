@@ -238,7 +238,14 @@ export function ScreenCarousel() {
                 role="tab"
                 aria-selected={i === index}
                 aria-label={`Скрин ${i + 1}: ${s.caption}`}
+                tabIndex={i === index ? 0 : -1}
                 onClick={() => setIndex(i)}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowRight') { e.preventDefault(); setIndex((i + 1) % SLIDES.length); }
+                  if (e.key === 'ArrowLeft') { e.preventDefault(); setIndex((i - 1 + SLIDES.length) % SLIDES.length); }
+                  if (e.key === 'Home') { e.preventDefault(); setIndex(0); }
+                  if (e.key === 'End') { e.preventDefault(); setIndex(SLIDES.length - 1); }
+                }}
                 style={{
                   width: i === index ? 28 : 8,
                   height: 8,

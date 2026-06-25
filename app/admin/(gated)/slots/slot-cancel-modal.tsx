@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 
+import { Modal } from '@/components/ui/primitives'
 import type { CalendarRow } from '@/lib/calendar/view-model'
 
 // Wave A PR3 — slot detail modal launched from calendar click. Read
@@ -94,36 +95,13 @@ export function SlotCancelModal({
   }
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="slot-modal-title"
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-      }}
+    <Modal
+      open={true}
+      onClose={onClose}
+      busy={busy}
+      title={`Слот ${row.startLabel} – ${row.endLabel}`}
+      size="md"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: '#1f1f23',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: 12,
-          padding: 24,
-          minWidth: 360,
-          maxWidth: 480,
-          color: '#e4e4e7',
-        }}
-      >
-        <h2 id="slot-modal-title" style={{ fontSize: 18, marginBottom: 12 }}>
-          Слот {row.startLabel} – {row.endLabel}
-        </h2>
         <dl style={{ fontSize: 13, color: '#9ca3af', lineHeight: 1.7 }}>
           <DescRow label="Дата" value={row.dayYmd} />
           <DescRow label="Длительность" value={`${slot.durationMinutes} мин`} />
@@ -292,8 +270,7 @@ export function SlotCancelModal({
             </button>
           ) : null}
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 

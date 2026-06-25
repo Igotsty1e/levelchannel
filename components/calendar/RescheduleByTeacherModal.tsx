@@ -1,8 +1,8 @@
 'use client'
 
-import { CSSProperties, useEffect, useState } from 'react'
+import { CSSProperties, useState } from 'react'
 
-import { DatePicker, TimePicker } from '@/components/ui/primitives'
+import { DatePicker, Modal, TimePicker } from '@/components/ui/primitives'
 import type { CalendarRow } from '@/lib/calendar/view-model'
 
 // teacher-reschedule-ui-wave-b (2026-06-16). Учитель переносит booked
@@ -43,13 +43,7 @@ export function RescheduleByTeacherModal({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape' && !busy) onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [busy, onClose])
+  // ESC + backdrop + body scroll lock handled by Modal primitive.
 
   const reasonValid = reason.trim().length >= 5
   const canSubmit = !busy && reasonValid && date && time
@@ -92,23 +86,10 @@ export function RescheduleByTeacherModal({
   const wasDate = formatDayYmdRu(row.dayYmd)
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="teacher-reschedule-title"
-      onClick={busy ? undefined : onClose}
-      style={overlayStyle}
-    >
-      <div onClick={(e) => e.stopPropagation()} style={sheetStyle}>
-        <h2
-          id="teacher-reschedule-title"
-          style={{ fontSize: 18, marginTop: 0, marginBottom: 8 }}
-        >
-          Перенести занятие
-        </h2>
-        <p style={{ fontSize: 13, color: 'var(--secondary)', marginTop: 0 }}>
-          Сейчас: {wasDate}, {wasWhen} · {learnerLabel}
-        </p>
+    <Modal open={true} onClose={onClose} busy={busy} title="Перенести занятие" size="lg">
+      <p style={{ fontSize: 13, color: 'var(--secondary)', marginTop: 0 }}>
+        Сейчас: {wasDate}, {wasWhen} · {learnerLabel}
+      </p>
 
         <div style={{ marginTop: 16 }}>
           <label style={labelStyle}>Новая дата</label>
@@ -202,8 +183,7 @@ export function RescheduleByTeacherModal({
             {busy ? 'Переносим…' : 'Перенести'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 

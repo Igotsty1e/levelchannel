@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 
+import { Modal } from '@/components/ui/primitives'
 import type { PricingTariff } from '@/lib/pricing/tariffs'
 
 // Single client island for the pricing page. Inline-editable rows +
@@ -296,34 +297,13 @@ function DeleteConfirm({
   busy: boolean
 }) {
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      onClick={busy ? undefined : onCancel}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-      }}
+    <Modal
+      open={true}
+      onClose={onCancel}
+      busy={busy}
+      title={`Удалить тариф «${tariffTitle}»?`}
+      size="md"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: '#1f1f23',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: 12,
-          padding: 24,
-          maxWidth: 460,
-          color: '#e4e4e7',
-        }}
-      >
-        <h3 style={{ fontSize: 16, marginBottom: 12 }}>
-          Удалить тариф «{tariffTitle}»?
-        </h3>
         <p style={{ fontSize: 13, lineHeight: 1.5, color: '#a1a1aa' }}>
           Удаление невозможно, если тариф уже был привязан хотя бы к
           одному слоту (это сломает аудит-связь). В таком случае
@@ -389,8 +369,7 @@ function DeleteConfirm({
             {busy ? 'Удаляем…' : 'Удалить'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
