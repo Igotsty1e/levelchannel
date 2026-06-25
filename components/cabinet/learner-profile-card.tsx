@@ -111,10 +111,19 @@ export function LearnerProfileCard({
           (data && (data.message || data.error)) || `HTTP ${res.status}`
         setState({ kind: 'err', message: String(message) })
       } else {
-        // Update baseline after successful save so dirty resets to false.
-        setBaselineFirst(firstName)
-        setBaselineLast(lastName)
-        setBaselineTz(timezone)
+        // 2026-06-25 paranoia round 2 WARN #3: baseline тоже trim'нем как
+        // сервер (lib/auth/profiles.ts:164). Иначе client local copy остаётся
+        // " Ivan " пока БД хранит "Ivan" → dirty всегда true для whitespace.
+        // Также синхронизируем UI state с canonical trimmed value.
+        const trimmedFirst = firstName.trim() === '' ? '' : firstName.trim()
+        const trimmedLast = lastName.trim() === '' ? '' : lastName.trim()
+        const trimmedTz = timezone.trim() === '' ? '' : timezone.trim()
+        setFirstName(trimmedFirst)
+        setLastName(trimmedLast)
+        setTimezone(trimmedTz)
+        setBaselineFirst(trimmedFirst)
+        setBaselineLast(trimmedLast)
+        setBaselineTz(trimmedTz)
         setState({
           kind: 'ok',
           at: new Date().toLocaleTimeString('ru-RU'),

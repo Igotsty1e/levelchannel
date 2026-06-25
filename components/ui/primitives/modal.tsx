@@ -78,7 +78,16 @@ export function Modal({
           'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
         ),
       ).filter((el) => !el.hasAttribute('disabled'))
-      if (focusables.length === 0) return
+      // 2026-06-25 paranoia round 2 BLOCKER fix: пустой список focusables
+      // (busy state может disable все buttons) → Tab уходил наружу. Теперь
+      // делаем preventDefault и focus на card itself через tabIndex=-1.
+      if (focusables.length === 0) {
+        e.preventDefault()
+        if (document.activeElement !== card) {
+          card.focus()
+        }
+        return
+      }
       const first = focusables[0]
       const last = focusables[focusables.length - 1]
       if (e.shiftKey) {
@@ -155,6 +164,10 @@ export function Modal({
       <div
         ref={cardRef}
         className="card"
+        // 2026-06-25 paranoia round 2 BLOCKER fix: tabIndex=-1 даёт fallback
+        // focus target когда внутри modal нет focusable elements (busy state
+        // могут отключить все кнопки). Без этого Tab уходил наружу page.
+        tabIndex={-1}
         style={{
           background: 'var(--surface)',
           border: '1px solid var(--border)',
@@ -164,6 +177,7 @@ export function Modal({
           width: '100%',
           maxHeight: 'calc(100vh - 32px)',
           overflowY: 'auto',
+          outline: 'none',
         }}
       >
         <h2

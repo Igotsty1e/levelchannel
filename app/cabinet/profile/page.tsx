@@ -56,11 +56,15 @@ export default async function CabinetProfilePage() {
   // /teacher/profile где живёт TeacherProfileCard + TeacherDangerCard.
   // Раньше /cabinet/profile рендерил shared <ProfileEditor> + <DangerZone>
   // и был совместим с teacher view; после Bug 3 redesign под учнический
-  // copy («ученик», «учитель увидит»...) teacher-сессия видела бы
-  // неподходящий текст.
+  // copy teacher-сессия видела бы неподходящий текст.
+  //
+  // 2026-06-25 paranoia round 2 WARN #2: unverified teacher-only НЕ редиректим
+  // на /teacher/profile — там layout сразу шлёт назад на /cabinet
+  // (app/teacher/layout.tsx:50). Это создаст loop. Pattern совпадает с
+  // existing /cabinet handling (app/cabinet/page.tsx:121-124).
   const isStudent = roles.includes('student')
   const isTeacher = roles.includes('teacher')
-  if (isTeacher && !isStudent) {
+  if (isTeacher && !isStudent && isVerified) {
     redirect('/teacher/profile')
   }
 
