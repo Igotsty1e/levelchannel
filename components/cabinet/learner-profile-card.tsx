@@ -155,6 +155,9 @@ export function LearnerProfileCard({
         </p>
       </header>
 
+      {/* 2026-06-25 paranoia round 3 WARN fix: disabled inputs во время save,
+          иначе trim() в onSave (closure захватил stale value) перетирает
+          characters typed после клика «Сохранить». */}
       <div className="lprofile-name-row">
         <FormField label="Имя" htmlFor="lprofile-first">
           <input
@@ -164,6 +167,7 @@ export function LearnerProfileCard({
             placeholder="Иван"
             maxLength={60}
             autoComplete="given-name"
+            disabled={busy}
             style={inputStyle}
           />
         </FormField>
@@ -174,6 +178,7 @@ export function LearnerProfileCard({
             onChange={(e) => setLastName(e.target.value)}
             placeholder="Петров"
             maxLength={60}
+            disabled={busy}
             autoComplete="family-name"
             style={inputStyle}
           />
@@ -191,6 +196,7 @@ export function LearnerProfileCard({
           value={chipValue}
           options={chipOptions}
           onChange={onChipChange}
+          disabled={busy}
         />
         {otherMode || (timezone !== '' && !QUICK_TZ_IDS.has(timezone)) ? (
           <div style={{ marginTop: 10 }}>
@@ -198,6 +204,7 @@ export function LearnerProfileCard({
               aria-label="Часовой пояс (полный список)"
               value={timezone}
               onChange={(e) => setTimezone(e.target.value)}
+              disabled={busy}
               style={inputStyle}
             >
               {TIMEZONE_OPTIONS.map((opt) => (
