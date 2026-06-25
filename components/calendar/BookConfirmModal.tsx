@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 
+import { Modal } from '@/components/ui/primitives'
 import type { CalendarRow } from '@/lib/calendar/view-model'
 
 // Wave B PR1 — learner-side click-to-book modal launched from the
@@ -167,39 +168,13 @@ export function BookConfirmModal({
   const isBookedSelf = slot.kind === 'booked-self'
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="book-confirm-title"
-      onClick={busy ? undefined : onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-      }}
+    <Modal
+      open={true}
+      onClose={onClose}
+      busy={busy}
+      title={`Занятие ${row.startLabel} – ${row.endLabel} (МСК)`}
+      size="md"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: '#1f1f23',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: 12,
-          padding: 24,
-          minWidth: 320,
-          maxWidth: 440,
-          color: '#e4e4e7',
-        }}
-      >
-        <h2 id="book-confirm-title" style={{ fontSize: 18, marginBottom: 12 }}>
-          Занятие {row.startLabel} – {row.endLabel}{' '}
-          <span style={{ fontSize: 12, color: '#71717a', fontWeight: 400 }}>
-            (МСК)
-          </span>
-        </h2>
         <dl style={{ fontSize: 13, color: '#9ca3af', lineHeight: 1.7 }}>
           <Row label="Дата" value={row.dayYmd} />
           {showLearnerTz && localStart && localEnd ? (
@@ -295,8 +270,7 @@ export function BookConfirmModal({
             </button>
           ) : null}
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 

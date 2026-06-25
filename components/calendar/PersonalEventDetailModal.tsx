@@ -5,8 +5,9 @@
 // первой итерации; редактирование — через cancel + create (out of
 // scope для этого PR).
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
+import { Modal } from '@/components/ui/primitives'
 import type { CalendarRow } from '@/lib/calendar/view-model'
 
 export function PersonalEventDetailModal({
@@ -22,13 +23,7 @@ export function PersonalEventDetailModal({
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape' && !busy) onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [busy, onClose])
+  // ESC handled by Modal primitive.
 
   if (slot.kind !== 'personal-event') return null
 
@@ -79,13 +74,11 @@ export function PersonalEventDetailModal({
         : 'var(--danger, #FF6E6E)'
 
   return (
-    <div role="dialog" aria-modal="true" style={scrimStyle} data-testid="personal-event-detail-modal">
-      <div style={cardStyle}>
-        <h3 style={titleStyle}>{slot.title || 'Дело'}</h3>
-        <p style={subStyle}>
-          {row.startLabel}–{row.endLabel} ·{' '}
-          <span style={{ color: statusColor }}>{statusLabel}</span>
-        </p>
+    <Modal open={true} onClose={onClose} title={slot.title || 'Дело'} size="md">
+      <p style={subStyle}>
+        {row.startLabel}–{row.endLabel} ·{' '}
+        <span style={{ color: statusColor }}>{statusLabel}</span>
+      </p>
 
         {slot.body ? (
           <div style={bodyStyle} data-testid="personal-event-body-view">
@@ -130,8 +123,7 @@ export function PersonalEventDetailModal({
             </button>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 

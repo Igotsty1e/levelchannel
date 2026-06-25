@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 
+import { Modal } from '@/components/ui/primitives'
 import {
   ALLOWED_PAINT_DURATIONS_MIN,
   type PaintDurationMinutes,
@@ -51,17 +52,7 @@ export function PaintConfirmModal({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // 2026-06-14 BUG-3b — ESC closes the modal (when no in-flight POST).
-  // Backdrop click was already guarded by `busy` at the root onClick;
-  // this brings keyboard close into parity with the rest of the
-  // calendar modals.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape' && !busy) onCancel()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [busy, onCancel])
+  // ESC + backdrop click + body scroll lock — handled by Modal primitive.
 
   const synth = useMemo(
     () =>
@@ -92,40 +83,13 @@ export function PaintConfirmModal({
   }
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="paint-confirm-title"
-      // Codex 2026-05-08 MEDIUM 2: backdrop click MUST NOT close the
-      // modal while a POST is in flight — that gave the user a
-      // misleading "cancelled" UX while creation was actually
-      // proceeding. Backdrop click is now a no-op when busy.
-      onClick={busy ? undefined : onCancel}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-      }}
+    <Modal
+      open={true}
+      onClose={onCancel}
+      busy={busy}
+      title={`Новые слоты · ${formatYmdRu(span.ymd)}`}
+      size="lg"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: 'var(--surface-1, #1f1f23)',
-          border: '1px solid var(--border)',
-          borderRadius: 12,
-          padding: 24,
-          minWidth: 360,
-          maxWidth: 520,
-          color: 'var(--text)',
-        }}
-      >
-        <h2 id="paint-confirm-title" style={{ fontSize: 18, marginBottom: 16, marginTop: 0 }}>
-          Новые слоты · {formatYmdRu(span.ymd)}
-        </h2>
 
         <FieldLabel>Длительность</FieldLabel>
         <ChipGroup
@@ -261,8 +225,7 @@ export function PaintConfirmModal({
             {busy ? 'Создаём…' : 'Создать'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
