@@ -5,7 +5,7 @@ import { Pill, type PillTone } from '@/components/ui/primitives'
 
 // teacher/settings hub tile (2026-06-07 → 2026-06-10).
 // Один тайл = одна sub-страница раздела «Настройки» (профиль / цены /
-// пакеты / подписка / интеграции / уведомления / приём оплат).
+// пакеты / подписка / интеграции / уведомления / учёт оплат).
 // Иконка живёт в accent-tinted chip, title + опциональный status-pill
 // ИЛИ icon-indicator (взаимно исключающие).
 

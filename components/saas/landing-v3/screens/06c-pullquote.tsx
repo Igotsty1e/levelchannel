@@ -69,11 +69,7 @@ export function ScreenPullquote() {
           }}
         >
           <span style={{ color: 'var(--v3-accent-end)', fontWeight: 600 }}>«</span>
-          За первый месяц я не написал ни одного «не забудь, у нас сегодня»
-          {' '}
-          <span style={{ color: 'var(--v3-text-muted)' }}>—</span>
-          {' '}
-          и в первый раз за два года точно знал, кто оплатил февраль.
+          За первый месяц я не написал ни одного «не забудь, у нас сегодня». И в первый раз за два года точно знал, кто оплатил февраль.
           <span style={{ color: 'var(--v3-accent-end)', fontWeight: 600 }}>»</span>
         </motion.blockquote>
 

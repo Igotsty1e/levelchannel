@@ -58,7 +58,7 @@ export function ScreenHero() {
           А переписки <em style={{ fontStyle: 'italic', fontFamily: 'Charter, Iowan Old Style, Georgia, serif' }}>возьмём на себя.</em>
         </h1>
         <p className="landing-v3-lede" style={{ marginTop: 32, marginLeft: 'auto', marginRight: 'auto' }}>
-          Кабинет частного репетитора: расписание, ученики, балансы и оплаты — в одном месте. Без шести вкладок, Excel-таблиц и блокнотов.
+          Кабинет частного репетитора: расписание, ученики, балансы и оплаты собраны в одном месте. Без кучи вкладок, Excel-таблиц и блокнотов.
         </p>
         <div style={{ marginTop: 48, display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
           <Link

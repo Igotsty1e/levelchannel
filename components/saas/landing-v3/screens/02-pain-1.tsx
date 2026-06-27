@@ -21,7 +21,7 @@ const MESSAGES: Message[] = [
   { who: 'Мама Пети',     initials: 'МП', color: '#FE6E64', at: '08:12', text: 'А реквизиты для оплаты ещё раз можно?' },
   { who: 'Аня',           initials: 'А',  color: '#4FBBE8', at: '08:34', text: 'Можем перенести на четверг 18:00?' },
   { who: 'Маша',          initials: 'М',  color: '#FFA21F', at: '09:01', text: 'У меня вылетело из календаря, во сколько у нас?' },
-  { who: 'Папа Кирилла',  initials: 'ПК', color: '#66CD5E', at: '09:18', text: 'Сегодня не сможем — Кирилл заболел.' },
+  { who: 'Папа Кирилла',  initials: 'ПК', color: '#66CD5E', at: '09:18', text: 'Сегодня не сможем, Кирилл заболел.' },
   { who: 'Лена',          initials: 'Л',  color: '#C262E8', at: '09:42', text: 'Что было на прошлом уроке? Я не записала.' },
   { who: 'Мама Пети',     initials: 'МП', color: '#FE6E64', at: '09:55', text: 'Подскажите номер карты ещё раз 🙏' },
 ]
@@ -43,7 +43,7 @@ export function ScreenPain1() {
             transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
             className="landing-v3-h2 landing-v3-h2--serif"
           >
-            До первого урока — уже <em>сорок сообщений.</em>
+            До первого урока уже <em>30 сообщений.</em>
           </motion.h2>
           <motion.p
             {...fadeUp}
