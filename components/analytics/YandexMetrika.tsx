@@ -11,13 +11,17 @@ import { usePathname } from 'next/navigation'
 // Metrika — the counter AND Webvisor — loads ONLY on public marketing
 // pages. It is NEVER mounted on authenticated / payment / PII surfaces
 // (/login, /register, /auth*, /checkout*, /pay*, /cabinet*, /teacher*,
-// /admin*). This keeps the public promise "no third-party analytics in the
-// cabinet" true and keeps Webvisor session-recording off forms that carry
-// personal data. Input content is additionally masked via the Metrika
-// dashboard setting ("не записывать содержимое полей") — owner-side. The two
-// together (no-mount on private routes + input masking) are the defensible
-// posture; the masking is the load-bearing protection for the rare
-// client-side nav from a public page into a form.
+// /admin*). The cabinet is only ever entered via a full navigation (login
+// POST → redirect), so on a /cabinet load this component returns null and no
+// Metrika is present there — "no third-party analytics in the cabinet" holds.
+//
+// Known limitation (epic-end wave 2026-06-27): a client-side SPA nav from a
+// public page to /login or /pay does NOT tear down an already-initialised
+// `window.ym`/Webvisor recorder — `return null` only unmounts the <Script>
+// element. The load-bearing protection for that path is INPUT MASKING (the
+// Metrika dashboard "не записывать содержимое полей", owner-enabled): field
+// contents are never captured. Public copy is worded accordingly — it claims
+// masking, not absolute non-recording on those routes.
 //
 // Disclosure: app/privacy §7 + app/consent/personal-data §5
 // (personal_data v2 / PERSONAL_DATA_DOCUMENT_VERSION 2026-06-27.1,
@@ -78,8 +82,12 @@ ym(${YM_COUNTER_ID}, 'init', {
 
 export function YandexMetrika({ nonce }: { nonce?: string }) {
   const pathname = usePathname()
-  // Hard gate: no Metrika outside public marketing pages.
+  // Hard gate 1: no Metrika outside public marketing pages.
   if (!isPublicAnalyticsPath(pathname)) return null
+  // Hard gate 2 (fail-closed): never emit the inline init script without the
+  // per-request CSP nonce. On the proxy CSP-fallback path the nonce is absent;
+  // skip analytics rather than ship an unnonced inline script.
+  if (!nonce) return null
 
   return (
     <>
