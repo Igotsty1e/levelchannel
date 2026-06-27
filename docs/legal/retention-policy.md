@@ -32,7 +32,11 @@ This section describes the **existing** state, not a plan.
 | Guest checkout (`/api/payments`) | `payment_orders.metadata.personalDataConsent` | snapshot from `buildPersonalDataConsentSnapshot()` in `lib/legal/personal-data.ts`: `documentVersion`, `documentPath`, `policyPath`, `acceptedAt`, `source='checkout'`, `ipAddress`, `userAgent`. Stored in order metadata; persists for the order's lifetime. |
 
 **Current document version:** `PERSONAL_DATA_DOCUMENT_VERSION =
-'2026-04-29.4'` (`lib/legal/personal-data.ts:1`). When a new revision
+'2026-06-27.1'` (`lib/legal/personal-data.ts:1`; bumped from `2026-04-29.4`
+on 2026-06-27 when the Yandex.Metrika + Webvisor analytics disclosure was
+added to `/privacy` + `/consent/personal-data`, sister migration
+`0142_legal_versions_analytics_disclosure.sql` publishes `privacy` v2 +
+`personal_data` v2). When a new revision
 ships, the version is bumped in code; a fresh `account_consents` row
 or a new `payment_orders.metadata` snapshot then automatically captures
 which version the user signed.

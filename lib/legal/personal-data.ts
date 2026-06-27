@@ -1,4 +1,4 @@
-export const PERSONAL_DATA_DOCUMENT_VERSION = '2026-04-29.4'
+export const PERSONAL_DATA_DOCUMENT_VERSION = '2026-06-27.1'
 export const PERSONAL_DATA_CONSENT_PATH = '/consent/personal-data'
 export const PERSONAL_DATA_POLICY_PATH = '/privacy'
 
