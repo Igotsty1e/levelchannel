@@ -69,4 +69,17 @@ describe('YandexMetrika component scope + nonce', () => {
     const { queryByTestId } = render(<YandexMetrika nonce="test-nonce-123" />)
     expect(queryByTestId('ym-init')).toBeNull()
   })
+
+  it('fail-closed: renders nothing on a public page when nonce is absent', () => {
+    // Proxy CSP-fallback path → no x-nonce → must NOT emit an unnonced script.
+    currentPath = '/'
+    const { queryByTestId } = render(<YandexMetrika />)
+    expect(queryByTestId('ym-init')).toBeNull()
+  })
+
+  // NOTE (epic-end wave 2026-06-27): this suite pins the MOUNT gate. It does
+  // NOT model the SPA-nav case (public → /login with an already-initialised
+  // window.ym), because the mount gate intentionally does not tear that down —
+  // the protection there is Metrika dashboard input masking, not non-mount.
+  // See components/analytics/YandexMetrika.tsx "Known limitation" + docs/analytics/privacy.md.
 })

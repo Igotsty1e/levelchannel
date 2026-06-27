@@ -62,7 +62,14 @@ export function assembleCsp({ nonce }: CspOptions): string {
     `style-src-attr 'unsafe-inline'`,
     `font-src 'self'`,
     `img-src 'self' data: https://*.cloudpayments.ru https://mc.yandex.ru`,
-    `connect-src 'self' https://api.cloudpayments.ru https://widget.cloudpayments.ru https://*.cloudpayments.ru https://www.google-analytics.com https://region1.google-analytics.com https://*.ingest.de.sentry.io https://*.ingest.sentry.io https://mc.yandex.ru`,
+    // `wss://mc.yandex.ru` — Yandex.Metrika Webvisor opens a WebSocket
+    // (`wss://mc.yandex.ru/solid.ws`) to stream session recordings. The
+    // `https://` entry does NOT cover the `wss:` scheme, so without this the
+    // Webvisor socket is CSP-blocked (caught at canary 2026-06-27 right after
+    // the counter was enabled — the counter `/watch` hits worked, the
+    // Webvisor socket did not). Counter-only analytics works without it;
+    // Webvisor needs it.
+    `connect-src 'self' https://api.cloudpayments.ru https://widget.cloudpayments.ru https://*.cloudpayments.ru https://www.google-analytics.com https://region1.google-analytics.com https://*.ingest.de.sentry.io https://*.ingest.sentry.io https://mc.yandex.ru wss://mc.yandex.ru`,
     `frame-src 'self' https://widget.cloudpayments.ru https://*.cloudpayments.ru https://mc.yandex.ru`,
     `worker-src 'self' blob:`,
   ]

@@ -69,7 +69,8 @@ Hence aggregate counts (DAU/MAU/funnels) remain valid even after personal data d
 **Я.Метрика + Webvisor (resolved 2026-06-27, legal-rf-router → commercial → qa):**
 - Раскрыты в Политике (`/privacy`, раздел 7) и Согласии (`/consent/personal-data`, разделы 2/3/5). Версия документа поднята (`PERSONAL_DATA_DOCUMENT_VERSION = 2026-06-27.1`, миграция `0142`).
 - Правовое основание — согласие + п. 7 ч. 1 ст. 6 152-ФЗ; полноценный opt-in-баннер юридически НЕ обязателен при выполненных условиях (вывод legal-rf-qa). Лёгкое уведомление с отказом — желательно, не обязательно.
-- **Webvisor — только на публичных marketing-страницах** (`/`, `/saas/learn/*`, `/offer`, `/privacy`, `/consent/*`), с маскировкой всего ввода; запрещён на `/login`, `/register`, `/auth*`, `/checkout*`, `/pay*`, `/cabinet*`, `/teacher*`, `/admin*`. Контракт зашит в условный mount компонента.
+- **Метрика (счётчик + Webvisor) — только на публичных marketing-страницах** (allowlist в `isPublicAnalyticsPath`: `/`, `/saas/learn/*`, `/saas/offer`, `/offer`, `/privacy`, `/consent/*`, `/integrations/*`); не монтируется на `/login`, `/register`, `/auth*`, `/checkout*`, `/pay*`, `/cabinet*`, `/teacher*`, `/admin*`. Контракт зашит в условный mount компонента + fail-closed по nonce.
+- **Известное ограничение (epic-end wave 2026-06-27):** SPA-переход с публичной страницы на `/login` или `/pay` не выгружает уже инициализированный `window.ym`/Webvisor (`return null` снимает только `<Script>`). Кабинет недостижим SPA-навигацией (вход — full-nav), поэтому там Метрики нет. Для SPA-leak load-bearing защита — **маскировка ввода** (dashboard «не записывать содержимое полей»); публичный копирайт обещает именно маскировку, а не абсолютное «запись не ведётся» на этих роутах.
 - Owner-side настройки в кабинете Метрики (обязательны до включения): «обезличивание данных» + «не отправлять за пределы РФ» + принятие Условий Яндекс.Метрики (поручение по ч. 3 ст. 6 152-ФЗ).
 
 ## Cross-device / Multi-tab
