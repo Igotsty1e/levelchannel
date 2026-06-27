@@ -1,23 +1,57 @@
-import Script from 'next/script'
+'use client'
 
-// Yandex.Metrika counter — installed 2026-06-16.
-// Counter ID 109816340. Settings enabled: SSR, Webvisor, clickmap,
-// e-commerce dataLayer, accurate bounce, link tracking.
+import Script from 'next/script'
+import { usePathname } from 'next/navigation'
+
+// Yandex.Metrika counter — installed 2026-06-16, enabled 2026-06-27.
+// Counter ID 109816340. Settings: SSR, Webvisor, clickmap, e-commerce
+// dataLayer, accurate bounce, link tracking.
 //
-// Loaded via next/script with `afterInteractive` strategy so it does
-// not block first paint. Next.js auto-stamps the per-request CSP
-// nonce on this inline script (proxy.ts threads `x-nonce` into the
-// dynamic render path → see app/layout.tsx for the nonce read).
+// SCOPE (152-FZ, legal-rf SIGN-OFF 2026-06-27 — router→commercial→qa):
+// Metrika — the counter AND Webvisor — loads ONLY on public marketing
+// pages. It is NEVER mounted on authenticated / payment / PII surfaces
+// (/login, /register, /auth*, /checkout*, /pay*, /cabinet*, /teacher*,
+// /admin*). This keeps the public promise "no third-party analytics in the
+// cabinet" true and keeps Webvisor session-recording off forms that carry
+// personal data. Input content is additionally masked via the Metrika
+// dashboard setting ("не записывать содержимое полей") — owner-side. The two
+// together (no-mount on private routes + input masking) are the defensible
+// posture; the masking is the load-bearing protection for the rare
+// client-side nav from a public page into a form.
 //
-// CSP allowances (lib/security/csp.ts + public/.htaccess):
-//   script-src  + https://mc.yandex.ru
-//   connect-src + https://mc.yandex.ru
-//   img-src     + https://mc.yandex.ru
+// Disclosure: app/privacy §7 + app/consent/personal-data §5
+// (personal_data v2 / PERSONAL_DATA_DOCUMENT_VERSION 2026-06-27.1,
+// migration 0142). docs/analytics/privacy.md carries the legal rationale.
 //
-// noscript fallback is a 1×1 transparent <img> that pings the
-// counter's /watch/ endpoint for users with JS disabled.
+// nonce: per-request CSP nonce, read in app/layout.tsx from the proxy.ts
+// `x-nonce` header and passed down. next/script does NOT auto-stamp the
+// nonce on a client-injected `afterInteractive` inline script, so we pass
+// it explicitly — that is the fix for the CSP-block that kept the counter
+// disabled before 2026-06-27.
+//
+// CSP allowances (lib/security/csp.ts): script-src / connect-src / img-src
+// already include https://mc.yandex.ru.
 
 export const YM_COUNTER_ID = 109816340
+
+// Public marketing surfaces where web analytics is allowed. Everything not
+// matched here gets NO Metrika at all.
+const PUBLIC_ANALYTICS_PREFIXES = [
+  '/saas/learn',
+  '/saas/offer',
+  '/offer',
+  '/privacy',
+  '/consent',
+  '/integrations',
+]
+
+export function isPublicAnalyticsPath(pathname: string | null): boolean {
+  if (!pathname) return false
+  if (pathname === '/') return true
+  return PUBLIC_ANALYTICS_PREFIXES.some(
+    (p) => pathname === p || pathname.startsWith(p + '/'),
+  )
+}
 
 const INIT_SNIPPET = `
 (function(m,e,t,r,i,k,a){
@@ -42,10 +76,14 @@ ym(${YM_COUNTER_ID}, 'init', {
 });
 `.trim()
 
-export function YandexMetrika() {
+export function YandexMetrika({ nonce }: { nonce?: string }) {
+  const pathname = usePathname()
+  // Hard gate: no Metrika outside public marketing pages.
+  if (!isPublicAnalyticsPath(pathname)) return null
+
   return (
     <>
-      <Script id="ym-init" strategy="afterInteractive">
+      <Script id="ym-init" nonce={nonce} strategy="afterInteractive">
         {INIT_SNIPPET}
       </Script>
       <noscript>
