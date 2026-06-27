@@ -131,7 +131,7 @@ export default async function TeacherSettingsHubPage() {
           />
         </li>
         <li>
-          {/* Приём оплат: всегда ведёт на /teacher/settings/payment-methods
+          {/* Учёт оплат: всегда ведёт на /teacher/settings/payment-methods
               (editor реквизитов). Раньше (PR #592, 2026-06-10) при N>0
               redirect'или на /teacher/payments (feed), но там нет formы
               добавить/архивировать метод — учитель терял доступ к editor
@@ -140,7 +140,7 @@ export default async function TeacherSettingsHubPage() {
           <SettingsTile
             href="/teacher/settings/payment-methods"
             icon={<SbpAcceptIcon />}
-            title="Приём оплат"
+            title="Учёт оплат"
             indicator={paymentMethodsCount > 0 ? 'connected' : 'not-connected'}
           />
         </li>

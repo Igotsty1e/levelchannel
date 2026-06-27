@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export const metadata = {
-  title: 'Приём оплат через СБП — LevelChannel',
+  title: 'Учёт оплат через СБП — LevelChannel',
   robots: { index: false, follow: false },
 }
 
@@ -52,7 +52,7 @@ export default async function TeacherPaymentMethodsPage() {
           letterSpacing: '-0.01em',
         }}
       >
-        Приём оплат через СБП
+        Учёт оплат через СБП
       </h1>
       <p
         style={{
@@ -63,7 +63,7 @@ export default async function TeacherPaymentMethodsPage() {
           marginBottom: 24,
         }}
       >
-        Укажите номер телефона и банк для приёма платежей через СБП.
+        Укажите номер телефона и банк для учёта платежей через СБП.
         После сохранения ученики увидят эти реквизиты на кнопке «Оплатить»
         в своём кабинете. Можно добавить несколько методов и закрепить
         разные за разными учениками.

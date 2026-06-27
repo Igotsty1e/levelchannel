@@ -25,10 +25,10 @@ export function ScreenCta() {
 
       <div style={{ position: 'relative', zIndex: 2, maxWidth: 1000, textAlign: 'center' }}>
         <motion.h2 {...fadeUp} transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }} className="landing-v3-h2 landing-v3-h2--serif">
-          Шесть вкладок — <em>в один кабинет.</em>
+          Пять вкладок. <em>Один кабинет.</em>
         </motion.h2>
         <motion.p {...fadeUp} transition={{ duration: 0.7, delay: 0.2 }} className="landing-v3-lede" style={{ marginTop: 24, marginLeft: 'auto', marginRight: 'auto' }}>
-          Стартовый — бесплатно, навсегда. Один ученик включён. Карта не нужна, мы не звоним.
+          На Стартовом всё бесплатно, навсегда, до 3 учеников. Карта не нужна, мы не звоним.
         </motion.p>
         <motion.div {...fadeUp} transition={{ duration: 0.7, delay: 0.4 }} style={{ marginTop: 40, display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
           <Link

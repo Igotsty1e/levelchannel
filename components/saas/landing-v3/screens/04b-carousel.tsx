@@ -13,34 +13,34 @@ type Slide = {
 
 const SLIDES: Slide[] = [
   {
-    caption: 'Главная — все ученики, кто оплатил, кто должен',
+    caption: 'Главная. Все ученики: кто оплатил, кто должен',
     desktop: '/assets/landing-v3/screens/teacher-dashboard.png',
     mobile: '/assets/landing-v3/screens/teacher-mobile-dashboard.png',
     alt: 'Главная учителя',
   },
   {
-    caption: 'Календарь — слоты, конфликты, переносы',
+    caption: 'Календарь. Время занятий, конфликты, переносы',
     desktop: '/assets/landing-v3/screens/feature-schedule.png',
     mobile: '/assets/landing-v3/screens/teacher-mobile-dashboard.png',
     alt: 'Календарь занятий',
   },
   {
-    caption: 'Журнал оплат — СБП-заявки и подтверждения',
+    caption: 'Журнал оплат. СБП-заявки и подтверждения',
     desktop: '/assets/landing-v3/screens/feature-balance.png',
     mobile: '/assets/landing-v3/screens/teacher-mobile-payments.png',
     alt: 'Журнал оплат',
   },
   {
-    caption: 'Карточка ученика — заметки, цели, прошлый урок',
+    caption: 'Карточка ученика. Заметки, цели, прошлый урок',
     desktop: '/assets/landing-v3/screens/feature-learner.png',
     mobile: '/assets/landing-v3/screens/teacher-mobile-dashboard.png',
     alt: 'Карточка ученика',
   },
   {
-    caption: 'Настройки оплаты — СБП-методы и пакеты',
+    caption: 'Настройки оплаты. СБП-методы и пакеты',
     desktop: '/assets/landing-v3/screens/feature-methods.png',
     mobile: '/assets/landing-v3/screens/teacher-mobile-payments.png',
-    alt: 'Настройки приёма оплат',
+    alt: 'Настройки учёта оплат',
   },
 ]
 
@@ -133,7 +133,7 @@ export function ScreenCarousel() {
             className="landing-v3-lede"
             style={{ marginTop: 22, marginInline: 'auto' }}
           >
-            Не маркетинговые скрины. Реальный кабинет с тестовыми учениками — точно так же ты увидишь его после регистрации.
+            Не маркетинговые скрины. Реальный кабинет с тестовыми учениками. Точно так же ты увидишь его после регистрации.
           </motion.p>
         </div>
 
