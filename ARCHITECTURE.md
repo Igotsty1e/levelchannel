@@ -273,8 +273,9 @@ ALERTS-EDITOR (2026-05-18) ships `operator_settings` (migration 0055) — operat
 - [`lib/email/templates/operator-payment-failure.ts`](lib/email/templates/operator-payment-failure.ts) + [`sendOperatorPaymentFailureNotification`](lib/email/dispatch.ts) - per-event operator email on terminal payment failure (Fail webhook, 3DS decline). Best-effort, silent skip when `OPERATOR_NOTIFY_EMAIL` unset. Aggregate webhook-flow alert continues to watch low-ratio trends in parallel
 - [`lib/security/request.ts`](lib/security/request.ts) - origin checks, invoice id validation, per-IP rate limiting (`enforceRateLimit` is async)
 - [`lib/security/rate-limit.ts`](lib/security/rate-limit.ts) - shared-store rate limiter. Postgres-backed bucket (table `rate_limit_buckets`, migration 0016) with an in-memory fallback when `DATABASE_URL` is unset or transiently unreachable. Atomic upsert with fixed-window semantics; the same counter agrees across replicas. Cleanup folded into `scripts/db-retention-cleanup.mjs` (rows with `reset_at` older than 1 hour are removed daily)
-- [`next.config.js`](next.config.js) - security headers for the Node deployment
-- [`public/.htaccess`](public/.htaccess) - security headers for Apache
+- [`next.config.js`](next.config.js) - static security headers (HSTS, X-Frame-Options, etc.) for the Node deployment
+- [`proxy.ts`](proxy.ts) + [`lib/security/csp.ts`](lib/security/csp.ts) - **single source of truth for Content-Security-Policy** (per-request nonce). Production serves nginx + Next.js (systemd), so this is the policy the browser enforces.
+- [`public/.htaccess`](public/.htaccess) - legacy Apache headers. **Inert on the current nginx deploy.** Its `Content-Security-Policy` line (a divergent static `'unsafe-inline'` policy) was removed 2026-06-27 to kill drift vs the nonce policy above. Do not re-add CSP here; if ever served by Apache, re-derive from `lib/security/csp.ts`.
 
 ### Auth API routes (Phase 1B Lane B)
 
