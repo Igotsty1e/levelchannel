@@ -1,5 +1,7 @@
 # План: включить Yandex.Метрику корректно (152-ФЗ) + rename + вычитка landing-v3
 
+**Status: SHIPPED 2026-06-27** — PRs #749 (152-ФЗ disclosure + P0 .htaccess) + #750 (honest copy + rename + landing proofread) + #751 (enable: nonce + Webvisor public-only) + #752 (epic-end wave follow-up: wss + nonce fail-closed + accurate copy). Plan-paranoia SIGN-OFF round 4/4 (owner-authorized), wave-paranoia SIGN-OFF round 2/2. Prod canary clean (SHA 97864d9): Metrika+Webvisor live on public pages, cabinet Metrika-free, Sentry 0. Webvisor accepted-risk (input masking is the control for SPA-nav). Owner enabled Yandex dashboard settings.
+
 ## Context
 
 «CSP-ошибка» оказалась заблокированной Yandex.Метрикой (Webvisor = запись сессий), выключенной CSP. Owner решил (2026-06-27): включить Метрику, раскрыть во всех документах, всё через пайплайн. Codex-paranoia раунд 1 (6 BLOCKER) + раунд 2 (5 BLOCKER) вычистили план до безопасной последовательности.

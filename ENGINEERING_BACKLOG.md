@@ -17,6 +17,12 @@ the rationale. Historical / fully-shipped waves live under
 - [SaaS-pivot scope](docs/backlog/saas-pivot.md) — SAAS-1..SAAS-6 product pivot from single-teacher-channel to multi-teacher SaaS; foundation docs first, multi-week sweep; SAAS-1 + follow-ups + SAAS-6-A11Y-1 SHIPPED, SAAS-2..6 ACTIVE.
 - [Cross-cutting backlog](docs/backlog/cross-cutting.md) — DOC-SPLIT (this file) / DOC-MODULE-CONTRACTS / API-BOUNDARIES / CRITICAL-PATH-INVENTORY / COVERAGE-PAYMENTS; status ACTIVE.
 
+## Follow-ups (small, owner-flagged 2026-06-27, metrika-rename-landing epic)
+
+- **Stale SEO learn-pages content refresh.** `app/saas/learn/free/page.tsx` still says «Один ученик» (free tier is now до 3) and `app/saas/learn/crm-for-tutors/page.tsx` lists tariffs «Стартовый 1 / Базовый 5 / Расширенный 30» — tiers that no longer exist (current: Стартовый до 3 / Оптимальный без лимита / Оптимальный на год). These were EXCLUDED from the rename epic to avoid a half-patch of a fully-stale narrative. Needs a dedicated content refresh against the current pricing (`08-pricing.tsx`). NOT a quick patch — the whole free-tier narrative is built around the obsolete «1 ученик» limit.
+- **Confirm ООО «Яндекс» реквизиты** in `app/privacy` §7 + `app/consent/personal-data` §5. Recipient named without ИНН/ОГРН (post-restructuring entity ambiguous). Owner to confirm exact реквизиты, then add via legal-rf-router (Legal-Pipeline-Verified).
+- **Webvisor accepted-risk (documented, not a bug):** SPA-nav from a public page to /login or /pay does not tear down the in-memory ym/Webvisor recorder; input masking is the control. Revisit only if the privacy posture tightens — then make those links full-page navigations.
+
 ## Cross-cutting / tech debt
 
 - [Coverage ratchet plan](docs/tech-debt/COVERAGE_RATCHET_PLAN.md) — gradual
