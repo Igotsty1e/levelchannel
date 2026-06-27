@@ -72,12 +72,12 @@ export default async function RootLayout({
   // closed upstream issue vercel/next.js#43743 (closed in 13.4.0)
   // where Vercel maintainers confirmed the trick.
   //
-  // The variable is intentionally unused after the read — the read is
-  // what matters. Future code that needs the nonce explicitly (e.g. a
-  // manual `<Script nonce={nonce}>` for a third-party loader) can use
-  // it directly.
+  // The read is also the load-bearing trigger for Next.js auto-stamping of
+  // `nonce=` on framework-emitted inline scripts. Beyond that, we pass the
+  // nonce EXPLICITLY into <YandexMetrika> — next/script does not auto-stamp
+  // a client-injected afterInteractive inline script (this was the CSP
+  // block that kept the counter disabled before 2026-06-27).
   const nonce = (await headers()).get('x-nonce') ?? undefined
-  void nonce
 
   // Codex 2026-05-08 (Wave 10 #5 / MEDIUM legal) — CloudPayments
   // widget script is loaded ONLY on the payment-stage pages
@@ -116,7 +116,7 @@ export default async function RootLayout({
         {children}
         <ServiceWorkerRegistration />
         <TrackingProvider />
-        <YandexMetrika />
+        <YandexMetrika nonce={nonce} />
       </body>
     </html>
   )
