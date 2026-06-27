@@ -77,6 +77,13 @@ export function ScreenCarousel() {
   // keyboard
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      // 2026-06-25 paranoia round 3 WARN fix: skip если focused на одной из
+      // dot-кнопок — там CarouselDots уже handle'ит Arrow keys. Без этого
+      // ArrowRight на dot triggered double-advance (dot listener + window).
+      const active = document.activeElement
+      if (active && active.getAttribute('role') === 'tab' && active.closest('[aria-label="Выбрать скрин"]')) {
+        return
+      }
       if (e.key === 'ArrowRight') next()
       if (e.key === 'ArrowLeft') prev()
     }

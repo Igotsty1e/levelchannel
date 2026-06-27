@@ -128,7 +128,14 @@ export function Modal({
       const focusable = card.querySelector<HTMLElement>(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
       )
-      focusable?.focus()
+      // 2026-06-25 paranoia round 3 BLOCKER fix: fallback на card itself
+      // когда нет focusable elements (busy state может disable все buttons).
+      // Без этого initial focus stays на background element за modal.
+      if (focusable) {
+        focusable.focus()
+      } else {
+        card.focus()
+      }
     }
     return () => {
       // Restore focus to whatever был focused before modal opened.
@@ -168,6 +175,9 @@ export function Modal({
         // focus target когда внутри modal нет focusable elements (busy state
         // могут отключить все кнопки). Без этого Tab уходил наружу page.
         tabIndex={-1}
+        // 2026-06-25 paranoia round 3 WARN fix: убрали `outline: none`. Когда
+        // focus падает на card itself (fallback path), default browser outline
+        // нужен sighted keyboard user'у чтобы видеть где focus.
         style={{
           background: 'var(--surface)',
           border: '1px solid var(--border)',
@@ -177,7 +187,6 @@ export function Modal({
           width: '100%',
           maxHeight: 'calc(100vh - 32px)',
           overflowY: 'auto',
-          outline: 'none',
         }}
       >
         <h2
