@@ -73,7 +73,7 @@ export default async function CabinetPackagesPage() {
         src="https://widget.cloudpayments.ru/bundles/cloudpayments.js"
         strategy="beforeInteractive"
       />
-      <div className="container" style={{ padding: '32px 0 64px' }}>
+      <div className="container" style={{ padding: '32px 0 64px', maxWidth: 1200 }}>
         <Link
           href="/cabinet"
           style={{
