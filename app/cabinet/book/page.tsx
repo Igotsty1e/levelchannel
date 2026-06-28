@@ -105,7 +105,7 @@ export default async function BookPage() {
 
   return (
     <>
-      <div style={{ width: '100%', maxWidth: 520, padding: '24px 16px' }}>
+      <div style={{ width: '100%', maxWidth: 520, padding: '24px 16px', marginInline: 'auto' }}>
         <Link
           href="/cabinet"
           style={{

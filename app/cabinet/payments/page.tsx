@@ -44,7 +44,7 @@ export default async function LearnerPaymentsHistoryPage() {
 
   return (
     <>
-      <div style={{ width: '100%', maxWidth: 640 }}>
+      <div style={{ width: '100%', maxWidth: 640, marginInline: 'auto' }}>
         <Link
           href="/cabinet"
           style={{
