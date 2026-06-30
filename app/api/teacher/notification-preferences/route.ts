@@ -21,9 +21,11 @@ import { requireTeacherWithCurrentSaasOfferConsent } from '@/lib/auth/guards'
 import {
   NOTIFICATION_CHANNELS_UI,
   NOTIFICATION_EVENT_CATALOG,
+  type NotificationChannel,
+} from '@/lib/notifications/catalog'
+import {
   listNotificationPreferences,
   upsertNotificationPreference,
-  type NotificationChannel,
 } from '@/lib/notifications/preferences'
 import { enforceAccountRateLimit } from '@/lib/security/account-rate-limit'
 import { enforceTrustedBrowserOrigin } from '@/lib/security/request'
