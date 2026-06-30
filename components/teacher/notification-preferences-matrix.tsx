@@ -10,98 +10,12 @@
 // одному изменению (минимум сетевой работы; debounce можно добавить позже).
 
 import { useState } from 'react'
-
-// Inline-копии каталога из lib/notifications/preferences (server-only
-// модуль тянет pg → ломает client bundle).
-const NOTIFICATION_EVENT_CATALOG = [
-  {
-    group: 'schedule',
-    groupLabel: 'Расписание',
-    items: [
-      {
-        kind: 'LessonCancelledByLearner',
-        label: 'Отмена занятия учеником',
-        desc: 'Ученик отменил забронированный урок.',
-      },
-      {
-        kind: 'LessonCancelledByTeacher',
-        label: 'Отмена занятия вами',
-        desc: 'Вы отменили урок ученика.',
-      },
-      {
-        kind: 'LessonRescheduledByLearner',
-        label: 'Перенос занятия учеником',
-        desc: 'Ученик перенёс свой урок.',
-      },
-      {
-        kind: 'LessonRescheduledByTeacher',
-        label: 'Перенос занятия вами',
-        desc: 'Вы перенесли урок ученика.',
-      },
-      {
-        kind: 'LessonDirectlyAssignedByTeacher',
-        label: 'Назначение урока',
-        desc: 'Вы назначили урок ученику напрямую (без брони).',
-      },
-    ],
-  },
-  {
-    group: 'payments',
-    groupLabel: 'Оплаты',
-    items: [
-      {
-        kind: 'LessonMarkedPaidByTeacher',
-        label: 'Отметка об оплате',
-        desc: 'Вы отметили оплату урока вне сервиса.',
-      },
-      {
-        kind: 'SbpClaimSubmittedByLearner',
-        label: 'Заявка на оплату вне сервиса',
-        desc: 'Ученик ждёт подтверждения оплаты от вас.',
-      },
-      {
-        kind: 'PaymentClaimConfirmed',
-        label: 'Подтверждение оплаты',
-        desc: 'Оператор подтвердил оплату по заявке ученика.',
-      },
-      {
-        kind: 'PaymentClaimDeclined',
-        label: 'Отклонение оплаты',
-        desc: 'Оператор отклонил заявку на оплату.',
-      },
-      {
-        kind: 'PaymentRefundIssued',
-        label: 'Возврат средств',
-        desc: 'Оператор оформил возврат по уроку.',
-      },
-    ],
-  },
-  {
-    group: 'reminders',
-    groupLabel: 'Напоминания',
-    items: [
-      {
-        kind: 'LessonMarkedCompleteByTeacher',
-        label: 'Отметка о проведённом уроке',
-        desc: 'Вы отметили урок как проведённый.',
-      },
-      {
-        kind: 'LessonMarkedNoShowByTeacher',
-        label: 'Отметка «ученик не пришёл»',
-        desc: 'Вы отметили урок как пропущенный учеником.',
-      },
-    ],
-  },
-] as const
-
-type NotificationChannel = 'email' | 'telegram' | 'push'
-
-const CHANNELS: ReadonlyArray<{ channel: NotificationChannel; label: string }> =
-  [
-    { channel: 'email', label: 'Email' },
-    { channel: 'telegram', label: 'Telegram' },
-    { channel: 'push', label: 'Push' },
-  ]
+import { CollapsibleCard } from '@/components/ui/primitives'
+import {
+  NOTIFICATION_CHANNELS_UI,
+  NOTIFICATION_EVENT_CATALOG,
+  type NotificationChannel,
+} from '@/lib/notifications/catalog'
 
 type PrefRow = {
   eventKind: string
@@ -111,6 +25,7 @@ type PrefRow = {
 
 type Props = {
   initialPreferences: ReadonlyArray<PrefRow>
+  channels?: ReadonlyArray<NotificationChannel>
 }
 
 function prefMapKey(eventKind: string, channel: NotificationChannel): string {
@@ -127,12 +42,18 @@ function buildInitialMap(
   return map
 }
 
-export function NotificationPreferencesMatrix({ initialPreferences }: Props) {
+export function NotificationPreferencesMatrix({
+  initialPreferences,
+  channels = NOTIFICATION_CHANNELS_UI.map(({ channel }) => channel),
+}: Props) {
   const [prefs, setPrefs] = useState<Record<string, boolean>>(() =>
     buildInitialMap(initialPreferences),
   )
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const visibleChannels = NOTIFICATION_CHANNELS_UI.filter(({ channel }) =>
+    channels.includes(channel),
+  )
 
   const isEnabled = (eventKind: string, channel: NotificationChannel) => {
     const k = prefMapKey(eventKind, channel)
@@ -202,89 +123,118 @@ export function NotificationPreferencesMatrix({ initialPreferences }: Props) {
         </p>
       ) : null}
 
-      {NOTIFICATION_EVENT_CATALOG.map((group) => (
-        <div key={group.group} style={{ marginBottom: 24 }}>
-          <h3
-            style={{
-              fontSize: 11,
-              color: 'var(--secondary)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-              fontWeight: 600,
-              margin: 0,
-              paddingBottom: 8,
-              borderBottom: '1px solid var(--border)',
-              marginBottom: 4,
-            }}
+      <div className="lc-stack-card">
+        {NOTIFICATION_EVENT_CATALOG.map((group) => (
+          <CollapsibleCard
+            key={group.group}
+            title={group.groupLabel}
+            description={groupDescription(group.group)}
+            meta={
+              <span style={groupMetaStyle}>
+                {group.items.length} {pluralizeEvents(group.items.length)}
+              </span>
+            }
           >
-            {group.groupLabel}
-          </h3>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th style={thLeftStyle}>Событие</th>
-                {CHANNELS.map((c) => (
-                  <th key={c.channel} style={thCenterStyle}>
-                    {c.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {group.items.map((item) => (
-                <tr key={item.kind} data-testid={`notification-prefs-row-${item.kind}`}>
-                  <td style={tdLeftStyle}>
-                    <div style={{ fontSize: 14, color: 'var(--text)' }}>
-                      {item.label}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: 'var(--secondary)',
-                        marginTop: 2,
-                        lineHeight: 1.4,
-                      }}
-                    >
-                      {item.desc}
-                    </div>
-                  </td>
-                  {CHANNELS.map((c) => {
-                    const on = isEnabled(item.kind, c.channel)
-                    return (
-                      <td key={c.channel} style={tdCenterStyle}>
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={on}
-                          aria-label={`${item.label} — ${c.label}`}
-                          data-testid={`notification-prefs-toggle-${item.kind}-${c.channel}`}
-                          onClick={() => void toggle(item.kind, c.channel)}
-                          disabled={busy}
-                          style={{
-                            ...toggleStyle,
-                            background: on
-                              ? 'var(--accent)'
-                              : 'var(--surface-2, #2a2a35)',
-                          }}
-                        >
-                          <span
-                            style={{
-                              ...toggleDotStyle,
-                              left: on ? 20 : 2,
-                            }}
-                          />
-                        </button>
-                      </td>
-                    )
-                  })}
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={thLeftStyle}>Событие</th>
+                  {visibleChannels.map((c) => (
+                    <th key={c.channel} style={thCenterStyle}>
+                      {c.label}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ))}
+              </thead>
+              <tbody>
+                {group.items.map((item) => (
+                  <tr
+                    key={item.kind}
+                    data-testid={`notification-prefs-row-${item.kind}`}
+                  >
+                    <td style={tdLeftStyle}>
+                      <div style={{ fontSize: 14, color: 'var(--text)' }}>
+                        {item.label}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: 'var(--secondary)',
+                          marginTop: 2,
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {item.desc}
+                      </div>
+                    </td>
+                    {visibleChannels.map((c) => {
+                      const on = isEnabled(item.kind, c.channel)
+                      return (
+                        <td key={c.channel} style={tdCenterStyle}>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={on}
+                            aria-label={`${item.label} — ${c.label}`}
+                            data-testid={`notification-prefs-toggle-${item.kind}-${c.channel}`}
+                            onClick={() => void toggle(item.kind, c.channel)}
+                            disabled={busy}
+                            style={{
+                              ...toggleStyle,
+                              background: on
+                                ? 'var(--accent)'
+                                : 'var(--surface-2, #2a2a35)',
+                            }}
+                          >
+                            <span
+                              style={{
+                                ...toggleDotStyle,
+                                left: on ? 20 : 2,
+                              }}
+                            />
+                          </button>
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CollapsibleCard>
+        ))}
+      </div>
     </section>
   )
+}
+
+function groupDescription(group: string): string {
+  switch (group) {
+    case 'schedule':
+      return 'Отмены, переносы и назначение уроков.'
+    case 'payments':
+      return 'Оплата вне сервиса, подтверждения и возвраты.'
+    case 'reminders':
+      return 'Что происходит после урока.'
+    default:
+      return ''
+  }
+}
+
+function pluralizeEvents(count: number): string {
+  const mod10 = count % 10
+  const mod100 = count % 100
+  if (mod10 === 1 && mod100 !== 11) return 'событие'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+    return 'события'
+  }
+  return 'событий'
+}
+
+const groupMetaStyle: React.CSSProperties = {
+  color: 'var(--secondary)',
+  fontSize: 12,
+  lineHeight: 1.3,
+  whiteSpace: 'nowrap',
 }
 
 const thLeftStyle: React.CSSProperties = {

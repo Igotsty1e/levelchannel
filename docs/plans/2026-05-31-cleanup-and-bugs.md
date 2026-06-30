@@ -1,15 +1,15 @@
 ---
 title: 2026-05-31 — cleanup wave + prod bug fixes + onboarding paranoia
-status: IN PROGRESS
+status: HISTORICAL — partial shipped 2026-06-01; remaining onboarding follow-up moved to dedicated plan-docs
 date: 2026-05-31 (autonomous orchestrator session)
 ---
 
 # 2026-05-31 — cleanup wave + prod bug fixes + onboarding paranoia
 
-Orchestration document для autonomous session 2026-05-31: shipped 3 small
-production-fix PRs (#458/#459/#460), готовит onboarding-волну через 3-round
-paranoia loop, и трекает plan G (`/login?invite` redeem) как новый sub-PR
-prerequisite для Sub-PR C learner hints.
+Historical orchestration document для autonomous session 2026-05-31. This
+session produced 3 small production-fix PRs (#458/#459/#460), completed the
+onboarding spec rewrite pass, and then moved the remaining onboarding follow-up
+into dedicated plan-docs instead of continuing here.
 
 ---
 

@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 
 import { EmailDigestCard } from '@/components/teacher/digest-settings'
+import { Banner } from '@/components/ui/primitives'
 import { NotificationPreferencesMatrix } from '@/components/teacher/notification-preferences-matrix'
 import { getAuthPool } from '@/lib/auth/pool'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
@@ -66,7 +67,7 @@ export default async function TeacherDigestSettingsPage() {
         <p className="digest-page-sub">
           Дайджест — короткое сообщение с занятиями на день, приходит
           каждое утро в&nbsp;08:00 по&nbsp;вашему часовому поясу.{' '}
-          Каналы доставки (Email, Telegram, Push) настраиваются{' '}
+          Каналы доставки (Email и Telegram) настраиваются{' '}
           <Link href="/teacher/settings/integrations" style={{ color: 'inherit', textDecoration: 'underline' }}>
             в разделе «Интеграции»
           </Link>
@@ -75,16 +76,24 @@ export default async function TeacherDigestSettingsPage() {
         </p>
       </header>
 
-      <div className="digest-channel-stack">
-        <EmailDigestCard email={accountEmail} />
-      </div>
+      <section className="lc-stack-card">
+        <div className="digest-channel-stack">
+          <EmailDigestCard email={accountEmail} />
+        </div>
 
-      {/* Epic D (2026-06-18) — гранулярные настройки уведомлений
-          per-event × per-channel. Default ON; учитель может выключить
-          конкретные события в конкретных каналах. */}
-      <NotificationPreferencesMatrix
-        initialPreferences={initialPreferences}
-      />
+        <Banner tone="info">
+          Push-уведомления для учителей пока не готовы и появятся
+          в будущих обновлениях.
+        </Banner>
+
+        {/* Epic D (2026-06-18) — гранулярные настройки уведомлений
+            per-event × per-channel. Default ON; учитель может выключить
+            конкретные события в конкретных каналах. */}
+        <NotificationPreferencesMatrix
+          initialPreferences={initialPreferences}
+          channels={['email', 'telegram']}
+        />
+      </section>
     </div>
   )
 }
