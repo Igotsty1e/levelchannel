@@ -232,12 +232,20 @@ Owner reported 4 bugs + asked for security + code-quality audits. Whole wave shi
   - **B.2 PR #617** — package picker в AssignDirectModal + GET /api/teacher/learners/[id]/billing-state endpoint (paymentMethod + postpaidAllowed + activePackages). assignSlotDirect extended с `billingChoice` ('auto'|'package'|'postpaid') + optional `packagePurchaseId`. UI cleanup всех 'prepaid_packages' labels: payment-method-toggle 3-radio → 2-radio с переписанным copy «Принимаю оплату (пакеты + счёт)»; invite-default 3 → 2 опции; union-narrow в teacher-blocks-list, teacher/learners/client, teacher/learners/[id]/page.
   - **B.3 PR #618 (epic-close)** — POST /api/teacher/slots/bulk-assign-direct endpoint (cap 50 slots, sequential через assignSlotDirect, 23505→skippedConflicts, остальные reason→skippedReasons). `BulkAssignDirectModal` (клон BulkAddSlotsModal + Combobox ученика + payment-choice + preview). MobileCreateFab.CreateMode расширен `'bulk_assign'` + кнопка «+ Назначить N» в calendar header.
 
+## 2026-06-12 teacher-calendar-unify wave (1 PR)
+
+- **`2026-06-12-teacher-calendar-unify.md`** — top-row unify + slotMode cleanup на `/teacher/calendar`. Status: SHIPPED 2026-06-12. Wave removed the cosmetic `accounts.calendar_slot_mode` layer (mig 0127), deleted `lib/scheduling/slot-mode.ts`, `/api/teacher/settings/calendar/slot-mode`, `SlotModeToggle`, sticky mobile FAB, and related CSS. Result: both primary teacher actions stay visible as equal top-row buttons, and learner-side returns to the standard pickup flow when no open slots exist.
+
 ## Foundational pre-2026-05 waves (kept for git blame continuity)
 
 - **`csp-hardening.md`** (CSP hardening, CLOSED 2026-05-09) — Content-Security-Policy lockdown for production.
 - **`prepay-postpay-billing.md`** (billing wave, PR #118 + follow-ups) — prepaid/postpaid billing model + package consumption SoT.
 - **`calendar-ui.md`** (Wave A, 2026-05-08) — base `/admin/slots` calendar UI before SAAS-1 redesign.
 - **`booking-calendly-style.md`** (BCS-* base, 2026-05-09…2026-05-15) — Calendly-style booking flow + downstream BCS-DEF-1..7 waves.
+- **`bcs-def-1-fanout.md`** (BCS-DEF-1-FANOUT, 2026-06-04, PR #531) — per-teacher fan-out branch for unresolved external-calendar conflict alerts; data layer shipped with mig 0104, probe-status audience filtering, and operator-gated activation via `CONFLICT_UNRESOLVED_TEACHER_FANOUT_ENABLED`.
+- **`bcs-def-4-learner-reminders.md`** (BCS-DEF-4, 2026-05-19, PR #392) — learner lesson-start email reminders via `scripts/learner-reminder-dispatch.mjs`, migrations 0064/0065/0066, admin card on `/admin/settings/alerts`, and cabinet/profile placeholder for future channels.
+- **`bcs-def-5-teacher-reminders.md`** (BCS-DEF-5, 2026-05-19, PR #393) — daily 08:00 teacher digest by local timezone via `scripts/teacher-daily-digest.mjs`, migrations 0067/0068/0069, and dedicated `/admin/settings/digest` operator surface.
+- **`sbp-payments.md`** (SBP-PAY, 2026-05-19, PR #391) — dedicated SBP QR flow on `/pay`: `POST /api/payments/sbp/create-qr`, `SbpQrModal`, `payment_orders.payment_method`, webhook payment-method classification, and post-ship operator gate `SBP_ENABLED` after the CloudPayments terminal readiness issue surfaced.
 - **`cabinet-profile-button.md`** (2026-05-18, PR #287) — `/cabinet/profile` button + page.
 - **`slots-split.md`** (Wave 17, 2026-05-11, PR #151) — `lib/scheduling/slots.ts` split into 9-file folder facade.
 

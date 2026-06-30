@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LevelChannel social avatars</title>
+  <style>
+    :root {
+      --bg: #0a0a0c;
+      --surface: #141416;
+      --surface-2: #1c1c1f;
+      --border: rgba(255,255,255,0.08);
+      --text: #f5f5f7;
+      --muted: #a1a1aa;
+      --accent: #d88a82;
+      --accent-2: #e8a890;
+      --light: #f6eee8;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top, rgba(216,138,130,0.12), transparent 30%),
+        linear-gradient(180deg, #111113 0%, #09090b 100%);
+      color: var(--text);
+      padding: 40px 24px 64px;
+    }
+
+    .shell {
+      max-width: 1440px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 34px;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+    }
+
+    .intro {
+      margin: 12px 0 36px;
+      max-width: 860px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+    }
+
+    .card {
+      background: rgba(20,20,22,0.9);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      padding: 24px;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.28);
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .card.recommended {
+      border-color: rgba(216,138,130,0.35);
+      background:
+        linear-gradient(180deg, rgba(216,138,130,0.08), transparent 35%),
+        rgba(20,20,22,0.95);
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      width: fit-content;
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-size: 12px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      background: rgba(216,138,130,0.12);
+      color: var(--accent-2);
+    }
+
+    .title {
+      margin: 0;
+      font-size: 21px;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+
+    .desc, .meta {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .avatar-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .avatar {
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      overflow: hidden;
+      background: #0b0b0d;
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 10px 28px rgba(0,0,0,0.25);
+    }
+
+    .avatar img {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .avatar.s32 { width: 32px; height: 32px; }
+    .avatar.s64 { width: 64px; height: 64px; }
+    .avatar.s96 { width: 96px; height: 96px; }
+    .avatar.hero { width: 180px; height: 180px; }
+
+    .stage {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      gap: 20px;
+      align-items: center;
+      padding: 18px;
+      border-radius: 22px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .stage.light {
+      background: linear-gradient(180deg, #fff8f2 0%, #f3e4d8 100%);
+      border-color: rgba(200,120,120,0.15);
+    }
+
+    .stage.light .stage-copy {
+      color: #433435;
+    }
+
+    .stage-copy strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chip {
+      border-radius: 999px;
+      padding: 8px 12px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.05);
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    .chip.light {
+      background: rgba(0,0,0,0.04);
+      border-color: rgba(0,0,0,0.06);
+      color: #433435;
+    }
+
+    .summary {
+      margin-top: 32px;
+      padding: 20px 22px;
+      border-radius: 24px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      color: var(--muted);
+      line-height: 1.6;
+      font-size: 14px;
+    }
+
+    a {
+      color: var(--accent-2);
+      text-decoration: none;
+    }
+
+    @media (max-width: 720px) {
+      body {
+        padding: 24px 16px 48px;
+      }
+
+      h1 {
+        font-size: 28px;
+      }
+
+      .stage {
+        grid-template-columns: 1fr;
+      }
+
+      .avatar.hero {
+        width: 144px;
+        height: 144px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <h1>Аватарки для соцсетей, ботов и саппорта</h1>
+    <p class="intro">
+      Ниже 6 вариантов на базе текущего знака LevelChannel. Я специально развёл их по характеру:
+      два для основных каналов, два для ботов, два для саппорта. Все файлы лежат в
+      <a href="/brand-options/social-avatars/">`/public/brand-options/social-avatars/`</a>
+      и подходят как исходники для `1024x1024` экспортов.
+    </p>
+
+    <div class="grid">
+      <section class="card recommended">
+        <div class="eyebrow">Main · recommended</div>
+        <h2 class="title">Calm signal</h2>
+        <p class="desc">Спокойный, узнаваемый, хорошо держится в Telegram, Instagram, YouTube и в списках чатов.</p>
+        <div class="stage">
+          <div class="avatar hero"><img src="main-calm.svg" alt="Main calm avatar" /></div>
+          <div class="stage-copy">
+            <strong>Лучший универсальный вариант для основного бренда</strong>
+            Мягкое свечение, тёмная база, знак читается даже в маленьком круге и не выглядит шумно.
+          </div>
+        </div>
+        <div class="avatar-row">
+          <div class="avatar s32"><img src="main-calm.svg" alt="" /></div>
+          <div class="avatar s64"><img src="main-calm.svg" alt="" /></div>
+          <div class="avatar s96"><img src="main-calm.svg" alt="" /></div>
+        </div>
+        <div class="chips">
+          <span class="chip">Telegram channel</span>
+          <span class="chip">Instagram</span>
+          <span class="chip">YouTube</span>
+          <span class="chip">VK</span>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="eyebrow">Main · bold</div>
+        <h2 class="title">Bold ring</h2>
+        <p class="desc">Более уверенный и заметный вариант. Хорошо подходит, если хочется сильнее отделить бренд от личных профилей.</p>
+        <div class="stage">
+          <div class="avatar hero"><img src="main-bold.svg" alt="Main bold avatar" /></div>
+          <div class="stage-copy">
+            <strong>Для более "официального" канального присутствия</strong>
+            Толще знак, сильнее контур, выше заметность в мелких лентах и на тёмных фонах.
+          </div>
+        </div>
+        <div class="avatar-row">
+          <div class="avatar s32"><img src="main-bold.svg" alt="" /></div>
+          <div class="avatar s64"><img src="main-bold.svg" alt="" /></div>
+          <div class="avatar s96"><img src="main-bold.svg" alt="" /></div>
+        </div>
+        <div class="chips">
+          <span class="chip">Corporate page</span>
+          <span class="chip">Pinned channel</span>
+          <span class="chip">Podcast cover</span>
+        </div>
+      </section>
+
+      <section class="card recommended">
+        <div class="eyebrow">Bot · recommended</div>
+        <h2 class="title">Signal grid</h2>
+        <p class="desc">Самый "ботовый" по ощущению вариант. Есть ритм, сеть и automation vibe, но без дешёвого sci-fi.</p>
+        <div class="stage">
+          <div class="avatar hero"><img src="bot-signal.svg" alt="Bot signal avatar" /></div>
+          <div class="stage-copy">
+            <strong>Лучший выбор для Telegram-ботов и service-ботов</strong>
+            Кольца и опорные точки создают ощущение маршрутизации, подсказок и автоматических действий.
+          </div>
+        </div>
+        <div class="avatar-row">
+          <div class="avatar s32"><img src="bot-signal.svg" alt="" /></div>
+          <div class="avatar s64"><img src="bot-signal.svg" alt="" /></div>
+          <div class="avatar s96"><img src="bot-signal.svg" alt="" /></div>
+        </div>
+        <div class="chips">
+          <span class="chip">Reminder bot</span>
+          <span class="chip">Payment bot</span>
+          <span class="chip">Onboarding bot</span>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="eyebrow">Bot · orbit</div>
+        <h2 class="title">Orbit loop</h2>
+        <p class="desc">Чуть мягче и интеллектуальнее, чем signal grid. Хорошо для AI-assistant или multi-step helper bot.</p>
+        <div class="stage">
+          <div class="avatar hero"><img src="bot-orbit.svg" alt="Bot orbit avatar" /></div>
+          <div class="stage-copy">
+            <strong>Если бот должен быть не только utilitarian, но и "умным"</strong>
+            Орбиты делают образ более живым и менее системным, чем у чисто сервисного бота.
+          </div>
+        </div>
+        <div class="avatar-row">
+          <div class="avatar s32"><img src="bot-orbit.svg" alt="" /></div>
+          <div class="avatar s64"><img src="bot-orbit.svg" alt="" /></div>
+          <div class="avatar s96"><img src="bot-orbit.svg" alt="" /></div>
+        </div>
+        <div class="chips">
+          <span class="chip">AI assistant</span>
+          <span class="chip">Tutor helper</span>
+          <span class="chip">Product companion</span>
+        </div>
+      </section>
+
+      <section class="card recommended">
+        <div class="eyebrow">Support · recommended</div>
+        <h2 class="title">Warm help</h2>
+        <p class="desc">Самый человечный и дружелюбный вариант. Светлый фон помогает быстро считывать профиль как поддержку, а не как ещё один бренд-канал.</p>
+        <div class="stage light">
+          <div class="avatar hero"><img src="support-warm.svg" alt="Support warm avatar" /></div>
+          <div class="stage-copy">
+            <strong>Лучший выбор для поддержки и customer success</strong>
+            Тёплая база, мягкий светлый круг, бренд остаётся узнаваемым, но тон становится спокойнее.
+          </div>
+        </div>
+        <div class="avatar-row">
+          <div class="avatar s32"><img src="support-warm.svg" alt="" /></div>
+          <div class="avatar s64"><img src="support-warm.svg" alt="" /></div>
+          <div class="avatar s96"><img src="support-warm.svg" alt="" /></div>
+        </div>
+        <div class="chips">
+          <span class="chip light">Support chat</span>
+          <span class="chip light">Helpdesk</span>
+          <span class="chip light">Client success</span>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="eyebrow">Support · shield</div>
+        <h2 class="title">Shield care</h2>
+        <p class="desc">Чуть более серьёзный и надёжный по тону вариант. Подходит, если саппорт ближе к payments / security / account recovery.</p>
+        <div class="stage">
+          <div class="avatar hero"><img src="support-shield.svg" alt="Support shield avatar" /></div>
+          <div class="stage-copy">
+            <strong>Для саппорта, где важны защита и доверие</strong>
+            Здесь уже меньше "тепла" и больше ощущения контроля, надёжности и аккуратной помощи.
+          </div>
+        </div>
+        <div class="avatar-row">
+          <div class="avatar s32"><img src="support-shield.svg" alt="" /></div>
+          <div class="avatar s64"><img src="support-shield.svg" alt="" /></div>
+          <div class="avatar s96"><img src="support-shield.svg" alt="" /></div>
+        </div>
+        <div class="chips">
+          <span class="chip">Account recovery</span>
+          <span class="chip">Billing support</span>
+          <span class="chip">Security support</span>
+        </div>
+      </section>
+    </div>
+
+    <div class="summary">
+      Если брать короткий стартовый набор без лишнего выбора, я бы рекомендовал так:
+      <strong>`main-calm.svg`</strong> для основных соцсетей,
+      <strong>`bot-signal.svg`</strong> для ботов,
+      <strong>`support-warm.svg`</strong> для саппорта.
+      Если захочешь, следующим проходом я могу сразу сделать второй борд уже под конкретные размеры и safe-zone
+      для Telegram, YouTube, Instagram и VK.
+    </div>
+  </div>
+</body>
+</html>
