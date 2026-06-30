@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 
 import { EmailDigestCard } from '@/components/teacher/digest-settings'
+import { Banner } from '@/components/ui/primitives'
 import { NotificationPreferencesMatrix } from '@/components/teacher/notification-preferences-matrix'
 import { getAuthPool } from '@/lib/auth/pool'
 import { SESSION_COOKIE_NAME, lookupSession } from '@/lib/auth/sessions'
@@ -75,29 +76,24 @@ export default async function TeacherDigestSettingsPage() {
         </p>
       </header>
 
-      <div className="digest-channel-stack">
-        <EmailDigestCard email={accountEmail} />
-      </div>
+      <section className="lc-stack-card">
+        <div className="digest-channel-stack">
+          <EmailDigestCard email={accountEmail} />
+        </div>
 
-      <p
-        style={{
-          color: 'var(--secondary)',
-          fontSize: 13,
-          lineHeight: 1.5,
-          margin: '0 0 12px 0',
-          maxWidth: '60ch',
-        }}
-      >
-        Push-уведомления для учителей пока не готовы и появятся отдельной волной.
-      </p>
+        <Banner tone="info">
+          Push-уведомления для учителей пока не готовы и появятся
+          в будущих обновлениях.
+        </Banner>
 
-      {/* Epic D (2026-06-18) — гранулярные настройки уведомлений
-          per-event × per-channel. Default ON; учитель может выключить
-          конкретные события в конкретных каналах. */}
-      <NotificationPreferencesMatrix
-        initialPreferences={initialPreferences}
-        channels={['email', 'telegram']}
-      />
+        {/* Epic D (2026-06-18) — гранулярные настройки уведомлений
+            per-event × per-channel. Default ON; учитель может выключить
+            конкретные события в конкретных каналах. */}
+        <NotificationPreferencesMatrix
+          initialPreferences={initialPreferences}
+          channels={['email', 'telegram']}
+        />
+      </section>
     </div>
   )
 }
