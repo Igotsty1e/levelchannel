@@ -111,6 +111,7 @@ type PrefRow = {
 
 type Props = {
   initialPreferences: ReadonlyArray<PrefRow>
+  channels?: ReadonlyArray<NotificationChannel>
 }
 
 function prefMapKey(eventKind: string, channel: NotificationChannel): string {
@@ -127,12 +128,18 @@ function buildInitialMap(
   return map
 }
 
-export function NotificationPreferencesMatrix({ initialPreferences }: Props) {
+export function NotificationPreferencesMatrix({
+  initialPreferences,
+  channels = CHANNELS.map(({ channel }) => channel),
+}: Props) {
   const [prefs, setPrefs] = useState<Record<string, boolean>>(() =>
     buildInitialMap(initialPreferences),
   )
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const visibleChannels = CHANNELS.filter(({ channel }) =>
+    channels.includes(channel),
+  )
 
   const isEnabled = (eventKind: string, channel: NotificationChannel) => {
     const k = prefMapKey(eventKind, channel)
@@ -223,7 +230,7 @@ export function NotificationPreferencesMatrix({ initialPreferences }: Props) {
             <thead>
               <tr>
                 <th style={thLeftStyle}>Событие</th>
-                {CHANNELS.map((c) => (
+                {visibleChannels.map((c) => (
                   <th key={c.channel} style={thCenterStyle}>
                     {c.label}
                   </th>
@@ -248,7 +255,7 @@ export function NotificationPreferencesMatrix({ initialPreferences }: Props) {
                       {item.desc}
                     </div>
                   </td>
-                  {CHANNELS.map((c) => {
+                  {visibleChannels.map((c) => {
                     const on = isEnabled(item.kind, c.channel)
                     return (
                       <td key={c.channel} style={tdCenterStyle}>

@@ -21,6 +21,7 @@ export function BindCodeModal({
   onClose,
 }: BindCodeModalProps) {
   const [copied, setCopied] = useState(false)
+  const command = `/start ${code}`
 
   const expiresLabel = expiresAt
     ? new Date(expiresAt).toLocaleTimeString('ru-RU', {
@@ -35,7 +36,7 @@ export function BindCodeModal({
 
   async function handleCopy() {
     try {
-      await navigator.clipboard.writeText(code)
+      await navigator.clipboard.writeText(command)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 2000)
     } catch {
@@ -47,7 +48,7 @@ export function BindCodeModal({
   return (
     <Modal open={true} onClose={onClose} title="Код для Telegram-бота" size="md">
       <p style={{ fontSize: 14, lineHeight: 1.5, color: 'var(--secondary)', margin: 0, marginBottom: 16 }}>
-        Откройте бота и&nbsp;отправьте код одним сообщением — или нажмите кнопку ниже,
+        Откройте бота и&nbsp;отправьте команду одним сообщением — или нажмите кнопку ниже,
         если Telegram установлен на&nbsp;этом устройстве.
       </p>
       <div className="digest-bind-code-block">
@@ -55,7 +56,7 @@ export function BindCodeModal({
           className="digest-bind-code-value"
           data-testid="teacher-bind-code-value"
         >
-          {code}
+          {command}
         </span>
         <Button
           type="button"
@@ -63,7 +64,7 @@ export function BindCodeModal({
           size="sm"
           onClick={handleCopy}
         >
-          {copied ? 'Скопировано' : 'Скопировать'}
+          {copied ? 'Скопировано' : 'Скопировать команду'}
         </Button>
       </div>
       {expiresLabel ? (
@@ -82,10 +83,10 @@ export function BindCodeModal({
           в&nbsp;Telegram.
         </li>
         <li>
-          Отправьте код {code} или нажмите «Start» — бот распознает оба формата.
+          Отправьте команду <strong>{command}</strong>.
         </li>
         <li>
-          Вернитесь сюда — статус обновится при следующем заходе на&nbsp;страницу.
+          Вернитесь сюда — после успешной привязки статус обновится здесь.
         </li>
       </ol>
       <Modal.Footer>

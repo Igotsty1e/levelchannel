@@ -66,7 +66,7 @@ export default async function TeacherDigestSettingsPage() {
         <p className="digest-page-sub">
           Дайджест — короткое сообщение с занятиями на день, приходит
           каждое утро в&nbsp;08:00 по&nbsp;вашему часовому поясу.{' '}
-          Каналы доставки (Email, Telegram, Push) настраиваются{' '}
+          Каналы доставки (Email и Telegram) настраиваются{' '}
           <Link href="/teacher/settings/integrations" style={{ color: 'inherit', textDecoration: 'underline' }}>
             в разделе «Интеграции»
           </Link>
@@ -79,11 +79,24 @@ export default async function TeacherDigestSettingsPage() {
         <EmailDigestCard email={accountEmail} />
       </div>
 
+      <p
+        style={{
+          color: 'var(--secondary)',
+          fontSize: 13,
+          lineHeight: 1.5,
+          margin: '0 0 12px 0',
+          maxWidth: '60ch',
+        }}
+      >
+        Push-уведомления для учителей пока не готовы и появятся отдельной волной.
+      </p>
+
       {/* Epic D (2026-06-18) — гранулярные настройки уведомлений
           per-event × per-channel. Default ON; учитель может выключить
           конкретные события в конкретных каналах. */}
       <NotificationPreferencesMatrix
         initialPreferences={initialPreferences}
+        channels={['email', 'telegram']}
       />
     </div>
   )

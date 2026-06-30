@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 
 import { Button, Pill } from '@/components/ui/primitives'
 import {
@@ -40,16 +41,50 @@ export function TelegramDigestCard({
   initialBound,
   masterSwitchOn,
 }: TelegramDigestCardProps) {
+  const router = useRouter()
   const [bound, setBound] = useState(initialBound)
   const [bindCode, setBindCode] = useState<BindCodePayload | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
+
+  useEffect(() => {
+    setBound(initialBound)
+    if (initialBound) {
+      setBindCode(null)
+      setError(null)
+    }
+  }, [initialBound])
+
+  useEffect(() => {
+    if (!bindCode) return
+
+    const refreshStatus = () => {
+      startTransition(() => {
+        router.refresh()
+      })
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshStatus()
+      }
+    }
+
+    window.addEventListener('focus', refreshStatus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('focus', refreshStatus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [bindCode, router, startTransition])
 
   const onIssue = () => {
     setError(null)
     startTransition(async () => {
       const result = await requestTeacherTelegramBindCode()
       if (result.ok) {
+        setBound(false)
         setBindCode({
           code: result.code,
           expiresAt: result.expiresAt,
@@ -79,6 +114,7 @@ export function TelegramDigestCard({
       if (result.ok) {
         setBound(false)
         setBindCode(null)
+        router.refresh()
       } else if (result.error === 'rate_limited') {
         setError(
           `Слишком частые запросы. Попробуйте через ${Math.ceil(

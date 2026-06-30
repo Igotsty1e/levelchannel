@@ -143,6 +143,8 @@ export async function POST(request: Request) {
   if (text.startsWith('/start ')) {
     const code = text.slice('/start '.length).trim().toUpperCase()
     await handleStart(code, String(chatId), String(fromId))
+  } else if (/^[A-Z0-9]{8}$/i.test(text)) {
+    await handleStart(text.toUpperCase(), String(chatId), String(fromId))
   } else if (text === '/start') {
     await replySafe(
       String(chatId),
